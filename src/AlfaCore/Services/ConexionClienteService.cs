@@ -328,9 +328,16 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     /// podido restaurar el token del navegador y ejecutar su activación posterior a F5.
     /// El override queda en este servicio scoped: dos circuitos/pestañas no lo comparten.
     /// Sólo se acepta una ruta con forma tenant real (<see cref="TenantRouteParser"/>: rutas root
-    /// como /consultas/12 NO son idweb=consultas/idbase=12) y cuyo idweb sea el del cliente dueño
-    /// de la base en ALFA_CENTRAL. Si la forma es tenant pero la base no existe o el idweb no
-    /// coincide, se marca <c>_routeSessionRejected</c> y GetActiveSession falla cerrado.
+    /// como /consultas/12 NO son idweb=consultas/idbase=12) y que cumpla UNA de estas dos
+    /// condiciones server-side (ver <see cref="IsRouteTenantAccepted"/>):
+    /// - el idweb es el del cliente dueño de la base en ALFA_CENTRAL (URL del propio tenant, la que
+    ///   usa el login directo por ruta), o
+    /// - el idweb es el del usuario autenticado y la base está en SU lista de bases autorizadas
+    ///   (el mismo LoadSaaSSessionsAsync que alimenta SeleccionarBase/SwitchSession). Es la
+    ///   convención con la que la app arma las URLs (SeleccionarBase, RouteContextService):
+    ///   /{idweb del usuario}/{base elegida}, p. ej. un superadmin en /ALFANET/{base de un cliente}.
+    /// Si la forma es tenant pero no se cumple ninguna (o la base no existe), se marca
+    /// <c>_routeSessionRejected</c> y GetActiveSession falla cerrado.
     /// </summary>
     private SessionDto? ResolveRouteSessionOverride()
     {
@@ -347,7 +354,11 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
             return null;
         }
 
-        var routeKey = $"{idWeb}|{baseId}";
+        // La decisión depende también del usuario (su idweb y sus bases autorizadas): la clave de
+        // cache lo incluye para que un login/logout/restauración de token nunca reutilice un
+        // resultado calculado para otra identidad (además del reset de OnUserStateChanged).
+        var currentUser = _appUserSession.CurrentUser;
+        var routeKey = $"{idWeb}|{baseId}|{BuildUserKey(currentUser)}";
         lock (_lock)
         {
             if (string.Equals(_routeSessionKey, routeKey, StringComparison.OrdinalIgnoreCase))
@@ -360,7 +371,17 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         SessionDto? resolved;
         try
         {
-            resolved = Task.Run(() => ResolveValidatedRouteSessionAsync(idWeb, baseId))
+            var userHasBase = false;
+            if (currentUser is not null)
+            {
+                lock (_lock)
+                {
+                    RefreshSaaSCacheIfNeeded();
+                    userHasBase = _cachedSessions.Any(s => s.BaseId == baseId);
+                }
+            }
+
+            resolved = Task.Run(() => ResolveValidatedRouteSessionAsync(idWeb, baseId, currentUser?.IdWeb, userHasBase))
                 .GetAwaiter()
                 .GetResult();
         }
@@ -388,18 +409,20 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         return resolved;
     }
 
-    private async Task<SessionDto?> ResolveValidatedRouteSessionAsync(string idWeb, int baseId)
+    private async Task<SessionDto?> ResolveValidatedRouteSessionAsync(string idWeb, int baseId, string? userIdWeb, bool userHasBase)
     {
         var routeBase = await _basesService.GetByIdAsync(baseId).ConfigureAwait(false);
         if (routeBase is null)
             return null;
 
-        // Mismo criterio que la autenticación de PublicLinks (Program.TryActivateVb6InstallationAsync):
-        // el idweb de la URL tiene que ser el del cliente dueño de la base.
-        var cliente = await _clientesService.GetByIdClienteAsync(routeBase.IdCliente).ConfigureAwait(false);
-        if (cliente is null
-            || string.IsNullOrWhiteSpace(cliente.IdWeb)
-            || !string.Equals(cliente.IdWeb.Trim(), idWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+        // Si la URL usa el idweb del usuario y la base está en su lista autorizada, no hace falta
+        // consultar el dueño. Si no, mismo criterio que la autenticación de PublicLinks
+        // (Program.TryActivateVb6InstallationAsync): el idweb tiene que ser el del dueño de la base.
+        var ownerIdWeb = IsUserAuthorizedRoute(idWeb, userIdWeb, userHasBase)
+            ? null
+            : (await _clientesService.GetByIdClienteAsync(routeBase.IdCliente).ConfigureAwait(false))?.IdWeb;
+
+        if (!IsRouteTenantAccepted(idWeb, ownerIdWeb, userIdWeb, userHasBase))
             return null;
 
         return new SessionDto
@@ -415,6 +438,35 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
             Activa = true
         };
     }
+
+    /// <summary>
+    /// Regla única para aceptar una ruta /{idweb}/{idbase} ya existente en ALFA_CENTRAL:
+    /// - idweb del dueño de la base (<paramref name="ownerIdWeb"/>), o
+    /// - idweb del usuario autenticado + base incluida en su lista autorizada
+    ///   (<paramref name="userHasBase"/>, calculado con LoadSaaSSessionsAsync: sus bases por
+    ///   IdCliente, o todas si es superadmin). Nunca por el flag SuperAdmin aislado.
+    /// Aceptar la ruta NO autoriza al usuario: eso sigue siendo IsAuthorizedForSession (login
+    /// interno de la base), que es lo que exigen el @Body y los consumidores del layout.
+    /// </summary>
+    internal static bool IsRouteTenantAccepted(string routeIdWeb, string? ownerIdWeb, string? userIdWeb, bool userHasBase)
+    {
+        if (string.IsNullOrWhiteSpace(routeIdWeb))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(ownerIdWeb)
+            && string.Equals(ownerIdWeb.Trim(), routeIdWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return IsUserAuthorizedRoute(routeIdWeb, userIdWeb, userHasBase);
+    }
+
+    private static bool IsUserAuthorizedRoute(string routeIdWeb, string? userIdWeb, bool userHasBase)
+        => userHasBase
+           && !string.IsNullOrWhiteSpace(userIdWeb)
+           && string.Equals(userIdWeb.Trim(), routeIdWeb.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildUserKey(AppUserSessionInfo? user)
+        => user is null ? "-" : $"{user.IdCliente}:{user.SuperAdmin}:{user.IdWeb}";
 
     private async Task<IReadOnlyList<SessionDto>> LoadSaaSSessionsAsync(AppUserSessionInfo user)
     {

@@ -121,6 +121,84 @@ public sealed class TenantRouteSessionIsolationTests
     }
 
     [Fact]
+    public void Superadmin_CanOpenAuthorizedBaseOwnedByAnotherClient()
+    {
+        // Convención de URL de la app (SeleccionarBase / RouteContextService):
+        // /{idweb del usuario}/{base elegida}. Un superadmin (bases autorizadas = todas, vía
+        // LoadSaaSSessionsAsync -> GetAllAsync) entra a la base de un cliente como /ALFANET/5000.
+        var central = new FakeCentral()
+            .WithBase(4264, idCliente: "C_ALFANET", idWeb: "ALFANET")
+            .WithBase(5000, idCliente: "C_OTRO", idWeb: "OTRO");
+        var superadmin = new AppUserSessionInfo { UserName = "SOPORTE", IdCliente = "C_ALFANET", IdWeb = "ALFANET", SuperAdmin = true };
+        var session = CreateSession("https://alfanetweb.ddns.net/ALFANET/5000/auditoria", central, superadmin);
+
+        Assert.Equal(5000, session.GetActiveSession()?.BaseId);
+    }
+
+    [Fact]
+    public void Superadmin_CannotOpenArbitraryNonExistentBase()
+    {
+        var central = new FakeCentral().WithBase(4264, idCliente: "C_ALFANET", idWeb: "ALFANET");
+        var superadmin = new AppUserSessionInfo { UserName = "SOPORTE", IdCliente = "C_ALFANET", IdWeb = "ALFANET", SuperAdmin = true };
+        var session = CreateSession("https://alfanetweb.ddns.net/ALFANET/9999/auditoria", central, superadmin);
+
+        Assert.Null(session.GetActiveSession());
+    }
+
+    [Fact]
+    public void AuthenticatedUser_CannotOpenUnauthorizedBaseOfAnotherClient()
+    {
+        var central = new FakeCentral()
+            .WithBase(100, idCliente: "C_A", idWeb: "EMPRESAA")
+            .WithBase(5000, idCliente: "C_OTRO", idWeb: "OTRO");
+        var userA = new AppUserSessionInfo { UserName = "ANA", IdCliente = "C_A", IdWeb = "EMPRESAA" };
+
+        // Con su propio idweb: la base 5000 no está en sus bases autorizadas => ruta rechazada.
+        var ownIdWeb = CreateSession("https://alfanetweb.ddns.net/EMPRESAA/5000/auditoria", central, userA);
+        Assert.Null(ownIdWeb.GetActiveSession());
+
+        // Con el idweb real del dueño la URL es la del tenant (la del login directo por ruta): la
+        // ruta resuelve, pero el usuario de A NO está autorizado para esa sesión => ni @Body ni
+        // consultas del shell.
+        var ownerAppUser = new FakeAppUserSession(userA, authorizedSessionId: SessionDto.BuildGuidFromBaseId(100));
+        var ownerIdWeb = CreateSession("https://alfanetweb.ddns.net/OTRO/5000/auditoria", central, ownerAppUser);
+        Assert.Equal(5000, ownerIdWeb.GetActiveSession()?.BaseId);
+        Assert.False(TenantDataAccessGuard.IsActiveSessionAuthorized(new SessionService(ownerIdWeb), ownerAppUser));
+    }
+
+    [Fact]
+    public async Task AuthenticatedUserOnOtherTenantRoute_PollingNeverQueriesInbox()
+    {
+        // Cadena real: ConexionClienteService (ruta de B) -> SessionService ->
+        // GlobalConversationNotificationsSource. El usuario de A está autorizado sólo para su base.
+        var central = new FakeCentral()
+            .WithBase(100, idCliente: "C_A", idWeb: "EMPRESAA")
+            .WithBase(5000, idCliente: "C_OTRO", idWeb: "OTRO");
+        var userA = new FakeAppUserSession(
+            new AppUserSessionInfo { UserName = "ANA", IdCliente = "C_A", IdWeb = "EMPRESAA" },
+            authorizedSessionId: SessionDto.BuildGuidFromBaseId(100));
+        var session = new SessionService(CreateSession("https://alfanetweb.ddns.net/OTRO/5000/dashboard", central, userA));
+        var conversaciones = TenantScopedShellQueriesTests.CountingConversaciones(out var spy);
+
+        var result = await new GlobalConversationNotificationsSource(session, userA, conversaciones).FetchPendingAsync();
+
+        Assert.False(result.Executed);
+        Assert.Equal(0, spy.InboxCalls);
+        Assert.Equal(0, spy.SchemaCalls);
+    }
+
+    [Theory]
+    [InlineData("OTRO", "OTRO", "ALFANET", false, true)]      // idweb del dueño
+    [InlineData("ALFANET", "OTRO", "ALFANET", true, true)]    // idweb del usuario + base autorizada
+    [InlineData("ALFANET", "OTRO", "ALFANET", false, false)]  // idweb del usuario sin la base en su lista
+    [InlineData("ALFANET", "OTRO", null, true, false)]        // sin usuario
+    [InlineData("TERCERO", "OTRO", "ALFANET", true, false)]   // idweb que no es ni dueño ni usuario
+    public void RouteAcceptanceRule(string routeIdWeb, string? ownerIdWeb, string? userIdWeb, bool userHasBase, bool expected)
+    {
+        Assert.Equal(expected, ConexionClienteService.IsRouteTenantAccepted(routeIdWeb, ownerIdWeb, userIdWeb, userHasBase));
+    }
+
+    [Fact]
     public void WebhookOverride_KeepsPriorityOverAnyRoute_WithoutCentralLookups()
     {
         var central = new FakeCentral().WithBase(4264, idCliente: "C_ALFANET", idWeb: "ALFANET");
@@ -228,24 +306,32 @@ public sealed class TenantRouteSessionIsolationTests
     [Fact]
     public void MainLayout_MountsBodyOnlyThroughTenantGate()
     {
-        var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "AlfaCore", "Components", "Layout", "MainLayout.razor"));
-        var bodyCount = CountOccurrences(source, "@Body");
-        var gatedBodyCount = CountOccurrences(source, "@if (ShouldRenderTenantBody)\n        {\n            @Body")
-            + CountOccurrences(source, "@if (ShouldRenderTenantBody)\r\n        {\r\n            @Body")
-            + CountOccurrences(source, "@if (ShouldRenderTenantBody)\n            {\n                @Body")
-            + CountOccurrences(source, "@if (ShouldRenderTenantBody)\r\n            {\r\n                @Body");
+        // Cada línea de markup que renderiza @Body debe estar inmediatamente dentro de
+        // "@if (ShouldRenderTenantBody) {" (independiente de indentación y fin de línea).
+        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "src", "AlfaCore", "Components", "Layout", "MainLayout.razor"))
+            .Select(l => l.Trim())
+            .ToArray();
+        var bodyLines = Enumerable.Range(0, lines.Length).Where(i => lines[i] == "@Body").ToArray();
 
-        Assert.True(bodyCount > 0);
-        Assert.Equal(bodyCount, gatedBodyCount);
+        Assert.NotEmpty(bodyLines);
+        Assert.All(bodyLines, i =>
+        {
+            Assert.True(i >= 2, "@Body sin gate");
+            Assert.Equal("{", lines[i - 1]);
+            Assert.Equal("@if (ShouldRenderTenantBody)", lines[i - 2]);
+        });
     }
 
     private static ConexionClienteService CreateSession(string uri, FakeCentral central, AppUserSessionInfo? user = null)
+        => CreateSession(uri, central, new FakeAppUserSession(user));
+
+    private static ConexionClienteService CreateSession(string uri, FakeCentral central, IAppUserSessionService appUserSession)
     {
         var navigation = new TestNavigationManager();
         navigation.InitializeForTest("https://alfanetweb.ddns.net/", uri);
         return new ConexionClienteService(
             new FakeAppMode(true),
-            new FakeAppUserSession(user),
+            appUserSession,
             central,
             central,
             new FakeHostEnvironment(),
@@ -259,19 +345,6 @@ public sealed class TenantRouteSessionIsolationTests
 
     private static TService ThrowingProxy<TService>() where TService : class
         => System.Reflection.DispatchProxy.Create<TService, WhatsAppTenantIsolationTests.ThrowingProxy>();
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        var index = 0;
-        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            index += value.Length;
-        }
-
-        return count;
-    }
 
     private static string RepositoryRoot()
     {
@@ -362,7 +435,7 @@ public sealed class TenantRouteSessionIsolationTests
         public bool IsSaaSMode { get; } = isSaaSMode;
     }
 
-    private sealed class FakeAppUserSession(AppUserSessionInfo? user) : IAppUserSessionService
+    private sealed class FakeAppUserSession(AppUserSessionInfo? user, Guid? authorizedSessionId = null) : IAppUserSessionService
     {
         public event Action? StateChanged { add { } remove { } }
         public bool IsAuthenticated => user is not null;
@@ -376,7 +449,8 @@ public sealed class TenantRouteSessionIsolationTests
         public void Logout() { }
         public void HandleSqlSessionChanged() { }
         public string GetCurrentUserName(string fallback = "") => fallback;
-        public bool IsAuthorizedForSession(Guid? activeSessionId) => false;
+        public bool IsAuthorizedForSession(Guid? activeSessionId)
+            => user is not null && activeSessionId is not null && activeSessionId == authorizedSessionId;
         public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
     }
 

@@ -1433,7 +1433,9 @@ else
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
-    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
+    // Misma regla que el @Body y el polling (TenantDataAccessGuard): el panel lee/escribe tareas de
+    // la base activa, así que exige sesión autorizada, no sólo usuario autenticado.
+    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && IsActiveSessionAuthorized;
     private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
@@ -1446,7 +1448,7 @@ else
     /// pero esta propiedad es la que se evalúa en cada render, así que cubre ese caso también.
     /// </summary>
     private bool IsActiveSessionAuthorized
-        => AppUserSession.IsAuthorizedForSession(SessionSvc.GetActiveSession()?.Id);
+        => AlfaCore.Services.TenantDataAccessGuard.IsActiveSessionAuthorized(SessionSvc, AppUserSession);
 
     private bool IsInternalSqlLoginContext
     {
@@ -1588,6 +1590,11 @@ else
     private long? _tasksPanelDragOverNoteId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
+    private Guid? _globalConversationSessionId;
+    private AlfaCore.Services.GlobalConversationNotificationsSource? _globalConversationNotifications;
+    private AlfaCore.Services.GlobalConversationNotificationsSource GlobalConversationNotifications
+        => _globalConversationNotifications ??= new AlfaCore.Services.GlobalConversationNotificationsSource(SessionSvc, AppUserSession, ConversacionesSvc);
+    private Guid? _tasksPanelSessionId;
     private CancellationTokenSource? _globalConversationPollingCts;
     private Task? _globalConversationPollingTask;
     private bool _globalConversationBaselineReady;
@@ -1613,6 +1620,7 @@ else
     {
         _activeSession = SessionSvc.GetActiveSession();
         ResetMenuSearchCatalog();
+        EnsureTasksPanelMatchesAuthorizedSession();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
         EnsureLoginDraftPrimedForInternalContext();
@@ -1639,6 +1647,7 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
+        EnsureTasksPanelMatchesAuthorizedSession();
         EnsureLoginDraftPrimedForInternalContext();
         _ = InvokeAsync(RestoreRememberedLoginForCurrentContextAsync);
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
@@ -1714,6 +1723,7 @@ else
         _mobileSidebarOpen = false;
         if (!TryGetRouteBaseId(out _))
             _routeSessionLabel = string.Empty;
+        EnsureTasksPanelMatchesAuthorizedSession();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (IsLauncherRoute)
@@ -2622,25 +2632,30 @@ else
 
     private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
     {
-        if (!AppUserSession.IsAuthenticated
-            || IsDirectMode
+        if (IsDirectMode
             || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             return;
 
         try
         {
-            if (!await ConversacionesSvc.HasConversationSchemaAsync(cancellationToken))
-            {
-                ResetGlobalConversationNotifications();
+            // Sólo con sesión activa AUTORIZADA para el usuario (misma regla que el @Body). Antes
+            // bastaba IsAuthenticated: un usuario de A en /{idweb de B}/{idbase de B} recibía nombre
+            // de contacto y resumen del último mensaje de B aunque la página estuviera bloqueada.
+            var fetched = await GlobalConversationNotifications.FetchPendingAsync(cancellationToken);
+            if (!fetched.Executed)
                 return;
+
+            // Cambio de base: la línea de base (ids de conversación/mensaje) de la base anterior no
+            // sirve para la nueva y los contadores/último contacto no deben arrastrarse.
+            if (_globalConversationSessionId != fetched.SessionId)
+            {
+                _globalConversationLastIncomingById.Clear();
+                _globalConversationBaselineReady = false;
+                ResetGlobalConversationNotifications();
+                _globalConversationSessionId = fetched.SessionId;
             }
 
-            var inbox = await ConversacionesSvc.GetInboxAsync(new AlfaCore.Models.ConversacionesInboxFilters
-            {
-                Canal = "WHATSAPP",
-                Modo = "pendientes",
-                Limit = 10
-            }, cancellationToken);
+            var inbox = fetched.Value ?? [];
 
             var newCount = 0;
             AlfaCore.Models.ConversacionInboxItemDto? latest = null;
@@ -3375,6 +3390,25 @@ else
         _tasksPanelDragOverNoteId = null;
     }
 
+    private void ClearTasksPanelForSessionChange()
+    {
+        _tasksPanel = new();
+        _tasksPanelSessionId = null;
+        CloseTasksPanel();
+    }
+
+    // Llamado ante cambio de sesión/usuario/ruta: si las tareas cargadas son de otra base (o la
+    // base actual todavía no está autorizada), se descartan y el panel se cierra.
+    private void EnsureTasksPanelMatchesAuthorizedSession()
+    {
+        if (_tasksPanelSessionId is null)
+            return;
+
+        if (!AlfaCore.Services.TenantDataAccessGuard.TryGetAuthorizedSession(SessionSvc, AppUserSession, out var sessionId)
+            || sessionId != _tasksPanelSessionId)
+            ClearTasksPanelForSessionChange();
+    }
+
     private async Task LoadTasksPanelAsync()
     {
         _tasksPanelLoading = true;
@@ -3382,7 +3416,19 @@ else
 
         try
         {
-            _tasksPanel = await TareasSvc.GetPageAsync(TasksPanelUser);
+            var user = TasksPanelUser;
+            var loaded = await AlfaCore.Services.TenantDataAccessGuard.RunForAuthorizedSessionAsync(
+                SessionSvc, AppUserSession, token => TareasSvc.GetPageAsync(user, token));
+            if (!loaded.Executed || loaded.Value is null)
+            {
+                // Sin sesión autorizada (o la base cambió durante la carga): no se muestran tareas
+                // de otra base ni de una base todavía no autorizada.
+                ClearTasksPanelForSessionChange();
+                return;
+            }
+
+            _tasksPanel = loaded.Value;
+            _tasksPanelSessionId = loaded.SessionId;
         }
         catch (Exception ex)
         {
