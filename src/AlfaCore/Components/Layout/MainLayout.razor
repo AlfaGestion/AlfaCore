@@ -1513,6 +1513,8 @@ else
         "contactos",
         "usuarios",
         "clientes",
+        "proveedores",
+        "articulos",
         "compras",
         "ventas",
         "contabilidad",
@@ -1710,8 +1712,16 @@ else
         // Estadísticas/Informes, que NUNCA llaman PageHeader.Set() propio. Preservar por módulo
         // dejaba el header de Conversaciones pegado al navegar a esas otras páginas (topbar
         // ausente, contenido tapado, o la pestaña "Configuración" marcada activa sin corresponder).
+        // Si el header actual declaró de qué módulo es (PageHeaderConfig.ModuleKey), exigimos que
+        // coincida con el módulo de la ruta nueva antes de preservarlo -- evita que el header de un
+        // módulo AlfaDesignPilot (ej. Clientes) quede pegado al navegar a OTRO módulo AlfaDesignPilot
+        // distinto (ej. Artículos), con acciones de Guardar/Cancelar apuntando a una instancia ya
+        // dispuesta. Los módulos que todavía no completan ModuleKey mantienen el criterio histórico
+        // (solo ShellMode + ruta gestionada) sin cambios de comportamiento.
         var preserveAlfaDesignPilot = IsCurrentRouteAlfaDesignManaged()
-            && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+            && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot
+            && (string.IsNullOrEmpty(PageHeader.Current.ModuleKey)
+                || string.Equals(PageHeader.Current.ModuleKey, _currentModule, StringComparison.OrdinalIgnoreCase));
         if (!preserveAlfaDesignPilot)
             PageHeader.Clear();
         if (EnforceDirectMode())

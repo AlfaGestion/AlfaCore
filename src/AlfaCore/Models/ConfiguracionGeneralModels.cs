@@ -77,3 +77,20 @@ public sealed class ConfiguracionVentasPortalClienteDto
     public bool Carrito { get; set; } = true;
     public bool Pedidos { get; set; } = true;
 }
+
+/// <summary>Catálogo de configuraciones ("Cfg") que usa el maestro de Artículos (Archivos > Maestros >
+/// Artículos), acotado a las claves relevantes al MVP -- ver plan en
+/// C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md. El resto de las ~55 claves que usa
+/// el maestro legacy completo (Ma_art.frm) queda documentado ahí para una eventual fase 2.
+/// Todo vive en TA_CONFIGURACION, mismas claves reales que ya usa el sistema de escritorio.</summary>
+public sealed class ConfiguracionArticulosDto
+{
+    public decimal TasaIvaDefault { get; set; }
+    public string ClasePrecioVenta { get; set; } = "1";
+    public bool PrecioIncluyeIva { get; set; }
+    public bool Clase2ConIva { get; set; }
+    public bool ModoRetail { get; set; }
+    public string PlantillaCodigoBarraPesable { get; set; } = string.Empty;
+    public bool CodigoBarraAutomatico { get; set; }
+    public string RutaImagenes { get; set; } = string.Empty;
+}

@@ -1,0 +1,114 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+
+@* Vista Kanban de Artículos -- mismo patrón que ContactosKanbanView.razor (una grilla de tarjetas,
+   no un tablero de columnas por estado): misma lista/paginación/selección que la tabla, solo cambia
+   el layout visual, con la miniatura del artículo como diferencial frente a Contactos. *@
+
+<section class="articulos-kanban" aria-label="Kanban de artículos" aria-busy="@Loading">
+    @if (Loading)
+    {
+        <div class="articulos-kanban__state">
+            <AlfaEmptyState Title="Cargando artículos" Message="Estamos consultando la base activa con los filtros actuales." />
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="articulos-kanban__state">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                            Title="No se pudieron cargar los artículos"
+                            Message="@ErrorMessage"
+                            ActionLabel="Reintentar"
+                            ActionIcon="bi bi-arrow-clockwise"
+                            OnAction="OnRetry" />
+        </div>
+    }
+    else if (Items.Count == 0)
+    {
+        <div class="articulos-kanban__state">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                            Title="No encontramos artículos"
+                            Message="No hay artículos para los filtros seleccionados."
+                            ActionLabel="Limpiar filtros"
+                            ActionIcon="bi bi-eraser"
+                            OnAction="OnEmptyAction" />
+        </div>
+    }
+    else
+    {
+        <div class="articulos-kanban__scroll">
+            <div class="articulos-kanban__grid">
+                @foreach (var item in Items)
+                {
+                    var selected = SelectedCodes.Contains(item.Codigo);
+                    var imagenUrl = BuildImagenUrl(item.Codigo);
+
+                    <article class="articulos-kanban-card @(selected ? "is-selected" : string.Empty)"
+                             @ondblclick="() => OnOpenRecord.InvokeAsync(item.Codigo)"
+                             aria-label="@($"Artículo {item.Descripcion}")">
+                        <label class="articulos-kanban-card__selection" title="Seleccionar artículo" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
+                            <input type="checkbox" checked="@selected" @onchange="() => OnToggleSelection.InvokeAsync(item.Codigo)" aria-label="@($"Seleccionar {item.Descripcion}")" />
+                        </label>
+
+                        <div class="articulos-kanban-card__media">
+                            @if (!string.IsNullOrWhiteSpace(imagenUrl))
+                            {
+                                <img src="@imagenUrl" alt="@item.Descripcion" onerror="this.style.display='none'" />
+                            }
+                            else
+                            {
+                                <i class="bi bi-box-seam" aria-hidden="true"></i>
+                            }
+                        </div>
+
+                        <div class="articulos-kanban-card__body">
+                            <button type="button" class="articulos-kanban-card__title" title="Doble clic para editar"
+                                    @onclick:stopPropagation="true" @ondblclick="() => OnOpenRecord.InvokeAsync(item.Codigo)" @ondblclick:stopPropagation="true">
+                                @item.Descripcion
+                            </button>
+                            <div class="articulos-kanban-card__meta">
+                                <span title="@item.Codigo"><i class="bi bi-upc-scan" aria-hidden="true"></i>@item.Codigo</span>
+                                @if (!string.IsNullOrWhiteSpace(item.RubroDescripcion))
+                                {
+                                    <span title="@item.RubroDescripcion"><i class="bi bi-tag" aria-hidden="true"></i>@item.RubroDescripcion</span>
+                                }
+                            </div>
+                            <div class="articulos-kanban-card__footer">
+                                <span class="articulos-kanban-card__price">$ @item.Precio.ToString("N2")</span>
+                                <span class="articulos-kanban-card__status @(item.Activo ? "is-active" : "is-inactive")">
+                                    <i class="bi bi-circle-fill" aria-hidden="true"></i>@(item.Activo ? "Activo" : "Inactivo")
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="articulos-kanban-card__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
+                            <AlfaActionMenu Items="@RowActions(item)"
+                                            TriggerLabel="@($"Acciones de {item.Descripcion}")"
+                                            MenuLabel="Acciones del artículo"
+                                            Align="AlfaActionMenuAlign.End" />
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ArticuloGridItemDto> Items { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlySet<string> SelectedCodes { get; set; } = new HashSet<string>();
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string ErrorMessage { get; set; } = string.Empty;
+    [Parameter] public string? FtpCodigoCta { get; set; }
+    [Parameter] public int? IdBase { get; set; }
+    [Parameter, EditorRequired] public Func<ArticuloGridItemDto, IReadOnlyList<AlfaActionMenuItem>> RowActions { get; set; } = _ => [];
+    [Parameter] public EventCallback<string> OnToggleSelection { get; set; }
+    [Parameter] public EventCallback<string> OnOpenRecord { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public EventCallback OnEmptyAction { get; set; }
+
+    private string BuildImagenUrl(string codigo)
+        => string.IsNullOrWhiteSpace(FtpCodigoCta)
+            ? string.Empty
+            : ArticuloImagenUrlHelper.BuildPublicImageUrl(FtpCodigoCta, codigo, IdBase, thumbnail: true);
+}

@@ -43,6 +43,15 @@ public sealed class PageHeaderConfig
     public IReadOnlyList<string> Breadcrumb { get; init; } = [];
     public PageHeaderState State { get; init; } = PageHeaderState.Idle;
     public PageHeaderShellMode ShellMode { get; init; } = PageHeaderShellMode.Legacy;
+
+    /// <summary>Módulo dueño de este header (primer segmento de ruta, ej. "articulos", "clientes").
+    /// Opcional -- si una página no lo completa, MainLayout usa el criterio histórico (solo ShellMode +
+    /// ruta gestionada) para decidir si preservar el header entre navegaciones. Si SÍ lo completa,
+    /// MainLayout exige que coincida con el módulo actual antes de preservarlo, evitando que el header
+    /// de una página AlfaDesignPilot quede pegado al navegar a OTRO módulo AlfaDesignPilot distinto
+    /// (bug real: Clientes -> Artículos dejaba las acciones de Guardar/Cancelar apuntando a la
+    /// instancia ya dispuesta de Clientes).</summary>
+    public string ModuleKey { get; init; } = string.Empty;
     public IReadOnlyList<PageHeaderTopNavItem> TopNavigationItems { get; init; } = [];
     public PageHeaderSearchConfig? Search { get; init; }
     public RenderFragment? SearchContent { get; init; }

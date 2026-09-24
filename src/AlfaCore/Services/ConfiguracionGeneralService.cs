@@ -269,6 +269,51 @@ public sealed class ConfiguracionGeneralService(
         return string.IsNullOrWhiteSpace(raw) || ParseBool(raw);
     }
 
+    public Task<ConfiguracionArticulosDto> GetArticulosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetArticulos", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var valores = await ReadConfigMapAsync(cn, ArticulosClaves, token);
+            return new ConfiguracionArticulosDto
+            {
+                TasaIvaDefault = ParseDecimalInvariant(Get(valores, "PIVA")),
+                ClasePrecioVenta = string.IsNullOrWhiteSpace(Get(valores, "CLASEPRECIOVENTA")) ? "1" : Get(valores, "CLASEPRECIOVENTA"),
+                PrecioIncluyeIva = ParseBool(Get(valores, "MAESTROARTICULOCONIVA")),
+                Clase2ConIva = ParseBool(Get(valores, "CLASE2CONIVA")),
+                ModoRetail = ParseBool(Get(valores, "RETAIL")),
+                PlantillaCodigoBarraPesable = Get(valores, "TIPOEAN"),
+                CodigoBarraAutomatico = ParseBool(Get(valores, "CODIGOBARRAAUTOMATICO")),
+                RutaImagenes = Get(valores, "RUTAIMAGENES")
+            };
+        }, "No se pudo cargar la configuración de artículos.", ct);
+
+    public Task SaveArticulosAsync(ConfiguracionArticulosDto dto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveArticulos", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(dto);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await SetConfigAsync(cn, "PIVA", dto.TasaIvaDefault.ToString(System.Globalization.CultureInfo.InvariantCulture), token);
+            await SetConfigAsync(cn, "CLASEPRECIOVENTA", dto.ClasePrecioVenta.Trim(), token);
+            await SetConfigAsync(cn, "MAESTROARTICULOCONIVA", dto.PrecioIncluyeIva ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "CLASE2CONIVA", dto.Clase2ConIva ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "RETAIL", dto.ModoRetail ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "TIPOEAN", dto.PlantillaCodigoBarraPesable, token);
+            await SetConfigAsync(cn, "CODIGOBARRAAUTOMATICO", dto.CodigoBarraAutomatico ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "RUTAIMAGENES", dto.RutaImagenes, token);
+        }, "No se pudo guardar la configuración de artículos.", ct);
+
+    private static readonly string[] ArticulosClaves =
+    [
+        "PIVA", "CLASEPRECIOVENTA", "MAESTROARTICULOCONIVA", "CLASE2CONIVA", "RETAIL",
+        "TIPOEAN", "CODIGOBARRAAUTOMATICO", "RUTAIMAGENES"
+    ];
+
+    private static decimal ParseDecimalInvariant(string? value)
+        => decimal.TryParse((value ?? string.Empty).Trim().Replace(",", "."),
+            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0m;
+
     // ---- Helpers privados ----
 
     private static readonly string[] EmailClaves =

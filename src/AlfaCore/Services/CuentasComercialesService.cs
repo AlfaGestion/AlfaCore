@@ -1680,6 +1680,7 @@ public sealed class CuentasComercialesService(
         => new()
         {
             AgruparPor = CuentaComercialViewGroupKeys.None,
+            Vista = CuentaComercialViewModeKeys.Listado,
             Columnas =
             [
                 new() { Key = CuentaComercialViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
@@ -1716,6 +1717,7 @@ public sealed class CuentasComercialesService(
                 CuentaComercialViewGroupKeys.Bloqueado => CuentaComercialViewGroupKeys.Bloqueado,
                 _ => CuentaComercialViewGroupKeys.None
             },
+            Vista = settings.Vista == CuentaComercialViewModeKeys.Kanban ? CuentaComercialViewModeKeys.Kanban : CuentaComercialViewModeKeys.Listado,
             Columnas = defaults.Columnas
                 .Select(defaultCol =>
                 {

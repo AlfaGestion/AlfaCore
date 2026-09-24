@@ -1,0 +1,193 @@
+.cuentas-kanban {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.cuentas-kanban__state {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--alfa-space-16);
+    overflow-y: auto;
+}
+
+.cuentas-kanban__scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 14px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.cuentas-kanban__grid {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.cuentas-kanban-card {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 136px;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--alfa-border-default) 78%, transparent);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.cuentas-kanban-card:hover {
+    border-color: color-mix(in srgb, var(--alfa-accent) 38%, var(--alfa-border-default));
+    background: var(--alfa-bg-row-hover);
+}
+
+.cuentas-kanban-card.is-selected {
+    border-color: var(--alfa-accent);
+    background: color-mix(in srgb, var(--alfa-state-selected) 28%, var(--alfa-bg-surface));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent) 18%, transparent);
+}
+
+.cuentas-kanban-card__selection {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    width: 18px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.cuentas-kanban-card__selection input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.cuentas-kanban-card__selection span {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--alfa-border-strong) 84%, transparent);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, var(--alfa-bg-surface) 90%, transparent);
+    color: transparent;
+    font-size: 11px;
+}
+
+.cuentas-kanban-card__selection input:checked + span {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-accent);
+    color: var(--alfa-bg-canvas);
+}
+
+.cuentas-kanban-card__actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+}
+
+.cuentas-kanban-card__avatar {
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    align-self: start;
+    margin-top: 12px;
+    border-radius: 7px;
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.cuentas-kanban-card__avatar.tone-0 { background: #397dcc; }
+.cuentas-kanban-card__avatar.tone-1 { background: #3a966c; }
+.cuentas-kanban-card__avatar.tone-2 { background: #7958b5; }
+.cuentas-kanban-card__avatar.tone-3 { background: #318f99; }
+.cuentas-kanban-card__avatar.tone-4 { background: #ad4f7d; }
+.cuentas-kanban-card__avatar.tone-5 { background: #a87936; }
+
+.cuentas-kanban-card__body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 12px;
+}
+
+.cuentas-kanban-card__title {
+    appearance: none;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.cuentas-kanban-card__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
+.cuentas-kanban-card__meta span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cuentas-kanban-card__footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    font-size: var(--alfa-font-small);
+}
+
+.cuentas-kanban-card__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--alfa-font-caption);
+}
+
+.cuentas-kanban-card__status i { font-size: 8px; }
+.cuentas-kanban-card__status.is-active { color: var(--alfa-status-success, #2e7d32); }
+.cuentas-kanban-card__status.is-inactive { color: var(--alfa-status-danger, #c62828); }
+.cuentas-kanban-card__status.is-blocked { color: var(--alfa-status-danger, #c62828); }
