@@ -13,6 +13,7 @@ public sealed class SessionService(IConexionClienteService conexionClienteServic
     public string GetConnectionString() => conexionClienteService.GetConnectionString();
     public SessionDto? GetActiveSession() => conexionClienteService.GetActiveSession();
     public void SetWebhookOverride(SessionDto session) => conexionClienteService.SetWebhookOverride(session);
+    public SessionDto? GetWebhookOverride(int expectedBaseId) => conexionClienteService.GetWebhookOverride(expectedBaseId);
     public void ClearWebhookOverride() => conexionClienteService.ClearWebhookOverride();
     public IReadOnlyList<SessionDto> GetAllSessions() => conexionClienteService.GetAllSessions();
     public void SwitchSession(Guid id) => conexionClienteService.SwitchSession(id);

@@ -13,8 +13,9 @@ public interface IConversacionAsistenteHerramientasService
 {
     /// <summary>
     /// Arma la lista de herramientas habilitadas para esta conversación: cruza cada toggle de
-    /// <paramref name="config"/> contra si aplica al tipo de cuenta vinculada. Sin cuenta vinculada,
-    /// solo puede quedar habilitado "consultar_precio" (funciona con lista de precios por defecto).
+    /// <paramref name="config"/> contra si aplica al tipo de cuenta vinculada. Sin Cliente
+    /// vinculado, el catálogo público se puede ofrecer siempre; precios de consumidor final solo si
+    /// la configuración explícita lo permite.
     /// </summary>
     IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,

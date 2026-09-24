@@ -40,27 +40,41 @@ public sealed class ConversacionesConfigService(
 
     private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
     {
+        // Cuando el caller ya trae un BaseId autoritativo resuelto server-side (el webhook
+        // tokenizado de WhatsApp/Instagram/Facebook/MercadoLibre: ver TryResolveWebhookTenantAsync
+        // -> SetWebhookOverride en Program.cs), resolvemos exclusivamente contra ese override y
+        // NUNCA llamamos a GetActiveSession() -- ni siquiera indirectamente puede terminar
+        // evaluando ruta/NavigationManager. Si el override no existe o pertenece a otra base, caemos
+        // al camino de sesión de siempre (UI interactiva), que sigue validando el mismatch más abajo.
+        if (expectedBaseId is > 0)
+        {
+            var webhookOverride = sessionService.GetWebhookOverride(expectedBaseId.Value);
+            if (webhookOverride is not null)
+                return BuildTenantConnectionContext(webhookOverride);
+        }
+
         var active = sessionService.GetActiveSession();
         if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
             throw new InvalidOperationException(
                 $"La sesión activa no coincide con la base solicitada para Conversaciones.{operation}.");
 
         if (active is not null)
-        {
-            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
-            {
-                DataSource = active.Servidor,
-                InitialCatalog = active.BaseDatos,
-                UserID = active.Usuario,
-                Password = active.Password,
-                TrustServerCertificate = active.TrustServerCertificate,
-                ApplicationName = "AlfaCore"
-            }.ConnectionString);
-        }
+            return BuildTenantConnectionContext(active);
 
         return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
             ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
     }
+
+    private static TenantConnectionContext BuildTenantConnectionContext(SessionDto session)
+        => new(session.BaseId, new SqlConnectionStringBuilder
+        {
+            DataSource = session.Servidor,
+            InitialCatalog = session.BaseDatos,
+            UserID = session.Usuario,
+            Password = session.Password,
+            TrustServerCertificate = session.TrustServerCertificate,
+            ApplicationName = "AlfaCore"
+        }.ConnectionString);
 
     public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
         => GetWhatsAppConfigAsync((int?)null, ct);
@@ -829,12 +843,15 @@ public sealed class ConversacionesConfigService(
                 SlaHorasReasignar = ReadIntValue(values, "CONV_SLA_HORAS_REASIGNAR", 0, 4),
                 AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
                 AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
+                AsistenteUrgenciaTemplate = ReadValue(values, "CONV_ASISTENTE_URGENCIA_TEMPLATE", string.Empty, "cliente_consultando_urgencia"),
+                AsistenteUrgenciaTecnicos = ParseDelimitedList(ReadValue(values, "CONV_ASISTENTE_URGENCIA_TECNICOS", string.Empty)),
                 AsistenteUsaKnowledge = ReadValue(values, "CONV_ASISTENTE_USA_KNOWLEDGE", string.Empty, "1") != "0",
                 AsistenteHerramientaPrecios = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PRECIOS", string.Empty) == "1",
                 AsistenteHerramientaSaldoCliente = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", string.Empty) == "1",
                 AsistenteHerramientaSaldoProveedor = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", string.Empty) == "1",
                 AsistenteHerramientaPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", string.Empty) == "1",
                 AsistenteHerramientaPortalLink = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", string.Empty) == "1",
+                CatalogoMuestraPrecioConsumidor = ReadValue(values, "CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", string.Empty) == "1",
                 InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
@@ -881,12 +898,15 @@ public sealed class ConversacionesConfigService(
                 ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 ("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"),
                 ("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()),
+                ("CONV_ASISTENTE_URGENCIA_TEMPLATE", string.IsNullOrWhiteSpace(config.AsistenteUrgenciaTemplate) ? "cliente_consultando_urgencia" : config.AsistenteUrgenciaTemplate.Trim()),
+                ("CONV_ASISTENTE_URGENCIA_TECNICOS", string.Join(',', NormalizeDelimitedList(config.AsistenteUrgenciaTecnicos))),
                 ("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_PRECIOS", config.AsistenteHerramientaPrecios ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", config.AsistenteHerramientaSaldoCliente ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"),
+                ("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", config.CatalogoMuestraPrecioConsumidor ? "1" : "0"),
                 ("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim())
             };
 
@@ -2416,12 +2436,15 @@ public sealed class ConversacionesConfigService(
                 'CONV_SLA_HORAS_REASIGNAR',
                 'CONV_ASISTENTE_FUERA_HORARIO',
                 'CONV_ASISTENTE_URGENCIA_PALABRAS',
+                'CONV_ASISTENTE_URGENCIA_TEMPLATE',
+                'CONV_ASISTENTE_URGENCIA_TECNICOS',
                 'CONV_ASISTENTE_USA_KNOWLEDGE',
                 'CONV_ASISTENTE_HERRAMIENTA_PRECIOS',
                 'CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE',
                 'CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR',
                 'CONV_ASISTENTE_HERRAMIENTA_PEDIDOS',
                 'CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK',
+                'CATALOGO_MUESTRA_PRECIO_CONSUMIDOR',
                 'CONV_INFORME_INSTRUCCIONES'
             )
             """;
@@ -2784,6 +2807,27 @@ public sealed class ConversacionesConfigService(
             return value.Trim();
 
         return string.IsNullOrWhiteSpace(auxValue) ? string.Empty : auxValue.Trim();
+    }
+
+    private static List<string> ParseDelimitedList(string? value)
+        => NormalizeDelimitedList((value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private static List<string> NormalizeDelimitedList(IEnumerable<string>? values)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in values ?? [])
+        {
+            var value = (raw ?? string.Empty).Trim();
+            if (value.Length == 0 || !seen.Add(value))
+                continue;
+
+            result.Add(value);
+        }
+
+        return result;
     }
 
     private static (string Value, string AuxValue) SplitStoredValue(string? value)

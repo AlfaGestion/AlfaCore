@@ -599,6 +599,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
     {
         public string GetConnectionString() => string.Empty;
         public SessionDto? GetActiveSession() => new() { BaseId = activeBaseId, Nombre = "ALFANET" };
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => expectedBaseId == activeBaseId ? GetActiveSession() : null;
         public void SetWebhookOverride(SessionDto session) => throw new NotSupportedException();
         public void ClearWebhookOverride() => throw new NotSupportedException();
         public IReadOnlyList<SessionDto> GetAllSessions() => throw new NotSupportedException();

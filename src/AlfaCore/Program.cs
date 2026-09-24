@@ -3743,7 +3743,12 @@ public class Program
         Action<string>? traceStage = null,
         int? resolvedBaseId = null)
     {
-        var options = await configService.GetWhatsAppConfigAsync(ct);
+        // Se pasa resolvedBaseId explícitamente (no el overload sin base) para que
+        // ResolveTenantConnection valide que la sesión resuelta coincide con la base del token
+        // ANTES de tocar cualquier tabla -- defensa en profundidad además del webhook override
+        // que ya setea TryResolveWebhookTenantAsync: si alguna vez ese override no coincidiera
+        // con resolvedBaseId, esto falla cerrado en vez de leer la configuración de otra base.
+        var options = await configService.GetWhatsAppConfigAsync(resolvedBaseId, ct);
 
         // El tenant lo resuelve autoritativamente TryResolveWebhookTenantAsync desde el token de la
         // ruta (resolvedBaseId). Sólo la ruta legacy sin token (sin resolvedBaseId) usa la sesión.

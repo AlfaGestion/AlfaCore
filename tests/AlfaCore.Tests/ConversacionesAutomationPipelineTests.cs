@@ -25,6 +25,8 @@ public sealed class ConversacionesAutomationPipelineTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string ServiceSource = File.ReadAllText(
         Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+    private static readonly string ConfigServiceSource = File.ReadAllText(
+        Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesConfigService.cs"));
 
     // ---------------------------------------------------------------------------------------
     // 1. Lógica pura del bot/reglas -- reflexión sobre métodos privados static, sin tocar SQL.
@@ -760,22 +762,46 @@ public sealed class ConversacionesAutomationPipelineTests
     // ---------------------------------------------------------------------------------------
 
     private static ConversacionAutomatizacionesConfigDto ToolsConfig(
-        bool precios = true, bool saldoCliente = true, bool saldoProveedor = true, bool pedidos = true, bool portal = true)
+        bool precios = true,
+        bool saldoCliente = true,
+        bool saldoProveedor = true,
+        bool pedidos = true,
+        bool portal = true,
+        bool precioConsumidor = false)
         => new()
         {
             AsistenteHerramientaPrecios = precios,
             AsistenteHerramientaSaldoCliente = saldoCliente,
             AsistenteHerramientaSaldoProveedor = saldoProveedor,
             AsistenteHerramientaPedidos = pedidos,
-            AsistenteHerramientaPortalLink = portal
+            AsistenteHerramientaPortalLink = portal,
+            CatalogoMuestraPrecioConsumidor = precioConsumidor
         };
+
+    private static ConversacionAsistenteHerramientasService CreateToolsService(
+        ICrmCotizacionService? crm = null,
+        IInterfacesCatalogosService? catalogos = null,
+        ICentralPublicLinkService? publicLinks = null,
+        IPortalClienteService? portal = null,
+        IProveedorSaldoService? proveedor = null,
+        IConversacionesConfigService? config = null,
+        IAppUserSessionService? appUser = null,
+        ISessionService? session = null)
+        => new(
+            new FakeConfiguration(),
+            session ?? new FakeSessionService(),
+            appUser ?? new FakeAppUserSessionService(),
+            crm ?? new ThrowingCrmCotizacionService(),
+            catalogos ?? new ThrowingInterfacesCatalogosService(),
+            publicLinks ?? new ThrowingCentralPublicLinkService(),
+            portal ?? new ThrowingPortalClienteService(),
+            proveedor ?? new ThrowingProveedorSaldoService(),
+            config ?? new FakeConversacionesConfigService());
 
     [Fact]
     public void Tools_NoToolsAreOfferedWhenTheMessageHasNoKeywordSignal()
     {
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), new ThrowingCrmCotizacionService(),
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService();
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"), "hola, como estas?");
@@ -786,9 +812,7 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Tools_SaldoTools_AreOnlyOfferedForTheAccountTypeTheyApplyTo()
     {
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), new ThrowingCrmCotizacionService(),
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService();
 
         var paraCliente = service.ObtenerHerramientasDisponibles(
             ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"), "cual es mi saldo?");
@@ -803,6 +827,263 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Tools_IdentifiedClient_GetsClientPriceAndPortalTools()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "quiero precio y portal");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_LeadWithConsumerPricesOff_GetsPublicCatalogButNoPriceTool()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            null,
+            "quiero precio del catalogo");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public async Task Tools_LeadWithConsumerPricesOn_UsesConsumerFinalSourceWithoutClientCode()
+    {
+        var crm = new FakeCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: true),
+            null,
+            "cuanto sale el tornillo?");
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo","codigo_cliente":"C999"}""", null);
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains("$ 100,00", result);
+        Assert.Null(crm.LastClienteCodigo);
+    }
+
+    [Fact]
+    public async Task Tools_LeadPrice_ZeroResolvedPriceNeverShowsAsAValidZeroPrice()
+    {
+        // Si la base no tiene bien configurado el precio de consumidor final, el resolver general
+        // (compartido con POS/Cotizaciones/Crm) puede devolver 0 -- para consumidor final/lead eso
+        // no puede mostrarse como si fuera un precio comercial real.
+        var crm = new FakeCrmCotizacionService { PrecioUnitarioConIva = 0m };
+        var service = CreateToolsService(crm: crm);
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", null);
+
+        Assert.DoesNotContain("$ 0,00", result);
+        Assert.Contains("precio no disponible", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Tools_IdentifiedClientPrice_ZeroResolvedPriceIsShownAsIs()
+    {
+        // No tocar el comportamiento de clientes identificados: el guard de "no inventar precio"
+        // aplica solo al contexto consumidor final/lead.
+        var crm = new FakeCrmCotizacionService { PrecioUnitarioConIva = 0m };
+        var service = CreateToolsService(crm: crm);
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", cuenta);
+
+        Assert.Contains("$ 0,00", result);
+    }
+
+    [Fact]
+    public void Tools_ProviderIsNotTreatedAsClientForPortalOrOrders()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"),
+            "quiero portal, pedidos y precio");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_AmbiguousOrMissingAccountKeepsSafeLeadBehavior()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            null,
+            "quiero saldo, pedidos, portal y catalogo");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_AmbiguousAccount_GetsNoPrivateToolsEvenWithConsumerPricesOn()
+    {
+        // Contacto vinculado a más de un Cliente (ver ResolverCuentaVinculadaAsync): EsAmbigua = true.
+        // No debe ofrecerse ninguna tool privada de cuenta, y tampoco el fallback de precio
+        // consumidor (ese es solo para leads sin ninguna cuenta vinculada).
+        var service = CreateToolsService();
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: true),
+            ambigua,
+            "quiero precio, saldo, pedidos y portal");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_detalle");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_ExecutingAnyPrivateToolFailsClosedWithoutCallingAnyBackend()
+    {
+        // Defensa en profundidad: aunque ObtenerHerramientasDisponibles ya no ofrezca estas tools,
+        // EjecutarAsync también debe cortar si el modelo igual intenta invocarlas.
+        var crm = new ThrowingCrmCotizacionService();
+        var portal = new ThrowingPortalClienteService();
+        var service = CreateToolsService(crm: crm, portal: portal);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var precio = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", ambigua);
+        var saldo = await service.EjecutarAsync("consultar_saldo_total", "{}", ambigua);
+        var detalle = await service.EjecutarAsync("consultar_saldo_detalle", "{}", ambigua);
+        var pedidos = await service.EjecutarAsync("consultar_pedidos", "{}", ambigua);
+        var portalLink = await service.EjecutarAsync("generar_link_portal", "{}", ambigua);
+
+        foreach (var result in new[] { precio, saldo, detalle, pedidos, portalLink })
+            Assert.Contains("más de una cuenta vinculada", result);
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_IgnoresClientCodeSentByModelArguments()
+    {
+        var crm = new FakeCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo","codigo_cliente":"C999"}""", ambigua);
+
+        Assert.False(crm.WasCalled); // ni siquiera llega a resolver precio consumidor: corta antes de tocar el backend
+    }
+
+    [Fact]
+    public void Tools_WithoutConsumerPriceConfig_DefaultsToNoLeadPrices()
+    {
+        var service = CreateToolsService();
+        var config = ToolsConfig(precioConsumidor: false);
+
+        Assert.False(config.CatalogoMuestraPrecioConsumidor);
+        var herramientas = service.ObtenerHerramientasDisponibles(config, null, "precio del producto");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+    }
+
+    [Fact]
+    public void Tools_ConsumerPriceConfig_IsStoredPerTenantConfiguration()
+    {
+        Assert.Contains("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", ConfigServiceSource, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetAutomatizacionesConfig\")", ConfigServiceSource, StringComparison.Ordinal);
+        Assert.Contains("await using var cn = new SqlConnection(tenant.ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);
+        Assert.Contains("await using var cn = new SqlConnection(ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_UsesCurrentCompanyAndBaseOnly()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            appUser: new FakeAppUserSessionService("empresa-a"),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
+        Assert.DoesNotContain(publicLinks.Requests, r => r.IdWeb == "empresa-b" || r.IdBase == 9999);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsRejectedInFavorOfPortalCliente()
+    {
+        var service = CreateToolsService();
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
+
+        Assert.Contains("debe usar el Portal Cliente", result);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_AmbiguousAccount_IsAllowedAsSafeFallback()
+    {
+        // Bug corregido: EsAmbigua comparte Tipo=Cliente (no hay un tercer valor de enum), así que
+        // esta tool tiene que mirar EsAmbigua antes que Tipo -- si no, un contacto ambiguo recibía el
+        // mensaje de "usá el Portal Cliente" en vez del único fallback seguro que le corresponde.
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            appUser: new FakeAppUserSessionService("empresa-a"),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", ambigua);
+
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.DoesNotContain("debe usar el Portal Cliente", result);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_PublicCatalogFallbackStillExcludesEveryPrivateTool()
+    {
+        // El fallback público habilitado para EsAmbigua no debe abrir ninguna puerta lateral hacia
+        // saldo/pedidos/precio/portal -- se re-confirma acá junto con el fix del catálogo.
+        var crm = new ThrowingCrmCotizacionService();
+        var portal = new ThrowingPortalClienteService();
+        var service = CreateToolsService(crm: crm, portal: portal);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: true), ambigua, "precio, saldo, pedidos, portal y catalogo");
+
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_detalle");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+
+        var saldo = await service.EjecutarAsync("consultar_saldo_total", "{}", ambigua);
+        var portalLink = await service.EjecutarAsync("generar_link_portal", "{}", ambigua);
+        Assert.Contains("más de una cuenta vinculada", saldo);
+        Assert.Contains("más de una cuenta vinculada", portalLink);
+    }
+
+    [Fact]
     public async Task Tools_SaldoQuery_AlwaysUsesTheLinkedAccount_NeverAnyIdentifierFromModelArguments()
     {
         // GUARDRAIL DE SEGURIDAD documentado en el propio archivo: ninguna herramienta sensible
@@ -810,9 +1091,7 @@ public sealed class ConversacionesAutomationPipelineTests
         // intenta indicar OTRA cuenta ("cuenta":"OTRA-999") -- el resultado debe reflejar
         // igualmente la cuenta vinculada real (C001), nunca la del JSON.
         var portal = new FakePortalClienteService { ResumenPorCliente = { ["C001"] = new PortalClienteCuentaCorrienteResumenDto { SaldoTotal = 555m, CantidadPendientes = 1 } } };
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), new ThrowingCrmCotizacionService(),
-            portal, new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService(portal: portal);
 
         var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
         var result = await service.EjecutarAsync("consultar_saldo_total", """{"cuenta":"OTRA-999","codigo_cliente":"OTRA-999"}""", cuenta);
@@ -826,9 +1105,7 @@ public sealed class ConversacionesAutomationPipelineTests
     {
         var portal = new FakePortalClienteService();
         var proveedor = new ThrowingProveedorSaldoService();
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), new ThrowingCrmCotizacionService(),
-            portal, proveedor, new FakeConversacionesConfigService());
+        var service = CreateToolsService(portal: portal, proveedor: proveedor);
 
         var result = await service.EjecutarAsync("consultar_saldo_total", "{}", null);
 
@@ -840,9 +1117,7 @@ public sealed class ConversacionesAutomationPipelineTests
     public async Task Tools_PrecioQuery_ScopesArticleSearchToTheLinkedClientCode_NotAnyArgument()
     {
         var crm = new FakeCrmCotizacionService();
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), crm,
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService(crm: crm);
 
         var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
         await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo","cliente":"OTRO-999"}""", cuenta);
@@ -854,9 +1129,7 @@ public sealed class ConversacionesAutomationPipelineTests
     public async Task Tools_PrecioQuery_MissingArticuloArgument_FailsClosedWithoutQuerying()
     {
         var crm = new FakeCrmCotizacionService();
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), crm,
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService(crm: crm);
 
         var result = await service.EjecutarAsync("consultar_precio", "{}", new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
@@ -867,9 +1140,7 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public async Task Tools_UnknownToolName_ReturnsFixedFallback_NeverThrows()
     {
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), new ThrowingCrmCotizacionService(),
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService();
 
         var result = await service.EjecutarAsync("borrar_todo_el_sistema", "{}", null);
 
@@ -880,13 +1151,93 @@ public sealed class ConversacionesAutomationPipelineTests
     public async Task Tools_BackendFailure_IsCaughtAndReturnsAGracefulFallback_NeverThrowsIntoTheBot()
     {
         var crm = new ThrowingCrmCotizacionService();
-        var service = new ConversacionAsistenteHerramientasService(
-            new FakeConfiguration(), new FakeSessionService(), crm,
-            new ThrowingPortalClienteService(), new ThrowingProveedorSaldoService(), new FakeConversacionesConfigService());
+        var service = CreateToolsService(crm: crm);
 
         var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
         Assert.Contains("No se pudo obtener el dato", result);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // 9 bis. Identidad ambigua -- ResolverCuentaVinculadaAsync abre su propio SqlConnection contra
+    // el tenant (mismo caso que Auto-cierre/SLA más abajo): no hay forma de ejercitar 0/1/N Clientes
+    // vinculados sin una base de tenant real con MA_CONTACTOS_CUENTAS/VT_CLIENTES/VT_PROVEEDORES.
+    // REQUIERE SQL INTEGRATION -- se prueba estructuralmente que ya no hace TOP (1) arbitrario sobre
+    // las cuentas del contacto y que cuenta explícitamente los Clientes distintos.
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_NoLongerPicksAnArbitraryTopOneAmongLinkedAccounts()
+    {
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+
+        // Antes había un único ORDER BY TipoOrdinal, usado junto con TOP (1) para quedarse con
+        // cualquier cuenta vinculada al contacto (el bug: con 2+ Clientes, elegía uno arbitrariamente).
+        // Ya no debe existir ese ordenamiento -- ahora se traen todas las filas y se cuentan en C#.
+        Assert.DoesNotContain("ORDER BY TipoOrdinal", method, StringComparison.Ordinal);
+        Assert.Contains("FROM dbo.MA_CONTACTOS_CUENTAS mcc", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_CountsDistinctLinkedClientsBeforeDeciding()
+    {
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+
+        Assert.Contains(".Where(v => v.TipoOrdinal == 1)", method, StringComparison.Ordinal);
+        Assert.Contains(".GroupBy(v => v.Codigo, StringComparer.OrdinalIgnoreCase)", method, StringComparison.Ordinal);
+        Assert.Contains("if (clientes.Count > 1)", method, StringComparison.Ordinal);
+        Assert.Contains("EsAmbigua = true", method, StringComparison.Ordinal);
+        Assert.Contains("if (clientes.Count == 1)", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_ZeroClientsStillAllowsSingleProviderMatch()
+    {
+        // 0 Cliente vinculados no es lo mismo que "ambiguo": si hay exactamente un Proveedor,
+        // se sigue devolviendo (comportamiento previo, sin cambios) -- un Proveedor no cuenta
+        // como Cliente para la ambigüedad.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        Assert.Contains("vinculadas.FirstOrDefault(v => v.TipoOrdinal == 2)", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_ExplicitConversationClienteCodigoIsUsedAsIs_WithoutChange()
+    {
+        // Cuando la conversación ya tiene ClienteCodigo fijado (RelacionarCliente, que valida contra
+        // VT_CLIENTES al escribir), se sigue usando tal cual -- esta parte no cambió.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        var explicitPathIndex = method.IndexOf("if (!string.IsNullOrWhiteSpace(clienteCodigo))", StringComparison.Ordinal);
+        var ambiguousPathIndex = method.IndexOf("if (clientes.Count > 1)", StringComparison.Ordinal);
+        Assert.True(explicitPathIndex >= 0 && explicitPathIndex < ambiguousPathIndex);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_UsesTenantScopedConnectionForEveryQuery()
+    {
+        // Aislamiento: las tres consultas (conversación, cliente explícito, cuentas del contacto)
+        // usan `ConnectionString` (resuelto por tenant/sesión activa), nunca un valor fijo o
+        // compartido entre bases.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        var occurrences = System.Text.RegularExpressions.Regex.Matches(method, "new SqlConnection\\(ConnectionString\\)").Count;
+        Assert.Equal(3, occurrences);
+    }
+
+    private static string ExtractServiceMethod(string signature)
+    {
+        var start = ServiceSource.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"No se encontró {signature}.");
+        var brace = ServiceSource.IndexOf('{', start);
+        Assert.True(brace >= 0, $"No se encontró el cuerpo de {signature}.");
+
+        var depth = 0;
+        for (var i = brace; i < ServiceSource.Length; i++)
+        {
+            if (ServiceSource[i] == '{') depth++;
+            if (ServiceSource[i] == '}') depth--;
+            if (depth == 0) return ServiceSource[brace..(i + 1)];
+        }
+
+        throw new InvalidOperationException($"No se pudo extraer {signature}.");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1040,11 +1391,12 @@ public sealed class ConversacionesAutomationPipelineTests
         public Microsoft.Extensions.Primitives.IChangeToken GetReloadToken() => throw new NotSupportedException();
     }
 
-    private sealed class FakeSessionService : ISessionService
+    private sealed class FakeSessionService(SessionDto? activeSession = null) : ISessionService
     {
         public event Action? SessionChanged;
         public string GetConnectionString() => "Server=test;Database=test;";
-        public SessionDto? GetActiveSession() => null;
+        public SessionDto? GetActiveSession() => activeSession;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => null;
         public void SetWebhookOverride(SessionDto session) { }
         public void ClearWebhookOverride() { }
         public IReadOnlyList<SessionDto> GetAllSessions() => [];
@@ -1053,6 +1405,116 @@ public sealed class ConversacionesAutomationPipelineTests
         public void UpdateSession(Guid a, string b, string c, string d, string e, string f) { }
         public void DeleteSession(Guid id) { }
         public void ClearActiveSession() { }
+    }
+
+    private sealed class FakeAppUserSessionService(string idWeb = "empresa-a") : IAppUserSessionService
+    {
+        public event Action? StateChanged;
+        public bool IsAuthenticated => true;
+        public AppUserSessionInfo? CurrentUser { get; } = new() { UserName = "admin", IdWeb = idWeb };
+        public bool RequiresInternalLogin => false;
+        public string? CurrentToken => "test-token";
+        public Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default) => throw new NotSupportedException();
+        public void AdoptInternalUser(AppUserSessionInfo internalUser) => throw new NotSupportedException();
+        public bool TryRestoreFromToken(string token) => throw new NotSupportedException();
+        public void Logout() => throw new NotSupportedException();
+        public void HandleSqlSessionChanged() { }
+        public string GetCurrentUserName(string fallback = "") => CurrentUser?.UserName ?? fallback;
+        public bool IsAuthorizedForSession(Guid? activeSessionId) => true;
+        public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
+    }
+
+    private sealed class FakeCentralPublicLinkService : ICentralPublicLinkService
+    {
+        public List<(string IdWeb, int IdBase, string Tipo, int IdReferencia)> Requests { get; } = [];
+        public PublicLinkDto? Existing { get; set; }
+        public PublicLinkDto Created { get; set; } = new()
+        {
+            IdPublicLink = 1,
+            IdWeb = "empresa-a",
+            IdBase = 4271,
+            Tipo = PublicLinkTipos.Catalogo,
+            IdReferencia = 123,
+            Token = "tok123",
+            Slug = "catalogo",
+            Activo = true
+        };
+
+        public Task<PublicLinkDto?> ResolveAsync(string idWeb, string tipo, string routeSegment, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<PublicLinkDto?> TryGetExistingAsync(string idWeb, int idBase, string tipo, int idReferencia, CancellationToken ct = default)
+        {
+            Requests.Add((idWeb, idBase, tipo, idReferencia));
+            return Task.FromResult(Existing);
+        }
+
+        public Task<PublicLinkDto> GetOrCreateAsync(string idWeb, int idBase, string tipo, int idReferencia, string? nombreParaSlug, CancellationToken ct = default)
+        {
+            Requests.Add((idWeb, idBase, tipo, idReferencia));
+            return Task.FromResult(Created);
+        }
+
+        public Task<IReadOnlyDictionary<int, PublicLinkDto>> GetOrCreateManyAsync(string idWeb, int idBase, string tipo, IReadOnlyList<(int IdReferencia, string? Nombre)> referencias, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task RevokeAsync(int idPublicLink, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PublicLinkDto> RegenerateAsync(int idPublicLink, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingCentralPublicLinkService : ICentralPublicLinkService
+    {
+        public Task<PublicLinkDto?> ResolveAsync(string idWeb, string tipo, string routeSegment, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PublicLinkDto?> TryGetExistingAsync(string idWeb, int idBase, string tipo, int idReferencia, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PublicLinkDto> GetOrCreateAsync(string idWeb, int idBase, string tipo, int idReferencia, string? nombreParaSlug, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyDictionary<int, PublicLinkDto>> GetOrCreateManyAsync(string idWeb, int idBase, string tipo, IReadOnlyList<(int IdReferencia, string? Nombre)> referencias, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task RevokeAsync(int idPublicLink, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PublicLinkDto> RegenerateAsync(int idPublicLink, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private class FakeInterfacesCatalogosService : IInterfacesCatalogosService
+    {
+        public CatalogosCatalogoDetalleDto? Catalogo { get; set; } = new() { IdInsert = 123, Nombre = "Catálogo público" };
+
+        public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)
+            => Task.FromResult(Catalogo);
+
+        public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PagedResult<CatalogosArticuloBusquedaDto>> SearchArticulosAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetRubrosArticuloAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetFamiliasArticuloAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetMarcasArticuloAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetProveedoresArticuloAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<int> CountArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> SearchArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, string? idWeb = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<PagedResult<CatalogosCatalogoResumenDto>> SearchCatalogosAsync(string? texto, int pageNumber = 1, int pageSize = 50, DateTime? fechaFiltro = null, string? tipoFiltro = null, string? estadoFiltro = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<int> GetCatalogoPredeterminadoIdAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetCatalogoPredeterminadoAsync(string userName, int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogoPedidoResultDto> ConfirmarPedidoCarritoAsync(CatalogoPedidoConfirmarRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SavePublicIdentityNameAsync(string userName, string? nombreVisible, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SavePublicLogoFormatAsync(string userName, string? idWeb, string logoFormat, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosPublicIdentityDto> SavePublicIdentityLogoAsync(string userName, string? idWeb, Stream content, string fileName, string contentType, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task ResetPublicIdentityLogoAsync(string userName, string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosPublicLogoServeDto?> GetPublicLogoForServeAsync(string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GetPublicClasePrecioAsync(string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SavePublicClasePrecioAsync(string userName, string? idWeb, string clasePrecio, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CatalogosViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveViewSettingsAsync(string userName, CatalogosViewSettingsDto settings, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task ClearImagenModificadaAsync(string idArticulo, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingInterfacesCatalogosService : FakeInterfacesCatalogosService
+    {
+        public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeConversacionesConfigService : ThrowingConversacionesConfigService
@@ -1065,12 +1527,13 @@ public sealed class ConversacionesAutomationPipelineTests
     {
         public string? LastClienteCodigo { get; private set; }
         public bool WasCalled { get; private set; }
+        public decimal PrecioUnitarioConIva { get; set; } = 100m;
 
         public Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosAsync(string? clienteCodigo, string texto, int take = 25, CancellationToken ct = default)
         {
             WasCalled = true;
             LastClienteCodigo = clienteCodigo;
-            IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = 100m }];
+            IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = PrecioUnitarioConIva }];
             return Task.FromResult(result);
         }
 

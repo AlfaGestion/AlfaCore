@@ -150,6 +150,7 @@ internal static class ArcaCaeDiagnosticCommand
     {
         public string GetConnectionString() => string.Empty;
         public AlfaCore.Models.SessionDto? GetActiveSession() => null;
+        public AlfaCore.Models.SessionDto? GetWebhookOverride(int expectedBaseId) => null;
         public void SetWebhookOverride(AlfaCore.Models.SessionDto session) { }
         public void ClearWebhookOverride() { }
         public IReadOnlyList<AlfaCore.Models.SessionDto> GetAllSessions() => [];

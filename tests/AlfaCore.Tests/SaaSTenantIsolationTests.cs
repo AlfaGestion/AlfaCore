@@ -168,6 +168,7 @@ public sealed class SaaSTenantIsolationTests
         public event Action? SessionChanged;
         public string GetConnectionString() => _active is null ? string.Empty : $"Server={_active.Servidor};Database={_active.BaseDatos};User Id={_active.Usuario};Password={_active.Password};TrustServerCertificate=True";
         public SessionDto? GetActiveSession() => _active;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => _active?.BaseId == expectedBaseId ? _active : null;
         public void SetWebhookOverride(SessionDto session) { _active = session; SessionChanged?.Invoke(); }
         public void ClearWebhookOverride() => _active = null;
         public IReadOnlyList<SessionDto> GetAllSessions() => _active is null ? [] : [_active];
