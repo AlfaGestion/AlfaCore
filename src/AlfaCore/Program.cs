@@ -222,6 +222,13 @@ public class Program
         // Add services to the container.
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
+        // El límite por defecto del circuito de Blazor Server (SignalR MaximumReceiveMessageSize)
+        // es 32 KB -- cualquier "Pegar" de imagen desde el portapapeles (BaseMaestraImagenesDialog,
+        // interfaces-upload.js: readImageFromClipboard) manda la imagen completa como data URL sin
+        // recortar, así que una foto normal ya lo supera y tira la conexión ("Conexión
+        // interrumpida"). Se sube a 10 MB (cubre imágenes de hasta ~7 MB una vez descontado el
+        // overhead de base64) en vez de sacarle el límite del todo.
+        builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 10 * 1024 * 1024);
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddSingleton<IAppModeService, AppModeService>();
         builder.Services.AddScoped<IAppSessionInitialization, AppSessionInitialization>();
@@ -338,6 +345,7 @@ public class Program
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
         builder.Services.AddScoped<ICuentasComercialesValidator, CuentasComercialesValidator>();
+        builder.Services.AddScoped<IArticulosService, ArticulosService>();
         builder.Services.AddScoped<ICargaViajesService, CargaViajesService>();
         builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();
         builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();

@@ -1,0 +1,125 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+
+@* Vista Kanban de Clientes/Proveedores -- mismo patrón que ContactosKanbanView.razor/
+   ArticulosKanbanView.razor: una grilla de tarjetas con la misma lista/paginación/selección que la
+   tabla, no un tablero de columnas por estado. Componente compartido entre Clientes y Proveedores
+   (mismo shape que CuentasComercialesPage.razor), por eso no asume la etiqueta "cliente"/"proveedor"
+   -- la recibe como parámetro. *@
+
+<section class="cuentas-kanban" aria-label="Kanban" aria-busy="@Loading">
+    @if (Loading)
+    {
+        <div class="cuentas-kanban__state">
+            <AlfaEmptyState Title="Cargando" Message="Estamos consultando la base activa con los filtros actuales." />
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="cuentas-kanban__state">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                            Title="No se pudo cargar el listado"
+                            Message="@ErrorMessage"
+                            ActionLabel="Reintentar"
+                            ActionIcon="bi bi-arrow-clockwise"
+                            OnAction="OnRetry" />
+        </div>
+    }
+    else if (Items.Count == 0)
+    {
+        <div class="cuentas-kanban__state">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                            Title="Sin resultados"
+                            Message="No hay registros para los filtros seleccionados."
+                            ActionLabel="Limpiar filtros"
+                            ActionIcon="bi bi-eraser"
+                            OnAction="OnEmptyAction" />
+        </div>
+    }
+    else
+    {
+        <div class="cuentas-kanban__scroll">
+            <div class="cuentas-kanban__grid">
+                @foreach (var item in Items)
+                {
+                    var selected = SelectedCodes.Contains(item.Codigo);
+                    var location = string.Join(" · ", new[] { item.Localidad, item.ProvinciaDescripcion }
+                        .Where(v => !string.IsNullOrWhiteSpace(v)));
+
+                    <article class="cuentas-kanban-card @(selected ? "is-selected" : string.Empty)"
+                             @ondblclick="() => OnOpenRecord.InvokeAsync(item.Codigo)"
+                             aria-label="@($"Registro {item.RazonSocial}")">
+                        <label class="cuentas-kanban-card__selection" title="@($"Seleccionar {SingularLabelLower}")" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
+                            <input type="checkbox" checked="@selected" @onchange="() => OnToggleSelection.InvokeAsync(item.Codigo)" aria-label="@($"Seleccionar {item.RazonSocial}")" />
+                            <span aria-hidden="true"><i class="bi bi-check2"></i></span>
+                        </label>
+
+                        <span class="cuentas-kanban-card__avatar @GetAvatarTone(item.Codigo)" aria-hidden="true">
+                            @GetAvatarInitial(item.RazonSocial)
+                        </span>
+
+                        <div class="cuentas-kanban-card__body">
+                            <button type="button" class="cuentas-kanban-card__title" title="Doble clic para editar"
+                                    @onclick:stopPropagation="true" @ondblclick="() => OnOpenRecord.InvokeAsync(item.Codigo)" @ondblclick:stopPropagation="true">
+                                @item.RazonSocial
+                            </button>
+                            <div class="cuentas-kanban-card__meta">
+                                <span title="@item.Codigo"><i class="bi bi-hash" aria-hidden="true"></i>@item.Codigo</span>
+                                @if (!string.IsNullOrWhiteSpace(location))
+                                {
+                                    <span title="@location"><i class="bi bi-geo-alt" aria-hidden="true"></i>@location</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.Telefono))
+                                {
+                                    <span title="@item.Telefono"><i class="bi bi-telephone" aria-hidden="true"></i>@item.Telefono</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.Mail))
+                                {
+                                    <span title="@item.Mail"><i class="bi bi-envelope" aria-hidden="true"></i>@item.Mail</span>
+                                }
+                            </div>
+                            <div class="cuentas-kanban-card__footer">
+                                <span class="cuentas-kanban-card__status @(item.Activo ? "is-active" : "is-inactive")">
+                                    <i class="bi bi-circle-fill" aria-hidden="true"></i>@(item.Activo ? "Activo" : "Inactivo")
+                                </span>
+                                @if (item.Bloqueado)
+                                {
+                                    <span class="cuentas-kanban-card__status is-blocked"><i class="bi bi-lock-fill" aria-hidden="true"></i>Bloqueado</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="cuentas-kanban-card__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
+                            <AlfaActionMenu Items="@RowActions(item)"
+                                            TriggerLabel="@($"Acciones de {item.RazonSocial}")"
+                                            MenuLabel="Acciones"
+                                            Align="AlfaActionMenuAlign.End" />
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CuentaComercialGridItemDto> Items { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlySet<string> SelectedCodes { get; set; } = new HashSet<string>();
+    [Parameter] public string SingularLabelLower { get; set; } = "registro";
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string ErrorMessage { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public Func<CuentaComercialGridItemDto, IReadOnlyList<AlfaActionMenuItem>> RowActions { get; set; } = _ => [];
+    [Parameter] public EventCallback<string> OnToggleSelection { get; set; }
+    [Parameter] public EventCallback<string> OnOpenRecord { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public EventCallback OnEmptyAction { get; set; }
+
+    private static string? GetAvatarInitial(string value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized[..1].ToUpperInvariant();
+    }
+
+    private static string GetAvatarTone(string codigo)
+        => $"tone-{Math.Abs(codigo.GetHashCode()) % 6}";
+}

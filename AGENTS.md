@@ -7,6 +7,7 @@ Este proyecto utiliza reglas obligatorias definidas en:
 - /docs/CODEX_RULES.md
 - /docs/DATABASE_OBJETOS_SQL_PRIORITARIOS.md
 - /docs/CONFIGURACION_GLOBAL.md
+- /docs/ui/alfadesign-module-guide.md (toda pantalla web nueva o rediseñada)
 
 Estas definen:
 - cómo trabajar
@@ -117,6 +118,46 @@ Antes de crear un documento nuevo:
 3. Evitar duplicar contenido ya existente
 4. Si es un manual de usuario, guardarlo en `src/AlfaCore/Docs/`
 5. Si hace falta acceso rápido desde `docs/`, crear un archivo puente corto en lugar de duplicar el contenido
+
+---
+
+## Regla obligatoria: shell AlfaDesign para módulos nuevos (menú superior, sin sidebar)
+
+Toda pantalla web nueva **debe** usar el shell AlfaDesign (barra superior global + Context Toolbar
+propio del módulo) y **nunca** el sidebar lateral legacy. No es opcional ni "a criterio": es la
+norma vigente para código nuevo.
+
+### Cómo activarlo (2 pasos, los dos son obligatorios)
+
+1. En la página/componente, inyectar `IPageHeaderService` e implementar `IDisposable`:
+   ```csharp
+   protected override void OnInitialized() => UpdatePageHeader();
+   protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdatePageHeader(); }
+   public void Dispose() => PageHeader.Clear();
+
+   private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+   {
+       ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+       // Title, Breadcrumb, TopNavigationItems, Search/SearchContent, Actions, Pagination...
+   });
+   ```
+2. **Paso que se olvida fácil y rompe todo en silencio**: agregar el primer segmento de la ruta
+   (`_currentModule`, ej. `"articulos"` para `/articulos`) al `HashSet<string> AlfaDesignManagedModules`
+   en `src/AlfaCore/Components/Layout/MainLayout.razor` (~línea 1511). Si falta este paso, el llamado a
+   `PageHeader.Set(...)` no tira ningún error, pero `MainLayout` sigue mostrando el sidebar legacy
+   genérico y **nunca** renderiza el topbar/toolbar/búsqueda del `PageHeaderConfig` — el síntoma es
+   "la pantalla no tiene menú superior ni botones, y el sidebar no corresponde al módulo".
+3. **Segundo paso, también obligatorio**: setear `ModuleKey = "<módulo>"` (mismo valor de arriba) en
+   CADA llamada a `PageHeader.Set(...)` de la página. Sin esto, navegar desde OTRO módulo
+   AlfaDesignPilot (ej. Clientes) hacia el nuevo puede dejar el topbar/las acciones (Guardar/Cancelar)
+   pegadas a la página anterior -- `MainLayout` sólo limpia el header viejo entre dos módulos
+   AlfaDesignPilot distintos si ambos declaran `ModuleKey` y no coincide. El síntoma es sutil: la
+   pantalla nueva carga bien, pero el título/tab superior sigue diciendo el módulo anterior y los
+   botones del header no hacen nada (llaman a una instancia ya dispuesta).
+
+Ver `docs/ui/alfadesign-module-guide.md` para el resto del proceso (Smart Search, Data View,
+column sizing, etc.) y páginas ya migradas (`Clientes.razor`/`CuentasComercialesPage.razor`,
+`ConfiguracionGeneralEmail.razor` para el caso simple sin lista) como referencia de estructura.
 
 ---
 

@@ -196,7 +196,14 @@ public sealed class CuentaComercialContactoLinkRequest
 public sealed class CuentaComercialViewSettingsDto
 {
     public string AgruparPor { get; set; } = CuentaComercialViewGroupKeys.None;
+    public string Vista { get; set; } = CuentaComercialViewModeKeys.Listado;
     public List<CuentaComercialViewColumnDto> Columnas { get; set; } = [];
+}
+
+public static class CuentaComercialViewModeKeys
+{
+    public const string Listado = "listado";
+    public const string Kanban = "kanban";
 }
 
 public sealed class CuentaComercialViewColumnDto

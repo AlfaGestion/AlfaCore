@@ -39,4 +39,10 @@ public interface IConfiguracionGeneralService
     Task<ConfiguracionVentasPortalClienteDto> GetVentasPortalClienteAsync(CancellationToken ct = default);
 
     Task SaveVentasPortalClienteAsync(ConfiguracionVentasPortalClienteDto dto, CancellationToken ct = default);
+
+    /// <summary>Catálogo de claves "Cfg" que usa el maestro de Artículos (MVP). Ver
+    /// ConfiguracionArticulosDto para el detalle de qué controla cada una.</summary>
+    Task<ConfiguracionArticulosDto> GetArticulosAsync(CancellationToken ct = default);
+
+    Task SaveArticulosAsync(ConfiguracionArticulosDto dto, CancellationToken ct = default);
 }

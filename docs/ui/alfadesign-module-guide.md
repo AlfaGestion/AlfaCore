@@ -7,7 +7,7 @@
 1. Auditar dominio, datos, permisos, rutas, servicios y operaciones reales.
 2. Elegir arquitectura: CRUD con ficha, ABM administrativo, ABM con entidad relacionada, u otra derivada del dominio.
 3. Inventariar estados: Browse, Record, Edit, New y transitorios reales.
-4. Usar App Top Bar y Context Toolbar compartidas.
+4. Usar App Top Bar y Context Toolbar compartidas. Además de llamar `PageHeader.Set(new PageHeaderConfig { ShellMode = PageHeaderShellMode.AlfaDesignPilot, ... })`, agregar el módulo (primer segmento de la ruta) al `HashSet<string> AlfaDesignManagedModules` en `MainLayout.razor` — sin ese paso el sidebar legacy no se oculta y el topbar/toolbar nunca se renderiza, sin ningún error visible.
 5. Elegir Smart Search por complejidad de contenido: compact, standard o wide.
 6. Definir Data View: Header, rows/content y Footer.
 7. Evaluar si column resize aporta valor.

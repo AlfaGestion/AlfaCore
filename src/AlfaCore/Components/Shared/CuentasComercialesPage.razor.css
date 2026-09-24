@@ -10,9 +10,9 @@
     background: var(--alfa-bg-canvas);
 }
 
-/* Editor de Clientes bajo el shell AlfaDesign: .shell__content es flex + overflow:hidden y esta
-   rama (compartida con el editor legacy de Proveedores) no declaraba altura/scroll propios. */
-.shell.shell--alfa-design .page-grid.cuentas-page-grid--cliente-editor {
+/* Editor de Clientes/Proveedores bajo el shell AlfaDesign: .shell__content es flex + overflow:hidden
+   y esta rama no declaraba altura/scroll propios. */
+.shell.shell--alfa-design .page-grid.cuentas-page-grid--editor {
     height: 100%;
     overflow-y: auto;
 }

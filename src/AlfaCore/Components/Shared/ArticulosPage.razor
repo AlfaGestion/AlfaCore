@@ -1,0 +1,1497 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using Microsoft.AspNetCore.WebUtilities
+@inject IArticulosService ArticulosSvc
+@inject IAppUiOperationService UiOps
+@inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteContext
+@inject IPageHeaderService PageHeader
+@inject ISessionService SessionSvc
+@inject NavigationManager Nav
+@implements IDisposable
+
+@* Módulo Archivos > Maestros > Artículos (MVP) -- mismo patrón estructural que Clientes
+   (CuentasComercialesPage.razor): lista con columnas configurables + header/toolbar vía
+   IPageHeaderService + editor de página completa (no modal) con pestañas. Alcance y decisiones en
+   C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md. *@
+
+<div class="articulos-page" @onclick="HandlePageClickAsync">
+    <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
+
+    <AlfaDialog Open="@_showViewSettings"
+                Title="Configurar vista"
+                Eyebrow="Listado de artículos"
+                Description="Elegí qué columnas mostrar en la grilla y su orden."
+                Size="AlfaDialogSize.Md"
+                Loading="@_savingViewSettings"
+                OnClose="CancelarConfiguracionVista">
+        <ChildContent>
+            <div class="articulos-view-settings">
+                @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
+                {
+                    var ordered = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+                    var index = ordered.FindIndex(c => string.Equals(c.Key, column.Key, StringComparison.OrdinalIgnoreCase));
+                    <div class="articulos-view-settings__item">
+                        <AlfaCheckbox Value="@column.Visible" ValueChanged="v => SetColumnVisibility(column.Key, v)" Disabled="@_savingViewSettings">
+                            @column.Label
+                        </AlfaCheckbox>
+                        <div class="articulos-view-settings__order">
+                            <AlfaIconButton Icon="bi bi-arrow-up" Label="@($"Subir {column.Label}")" Size="AlfaSize.Sm"
+                                            Disabled="@(_savingViewSettings || index <= 0)" OnClick="_ => MoveColumn(column.Key, -1)" />
+                            <AlfaIconButton Icon="bi bi-arrow-down" Label="@($"Bajar {column.Label}")" Size="AlfaSize.Sm"
+                                            Disabled="@(_savingViewSettings || index == ordered.Count - 1)" OnClick="_ => MoveColumn(column.Key, 1)" />
+                        </div>
+                    </div>
+                }
+            </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_savingViewSettings" OnClick="_ => CancelarConfiguracionVista()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingViewSettings" OnClick="_ => GuardarConfiguracionVistaAsync()">Guardar vista</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
+    <AlfaConfirmDialog Open="@_showDeactivateConfirm"
+                       Title="@(_pendingDeactivateCodes.Count > 1 ? $"Dar de baja {_pendingDeactivateCodes.Count} artículos" : "Dar de baja artículo")"
+                       Message="@GetDeactivateMessage()"
+                       SecondaryMessage="La baja es lógica: los artículos quedan inactivos, no se eliminan."
+                       ConfirmLabel="Dar de baja"
+                       CancelLabel="Cancelar"
+                       Loading="@_saving"
+                       OnConfirm="ConfirmDeactivateAsync"
+                       OnCancel="CloseDeactivateConfirm" />
+
+    <BaseMaestraImagenesDialog Open="@_showBuscarImagenModal"
+                               Titulo="Imágenes encontradas"
+                               Subtitulo="Búsqueda automática por código de barras/descripción -- misma fuente que usa Interfaces > Catálogos."
+                               Articulos="@_buscarImagenOrigen"
+                               IdClienteFtp="@_ftpCodigoCta"
+                               IdBase="@SessionSvc.GetActiveSession()?.BaseId"
+                               IncluirExistentesInicial="@_incluirExistentesEnBusqueda"
+                               OnAsignadas="OnImagenAsignadaAsync"
+                               OnClose="CerrarBusquedaImagenAsync" />
+
+    @if (!_showEditor)
+    {
+        <section class="articulos-list-shell @(_selectedCodes.Count > 0 ? "articulos-list-shell--selection" : string.Empty)">
+            @if (_loadingList)
+            {
+                <div class="articulos-list-shell__state">
+                    <AlfaEmptyState Title="Cargando artículos" Message="Estamos consultando la base activa con los filtros actuales." />
+                </div>
+            }
+            else if (_listLoadFailed)
+            {
+                <div class="articulos-list-shell__state">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudieron cargar los artículos"
+                                    Message="Reintentá la consulta sobre la base activa."
+                                    ActionLabel="Reintentar"
+                                    ActionIcon="bi bi-arrow-clockwise"
+                                    OnAction="_ => BuscarAsync()" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="articulos-list-shell__state">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                    Title="No encontramos artículos"
+                                    Message="No hay artículos para los filtros seleccionados."
+                                    ActionLabel="Limpiar filtros"
+                                    ActionIcon="bi bi-eraser"
+                                    OnAction="_ => LimpiarFiltrosAsync()" />
+                </div>
+            }
+            else if (_viewMode == ArticuloViewModeKeys.Kanban)
+            {
+                <ArticulosKanbanView Items="@_items"
+                                     SelectedCodes="@_selectedCodes"
+                                     FtpCodigoCta="@_ftpCodigoCta"
+                                     IdBase="@SessionSvc.GetActiveSession()?.BaseId"
+                                     RowActions="BuildRowActions"
+                                     OnToggleSelection="ToggleKanbanSelection"
+                                     OnOpenRecord="codigo => AbrirEditorAsync(codigo)"
+                                     OnRetry="BuscarAsync"
+                                     OnEmptyAction="LimpiarFiltrosAsync" />
+            }
+            else
+            {
+                <div class="articulos-list-shell__table-scroll">
+                    <table class="articulos-list-table" aria-label="Artículos encontrados">
+                        <thead>
+                            <tr>
+                                <th class="articulos-list-table__select">
+                                    <input type="checkbox" checked="@AreAllCurrentPageSelected" @onchange="ToggleSelectAll"
+                                           aria-label="Seleccionar todos los artículos visibles" />
+                                </th>
+                                @foreach (var column in GetVisibleColumns())
+                                {
+                                    <th class="@GetColumnCssClass(column.Key)">@column.Label</th>
+                                }
+                                <th class="articulos-list-table__actions">Acciones</th>
+                            </tr>
+                        </thead>
+                        @foreach (var group in BuildGridGroups())
+                        {
+                            <tbody>
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="articulos-list-table__group">
+                                        <td colspan="@(GetVisibleColumns().Count + 2)">@group.Label</td>
+                                    </tr>
+                                }
+                                @foreach (var item in group.Items)
+                                {
+                                    <tr class="articulos-list-table__row @(IsSelected(item) ? "is-selected" : string.Empty)"
+                                        @ondblclick="() => AbrirEditorAsync(item.Codigo)">
+                                        <td class="articulos-list-table__select" @onclick:stopPropagation="true">
+                                            <input type="checkbox" checked="@_selectedCodes.Contains(item.Codigo)"
+                                                   @onchange="args => ToggleRowSelection(item.Codigo, args)"
+                                                   aria-label="@($"Seleccionar {item.Descripcion}")" />
+                                        </td>
+                                        @foreach (var column in GetVisibleColumns())
+                                        {
+                                            <td class="@GetColumnCssClass(column.Key)">@RenderCell(item, column.Key)</td>
+                                        }
+                                        <td class="articulos-list-table__actions" @onclick:stopPropagation="true">
+                                            <AlfaActionMenu Items="@BuildRowActions(item)"
+                                                            TriggerLabel="@($"Acciones de {item.Descripcion}")"
+                                                            MenuLabel="Acciones del artículo"
+                                                            Align="AlfaActionMenuAlign.End" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+            }
+            <footer class="articulos-list-footer">
+                <span class="articulos-list-footer__summary">@GetSummary()</span>
+                <div class="articulos-list-footer__controls">
+                    <AlfaSelect Value="@_filters.PageSize.ToString()" ValueChanged="SetPageSizeAsync" Options="@PageSizeOptions" Disabled="@_loadingList" Class="articulos-list-footer__page-size" />
+                </div>
+            </footer>
+        </section>
+    }
+    else
+    {
+        <section class="panel-card">
+            <div class="articulos-summary">
+                <div class="articulos-summary__avatar">
+                    @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+                    {
+                        <img src="@_imagenUrl" alt="Imagen del artículo" onerror="this.style.visibility='hidden'" />
+                    }
+                    else
+                    {
+                        @GetArticuloInitial()
+                    }
+                </div>
+                <div class="articulos-summary__body">
+                    <h2>@(string.IsNullOrWhiteSpace(_form.Descripcion) ? "Nuevo artículo" : _form.Descripcion)</h2>
+                    <div class="articulos-summary__meta">
+                        <span><i class="bi bi-upc-scan"></i>@(string.IsNullOrWhiteSpace(_form.Codigo) ? "Sin código" : _form.Codigo)</span>
+                        @if (!_isNewMode)
+                        {
+                            <span><i class="bi bi-circle-fill @(_selectedActivo ? "articulos-status-dot--activo" : "articulos-status-dot--inactivo")"></i>@(_selectedActivo ? "Activo" : "Inactivo")</span>
+                        }
+                        <span><i class="bi bi-tag"></i>Precio: @_form.Precio.ToString("N2")</span>
+                    </div>
+                    @if (!_isNewMode)
+                    {
+                        <div class="articulos-image-actions">
+                            <div class="articulos-image-picker">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Size="AlfaSize.Sm" Disabled="@_subiendoImagen">
+                                    @(_subiendoImagen ? "Subiendo..." : "Subir imagen")
+                                </AlfaButton>
+                                <InputFile class="articulos-image-input" OnChange="HandleImagenSeleccionadaAsync" accept=".jpg,.jpeg,.png,image/jpeg,image/png" disabled="@_subiendoImagen" />
+                            </div>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-search" Size="AlfaSize.Sm" Disabled="@_subiendoImagen" OnClick="AbrirBusquedaImagenAsync">
+                                Buscar en internet
+                            </AlfaButton>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <AlfaTabs Items="@_tabItems" ActiveKey="@_activeTab.ToString()" ActiveKeyChanged="SetActiveTabAsync" AriaLabel="Secciones del artículo" />
+
+            @if (_activeTab == ArticuloTab.Datos)
+            {
+                <div class="articulos-form-grid">
+                    <AlfaInput Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
+                               Disabled="@(!_isNewMode)" Required="true" MaxLength="25"
+                               HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- numérico o alfanumérico." : "No se puede modificar en un artículo existente.")" />
+                    <AlfaInput Label="Código de barras" Value="@_form.CodigoBarra" ValueChanged="v => _form.CodigoBarra = v ?? string.Empty" MaxLength="25" />
+
+                    <AlfaInput Label="Descripción" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Required="true" MaxLength="150" Class="articulos-form-grid__span2" />
+
+                    <div class="articulos-field">
+                        <label class="articulos-field__label">Rubro</label>
+                        <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                    Placeholder="Buscar o crear rubro..."
+                                    MinimumCharacters="0"
+                                    SearchText="@_form.RubroDescripcion"
+                                    SearchTextChanged="v => _form.RubroDescripcion = v"
+                                    SearchFunc="BuscarRubrosFiltroAsync"
+                                    ItemKey="r => r.Codigo"
+                                    SelectedItem="@_rubroSeleccionado"
+                                    SelectedItemChanged="OnRubroSeleccionadoAsync">
+                            <ItemTemplate Context="r">@r.Descripcion</ItemTemplate>
+                        </AlfaLookup>
+                        <small class="articulos-field__help">Elegí uno existente o escribí uno nuevo para crearlo al grabar.</small>
+                    </div>
+                    <div class="articulos-field">
+                        <label class="articulos-field__label">Marca</label>
+                        <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                    Placeholder="Buscar o crear marca..."
+                                    MinimumCharacters="0"
+                                    SearchText="@_form.MarcaDescripcion"
+                                    SearchTextChanged="v => _form.MarcaDescripcion = v"
+                                    SearchFunc="BuscarMarcasFiltroAsync"
+                                    ItemKey="m => m.Codigo"
+                                    SelectedItem="@_marcaSeleccionada"
+                                    SelectedItemChanged="OnMarcaSeleccionadaAsync">
+                            <ItemTemplate Context="m">@m.Descripcion</ItemTemplate>
+                        </AlfaLookup>
+                    </div>
+                    <div class="articulos-field">
+                        <label class="articulos-field__label">Unidad de medida</label>
+                        <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                    Placeholder="Buscar o crear unidad..."
+                                    MinimumCharacters="0"
+                                    SearchText="@_form.UnidadDescripcion"
+                                    SearchTextChanged="v => _form.UnidadDescripcion = v"
+                                    SearchFunc="BuscarUnidadesFiltroAsync"
+                                    ItemKey="u => u.Codigo"
+                                    SelectedItem="@_unidadSeleccionada"
+                                    SelectedItemChanged="OnUnidadSeleccionadaAsync">
+                            <ItemTemplate Context="u">@u.Descripcion</ItemTemplate>
+                        </AlfaLookup>
+                    </div>
+
+                    <div class="articulos-field">
+                        <label class="articulos-field__label">Proveedor</label>
+                        <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                    Placeholder="Buscar proveedor..."
+                                    MinimumCharacters="1"
+                                    SearchText="@_proveedorTexto"
+                                    SearchTextChanged="v => _proveedorTexto = v"
+                                    SearchFunc="BuscarProveedoresAsync"
+                                    ItemKey="p => p.Codigo"
+                                    SelectedItem="@_proveedorSeleccionado"
+                                    SelectedItemChanged="OnProveedorSeleccionadoAsync">
+                            <ItemTemplate Context="p">@p.Codigo -- @p.Descripcion</ItemTemplate>
+                        </AlfaLookup>
+                        <small class="articulos-field__help">Opcional. Podés dejarlo en blanco o elegir uno del maestro de proveedores.</small>
+                    </div>
+                    <div class="articulos-field">
+                        <label class="articulos-field__label">Artículo del proveedor</label>
+                        <input class="articulos-field__control" value="@_form.CodigoArtProveedor"
+                               @onchange="e => _form.CodigoArtProveedor = e.Value?.ToString() ?? string.Empty" maxlength="25" />
+                        <small class="articulos-field__help">Código que usa el proveedor para identificar este artículo (texto libre, sin validar).</small>
+                    </div>
+
+                    <div class="articulos-form-grid__span2">
+                        <AlfaCheckbox Value="@_form.Pesable" ValueChanged="v => _form.Pesable = v == true">
+                            <i class="bi bi-speedometer2"></i> Producto para balanza (pesable)
+                        </AlfaCheckbox>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="articulos-form-grid">
+                    <AlfaInput Label="Costo" Type="number" Value="@_form.Costo.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                               ValueChanged="OnCostoChangedAsync" />
+                    <AlfaInput Label="Precio de venta" Type="number" Value="@_form.Precio.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                               ValueChanged="OnPrecioChangedAsync" />
+                    <AlfaInput Label="Utilidad %" Type="number" Value="@_form.Utilidad.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                               ValueChanged="OnUtilidadChangedAsync" />
+                    <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                               ValueChanged="v => _form.TasaIva = ParseDecimal(v)" />
+                    <div class="articulos-form-grid__span2">
+                        <AlfaCheckbox Value="@_form.Exento" ValueChanged="v => _form.Exento = v == true">
+                            <i class="bi bi-receipt"></i> Exento de IVA
+                        </AlfaCheckbox>
+                    </div>
+                    @if (_lookups.PrecioIncluyeIva)
+                    {
+                        <div class="articulos-form-grid__span2 articulos-hint">
+                            <i class="bi bi-info-circle"></i> Configuración vigente: el precio de venta se carga con IVA incluido.
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private readonly List<ArticuloGridItemDto> _items = [];
+    private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
+    private ArticuloFilters _filters = new();
+    private ArticuloLookupDataDto _lookups = new();
+    private ArticuloViewSettingsDto _viewSettings = new();
+    private readonly List<ArticuloViewColumnDto> _viewSettingsDraft = [];
+    private bool _viewSettingsLoaded;
+    private string _viewSettingsUserName = string.Empty;
+    private string _viewMode = ArticuloViewModeKeys.Listado;
+
+    private bool _loadingList;
+    private bool _listLoadFailed;
+    private bool _saving;
+    private bool _savingViewSettings;
+    private bool _showViewSettings;
+    private bool _showEditor;
+    private bool _isNewMode;
+    private bool _selectedActivo = true;
+    private string _selectedCodigo = string.Empty;
+    private ArticuloTab _activeTab = ArticuloTab.Datos;
+
+    // Combos con búsqueda del editor (Rubro/Marca/Unidad/Proveedor) -- mismo patrón AlfaLookup que el
+    // panel de filtros, para que todo campo de tabla relacionada se maneje de forma homogénea.
+    private ArticuloLookupOptionDto? _rubroSeleccionado;
+    private ArticuloLookupOptionDto? _marcaSeleccionada;
+    private ArticuloLookupOptionDto? _unidadSeleccionada;
+    private string _proveedorTexto = string.Empty;
+    private ArticuloLookupOptionDto? _proveedorSeleccionado;
+
+    private string _imagenUrl = string.Empty;
+    private bool _subiendoImagen;
+    private bool _showBuscarImagenModal;
+    private IReadOnlyList<BaseMaestraImagenOrigenDto> _buscarImagenOrigen = [];
+    private bool _incluirExistentesEnBusqueda;
+    private string? _ftpCodigoCta;
+    private ArticuloSaveRequest _form = new();
+    private AppUiMessage? _feedback;
+
+    private bool _showDeactivateConfirm;
+    private readonly List<string> _pendingDeactivateCodes = [];
+
+    private bool _showSearchPanel;
+    private CancellationTokenSource? _searchDebounceCts;
+    private string _rubroFiltroTexto = string.Empty;
+    private ArticuloLookupOptionDto? _rubroFiltroSeleccionado;
+    private string _marcaFiltroTexto = string.Empty;
+    private ArticuloLookupOptionDto? _marcaFiltroSeleccionado;
+
+    private int _pagedTotal;
+    private int _pageNumber = 1;
+    private int _totalPages = 1;
+    private bool _hasPrev;
+    private bool _hasNext;
+
+    private readonly IReadOnlyList<AlfaTabItem> _tabItems =
+    [
+        new(ArticuloTab.Datos.ToString(), "Datos generales"),
+        new(ArticuloTab.Precios.ToString(), "Precios")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> PageSizeOptions =
+    [
+        new("25", "25 por página"),
+        new("50", "50 por página"),
+        new("100", "100 por página")
+    ];
+
+    private enum ArticuloTab { Datos, Precios }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        // No depender solo de los `_ = InvokeAsync(StateHasChanged)` desperdigados en
+        // UpdatePageHeader(): los botones del header (Guardar/Cancelar/etc.) se disparan desde
+        // MainPageHeader, no desde esta página, así que el único disparador confiable de un
+        // re-render del CUERPO de esta página ante un cambio de header es suscribirse al evento,
+        // igual que hace el propio MainPageHeader.
+        PageHeader.Changed += OnHeaderChanged;
+        UpdatePageHeader();
+        await LoadLookupsAsync();
+        await EnsureViewSettingsLoadedAsync();
+        await BuscarAsync();
+        await ApplyStartupQueryAsync();
+        UpdatePageHeader();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    private void OnHeaderChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        PageHeader.Changed -= OnHeaderChanged;
+        PageHeader.Clear();
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editar) ? editar.ToString() : string.Empty;
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            if (_showEditor && !_isNewMode)
+                CerrarEditor();
+            return;
+        }
+
+        if (!_showEditor || !string.Equals(_selectedCodigo, codigo, StringComparison.OrdinalIgnoreCase))
+            await AbrirEditorAsync(codigo, updateUrl: false);
+    }
+
+    private async Task ApplyStartupQueryAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editar) ? editar.ToString() : string.Empty;
+        if (!string.IsNullOrWhiteSpace(codigo))
+            await AbrirEditorAsync(codigo, updateUrl: false);
+    }
+
+    private Task HandlePageClickAsync() => Task.CompletedTask;
+
+    private void DismissFeedback() => _feedback = null;
+
+    private void SetFeedback(AppUiMessage? message) => _feedback = message;
+
+    private void UpdatePageHeader()
+    {
+        if (_showEditor)
+        {
+            var editorActions = new List<PageHeaderAction>
+            {
+                new()
+                {
+                    Key = "guardar",
+                    Label = _saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _saving,
+                    Busy = _saving,
+                    OnClick = GuardarAsync
+                },
+                new()
+                {
+                    Key = "cancelar",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _saving,
+                    OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+                }
+            };
+            if (!_isNewMode && _selectedActivo)
+            {
+                editorActions.Add(new PageHeaderAction
+                {
+                    Key = "baja",
+                    Label = "Dar de baja",
+                    Icon = "bi-trash",
+                    Style = PageHeaderActionStyle.Danger,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _saving,
+                    OnClick = () => { OpenDeactivateConfirm([_selectedCodigo]); return Task.CompletedTask; }
+                });
+            }
+
+            PageHeader.Set(new PageHeaderConfig
+            {
+                Title = _isNewMode ? "Nuevo artículo" : $"Editar {_form.Descripcion}",
+                Breadcrumb = ["Archivos", "Maestros", "Artículos"],
+                State = _saving ? PageHeaderState.Loading : _isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing,
+                ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+                ModuleKey = "articulos",
+                TopNavigationItems = [new() { Key = "articulos", Label = "Artículos", Url = RouteContext.BuildRoute("/articulos"), Active = true }],
+                Actions = editorActions
+            });
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var actions = new List<PageHeaderAction>();
+        if (_selectedCodes.Count > 0)
+        {
+            actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "buscar-imagenes-masivo", Label = "Buscar imágenes", Icon = "bi-search", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = AbrirBusquedaImagenBulkAsync });
+            actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = () => { OpenDeactivateConfirm(_selectedCodes.ToList()); return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { _selectedCodes.Clear(); UpdatePageHeader(); return Task.CompletedTask; } });
+        }
+
+        actions.Add(new PageHeaderAction { Key = "nuevo", Label = "Nuevo artículo", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = BeginNewAsync });
+        actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
+        actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Artículos",
+            Breadcrumb = ["Archivos", "Maestros", "Artículos"],
+            State = _loadingList ? PageHeaderState.Loading : _selectedCodes.Count > 0 ? PageHeaderState.Selection : _viewMode == ArticuloViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "articulos",
+            TopNavigationItems = [new() { Key = "articulos", Label = "Artículos", Url = RouteContext.BuildRoute("/articulos"), Active = true }],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderArticulosSmartSearch(),
+            Pagination = BuildHeaderPagination(),
+            ViewButtons = BuildHeaderViewButtons(),
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons() =>
+    [
+        new()
+        {
+            Key = "listado",
+            Label = "Listado",
+            Title = "Vista de listado",
+            Icon = "bi-table",
+            Active = _viewMode != ArticuloViewModeKeys.Kanban,
+            Disabled = _loadingList,
+            OnClick = () => SetViewModeAsync(ArticuloViewModeKeys.Listado)
+        },
+        new()
+        {
+            Key = "kanban",
+            Label = "Kanban",
+            Title = "Vista Kanban",
+            Icon = "bi-kanban",
+            Active = _viewMode == ArticuloViewModeKeys.Kanban,
+            Disabled = _loadingList,
+            OnClick = () => SetViewModeAsync(ArticuloViewModeKeys.Kanban)
+        }
+    ];
+
+    private async Task SetViewModeAsync(string modo)
+    {
+        var normalizado = modo == ArticuloViewModeKeys.Kanban ? ArticuloViewModeKeys.Kanban : ArticuloViewModeKeys.Listado;
+        if (_viewMode == normalizado)
+            return;
+
+        _viewMode = normalizado;
+        _viewSettings.Vista = normalizado;
+        UpdatePageHeader();
+
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await ArticulosSvc.SaveViewSettingsAsync(currentUser, _viewSettings); return true; }, "No se pudo guardar la vista seleccionada.");
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
+
+    private Task ToggleKanbanSelection(string codigo)
+    {
+        var normalizado = (codigo ?? string.Empty).Trim();
+        if (normalizado.Length == 0)
+            return Task.CompletedTask;
+
+        if (!_selectedCodes.Add(normalizado))
+            _selectedCodes.Remove(normalizado);
+
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private PageHeaderPaginationConfig BuildHeaderPagination() => new()
+    {
+        Label = $"{_pagedTotal:N0} registros",
+        PageLabel = $"{_pageNumber} / {_totalPages}",
+        HasPrevious = _hasPrev,
+        HasNext = _hasNext,
+        Disabled = _loadingList,
+        OnPrevious = () => CambiarPaginaAsync(_pageNumber - 1),
+        OnNext = () => CambiarPaginaAsync(_pageNumber + 1)
+    };
+
+    private RenderFragment RenderArticulosSmartSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="OnSearchKeyDownAsync">
+        <div class="smart-search__bar">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input type="search"
+                   placeholder="Buscar por código, código de barras o descripción..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenSearchPanel"
+                   @oninput="OnSearchInput" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <div class="smart-search__panel">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    <button type="button" class="@GetSmartOptionClass(_filters.Activo == true)" @onclick="() => SetActivoFiltroAsync(true)">Activos</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.Activo == false)" @onclick="() => SetActivoFiltroAsync(false)">Inactivos</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.Activo == null)" @onclick="() => SetActivoFiltroAsync(null)">Todos</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-tag-fill"></i> Rubro</h4>
+                    <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                Placeholder="Buscar rubro..."
+                                MinimumCharacters="0"
+                                SearchText="@_rubroFiltroTexto"
+                                SearchTextChanged="v => _rubroFiltroTexto = v"
+                                SearchFunc="BuscarRubrosFiltroAsync"
+                                ItemKey="r => r.Codigo"
+                                SelectedItem="@_rubroFiltroSeleccionado"
+                                SelectedItemChanged="OnRubroFiltroSeleccionadoAsync">
+                        <ItemTemplate Context="r">@r.Descripcion</ItemTemplate>
+                    </AlfaLookup>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-award-fill"></i> Marca</h4>
+                    <AlfaLookup TItem="ArticuloLookupOptionDto"
+                                Placeholder="Buscar marca..."
+                                MinimumCharacters="0"
+                                SearchText="@_marcaFiltroTexto"
+                                SearchTextChanged="v => _marcaFiltroTexto = v"
+                                SearchFunc="BuscarMarcasFiltroAsync"
+                                ItemKey="m => m.Codigo"
+                                SelectedItem="@_marcaFiltroSeleccionado"
+                                SelectedItemChanged="OnMarcaFiltroSeleccionadoAsync">
+                        <ItemTemplate Context="m">@m.Descripcion</ItemTemplate>
+                    </AlfaLookup>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ArticuloViewGroupKeys.None)" @onclick="() => SetGroupAsync(ArticuloViewGroupKeys.None)">Sin agrupar</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ArticuloViewGroupKeys.Rubro)" @onclick="() => SetGroupAsync(ArticuloViewGroupKeys.Rubro)">Rubro</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync">
+                        <i class="bi bi-eraser"></i> Limpiar filtros
+                    </button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void OpenSearchPanel()
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleSearchPanel()
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private void CloseSearchPanel()
+    {
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = e.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
+        DebounceSearch();
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (string.Equals(e.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseSearchPanel();
+            return;
+        }
+
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _searchDebounceCts?.Cancel();
+        _filters.PageNumber = 1;
+        CloseSearchPanel();
+        await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private void DebounceSearch()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, cts.Token);
+                if (cts.IsCancellationRequested)
+                    return;
+
+                _filters.PageNumber = 1;
+                await BuscarAsync();
+                UpdatePageHeader();
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+    }
+
+    private static string GetSmartOptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
+
+    private async Task SetActivoFiltroAsync(bool? valor)
+    {
+        _filters.Activo = valor;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetGroupAsync(string grupo)
+    {
+        _viewSettings.AgruparPor = grupo;
+        await AplicarFiltrosAsync();
+    }
+
+    private Task<IReadOnlyList<ArticuloLookupOptionDto>> BuscarRubrosFiltroAsync(string texto, CancellationToken ct)
+        => Task.FromResult(FiltrarLookup(_lookups.Rubros, texto));
+
+    private Task<IReadOnlyList<ArticuloLookupOptionDto>> BuscarMarcasFiltroAsync(string texto, CancellationToken ct)
+        => Task.FromResult(FiltrarLookup(_lookups.Marcas, texto));
+
+    private static IReadOnlyList<ArticuloLookupOptionDto> FiltrarLookup(IReadOnlyList<ArticuloLookupOptionDto> lista, string texto)
+    {
+        var t = (texto ?? string.Empty).Trim();
+        var query = t.Length == 0
+            ? lista
+            : lista.Where(x => x.Descripcion.Contains(t, StringComparison.OrdinalIgnoreCase) || x.Codigo.Contains(t, StringComparison.OrdinalIgnoreCase));
+        return query.Take(30).ToList();
+    }
+
+    private async Task OnRubroFiltroSeleccionadoAsync(ArticuloLookupOptionDto? item)
+    {
+        _rubroFiltroSeleccionado = item;
+        _rubroFiltroTexto = item?.Descripcion ?? string.Empty;
+        _filters.RubroCodigo = item?.Codigo ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnMarcaFiltroSeleccionadoAsync(ArticuloLookupOptionDto? item)
+    {
+        _marcaFiltroSeleccionado = item;
+        _marcaFiltroTexto = item?.Descripcion ?? string.Empty;
+        _filters.MarcaCodigo = item?.Codigo ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        var result = await UiOps.RunAsync(() => ArticulosSvc.GetLookupDataAsync(), "No se pudieron cargar las referencias de artículos.");
+        _lookups = result.Success && result.Value is not null ? result.Value : new ArticuloLookupDataDto();
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+
+        // Se resuelve una sola vez acá (no en cada tarjeta) para que la vista Kanban pueda armar la
+        // miniatura de cada artículo sin ida y vuelta al servidor por ítem.
+        try
+        {
+            _ftpCodigoCta = await ArticulosSvc.GetFtpCodigoCtaAsync();
+        }
+        catch
+        {
+            _ftpCodigoCta = null;
+        }
+    }
+
+    private async Task BuscarAsync()
+    {
+        _listLoadFailed = false;
+        _loadingList = true;
+        UpdatePageHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => ArticulosSvc.SearchAsync(_filters), "No se pudieron cargar los artículos.");
+            if (!result.Success || result.Value is null)
+            {
+                _listLoadFailed = true;
+                _items.Clear();
+                _pagedTotal = 0;
+                _pageNumber = 1;
+                _totalPages = 1;
+                _hasPrev = false;
+                _hasNext = false;
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _items.Clear();
+            _items.AddRange(result.Value.Items);
+            _selectedCodes.IntersectWith(_items.Select(i => i.Codigo));
+            _pagedTotal = result.Value.Total;
+            _pageNumber = result.Value.PageNumber;
+            _totalPages = Math.Max(1, result.Value.TotalPages);
+            _hasPrev = result.Value.HasPrev;
+            _hasNext = result.Value.HasNext;
+        }
+        finally
+        {
+            _loadingList = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private async Task AplicarFiltrosAsync()
+    {
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        _filters = new ArticuloFilters();
+        _viewSettings.AgruparPor = ArticuloViewGroupKeys.None;
+        _rubroFiltroTexto = string.Empty;
+        _rubroFiltroSeleccionado = null;
+        _marcaFiltroTexto = string.Empty;
+        _marcaFiltroSeleccionado = null;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task CambiarPaginaAsync(int pagina)
+    {
+        if (pagina < 1 || pagina > _totalPages || pagina == _pageNumber)
+            return;
+
+        _filters.PageNumber = pagina;
+        await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task SetPageSizeAsync(string? value)
+    {
+        if (!int.TryParse(value, out var size) || size <= 0)
+            return;
+
+        _filters.PageSize = size;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task RecargarAsync()
+    {
+        await LoadLookupsAsync();
+        await EnsureViewSettingsLoadedAsync(force: true);
+        await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private bool IsSelected(ArticuloGridItemDto item) => string.Equals(_selectedCodigo, item.Codigo, StringComparison.OrdinalIgnoreCase);
+
+    private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(i => _selectedCodes.Contains(i.Codigo));
+
+    private void ToggleRowSelection(string codigo, ChangeEventArgs args)
+    {
+        var normalized = (codigo ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            return;
+
+        if (args.Value is bool flag && flag)
+            _selectedCodes.Add(normalized);
+        else
+            _selectedCodes.Remove(normalized);
+
+        UpdatePageHeader();
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var shouldSelect = args.Value is bool flag && flag;
+        foreach (var codigo in _items.Select(i => i.Codigo).Where(c => !string.IsNullOrWhiteSpace(c)))
+        {
+            if (shouldSelect)
+                _selectedCodes.Add(codigo);
+            else
+                _selectedCodes.Remove(codigo);
+        }
+
+        UpdatePageHeader();
+    }
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildRowActions(ArticuloGridItemDto item) =>
+    [
+        new() { Label = "Editar", Icon = "bi bi-pencil", OnClick = () => AbrirEditorAsync(item.Codigo) },
+        new() { Label = "Dar de baja", Icon = "bi bi-trash", Danger = true, Disabled = !item.Activo, OnClick = () => { OpenDeactivateConfirm([item.Codigo]); return Task.CompletedTask; } }
+    ];
+
+    private async Task BeginNewAsync()
+    {
+        _showEditor = true;
+        _showViewSettings = false;
+        _isNewMode = true;
+        _selectedCodigo = string.Empty;
+        _selectedActivo = true;
+        _activeTab = ArticuloTab.Datos;
+        _form = new ArticuloSaveRequest { TasaIva = _lookups.TasaIvaDefault };
+        _rubroSeleccionado = null;
+        _marcaSeleccionada = null;
+        _unidadSeleccionada = null;
+        _proveedorTexto = string.Empty;
+        _proveedorSeleccionado = null;
+        _imagenUrl = string.Empty;
+        UpdatePageHeader();
+        await Task.CompletedTask;
+    }
+
+    private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
+    {
+        if (updateUrl)
+        {
+            var target = QueryHelpers.AddQueryString(Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath, "editar", codigo);
+            var current = Nav.ToBaseRelativePath(Nav.Uri);
+            if (!string.Equals(current, target.TrimStart('/'), StringComparison.Ordinal))
+                Nav.NavigateTo(target);
+        }
+
+        _showEditor = true;
+        _showViewSettings = false;
+        UpdatePageHeader();
+        await SeleccionarAsync(codigo);
+    }
+
+    private async Task SeleccionarAsync(string codigo)
+    {
+        var result = await UiOps.RunAsync(() => ArticulosSvc.GetByIdAsync(codigo), "No se pudo cargar el artículo.");
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        if (result.Value is null)
+        {
+            SetFeedback(AppUiMessage.Warning("Artículo no disponible", "El artículo seleccionado ya no existe en la base activa."));
+            await BuscarAsync();
+            return;
+        }
+
+        _isNewMode = false;
+        _selectedCodigo = result.Value.Codigo;
+        _selectedActivo = result.Value.Activo;
+        _activeTab = ArticuloTab.Datos;
+        _form = result.Value;
+        _rubroSeleccionado = _lookups.Rubros.FirstOrDefault(r => string.Equals(r.Codigo, _form.RubroCodigo, StringComparison.OrdinalIgnoreCase));
+        _marcaSeleccionada = _lookups.Marcas.FirstOrDefault(m => string.Equals(m.Codigo, _form.MarcaCodigo, StringComparison.OrdinalIgnoreCase));
+        _unidadSeleccionada = _lookups.Unidades.FirstOrDefault(u => string.Equals(u.Codigo, _form.UnidadCodigo, StringComparison.OrdinalIgnoreCase));
+        _proveedorSeleccionado = string.IsNullOrWhiteSpace(_form.CuentaProveedor)
+            ? null
+            : new ArticuloLookupOptionDto { Codigo = _form.CuentaProveedor, Descripcion = result.Value.CuentaProveedorNombre };
+        _proveedorTexto = _proveedorSeleccionado is null ? string.Empty : $"{_proveedorSeleccionado.Codigo} -- {_proveedorSeleccionado.Descripcion}";
+        UpdatePageHeader();
+        await LoadImagenAsync();
+    }
+
+    private async Task LoadImagenAsync()
+    {
+        try
+        {
+            _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo);
+        }
+        catch
+        {
+            // La imagen es un dato secundario -- si falla resolverla no bloqueamos la edición del
+            // artículo, simplemente no se muestra.
+            _imagenUrl = string.Empty;
+        }
+    }
+
+    private async Task HandleImagenSeleccionadaAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null || _isNewMode)
+            return;
+
+        _subiendoImagen = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            var extension = Path.GetExtension(file.Name);
+
+            var result = await UiOps.RunAsync(async () => { await ArticulosSvc.UploadImagenAsync(_form.Codigo, bytes, extension); return true; }, "No se pudo subir la imagen del artículo.");
+            if (result.Success)
+            {
+                _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo, forzarRecarga: true);
+                SetFeedback(AppUiMessage.Success("Imagen actualizada", "La imagen del artículo se guardó correctamente."));
+            }
+            else
+            {
+                SetFeedback(result.Feedback);
+            }
+        }
+        finally
+        {
+            _subiendoImagen = false;
+        }
+    }
+
+    // Búsqueda automática de imágenes (código de barras/descripción) -- reusa el mismo diálogo
+    // compartido que ya usa Interfaces > Catálogos (BaseMaestraImagenesDialog / BaseMaestraImagenService:
+    // Base Maestra oficial, sitios de supermercados y Google Images), en vez de construir un buscador
+    // nuevo para Artículos.
+    private async Task AbrirBusquedaImagenAsync()
+    {
+        if (_isNewMode)
+            return;
+
+        _ftpCodigoCta ??= await ArticulosSvc.GetFtpCodigoCtaAsync();
+        if (string.IsNullOrWhiteSpace(_ftpCodigoCta))
+        {
+            SetFeedback(AppUiMessage.Warning("Buscar en internet", "No se pudo determinar el código de cliente FTP para buscar/guardar imágenes."));
+            return;
+        }
+
+        _buscarImagenOrigen =
+        [
+            new BaseMaestraImagenOrigenDto
+            {
+                IdArticulo = _form.Codigo,
+                DescripcionArticulo = _form.Descripcion,
+                CodigoBarra = _form.CodigoBarra,
+                TieneImagenActual = !string.IsNullOrWhiteSpace(_imagenUrl)
+            }
+        ];
+        // Búsqueda de UN artículo puntual y explícito -- el usuario ya sabe que puede tener o no
+        // imagen, así que mostramos el resultado directo en vez del gate pensado para la búsqueda en
+        // lote (ver AbrirBusquedaImagenBulkAsync, que sí necesita filtrar los que ya tienen imagen).
+        _incluirExistentesEnBusqueda = true;
+        _showBuscarImagenModal = true;
+    }
+
+    private Task CerrarBusquedaImagenAsync()
+    {
+        _showBuscarImagenModal = false;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Versión en lote: busca y asigna automáticamente (la primera imagen encontrada por
+    /// artículo) para todos los seleccionados en la lista, reutilizando el mismo diálogo
+    /// -- BaseMaestraImagenesDialog ya soporta N artículos, acá solo cambia de dónde sale la lista
+    /// (la selección de la grilla en vez del único artículo abierto en el editor).</summary>
+    private async Task AbrirBusquedaImagenBulkAsync()
+    {
+        if (_selectedCodes.Count == 0)
+            return;
+
+        _ftpCodigoCta ??= await ArticulosSvc.GetFtpCodigoCtaAsync();
+        if (string.IsNullOrWhiteSpace(_ftpCodigoCta))
+        {
+            SetFeedback(AppUiMessage.Warning("Buscar imágenes", "No se pudo determinar el código de cliente FTP para buscar/guardar imágenes."));
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _buscarImagenOrigen = _items
+            .Where(i => _selectedCodes.Contains(i.Codigo))
+            .Select(i => new BaseMaestraImagenOrigenDto
+            {
+                IdArticulo = i.Codigo,
+                DescripcionArticulo = i.Descripcion,
+                CodigoBarra = i.CodigoBarra,
+                TieneImagenActual = false
+            })
+            .ToList();
+
+        if (_buscarImagenOrigen.Count == 0)
+            return;
+
+        _incluirExistentesEnBusqueda = false;
+        _showBuscarImagenModal = true;
+        // Invocado desde una PageHeaderAction del topbar (MainPageHeader, componente distinto de esta
+        // página) -- sin este StateHasChanged explícito el diálogo queda armado pero invisible hasta
+        // que algo más fuerce un render (por eso "Recargar" lo hacía aparecer). Mismo bug que
+        // OpenDeactivateConfirm más abajo.
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnImagenAsignadaAsync(BaseMaestraImagenResultadoDto resultado)
+    {
+        _showBuscarImagenModal = false;
+        if (resultado.Asignadas <= 0)
+        {
+            SetFeedback(AppUiMessage.Info("Buscar en internet", "No se asignó ninguna imagen."));
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Imágenes actualizadas", $"{resultado.Asignadas} imagen(es) se guardaron correctamente."));
+        if (_showEditor)
+            _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo, forzarRecarga: true);
+        else
+            await BuscarAsync();
+    }
+
+    private void CerrarEditor()
+    {
+        _showEditor = false;
+        UpdatePageHeader();
+
+        // Saca el ?editar= de la URL -- si no lo hacemos, ApplyCurrentLocationAsync lo vuelve a leer
+        // ante cualquier LocationChanged posterior (los hay, disparados desde MainLayout) y reabre el
+        // editor solo, aunque el usuario ya haya cancelado/guardado.
+        var path = Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath;
+        var current = Nav.ToBaseRelativePath(Nav.Uri);
+        if (!string.Equals(current, path.TrimStart('/'), StringComparison.Ordinal))
+            Nav.NavigateTo(path);
+    }
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        UpdatePageHeader();
+        try
+        {
+            var savedCode = await ArticulosSvc.SaveAsync(_form);
+            SetFeedback(AppUiMessage.Success("Artículo guardado", $"El artículo {savedCode} se guardó correctamente."));
+            CerrarEditor();
+            await BuscarAsync();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No se pudo guardar el artículo."));
+        }
+        finally
+        {
+            _saving = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private void OpenDeactivateConfirm(List<string> codigos)
+    {
+        if (codigos.Count == 0 || _saving)
+            return;
+
+        _pendingDeactivateCodes.Clear();
+        _pendingDeactivateCodes.AddRange(codigos);
+        _showDeactivateConfirm = true;
+        // Se llama tanto desde el menú de la fila (ya dispara render solo, vive en el árbol de esta
+        // página) como desde una PageHeaderAction del topbar (la dispara MainPageHeader, un
+        // componente distinto -- sin este StateHasChanged explícito, el diálogo queda armado pero
+        // invisible). Ver [[feedback_alfadesign_shell_modulos_nuevos]] para el mismo patrón de bug.
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseDeactivateConfirm()
+    {
+        if (_saving)
+            return;
+
+        _showDeactivateConfirm = false;
+        _pendingDeactivateCodes.Clear();
+    }
+
+    private string GetDeactivateMessage()
+        => _pendingDeactivateCodes.Count > 1
+            ? $"Vas a dar de baja {_pendingDeactivateCodes.Count} artículos seleccionados."
+            : $"Vas a dar de baja el artículo {(_pendingDeactivateCodes.FirstOrDefault() ?? string.Empty)}.";
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        _saving = true;
+        try
+        {
+            foreach (var codigo in _pendingDeactivateCodes)
+            {
+                var result = await UiOps.RunAsync(() => ArticulosSvc.DeactivateAsync(codigo), "No se pudo dar de baja el artículo.");
+                if (!result.Success)
+                {
+                    SetFeedback(result.Feedback);
+                    return;
+                }
+            }
+
+            SetFeedback(AppUiMessage.Success("Artículos dados de baja", "Los artículos seleccionados quedaron inactivos."));
+            _selectedCodes.Clear();
+            _showDeactivateConfirm = false;
+            var afectaEditor = !string.IsNullOrWhiteSpace(_selectedCodigo) && _pendingDeactivateCodes.Contains(_selectedCodigo, StringComparer.OrdinalIgnoreCase);
+            _pendingDeactivateCodes.Clear();
+            if (afectaEditor)
+                _showEditor = false;
+
+            await BuscarAsync();
+            UpdatePageHeader();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SetActiveTabAsync(string? key)
+    {
+        if (Enum.TryParse<ArticuloTab>(key, out var tab))
+            _activeTab = tab;
+        await Task.CompletedTask;
+    }
+
+    // ---- Rubro/Marca/Unidad/Proveedor: mismo combo con búsqueda (AlfaLookup) que el panel de
+    // filtros, para que todo campo de tabla relacionada se maneje de forma homogénea en todo el
+    // sistema. Rubro/Marca/Unidad además permiten "crear nuevo" -- si no se selecciona nada de la
+    // lista, el texto tipeado (SearchText, ligado a *_form.XxxDescripcion*) se manda igual y el
+    // servidor lo crea al grabar (ver ResolveOrCreateLookupCodeAsync). Proveedor NO admite crear
+    // nuevo -- si no se selecciona un ítem real de vt_proveedores, el código queda vacío.
+
+    private Task<IReadOnlyList<ArticuloLookupOptionDto>> BuscarUnidadesFiltroAsync(string texto, CancellationToken ct)
+        => Task.FromResult(FiltrarLookup(_lookups.Unidades, texto));
+
+    private Task<IReadOnlyList<ArticuloLookupOptionDto>> BuscarProveedoresAsync(string texto, CancellationToken ct)
+        => ArticulosSvc.SearchProveedoresAsync(texto, ct);
+
+    private Task OnRubroSeleccionadoAsync(ArticuloLookupOptionDto? item)
+    {
+        _rubroSeleccionado = item;
+        _form.RubroCodigo = item?.Codigo ?? string.Empty;
+        if (item is not null)
+            _form.RubroDescripcion = item.Descripcion;
+        return Task.CompletedTask;
+    }
+
+    private Task OnMarcaSeleccionadaAsync(ArticuloLookupOptionDto? item)
+    {
+        _marcaSeleccionada = item;
+        _form.MarcaCodigo = item?.Codigo ?? string.Empty;
+        if (item is not null)
+            _form.MarcaDescripcion = item.Descripcion;
+        return Task.CompletedTask;
+    }
+
+    private Task OnUnidadSeleccionadaAsync(ArticuloLookupOptionDto? item)
+    {
+        _unidadSeleccionada = item;
+        _form.UnidadCodigo = item?.Codigo ?? string.Empty;
+        if (item is not null)
+            _form.UnidadDescripcion = item.Descripcion;
+        return Task.CompletedTask;
+    }
+
+    private Task OnProveedorSeleccionadoAsync(ArticuloLookupOptionDto? item)
+    {
+        _proveedorSeleccionado = item;
+        _form.CuentaProveedor = item?.Codigo ?? string.Empty;
+        _proveedorTexto = item is null ? _proveedorTexto : $"{item.Codigo} -- {item.Descripcion}";
+        return Task.CompletedTask;
+    }
+
+    private static decimal ParseDecimal(string? value)
+        => decimal.TryParse((value ?? string.Empty).Trim().Replace(",", "."),
+            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0m;
+
+    /// <summary>Mismo cálculo bidireccional Precio&lt;-&gt;Costo&lt;-&gt;Utilidad que
+    /// CalcularUtlPrecio en FrmArtAlta.frm: si el precio incluye IVA (Cfg MaestroArticuloConIva), el
+    /// margen se calcula sobre el precio neto de IVA.</summary>
+    private Task OnCostoChangedAsync(string? value)
+    {
+        _form.Costo = ParseDecimal(value);
+        if (_form.Utilidad > 0)
+            RecalcularPrecioDesdeUtilidad();
+        return Task.CompletedTask;
+    }
+
+    private Task OnUtilidadChangedAsync(string? value)
+    {
+        _form.Utilidad = ParseDecimal(value);
+        RecalcularPrecioDesdeUtilidad();
+        return Task.CompletedTask;
+    }
+
+    private Task OnPrecioChangedAsync(string? value)
+    {
+        _form.Precio = ParseDecimal(value);
+        RecalcularUtilidadDesdePrecio();
+        return Task.CompletedTask;
+    }
+
+    private void RecalcularPrecioDesdeUtilidad()
+    {
+        var precio = _form.Costo + (_form.Utilidad * _form.Costo / 100m);
+        if (_lookups.PrecioIncluyeIva && !_form.Exento)
+        {
+            var alicuota = _form.TasaIva > 0 ? _form.TasaIva : _lookups.TasaIvaDefault;
+            precio *= 1 + (alicuota / 100m);
+        }
+
+        _form.Precio = Math.Round(precio, 2);
+    }
+
+    private void RecalcularUtilidadDesdePrecio()
+    {
+        if (_form.Costo <= 0)
+            return;
+
+        var precioNeto = _form.Precio;
+        if (_lookups.PrecioIncluyeIva && !_form.Exento)
+        {
+            var alicuota = _form.TasaIva > 0 ? _form.TasaIva : _lookups.TasaIvaDefault;
+            precioNeto /= 1 + (alicuota / 100m);
+        }
+
+        _form.Utilidad = _form.Costo >= precioNeto ? 0 : Math.Round(((precioNeto * 100m) / _form.Costo) - 100m, 2);
+    }
+
+    private string GetArticuloInitial()
+        => string.IsNullOrWhiteSpace(_form.Descripcion) ? "?" : _form.Descripcion.Trim()[..1].ToUpperInvariant();
+
+    private string GetSummary()
+        => _pagedTotal == 0 ? "Sin resultados" : $"{_pagedTotal:N0} artículo{(_pagedTotal == 1 ? string.Empty : "s")}";
+
+    // ---- Columnas configurables ----
+
+    private List<ArticuloViewColumnDto> GetVisibleColumns()
+        => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private sealed record ArticuloGridGroup(string Label, bool ShowHeader, List<ArticuloGridItemDto> Items);
+
+    private List<ArticuloGridGroup> BuildGridGroups()
+    {
+        if (_viewSettings.AgruparPor != ArticuloViewGroupKeys.Rubro)
+            return [new ArticuloGridGroup(string.Empty, false, _items)];
+
+        return _items
+            .GroupBy(i => string.IsNullOrWhiteSpace(i.RubroDescripcion) ? "Sin rubro" : i.RubroDescripcion)
+            .OrderBy(g => g.Key)
+            .Select(g => new ArticuloGridGroup(g.Key, true, g.ToList()))
+            .ToList();
+    }
+
+    private static string GetColumnCssClass(string key) => $"articulos-col articulos-col--{key}";
+
+    private RenderFragment RenderCell(ArticuloGridItemDto item, string key) => builder =>
+    {
+        var text = key switch
+        {
+            ArticuloViewColumnKeys.Codigo => item.Codigo,
+            ArticuloViewColumnKeys.CodigoBarra => item.CodigoBarra,
+            ArticuloViewColumnKeys.Descripcion => item.Descripcion,
+            ArticuloViewColumnKeys.Rubro => item.RubroDescripcion,
+            ArticuloViewColumnKeys.Marca => item.MarcaDescripcion,
+            ArticuloViewColumnKeys.Unidad => item.UnidadDescripcion,
+            ArticuloViewColumnKeys.Costo => item.Costo.ToString("N2"),
+            ArticuloViewColumnKeys.Precio => item.Precio.ToString("N2"),
+            ArticuloViewColumnKeys.TasaIva => item.TasaIva.ToString("N2"),
+            _ => string.Empty
+        };
+        builder.AddContent(0, text);
+    };
+
+    private async Task EnsureViewSettingsLoadedAsync(bool force = false)
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (!force && _viewSettingsLoaded && string.Equals(_viewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            _viewSettings = BuildDefaultViewSettings();
+            _viewMode = _viewSettings.Vista;
+            _viewSettingsLoaded = true;
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => ArticulosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
+        _viewSettings = result.Success && result.Value is not null ? result.Value : BuildDefaultViewSettings();
+        _viewMode = _viewSettings.Vista == ArticuloViewModeKeys.Kanban ? ArticuloViewModeKeys.Kanban : ArticuloViewModeKeys.Listado;
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+
+        _viewSettingsUserName = currentUser;
+        _viewSettingsLoaded = true;
+    }
+
+    private static ArticuloViewSettingsDto BuildDefaultViewSettings() => new()
+    {
+        Columnas =
+        [
+            new() { Key = ArticuloViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
+            new() { Key = ArticuloViewColumnKeys.Descripcion, Label = "Descripción", Visible = true, Order = 1 },
+            new() { Key = ArticuloViewColumnKeys.Rubro, Label = "Rubro", Visible = true, Order = 2 },
+            new() { Key = ArticuloViewColumnKeys.Costo, Label = "Costo", Visible = true, Order = 3 },
+            new() { Key = ArticuloViewColumnKeys.Precio, Label = "Precio", Visible = true, Order = 4 }
+        ]
+    };
+
+    private void AbrirConfiguracionVista()
+    {
+        _showViewSettings = true;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(_viewSettings.Columnas.Select(c => new ArticuloViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }));
+    }
+
+    private void CancelarConfiguracionVista()
+    {
+        _showViewSettings = false;
+        _viewSettingsDraft.Clear();
+    }
+
+    private void SetColumnVisibility(string key, bool? visible)
+    {
+        var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is not null)
+            column.Visible = visible == true;
+    }
+
+    private void MoveColumn(string key, int delta)
+    {
+        var ordered = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+        var index = ordered.FindIndex(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= ordered.Count)
+            return;
+
+        (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
+        for (var i = 0; i < ordered.Count; i++)
+            ordered[i].Order = i;
+
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(ordered);
+    }
+
+    private async Task GuardarConfiguracionVistaAsync()
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            SetFeedback(AppUiMessage.Warning("Configurar vista", "No hay un usuario logueado para guardar la configuración."));
+            return;
+        }
+
+        _savingViewSettings = true;
+        try
+        {
+            var nueva = new ArticuloViewSettingsDto { Columnas = _viewSettingsDraft.OrderBy(c => c.Order).ToList() };
+            var result = await UiOps.RunAsync(async () => { await ArticulosSvc.SaveViewSettingsAsync(currentUser, nueva); return true; }, "No se pudo guardar la configuración de vista.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _viewSettings = nueva;
+            _showViewSettings = false;
+            SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de columnas se guardó correctamente."));
+        }
+        finally
+        {
+            _savingViewSettings = false;
+        }
+    }
+}

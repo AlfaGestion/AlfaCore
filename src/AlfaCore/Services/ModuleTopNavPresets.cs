@@ -88,7 +88,8 @@ public static class ModuleTopNavPresets
             ("empresa", "Empresa", "/configuracion-general"),
             ("logo", "Logo y Estilo", "/configuracion-general/logo"),
             ("email", "Email", "/configuracion-general/email"),
-            ("ventas", "Ventas", "/configuracion-general/ventas")
+            ("ventas", "Ventas", "/configuracion-general/ventas"),
+            ("articulos", "Artículos", "/configuracion-general/articulos")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)
