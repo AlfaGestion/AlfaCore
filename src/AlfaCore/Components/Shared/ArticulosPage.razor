@@ -67,6 +67,7 @@
                                Articulos="@_buscarImagenOrigen"
                                IdClienteFtp="@_ftpCodigoCta"
                                IdBase="@SessionSvc.GetActiveSession()?.BaseId"
+                               IncluirExistentesInicial="@_incluirExistentesEnBusqueda"
                                OnAsignadas="OnImagenAsignadaAsync"
                                OnClose="CerrarBusquedaImagenAsync" />
 
@@ -361,6 +362,7 @@
     private bool _subiendoImagen;
     private bool _showBuscarImagenModal;
     private IReadOnlyList<BaseMaestraImagenOrigenDto> _buscarImagenOrigen = [];
+    private bool _incluirExistentesEnBusqueda;
     private string? _ftpCodigoCta;
     private ArticuloSaveRequest _form = new();
     private AppUiMessage? _feedback;
@@ -522,6 +524,7 @@
         if (_selectedCodes.Count > 0)
         {
             actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "buscar-imagenes-masivo", Label = "Buscar imágenes", Icon = "bi-search", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = AbrirBusquedaImagenBulkAsync });
             actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = () => { OpenDeactivateConfirm(_selectedCodes.ToList()); return Task.CompletedTask; } });
             actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { _selectedCodes.Clear(); UpdatePageHeader(); return Task.CompletedTask; } });
         }
@@ -1068,6 +1071,10 @@
                 TieneImagenActual = !string.IsNullOrWhiteSpace(_imagenUrl)
             }
         ];
+        // Búsqueda de UN artículo puntual y explícito -- el usuario ya sabe que puede tener o no
+        // imagen, así que mostramos el resultado directo en vez del gate pensado para la búsqueda en
+        // lote (ver AbrirBusquedaImagenBulkAsync, que sí necesita filtrar los que ya tienen imagen).
+        _incluirExistentesEnBusqueda = true;
         _showBuscarImagenModal = true;
     }
 
@@ -1077,18 +1084,60 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>Versión en lote: busca y asigna automáticamente (la primera imagen encontrada por
+    /// artículo) para todos los seleccionados en la lista, reutilizando el mismo diálogo
+    /// -- BaseMaestraImagenesDialog ya soporta N artículos, acá solo cambia de dónde sale la lista
+    /// (la selección de la grilla en vez del único artículo abierto en el editor).</summary>
+    private async Task AbrirBusquedaImagenBulkAsync()
+    {
+        if (_selectedCodes.Count == 0)
+            return;
+
+        _ftpCodigoCta ??= await ArticulosSvc.GetFtpCodigoCtaAsync();
+        if (string.IsNullOrWhiteSpace(_ftpCodigoCta))
+        {
+            SetFeedback(AppUiMessage.Warning("Buscar imágenes", "No se pudo determinar el código de cliente FTP para buscar/guardar imágenes."));
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _buscarImagenOrigen = _items
+            .Where(i => _selectedCodes.Contains(i.Codigo))
+            .Select(i => new BaseMaestraImagenOrigenDto
+            {
+                IdArticulo = i.Codigo,
+                DescripcionArticulo = i.Descripcion,
+                CodigoBarra = i.CodigoBarra,
+                TieneImagenActual = false
+            })
+            .ToList();
+
+        if (_buscarImagenOrigen.Count == 0)
+            return;
+
+        _incluirExistentesEnBusqueda = false;
+        _showBuscarImagenModal = true;
+        // Invocado desde una PageHeaderAction del topbar (MainPageHeader, componente distinto de esta
+        // página) -- sin este StateHasChanged explícito el diálogo queda armado pero invisible hasta
+        // que algo más fuerce un render (por eso "Recargar" lo hacía aparecer). Mismo bug que
+        // OpenDeactivateConfirm más abajo.
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private async Task OnImagenAsignadaAsync(BaseMaestraImagenResultadoDto resultado)
     {
         _showBuscarImagenModal = false;
-        if (resultado.Asignadas > 0)
-        {
-            _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo, forzarRecarga: true);
-            SetFeedback(AppUiMessage.Success("Imagen actualizada", "La imagen del artículo se guardó correctamente."));
-        }
-        else
+        if (resultado.Asignadas <= 0)
         {
             SetFeedback(AppUiMessage.Info("Buscar en internet", "No se asignó ninguna imagen."));
+            return;
         }
+
+        SetFeedback(AppUiMessage.Success("Imágenes actualizadas", $"{resultado.Asignadas} imagen(es) se guardaron correctamente."));
+        if (_showEditor)
+            _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo, forzarRecarga: true);
+        else
+            await BuscarAsync();
     }
 
     private void CerrarEditor()
@@ -1135,6 +1184,11 @@
         _pendingDeactivateCodes.Clear();
         _pendingDeactivateCodes.AddRange(codigos);
         _showDeactivateConfirm = true;
+        // Se llama tanto desde el menú de la fila (ya dispara render solo, vive en el árbol de esta
+        // página) como desde una PageHeaderAction del topbar (la dispara MainPageHeader, un
+        // componente distinto -- sin este StateHasChanged explícito, el diálogo queda armado pero
+        // invisible). Ver [[feedback_alfadesign_shell_modulos_nuevos]] para el mismo patrón de bug.
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void CloseDeactivateConfirm()

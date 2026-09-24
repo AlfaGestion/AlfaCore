@@ -41,7 +41,7 @@
                 @foreach (var item in Items)
                 {
                     var selected = SelectedCodes.Contains(item.Codigo);
-                    var imagenUrl = BuildImagenUrl(item.Codigo);
+                    var imagenUrl = BuildImagenUrl(item);
 
                     <article class="articulos-kanban-card @(selected ? "is-selected" : string.Empty)"
                              @ondblclick="() => OnOpenRecord.InvokeAsync(item.Codigo)"
@@ -51,13 +51,10 @@
                         </label>
 
                         <div class="articulos-kanban-card__media">
+                            <i class="bi bi-box-seam" aria-hidden="true"></i>
                             @if (!string.IsNullOrWhiteSpace(imagenUrl))
                             {
                                 <img src="@imagenUrl" alt="@item.Descripcion" onerror="this.style.display='none'" />
-                            }
-                            else
-                            {
-                                <i class="bi bi-box-seam" aria-hidden="true"></i>
                             }
                         </div>
 
@@ -107,8 +104,8 @@
     [Parameter] public EventCallback OnRetry { get; set; }
     [Parameter] public EventCallback OnEmptyAction { get; set; }
 
-    private string BuildImagenUrl(string codigo)
+    private string BuildImagenUrl(ArticuloGridItemDto item)
         => string.IsNullOrWhiteSpace(FtpCodigoCta)
             ? string.Empty
-            : ArticuloImagenUrlHelper.BuildPublicImageUrl(FtpCodigoCta, codigo, IdBase, thumbnail: true);
+            : ArticuloImagenUrlHelper.BuildPublicImageUrl(FtpCodigoCta, item.Codigo, IdBase, thumbnail: true, forzarRecarga: item.ImagenModificada);
 }

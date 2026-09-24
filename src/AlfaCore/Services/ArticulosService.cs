@@ -60,7 +60,8 @@ public sealed class ArticulosService(
                     ISNULL(a.TasaIVA, 0) AS TasaIva,
                     ISNULL(a.EXENTO, 0) AS Exento,
                     ISNULL(a.Pesable, 0) AS Pesable,
-                    CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Activo
+                    CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Activo,
+                    CASE WHEN ISNULL(a.ModificoImagen, '') = 'S' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.v_ta_rubros r ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.v_ta_tipoArticulo t ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))

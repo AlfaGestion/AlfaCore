@@ -194,6 +194,12 @@
     [Parameter] public EventCallback<BaseMaestraImagenResultadoDto> OnAsignadas { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
+    /// <summary>Cuando el llamador ya sabe que va a pedir imagen para un artículo puntual (el usuario
+    /// hizo clic en "Buscar en internet" sobre ESE artículo), arranca mostrando el resultado directo en
+    /// vez del gate "no hay artículos sin imagen" que solo tiene sentido para la búsqueda en lote (donde
+    /// sí interesa filtrar los que ya tienen imagen antes de mostrar la lista).</summary>
+    [Parameter] public bool IncluirExistentesInicial { get; set; }
+
     private bool _wasOpen;
     private bool _cargando;
     private bool _asignando;
@@ -214,7 +220,7 @@
         if (Open && !_wasOpen)
         {
             _wasOpen = true;
-            _incluirExistentes = false;
+            _incluirExistentes = IncluirExistentesInicial;
             await CargarAsync(forceRefresh: false);
         }
         else if (!Open)

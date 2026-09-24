@@ -34,6 +34,10 @@ public sealed class ArticuloGridItemDto
     public bool Exento { get; set; }
     public bool Pesable { get; set; }
     public bool Activo { get; set; } = true;
+
+    /// <summary>V_MA_ARTICULOS.ModificoImagen='S' -- misma bandera que ya usa CatalogoPublico.razor
+    /// para invalidar el caché local de ArticuloImagenFtpService cuando la imagen cambió.</summary>
+    public bool ImagenModificada { get; set; }
 }
 
 public class ArticuloSaveRequest
