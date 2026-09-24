@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/interfaces/configuracion"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesConfigService ConfigSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
@@ -15,7 +16,7 @@
             <p class="page-intro__text">Definí dónde se guardan los documentos recibidos por la bandeja de Interfaces y qué reglas de carga aplica la base activa.</p>
         </div>
         <div class="actions">
-            <a class="btn btn--ghost" href="/interfaces">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
                 <i class="bi bi-arrow-left"></i> Volver
             </a>
             <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@(Loading || Saving)">
