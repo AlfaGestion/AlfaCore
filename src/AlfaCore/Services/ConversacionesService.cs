@@ -5080,6 +5080,15 @@ public sealed class ConversacionesService(
                 if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
+                var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                    activeBaseId, numero?.IdNumero ?? conversation.IdNumeroWhatsApp,
+                    whatsAppConfig.PhoneNumberId, whatsAppConfig, token);
+                whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
+                whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
+                whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
+                whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
+
                 var deliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numero);
                 EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
@@ -5121,19 +5130,41 @@ public sealed class ConversacionesService(
 
             if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
             {
-                var sendResult = await SendAttachmentToWhatsAppAsync(
-                    whatsAppConfig,
-                    conversation.TelefonoWhatsApp,
-                    rutaLocal,
-                    nombreArchivo,
-                    mimeType,
-                    messageType,
-                    token);
+                try
+                {
+                    var sendResult = await SendAttachmentToWhatsAppAsync(
+                        whatsAppConfig,
+                        conversation.TelefonoWhatsApp,
+                        rutaLocal,
+                        nombreArchivo,
+                        mimeType,
+                        messageType,
+                        token);
 
-                whatsAppMessageId = sendResult.WhatsAppMessageId;
-                finalState = sendResult.EstadoEnvio;
-                payload = sendResult.PayloadJson;
-                await BindConversationToMetaNumberAsync(request.IdConversacion, whatsAppConfig.PhoneNumberId, token);
+                    whatsAppMessageId = sendResult.WhatsAppMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                    await BindConversationToMetaNumberAsync(request.IdConversacion, whatsAppConfig.PhoneNumberId, token);
+                }
+                catch (Exception ex)
+                {
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "UploadAttachmentWhatsAppSend",
+                        ex,
+                        "No se pudo enviar el adjunto por WhatsApp.",
+                        new
+                        {
+                            request.IdConversacion,
+                            whatsAppConfig.PhoneNumberId,
+                            TipoArchivo = messageType,
+                            MimeType = mimeType,
+                            TamanoBytes = tamanoBytes
+                        },
+                        AppEventSeverity.Error,
+                        token);
+                    throw;
+                }
             }
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
