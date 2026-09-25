@@ -274,7 +274,7 @@ public sealed class FacturaDocumentService(
             WHERE a.TCO_ORIGEN = @Tc
               AND a.IDComprobante_ORIGEN = @IdComprobante
               AND b.[DEBE-HABER] = 'D'
-            ORDER BY ISNULL(b.ID, 0);
+            ORDER BY ISNULL(b.[NUMERO ASIENTO], 0), ISNULL(b.SECUENCIA, 0), b.CUENTA;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
             cancellationToken: ct));

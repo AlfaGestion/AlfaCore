@@ -1268,6 +1268,70 @@
         font-weight: 900;
     }
 
+    .pos-manual-article-modal {
+        display: block;
+        width: min(520px, calc(100vw - 2rem));
+    }
+
+    .pos-manual-article-modal__hint {
+        margin: 0;
+        color: var(--color-muted);
+        line-height: 1.45;
+    }
+
+    .pos-manual-article-modal__fields {
+        display: grid;
+        gap: 0.8rem;
+        margin-top: 0.25rem;
+    }
+
+    .pos-manual-article-modal__fields label {
+        display: grid;
+        gap: 0.35rem;
+        color: var(--color-muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    .pos-manual-article-modal__fields input {
+        min-height: 2.8rem;
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-manual-article-modal__error {
+        margin: 0;
+        color: #fecaca;
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+
+    .pos-manual-article-modal__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.6rem;
+        margin-top: 1rem;
+    }
+
+    .pos-manual-article-modal__actions button {
+        min-height: 2.8rem;
+        padding: 0 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+        font-weight: 800;
+    }
+
+    .pos-manual-article-modal__actions button:last-child {
+        border-color: rgba(56, 189, 248, 0.55);
+        background: rgba(56, 189, 248, 0.16);
+    }
+
     .pos-topbar__menu {
         position: relative;
     }
@@ -3845,6 +3909,65 @@
     </section>
 }
 
+@if (_manualArticlePending is not null)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar carga manual" @onclick="CloseManualArticleModal"></button>
+    <section class="pos-item-modal pos-manual-article-modal" aria-label="Cargar artículo especial">
+        <div class="pos-item-modal__top">
+            <div>
+                <div class="pos-item-modal__code"># @_manualArticlePending.IdArticulo</div>
+                <h3 class="pos-item-modal__title">
+                    @(_manualArticleRequiresDescription ? "Cargar artículo manual" : "Ingresar precio")
+                </h3>
+            </div>
+            <button type="button" class="pos-item-modal__close" @onclick="CloseManualArticleModal">X</button>
+        </div>
+
+        <p class="pos-manual-article-modal__hint">
+            @(_manualArticleRequiresDescription
+                ? "Este artículo requiere que ingreses la descripción y el precio antes de agregarlo al carrito."
+                : "Este artículo no tiene precio configurado. Ingresá el precio antes de agregarlo al carrito.")
+        </p>
+
+        <div class="pos-manual-article-modal__fields">
+            @if (_manualArticleRequiresDescription)
+            {
+                <label for="pos-manual-article-description">
+                    Descripción
+                    <input id="pos-manual-article-description"
+                           @ref="_manualArticleDescriptionRef"
+                           @bind="_manualArticleDescription"
+                           @bind:event="oninput"
+                           @onkeydown="HandleManualArticleDescriptionKeyDown"
+                           autocomplete="off"
+                           placeholder="Ingresá la descripción" />
+                </label>
+            }
+            <label for="pos-manual-article-price">
+                Precio unitario
+                <input id="pos-manual-article-price"
+                       @ref="_manualArticlePriceRef"
+                       @bind="_manualArticlePriceInput"
+                       @bind:event="oninput"
+                       @onkeydown="HandleManualArticlePriceKeyDown"
+                       inputmode="decimal"
+                       autocomplete="off"
+                       placeholder="0,00" />
+            </label>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_manualArticleError))
+        {
+            <p class="pos-manual-article-modal__error">@_manualArticleError</p>
+        }
+
+        <div class="pos-manual-article-modal__actions">
+            <button type="button" @onclick="CloseManualArticleModal">Cancelar</button>
+            <button type="button" @onclick="ConfirmManualArticleAsync">Agregar al carrito</button>
+        </div>
+    </section>
+}
+
 @if (_showChargeModal)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar cobranza" @onclick="CloseChargeModal" disabled="@_chargeSaving"></button>
@@ -5073,6 +5196,16 @@
     private bool _closeReceiptAfterPrint;
     private string? _selectedCartItemId;
     private string _descriptionBeingEdited = string.Empty;
+    private PuntoVentaArticleDto? _manualArticlePending;
+    private decimal _manualArticlePendingQuantity = 1m;
+    private string _manualArticleDescription = string.Empty;
+    private string _manualArticlePriceInput = string.Empty;
+    private string _manualArticleError = string.Empty;
+    private ElementReference _manualArticleDescriptionRef;
+    private ElementReference _manualArticlePriceRef;
+    private bool _manualArticleRequiresDescription;
+    private bool _manualArticleFocusDescription;
+    private bool _manualArticleFocusPrice;
     private string _scanCode = string.Empty;
     private string _scanError = string.Empty;
     private bool _scanLoading;
@@ -5588,6 +5721,17 @@
             await Js.InvokeVoidAsync("alfaPosRegisterShortcuts");
         }
 
+        if (_manualArticleFocusDescription && _manualArticlePending is not null)
+        {
+            _manualArticleFocusDescription = false;
+            try { await _manualArticleDescriptionRef.FocusAsync(); } catch { }
+        }
+        else if (_manualArticleFocusPrice && _manualArticlePending is not null)
+        {
+            _manualArticleFocusPrice = false;
+            try { await _manualArticlePriceRef.FocusAsync(); } catch { }
+        }
+
         if (_needScanFocus && _context is not null && !_loading && !_scanLoading)
         {
             _needScanFocus = false;
@@ -5682,6 +5826,21 @@
 
     private void AddToCart(PuntoVentaArticleDto article, decimal cantidad = 1m)
     {
+        var esArticuloManual = EsArticuloManual(article.IdArticulo);
+        if (esArticuloManual || article.PrecioUnitario <= 0m)
+        {
+            OpenManualArticleModal(
+                article,
+                cantidad,
+                esArticuloManual || string.IsNullOrWhiteSpace(article.Descripcion));
+            return;
+        }
+
+        AddToCartCore(article, cantidad);
+    }
+
+    private void AddToCartCore(PuntoVentaArticleDto article, decimal cantidad = 1m)
+    {
         _chargeSuccess = null;
         var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
         if (existing is not null)
@@ -5701,6 +5860,116 @@
             Exento = article.Exento,
             Familia = article.Familia
         });
+    }
+
+    private static bool EsArticuloManual(string? idArticulo)
+    {
+        var codigo = (idArticulo ?? string.Empty).Trim();
+        return codigo is "*" or "***" or "****";
+    }
+
+    private void OpenManualArticleModal(
+        PuntoVentaArticleDto article,
+        decimal cantidad,
+        bool requiereDescripcion)
+    {
+        _manualArticlePending = article;
+        _manualArticlePendingQuantity = cantidad;
+        _manualArticleRequiresDescription = requiereDescripcion;
+        _manualArticleDescription = requiereDescripcion
+            ? string.Empty
+            : article.Descripcion?.Trim() ?? string.Empty;
+        _manualArticlePriceInput = string.Empty;
+        _manualArticleError = string.Empty;
+        _manualArticleFocusDescription = requiereDescripcion;
+        _manualArticleFocusPrice = !requiereDescripcion;
+        _selectedCartItemId = null;
+        _needScanFocus = false;
+    }
+
+    private void CloseManualArticleModal()
+    {
+        _manualArticlePending = null;
+        _manualArticlePendingQuantity = 1m;
+        _manualArticleDescription = string.Empty;
+        _manualArticlePriceInput = string.Empty;
+        _manualArticleError = string.Empty;
+        _manualArticleRequiresDescription = false;
+        _manualArticleFocusDescription = false;
+        _manualArticleFocusPrice = false;
+        _needScanFocus = true;
+    }
+
+    private async Task ConfirmManualArticleAsync()
+    {
+        var article = _manualArticlePending;
+        var descripcion = _manualArticleDescription.Trim();
+        if (article is null)
+            return;
+
+        if (descripcion.Length == 0)
+        {
+            _manualArticleError = "Ingresá la descripción del artículo.";
+            return;
+        }
+
+        if (!TryParseMoney(_manualArticlePriceInput, out var precio) || precio <= 0m)
+        {
+            _manualArticleError = "Ingresá un precio unitario válido mayor que cero.";
+            return;
+        }
+
+        var manualArticle = new PuntoVentaArticleDto
+        {
+            IdArticulo = article.IdArticulo,
+            CodigoBarra = article.CodigoBarra,
+            Descripcion = descripcion,
+            Presentacion = article.Presentacion,
+            Procedencia = article.Procedencia,
+            IdFamilia = article.IdFamilia,
+            Familia = article.Familia,
+            IdUnidad = article.IdUnidad,
+            PrecioUnitario = decimal.Round(precio, 2),
+            TasaIva = article.TasaIva,
+            Exento = article.Exento,
+            NoControlaStock = article.NoControlaStock,
+            Pesable = article.Pesable,
+            RutaImagen = article.RutaImagen
+        };
+        var cantidad = _manualArticlePendingQuantity;
+        CloseManualArticleModal();
+
+        if (cantidad < 0m && RequiereClaveCancelar())
+        {
+            AbrirModalClaveCancelar(
+                "Cantidad negativa",
+                "Ingresá la clave para cargar una cantidad negativa.",
+                () =>
+                {
+                    AddToCartCore(manualArticle, cantidad);
+                    return Task.CompletedTask;
+                });
+        }
+        else
+        {
+            AddToCartCore(manualArticle, cantidad);
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleManualArticleDescriptionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            try { await _manualArticlePriceRef.FocusAsync(); } catch { }
+        }
+    }
+
+    private async Task HandleManualArticlePriceKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ConfirmManualArticleAsync();
     }
 
     private void ChangeQty(string idArticulo, decimal delta)
