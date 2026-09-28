@@ -15,7 +15,9 @@ namespace AlfaCore.Configuration;
 /// <summary>
 /// Modo one-shot 100% READ-ONLY para diagnosticar el paso SUBSCRIBING_WABAS sin ejecutar el POST de
 /// suscripcion. Reproduce las dos lecturas previas del flujo real: resolucion de routing + self-check
-/// del callback publico, y GET /{wabaId}/subscribed_apps con la credencial runtime del numero.
+/// del callback publico, y GET /{wabaId}/subscribed_apps con la credencial runtime del numero. Además
+/// hace GET /{phoneNumberId}?fields=webhook_configuration (callback efectivo por nivel) con la misma
+/// credencial. Sólo GET: nunca POST/DELETE a Meta, nunca escribe SQL, nunca toca onboarding.
 /// </summary>
 internal static class WhatsAppSubscriptionInspectionCommand
 {
@@ -193,6 +195,15 @@ internal static class WhatsAppSubscriptionInspectionCommand
             callback.NormalizedCallbackUrl,
             output,
             ct);
+        output.WriteLine("");
+        await InspectPhoneWebhookConfigurationAsync(
+            httpClient,
+            graphBaseUrl,
+            credential,
+            normalizedPhoneNumberId,
+            callback.NormalizedCallbackUrl,
+            output,
+            ct);
 
         var evidence = ResolveEvidence(callback, subscribedApps);
         if (compareIdBase is > 0 && inspectRoutingSource is not null)
@@ -300,9 +311,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         output.WriteLine("=== SUBSCRIBED_APPS GET ===");
         output.WriteLine($"EXPECTED_APP_ID = {ValueOrEmpty(expectedAppId)}");
 
-        var baseUrl = (string.IsNullOrWhiteSpace(graphBaseUrl) ? "https://graph.facebook.com" : graphBaseUrl).TrimEnd('/');
-        var version = (string.IsNullOrWhiteSpace(credential.GraphVersion) ? "v26.0" : credential.GraphVersion).Trim('/');
-        var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(wabaId)}/subscribed_apps?fields={Uri.EscapeDataString("id,override_callback_uri")}&limit=100";
+        var uri = $"{BuildGraphRoot(graphBaseUrl, credential)}/{Uri.EscapeDataString(wabaId)}/subscribed_apps?fields={Uri.EscapeDataString("id,override_callback_uri")}&limit=100";
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -329,12 +338,203 @@ internal static class WhatsAppSubscriptionInspectionCommand
         var alreadySubscribed = IsOurSubscriptionConfirmed(items, expectedAppId, expectedCallback);
 
         output.WriteLine($"SUBSCRIBED_APPS_COUNT = {items.Count}");
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            output.WriteLine($"SUBSCRIBED_APP[{i}]_ID = {ValueOrEmpty(item.AppId)}");
+            WriteMaskedCallback(output, $"SUBSCRIBED_APP[{i}]_OVERRIDE", item.OverrideCallbackUri, expectedCallback);
+        }
         output.WriteLine($"EXPECTED_APP_ID_FOUND = {expectedFound}");
         output.WriteLine($"APP_ALREADY_SUBSCRIBED = {alreadySubscribed}");
         output.WriteLine("ERROR_CODE = N/A");
         output.WriteLine("ERROR_TYPE = N/A");
         output.WriteLine("ERROR_SUMMARY = N/A");
         return new SubscribedAppsInspectionResult(GraphSuccess: true, alreadySubscribed, expectedFound);
+    }
+
+    // Precedencia de Meta para el callback efectivo de un número: override del número > override del
+    // WABA > callback de la App. Sólo se usa para elegir PHONE_WEBHOOK_EFFECTIVE_*; cualquier otro
+    // nivel que devuelva Meta igual se imprime (enmascarado) pero no participa del efectivo.
+    private static readonly string[] PhoneWebhookLevelPrecedence = ["phone_number", "whatsapp_business_account", "application"];
+
+    /// <summary>
+    /// GET /{phoneNumberId}?fields=webhook_configuration con la misma credencial runtime. El schema de
+    /// Meta no se asume: cada nivel puede venir como string (URL) u objeto con una URL adentro. El body
+    /// crudo queda sólo en memoria; se imprime host + path con el WebhookToken enmascarado.
+    /// </summary>
+    private static async Task InspectPhoneWebhookConfigurationAsync(
+        HttpClient httpClient,
+        string graphBaseUrl,
+        WhatsAppRuntimeCredential credential,
+        string phoneNumberId,
+        string expectedCallback,
+        TextWriter output,
+        CancellationToken ct)
+    {
+        output.WriteLine("=== PHONE WEBHOOK_CONFIGURATION GET ===");
+
+        var uri = $"{BuildGraphRoot(graphBaseUrl, credential)}/{Uri.EscapeDataString(phoneNumberId)}?fields={Uri.EscapeDataString("webhook_configuration")}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        string body;
+        HttpStatusCode statusCode;
+        try
+        {
+            using var response = await httpClient.SendAsync(request, ct);
+            body = await response.Content.ReadAsStringAsync(ct);
+            statusCode = response.StatusCode;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            output.WriteLine("PHONE_WEBHOOK_HTTP = N/A");
+            WritePhoneWebhookUnavailable(output);
+            output.WriteLine($"PHONE_WEBHOOK_ERROR_TYPE = {ResolveCallbackExceptionType(ex)}");
+            output.WriteLine($"PHONE_WEBHOOK_ERROR_SUMMARY = {RedactWebhookTokens(Sanitize(ex.Message))}");
+            return;
+        }
+
+        output.WriteLine($"PHONE_WEBHOOK_HTTP = {(int)statusCode}");
+        if ((int)statusCode is < 200 or > 299)
+        {
+            var error = ParseGraphError(body);
+            WritePhoneWebhookUnavailable(output);
+            output.WriteLine($"PHONE_WEBHOOK_ERROR_CODE = {ValueOrEmpty(error.Code)}");
+            output.WriteLine($"PHONE_WEBHOOK_ERROR_TYPE = {ValueOrEmpty(error.Type)}");
+            output.WriteLine($"PHONE_WEBHOOK_ERROR_SUMMARY = {RedactWebhookTokens(ValueOrEmpty(error.Summary))}");
+            return;
+        }
+
+        var levels = ParsePhoneWebhookConfiguration(body);
+        output.WriteLine($"PHONE_WEBHOOK_CONFIG_PRESENT = {levels is not null}");
+        if (levels is null)
+        {
+            output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_LEVEL = N/A");
+            output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_HOST = N/A");
+            output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_PATH = N/A");
+            output.WriteLine("PHONE_WEBHOOK_MATCHES_EXPECTED = False");
+            return;
+        }
+
+        foreach (var (level, callbackUrl) in levels)
+            WriteMaskedCallback(output, $"PHONE_WEBHOOK_LEVEL[{level}]", callbackUrl, expectedCallback);
+
+        var effective = PhoneWebhookLevelPrecedence
+            .Select(level => levels.FirstOrDefault(x => string.Equals(x.Level, level, StringComparison.Ordinal)))
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.CallbackUrl));
+        output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_LEVEL = {(effective.Level is null ? "N/A" : effective.Level)}");
+        output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_HOST = {FormatCallbackHost(effective.CallbackUrl)}");
+        output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_PATH = {MaskWebhookPath(effective.CallbackUrl)}");
+        output.WriteLine($"PHONE_WEBHOOK_MATCHES_EXPECTED = {CallbackMatchesExpected(effective.CallbackUrl, expectedCallback)}");
+    }
+
+    private static void WritePhoneWebhookUnavailable(TextWriter output)
+    {
+        output.WriteLine("PHONE_WEBHOOK_CONFIG_PRESENT = False");
+        output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_LEVEL = N/A");
+        output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_HOST = N/A");
+        output.WriteLine("PHONE_WEBHOOK_EFFECTIVE_PATH = N/A");
+        output.WriteLine("PHONE_WEBHOOK_MATCHES_EXPECTED = False");
+    }
+
+    /// <summary>
+    /// null si Meta no devolvió webhook_configuration (o vino vacío/no-objeto). Si vino, un par
+    /// (nivel, url) por propiedad; la url queda vacía cuando el nivel existe pero no trae una URL
+    /// reconocible. El nombre del nivel se normaliza a [a-z0-9_] para que nunca imprima nada raro.
+    /// </summary>
+    internal static IReadOnlyList<(string Level, string CallbackUrl)>? ParsePhoneWebhookConfiguration(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("webhook_configuration", out var config)
+                || config.ValueKind != JsonValueKind.Object)
+                return null;
+
+            var levels = new List<(string Level, string CallbackUrl)>();
+            foreach (var property in config.EnumerateObject())
+            {
+                var level = Regex.Replace(property.Name.ToLowerInvariant(), "[^a-z0-9_]", string.Empty);
+                if (level.Length == 0)
+                    continue;
+                levels.Add((level, ReadCallbackValue(property.Value)));
+            }
+
+            return levels.Count == 0 ? null : levels;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string ReadCallbackValue(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.String)
+            return value.GetString()?.Trim() ?? string.Empty;
+        if (value.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        foreach (var name in new[] { "override_callback_uri", "callback_uri", "callback_url", "url", "uri" })
+        {
+            var candidate = TryReadString(value, name).Trim();
+            if (candidate.Length > 0)
+                return candidate;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>Imprime {prefix}_HOST / {prefix}_PATH / {prefix}_MATCHES_EXPECTED. Nunca imprime la URL
+    /// completa: el último segmento del path (WebhookToken) va como "&lt;token&gt;" y la query se descarta.</summary>
+    private static void WriteMaskedCallback(TextWriter output, string prefix, string? callbackUrl, string expectedCallback)
+    {
+        output.WriteLine($"{prefix}_HOST = {FormatCallbackHost(callbackUrl)}");
+        output.WriteLine($"{prefix}_PATH = {MaskWebhookPath(callbackUrl)}");
+        output.WriteLine($"{prefix}_MATCHES_EXPECTED = {CallbackMatchesExpected(callbackUrl, expectedCallback)}");
+    }
+
+    internal static string FormatCallbackHost(string? callbackUrl)
+    {
+        if (string.IsNullOrWhiteSpace(callbackUrl))
+            return "N/A";
+        if (!Uri.TryCreate(callbackUrl.Trim(), UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
+            return "INVALID";
+        return uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+    }
+
+    /// <summary>Path con el último segmento (WebhookToken) reemplazado por "&lt;token&gt;"; sin query ni
+    /// fragment. Una URL no absoluta nunca se imprime (podría ser el token suelto).</summary>
+    internal static string MaskWebhookPath(string? callbackUrl)
+    {
+        if (string.IsNullOrWhiteSpace(callbackUrl))
+            return "N/A";
+        if (!Uri.TryCreate(callbackUrl.Trim(), UriKind.Absolute, out var uri))
+            return "INVALID";
+        var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return "/";
+        segments[^1] = "<token>";
+        return "/" + string.Join('/', segments);
+    }
+
+    private static bool CallbackMatchesExpected(string? callbackUrl, string expectedCallback)
+        => !string.IsNullOrWhiteSpace(callbackUrl)
+           && !string.IsNullOrWhiteSpace(expectedCallback)
+           && string.Equals(NormalizeCallbackUri(callbackUrl), expectedCallback, StringComparison.Ordinal);
+
+    /// <summary>Defensa extra para textos libres de Graph (mensajes de error): si Meta llegara a
+    /// incluir una URL de webhook, el segmento que sigue a "/webhook/" nunca se imprime.</summary>
+    private static string RedactWebhookTokens(string text)
+        => Regex.Replace(text, @"(?i)(/webhook/)[^/\s?&""']+", "$1<token>");
+
+    private static string BuildGraphRoot(string graphBaseUrl, WhatsAppRuntimeCredential credential)
+    {
+        var baseUrl = (string.IsNullOrWhiteSpace(graphBaseUrl) ? "https://graph.facebook.com" : graphBaseUrl).TrimEnd('/');
+        var version = (string.IsNullOrWhiteSpace(credential.GraphVersion) ? "v26.0" : credential.GraphVersion).Trim('/');
+        return $"{baseUrl}/{version}";
     }
 
     private static string ResolveEvidence(CallbackInspectionResult callback, SubscribedAppsInspectionResult subscribedApps)
@@ -817,6 +1017,10 @@ internal static class WhatsAppSubscriptionInspectionCommand
         output.WriteLine("ERROR_CODE = N/A");
         output.WriteLine("ERROR_TYPE = N/A");
         output.WriteLine("ERROR_SUMMARY = N/A");
+        output.WriteLine("");
+        output.WriteLine("=== PHONE WEBHOOK_CONFIGURATION GET ===");
+        output.WriteLine("PHONE_WEBHOOK_HTTP = N/A");
+        WritePhoneWebhookUnavailable(output);
         output.WriteLine($"EVIDENCE = {evidence}");
     }
 
