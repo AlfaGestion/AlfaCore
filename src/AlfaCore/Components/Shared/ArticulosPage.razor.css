@@ -105,6 +105,20 @@
     text-align: center;
 }
 
+.articulos-list-table__th--sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.articulos-list-table__th--sortable:hover {
+    color: var(--alfa-text-primary);
+}
+
+.articulos-list-table__th--sortable i {
+    margin-left: 4px;
+    font-size: 10px;
+}
+
 .articulos-list-table__group td {
     background: var(--alfa-bg-table-header);
     color: var(--alfa-text-secondary);

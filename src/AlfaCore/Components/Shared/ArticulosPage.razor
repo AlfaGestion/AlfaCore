@@ -126,7 +126,13 @@
                                 </th>
                                 @foreach (var column in GetVisibleColumns())
                                 {
-                                    <th class="@GetColumnCssClass(column.Key)">@column.Label</th>
+                                    <th class="@GetColumnCssClass(column.Key) articulos-list-table__th--sortable" @onclick="() => OrdenarPorAsync(column.Key)">
+                                        @column.Label
+                                        @if (string.Equals(_filters.SortBy, column.Key, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <i class="bi @(_filters.SortDescending ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
+                                        }
+                                    </th>
                                 }
                                 <th class="articulos-list-table__actions">Acciones</th>
                             </tr>
@@ -221,8 +227,9 @@
             {
                 <div class="articulos-form-grid">
                     <AlfaInput Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
+                               OnBlur="VerificarCodigoNuevoAsync"
                                Disabled="@(!_isNewMode)" Required="true" MaxLength="25"
-                               HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- numérico o alfanumérico." : "No se puede modificar en un artículo existente.")" />
+                               HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- se propone el próximo libre, pero podés cambiarlo; si ya existe, se abre para editar." : "No se puede modificar en un artículo existente.")" />
                     <AlfaInput Label="Código de barras" Value="@_form.CodigoBarra" ValueChanged="v => _form.CodigoBarra = v ?? string.Empty" MaxLength="25" />
 
                     <AlfaInput Label="Descripción" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Required="true" MaxLength="150" Class="articulos-form-grid__span2" />
@@ -854,6 +861,26 @@
         UpdatePageHeader();
     }
 
+    /// <summary>Clic en un encabezado de columna: primer clic ordena ascendente, un segundo clic sobre
+    /// la misma columna invierte a descendente -- orden real contra la base (no solo la página
+    /// visible), consistente con la paginación del listado.</summary>
+    private async Task OrdenarPorAsync(string key)
+    {
+        if (_loadingList)
+            return;
+
+        if (string.Equals(_filters.SortBy, key, StringComparison.OrdinalIgnoreCase))
+            _filters.SortDescending = !_filters.SortDescending;
+        else
+        {
+            _filters.SortBy = key;
+            _filters.SortDescending = false;
+        }
+
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
     private async Task LimpiarFiltrosAsync()
     {
         _filters = new ArticuloFilters();
@@ -948,7 +975,37 @@
         _proveedorSeleccionado = null;
         _imagenUrl = string.Empty;
         UpdatePageHeader();
-        await Task.CompletedTask;
+
+        // Igual que la planilla legacy (Ma_art.frm): propone el próximo código numérico libre como
+        // punto de partida editable -- el usuario puede dejarlo, o sobreescribirlo con cualquier otro
+        // código (existente para editar, o nuevo para dar de alta con ese código puntual).
+        var siguiente = await UiOps.RunAsync(() => ArticulosSvc.GetNextCodigoAsync(), "No se pudo proponer el próximo código.");
+        if (siguiente.Success && _isNewMode && string.IsNullOrWhiteSpace(_form.Codigo))
+        {
+            _form.Codigo = siguiente.Value ?? string.Empty;
+            UpdatePageHeader();
+        }
+    }
+
+    /// <summary>Se dispara al salir del campo Código mientras se está dando de alta un artículo nuevo
+    /// -- reproduce el flujo de "Altas" del legacy: si el código tipeado ya existe, abre ESE artículo
+    /// para editar en vez de dejar seguir cargando un alta duplicada. Evita tener que buscarlo en la
+    /// lista completa cuando hay cientos de códigos parecidos.</summary>
+    private async Task VerificarCodigoNuevoAsync()
+    {
+        if (!_isNewMode)
+            return;
+
+        var codigo = _form.Codigo.Trim();
+        if (codigo.Length == 0)
+            return;
+
+        var existente = await UiOps.RunAsync(() => ArticulosSvc.GetByIdAsync(codigo), "No se pudo verificar el código.");
+        if (existente.Success && existente.Value is not null)
+        {
+            SetFeedback(AppUiMessage.Info("Artículo existente", $"El código {existente.Value.Codigo} ya existe -- abriendo para editar."));
+            await AbrirEditorAsync(existente.Value.Codigo);
+        }
     }
 
     private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
@@ -995,6 +1052,11 @@
             ? null
             : new ArticuloLookupOptionDto { Codigo = _form.CuentaProveedor, Descripcion = result.Value.CuentaProveedorNombre };
         _proveedorTexto = _proveedorSeleccionado is null ? string.Empty : $"{_proveedorSeleccionado.Codigo} -- {_proveedorSeleccionado.Descripcion}";
+        // No confiar en a.UTILIDAD (la columna de la base): igual que el legacy (CalcularUtlPrecio se
+        // ejecuta también al abrir el artículo, no solo al tipear), se recalcula siempre desde
+        // Costo/Precio/IVA -- la columna queda desactualizada apenas el precio se toca por otra vía
+        // (Aumento Global, planilla, etc.) y termina mostrando valores sin sentido como negativos.
+        RecalcularUtilidadDesdePrecio();
         UpdatePageHeader();
         await LoadImagenAsync();
     }
@@ -1336,7 +1398,12 @@
     private void RecalcularUtilidadDesdePrecio()
     {
         if (_form.Costo <= 0)
+        {
+            // Sin costo cargado la utilidad no tiene sentido (división por cero) -- se deja en 0 en
+            // vez de arrastrar el valor crudo de a.UTILIDAD, que puede quedar desactualizado.
+            _form.Utilidad = 0;
             return;
+        }
 
         var precioNeto = _form.Precio;
         if (_lookups.PrecioIncluyeIva && !_form.Exento)

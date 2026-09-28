@@ -43,6 +43,7 @@ public sealed class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
+            var orderByClause = BuildOrderByClause(filters.SortBy, filters.SortDescending, precioColumn);
 
             var sql = $"""
                 SELECT
@@ -76,9 +77,7 @@ public sealed class ArticulosService(
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                 ORDER BY
-                    CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN 0 ELSE 1 END,
-                    ISNULL(a.DESCRIPCION, ''),
-                    LTRIM(RTRIM(a.IDARTICULO))
+                    {orderByClause}
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(*)
@@ -162,6 +161,24 @@ public sealed class ArticulosService(
             var rows = await cn.QueryAsync<ArticuloDetailDto>(new CommandDefinition(sql, new { Codigo = normalizado }, cancellationToken: token));
             return rows.FirstOrDefault();
         }, "No se pudo cargar el artículo.", ct);
+
+    public Task<string> GetNextCodigoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetNextCodigo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+                SELECT ISNULL(MAX(v), 0) + 1
+                FROM (
+                    SELECT TRY_CAST(LTRIM(RTRIM(IDARTICULO)) AS BIGINT) AS v
+                    FROM dbo.V_MA_ARTICULOS
+                ) x
+                WHERE v IS NOT NULL;
+                """, cancellationToken: token));
+
+            return siguiente.ToString();
+        }, "No se pudo calcular el próximo código de artículo.", ct);
 
     public Task<ArticuloLookupDataDto> GetLookupDataAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetLookupData", async token =>
@@ -462,6 +479,32 @@ public sealed class ArticulosService(
         }, "No se pudo guardar la configuración de vista.", ct);
 
     // ---- Helpers privados ----
+
+    /// <summary>Arma el ORDER BY del listado a partir de la columna en la que el usuario hizo clic
+    /// (ver ArticuloViewColumnKeys) -- lista blanca fija, nunca concatena SortBy directo al SQL. Sin
+    /// columna reconocida, mantiene el orden por defecto (activos primero, por descripción).</summary>
+    private static string BuildOrderByClause(string? sortBy, bool descending, string precioColumn)
+    {
+        var direction = descending ? "DESC" : "ASC";
+        var expression = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            ArticuloViewColumnKeys.Codigo =>
+                $"CASE WHEN TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) IS NULL THEN 1 ELSE 0 END {direction}, TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) {direction}",
+            ArticuloViewColumnKeys.CodigoBarra => $"LTRIM(RTRIM(a.CODIGOBARRA)) {direction}",
+            ArticuloViewColumnKeys.Descripcion => $"ISNULL(a.DESCRIPCION, '') {direction}",
+            ArticuloViewColumnKeys.Rubro => $"ISNULL(r.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Marca => $"ISNULL(t.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Unidad => $"ISNULL(u.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Costo => $"ISNULL(a.COSTO, 0) {direction}",
+            ArticuloViewColumnKeys.Precio => $"ISNULL(a.{precioColumn}, 0) {direction}",
+            ArticuloViewColumnKeys.TasaIva => $"ISNULL(a.TasaIVA, 0) {direction}",
+            _ => string.Empty
+        };
+
+        return expression.Length == 0
+            ? "CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN 0 ELSE 1 END, ISNULL(a.DESCRIPCION, ''), LTRIM(RTRIM(a.IDARTICULO))"
+            : $"{expression}, LTRIM(RTRIM(a.IDARTICULO))";
+    }
 
     private static async Task<string> ResolvePrecioVentaColumnAsync(SqlConnection cn, CancellationToken ct)
     {

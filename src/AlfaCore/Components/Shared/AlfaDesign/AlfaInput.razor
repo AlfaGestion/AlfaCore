@@ -19,7 +19,8 @@
            required="@Required"
            aria-invalid="@HasError.ToString().ToLowerInvariant()"
            aria-describedby="@DescribedBy"
-           @oninput="UpdateValueAsync" />
+           @oninput="UpdateValueAsync"
+           @onblur="() => OnBlur.InvokeAsync()" />
     @if (!string.IsNullOrWhiteSpace(ErrorText))
     {
         <div id="@ErrorId" class="alfa-field__message alfa-field__message--error">@ErrorText</div>
@@ -36,6 +37,7 @@
     [Parameter] public string? Label { get; set; }
     [Parameter] public string? Value { get; set; }
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public EventCallback OnBlur { get; set; }
     [Parameter] public string Type { get; set; } = "text";
     [Parameter] public string? Placeholder { get; set; }
     [Parameter] public int? MaxLength { get; set; }
