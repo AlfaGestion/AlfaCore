@@ -169,14 +169,30 @@ public static class DocumentBlockFields
         [TiposBloqueDocumento.Empresa] = [new("Nombre", "Nombre"), new("Cuit", "CUIT"), new("Domicilio", "Domicilio"), new("Telefono", "Teléfono"), new("Email", "Email")],
         [TiposBloqueDocumento.Comprobante] = [new("Numero", "Número"), new("Fecha", "Fecha"), new("Vencimiento", "Vencimiento"), new("Moneda", "Moneda")],
         [TiposBloqueDocumento.Cliente] = [new("Codigo", "Código"), new("RazonSocial", "Razón social"), new("Cuit", "CUIT"), new("CondicionIva", "Condición IVA"), new("Domicilio", "Domicilio"), new("Telefono", "Teléfono"), new("Email", "Email")],
-        [TiposBloqueDocumento.Totales] = [new("Neto", "Neto"), new("Descuento", "Descuento"), new("Impuestos", "Impuestos"), new("Total", "Total")],
+        // "Descuento" se conserva como alias de compatibilidad para plantillas
+        // anteriores. El diseñador nuevo usa los cuatro descuentos por separado.
+        [TiposBloqueDocumento.Totales] =
+        [
+            new("Neto", "Subtotal"),
+            new("Descuento", "Descuentos (todos)"),
+            new("Descuento1", "Descuento 1"), new("Descuento2", "Descuento 2"),
+            new("Descuento3", "Descuento 3"), new("Descuento4", "Descuento 4"),
+            new("Impuestos", "Impuestos / percepciones"),
+            new("Iva", "IVA"), new("IvaRecargo", "IVA recargo"),
+            new("Total", "Total")
+        ],
         [TiposBloqueDocumento.Pie] = [new("NumeroPagina", "Número de página"), new("NombreEmpresa", "Nombre de la empresa")],
         [TiposBloqueDocumento.RecuadroTipo] = [new("Letra", "Letra"), new("CodigoAfip", "Código AFIP")],
-        [TiposBloqueDocumento.Cae] = [new("Cae", "CAE"), new("Vencimiento", "Vencimiento"), new("CodigoBarra", "Código de barras")]
+        [TiposBloqueDocumento.Cae] = [new("Cae", "CAE"), new("Vencimiento", "Vencimiento"), new("CodigoBarra", "Código de barras"), new("Estado", "Estado de autorización")]
     };
 
     public static IReadOnlyList<DocumentFieldOption> For(string tipo)
         => PorTipo.TryGetValue(tipo, out var options) ? options : [];
+
+    public static IReadOnlyList<DocumentFieldOption> ForDesigner(string tipo)
+        => string.Equals(tipo, TiposBloqueDocumento.Totales, StringComparison.OrdinalIgnoreCase)
+            ? PorTipo[TiposBloqueDocumento.Totales].Where(x => !string.Equals(x.Field, "Descuento", StringComparison.OrdinalIgnoreCase)).ToArray()
+            : For(tipo);
 }
 
 /// <summary>Fuente de verdad versionable del diseño; no contiene HTML ni código ejecutable.</summary>
@@ -185,6 +201,10 @@ public sealed class DocumentTemplateDefinition
     public int SchemaVersion { get; set; } = 1;
     public DocumentPaperDefinition Paper { get; set; } = new();
     public bool TotalesAlPiePagina { get; set; }
+    /// <summary>Determina si el detalle impreso dibuja un renglón debajo de cada artículo.</summary>
+    public bool MostrarRenglonesDetalle { get; set; } = true;
+    /// <summary>Datos opcionales pensados para el cierre de tickets y comprobantes del POS.</summary>
+    public DocumentTicketExtrasDefinition DatosTicket { get; set; } = new();
     public List<DocumentBlockDefinition> Blocks { get; set; } = [];
 
     public static DocumentTemplateDefinition CrearCotizacionEstandar() => new()
@@ -261,6 +281,17 @@ public sealed class DocumentTemplateDefinition
             ]
         };
     }
+}
+
+public sealed class DocumentTicketExtrasDefinition
+{
+    public bool MostrarMediosPago { get; set; }
+    public bool MostrarTotalUnidades { get; set; }
+    public bool MostrarCantidadProductos { get; set; }
+    public bool MostrarCajero { get; set; }
+    public bool MostrarVendedor { get; set; }
+    public bool MostrarLeyendaFinal { get; set; }
+    public string LeyendaFinal { get; set; } = "Gracias por su compra";
 }
 
 public sealed class DocumentPaperDefinition
@@ -372,6 +403,7 @@ public sealed class FacturaDocumentData
     public FacturaClienteDocumentData Cliente { get; set; } = new();
     public List<FacturaDocumentItemData> Items { get; set; } = [];
     public FacturaTotalesDocumentData Totales { get; set; } = new();
+    public FacturaTicketExtrasData DatosTicket { get; set; } = new();
     /// <summary>Null = todavía no hay CAE (comprobante pre-electrónico o pendiente de AFIP) -- el
     /// renderer omite el bloque en vez de mostrarlo vacío.</summary>
     public FacturaCaeDocumentData? Cae { get; set; }
@@ -395,6 +427,17 @@ public sealed class FacturaComprobanteDocumentData
     public string CondicionVenta { get; set; } = string.Empty;
     public string Vendedor { get; set; } = string.Empty;
 }
+
+public sealed class FacturaTicketExtrasData
+{
+    public List<FacturaPagoDocumentData> Pagos { get; set; } = [];
+    public decimal TotalUnidades { get; set; }
+    public int CantidadProductos { get; set; }
+    public string Cajero { get; set; } = string.Empty;
+    public string Vendedor { get; set; } = string.Empty;
+}
+
+public sealed record FacturaPagoDocumentData(string MedioPago, decimal Importe);
 
 public sealed class FacturaClienteDocumentData
 {
@@ -441,8 +484,8 @@ public sealed class FacturaTotalesDocumentData
     public string Moneda { get; set; } = string.Empty;
 }
 
-public sealed record FacturaIvaLineaData(decimal Alicuota, decimal Importe);
-public sealed record FacturaDescuentoLineaData(decimal Porcentaje, decimal Importe);
+public sealed record FacturaIvaLineaData(decimal Alicuota, decimal Importe, bool EsRecargo = false);
+public sealed record FacturaDescuentoLineaData(int Numero, decimal Porcentaje, decimal Importe);
 public sealed record FacturaPercepcionLineaData(string Descripcion, decimal BaseImponible, decimal Alicuota, decimal Importe);
 
 /// <summary>Fila liviana para el combo de preview del Diseñador (buscar un comprobante real de una

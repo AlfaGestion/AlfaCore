@@ -21,12 +21,14 @@ internal static class DocumentTicketLayout
             .afip-box{align-self:center;margin:0}.afip-box .letra{font-size:16pt}
             .card{padding:2mm 0;border:0;border-bottom:1px dashed #444;background:white;margin:0 0 3mm}
             .items{display:block;width:100%;margin:2mm 0;font-size:9pt}.items colgroup,.items thead{display:none}
-            .items tbody{display:block}.items tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1mm 2mm;padding:2mm 0;border-bottom:1px dashed #444}
+            .items tbody{display:block}.items tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1mm 2mm;padding:2mm 0}.doc-lines .items tr{border-bottom:1px dashed #444}
             .items td{display:block;min-width:0;padding:0;border:0;font-size:inherit}
             .items td:before{content:attr(data-label);display:block;font-size:7pt;color:#444}
             .items td[data-field="Descripcion"],.items td[data-field="Total"]{grid-column:1/-1}
             .items td[data-field="Descripcion"]{font-weight:600}.items td[data-field="Descripcion"]:before{display:none}
             .totals{width:100%;margin:3mm 0 0;font-size:9pt}.totals td{font-size:inherit}.total-final td{font-size:12pt}
+            .transparencia-fiscal{margin-top:3mm;padding:2mm 0 2.5mm;font-size:8pt}.transparencia-fiscal__row{gap:2mm}.transparencia-fiscal__row span:first-child{min-width:0}.transparencia-fiscal__row span:last-child{white-space:nowrap}
+            .ticket-extras{margin-top:3mm;padding:2mm 0;font-size:8pt}.ticket-extras__row{margin:.8mm 0}.ticket-legend{margin:4mm 0 0;font-size:8pt}.cae-barcode{font-size:7pt;letter-spacing:.04em}.cae-status{font-size:8pt}
             .document-closing{margin:0;display:flow-root}.cae-box{padding:2mm 0;border:0;border-top:1px dashed #444;font-size:8pt}
             .qr-box{text-align:center}.qr-box img{max-width:100%;height:auto!important}
             .signature{margin-top:4mm}.signature-image img{max-width:100%}.ticket-footer{font-size:8pt;text-align:center;margin-top:3mm}

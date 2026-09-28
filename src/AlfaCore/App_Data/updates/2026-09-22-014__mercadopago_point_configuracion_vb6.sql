@@ -1,0 +1,26 @@
+/*
+    Mercado Pago Point -- configuración web equivalente al formulario VB6.
+    No agrega tablas: las opciones se guardan en TA_CONFIGURACION y las asignaciones
+    por punto de venta usando claves MERCADOPAGO_LECTORES_PV_<id>.
+*/
+
+SET NOCOUNT ON;
+
+IF OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NULL
+    RETURN;
+
+IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'MERCADOPAGO_MEDIOS_PAGO')
+    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
+    VALUES (N'MERCADOPAGO', N'MERCADOPAGO_MEDIOS_PAGO', N'', N'Medios de pago habilitados para iniciar cobros con Point, separados por coma.', GETDATE());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'MERCADOPAGO_MEDIO_PAGO_QR')
+    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
+    VALUES (N'MERCADOPAGO', N'MERCADOPAGO_MEDIO_PAGO_QR', N'', N'Código opcional del medio de pago usado para cobros QR con Point.', GETDATE());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'MERCADOPAGO_MEDIO_PAGO_TARJETA')
+    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
+    VALUES (N'MERCADOPAGO', N'MERCADOPAGO_MEDIO_PAGO_TARJETA', N'', N'Código opcional del medio de pago usado para cobros con tarjeta Point.', GETDATE());
+
+IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'MERCADOPAGO_OBTENER_MEDIO_PAGO_AUTOMATICO')
+    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
+    VALUES (N'MERCADOPAGO', N'MERCADOPAGO_OBTENER_MEDIO_PAGO_AUTOMATICO', N'NO', N'Point determina automáticamente el medio de pago utilizado.', GETDATE());

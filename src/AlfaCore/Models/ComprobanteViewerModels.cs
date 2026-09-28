@@ -10,6 +10,8 @@ public sealed class ComprobanteViewerDto
     public IReadOnlyList<ComprobanteAplicacionDto> AplicaA { get; init; } = [];
     public IReadOnlyList<ComprobanteAplicacionDto> AplicadoPor { get; init; } = [];
     public IReadOnlyList<ComprobanteAccionDto> Acciones { get; init; } = [];
+    public IReadOnlyList<ComprobanteAsientoDto> Asientos { get; init; } = [];
+    public bool TieneAsiento { get; init; }
 }
 
 public sealed class ComprobanteCabeceraDto
@@ -35,11 +37,21 @@ public sealed class ComprobanteCabeceraDto
     public string TecnicoCodigo { get; init; } = string.Empty;
     public string TecnicoNombre { get; init; } = string.Empty;
     public string Usuario { get; init; } = string.Empty;
+    public string UnidadNegocio { get; init; } = string.Empty;
+    public string UnidadNegocioDescripcion { get; init; } = string.Empty;
     public decimal ImporteTotal { get; init; }
     public decimal ImporteSinIva { get; init; }
+    public decimal ImporteInsumos { get; init; }
+    public decimal ImporteServicios { get; init; }
+    public decimal ImporteOtrosConceptos { get; init; }
+    public decimal ImporteImpuestosInternos { get; init; }
     public decimal Iva { get; init; }
     public decimal IvaRecargo { get; init; }
-    public decimal Descuentos { get; init; }
+    public decimal Descuento1 { get; init; }
+    public decimal Descuento2 { get; init; }
+    public decimal Descuento3 { get; init; }
+    public decimal Descuento4 { get; init; }
+    public decimal Descuentos => Descuento1 + Descuento2 + Descuento3 + Descuento4;
     public decimal NetoGravado { get; init; }
     public decimal NetoNoGravado { get; init; }
     public bool Anulada { get; init; }
@@ -127,6 +139,25 @@ public sealed class ComprobanteAccionDto
     public string Usuario { get; init; } = string.Empty;
     public string Pc { get; init; } = string.Empty;
     public string Proceso { get; init; } = string.Empty;
+}
+
+public sealed class ComprobanteAsientoDto
+{
+    public int NumeroAsiento { get; init; }
+    public DateTime? Fecha { get; init; }
+    public DateTime? FechaHoraGrabacion { get; init; }
+    public string Cuenta { get; init; } = string.Empty;
+    public string DescripcionCuenta { get; init; } = string.Empty;
+    public string Detalle { get; init; } = string.Empty;
+    public string DebeHaber { get; init; } = string.Empty;
+    public decimal Importe { get; init; }
+    public decimal Debe { get; init; }
+    public decimal Haber { get; init; }
+    public string Cheque { get; init; } = string.Empty;
+    public DateTime? Vencimiento { get; init; }
+    public int Cuotas { get; init; }
+    public string UnidadNegocio { get; init; } = string.Empty;
+    public string Usuario { get; init; } = string.Empty;
 }
 
 public sealed class ComprobanteDocumentoArchivoDto

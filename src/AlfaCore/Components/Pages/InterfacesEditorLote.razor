@@ -3,6 +3,7 @@
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IInterfacesConfigService InterfacesConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -18,7 +19,7 @@
             <p class="page-intro__text">Subí varios comprobantes sueltos de una vez. Los archivos que compartan un patrón de nombre (páginas, "1de2", etc.) se agrupan automáticamente en un mismo comprobante; el resto queda uno por archivo y, si dos terminan siendo la misma factura, la cola de lectura IA los fusiona sola al terminar de leerlos.</p>
         </div>
         <div class="actions">
-            <a class="btn btn--ghost" href="/interfaces">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
                 <i class="bi bi-arrow-left"></i> Volver al listado
             </a>
         </div>
@@ -58,7 +59,7 @@
                             <span>@item.ArchivosOrigen</span>
                         </div>
                         <div class="actions">
-                            <a class="btn btn--ghost btn--sm" href="/interfaces/@item.IdComprobanteRecibido" target="_blank">
+                            <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/interfaces/{item.IdComprobanteRecibido}")" target="_blank">
                                 <i class="bi bi-eye"></i> Ver
                             </a>
                         </div>

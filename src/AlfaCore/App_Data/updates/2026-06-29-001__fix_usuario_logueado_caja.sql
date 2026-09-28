@@ -53,7 +53,7 @@ IF (@unegocio IS NULL) OR (@unegocio = '') SET @unegocio = '   1'
 
 -- FechaHoraGrabacion = fecha + hora; pFecha = solo fecha (sin hora)
 SET @FechaHoraGrabacion = GETDATE()
-SET @pFecha = CONVERT(VARCHAR, @FechaHoraGrabacion, 103)
+SET @pFecha = @FechaHoraGrabacion
 
 -- Cuenta de efectivo por default
 SET @CuentaMP = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE = 'CUENTA_CAJA')

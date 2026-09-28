@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/costos/lotes/{Id:int}"
 @using AlfaCore.Models
 @inject AlfaCore.Services.ICostosService CostosSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
@@ -17,7 +18,7 @@ else if (_detail is null)
 {
     <div class="consultas-error">
         <i class="bi bi-exclamation-triangle"></i> Lote no encontrado.
-        <a href="/costos">Volver al módulo</a>
+        <a href="@RouteContext.BuildRoute("/costos")">Volver al módulo</a>
     </div>
 }
 else

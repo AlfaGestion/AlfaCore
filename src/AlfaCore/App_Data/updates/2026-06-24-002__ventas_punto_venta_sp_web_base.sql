@@ -577,7 +577,7 @@ IF @TCFactura = 'FP'
 ELSE
     SET @TcCobranza = 'CBCT'
 
-SET @pFecha = CONVERT(varchar, GETDATE(), 103)
+SET @pFecha = GETDATE()
 
 IF @pCliente = ''
     SET @pCliente = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE = 'CUENTACONSUMIDORFINAL')
@@ -722,7 +722,7 @@ END
 IF (@unegocio IS NULL) OR (@unegocio = '') SET @unegocio = '   1'
 
 SET @FechaHoraGrabacion = GETDATE()
-SET @pFecha = CONVERT(varchar, @FechaHoraGrabacion, 103)
+SET @pFecha = CONVERT(datetime, CONVERT(varchar(8), @FechaHoraGrabacion, 112), 112)
 
 DECLARE @NroAsiento int
 DECLARE @Periodo nvarchar(6)

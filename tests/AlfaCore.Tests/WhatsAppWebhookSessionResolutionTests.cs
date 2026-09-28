@@ -29,7 +29,7 @@ public sealed class WhatsAppWebhookSessionResolutionTests
             new FakeAppMode(isSaaSMode: true),
             new FakeAppUserSession(),
             basesSpy,
-            new FakeHostEnvironment(),
+            new NullCentralClientesService(), new FakeHostEnvironment(),
             new UninitializedNavigationManager());
 
         session.SetWebhookOverride(WebhookSession(baseId: 106, nombre: "ALFANET"));
@@ -54,7 +54,7 @@ public sealed class WhatsAppWebhookSessionResolutionTests
             new FakeAppMode(isSaaSMode: true),
             new FakeAppUserSession(),
             basesSpy,
-            new FakeHostEnvironment(),
+            new NullCentralClientesService(), new FakeHostEnvironment(),
             navigationManager);
 
         session.SetWebhookOverride(WebhookSession(baseId: 106, nombre: "ALFANET"));
@@ -72,12 +72,12 @@ public sealed class WhatsAppWebhookSessionResolutionTests
     {
         var sessionForBaseA = new ConexionClienteService(
             new FakeAppMode(isSaaSMode: true), new FakeAppUserSession(),
-            new SpyCentralBasesService(), new FakeHostEnvironment(), new UninitializedNavigationManager());
+            new SpyCentralBasesService(), new NullCentralClientesService(), new FakeHostEnvironment(), new UninitializedNavigationManager());
         sessionForBaseA.SetWebhookOverride(WebhookSession(baseId: 84, nombre: "BASE_A", dbName: "AW_84"));
 
         var sessionForBaseB = new ConexionClienteService(
             new FakeAppMode(isSaaSMode: true), new FakeAppUserSession(),
-            new SpyCentralBasesService(), new FakeHostEnvironment(), new UninitializedNavigationManager());
+            new SpyCentralBasesService(), new NullCentralClientesService(), new FakeHostEnvironment(), new UninitializedNavigationManager());
         sessionForBaseB.SetWebhookOverride(WebhookSession(baseId: 106, nombre: "BASE_B", dbName: "AW_106"));
 
         var activeA = sessionForBaseA.GetActiveSession();
@@ -101,7 +101,7 @@ public sealed class WhatsAppWebhookSessionResolutionTests
             new FakeAppMode(isSaaSMode: true),
             new FakeAppUserSession(),
             new SpyCentralBasesService(),
-            new FakeHostEnvironment(),
+            new NullCentralClientesService(), new FakeHostEnvironment(),
             new UninitializedNavigationManager());
         session.SetWebhookOverride(WebhookSession(baseId: 106, nombre: "BASE_A"));
 
@@ -248,6 +248,17 @@ public sealed class WhatsAppWebhookSessionResolutionTests
 
         public Task<string> EnsureWebhookTokenAsync(int idBase, CancellationToken ct = default)
             => Task.FromResult(string.Empty);
+    }
+
+    // Nunca debe consultarse en estos tests: el webhook override se resuelve antes de cualquier
+    // validación de ruta (ver ConexionClienteService.ResolveValidatedRouteSessionAsync).
+    private sealed class NullCentralClientesService : ICentralClientesService
+    {
+        public Task<ClienteCentralDto?> GetByIdClienteAsync(string idCliente, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
+        public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
+        public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
+        public Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ClienteCentralDto>>([]);
+        public Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default) => Task.FromResult(string.Empty);
     }
 
     private sealed class NullHttpClientFactory : IHttpClientFactory

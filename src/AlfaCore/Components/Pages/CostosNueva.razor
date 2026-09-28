@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/costos/nueva"
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.ICostosService CostosSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Nav
@@ -167,7 +168,7 @@
                     <i class="bi bi-arrow-clockwise"></i>
                     <span>Volver a correr</span>
                 </button>
-                <a class="btn btn--ghost" href="/costos/lotes/@_result.Batch.Id">
+                <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/costos/lotes/{_result.Batch.Id}")">
                     <i class="bi bi-box-arrow-right"></i>
                     <span>Abrir lote</span>
                 </a>

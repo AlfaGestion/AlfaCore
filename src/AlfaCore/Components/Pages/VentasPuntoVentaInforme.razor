@@ -18,28 +18,6 @@
         </div>
     </div>
 
-    <section class="panel-card filters-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">Elegí el período que querés consultar.</p>
-            </div>
-            <button type="button" class="btn btn--primary btn--sm" @onclick="CargarAsync" disabled="@_loading">
-                <i class="bi bi-search"></i> Buscar
-            </button>
-        </div>
-        <div class="filters-grid filters-grid--dates">
-            <div class="field">
-                <label>Desde</label>
-                <InputDate @bind-Value="_fechaDesde" />
-            </div>
-            <div class="field">
-                <label>Hasta</label>
-                <InputDate @bind-Value="_fechaHasta" />
-            </div>
-        </div>
-    </section>
-
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <div class="panel-card empty-state"><p>@_error</p></div>
@@ -55,6 +33,19 @@
             <KpiCard Titulo="Comprobantes" Valor="@_comprobantes.ToString("N0")" Icono="#" />
             <KpiCard Titulo="Puntos de venta" Valor="@_rows.Count.ToString("N0")" Icono="P" />
         </div>
+
+        @if (_resumenMensual is not null && _mensual)
+        {
+            <DataTable Titulo="Resumen mensual" Subtitulo="Totales agrupados por mes dentro del período seleccionado.">
+                <Header><tr><th>Período</th><th style="text-align:right;">Total vendido</th></tr></Header>
+                <Rows>
+                    @foreach (var periodo in _resumenMensual.EvolucionMensual)
+                    {
+                        <tr><td>@periodo.Periodo</td><td style="text-align:right;"><strong>@Moneda(periodo.Total)</strong></td></tr>
+                    }
+                </Rows>
+            </DataTable>
+        }
 
         <DataTable Titulo="Ventas por punto de venta" Subtitulo="Resumen agrupado por el punto de venta configurado.">
             <Header>
@@ -95,21 +86,306 @@
                 }
             </Rows>
         </DataTable>
+
+        @if (_rubros && _rubrosData is not null)
+        {
+            <DataTable Titulo="Detalle por rubro" Subtitulo="Ventas agrupadas por rubro con el período seleccionado.">
+                <Header><tr><th>Rubro</th><th style="text-align:right;">Artículos</th><th style="text-align:right;">Comprobantes</th><th style="text-align:right;">Total</th></tr></Header>
+                <Rows>
+                    @foreach (var rubro in _rubrosData.Rubros)
+                    {
+                        <tr><td><strong>@rubro.Rubro</strong></td><td style="text-align:right;">@rubro.CantidadArticulos.ToString("N0")</td><td style="text-align:right;">@rubro.CantidadComprobantes.ToString("N0")</td><td style="text-align:right;"><strong>@Moneda(rubro.TotalVendido)</strong></td></tr>
+                    }
+                </Rows>
+            </DataTable>
+        }
+
+        @if (_productos && _productosData is not null)
+        {
+            <DataTable Titulo="Venta por productos" Subtitulo="Productos vendidos dentro del período seleccionado.">
+                <Header><tr><th>Código</th><th>Descripción</th><th style="text-align:right;">Cantidad</th><th style="text-align:right;">Comprobantes</th><th style="text-align:right;">Total</th></tr></Header>
+                <Rows>
+                    @foreach (var articulo in _productosData.Articulos)
+                    {
+                        <tr><td>@articulo.IdArticulo</td><td><strong>@articulo.Descripcion</strong></td><td style="text-align:right;">@articulo.CantidadVendida.ToString("N2")</td><td style="text-align:right;">@articulo.CantidadComprobantes.ToString("N0")</td><td style="text-align:right;"><strong>@Moneda(articulo.TotalVendido)</strong></td></tr>
+                    }
+                </Rows>
+            </DataTable>
+        }
+
+        @if (_cobranzas && _cobranzasData is not null)
+        {
+            <DataTable Titulo="Detalle de cobranzas" Subtitulo="Resumen de cobranzas por tipo de comprobante dentro del período seleccionado.">
+                <Header><tr><th>Tipo</th><th style="text-align:right;">Comprobantes</th><th style="text-align:right;">Total</th></tr></Header>
+                <Rows>
+                    @foreach (var fila in _cobranzasData.Filas)
+                    {
+                        <tr><td><strong>@fila.Tc</strong></td><td style="text-align:right;">@fila.Cantidad.ToString("N0")</td><td style="text-align:right;"><strong>@Moneda(fila.Total)</strong></td></tr>
+                    }
+                </Rows>
+            </DataTable>
+        }
+
+        @if (_ventas)
+        {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Detalle del informe</h3>
+                    <p class="panel-card__subtitle">Consultá cada comprobante incluido en el período y los filtros seleccionados.</p>
+                </div>
+                <button type="button" class="btn btn--secondary btn--sm" @onclick="AlternarDetalleAsync" disabled="@_detalleLoading">
+                    <i class="bi bi-list-ul"></i> @(_mostrarDetalle ? "Ocultar detallado" : "Ver detallado")
+                </button>
+            </div>
+            @if (_mostrarDetalle)
+            {
+                @if (_detalleLoading)
+                {
+                    <div class="loading">Cargando detalle...</div>
+                }
+                else if (_detalle is null || _detalle.Comprobantes.Count == 0)
+                {
+                    <p class="text-muted">No hay comprobantes para mostrar con los filtros seleccionados.</p>
+                }
+                else
+                {
+                    <div class="usuarios-table-wrap">
+                        <table class="data-table usuarios-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Comprobante</th>
+                                    <th>Cuenta</th>
+                                    <th>Cliente</th>
+                                    <th>Usuario</th>
+                                    <th style="text-align:right;">Importe</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var comprobante in _detalle.Comprobantes)
+                                {
+                                    <tr>
+                                        <td>@comprobante.Fecha.ToString("dd/MM/yyyy")</td>
+                                        <td>
+                                            <button type="button" class="informe-pv-comprobante-link"
+                                               @onclick="() => AbrirComprobanteModal(comprobante)"
+                                               title="Ver encabezado, artículos, totales, asiento e historial">
+                                                <strong>@comprobante.Tc @comprobante.IdComprobante</strong>
+                                            </button>
+                                        </td>
+                                        <td>@comprobante.Cuenta</td>
+                                        <td>@comprobante.Cliente</td>
+                                        <td>@comprobante.Usuario</td>
+                                        <td style="text-align:right;"><strong>@Moneda(comprobante.Importe)</strong></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (_detalle.HayMasResultados)
+                    {
+                        <p class="text-muted">Se muestran los primeros 500 comprobantes.</p>
+                    }
+                }
+            }
+        </section>
+        }
     }
 </section>
 
+@if (_comprobanteModal is { } seleccionado)
+{
+    <ComprobanteViewerModal @key="@($"{seleccionado.Tc}|{seleccionado.Id}|{seleccionado.Complemento}")"
+                            Visible="true"
+                            Tc="@seleccionado.Tc"
+                            IdComprobante="@seleccionado.Id"
+                            IdComplemento="@seleccionado.Complemento"
+                            Cliente="@seleccionado.Cliente"
+                            Cerrado="CerrarComprobanteModal" />
+}
+
 @code {
-    private DateTime? _fechaDesde = DateTime.Today;
-    private DateTime? _fechaHasta = DateTime.Today;
+    private VentasDashboardFilters _filters = new()
+    {
+        FechaDesde = DateTime.Today,
+        FechaHasta = DateTime.Today
+    };
+    private VentasFilterOptionsDto _options = new();
     private IReadOnlyList<VentasUnidadNegocioResumenDto> _rows = [];
+    private VentasComprobantesPageDto? _detalle;
+    private VentasRubrosPageDto? _rubrosData;
+    private VentasArticulosPageDto? _productosData;
+    private VentasResumenTcPageDto? _cobranzasData;
+    private VentasDashboardDto? _resumenMensual;
+    private bool _mostrarDetalle;
+    private bool _detalleLoading;
+    private bool _mostrarFiltros;
+    private string _rango = "hoy";
+    private bool _saldoInicial;
+    private bool _diario;
+    private bool _mensual;
+    private bool _cancelados;
+    private bool _productos;
+    private bool _rubros;
+    private bool _ventas;
+    private bool _cobranzas;
+    private (string Tc, string Id, int Complemento, string Cliente)? _comprobanteModal;
+
+    private RenderFragment RenderInformeSmartSearch() => @<div class="smart-search informe-pv-smart-search" @onclick:stopPropagation @onkeydown="HandleSearchKeyDownAsync">
+        <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button"
+                    class="smart-search__filter-button @(_mostrarFiltros || TieneFiltrosActivos ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_mostrarFiltros"
+                    @onclick="ToggleFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="informe-pv-periodo" aria-label="Período del informe">
+                <select aria-label="Rango" value="@_rango" @onchange="OnRangoChangedAsync">
+                    <option value="hoy">Hoy</option>
+                    <option value="mes">Mes actual</option>
+                    <option value="mes-anterior">Mes anterior</option>
+                    <option value="ultimos-30">Últimos 30 días</option>
+                    <option value="ultimos-3-meses">Últimos 3 meses</option>
+                    <option value="anio">Año actual</option>
+                    <option value="todo">Todo</option>
+                    <option value="personalizado">Personalizado</option>
+                </select>
+                <label class="informe-pv-fecha">
+                    <span>Fecha desde</span>
+                    <input type="date" aria-label="Fecha desde" value="@FechaIso(_filters.FechaDesde)" @onchange="OnFechaDesdeChanged" />
+                </label>
+                <label class="informe-pv-fecha">
+                    <span>Fecha hasta</span>
+                    <input type="date" aria-label="Fecha hasta" value="@FechaIso(_filters.FechaHasta)" @onchange="OnFechaHastaChanged" />
+                </label>
+            </div>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @if (!string.IsNullOrWhiteSpace(_filters.Cliente))
+                {
+                    <button type="button" class="smart-search__active-filter" @onclick="LimpiarBusquedaAsync">
+                        <span>Buscar: @_filters.Cliente</span><span class="smart-search__active-filter-remove"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (_rango != "hoy")
+                {
+                    <button type="button" class="smart-search__active-filter" @onclick='() => SeleccionarRangoAsync("hoy")'>
+                        <span>@NombreRango()</span><span class="smart-search__active-filter-remove"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (!string.IsNullOrWhiteSpace(_filters.Usuario) || !string.IsNullOrWhiteSpace(_filters.TipoComprobante))
+                {
+                    <span class="smart-search__more-filters">+filtros</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por cliente, cuenta o comprobante..."
+                   value="@(_filters.Cliente ?? string.Empty)"
+                   @oninput="OnBusquedaChanged"
+                   @onfocus="() => _mostrarFiltros = true" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleFiltros" aria-label="Mostrar filtros" aria-expanded="@_mostrarFiltros">
+                <i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+        @if (_mostrarFiltros)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar3"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label for="informe-rango">Rango</label>
+                        <select id="informe-rango" value="@_rango" @onchange="OnRangoChangedAsync">
+                            <option value="hoy">Hoy</option>
+                            <option value="mes">Mes actual</option>
+                            <option value="mes-anterior">Mes anterior</option>
+                            <option value="ultimos-30">Últimos 30 días</option>
+                            <option value="ultimos-3-meses">Últimos 3 meses</option>
+                            <option value="anio">Año actual</option>
+                            <option value="todo">Todo</option>
+                            <option value="personalizado">Personalizado</option>
+                        </select>
+                    </div>
+                    <div class="smart-search__inline"><label>Fecha desde</label><InputDate @bind-Value="_filters.FechaDesde" /></div>
+                    <div class="smart-search__inline"><label>Fecha hasta</label><InputDate @bind-Value="_filters.FechaHasta" /></div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <div class="smart-search__inline"><label>Usuario</label><InputSelect @bind-Value="_filters.Usuario"><option value="">Todos</option>@foreach (var item in _options.Usuarios) { <option value="@item">@item</option> }</InputSelect></div>
+                    <div class="smart-search__inline"><label>Comprobante</label><InputSelect @bind-Value="_filters.TipoComprobante"><option value="">Todos</option>@foreach (var item in _options.TiposComprobante) { <option value="@item">@item</option> }</InputSelect></div>
+                    <div class="smart-search__inline"><label>Unidad</label><select @bind="UnidadSeleccionada"><option value="">Todas</option>@foreach (var item in _options.UnidadesNegocio) { <option value="@item.Codigo">@item.Descripcion</option> }</select></div>
+                </div>
+                <div class="smart-search__column informe-pv-opciones">
+                    <h4><i class="bi bi-check2-square"></i> Opciones</h4>
+                    <label><input type="checkbox" @bind="_saldoInicial" /> Incluir saldo inicial</label>
+                    <label><input type="checkbox" @bind="_diario" /> Diario</label>
+                    <label><input type="checkbox" @bind="_mensual" /> Mensual</label>
+                    <label><input type="checkbox" @bind="_cancelados" /> Ver comprobantes cancelados</label>
+                    <label><input type="checkbox" @bind="_productos" /> Venta por productos</label>
+                    <label><input type="checkbox" @bind="_rubros" /> Detalle por rubro</label>
+                    <label><input type="checkbox" @bind="_ventas" /> Detalle de ventas</label>
+                    <label><input type="checkbox" @bind="_cobranzas" /> Detalle de cobranzas</label>
+                    @if (_saldoInicial || _cancelados)
+                    {
+                        <small class="informe-pv-opciones__notice">Saldo inicial y comprobantes cancelados pertenecen al cierre de caja y no se consultan con las rutinas de ventas por rango.</small>
+                    }
+                </div>
+                <div class="smart-search__column smart-search__section--actions">
+                    <h4><i class="bi bi-lightning-fill"></i> Acciones</h4>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="CargarAsync" disabled="@_loading"><i class="bi bi-search"></i> Aplicar</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loading"><i class="bi bi-eraser"></i> Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
     private decimal _total;
     private int _comprobantes;
     private string? _error;
+    private string? _errorFiltros;
     private bool _loading = true;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
-    protected override async Task OnInitializedAsync() => await CargarAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await CargarAsync();
+            // Las opciones del panel no deben bloquear la carga del informe.
+            // Algunas bases tienen muchos comprobantes y estas consultas pueden
+            // demorar bastante más que el resumen principal.
+            _ = CargarOpcionesFiltrosAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    private async Task CargarOpcionesFiltrosAsync()
+    {
+        try
+        {
+            _options = await GestionSvc.GetVentasFilterOptionsAsync();
+            _errorFiltros = null;
+        }
+        catch (Exception ex)
+        {
+            _errorFiltros = ex.Message;
+        }
+
+        await InvokeAsync(() =>
+        {
+            UpdatePageHeader();
+            StateHasChanged();
+        });
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -122,13 +398,139 @@
     private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        SearchContent = RenderInformeSmartSearch(),
         TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "informe-punto-venta")
     });
+
+    private bool TieneFiltrosActivos
+        => !string.IsNullOrWhiteSpace(_filters.Cliente)
+           || !string.IsNullOrWhiteSpace(_filters.Usuario)
+           || !string.IsNullOrWhiteSpace(_filters.TipoComprobante)
+           || _filters.UnidadesNegocio.Count > 0
+           || _rango != "hoy";
+
+    private string UnidadSeleccionada
+    {
+        get => _filters.UnidadesNegocio.FirstOrDefault() ?? string.Empty;
+        set
+        {
+            _filters.UnidadesNegocio = string.IsNullOrWhiteSpace(value) ? [] : [value];
+        }
+    }
+
+    private string NombreRango() => _rango switch
+    {
+        "hoy" => "Hoy",
+        "mes-anterior" => "Mes anterior",
+        "ultimos-30" => "Últimos 30 días",
+        "ultimos-3-meses" => "Últimos 3 meses",
+        "anio" => "Año actual",
+        "todo" => "Todo",
+        "personalizado" => "Personalizado",
+        _ => "Hoy"
+    };
+
+    private void ToggleFiltros()
+    {
+        _mostrarFiltros = !_mostrarFiltros;
+        UpdatePageHeader();
+    }
+
+    private void CerrarFiltros()
+    {
+        _mostrarFiltros = false;
+        UpdatePageHeader();
+    }
+
+    private void OnBusquedaChanged(ChangeEventArgs args)
+    {
+        _filters.Cliente = args.Value?.ToString();
+        UpdatePageHeader();
+    }
+
+    private void OnFechaDesdeChanged(ChangeEventArgs args)
+    {
+        _filters.FechaDesde = ParseFechaIso(args.Value?.ToString());
+        _rango = "personalizado";
+        UpdatePageHeader();
+    }
+
+    private void OnFechaHastaChanged(ChangeEventArgs args)
+    {
+        _filters.FechaHasta = ParseFechaIso(args.Value?.ToString());
+        _rango = "personalizado";
+        UpdatePageHeader();
+    }
+
+    private static string FechaIso(DateTime? value)
+        => value?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static DateTime? ParseFechaIso(string? value)
+        => DateTime.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var fecha) ? fecha : null;
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key.Equals("Enter", StringComparison.OrdinalIgnoreCase))
+            await CargarAsync();
+    }
+
+    private async Task LimpiarBusquedaAsync()
+    {
+        _filters.Cliente = null;
+        await CargarAsync();
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        _filters = new VentasDashboardFilters
+        {
+            FechaDesde = DateTime.Today,
+            FechaHasta = DateTime.Today
+        };
+        _rango = "hoy";
+        await CargarAsync();
+    }
+
+    private Task OnRangoChangedAsync(ChangeEventArgs args)
+    {
+        _rango = args.Value?.ToString() ?? "personalizado";
+        if (_rango == "personalizado")
+        {
+            _mostrarFiltros = true;
+            UpdatePageHeader();
+            return Task.CompletedTask;
+        }
+
+        var hoy = DateTime.Today;
+        switch (_rango)
+        {
+            case "hoy": _filters.FechaDesde = hoy; _filters.FechaHasta = hoy; break;
+            case "mes": _filters.FechaDesde = new DateTime(hoy.Year, hoy.Month, 1); _filters.FechaHasta = hoy; break;
+            case "mes-anterior": var primero = new DateTime(hoy.Year, hoy.Month, 1); _filters.FechaDesde = primero.AddMonths(-1); _filters.FechaHasta = primero.AddDays(-1); break;
+            case "ultimos-30": _filters.FechaDesde = hoy.AddDays(-29); _filters.FechaHasta = hoy; break;
+            case "ultimos-3-meses": _filters.FechaDesde = hoy.AddMonths(-3); _filters.FechaHasta = hoy; break;
+            case "anio": _filters.FechaDesde = new DateTime(hoy.Year, 1, 1); _filters.FechaHasta = hoy; break;
+            case "todo": _filters.FechaDesde = null; _filters.FechaHasta = null; break;
+        }
+
+        UpdatePageHeader();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task SeleccionarRangoAsync(string rango)
+    {
+        _rango = rango;
+        await OnRangoChangedAsync(new ChangeEventArgs { Value = rango });
+    }
 
     private async Task CargarAsync()
     {
         _error = null;
-        if (_fechaDesde.HasValue && _fechaHasta.HasValue && _fechaDesde.Value.Date > _fechaHasta.Value.Date)
+        _mostrarFiltros = false;
+        UpdatePageHeader();
+        if (_filters.FechaDesde.HasValue && _filters.FechaHasta.HasValue && _filters.FechaDesde.Value.Date > _filters.FechaHasta.Value.Date)
         {
             _rows = [];
             _total = 0;
@@ -143,12 +545,29 @@
         {
             var filters = new VentasDashboardFilters
             {
-                FechaDesde = _fechaDesde?.Date,
-                FechaHasta = _fechaHasta?.Date
+                FechaDesde = _filters.FechaDesde?.Date,
+                FechaHasta = _filters.FechaHasta?.Date,
+                Cliente = _filters.Cliente,
+                Usuario = _filters.Usuario,
+                TipoComprobante = _filters.TipoComprobante,
+                Deposito = _filters.Deposito,
+                UnidadesNegocio = [.. _filters.UnidadesNegocio]
             };
+            _filters = filters;
             _rows = await GestionSvc.GetVentasPorUnidadNegocioAsync(filters);
             _total = _rows.Sum(x => x.TotalFacturado);
             _comprobantes = _rows.Sum(x => x.Comprobantes);
+            _detalle = null;
+            _mostrarDetalle = false;
+            _rubrosData = null;
+            _productosData = null;
+            _cobranzasData = null;
+            _resumenMensual = null;
+            // El detalle de comprobantes forma parte del informe y se carga
+            // siempre que el resumen encuentre ventas.
+            if (_ventas)
+                await CargarDetalleAsync(filters);
+            await CargarOpcionesInformeAsync(filters);
         }
         catch (Exception ex)
         {
@@ -163,6 +582,80 @@
         }
     }
 
+    private async Task AlternarDetalleAsync()
+    {
+        if (!_ventas)
+            return;
+
+        if (_mostrarDetalle)
+        {
+            _mostrarDetalle = false;
+            return;
+        }
+
+        _mostrarDetalle = true;
+        _detalleLoading = true;
+        try
+        {
+            _detalle = await GestionSvc.GetVentasComprobantesAsync(_filters);
+        }
+        catch (Exception ex)
+        {
+            _detalle = null;
+            _error = ex.Message;
+        }
+        finally
+        {
+            _detalleLoading = false;
+        }
+    }
+
+    private async Task CargarOpcionesInformeAsync(VentasDashboardFilters filters)
+    {
+        var tareas = new List<Task>();
+        if (_rubros) tareas.Add(CargarRubrosAsync(filters));
+        if (_productos) tareas.Add(CargarProductosAsync(filters));
+        if (_cobranzas) tareas.Add(CargarCobranzasAsync(filters));
+        if (_mensual) tareas.Add(CargarResumenMensualAsync(filters));
+        await Task.WhenAll(tareas);
+    }
+
+    private async Task CargarRubrosAsync(VentasDashboardFilters filters)
+        => _rubrosData = await GestionSvc.GetVentasRubrosAsync(filters);
+
+    private async Task CargarProductosAsync(VentasDashboardFilters filters)
+        => _productosData = await GestionSvc.GetVentasArticulosAsync(filters);
+
+    private async Task CargarCobranzasAsync(VentasDashboardFilters filters)
+        => _cobranzasData = await GestionSvc.GetVentasResumenPorTcAsync(filters);
+
+    private async Task CargarResumenMensualAsync(VentasDashboardFilters filters)
+        => _resumenMensual = await GestionSvc.GetVentasAsync(filters);
+
+    private async Task CargarDetalleAsync(VentasDashboardFilters filters)
+    {
+        _detalleLoading = true;
+        try
+        {
+            _detalle = await GestionSvc.GetVentasComprobantesAsync(filters);
+            _mostrarDetalle = true;
+        }
+        finally
+        {
+            _detalleLoading = false;
+        }
+    }
+
     private static string Moneda(decimal value)
         => value.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private void AbrirComprobanteModal(VentasComprobanteResumenDto comprobante)
+    {
+        _comprobanteModal = (comprobante.Tc, comprobante.IdComprobante, 0, comprobante.Cliente);
+    }
+
+    private void CerrarComprobanteModal()
+    {
+        _comprobanteModal = null;
+    }
 }

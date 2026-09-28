@@ -69,6 +69,7 @@ public sealed class PuntoVentaCartItemDto
     public decimal Cantidad { get; set; } = 1m;
     public decimal TasaIva { get; set; }
     public bool Exento { get; set; }
+    public bool NoGravado { get; set; }
     public string Familia { get; set; } = string.Empty;
     public decimal Subtotal => Math.Round(Cantidad * PrecioUnitario, 2);
 }
@@ -83,8 +84,15 @@ public sealed class PuntoVentaArticleImageDto
 public sealed class PuntoVentaSettingsDto
 {
     public string ClasePrecioDefault { get; set; } = "1";
+    public string ComprobanteHabitual { get; set; } = "FC";
+    public string SucursalDefault { get; set; } = string.Empty;
+    public bool UsaProforma { get; set; } = true;
     public string VerificadorRutaImagenes { get; set; } = string.Empty;
     public string CuentaConsumidorFinal { get; set; } = string.Empty;
+    public string CuentaCaja { get; set; } = string.Empty;
+    public string CuentaVentasOtrosConceptos { get; set; } = string.Empty;
+    public string ClaveCancelar { get; set; } = string.Empty;
+    public bool CobranzaPFSoloEfectivo { get; set; }
     public string RutaImagenesLegacy { get; set; } = string.Empty;
     public string EmailServer { get; set; } = string.Empty;
     public string EmailPort { get; set; } = string.Empty;
@@ -93,6 +101,8 @@ public sealed class PuntoVentaSettingsDto
     public string EmailSsl { get; set; } = string.Empty;
     public string FtpCodigoCta { get; set; } = string.Empty;
     public string MedioDePagoContado { get; set; } = string.Empty;
+    /// <summary>Si está activo, el recargo de tarjeta se informa como importe sin IVA.</summary>
+    public bool RecargoTarjetaSinIva { get; set; }
 }
 
 public sealed class PuntoVentaRubroDto
@@ -114,7 +124,9 @@ public sealed class PuntoVentaPaymentLineDto
 {
     public string CodigoMedioPago { get; set; } = string.Empty;
     public string DescripcionMedioPago { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
     public decimal Importe { get; set; }
+    public decimal Recargo { get; set; }
 }
 
 public sealed class PuntoVentaSaleRequestDto
@@ -129,6 +141,8 @@ public sealed class PuntoVentaSaleRequestDto
     public string Letra { get; set; } = string.Empty;
     public IReadOnlyList<PuntoVentaCartItemDto> Items { get; init; } = [];
     public IReadOnlyList<PuntoVentaPaymentLineDto> Pagos { get; init; } = [];
+    /// <summary>Callback de presentación del POS. No forma parte de la operación SQL.</summary>
+    public Func<string, Task>? Progreso { get; init; }
 }
 
 public sealed class PuntoVentaClienteEventualDto

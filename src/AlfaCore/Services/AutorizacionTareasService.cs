@@ -189,6 +189,7 @@ public sealed class AutorizacionTareasService(
                 PermisosSistema = sistemaPermisos.Trim().ToUpperInvariant(),
                 Usuario = usuario.Trim(),
                 Administrador = userData.Administrador,
+                VerProforma = userData.VerProforma,
                 UNegocio = unidadNegocio,
                 IdCaja = idCaja,
                 IdDeposito = idDeposito,
@@ -229,6 +230,7 @@ public sealed class AutorizacionTareasService(
             var hasIdCaja = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDCAJA", token);
             var hasUNegocio = await ColumnExistsAsync(cn, "TA_USUARIOS", "UNegocio", token);
             var hasIdDeposito = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDDEPOSITO", token);
+            var hasVerProforma = await ColumnExistsAsync(cn, "TA_USUARIOS", "VerProforma", token);
 
             var managedKeys = (await cn.QueryAsync<string>(new CommandDefinition("""
                 SELECT DISTINCT UPPER(LTRIM(RTRIM(Clave)))
@@ -291,6 +293,7 @@ public sealed class AutorizacionTareasService(
                     request.PermisosSistema,
                     request.Usuario,
                     request.Administrador,
+                    request.VerProforma,
                     unidadNegocio,
                     idCaja,
                     idDeposito,
@@ -298,6 +301,7 @@ public sealed class AutorizacionTareasService(
                     hasIdCaja,
                     hasUNegocio,
                     hasIdDeposito,
+                    hasVerProforma,
                     token);
 
                 var deleteBase = """
@@ -424,6 +428,7 @@ public sealed class AutorizacionTareasService(
         var hasIdCaja = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDCAJA", ct);
         var hasUNegocio = await ColumnExistsAsync(cn, "TA_USUARIOS", "UNegocio", ct);
         var hasIdDeposito = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDDEPOSITO", ct);
+        var hasVerProforma = await ColumnExistsAsync(cn, "TA_USUARIOS", "VerProforma", ct);
 
         var sql = $"""
             SELECT TOP (1)
@@ -432,6 +437,7 @@ public sealed class AutorizacionTareasService(
                 {(hasIdCaja ? "ISNULL(IDCAJA, '')" : "''")} AS IdCaja,
                 {(hasUNegocio ? "ISNULL(UNegocio, '')" : "''")} AS UNegocio,
                 {(hasIdDeposito ? "ISNULL(IDDEPOSITO, '')" : "''")} AS IdDeposito
+                ,{(hasVerProforma ? "CASE WHEN ISNULL(VerProforma, 1) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(1 AS bit)")} AS VerProforma
             FROM dbo.TA_USUARIOS
             WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
               AND UPPER(LTRIM(RTRIM(NOMBRE))) = @Usuario;
@@ -509,6 +515,7 @@ public sealed class AutorizacionTareasService(
         string sistemaPermisos,
         string usuario,
         bool administrador,
+        bool verProforma,
         string unidadNegocio,
         string idCaja,
         string idDeposito,
@@ -516,6 +523,7 @@ public sealed class AutorizacionTareasService(
         bool hasIdCaja,
         bool hasUNegocio,
         bool hasIdDeposito,
+        bool hasVerProforma,
         CancellationToken ct)
     {
         var assignments = new List<string>();
@@ -527,6 +535,8 @@ public sealed class AutorizacionTareasService(
             assignments.Add("UNegocio = @UNegocio");
         if (hasIdDeposito)
             assignments.Add("IDDEPOSITO = @IdDeposito");
+        if (hasVerProforma)
+            assignments.Add("VerProforma = @VerProforma");
 
         if (assignments.Count == 0)
             return;
@@ -541,6 +551,7 @@ public sealed class AutorizacionTareasService(
         var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new
         {
             Administrador = administrador,
+            VerProforma = verProforma,
             IdCaja = DbNullable(idCaja),
             UNegocio = unidadNegocio,
             IdDeposito = DbNullable(idDeposito),
@@ -705,6 +716,7 @@ public sealed class AutorizacionTareasService(
     {
         public string Nombre { get; init; } = string.Empty;
         public bool Administrador { get; init; }
+        public bool VerProforma { get; init; } = true;
         public string IdCaja { get; init; } = string.Empty;
         public string UNegocio { get; init; } = string.Empty;
         public string IdDeposito { get; init; } = string.Empty;

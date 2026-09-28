@@ -25,19 +25,14 @@
     </div>
 
     <div class="quick-range">
-        @foreach (var opt in QuickRangeOptions)
-        {
-            <button type="button"
-                    class="btn btn--sm @(_activeQuickRange == opt.Key ? "btn--primary" : "btn--ghost")"
-                    @onclick="() => ApplyQuickRangeAsync(opt.Key)">
-                @opt.Label
-            </button>
-        }
-        <button type="button"
-                class="btn btn--sm @(_activeQuickRange is null ? "btn--primary" : "btn--ghost")"
-                @onclick="MarcarRangoPersonalizado">
-            Rango personalizado
-        </button>
+        <label class="quick-range__select-label" for="ventas-rango-rapido">Rango</label>
+        <select id="ventas-rango-rapido" class="quick-range__select" value="@(_activeQuickRange ?? string.Empty)" @onchange="ApplyQuickRangeFromSelectAsync">
+            @foreach (var opt in QuickRangeOptions)
+            {
+                <option value="@opt.Key">@opt.Label</option>
+            }
+            <option value="">Personalizado</option>
+        </select>
     </div>
 
     <div class="filters-summary" aria-live="polite">
@@ -118,18 +113,16 @@
     [Parameter] public EventCallback OnApply { get; set; }
 
     private bool _showAdvanced;
-    private string? _activeQuickRange;
+    private string? _activeQuickRange = "mes";
 
     private static readonly (string Key, string Label)[] QuickRangeOptions =
     [
-        ("ayer", "Ayer"),
-        ("ultimos-7", "Últimos 7 días"),
-        ("ultimos-15", "Últimos 15 días"),
+        ("mes", "Mes actual"),
+        ("mes-anterior", "Mes anterior"),
         ("ultimos-30", "Últimos 30 días"),
-        ("mes", "Este mes"),
-        ("mes-anterior", "Mes pasado"),
-        ("anio", "Este año"),
-        ("anio-anterior", "Año pasado")
+        ("ultimos-3-meses", "Últimos 3 meses"),
+        ("anio", "Año actual"),
+        ("todo", "Todo")
     ];
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
@@ -153,6 +146,18 @@
 
     private void MarcarRangoPersonalizado() => _activeQuickRange = null;
 
+    private async Task ApplyQuickRangeFromSelectAsync(ChangeEventArgs args)
+    {
+        var key = args.Value?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(key) || key == "personalizado")
+        {
+            MarcarRangoPersonalizado();
+            return;
+        }
+
+        await ApplyQuickRangeAsync(key);
+    }
+
     private async Task ClearAsync()
     {
         var today = DateTime.Today;
@@ -173,22 +178,6 @@
         var today = DateTime.Today;
         switch (key)
         {
-            case "ayer":
-                Model.FechaDesde = today.AddDays(-1);
-                Model.FechaHasta = today.AddDays(-1);
-                break;
-            case "ultimos-7":
-                Model.FechaDesde = today.AddDays(-6);
-                Model.FechaHasta = today;
-                break;
-            case "ultimos-15":
-                Model.FechaDesde = today.AddDays(-14);
-                Model.FechaHasta = today;
-                break;
-            case "ultimos-30":
-                Model.FechaDesde = today.AddDays(-29);
-                Model.FechaHasta = today;
-                break;
             case "mes":
                 Model.FechaDesde = new DateTime(today.Year, today.Month, 1);
                 Model.FechaHasta = today;
@@ -198,13 +187,21 @@
                 Model.FechaDesde = firstThisMonth.AddMonths(-1);
                 Model.FechaHasta = firstThisMonth.AddDays(-1);
                 break;
+            case "ultimos-30":
+                Model.FechaDesde = today.AddDays(-29);
+                Model.FechaHasta = today;
+                break;
+            case "ultimos-3-meses":
+                Model.FechaDesde = today.AddMonths(-3);
+                Model.FechaHasta = today;
+                break;
             case "anio":
                 Model.FechaDesde = new DateTime(today.Year, 1, 1);
                 Model.FechaHasta = today;
                 break;
-            case "anio-anterior":
-                Model.FechaDesde = new DateTime(today.Year - 1, 1, 1);
-                Model.FechaHasta = new DateTime(today.Year - 1, 12, 31);
+            case "todo":
+                Model.FechaDesde = null;
+                Model.FechaHasta = null;
                 break;
         }
 

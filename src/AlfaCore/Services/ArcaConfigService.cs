@@ -12,6 +12,11 @@ public sealed class ArcaConfigService(
 {
     private const string ModuleName = "ArcaFacturacionElectronica";
     private const string ClaveGlobal = "GLOBAL";
+    private const int ArcaSqlCommandTimeoutSeconds = 120;
+    private const string WsaaProduccionDefault = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsaaHomologacionDefault = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsfeProduccionDefault = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL";
+    private const string WsfeHomologacionDefault = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -30,6 +35,8 @@ public sealed class ArcaConfigService(
             var ambiente = string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase)
                 ? ArcaAmbiente.Produccion
                 : ArcaAmbiente.Homologacion;
+            var wsaaUrl = ResolveConfiguredEndpoint(global, "WSAA_URL", ambiente, WsaaProduccionDefault, WsaaHomologacionDefault);
+            var wsfeUrl = ResolveConfiguredEndpoint(global, "WSFE_URL", ambiente, WsfeProduccionDefault, WsfeHomologacionDefault);
 
             var condicionIva = ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty));
 
@@ -77,7 +84,7 @@ public sealed class ArcaConfigService(
             var certificadoPem = Encoding.UTF8.GetString(certificado.Value.Crt);
             var clavePem = Encoding.UTF8.GetString(certificado.Value.Key);
 
-            return new ArcaEmisorConfig(cuitDigits, razonSocial, ambiente, puntoVenta, certificadoPem, clavePem, condicionIva);
+            return new ArcaEmisorConfig(cuitDigits, razonSocial, ambiente, puntoVenta, certificadoPem, clavePem, condicionIva, wsaaUrl, wsfeUrl);
         }
         catch (InvalidOperationException)
         {
@@ -120,7 +127,9 @@ public sealed class ArcaConfigService(
             0,
             Encoding.UTF8.GetString(certificado.Value.Crt),
             Encoding.UTF8.GetString(certificado.Value.Key),
-            ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty)));
+            ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty)),
+            ReadValue(global, "WSAA_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsaaProduccionDefault : WsaaHomologacionDefault),
+            ReadValue(global, "WSFE_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsfeProduccionDefault : WsfeHomologacionDefault));
     }
 
     private (byte[]? Crt, byte[]? Key, ArcaAmbiente Ambiente)? ReadCertificadoPadronPorDefecto()
@@ -199,6 +208,8 @@ public sealed class ArcaConfigService(
                 ModoFalloCae = ReadValue(global, "ARCA_MODO_FALLO_CAE", "ESTRICTO").ToUpperInvariant(),
                 Cuit = ReadValue(global, "WSFE_CUIT", string.Empty),
                 PuntoVenta = ReadValue(global, "PV_EFACTURA", string.Empty),
+                WsaaUrl = ResolveConfiguredEndpoint(global, "WSAA_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsaaProduccionDefault, WsaaHomologacionDefault),
+                WsfeUrl = ResolveConfiguredEndpoint(global, "WSFE_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsfeProduccionDefault, WsfeHomologacionDefault),
                 TieneCertificado = certGlobal.TieneCrt && certGlobal.TieneKey,
                 NombreArchivoCrt = certGlobal.NombreCrt,
                 NombreArchivoKey = certGlobal.NombreKey,
@@ -265,6 +276,15 @@ public sealed class ArcaConfigService(
                 string.Equals(dto.ModoFalloCae, "DEGRADADO", StringComparison.OrdinalIgnoreCase) ? "DEGRADADO" : "ESTRICTO", token);
             await SetConfigAsync(cn, detailColumn, "WSFE_CUIT", (dto.Cuit ?? string.Empty).Trim(), token);
             await SetConfigAsync(cn, detailColumn, "PV_EFACTURA", (dto.PuntoVenta ?? string.Empty).Trim(), token);
+            var ambiente = string.Equals(dto.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase)
+                ? ArcaAmbiente.Produccion
+                : ArcaAmbiente.Homologacion;
+            await SetConfigAsync(cn, detailColumn, "WSAA_URL", ResolveConfiguredEndpoint(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["WSAA_URL"] = dto.WsaaUrl ?? string.Empty },
+                "WSAA_URL", ambiente, WsaaProduccionDefault, WsaaHomologacionDefault), token);
+            await SetConfigAsync(cn, detailColumn, "WSFE_URL", ResolveConfiguredEndpoint(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["WSFE_URL"] = dto.WsfeUrl ?? string.Empty },
+                "WSFE_URL", ambiente, WsfeProduccionDefault, WsfeHomologacionDefault), token);
 
             await appEvents.LogAuditAsync(ModuleName, "GuardarConfiguracionGeneral", "TA_CONFIGURACION", "ARCA",
                 "Se actualizó la configuración general de facturación electrónica.",
@@ -374,7 +394,10 @@ public sealed class ArcaConfigService(
     {
         if (!await ExistsAsync(cn, "dbo.ARCA_CERTIFICADO", ct))
             return false;
-        await using var cmd = new SqlCommand("SELECT COUNT(1) FROM dbo.ARCA_CERTIFICADO WHERE UNegocio = @UNegocio;", cn);
+        await using var cmd = new SqlCommand("SELECT COUNT(1) FROM dbo.ARCA_CERTIFICADO WHERE UNegocio = @UNegocio;", cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@UNegocio", uNegocio);
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) > 0;
     }
@@ -385,7 +408,10 @@ public sealed class ArcaConfigService(
             return null;
 
         // Lectura vía SqlDataReader (no Dapper): igual criterio que TA_LOGOS.IMAGEN para blobs grandes.
-        await using var cmd = new SqlCommand("SELECT ArchivoCrt, ArchivoKey FROM dbo.ARCA_CERTIFICADO WHERE UNegocio = @UNegocio;", cn);
+        await using var cmd = new SqlCommand("SELECT ArchivoCrt, ArchivoKey FROM dbo.ARCA_CERTIFICADO WHERE UNegocio = @UNegocio;", cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@UNegocio", uNegocio);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
@@ -427,7 +453,10 @@ public sealed class ArcaConfigService(
                 INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, FechaHora_Grabacion, FechaHora_Modificacion)
                 VALUES (N'ARCA', @ClaveOriginal, @Valor, GETDATE(), GETDATE());
             """;
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@Valor", DbNullable(valor));
         cmd.Parameters.AddWithValue("@Clave", clave.ToUpperInvariant());
         cmd.Parameters.AddWithValue("@ClaveOriginal", clave);
@@ -462,7 +491,10 @@ public sealed class ArcaConfigService(
             )
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
         {
@@ -483,7 +515,10 @@ public sealed class ArcaConfigService(
             WHERE LTRIM(RTRIM(Codigo)) = @UNegocio;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@UNegocio", uNegocio);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
@@ -506,7 +541,10 @@ public sealed class ArcaConfigService(
             ORDER BY name
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         var result = await cmd.ExecuteScalarAsync(ct);
         var column = Convert.ToString(result) ?? string.Empty;
         return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;
@@ -514,7 +552,10 @@ public sealed class ArcaConfigService(
 
     private static async Task<bool> ExistsAsync(SqlConnection cn, string objeto, CancellationToken ct)
     {
-        await using var cmd = new SqlCommand($"SELECT OBJECT_ID(N'{objeto}');", cn);
+        await using var cmd = new SqlCommand($"SELECT OBJECT_ID(N'{objeto}');", cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null and not DBNull;
     }
@@ -524,6 +565,37 @@ public sealed class ArcaConfigService(
 
     private static string ReadValue(Dictionary<string, string> values, string key, string fallback = "")
         => values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : fallback;
+
+    private static string ResolveConfiguredEndpoint(
+        Dictionary<string, string> values,
+        string key,
+        ArcaAmbiente ambiente,
+        string produccion,
+        string homologacion)
+    {
+        var configured = ReadValue(values, key, string.Empty);
+        if (string.IsNullOrWhiteSpace(configured))
+            return ambiente == ArcaAmbiente.Produccion ? produccion : homologacion;
+
+        var normalized = configured.Trim().TrimEnd('/');
+        var officialProduction = produccion.Trim().TrimEnd('/');
+        var officialHomologacion = homologacion.Trim().TrimEnd('/');
+        var configuredBase = normalized.EndsWith("?wsdl", StringComparison.OrdinalIgnoreCase)
+            ? normalized[..^5]
+            : normalized;
+        var productionBase = officialProduction.EndsWith("?wsdl", StringComparison.OrdinalIgnoreCase)
+            ? officialProduction[..^5]
+            : officialProduction;
+        var homologacionBase = officialHomologacion.EndsWith("?wsdl", StringComparison.OrdinalIgnoreCase)
+            ? officialHomologacion[..^5]
+            : officialHomologacion;
+
+        if (configuredBase.Equals(productionBase, StringComparison.OrdinalIgnoreCase)
+            || configuredBase.Equals(homologacionBase, StringComparison.OrdinalIgnoreCase))
+            return ambiente == ArcaAmbiente.Produccion ? produccion : homologacion;
+
+        return configured;
+    }
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;

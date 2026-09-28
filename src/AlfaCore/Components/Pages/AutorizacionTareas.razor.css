@@ -198,6 +198,62 @@
     background: rgba(6, 16, 31, .62);
 }
 
+/* Separar el buscador de las acciones evita que los botones se superpongan
+   cuando el árbol ocupa una columna angosta. */
+.auth-page .auth-tree-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "search search"
+        "selection view";
+    row-gap: .7rem;
+}
+
+.auth-page .auth-tree-toolbar__search {
+    grid-area: search;
+    width: 100%;
+    min-width: 0;
+}
+
+.auth-page .auth-tree-toolbar__group:nth-child(2) {
+    grid-area: selection;
+}
+
+.auth-page .auth-tree-toolbar__group:nth-child(3) {
+    grid-area: view;
+    justify-content: flex-end;
+}
+
+.auth-page .auth-tree-toolbar__group .btn {
+    white-space: nowrap;
+}
+
+.auth-page .auth-stat {
+    min-width: 6.25rem;
+    justify-content: center;
+}
+
+.auth-page .auth-panel {
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .12);
+}
+
+.auth-page .auth-panel--footer {
+    background: linear-gradient(180deg, rgba(10, 25, 46, .72), rgba(7, 17, 33, .62));
+}
+
+.auth-page .auth-toggle {
+    min-height: 2.35rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(102, 171, 255, .1);
+    border-radius: .65rem;
+    background: rgba(148, 163, 184, .045);
+}
+
+.auth-page .auth-toggle:hover {
+    border-color: rgba(56, 189, 248, .28);
+    background: rgba(56, 189, 248, .07);
+}
+
 .auth-page .auth-tree-toolbar__group {
     display: flex;
     flex-wrap: wrap;
@@ -328,5 +384,17 @@
 
     .auth-page .auth-main__status {
         align-self: flex-start;
+    }
+
+    .auth-page .auth-tree-toolbar {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "search"
+            "selection"
+            "view";
+    }
+
+    .auth-page .auth-tree-toolbar__group:nth-child(3) {
+        justify-content: flex-start;
     }
 }

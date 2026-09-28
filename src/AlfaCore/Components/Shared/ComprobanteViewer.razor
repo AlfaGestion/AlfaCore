@@ -1,7 +1,9 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IComprobanteViewerService ComprobanteViewerSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
+@inject AlfaCore.Services.ICompanyBrandingService CompanyBrandingSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
 
@@ -36,6 +38,13 @@
                     <i class="bi bi-box-arrow-up-right"></i>
                     <span>Abrir en otra pestaña</span>
                 </a>
+                @if (_dto.TieneAsiento)
+                {
+                    <button type="button" class="btn btn--secondary" @onclick="MostrarAsientoAsync" disabled="@_asientoLoading">
+                        <i class="bi bi-journal-text"></i>
+                        <span>Ver asiento</span>
+                    </button>
+                }
                 <button type="button" class="btn btn--primary" @onclick="VerPdfFacturaAsync" disabled="@(_loading || _generandoPdf)">
                     <i class="bi bi-file-earmark-pdf"></i>
                     <span>Ver PDF</span>
@@ -93,56 +102,30 @@
                 </div>
             </div>
 
-            <div class="contactos-form__grid">
-                <div class="field">
-                    <label>@(c.SistemaOrigen == "COMPRAS" ? "Proveedor / cuenta" : "Cliente / cuenta")</label>
-                    <input value="@FormatClienteCuenta(c)" readonly />
-                </div>
-                <div class="field">
-                    <label>Nombre</label>
-                    <input value="@c.Nombre" readonly />
-                </div>
-                <div class="field">
-                    <label>Domicilio</label>
-                    <input value="@c.Domicilio" readonly />
-                </div>
-                <div class="field">
-                    <label>Localidad</label>
-                    <input value="@BuildLocalidad(c)" readonly />
-                </div>
-                <div class="field">
-                    <label>Teléfono</label>
-                    <input value="@c.Telefono" readonly />
-                </div>
-                <div class="field">
-                    <label>Condición comercial</label>
-                    <input value="@BuildCondicion(c)" readonly />
-                </div>
-                <div class="field">
-                    <label>Vendedor</label>
-                    <input value="@BuildVendedor(c)" readonly />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <input value="@BuildTecnico(c)" readonly />
-                </div>
+            <div class="comprobante-viewer__header-grid">
+                @RenderHeaderField(c.SistemaOrigen == "COMPRAS" ? "Proveedor / cuenta" : "Cliente / cuenta", FormatClienteCuenta(c))
+                @RenderHeaderField("Nombre", c.Nombre)
+                @RenderHeaderField("Domicilio", c.Domicilio)
+                @RenderHeaderField("Localidad", BuildLocalidad(c))
+                @RenderHeaderField("Teléfono", c.Telefono)
+                @RenderHeaderField("Condición comercial", BuildCondicion(c))
+                @RenderHeaderField("Vendedor", BuildVendedor(c))
+                @RenderHeaderField("Técnico", BuildTecnico(c))
             </div>
 
-            @if (BuildTotales(c).Count > 0)
+            @if (!ModoDetalleCompleto && BuildTotales(c).Count > 0)
             {
-                <div class="comprobante-viewer__totales" style="@BuildTotalesStyle(BuildTotales(c).Count)">
-                    @foreach (var total in BuildTotales(c))
-                    {
-                        <article class="kpi-card" style="width:auto;display:block;">
-                            <div class="kpi-card__label">@total.Label</div>
-                            <div class="kpi-card__value">@FormatMoney(total.Value)</div>
-                        </article>
-                    }
-                </div>
+                @RenderTotales(c)
             }
         </section>
 
         <section class="panel-card">
+            @if (ModoDetalleCompleto)
+            {
+                @RenderDetalleCompleto()
+            }
+            else
+            {
             <div class="contactos-tabs">
                 @foreach (var tab in Tabs)
                 {
@@ -202,19 +185,115 @@
             {
                 @RenderDocumentos()
             }
+            else if (_activeTab == "asientos")
+            {
+                @RenderAsientos()
+            }
             else if (_activeTab == "acciones")
             {
                 @RenderAcciones()
             }
+            }
         </section>
     }
 </div>
+
+@if (_asientoModalAbierto && _dto?.Cabecera is not null)
+{
+    <div class="comprobante-asiento-modal" role="dialog" aria-modal="true" aria-labelledby="comprobante-asiento-title">
+        <section class="comprobante-asiento-modal__card" @onclick:stopPropagation="true">
+            <header class="comprobante-asiento-modal__header">
+                <div>
+                    <h2 id="comprobante-asiento-title">Detalle del asiento contable</h2>
+                    <p>@GetAsientoTitle()</p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarAsientoModalAsync" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="comprobante-asiento-modal__body">
+                <div class="comprobante-asiento-modal__summary">
+                    <div><strong>Fecha</strong><span>@FormatDate(_dto.Cabecera.Fecha)</span></div>
+                    <div><strong>Comprobante</strong><span>@($"{_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante}")</span></div>
+                    <div><strong>Concepto</strong><span>@BuildAsientoConcepto()</span></div>
+                    <div><strong>Usuario</strong><span>@_dto.Cabecera.Usuario</span></div>
+                    <div><strong>Asiento N.º</strong><span>@GetNumeroAsiento()</span></div>
+                    <div><strong>Unidad de negocio</strong><span>@GetUnidadNegocio()</span></div>
+                </div>
+
+                @if (_asientoLoading)
+                {
+                    <div class="loading">Cargando asiento...</div>
+                }
+                else if (!string.IsNullOrWhiteSpace(_asientoError))
+                {
+                    <div class="editor-msg editor-msg--error"><p>No se pudo cargar el asiento: @_asientoError</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data-table usuarios-table comprobante-asiento-modal__table">
+                            <thead>
+                                <tr>
+                                    <th>Cuenta</th>
+                                    <th>Descripción</th>
+                                    <th>Cheque</th>
+                                    <th>Vencimiento</th>
+                                    <th>Cuotas</th>
+                                    <th>Debe</th>
+                                    <th>Haber</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_asientos.Count == 0)
+                                {
+                                    <tr><td colspan="7" class="muted">Este comprobante no tiene asiento registrado.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in _asientos)
+                                    {
+                                        <tr>
+                                            <td>@item.Cuenta</td>
+                                            <td>
+                                                <span>@(string.IsNullOrWhiteSpace(item.DescripcionCuenta) ? item.Detalle : item.DescripcionCuenta)</span>
+                                                @if (!string.IsNullOrWhiteSpace(item.Detalle) && !string.Equals(item.Detalle.Trim(), item.DescripcionCuenta.Trim(), StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    <small class="comprobante-asiento-detail">@item.Detalle</small>
+                                                }
+                                            </td>
+                                            <td>@item.Cheque</td>
+                                            <td>@FormatDate(item.Vencimiento)</td>
+                                            <td>@(item.Cuotas == 0 ? "" : item.Cuotas.ToString())</td>
+                                            <td class="money">@FormatMoney(item.Debe)</td>
+                                            <td class="money">@FormatMoney(item.Haber)</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="comprobante-asiento-modal__totals">
+                        <span>Suma de débitos: <strong>@FormatMoney(_asientos.Sum(x => x.Debe))</strong></span>
+                        <span>Suma de créditos: <strong>@FormatMoney(_asientos.Sum(x => x.Haber))</strong></span>
+                    </div>
+                }
+
+                <section class="comprobante-asiento-modal__history">
+                    <h3>Historial de acciones</h3>
+                    @RenderAcciones()
+                </section>
+            </div>
+        </section>
+    </div>
+}
 
 @code {
     [Parameter] public string Tc { get; set; } = string.Empty;
     [Parameter] public string IdComprobante { get; set; } = string.Empty;
     [Parameter] public int IdComplemento { get; set; }
     [Parameter] public string? ReturnUrl { get; set; }
+    [Parameter] public bool ModoDetalleCompleto { get; set; }
     [SupplyParameterFromQuery(Name = "reimpresion")] public string? Reimpresion { get; set; }
 
     private static readonly (string Key, string Label)[] Tabs =
@@ -225,14 +304,20 @@
         ("observaciones", "Otros conceptos"),
         ("aplicaciones", "Aplicaciones"),
         ("documentos", "Documentos"),
+        ("asientos", "Asiento"),
         ("acciones", "Historial")
     ];
 
     private readonly Stack<ViewerNavItem> _history = new();
     private ComprobanteViewerDto? _dto;
+    private CompanyBrandingDto? _branding;
     private AppUiMessage? _feedback;
     private bool _loading;
     private bool _generandoPdf;
+    private bool _asientoLoading;
+    private string? _asientoError;
+    private IReadOnlyList<ComprobanteAsientoDto> _asientos = [];
+    private bool _asientoModalAbierto;
     private string _activeTab = "resumen";
     private string _routeKey = string.Empty;
 
@@ -258,6 +343,11 @@
         _feedback = null;
         StateHasChanged();
 
+        var brandingTask = CompanyBrandingSvc.GetAsync();
+        var asientoTask = EsCobranza(tc)
+            ? ComprobanteViewerSvc.GetAsientosAsync(tc, idComprobante)
+            : Task.FromResult<IReadOnlyList<ComprobanteAsientoDto>>([]);
+
         var result = await UiOps.RunAsync(
             () => ComprobanteViewerSvc.GetAsync(tc, idComprobante, idComplemento),
             "No se pudo cargar el comprobante.");
@@ -271,6 +361,27 @@
         }
 
         _dto = result.Value;
+        try { _branding = await brandingTask; }
+        catch { _branding = null; }
+        _asientos = [];
+        _asientoError = null;
+        _asientoModalAbierto = false;
+        if (EsCobranza(tc))
+        {
+            _asientoLoading = true;
+            try
+            {
+                _asientos = await asientoTask;
+            }
+            catch (Exception ex)
+            {
+                _asientoError = ex.Message;
+            }
+            finally
+            {
+                _asientoLoading = false;
+            }
+        }
         _activeTab = ResolveDefaultTab(_dto);
         _loading = false;
     }
@@ -288,6 +399,129 @@
     {
         await LoadAsync(tc, idComprobante, idComplemento, true);
     }
+
+    private async Task MostrarAsientoAsync()
+    {
+        if (_dto?.Cabecera is null)
+            return;
+
+        _asientoModalAbierto = true;
+        if (_asientoLoading || _asientos.Count > 0)
+            return;
+
+        _asientoLoading = true;
+        _asientoError = null;
+        try
+        {
+            _asientos = await ComprobanteViewerSvc.GetAsientosAsync(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante);
+        }
+        catch (Exception ex)
+        {
+            _asientoError = ex.Message;
+        }
+        finally
+        {
+            _asientoLoading = false;
+        }
+    }
+
+    private Task CerrarAsientoModalAsync()
+    {
+        _asientoModalAbierto = false;
+        return Task.CompletedTask;
+    }
+
+
+    private string GetAsientoTitle()
+        => _dto?.Cabecera is null
+            ? string.Empty
+            : $"{_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante} · {_dto.Cabecera.Nombre}";
+
+    private string BuildAsientoConcepto()
+        => _dto?.Cabecera is null
+            ? string.Empty
+            : string.IsNullOrWhiteSpace(_dto.Cabecera.Comentarios)
+                ? _dto.Cabecera.Tc.Equals("FC", StringComparison.OrdinalIgnoreCase) ? "Venta" : "Movimiento contable"
+                : _dto.Cabecera.Comentarios;
+
+    private string GetNumeroAsiento()
+        => _asientos.FirstOrDefault()?.NumeroAsiento.ToString() ?? "—";
+
+    private string GetUnidadNegocio()
+        => _asientos.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.UnidadNegocio))?.UnidadNegocio ?? "—";
+
+    private RenderFragment RenderDetalleCompleto() => @<div class="comprobante-detalle-completo">
+        @if (EsCobranza(_dto!.Cabecera?.Tc))
+        {
+            <section class="comprobante-detalle-completo__section comprobante-detalle-completo__section--seat">
+                <h3>Asiento contable y medios de pago</h3>
+                @RenderAsientos()
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Medios de pago</h3>
+                @RenderMediosPago()
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Otros conceptos</h3>
+                @RenderObservaciones()
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Totales</h3>
+                @RenderTotales(_dto.Cabecera!)
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Comprobantes relacionados</h3>
+                @RenderAplicaciones(false)
+            </section>
+        }
+        else
+        {
+            @if (_dto.Insumos.Count > 0)
+            {
+                <section class="comprobante-detalle-completo__section comprobante-detalle-completo__section--items">
+                    <h3>Artículos</h3>
+                    @RenderInsumos()
+                </section>
+            }
+            @if (_dto.Tareas.Count > 0)
+            {
+                <section class="comprobante-detalle-completo__section">
+                    <h3>Servicios</h3>
+                    @RenderTareas()
+                </section>
+            }
+            <section class="comprobante-detalle-completo__section">
+                <h3>Otros conceptos</h3>
+                @RenderObservaciones()
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Totales</h3>
+                @RenderTotales(_dto.Cabecera!)
+            </section>
+            <section class="comprobante-detalle-completo__section">
+                <h3>Comprobantes relacionados y cobranzas</h3>
+                @RenderAplicaciones()
+            </section>
+        }
+        <section class="comprobante-detalle-completo__section">
+            <h3>Historial de acciones</h3>
+            @RenderAcciones()
+        </section>
+        <section class="comprobante-detalle-completo__section">
+            <h3>Unidad de negocio</h3>
+            <div class="comprobante-viewer__unit">
+                @if (_dto.Cabecera is { } unidadCabecera && !string.IsNullOrWhiteSpace(unidadCabecera.UnidadNegocio))
+                {
+                    <strong>@unidadCabecera.UnidadNegocio</strong>
+                    <span>@(string.IsNullOrWhiteSpace(unidadCabecera.UnidadNegocioDescripcion) || string.Equals(unidadCabecera.UnidadNegocioDescripcion.Trim(), unidadCabecera.UnidadNegocio.Trim(), StringComparison.OrdinalIgnoreCase) ? "—" : unidadCabecera.UnidadNegocioDescripcion)</span>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </div>
+        </section>
+    </div>;
 
     private async Task VerPdfFacturaAsync()
     {
@@ -328,7 +562,7 @@
 
     private string BuildPageUrl(string tc, string idComprobante, int idComplemento)
     {
-        var path = $"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?idComplemento={idComplemento}";
+        var path = RouteCtx.BuildRoute($"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?idComplemento={idComplemento}");
         if (!string.IsNullOrWhiteSpace(ReturnUrl))
             path += $"&returnUrl={Uri.EscapeDataString(ReturnUrl)}";
         return path;
@@ -339,6 +573,11 @@
 
     private static string BuildKey(string tc, string idComprobante, int idComplemento)
         => $"{tc.Trim().ToUpperInvariant()}|{idComprobante.Trim().ToUpperInvariant()}|{idComplemento}";
+
+    private RenderFragment RenderHeaderField(string label, string value) => @<div class="comprobante-viewer__header-field">
+        <span class="comprobante-viewer__header-label">@label</span>
+        <strong>@(string.IsNullOrWhiteSpace(value) ? "—" : value)</strong>
+    </div>;
 
     private static string FormatMoney(decimal? value)
         => value.HasValue ? value.Value.ToString("N2") : "—";
@@ -351,6 +590,15 @@
 
     private static string FormatDateTime(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+
+    private static string FormatTipoAccion(string? tipo)
+        => tipo?.Trim().ToUpperInvariant() switch
+        {
+            "IN" or "A" or "ALTA" => "ALTA",
+            "MO" or "M" or "MODIFICACION" or "MODIFICACIÓN" => "MODIFICACIÓN",
+            "BA" or "B" or "BAJA" => "BAJA",
+            _ => string.IsNullOrWhiteSpace(tipo) ? "—" : tipo.Trim()
+        };
 
     private static string FormatClienteCuenta(ComprobanteCabeceraDto c)
         => string.Join(" · ", new[] { c.Cuenta, c.Nombre }.Where(x => !string.IsNullOrWhiteSpace(x)));
@@ -367,18 +615,71 @@
     private static string BuildTecnico(ComprobanteCabeceraDto c)
         => string.Join(" · ", new[] { c.TecnicoCodigo, c.TecnicoNombre }.Distinct().Where(x => !string.IsNullOrWhiteSpace(x)));
 
+    private static bool EsCobranza(string? tc)
+        => string.Equals(tc?.Trim(), "CBCT", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(tc?.Trim(), "CB", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(tc?.Trim(), "CBFP", StringComparison.OrdinalIgnoreCase);
+
     private static List<(string Label, decimal Value)> BuildTotales(ComprobanteCabeceraDto c)
     {
+        var subtotal = c.ImporteInsumos + c.ImporteServicios + c.ImporteOtrosConceptos;
         var items = new List<(string Label, decimal Value)>
         {
-            ("Importe total", c.ImporteTotal),
-            ("Importe sin IVA", c.ImporteSinIva),
+            ("Subtotal", subtotal != 0m ? subtotal : c.ImporteSinIva),
+            ("Descuento 1", c.Descuento1),
+            ("Descuento 2", c.Descuento2),
+            ("Descuento 3", c.Descuento3),
+            ("Descuento 4", c.Descuento4),
+            ("Impuestos", c.ImporteImpuestosInternos),
+            ("Neto gravado", c.NetoGravado),
+            ("Neto no gravado", c.NetoNoGravado),
             ("IVA", c.Iva),
             ("IVA recargo", c.IvaRecargo),
-            ("Descuentos", c.Descuentos)
+            ("Total", c.ImporteTotal)
         };
 
-        return items.Where(static x => x.Value != 0m).ToList();
+        return items;
+    }
+
+    private RenderFragment RenderTotales(ComprobanteCabeceraDto c) => @<div class="comprobante-viewer__totales-list">
+        <div class="comprobante-viewer__total-column">
+            <span class="comprobante-viewer__total-label">SUBTOTAL:</span>
+            <strong>@FormatMoney(GetTotal(c, "Subtotal"))</strong>
+        </div>
+        <div class="comprobante-viewer__total-column comprobante-viewer__total-column--multi">
+            <span class="comprobante-viewer__total-label">DESCUENTOS:</span>
+            <strong>1&nbsp;&nbsp;@FormatMoney(c.Descuento1)</strong>
+            <strong>2&nbsp;&nbsp;@FormatMoney(c.Descuento2)</strong>
+            <strong>3&nbsp;&nbsp;@FormatMoney(c.Descuento3)</strong>
+            <strong>4&nbsp;&nbsp;@FormatMoney(c.Descuento4)</strong>
+        </div>
+        <div class="comprobante-viewer__total-column">
+            <span class="comprobante-viewer__total-label">IMPUESTOS:</span>
+            <strong>@FormatMoney(c.ImporteImpuestosInternos)</strong>
+        </div>
+        <div class="comprobante-viewer__total-column comprobante-viewer__total-column--multi">
+            <span class="comprobante-viewer__total-label">IVA:</span>
+            <strong>@FormatMoney(c.Iva)</strong>
+            <strong>0.00</strong>
+            <strong>0.00</strong>
+        </div>
+        <div class="comprobante-viewer__total-column">
+            <span class="comprobante-viewer__total-label">IVA RECARGO:</span>
+            <strong>@FormatMoney(c.IvaRecargo)</strong>
+        </div>
+        <div class="comprobante-viewer__total-column comprobante-viewer__total-column--grand">
+            <span class="comprobante-viewer__total-label">TOTAL $</span>
+            <strong>@FormatMoney(c.ImporteTotal)</strong>
+        </div>
+    </div>;
+
+    private static decimal GetTotal(ComprobanteCabeceraDto c, string label)
+    {
+        if (label != "Subtotal")
+            return 0m;
+
+        var subtotal = c.ImporteInsumos + c.ImporteServicios + c.ImporteOtrosConceptos;
+        return subtotal != 0m ? subtotal : c.ImporteSinIva;
     }
 
     private static string ResolveDefaultTab(ComprobanteViewerDto? dto)
@@ -424,7 +725,8 @@
             _ when c.SistemaOrigen == "COMPRAS" => "Comprobante de Compras",
             _ => "Comprobante"
         };
-        return $"{prefix} · {c.Tc} {c.IdComprobante}";
+        var empresa = string.IsNullOrWhiteSpace(_branding?.Nombre) ? "Alfa Gestión" : _branding.Nombre;
+        return $"{empresa} · {prefix} {c.Tc} {c.IdComprobante}";
     }
 
     private string GetIntro()
@@ -594,65 +896,104 @@
         </table>
     </div>;
 
-    private RenderFragment RenderAplicaciones() => @<div class="comprobante-viewer__related">
+    private RenderFragment RenderAplicaciones(bool incluirMediosPago = true) => @<div class="comprobante-viewer__related">
+        @if (incluirMediosPago && EsCobranza(_dto!.Cabecera?.Tc))
+        {
+            <div class="panel-card comprobante-viewer__nested">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Medios de pago</h3>
+                        <p class="panel-card__subtitle">Cuentas registradas en el asiento de la cobranza.</p>
+                    </div>
+                </div>
+                @RenderMediosPago()
+            </div>
+        }
         <div class="panel-card comprobante-viewer__nested">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Este comprobante aplica a</h3>
-                    <p class="panel-card__subtitle">Por ejemplo, factura aplicada a remito.</p>
+                    <h3 class="panel-card__title">Comprobantes que aplican a @_dto!.Cabecera!.Tc @_dto.Cabecera.IdComprobante</h3>
+                    <p class="panel-card__subtitle">TC e IDCOMPROBANTE de los comprobantes aplicados.</p>
                 </div>
             </div>
-            @RenderRelacionadasTable(_dto!.AplicaA, false)
-        </div>
-        <div class="panel-card comprobante-viewer__nested">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Comprobantes que aplican a este comprobante</h3>
-                    <p class="panel-card__subtitle">Por ejemplo, cobranzas o facturas relacionadas.</p>
-                </div>
-            </div>
-            @RenderRelacionadasTable(_dto!.AplicadoPor, true)
+            @RenderRelacionadasTable(_dto!.AplicadoPor, EsCobranza(_dto.Cabecera?.Tc))
         </div>
     </div>;
 
-    private RenderFragment RenderRelacionadasTable(IReadOnlyList<ComprobanteAplicacionDto> rows, bool usarRelacionado) => @<div class="table-wrap">
+    private RenderFragment RenderMediosPago() => @<div class="table-wrap">
         <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
-                    <th>TC origen</th>
-                    <th>ID origen</th>
-                    <th>TC relacionado</th>
-                    <th>ID relacionado</th>
-                    <th>Fecha</th>
-                    <th>Importe</th>
-                    <th>Recibo</th>
-                    <th>Estado</th>
-                    <th>Cuenta / nombre</th>
+                    <th>Cuenta</th>
+                    <th>Detalle</th>
+                    <th>Debe/Haber</th>
+                    <th>Usuario</th>
+                    <th style="text-align:right;">Importe</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_asientoLoading)
+                {
+                    <tr><td colspan="5" class="muted">Consultando los medios de pago en el asiento...</td></tr>
+                }
+                else if (!string.IsNullOrWhiteSpace(_asientoError))
+                {
+                    <tr><td colspan="5" class="muted">No se pudieron consultar los medios de pago.</td></tr>
+                }
+                else
+                {
+                    var medios = _asientos.Where(x => string.Equals(x.DebeHaber?.Trim(), "D", StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (medios.Count == 0)
+                    {
+                        medios = _asientos.ToList();
+                    }
+
+                    if (medios.Count == 0)
+                    {
+                        <tr><td colspan="5" class="muted">La cobranza no tiene medios de pago registrados en el asiento.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in medios)
+                        {
+                            <tr>
+                                <td>@item.Cuenta</td>
+                                <td>@item.Detalle</td>
+                                <td>@item.DebeHaber</td>
+                                <td>@item.Usuario</td>
+                                <td style="text-align:right;">@FormatMoney(item.Importe)</td>
+                            </tr>
+                        }
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderRelacionadasTable(IReadOnlyList<ComprobanteAplicacionDto> rows, bool mostrarOrigen) => @<div class="table-wrap">
+        <table class="data-table usuarios-table" data-sticky-list-header>
+            <thead>
+                <tr>
+                    <th>TC</th>
+                    <th>IDCOMPROBANTE</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 @if (rows.Count == 0)
                 {
-                    <tr><td colspan="10" class="muted">No hay comprobantes relacionados por aplicación.</td></tr>
+                    <tr><td colspan="3" class="muted">No hay comprobantes que apliquen a este comprobante.</td></tr>
                 }
                 else
                 {
                     @foreach (var item in rows)
                     {
-                        var tcDestino = usarRelacionado ? item.TcRelacionado : item.TcOrigen;
-                        var idDestino = usarRelacionado ? item.IdComprobanteRelacionado : item.IdComprobanteOrigen;
-                        var idCompDestino = usarRelacionado ? item.IdComplementoRelacionado : item.IdComplementoOrigen;
+                        var tcDestino = mostrarOrigen ? item.TcOrigen : item.TcRelacionado;
+                        var idDestino = mostrarOrigen ? item.IdComprobanteOrigen : item.IdComprobanteRelacionado;
+                        var idCompDestino = mostrarOrigen ? item.IdComplementoOrigen : item.IdComplementoRelacionado;
                         <tr>
-                            <td>@item.TcOrigen</td>
-                            <td>@item.IdComprobanteOrigen</td>
-                            <td>@item.TcRelacionado</td>
-                            <td>@item.IdComprobanteRelacionado</td>
-                            <td>@FormatDate(item.FechaRelacionado)</td>
-                            <td>@FormatMoney(item.ImporteAplicado)</td>
-                            <td>@item.Recibo</td>
-                            <td>@item.EstadoRelacionado</td>
-                            <td>@string.Join(" · ", new[] { item.CuentaRelacionada, item.NombreRelacionado }.Where(x => !string.IsNullOrWhiteSpace(x)))</td>
+                            <td>@tcDestino</td>
+                            <td>@idDestino</td>
                             <td>
                                 <div class="actions">
                                     <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenRelacionadoAsync(tcDestino, idDestino, idCompDestino)">
@@ -723,6 +1064,64 @@
         </table>
     </div>;
 
+    private RenderFragment RenderAsientos() => @<div class="table-wrap">
+        @if (_asientoLoading)
+        {
+            <div class="loading">Cargando asiento...</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_asientoError))
+        {
+            <div class="editor-msg editor-msg--error"><p>@_asientoError</p></div>
+        }
+        <table class="data-table usuarios-table" data-sticky-list-header>
+            <thead>
+                <tr>
+                    <th>Cuenta</th>
+                    <th>Descripción</th>
+                    <th>Cheque</th>
+                    <th>Vencimiento</th>
+                    <th>Cuotas</th>
+                    <th style="text-align:right;">Debe</th>
+                    <th style="text-align:right;">Haber</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_asientos.Count == 0 && !_asientoLoading)
+                {
+                    <tr><td colspan="7" class="muted">Este comprobante no tiene asiento registrado.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _asientos)
+                    {
+                        <tr>
+                            <td>@item.Cuenta</td>
+                            <td>
+                                <span>@(string.IsNullOrWhiteSpace(item.DescripcionCuenta) ? item.Detalle : item.DescripcionCuenta)</span>
+                                @if (!string.IsNullOrWhiteSpace(item.Detalle) && !string.Equals(item.Detalle.Trim(), item.DescripcionCuenta.Trim(), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <small class="comprobante-asiento-detail">@item.Detalle</small>
+                                }
+                            </td>
+                            <td>@item.Cheque</td>
+                            <td>@FormatDate(item.Vencimiento)</td>
+                            <td>@(item.Cuotas == 0 ? "0.00" : item.Cuotas.ToString("0.##"))</td>
+                            <td class="money">@FormatMoney(item.Debe)</td>
+                            <td class="money">@FormatMoney(item.Haber)</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        @if (_asientos.Count > 0)
+        {
+            <div class="comprobante-asiento-inline__totals">
+                <span>Suma de débitos: <strong>@FormatMoney(_asientos.Sum(x => x.Debe))</strong></span>
+                <span>Suma de créditos: <strong>@FormatMoney(_asientos.Sum(x => x.Haber))</strong></span>
+            </div>
+        }
+    </div>;
+
     private RenderFragment RenderAcciones() => @<div class="table-wrap">
         <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
@@ -745,7 +1144,7 @@
                     @foreach (var item in _dto.Acciones)
                     {
                         <tr>
-                            <td>@item.TipoAccion</td>
+                            <td>@FormatTipoAccion(item.TipoAccion)</td>
                             <td>@item.Comentario</td>
                             <td>@FormatDateTime(item.FechaHora)</td>
                             <td>@item.Usuario</td>

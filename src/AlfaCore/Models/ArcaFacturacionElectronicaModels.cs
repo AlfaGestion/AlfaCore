@@ -18,7 +18,9 @@ public sealed record ArcaEmisorConfig(
     int PuntoVentaElectronico,
     string CertificadoPem,
     string ClavePrivadaPem,
-    string CondicionIvaPropiaCodigo);
+    string CondicionIvaPropiaCodigo,
+    string WsaaUrl,
+    string WsfeUrl);
 
 /// <summary>Configuración global de facturación electrónica para la pantalla de Configuración General
 /// (Ventas). No incluye el contenido del certificado -- solo si hay uno subido y su nombre.</summary>
@@ -29,6 +31,8 @@ public sealed class ArcaConfiguracionGeneralDto
     public string ModoFalloCae { get; set; } = "ESTRICTO";
     public string Cuit { get; set; } = string.Empty;
     public string PuntoVenta { get; set; } = string.Empty;
+    public string WsaaUrl { get; set; } = string.Empty;
+    public string WsfeUrl { get; set; } = string.Empty;
     public bool TieneCertificado { get; set; }
     public string? NombreArchivoCrt { get; set; }
     public string? NombreArchivoKey { get; set; }

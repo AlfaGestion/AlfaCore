@@ -77,7 +77,7 @@ IF (@unegocio IS NULL) OR (@unegocio = '') SET @unegocio = '   1'
 -- FechaHoraGrabacion = fecha + hora exacta del momento de grabacion
 -- pFecha             = solo la fecha (sin hora), igual que FECHA y FechaSubdiario
 SET @FechaHoraGrabacion = GETDATE()
-SET @pFecha = CONVERT(varchar, @FechaHoraGrabacion, 103)
+SET @pFecha = @FechaHoraGrabacion
 
 DECLARE @NroAsiento int
 DECLARE @Periodo nvarchar(6)
@@ -196,7 +196,7 @@ IF (@unegocio IS NULL) OR (@unegocio = '') SET @unegocio = '   1'
 
 -- FechaHoraGrabacion = fecha + hora; pFecha = solo fecha (sin hora)
 SET @FechaHoraGrabacion = GETDATE()
-SET @pFecha = CONVERT(VARCHAR, @FechaHoraGrabacion, 103)
+SET @pFecha = @FechaHoraGrabacion
 
 -- Cuenta de efectivo por default
 SET @CuentaMP = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE = 'CUENTA_CAJA')

@@ -1,6 +1,7 @@
 @page "/consultas"
 @page "/{idweb}/{idbase:int}/consultas"
 @inject AlfaCore.Services.IConsultasService ConsultasSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ISessionService SessionSvc
 @implements IDisposable
@@ -12,7 +13,7 @@
         <h2 class="page-intro__title">Consultas</h2>
         <p class="page-intro__text">Ejecutá y exportá las consultas guardadas del sistema.</p>
     </div>
-    <a class="btn btn--primary" href="/consultas/nueva">
+    <a class="btn btn--primary" href="@RouteContext.BuildRoute("/consultas/nueva")">
         <i class="bi bi-plus-lg"></i> Nueva consulta
     </a>
 </div>
@@ -85,7 +86,7 @@ else
                         }
                         else
                         {
-                            <a class="ctree__leaf" href="/consultas/@nodo.Id">
+                            <a class="ctree__leaf" href="@RouteContext.BuildRoute($"/consultas/{nodo.Id}")">
                                 <span class="ctree__item-clave">@nodo.Clave</span>
                                 <span class="ctree__node-label">@nodo.Nombre</span>
                                 @if (nodo.TieneParametros)
@@ -104,7 +105,7 @@ else
             <div class="ctree-welcome">
                 <i class="bi bi-table ctree-welcome__icon"></i>
                 <p class="ctree-welcome__text">Seleccioná una consulta del árbol para abrirla.</p>
-                <a class="btn btn--ghost" href="/consultas/nueva">
+                <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/consultas/nueva")">
                     <i class="bi bi-plus-lg"></i> Crear nueva consulta
                 </a>
             </div>

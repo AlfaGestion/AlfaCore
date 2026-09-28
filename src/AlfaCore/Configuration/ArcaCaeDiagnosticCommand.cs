@@ -57,7 +57,7 @@ internal static class ArcaCaeDiagnosticCommand
         output.WriteLine($"Ticket obtenido. Vence (UTC): {ticket.ExpirationTimeUtc:yyyy-MM-dd HH:mm:ss}");
 
         output.WriteLine("== 3) Consultando último autorizado (WSFEv1) ==");
-        var ultimo = await wsfeClient.ObtenerUltimoAutorizadoAsync(ticket, emisor.Cuit, emisor.PuntoVentaElectronico, cbteTipo, emisor.Ambiente, ct);
+        var ultimo = await wsfeClient.ObtenerUltimoAutorizadoAsync(ticket, emisor.Cuit, emisor.PuntoVentaElectronico, cbteTipo, emisor.Ambiente, emisor.WsfeUrl, ct);
         output.WriteLine($"Último autorizado para PtoVta={emisor.PuntoVentaElectronico} CbteTipo={cbteTipo}: {ultimo}");
 
         if (!solicitarCae)
@@ -89,7 +89,7 @@ internal static class ArcaCaeDiagnosticCommand
             MonCotiz: 1m,
             Ivas: [new ArcaIvaAlicuotaDto(ArcaCodigosAfip.ResolverIdAlicuotaIva(21m), 100.00m, 21.00m)]);
 
-        var resultado = await wsfeClient.SolicitarCaeAsync(ticket, solicitud, emisor.Ambiente, ct);
+        var resultado = await wsfeClient.SolicitarCaeAsync(ticket, solicitud, emisor.Ambiente, emisor.WsfeUrl, ct);
         output.WriteLine($"ExitoTecnico={resultado.ExitoTecnico} Resultado={resultado.Resultado} Aprobado={resultado.Aprobado}");
         if (resultado.Aprobado)
         {

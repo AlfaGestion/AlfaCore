@@ -8,7 +8,8 @@ namespace AlfaCore.Services;
 public sealed class AuditoriaService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IAuditoriaService
+    IAppEventService appEvents,
+    IAppModeService appMode) : IAuditoriaService
 {
     private const string ConfigGroup = "AUDITORIA";
     private const string HoraInicioLaboralKey = "AUDITORIA-USUARIOS-HORA-INICIO-LABORAL";
@@ -20,10 +21,9 @@ public sealed class AuditoriaService(
     private const string DiasDuplicadosCompraKey = "AUDITORIA-USUARIOS-DIAS-DUPLICADOS-COMPRA";
     private const string SoloSucursalDuplicadosKey = "AUDITORIA-USUARIOS-SOLO-SUCURSAL-DUPLICADOS";
 
-    private string ConnectionString => sessionService.GetConnectionString().Length > 0
-        ? sessionService.GetConnectionString()
-        : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+    // En SaaS sin base activa falla cerrado (TenantSessionRequiredException) antes de abrir la
+    // conexión: nunca lee AUX_ERR/auditoría de ConnectionStrings:AlfaGestion como base global.
+    private string ConnectionString => TenantConnectionGuard.Resolve(sessionService, configuration, appMode, "Auditoría");
 
     public async Task<AuditoriaResumenDto> GetResumenAsync(CancellationToken ct = default)
     {

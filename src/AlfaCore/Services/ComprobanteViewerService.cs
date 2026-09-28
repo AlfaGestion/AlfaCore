@@ -43,7 +43,7 @@ public sealed class ComprobanteViewerService(
             // Determinar sistema desde V_TA_Cpte
             var sistema = await cn.QueryFirstOrDefaultAsync<string>(
                 new CommandDefinition(
-                    "SELECT TOP(1) ISNULL(UPPER(LTRIM(RTRIM(SISTEMA))), '') FROM dbo.V_TA_Cpte WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Tc",
+                    "SELECT TOP(1) ISNULL(UPPER(LTRIM(RTRIM(SISTEMA))), '') FROM dbo.V_TA_Cpte WHERE CODIGO = @Tc",
                     new { Tc = tcNorm },
                     cancellationToken: token)) ?? string.Empty;
 
@@ -55,6 +55,55 @@ public sealed class ComprobanteViewerService(
                 ? await GetComprasAsync(cn, tcNorm, idNorm, tipoFormato, token)
                 : await GetVentasAsync(cn, tcNorm, idNorm, idComplemento, tipoFormato, token);
         }, "No se pudo cargar el comprobante solicitado.", new { tc, idComprobante, idComplemento }, ct);
+
+    public Task<IReadOnlyList<ComprobanteAsientoDto>> GetAsientosAsync(string tc, string idComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetAsientos", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(tc) || string.IsNullOrWhiteSpace(idComprobante))
+                return (IReadOnlyList<ComprobanteAsientoDto>)[];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var idNorm = idComprobante.Trim().ToUpperInvariant();
+            if (idNorm.Length != 13)
+                return (IReadOnlyList<ComprobanteAsientoDto>)[];
+
+            var sucursal = idNorm[..4];
+            var numero = idNorm.Substring(4, 8);
+            var letra = idNorm[^1..];
+
+            var rows = await cn.QueryAsync<ComprobanteAsientoDto>(new CommandDefinition(
+                """
+                SELECT
+                    ISNULL(a.[NUMERO ASIENTO], 0) AS NumeroAsiento,
+                    a.FECHA AS Fecha,
+                    a.FECHAHORA_GRABACION AS FechaHoraGrabacion,
+                    ISNULL(LTRIM(RTRIM(a.CUENTA)), '') AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(mc.DESCRIPCION)), '') AS DescripcionCuenta,
+                    ISNULL(LTRIM(RTRIM(a.DETALLE)), '') AS Detalle,
+                    ISNULL(a.[DEBE-HABER], '') AS DebeHaber,
+                    ISNULL(a.IMPORTE, 0) AS Importe,
+                    CASE WHEN a.[DEBE-HABER] = 'D' THEN ISNULL(a.IMPORTE, 0) ELSE 0 END AS Debe,
+                    CASE WHEN a.[DEBE-HABER] = 'H' THEN ISNULL(a.IMPORTE, 0) ELSE 0 END AS Haber,
+                    ISNULL(a.NroComprobanteBancario, '') AS Cheque,
+                    a.VENCIMIENTO AS Vencimiento,
+                    ISNULL(a.TJ_Cuotas, 0) AS Cuotas,
+                    ISNULL(LTRIM(RTRIM(a.UNEGOCIO)), '') AS UnidadNegocio,
+                    ISNULL(LTRIM(RTRIM(a.USUARIO_LOGEADO)), '') AS Usuario
+                FROM dbo.MV_ASIENTOS a
+                LEFT JOIN dbo.MA_CUENTAS mc ON mc.CODIGO = a.CUENTA
+                WHERE a.TC = @Tc
+                  AND a.SUCURSAL = @Sucursal
+                  AND a.NUMERO = @Numero
+                  AND a.LETRA = @Letra
+                ORDER BY ISNULL(a.[NUMERO ASIENTO], 0), ISNULL(a.SECUENCIA, 0)
+                """,
+                new { Tc = tc.Trim().ToUpperInvariant(), Sucursal = sucursal, Numero = numero, Letra = letra },
+                cancellationToken: token));
+
+            return (IReadOnlyList<ComprobanteAsientoDto>)rows.AsList();
+        }, "No se pudo cargar el asiento del comprobante.", new { tc, idComprobante }, ct);
 
     // ── Ventas (V_MV_*) ──────────────────────────────────────────────────────
 
@@ -82,11 +131,20 @@ public sealed class ComprobanteViewerService(
                 ISNULL(c.IDTECNICO, '') AS TecnicoCodigo,
                 ISNULL(te.Nombre, '') AS TecnicoNombre,
                 ISNULL(c.Usuario, '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(c.UNEGOCIO)), '') AS UnidadNegocio,
+                ISNULL(NULLIF(LTRIM(RTRIM(un.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))) AS UnidadNegocioDescripcion,
                 ISNULL(c.IMPORTE, 0) AS ImporteTotal,
                 ISNULL(c.IMPORTE_S_IVA, 0) AS ImporteSinIva,
+                ISNULL(c.ImporteInsumos, 0) AS ImporteInsumos,
+                ISNULL(c.ImporteServicios, 0) AS ImporteServicios,
+                ISNULL(c.ImporteOtrosConceptos, 0) AS ImporteOtrosConceptos,
+                ISNULL(c.ImporteImpuestosInternos, 0) AS ImporteImpuestosInternos,
                 ISNULL(c.ImporteIva, 0) AS Iva,
                 ISNULL(c.ImporteIvaRec, 0) AS IvaRecargo,
-                ISNULL(c.ImpDescuento1, 0) + ISNULL(c.ImpDescuento2, 0) + ISNULL(c.ImpDescuento3, 0) + ISNULL(c.ImpDescuento4, 0) AS Descuentos,
+                ISNULL(c.ImpDescuento1, 0) AS Descuento1,
+                ISNULL(c.ImpDescuento2, 0) AS Descuento2,
+                ISNULL(c.ImpDescuento3, 0) AS Descuento3,
+                ISNULL(c.ImpDescuento4, 0) AS Descuento4,
                 ISNULL(c.NetoGravado, 0) AS NetoGravado,
                 ISNULL(c.NetoNoGravado, 0) AS NetoNoGravado,
                 CAST(ISNULL(c.ANULADA, 0) AS bit) AS Anulada,
@@ -99,13 +157,15 @@ public sealed class ComprobanteViewerService(
                 CAST(ISNULL(c.COMENTARIOS, '') AS nvarchar(max)) AS Comentarios
             FROM dbo.V_MV_Cpte c
             LEFT JOIN dbo.V_TA_Cpra_Vta cv
-                ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(c.IDCOND_CPRA_VTA, ''))))
+                ON cv.IDCond_Cpra_Vta = c.IDCOND_CPRA_VTA
             LEFT JOIN dbo.V_TA_VENDEDORES vd
-                ON UPPER(LTRIM(RTRIM(vd.IdVendedor))) = UPPER(LTRIM(RTRIM(ISNULL(c.IdVendedor, ''))))
+                ON vd.IdVendedor = c.IdVendedor
             LEFT JOIN dbo.V_TA_Tecnicos te
-                ON UPPER(LTRIM(RTRIM(te.IdTecnico))) = UPPER(LTRIM(RTRIM(ISNULL(c.IDTECNICO, ''))))
-            WHERE UPPER(LTRIM(RTRIM(c.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(c.IDCOMPROBANTE))) = @IdComprobante
+                ON te.IdTecnico = c.IDTECNICO
+            LEFT JOIN dbo.V_TA_UnidadNegocio un
+                ON LTRIM(RTRIM(un.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))
+            WHERE c.TC = @Tc
+              AND c.IDCOMPROBANTE = @IdComprobante
               AND ISNULL(c.IDCOMPLEMENTO, 0) = @IdComplemento
             ORDER BY c.ID DESC;
 
@@ -124,9 +184,9 @@ public sealed class ComprobanteViewerService(
                 ISNULL(i.CODIGOBARRA, '') AS CodigoBarra,
                 ISNULL(i.SECUENCIA, 0) AS Secuencia
             FROM dbo.V_MV_CpteInsumos i
-            WHERE UPPER(LTRIM(RTRIM(i.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(i.IDCOMPROBANTE))) = @IdComprobante
-              AND ISNULL(i.IDCOMPLEMENTO, 0) = @IdComplemento
+            WHERE i.TC = @Tc
+              AND i.IDCOMPROBANTE = @IdComprobante
+              AND i.IDCOMPLEMENTO = @IdComplemento
             ORDER BY ISNULL(i.SECUENCIA, 0), ISNULL(i.ID, 0);
 
             SELECT
@@ -146,10 +206,10 @@ public sealed class ComprobanteViewerService(
                 ISNULL(t.SECUENCIA, 0) AS Secuencia
             FROM dbo.V_MV_CpteTareas t
             LEFT JOIN dbo.V_TA_Tecnicos te
-                ON UPPER(LTRIM(RTRIM(te.IdTecnico))) = UPPER(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))))
-            WHERE UPPER(LTRIM(RTRIM(t.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(t.IDCOMPROBANTE))) = @IdComprobante
-              AND ISNULL(t.IDCOMPLEMENTO, 0) = @IdComplemento
+                ON te.IdTecnico = t.IdTecnico
+            WHERE t.TC = @Tc
+              AND t.IDCOMPROBANTE = @IdComprobante
+              AND t.IDCOMPLEMENTO = @IdComplemento
             ORDER BY ISNULL(t.SECUENCIA, 0), ISNULL(t.ID, 0);
 
             SELECT
@@ -158,20 +218,20 @@ public sealed class ComprobanteViewerService(
                 ISNULL(o.IMPORTE, 0) AS Importe,
                 ISNULL(o.SECUENCIA, 0) AS Secuencia
             FROM dbo.V_MV_CPTE_OBSERV o
-            WHERE UPPER(LTRIM(RTRIM(o.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(o.IDCOMPROBANTE))) = @IdComprobante
-              AND ISNULL(o.IDCOMPLEMENTO, 0) = @IdComplemento
+            WHERE o.TC = @Tc
+              AND o.IDCOMPROBANTE = @IdComprobante
+              AND o.IDCOMPLEMENTO = @IdComplemento
             ORDER BY ISNULL(o.SECUENCIA, 0), ISNULL(o.ID, 0);
 
             SELECT
                 ISNULL(d.DOCUMENTO, '') AS Documento
             FROM dbo.V_MV_CpteDoc d
-            WHERE UPPER(LTRIM(RTRIM(d.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(d.IDCOMPROBANTE))) = @IdComprobante
-              AND ISNULL(d.IDCOMPLEMENTO, 0) = @IdComplemento
+            WHERE d.TC = @Tc
+              AND d.IDCOMPROBANTE = @IdComprobante
+              AND d.IDCOMPLEMENTO = @IdComplemento
             ORDER BY ISNULL(d.ID, 0);
 
-            """ + AplicaAQuery + ";" + AplicadoPorQuery + ";" + AccionesVentasQuery;
+            """ + AplicadoPorQuery + ";" + AccionesVentasQuery + ";" + TieneAsientoQuery;
 
         var parameters = new
         {
@@ -212,11 +272,20 @@ public sealed class ComprobanteViewerService(
                 '' AS TecnicoCodigo,
                 '' AS TecnicoNombre,
                 ISNULL(c.USUARIO, '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(c.UNEGOCIO)), '') AS UnidadNegocio,
+                ISNULL(NULLIF(LTRIM(RTRIM(un.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))) AS UnidadNegocioDescripcion,
                 ISNULL(c.IMPORTE, 0) AS ImporteTotal,
                 ISNULL(c.IMPORTE_S_IVA, 0) AS ImporteSinIva,
+                ISNULL(c.ImporteInsumos, 0) AS ImporteInsumos,
+                ISNULL(c.ImporteServicios, 0) AS ImporteServicios,
+                ISNULL(c.ImporteOtrosConceptos, 0) AS ImporteOtrosConceptos,
+                ISNULL(c.ImporteImpuestosInternos, 0) AS ImporteImpuestosInternos,
                 ISNULL(c.ImporteIva, 0) AS Iva,
                 ISNULL(c.ImporteIvaRec, 0) AS IvaRecargo,
-                ISNULL(c.ImpDescuento1,0)+ISNULL(c.ImpDescuento2,0)+ISNULL(c.ImpDescuento3,0)+ISNULL(c.ImpDescuento4,0)+ISNULL(c.ImpDescuento5,0) AS Descuentos,
+                ISNULL(c.ImpDescuento1, 0) AS Descuento1,
+                ISNULL(c.ImpDescuento2, 0) AS Descuento2,
+                ISNULL(c.ImpDescuento3, 0) AS Descuento3,
+                ISNULL(c.ImpDescuento4, 0) AS Descuento4,
                 ISNULL(c.NetoGravado, 0) AS NetoGravado,
                 ISNULL(c.NetoNoGravado, 0) AS NetoNoGravado,
                 CAST(ISNULL(c.ANULADA, 0) AS bit) AS Anulada,
@@ -229,9 +298,11 @@ public sealed class ComprobanteViewerService(
                 CAST(ISNULL(c.COMENTARIOS, '') AS nvarchar(max)) AS Comentarios
             FROM dbo.C_MV_Cpte c
             LEFT JOIN dbo.V_TA_Cpra_Vta cv
-                ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(c.IDCOND_CPRA_VTA, ''))))
-            WHERE UPPER(LTRIM(RTRIM(c.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(c.IDCOMPROBANTE))) = @IdComprobante
+                ON cv.IDCond_Cpra_Vta = c.IDCOND_CPRA_VTA
+            LEFT JOIN dbo.V_TA_UnidadNegocio un
+                ON LTRIM(RTRIM(un.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))
+            WHERE c.TC = @Tc
+              AND c.IDCOMPROBANTE = @IdComprobante
             ORDER BY c.ID DESC;
 
             SELECT
@@ -249,15 +320,15 @@ public sealed class ComprobanteViewerService(
                 '' AS CodigoBarra,
                 0 AS Secuencia
             FROM dbo.C_MV_CpteInsumos i
-            WHERE UPPER(LTRIM(RTRIM(i.TC))) = @Tc
-              AND UPPER(LTRIM(RTRIM(i.IDCOMPROBANTE))) = @IdComprobante
+            WHERE i.TC = @Tc
+              AND i.IDCOMPROBANTE = @IdComprobante
             ORDER BY ISNULL(i.ID, 0);
 
             SELECT '' AS CodigoTarea WHERE 1=0;
             SELECT '' AS TipoObservacion WHERE 1=0;
             SELECT '' AS Documento WHERE 1=0;
 
-            """ + AplicaAQuery + ";" + AplicadoPorQuery + ";" + AccionesVentasQuery;
+            """ + AplicadoPorQuery + ";" + AccionesVentasQuery + ";" + TieneAsientoQuery;
 
         var parameters = new
         {
@@ -273,56 +344,6 @@ public sealed class ComprobanteViewerService(
 
     // ── Queries compartidas (MV_APLICACION y acciones) ────────────────────────
 
-    private const string AplicaAQuery = """
-        SELECT
-            ISNULL(ap.TCO_ORIGEN, '') AS TcOrigen,
-            ISNULL(ap.IDComprobante_Origen, '') AS IdComprobanteOrigen,
-            ISNULL(ap.IDCOMPLEMENTO_ORIGEN, 0) AS IdComplementoOrigen,
-            ISNULL(ap.TC, '') AS TcRelacionado,
-            ISNULL(ap.IDComprobante, '') AS IdComprobanteRelacionado,
-            ISNULL(rel.IDCOMPLEMENTO, 0) AS IdComplementoRelacionado,
-            rel.FECHA AS FechaRelacionado,
-            ISNULL(ap.IMPORTE, 0) AS ImporteAplicado,
-            LTRIM(RTRIM(
-                CASE
-                    WHEN ISNULL(ap.TC_Print, '') <> '' AND ISNULL(ap.IdComprobante_Print, '') <> '' THEN ap.TC_Print + ' ' + ap.IdComprobante_Print
-                    WHEN ISNULL(ap.TC_Print, '') <> '' THEN ap.TC_Print
-                    ELSE ISNULL(ap.IdComprobante_Print, '')
-                END
-            )) AS Recibo,
-            LTRIM(RTRIM(
-                CASE WHEN ISNULL(rel.ANULADA, 0) = 1 THEN 'ANULADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.FINALIZADA, 0) = 1 THEN 'FINALIZADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.APROBADO, 0) = 1 THEN 'APROBADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.BLOQUEADA, 0) = 1 THEN 'BLOQUEADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.CERRADA, 0) = 1 THEN 'CERRADO ' ELSE '' END
-            )) AS EstadoRelacionado,
-            ISNULL(rel.CUENTA, '') AS CuentaRelacionada,
-            ISNULL(rel.NOMBRE, '') AS NombreRelacionado
-        FROM dbo.MV_APLICACION ap
-        OUTER APPLY
-        (
-            SELECT TOP (1)
-                c2.IDCOMPLEMENTO,
-                c2.FECHA,
-                c2.ANULADA,
-                c2.FINALIZADA,
-                c2.APROBADO,
-                c2.BLOQUEADA,
-                c2.CERRADA,
-                c2.CUENTA,
-                c2.NOMBRE
-            FROM dbo.V_MV_Cpte c2
-            WHERE UPPER(LTRIM(RTRIM(c2.TC))) = UPPER(LTRIM(RTRIM(ap.TCO_ORIGEN)))
-              AND UPPER(LTRIM(RTRIM(c2.IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(ap.IDComprobante_Origen)))
-              AND ISNULL(c2.IDCOMPLEMENTO, 0) = ISNULL(ap.IDCOMPLEMENTO_ORIGEN, 0)
-            ORDER BY c2.ID DESC
-        ) rel
-        WHERE UPPER(LTRIM(RTRIM(ap.TC))) = @Tc
-          AND UPPER(LTRIM(RTRIM(ap.IDComprobante))) = @IdComprobante
-        ORDER BY ISNULL(rel.FECHA, '19000101'), ISNULL(ap.IDComprobante_Origen, '')
-        """;
-
     private const string AplicadoPorQuery = """
         SELECT
             ISNULL(ap.TCO_ORIGEN, '') AS TcOrigen,
@@ -330,46 +351,15 @@ public sealed class ComprobanteViewerService(
             ISNULL(ap.IDCOMPLEMENTO_ORIGEN, 0) AS IdComplementoOrigen,
             ISNULL(ap.TC, '') AS TcRelacionado,
             ISNULL(ap.IDComprobante, '') AS IdComprobanteRelacionado,
-            ISNULL(rel.IDCOMPLEMENTO, 0) AS IdComplementoRelacionado,
-            rel.FECHA AS FechaRelacionado,
-            ISNULL(ap.IMPORTE, 0) AS ImporteAplicado,
-            LTRIM(RTRIM(
-                CASE
-                    WHEN ISNULL(ap.TC_Print, '') <> '' AND ISNULL(ap.IdComprobante_Print, '') <> '' THEN ap.TC_Print + ' ' + ap.IdComprobante_Print
-                    WHEN ISNULL(ap.TC_Print, '') <> '' THEN ap.TC_Print
-                    ELSE ISNULL(ap.IdComprobante_Print, '')
-                END
-            )) AS Recibo,
-            LTRIM(RTRIM(
-                CASE WHEN ISNULL(rel.ANULADA, 0) = 1 THEN 'ANULADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.FINALIZADA, 0) = 1 THEN 'FINALIZADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.APROBADO, 0) = 1 THEN 'APROBADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.BLOQUEADA, 0) = 1 THEN 'BLOQUEADO ' ELSE '' END +
-                CASE WHEN ISNULL(rel.CERRADA, 0) = 1 THEN 'CERRADO ' ELSE '' END
-            )) AS EstadoRelacionado,
-            ISNULL(rel.CUENTA, '') AS CuentaRelacionada,
-            ISNULL(rel.NOMBRE, '') AS NombreRelacionado
+            0 AS IdComplementoRelacionado
         FROM dbo.MV_APLICACION ap
-        OUTER APPLY
-        (
-            SELECT TOP (1)
-                c2.IDCOMPLEMENTO,
-                c2.FECHA,
-                c2.ANULADA,
-                c2.FINALIZADA,
-                c2.APROBADO,
-                c2.BLOQUEADA,
-                c2.CERRADA,
-                c2.CUENTA,
-                c2.NOMBRE
-            FROM dbo.V_MV_Cpte c2
-            WHERE UPPER(LTRIM(RTRIM(c2.TC))) = UPPER(LTRIM(RTRIM(ap.TC)))
-              AND UPPER(LTRIM(RTRIM(c2.IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(ap.IDComprobante)))
-            ORDER BY CASE WHEN ISNULL(c2.IDCOMPLEMENTO, 0) = 0 THEN 0 ELSE 1 END, c2.ID DESC
-        ) rel
-        WHERE UPPER(LTRIM(RTRIM(ap.TCO_ORIGEN))) = @Tc
-          AND UPPER(LTRIM(RTRIM(ap.IDComprobante_Origen))) = @IdComprobante
-        ORDER BY ISNULL(rel.FECHA, '19000101'), ISNULL(ap.IDComprobante, '')
+        WHERE (
+                (ap.TCO_ORIGEN = @Tc
+                 AND ap.IDComprobante_Origen = @IdComprobante)
+             OR (ap.TC = @Tc
+                 AND ap.IDComprobante = @IdComprobante)
+              )
+        ORDER BY ISNULL(ap.IDComprobante, '')
         """;
 
     private const string AccionesVentasQuery = """
@@ -381,9 +371,21 @@ public sealed class ComprobanteViewerService(
             ISNULL(a.PC, '') AS Pc,
             ISNULL(a.Proceso, '') AS Proceso
         FROM dbo.V_MV_CpteAcciones a
-        WHERE UPPER(LTRIM(RTRIM(a.TC))) = @Tc
-          AND UPPER(LTRIM(RTRIM(a.IDCOMPROBANTE))) = @IdComprobante
+        WHERE a.TC = @Tc
+          AND a.IDCOMPROBANTE = @IdComprobante
         ORDER BY a.FECHAHORA DESC, a.ID DESC
+        """;
+
+    private const string TieneAsientoQuery = """
+        SELECT CAST(CASE WHEN EXISTS
+        (
+            SELECT 1
+            FROM dbo.MV_ASIENTOS a
+            WHERE a.TC = @Tc
+              AND a.SUCURSAL = SUBSTRING(@IdComprobante, 1, 4)
+              AND a.NUMERO = SUBSTRING(@IdComprobante, 5, 8)
+              AND a.LETRA = RIGHT(@IdComprobante, 1)
+        ) THEN 1 ELSE 0 END AS bit) AS TieneAsiento
         """;
 
     // ── Lectura del multi-resultset (orden fijo en ambos branches) ────────────
@@ -398,9 +400,9 @@ public sealed class ComprobanteViewerService(
         var tareas        = (await multi.ReadAsync<ComprobanteTareaDto>()).AsList();
         var observaciones = (await multi.ReadAsync<ComprobanteObservacionDto>()).AsList();
         var documentosRaw = (await multi.ReadAsync<ComprobanteDocumentoRow>()).AsList();
-        var aplicaA       = (await multi.ReadAsync<ComprobanteAplicacionDto>()).AsList();
         var aplicadoPor   = (await multi.ReadAsync<ComprobanteAplicacionDto>()).AsList();
         var acciones      = (await multi.ReadAsync<ComprobanteAccionDto>()).AsList();
+        var tieneAsiento  = await multi.ReadFirstOrDefaultAsync<bool>();
 
         return new ComprobanteViewerDto
         {
@@ -409,9 +411,10 @@ public sealed class ComprobanteViewerService(
             Tareas        = tareas,
             Observaciones = observaciones,
             Documentos    = documentosRaw.Select(MapDocumento).ToList(),
-            AplicaA       = aplicaA,
+            AplicaA       = [],
             AplicadoPor   = aplicadoPor,
-            Acciones      = acciones
+            Acciones      = acciones,
+            TieneAsiento  = tieneAsiento
         };
     }
 
@@ -427,9 +430,9 @@ public sealed class ComprobanteViewerService(
                 SELECT TOP (1)
                     ISNULL(d.DOCUMENTO, '') AS Documento
                 FROM dbo.V_MV_CpteDoc d
-                WHERE UPPER(LTRIM(RTRIM(d.TC))) = @Tc
-                  AND UPPER(LTRIM(RTRIM(d.IDCOMPROBANTE))) = @IdComprobante
-                  AND ISNULL(d.IDCOMPLEMENTO, 0) = @IdComplemento
+                WHERE d.TC = @Tc
+                  AND d.IDCOMPROBANTE = @IdComprobante
+                  AND d.IDCOMPLEMENTO = @IdComplemento
                   AND ISNULL(d.DOCUMENTO, '') = @Documento
                 ORDER BY ISNULL(d.ID, 0);
                 """;

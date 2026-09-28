@@ -30,7 +30,7 @@
                     @if (IsTicketsInitializationPending(_feedback.Message))
                     {
                         <div class="actions" style="margin-top: .75rem;">
-                            <a class="btn btn--primary btn--sm" href="/actualizaciones">
+                            <a class="btn btn--primary btn--sm" href="@RouteContext.BuildRoute("/actualizaciones")">
                                 <i class="bi bi-cloud-arrow-up"></i> Ir a Actualizaciones
                             </a>
                         </div>
@@ -211,13 +211,13 @@
                 <div class="actions">
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
                     {
-                        <a class="btn btn--ghost" href="@($"/conversaciones?id={idConv}")">
+                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
                             <i class="bi bi-chat-dots"></i> Ver chat
                         </a>
                     }
                     @if (!_isNew && _detail?.IdContacto is int idContacto)
                     {
-                        <a class="btn btn--ghost" href="@($"/contactos?editar={idContacto}")">
+                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/contactos?editar={idContacto}")">
                             <i class="bi bi-person-lines-fill"></i> Ver contacto
                         </a>
                     }

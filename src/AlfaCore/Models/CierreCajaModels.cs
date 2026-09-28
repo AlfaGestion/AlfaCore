@@ -75,7 +75,7 @@ public static class CierreCajaSecciones
         new("cotizacion", "Cotización", false, false),
         new("tc", "TC", false, false),
         new("sucursal", "Sucursal", false, false),
-        new("numero", "Numero", false, false),
+        new("numero", "Número", false, false),
         new("letra", "Letra", false, false)]),
         new("ingresos", "Detalle de ingresos de caja", "movimientos", "_orden", [
         new("cuenta", "Cuenta", false, false),
@@ -105,11 +105,11 @@ public static class CierreCajaSecciones
         new("rubros", "Detalle de venta por rubro", "rubros", "rubro,aliciva", [
         new("rubro", "Rubro", false, false),
         new("cantidad", "Cantidad", true, true),
-        new("aliciva", "Alicuota", false, false),
+        new("aliciva", "Alícuota", false, false),
         new("valorventa", "Valor venta s/iva", true, true),
         new("valorventa_civa", "Valor venta", true, true)]),
         new("productos", "Detalle de venta por artículo", "productos", "articulo,aliciva", [
-        new("articulo", "Articulo", false, false),
+        new("articulo", "Artículo", false, false),
         new("cantidad", "Cantidad", true, true),
         new("valorventa", "Valor venta s/iva", true, true),
         new("valorventa_civa", "Valor venta", true, true)]),
@@ -138,7 +138,7 @@ public static class CierreCajaSecciones
         new("diario", "Detalle diario", "diario", "_orden", [
         new("fecha", "Fecha", false, false),
         new("rubro", "Rubro", false, false),
-        new("descripcion", "Articulo", false, false),
+        new("descripcion", "Artículo", false, false),
         new("importe", "Importe venta", true, true),
         new("efectivo", "Efectivo", true, true),
         new("tarjeta", "Tarjeta", true, true),
@@ -150,7 +150,7 @@ public static class CierreCajaSecciones
         new("mensual", "Detalle mensual", "diario", "_orden", [
         new("fecha", "Fecha", false, false),
         new("rubro", "Rubro", false, false),
-        new("descripcion", "Articulo", false, false),
+        new("descripcion", "Artículo", false, false),
         new("importe", "Importe venta", true, true),
         new("efectivo", "Efectivo", true, true),
         new("tarjeta", "Tarjeta", true, true),

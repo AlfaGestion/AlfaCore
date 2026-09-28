@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/auditoria/error/{Id:int}"
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
 <PageTitle>Detalle de Error | Alfa Gestión</PageTitle>
@@ -43,7 +44,7 @@ else
                 <p class="page-intro__text">@_item.Proceso · @_item.Fecha.ToString("dd/MM/yyyy HH:mm:ss")</p>
             </div>
             <div class="actions">
-                <a class="btn btn--ghost" href="/auditoria/errores">
+                <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/auditoria/errores")">
                     <i class="bi bi-arrow-left"></i>
                     <span>Volver a errores</span>
                 </a>

@@ -1,0 +1,55 @@
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICompanyBrandingService CompanyBrandingSvc
+
+@if (Visible)
+{
+    <div class="comprobante-viewer-modal-backdrop" role="presentation" @onclick="CerrarAsync">
+        <section class="comprobante-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="comprobante-viewer-modal-title" @onclick:stopPropagation="true">
+            <header class="comprobante-viewer-modal__header">
+                <div>
+                    <span class="comprobante-viewer-modal__eyebrow">@(_empresaNombre ?? "Visor de comprobantes")</span>
+                    <h2 id="comprobante-viewer-modal-title">Detalle del comprobante @Tc @IdComprobante</h2>
+                </div>
+                <button type="button" class="comprobante-viewer-modal__close" @onclick="CerrarAsync" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="comprobante-viewer-modal__body" tabindex="-1">
+                <ComprobanteViewer Tc="@Tc"
+                                   IdComprobante="@IdComprobante"
+                                   IdComplemento="@IdComplemento"
+                                   ModoDetalleCompleto="true" />
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Tc { get; set; } = string.Empty;
+    [Parameter] public string IdComprobante { get; set; } = string.Empty;
+    [Parameter] public int IdComplemento { get; set; }
+    [Parameter] public string? Cliente { get; set; }
+    [Parameter] public EventCallback Cerrado { get; set; }
+
+    private string? _empresaNombre;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var branding = await CompanyBrandingSvc.GetAsync();
+            _empresaNombre = branding?.Nombre;
+        }
+        catch
+        {
+            _empresaNombre = null;
+        }
+    }
+
+    private async Task CerrarAsync()
+    {
+        if (Cerrado.HasDelegate)
+            await Cerrado.InvokeAsync();
+    }
+}

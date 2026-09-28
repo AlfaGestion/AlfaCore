@@ -25,6 +25,31 @@
 <div class="page-grid cfgventas-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
+    <nav class="cfgventas-tabs" role="tablist" aria-label="Configuración de ventas">
+        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPortal ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPortal)" @onclick="() => SeleccionarSubtab(SubtabPortal)">
+            <i class="bi bi-person-vcard"></i>
+            <span>Portal del Cliente</span>
+        </button>
+        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPuntoVenta ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPuntoVenta)" @onclick="() => SeleccionarSubtab(SubtabPuntoVenta)">
+            <i class="bi bi-shop"></i>
+            <span>Punto de Venta</span>
+        </button>
+        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabFactura ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabFactura)" @onclick="() => SeleccionarSubtab(SubtabFactura)">
+            <i class="bi bi-file-earmark-check"></i>
+            <span>Facturación electrónica</span>
+        </button>
+        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPadron ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPadron)" @onclick="() => SeleccionarSubtab(SubtabPadron)">
+            <i class="bi bi-person-vcard-fill"></i>
+            <span>Padrón ARCA</span>
+        </button>
+        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabMercadoPago ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabMercadoPago)" @onclick="() => SeleccionarSubtab(SubtabMercadoPago)">
+            <i class="bi bi-credit-card"></i>
+            <span>Mercado Pago Point</span>
+        </button>
+    </nav>
+
+    @if (_subtab == SubtabPortal)
+    {
     <section class="panel-card">
         <h3 class="panel-card__title">Portal del Cliente</h3>
         <p class="panel-card__subtitle">
@@ -50,7 +75,141 @@
             </AlfaCheckbox>
         </div>
     </section>
+    }
 
+    @if (_subtab == SubtabPuntoVenta)
+    {
+    <section class="panel-card">
+        <h3 class="panel-card__title">Punto de Venta</h3>
+        <p class="panel-card__subtitle">
+            Toda la configuración operativa que utiliza el Punto de Venta. Los valores se guardan en
+            <code>TA_CONFIGURACION</code> de la base activa.
+        </p>
+
+        <h4 class="cfgarca-subtitle">Operación y comprobantes</h4>
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Clase de precio por defecto
+                <select class="cfgarca-select" @bind="_posSettings.ClasePrecioDefault">
+                    @for (var clase = 1; clase <= 8; clase++)
+                    {
+                        <option value="@clase.ToString()">@clase</option>
+                    }
+                </select>
+            </label>
+            <label class="cfgarca-field">
+                Cuenta consumidor final
+                <input class="cfgarca-input" @bind="_posSettings.CuentaConsumidorFinal" placeholder="112010001" />
+            </label>
+        </div>
+
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Comprobante habitual
+                <select class="cfgarca-select" @bind="_posSettings.ComprobanteHabitual">
+                    <option value="FC">FC · Factura</option>
+                    <option value="NC">NC · Nota de crédito</option>
+                    <option value="FP" disabled="@(!_posSettings.UsaProforma)">FP · Factura proforma</option>
+                    <option value="NCFP" disabled="@(!_posSettings.UsaProforma)">NCFP · Nota de crédito proforma</option>
+                </select>
+            </label>
+            <label class="cfgarca-field">
+                Sucursal por defecto
+                <input class="cfgarca-input" @bind="_posSettings.SucursalDefault" placeholder="0001" maxlength="4" />
+            </label>
+        </div>
+
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Medio de pago contado por defecto
+                @if (_mpMediosDePago.Count > 0)
+                {
+                    <select class="cfgarca-select" @bind="_posSettings.MedioDePagoContado">
+                        <option value="">Automático: efectivo / caja</option>
+                        @foreach (var medio in _mpMediosDePago)
+                        {
+                            <option value="@CodigoMedio(medio)">@medio.Descripcion (@CodigoMedio(medio))</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input class="cfgarca-input" @bind="_posSettings.MedioDePagoContado" placeholder="Código opcional del medio" />
+                }
+            </label>
+            <label class="cfgarca-field">
+                Cuenta caja por defecto
+                <input class="cfgarca-input" @bind="_posSettings.CuentaCaja" placeholder="Código de cuenta" />
+            </label>
+        </div>
+
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Cuenta de ventas por defecto
+                @if (_cuentasVentas.Count > 0)
+                {
+                    <select class="cfgarca-select" @bind="_posSettings.CuentaVentasOtrosConceptos">
+                        <option value="">Sin configurar</option>
+                        @foreach (var cuenta in _cuentasVentas)
+                        {
+                            <option value="@cuenta.Codigo">@cuenta.Codigo · @cuenta.Descripcion</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input class="cfgarca-input" @bind="_posSettings.CuentaVentasOtrosConceptos" placeholder="Código de cuenta" />
+                }
+                <small class="cfgarca-hint">Configuración: <code>CUENTAVENTASDEFAULTINS</code>. La cuenta debe existir en <code>MA_CUENTAS</code>.</small>
+            </label>
+        </div>
+
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Clave para cantidad negativa y cancelación
+                <input class="cfgarca-input" type="password" @bind="_posSettings.ClaveCancelar"
+                       placeholder="Dejar vacío para no pedir clave" autocomplete="new-password" />
+                <small class="cfgarca-hint"><code>TPV_ClaveCancelar</code></small>
+            </label>
+        </div>
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" @bind="_posSettings.UsaProforma" />
+            <span>
+                <strong><i class="bi bi-file-earmark-text"></i> Habilitar comprobantes proforma</strong>
+                <small>Permite seleccionar FP y NCFP en el mostrador.</small>
+            </span>
+        </label>
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" @bind="_posSettings.CobranzaPFSoloEfectivo" />
+            <span>
+                <strong><i class="bi bi-cash-stack"></i> Cobranzas de proforma solo en efectivo</strong>
+                <small><code>CobranzaPFSoloEfectivo</code>: FP y NCFP no aceptan tarjetas, transferencias ni otros medios.</small>
+            </span>
+        </label>
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" @bind="_posSettings.RecargoTarjetaSinIva" />
+            <span>
+                <strong><i class="bi bi-percent"></i> Recargo por tarjeta sin IVA</strong>
+                <small><code>cfgRecargoTJTSinIVA</code>: informa el recargo completo como no gravado. Si está desactivado, el importe cobrado se interpreta con IVA incluido.</small>
+            </span>
+        </label>
+
+        <h4 class="cfgarca-subtitle">Integraciones del Punto de Venta</h4>
+        <div class="cfgarca-row cfgarca-row--general">
+            <label class="cfgarca-field">
+                Cuenta FTP heredada
+                <input class="cfgarca-input" @bind="_posSettings.FtpCodigoCta" placeholder="Código de cuenta" />
+            </label>
+        </div>
+
+    </section>
+    }
+
+    @if (_subtab == SubtabFactura)
+    {
     <section class="panel-card">
         <h3 class="panel-card__title">Facturación electrónica (AFIP/ARCA)</h3>
         <p class="panel-card__subtitle">
@@ -69,7 +228,7 @@
             <div class="cfgarca-row cfgarca-row--general">
                 <label class="cfgarca-field">
                     Ambiente
-                    <select class="cfgarca-select" @bind="_arca.Ambiente">
+                    <select class="cfgarca-select" @bind="_arca.Ambiente" @bind:after="ActualizarUrlsArcaSegunAmbiente">
                         <option value="HOMOLOGACION">Homologación (pruebas, sin validez fiscal)</option>
                         <option value="PRODUCCION">Producción</option>
                     </select>
@@ -80,6 +239,19 @@
                         <option value="ESTRICTO">Cortar la venta (recomendado)</option>
                         <option value="DEGRADADO">Completar igual, CAE pendiente</option>
                     </select>
+                </label>
+            </div>
+
+            <div class="cfgarca-row cfgarca-row--general">
+                <label class="cfgarca-field">
+                    URL de WSAA (autenticación)
+                    <input class="cfgarca-input" @bind="_arca.WsaaUrl" placeholder="Se completa según el ambiente" />
+                    <small class="panel-card__subtitle">Usá la URL de configuración del sistema anterior; si queda vacío se usa la oficial del ambiente.</small>
+                </label>
+                <label class="cfgarca-field">
+                    URL de WSFE (facturación)
+                    <input class="cfgarca-input" @bind="_arca.WsfeUrl" placeholder="Se completa según el ambiente" />
+                    <small class="panel-card__subtitle">Se admite la URL con o sin <code>?WSDL</code>.</small>
                 </label>
             </div>
 
@@ -207,7 +379,13 @@
             }
         }
 
-        <h4 class="cfgarca-subtitle">Consulta de padrón ARCA (certificado independiente)</h4>
+    </section>
+    }
+
+    @if (_subtab == SubtabPadron)
+    {
+    <section class="panel-card">
+        <h3 class="panel-card__title">Consulta de padrón ARCA (certificado independiente)</h3>
         <p class="panel-card__subtitle">
             Este certificado se usa solamente para consultar clientes/proveedores en ARCA y no reemplaza
             el certificado de facturación electrónica.
@@ -243,86 +421,187 @@
             </div>
         </div>
     </section>
+    }
 
+    @if (_subtab == SubtabMercadoPago)
+    {
     <section class="panel-card">
         <h3 class="panel-card__title">Mercado Pago Point (terminal física)</h3>
         <p class="panel-card__subtitle">
-            Cobro con tarjeta/QR desde el Punto de Venta usando una terminal Mercado Pago Point. Un solo
-            terminal fijo por base en esta etapa.
+            Configurá el acceso a Mercado Pago, los medios que pueden iniciar un cobro Point y la
+            asignación de lectores a cada punto de venta.
         </p>
 
-        <div class="cfgarca-row cfgarca-row--fallback">
+        <nav class="mp-point-tabs" role="tablist" aria-label="Configuración de Mercado Pago Point">
+            <button type="button" role="tab" class="mp-point-tab @(_mpPointTab == MpPointTabToken ? "is-active" : string.Empty)" aria-selected="@(_mpPointTab == MpPointTabToken)" @onclick="() => SeleccionarMpPointTab(MpPointTabToken)">
+                <i class="bi bi-key"></i><span>Token</span>
+            </button>
+            <button type="button" role="tab" class="mp-point-tab @(_mpPointTab == MpPointTabMedios ? "is-active" : string.Empty)" aria-selected="@(_mpPointTab == MpPointTabMedios)" @onclick="() => SeleccionarMpPointTab(MpPointTabMedios)">
+                <i class="bi bi-credit-card-2-front"></i><span>Medios de pago</span>
+            </button>
+            <button type="button" role="tab" class="mp-point-tab @(_mpPointTab == MpPointTabTerminales ? "is-active" : string.Empty)" aria-selected="@(_mpPointTab == MpPointTabTerminales)" @onclick="() => SeleccionarMpPointTab(MpPointTabTerminales)">
+                <i class="bi bi-phone"></i><span>Terminales Point</span>
+            </button>
+        </nav>
+
+    @if (_mpPointTab == MpPointTabToken)
+        {
+        <div class="mp-token-only">
             <label class="cfgarca-field">
                 Access Token
                 <input class="cfgarca-input" type="password" @bind="_mpAccessToken" placeholder="APP_USR-..." />
             </label>
-            <label class="cfgarca-field">
-                Terminal ID
-                <input class="cfgarca-input" @bind="_mpTerminalId" />
-            </label>
-            <label class="cfgarca-field">
-                POS External ID (informativo)
-                <input class="cfgarca-input" @bind="_mpPosExternalId" />
-            </label>
-            <label class="cfgarca-field">
-                Webhook Secret
-                <input class="cfgarca-input" type="password" @bind="_mpWebhookSecret" />
-            </label>
         </div>
 
-        <h4 class="cfgarca-subtitle">Medio de pago vinculado</h4>
-        <p class="panel-card__subtitle">
-            Elegí cuál de los medios de pago ya cargados en el POS dispara el cobro real con la
-            terminal. No asumimos ningún código fijo -- cada base tiene los suyos propios (por ejemplo
-            "QR" o "MP"), normalmente clasificados como efectivo a nivel contable.
-        </p>
-        <div class="cfgarca-row cfgarca-row--fallback">
-            <label class="cfgarca-field">
-                Medio de pago
-                <select class="cfgarca-input" @bind="_mpCodigoMedioPago">
-                    <option value="">Sin vincular</option>
-                    @foreach (var medio in _mpMediosDePago)
-                    {
-                        <option value="@medio.Codigo">@medio.Descripcion (@medio.Codigo · @medio.MedioDePago)</option>
-                    }
-                </select>
-            </label>
+        <div class="mp-instruction-card">
+            <div>
+                <strong>¿Necesitás configurar Mercado Pago Point?</strong>
+                <span>Consultá el instructivo completo de configuración y puesta en marcha.</span>
+            </div>
+            <a class="btn btn--ghost" href="https://www.alfagestion.com.ar/ag/configuracion-de-mercado-pago-point-smart/" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-book"></i> Ver instructivo
+            </a>
         </div>
+        }
 
-        @if (!string.IsNullOrWhiteSpace(_mpWebhookUrl))
+        @if (_mpPointTab == MpPointTabMedios)
         {
-            <div class="shell-empty-state">
-                <strong>URL de webhook para registrar en Mercado Pago</strong>
-                <span>@_mpWebhookUrl</span>
-                <button type="button" class="btn btn-sm btn-outline-light mt-2" @onclick="MpCopiarWebhookUrlAsync">Copiar</button>
+        <h4 class="cfgarca-subtitle">Medios de pago habilitados para Point</h4>
+        <p class="panel-card__subtitle">
+            Marcá los medios que pueden iniciar un cobro en la terminal. Se usa el código opcional de
+            cada medio, igual que en el sistema de escritorio.
+        </p>
+
+        @if (_mpMediosDePago.Count == 0)
+        {
+            <p class="cfgarca-sin-unidades">No se encontraron medios de pago habilitados en la base activa.</p>
+        }
+        else
+        {
+            <div class="mp-payment-methods">
+                @foreach (var medio in _mpMediosDePago)
+                {
+                    var codigoMedio = CodigoMedio(medio);
+                    <label class="mp-payment-method">
+                        <input type="checkbox" checked="@_mpMediosHabilitados.Contains(codigoMedio)" @onchange="e => CambiarMedioHabilitado(codigoMedio, e)" />
+                        <span>
+                            <strong>@medio.Descripcion</strong>
+                            <small>@codigoMedio · @medio.MedioDePago</small>
+                        </span>
+                    </label>
+                }
+            </div>
+        }
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" @bind="_mpObtenerMedioAutomatico" />
+            <span>
+                <strong><i class="bi bi-magic"></i> Obtener medio de pago automáticamente</strong>
+                <small>Si está activo, Point informa el medio utilizado y se usa el medio configurado que coincida; si no existe, se conserva el seleccionado.</small>
+            </span>
+        </label>
+
+        <label class="mp-auto-payment-option">
+            <input type="checkbox" @bind="_mpModoPrueba" disabled="@string.Equals(_arca.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase)" />
+            <span>
+                <strong><i class="bi bi-wrench-adjustable-circle"></i> Usar modo de prueba Point</strong>
+                <small>Solo funciona con certificados ARCA en Homologación. Permite simular QR, débito y crédito con recargo por cuotas sin llamar a Mercado Pago.</small>
+            </span>
+        </label>
+        @if (string.Equals(_arca.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase))
+        {
+            <p class="cfgarca-hint">El modo de prueba está bloqueado porque el ambiente de ARCA es Producción.</p>
+        }
+        }
+
+        @if (_mpPointTab == MpPointTabTerminales)
+        {
+        <h4 class="cfgarca-subtitle">Terminales Point por punto de venta</h4>
+        <p class="panel-card__subtitle">Seleccioná un punto de venta y asociá uno o más lectores. La configuración se guarda por punto de venta.</p>
+        <div class="mp-terminals-toolbar">
+            <button type="button" class="btn btn--ghost" disabled="@_mpBusy" @onclick="MpListarTerminalesAsync">
+                <i class="bi bi-arrow-clockwise"></i> Actualizar terminales
+            </button>
+        </div>
+
+        @if (_mpPuntosVenta.Count == 0)
+        {
+            <p class="cfgarca-sin-unidades">No se encontraron puntos de venta activos en POS_PUNTOVENTA.</p>
+        }
+        else
+        {
+            <div class="mp-terminal-assignment">
+                <div class="mp-terminal-pane">
+                    <div class="mp-terminal-pane__title">Puntos de venta</div>
+                    <div class="mp-terminal-list">
+                        @foreach (var puntoVenta in _mpPuntosVenta)
+                        {
+                            <button type="button" class="mp-terminal-list__item @(_mpPuntoVentaSeleccionado == puntoVenta.Id ? "is-selected" : string.Empty)" @onclick="() => SeleccionarPuntoVentaTerminal(puntoVenta.Id)">
+                                <span class="mp-terminal-list__code">@puntoVenta.Codigo</span>
+                                <span>@puntoVenta.Descripcion</span>
+                                <small>@puntoVenta.TerminalesAsignadas.Count lector(es)</small>
+                            </button>
+                        }
+                    </div>
+                    <div class="mp-terminal-selected-label">
+                        @if (_mpPuntoVentaSeleccionado > 0)
+                        {
+                            var puntoSeleccionado = _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado);
+                            <strong>Punto seleccionado: @puntoSeleccionado?.NombreVisible</strong>
+                        }
+                        else
+                        {
+                            <span>Seleccioná un punto de venta.</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="mp-terminal-pane">
+                    <div class="mp-terminal-pane__title">Terminales Point disponibles</div>
+                    <div class="cfgarca-table-wrap">
+                        @if (_mpTerminales.Count == 0)
+                        {
+                            <p class="cfgarca-sin-unidades">No hay terminales cargadas. Seleccioná un punto de venta y presioná “Actualizar terminales”.</p>
+                        }
+                        else
+                        {
+                            <table class="data-table mp-terminals-table">
+                                <thead><tr><th>Asignada</th><th>ID</th><th>Modo</th><th>POS</th></tr></thead>
+                                <tbody>
+                                    @foreach (var t in _mpTerminales)
+                                    {
+                                        <tr class="@(string.Equals(_mpTerminalSeleccionada, t.Id, StringComparison.OrdinalIgnoreCase) ? "row--selected" : string.Empty)" @onclick="() => SeleccionarTerminal(t.Id)">
+                                            <td>@(IsTerminalAsignada(t.Id) ? "Sí" : "")</td>
+                                            <td><strong>@t.Id</strong></td>
+                                            <td>@t.OperatingMode</td>
+                                            <td>@t.Store</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                    <div class="mp-terminal-actions">
+                        <button type="button" class="btn btn--ghost" disabled="@(!PuedeModificarAsignacionTerminal())" @onclick="AsignarTerminalAlPuntoVenta">
+                            Asignar al punto de venta
+                        </button>
+                        <button type="button" class="btn btn--ghost" disabled="@(!PuedeModificarAsignacionTerminal() || !IsTerminalAsignada(_mpTerminalSeleccionada))" @onclick="QuitarTerminalDelPuntoVenta">
+                            Quitar del punto de venta
+                        </button>
+                    </div>
+                </div>
             </div>
         }
 
         <h4 class="cfgarca-subtitle">Diagnóstico</h4>
         <p class="panel-card__subtitle">Probá la configuración ya guardada antes de usarla en una venta real.</p>
         <div class="d-flex gap-2 mb-3">
-            <button type="button" class="btn btn-outline-light" disabled="@_mpBusy" @onclick="MpListarTerminalesAsync">Listar terminales</button>
             <button type="button" class="btn btn-outline-light" disabled="@_mpBusy" @onclick="MpListarPosAsync">Listar puntos de venta</button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_mpMensajeDiagnostico))
         {
             <div class="editor-msg @(_mpMensajeEsError ? "editor-msg--error" : "editor-msg--ok")">@_mpMensajeDiagnostico</div>
-        }
-
-        @if (_mpTerminales.Count > 0)
-        {
-            <div class="cfgarca-table-wrap">
-                <table class="data-table">
-                    <thead><tr><th>Id</th><th>Modo</th><th>Sucursal</th><th>Estado</th></tr></thead>
-                    <tbody>
-                        @foreach (var t in _mpTerminales)
-                        {
-                            <tr><td>@t.Id</td><td>@t.OperatingMode</td><td>@t.Store</td><td>@t.Status</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
         }
 
         @if (_mpPos.Count > 0)
@@ -367,17 +646,41 @@
                 <span>Order: @_mpUltimoResultado.OrderId · Status: @_mpUltimoResultado.Status · Payment: @_mpUltimoResultado.PaymentId</span>
             </div>
         }
+        }
+
+        <div class="mp-point-navigation">
+            <button type="button" class="btn btn--ghost" disabled="@(_mpPointTab == MpPointTabToken)" @onclick="MpPointAnterior">
+                <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <button type="button" class="btn btn--primary" disabled="@(_mpPointTab == MpPointTabTerminales)" @onclick="MpPointSiguiente">
+                Siguiente <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
     </section>
+    }
 
 </div>
 
 @code {
+    private const string SubtabPortal = "portal";
+    private const string SubtabPuntoVenta = "puntoventa";
+    private const string SubtabFactura = "factura";
+    private const string SubtabPadron = "padron";
+    private const string SubtabMercadoPago = "mercadopago";
+    private const string MpPointTabToken = "token";
+    private const string MpPointTabMedios = "medios";
+    private const string MpPointTabTerminales = "terminales";
+
+    private string _subtab = SubtabPortal;
+    private string _mpPointTab = MpPointTabToken;
     private const string ClaveGlobal = "GLOBAL";
     private const string ClavePadron = "PADRON";
     private const long TamanoMaximoCertificadoBytes = 512 * 1024;
 
     private ConfiguracionVentasPortalClienteDto _portal = new();
     private ArcaConfiguracionGeneralDto _arca = new();
+    private PuntoVentaSettingsDto _posSettings = new();
+    private IReadOnlyList<PuntoVentaCuentaImputacionDto> _cuentasVentas = [];
     private bool _saving;
     private bool _subiendoCertGlobal;
     private bool _subiendoCertPadron;
@@ -388,8 +691,16 @@
     private string _mpTerminalId = string.Empty;
     private string _mpPosExternalId = string.Empty;
     private string _mpWebhookSecret = string.Empty;
-    private string _mpCodigoMedioPago = string.Empty;
+    private bool _mpObtenerMedioAutomatico;
+    private bool _mpModoPrueba;
+    private bool _mpMismoMedio = true;
+    private string _mpMedioQr = string.Empty;
+    private string _mpMedioTarjeta = string.Empty;
+    private readonly HashSet<string> _mpMediosHabilitados = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<PuntoVentaPaymentMethodDto> _mpMediosDePago = [];
+    private readonly List<MercadoPagoPointPuntoVentaDto> _mpPuntosVenta = [];
+    private int _mpPuntoVentaSeleccionado;
+    private string _mpTerminalSeleccionada = string.Empty;
     private bool _mpBusy;
     private bool _mpCobrando;
     private string _mpMensajeDiagnostico = string.Empty;
@@ -400,6 +711,47 @@
     private PaymentResult? _mpUltimoResultado;
     private readonly List<TerminalInfo> _mpTerminales = [];
     private readonly List<PosInfo> _mpPos = [];
+
+    private void SeleccionarSubtab(string subtab) => _subtab = subtab;
+    private void SeleccionarMpPointTab(string tab)
+    {
+        if (!string.Equals(tab, MpPointTabToken, StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(_mpAccessToken))
+        {
+            _mpPointTab = MpPointTabToken;
+            _feedback = AppUiMessage.Info("Falta el Access Token", "Completá el Access Token de Mercado Pago antes de continuar.");
+            return;
+        }
+
+        _mpPointTab = tab;
+    }
+
+    private void MpPointAnterior()
+    {
+        _mpPointTab = _mpPointTab switch
+        {
+            MpPointTabTerminales => MpPointTabMedios,
+            MpPointTabMedios => MpPointTabToken,
+            _ => MpPointTabToken
+        };
+    }
+
+    private void MpPointSiguiente()
+    {
+        if (string.IsNullOrWhiteSpace(_mpAccessToken))
+        {
+            _mpPointTab = MpPointTabToken;
+            _feedback = AppUiMessage.Info("Falta el Access Token", "Completá el Access Token de Mercado Pago antes de continuar.");
+            return;
+        }
+
+        _mpPointTab = _mpPointTab switch
+        {
+            MpPointTabToken => MpPointTabMedios,
+            MpPointTabMedios => MpPointTabTerminales,
+            _ => MpPointTabTerminales
+        };
+    }
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -430,16 +782,48 @@
 
     private async Task CargarMercadoPagoAsync()
     {
-        var options = await MpConfigSvc.ResolveOptionsAsync();
-        _mpAccessToken = options?.AccessToken ?? string.Empty;
-        _mpTerminalId = options?.TerminalId ?? string.Empty;
-        _mpWebhookSecret = await MpConfigSvc.ResolveWebhookSecretAsync();
-        _mpPosExternalId = await MpConfigSvc.ResolvePosExternalIdAsync();
-        _mpCodigoMedioPago = await MpConfigSvc.ResolveCodigoMedioPagoAsync();
+        try
+        {
+            _posSettings = await PuntoVentaSvc.GetSettingsAsync();
+            _cuentasVentas = await PuntoVentaSvc.GetCuentasVentasAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Error("Configuración del POS", ex.Message);
+        }
+
+        var config = await MpConfigSvc.GetConfiguracionAsync();
+        _mpAccessToken = config.AccessToken;
+        _mpTerminalId = config.TerminalId;
+        _mpWebhookSecret = config.WebhookSecret;
+        _mpPosExternalId = config.PosExternalId;
+        _mpObtenerMedioAutomatico = config.ObtenerMedioPagoAutomatico;
+        _mpModoPrueba = config.ModoPrueba;
+        _mpMismoMedio = config.MismoMedioParaQrYTarjeta;
+        _mpMedioQr = config.MedioPagoQr;
+        _mpMedioTarjeta = config.MedioPagoTarjeta;
+        _mpMediosHabilitados.Clear();
+        foreach (var codigo in config.MediosPagoHabilitados)
+            _mpMediosHabilitados.Add(codigo.Trim());
+        _mpPuntosVenta.Clear();
+        _mpPuntosVenta.AddRange(config.PuntosVenta);
+        // Al entrar a Terminales Point debe quedar un punto de venta listo para
+        // consultar/asignar lectores, igual que en el formulario VB6.
+        if (_mpPuntosVenta.Count > 0)
+            _mpPuntoVentaSeleccionado = _mpPuntosVenta[0].Id;
 
         _mpMediosDePago.Clear();
         try { _mpMediosDePago.AddRange(await PuntoVentaSvc.GetPaymentMethodsAsync()); }
         catch { /* Si el POS todavía no está configurado, se deja vacío -- no bloquea el resto de la pantalla. */ }
+
+        // Las bases antiguas pueden tener guardado el Codigo interno, mientras que el formulario VB6
+        // guardaba CodigoOpcional. La pantalla trabaja con un único código visible y acepta ambos.
+        _mpMedioQr = CodigoVisibleConfigurado(_mpMedioQr);
+        _mpMedioTarjeta = CodigoVisibleConfigurado(_mpMedioTarjeta);
+        var mediosGuardados = _mpMediosHabilitados.ToList();
+        _mpMediosHabilitados.Clear();
+        foreach (var codigo in mediosGuardados)
+            _mpMediosHabilitados.Add(CodigoVisibleConfigurado(codigo));
 
         var idBase = SessionSvc.GetActiveSession()?.BaseId;
         if (idBase is int id and not 0)
@@ -448,6 +832,74 @@
             var urlBase = Configuration["ServidorWeb:UrlBasePublica"]?.TrimEnd('/') ?? string.Empty;
             _mpWebhookUrl = $"{urlBase}/api/mercadopago/point/webhook/{token}";
         }
+    }
+
+    private static string CodigoMedio(PuntoVentaPaymentMethodDto medio)
+        => string.IsNullOrWhiteSpace(medio.CodigoOpcional) ? medio.Codigo.Trim() : medio.CodigoOpcional.Trim();
+
+    private string CodigoVisibleConfigurado(string codigo)
+    {
+        var medio = _mpMediosDePago.FirstOrDefault(x =>
+            string.Equals(x.Codigo, codigo, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x.CodigoOpcional, codigo, StringComparison.OrdinalIgnoreCase));
+        return medio is null ? codigo.Trim() : CodigoMedio(medio);
+    }
+
+    private void CambiarMedioHabilitado(string codigo, ChangeEventArgs args)
+    {
+        if (Convert.ToBoolean(args.Value))
+            _mpMediosHabilitados.Add(codigo);
+        else
+            _mpMediosHabilitados.Remove(codigo);
+    }
+
+    private void CambiarMismoMedio(bool value)
+    {
+        _mpMismoMedio = value;
+        if (value)
+            _mpMedioTarjeta = _mpMedioQr;
+    }
+
+    private bool IsTerminalAsignada(string terminalId)
+        => _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado)?
+            .TerminalesAsignadas.Contains(terminalId, StringComparer.OrdinalIgnoreCase) == true;
+
+    private void SeleccionarPuntoVentaTerminal(int id)
+    {
+        _mpPuntoVentaSeleccionado = id;
+        _mpTerminalSeleccionada = string.Empty;
+    }
+
+    private void SeleccionarTerminal(string terminalId) => _mpTerminalSeleccionada = terminalId;
+
+    private bool PuedeModificarAsignacionTerminal()
+        => _mpPuntoVentaSeleccionado > 0 && !string.IsNullOrWhiteSpace(_mpTerminalSeleccionada);
+
+    private void AsignarTerminalAlPuntoVenta()
+    {
+        var puntoVenta = _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado);
+        if (puntoVenta is null || !PuedeModificarAsignacionTerminal()) return;
+        if (!puntoVenta.TerminalesAsignadas.Contains(_mpTerminalSeleccionada, StringComparer.OrdinalIgnoreCase))
+            puntoVenta.TerminalesAsignadas.Add(_mpTerminalSeleccionada);
+    }
+
+    private void QuitarTerminalDelPuntoVenta()
+    {
+        var puntoVenta = _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado);
+        if (puntoVenta is null || !PuedeModificarAsignacionTerminal()) return;
+        puntoVenta.TerminalesAsignadas.RemoveAll(x => string.Equals(x, _mpTerminalSeleccionada, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void CambiarTerminalAsignada(string terminalId, ChangeEventArgs args)
+    {
+        var puntoVenta = _mpPuntosVenta.FirstOrDefault(x => x.Id == _mpPuntoVentaSeleccionado);
+        if (puntoVenta is null) return;
+
+        var asignada = Convert.ToBoolean(args.Value);
+        if (asignada && !puntoVenta.TerminalesAsignadas.Contains(terminalId, StringComparer.OrdinalIgnoreCase))
+            puntoVenta.TerminalesAsignadas.Add(terminalId);
+        else if (!asignada)
+            puntoVenta.TerminalesAsignadas.RemoveAll(x => string.Equals(x, terminalId, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task MpCopiarWebhookUrlAsync()
@@ -519,9 +971,33 @@
             return;
         }
 
+        var posResult = await UiOps.RunAsync(
+            async () => { await PuntoVentaSvc.SaveSettingsAsync(_posSettings); return true; },
+            "No se pudo guardar la configuración del Punto de Venta.");
+        if (!posResult.Success)
+        {
+            _saving = false;
+            UpdatePageHeader();
+            _feedback = posResult.Feedback;
+            return;
+        }
+
         var mpResult = await UiOps.RunAsync(async () =>
         {
-            await MpConfigSvc.GuardarConfiguracionAsync(_mpAccessToken, _mpTerminalId, _mpPosExternalId, _mpWebhookSecret, _mpCodigoMedioPago);
+            await MpConfigSvc.GuardarConfiguracionAsync(new MercadoPagoPointConfigDto
+            {
+                AccessToken = _mpAccessToken,
+                TerminalId = _mpTerminalId,
+                PosExternalId = _mpPosExternalId,
+                WebhookSecret = _mpWebhookSecret,
+                ObtenerMedioPagoAutomatico = _mpObtenerMedioAutomatico,
+                ModoPrueba = _mpModoPrueba,
+                MismoMedioParaQrYTarjeta = _mpMismoMedio,
+                MedioPagoQr = _mpMediosHabilitados.FirstOrDefault() ?? _mpMedioQr,
+                MedioPagoTarjeta = _mpMediosHabilitados.FirstOrDefault() ?? _mpMedioTarjeta,
+                MediosPagoHabilitados = _mpMediosHabilitados.ToList(),
+                PuntosVenta = _mpPuntosVenta
+            });
             return true;
         }, "No se pudo guardar la configuración de Mercado Pago Point.");
         _saving = false;
@@ -530,6 +1006,19 @@
         _feedback = mpResult.Success
             ? AppUiMessage.Success("Guardado", "La configuración se guardó correctamente.")
             : mpResult.Feedback;
+    }
+
+    private void ActualizarUrlsArcaSegunAmbiente()
+    {
+        if (string.Equals(_arca.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase))
+        {
+            _arca.WsaaUrl = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl";
+            _arca.WsfeUrl = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL";
+            return;
+        }
+
+        _arca.WsaaUrl = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
+        _arca.WsfeUrl = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL";
     }
 
     private async Task CancelarAsync()

@@ -2,6 +2,7 @@
 @page "/auditoria/errores"
 @page "/{idweb}/{idbase:int}/auditoria/errores"
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @implements IDisposable
@@ -51,14 +52,14 @@ else
                         @foreach (var item in _rows)
                         {
                             <tr>
-                                <td><a class="action-link" href="/auditoria/error/@item.Id">@item.Fecha.ToString("dd/MM/yyyy HH:mm")</a></td>
+                                <td><a class="action-link" href="@RouteContext.BuildRoute($"/auditoria/error/{item.Id}")">@item.Fecha.ToString("dd/MM/yyyy HH:mm")</a></td>
                                 <td>@item.Proceso</td>
                                 <td>@item.Usuario</td>
                                 <td>@item.Pc</td>
                                 <td>@item.ErrorCodigo</td>
                                 <td>@item.Descripcion</td>
                                 <td>
-                                    <a class="btn btn--ghost btn--sm" href="/auditoria/error/@item.Id">
+                                    <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/auditoria/error/{item.Id}")">
                                         <i class="bi bi-box-arrow-up-right"></i>
                                         <span>Ver detalle</span>
                                     </a>

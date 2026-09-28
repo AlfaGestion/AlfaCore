@@ -1,5 +1,7 @@
 @page "/ventas"
 @page "/{idweb}/{idbase:int}/ventas"
+@page "/ventas-dashboard"
+@page "/{idweb}/{idbase:int}/ventas-dashboard"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -128,12 +130,23 @@
     private IReadOnlyList<VentasUnidadNegocioResumenDto> _porUnidad = [];
     private VentasDashboardFilters _filters = null!;
     private VentasFilterOptionsDto _options = new();
+    private bool _redirigiendoAPuntoVenta;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        var rutaActual = Nav.ToBaseRelativePath(Nav.Uri)
+            .Split('?', 2)[0]
+            .TrimEnd('/');
+        if (rutaActual.EndsWith("ventas-dashboard", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _redirigiendoAPuntoVenta = true;
+        Nav.NavigateTo(RouteContext.BuildRoute("/ventas/punto-venta"), replace: true);
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && !_redirigiendoAPuntoVenta)
             UpdatePageHeader();
     }
 
@@ -147,6 +160,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (_redirigiendoAPuntoVenta)
+            return;
+
         _filters = FilterState.Ventas;
         try
         {
@@ -162,7 +178,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || _redirigiendoAPuntoVenta) return;
         try
         {
             var saved = await JS.InvokeAsync<string?>("localStorage.getItem", ChartTypeKey);

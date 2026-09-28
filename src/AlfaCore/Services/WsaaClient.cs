@@ -10,15 +10,29 @@ namespace AlfaCore.Services;
 public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventService appEvents) : IWsaaClient
 {
     private const string ModuleName = "ArcaFacturacionElectronica";
-    private static readonly TimeSpan MargenRenovacion = TimeSpan.FromMinutes(10);
+    private const int ArcaSqlCommandTimeoutSeconds = 120;
+    // El TRA que enviamos a WSAA tiene una vigencia de 10 minutos. Si el margen
+    // también es de 10 minutos, `VigentePara` nunca puede ser verdadero y cada
+    // venta vuelve a ejecutar LoginCms, agregando una espera innecesaria y
+    // aumentando la probabilidad de timeout contra ARCA.
+    private static readonly TimeSpan MargenRenovacion = TimeSpan.FromSeconds(30);
 
     private const string UrlWsaaHomologacion = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms";
     private const string UrlWsaaProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
+    private WsaaTicket? _ticketWsfeMemoria;
+    private string? _claveTicketWsfeMemoria;
 
     public async Task<WsaaTicket> ObtenerTicketAsync(SqlConnection cn, ArcaEmisorConfig emisor, CancellationToken ct, string servicio = "wsfe")
     {
         servicio = string.IsNullOrWhiteSpace(servicio) ? "wsfe" : servicio.Trim();
         var ambienteTexto = emisor.Ambiente == ArcaAmbiente.Produccion ? "PRODUCCION" : "HOMOLOGACION";
+        var claveMemoria = $"{emisor.Cuit}|{ambienteTexto}|{servicio}";
+
+        if (string.Equals(servicio, "wsfe", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_claveTicketWsfeMemoria, claveMemoria, StringComparison.OrdinalIgnoreCase)
+            && _ticketWsfeMemoria is not null
+            && _ticketWsfeMemoria.VigentePara(DateTime.UtcNow, MargenRenovacion))
+            return _ticketWsfeMemoria;
 
         var cacheado = string.Equals(servicio, "wsfe", StringComparison.OrdinalIgnoreCase)
             ? await LeerCacheAsync(cn, emisor.Cuit, ambienteTexto, ct)
@@ -30,7 +44,11 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
         {
             var ticket = await AutenticarAsync(emisor, servicio, ct);
             if (string.Equals(servicio, "wsfe", StringComparison.OrdinalIgnoreCase))
+            {
+                _claveTicketWsfeMemoria = claveMemoria;
+                _ticketWsfeMemoria = ticket;
                 await GuardarCacheAsync(cn, emisor.Cuit, ambienteTexto, ticket, ct);
+            }
             return ticket;
         }
         catch (Exception ex) when (ex is not ArcaAutenticacionException)
@@ -61,7 +79,9 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
 
         var cmsBase64 = FirmarCms(traXml, emisor.CertificadoPem, emisor.ClavePrivadaPem);
 
-        var url = emisor.Ambiente == ArcaAmbiente.Produccion ? UrlWsaaProduccion : UrlWsaaHomologacion;
+        var url = string.IsNullOrWhiteSpace(emisor.WsaaUrl)
+            ? (emisor.Ambiente == ArcaAmbiente.Produccion ? UrlWsaaProduccion : UrlWsaaHomologacion)
+            : NormalizarEndpoint(emisor.WsaaUrl);
         var soapRequest = $"""
             <?xml version="1.0" encoding="utf-8"?>
             <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
@@ -95,6 +115,15 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
         var signer = new CmsSigner(cert) { IncludeOption = X509IncludeOption.EndCertOnly };
         signedCms.ComputeSignature(signer);
         return Convert.ToBase64String(signedCms.Encode());
+    }
+
+    private static string NormalizarEndpoint(string url)
+    {
+        var resultado = url.Trim();
+        var indice = resultado.IndexOf('?', StringComparison.Ordinal);
+        return indice >= 0 && resultado[(indice + 1)..].Equals("wsdl", StringComparison.OrdinalIgnoreCase)
+            ? resultado[..indice]
+            : resultado;
     }
 
     private static WsaaTicket ParseLoginCmsResponse(string soapResponseBody)
@@ -135,7 +164,10 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
             WHERE Cuit = @Cuit AND Ambiente = @Ambiente;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@Cuit", cuit);
         cmd.Parameters.AddWithValue("@Ambiente", ambiente);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -160,7 +192,10 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
                 VALUES (@Cuit, @Ambiente, @Token, @Sign, @FechaGeneracionUtc, @FechaExpiracionUtc);
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@Cuit", cuit);
         cmd.Parameters.AddWithValue("@Ambiente", ambiente);
         cmd.Parameters.AddWithValue("@Token", ticket.Token);
@@ -172,7 +207,10 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
 
     private static async Task<bool> ExistsTablaAsync(SqlConnection cn, CancellationToken ct)
     {
-        await using var cmd = new SqlCommand("SELECT OBJECT_ID(N'dbo.ARCA_WSAA_TICKET', N'U');", cn);
+        await using var cmd = new SqlCommand("SELECT OBJECT_ID(N'dbo.ARCA_WSAA_TICKET', N'U');", cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null and not DBNull;
     }

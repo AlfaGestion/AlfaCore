@@ -12,14 +12,17 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
     private static readonly XNamespace Ns = "http://ar.gov.afip.dif.FEV1/";
     private static readonly XNamespace Soap = "http://schemas.xmlsoap.org/soap/envelope/";
 
-    public async Task<long> ObtenerUltimoAutorizadoAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo, ArcaAmbiente ambiente, CancellationToken ct)
+    public async Task<long> ObtenerUltimoAutorizadoAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct)
     {
         var body = new XElement(Ns + "FECompUltimoAutorizado",
             BuildAuth(ticket, cuit),
             new XElement(Ns + "PtoVta", ptoVta),
             new XElement(Ns + "CbteTipo", cbteTipo));
 
-        var response = await PostAsync(body, ambiente, ct);
+        // Consultar el último número autorizado es una operación idempotente.
+        // ARCA puede responder 503 durante una ventana breve de mantenimiento;
+        // reintentamos solo esta consulta, nunca la autorización del CAE.
+        var response = await PostAsync(body, ambiente, wsfeUrl, ct, reintentarServicioNoDisponible: true);
         var result = response.Descendants().FirstOrDefault(x => x.Name.LocalName == "FECompUltimoAutorizadoResult")
             ?? throw new ArcaWsfeException("La respuesta de FECompUltimoAutorizado no trae el resultado esperado.");
 
@@ -31,7 +34,7 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
         return long.Parse(cbteNroTexto, CultureInfo.InvariantCulture);
     }
 
-    public async Task<ArcaCaeResultadoDto> SolicitarCaeAsync(WsaaTicket ticket, ArcaCaeSolicitudDto solicitud, ArcaAmbiente ambiente, CancellationToken ct)
+    public async Task<ArcaCaeResultadoDto> SolicitarCaeAsync(WsaaTicket ticket, ArcaCaeSolicitudDto solicitud, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct)
     {
         try
         {
@@ -70,7 +73,7 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
                         new XElement(Ns + "CbteTipo", solicitud.CbteTipo)),
                     new XElement(Ns + "FeDetReq", detalle)));
 
-            var response = await PostAsync(body, ambiente, ct);
+            var response = await PostAsync(body, ambiente, wsfeUrl, ct);
             var result = response.Descendants().FirstOrDefault(x => x.Name.LocalName == "FECAESolicitarResult")
                 ?? throw new ArcaWsfeException("La respuesta de FECAESolicitar no trae el resultado esperado.");
 
@@ -137,7 +140,12 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
         throw new ArcaWsfeException($"{operacion} devolvió error de AFIP: {string.Join(" | ", mensajes)}");
     }
 
-    private async Task<XElement> PostAsync(XElement body, ArcaAmbiente ambiente, CancellationToken ct)
+    private async Task<XElement> PostAsync(
+        XElement body,
+        ArcaAmbiente ambiente,
+        string? wsfeUrl,
+        CancellationToken ct,
+        bool reintentarServicioNoDisponible = false)
     {
         var envelope = new XElement(Soap + "Envelope",
             new XAttribute(XNamespace.Xmlns + "soapenv", Soap.NamespaceName),
@@ -145,29 +153,82 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
             new XElement(Soap + "Header"),
             new XElement(Soap + "Body", body));
 
-        var url = ambiente == ArcaAmbiente.Produccion ? UrlProduccion : UrlHomologacion;
+        var url = string.IsNullOrWhiteSpace(wsfeUrl)
+            ? (ambiente == ArcaAmbiente.Produccion ? UrlProduccion : UrlHomologacion)
+            : NormalizarEndpoint(wsfeUrl);
         var client = httpClientFactory.CreateClient("Arca");
-        using var content = new StringContent(envelope.ToString(SaveOptions.DisableFormatting), Encoding.UTF8, "text/xml");
-        content.Headers.Add("SOAPAction", $"{Ns.NamespaceName}{body.Name.LocalName}");
-        using var response = await client.PostAsync(url, content, ct);
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var soapRequest = envelope.ToString(SaveOptions.DisableFormatting);
 
-        if (!response.IsSuccessStatusCode)
-            throw new ArcaWsfeException($"WSFEv1 respondió {(int)response.StatusCode}: {responseBody}");
+        for (var intento = 1; ; intento++)
+        {
+            using var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
+            content.Headers.Add("SOAPAction", $"{Ns.NamespaceName}{body.Name.LocalName}");
+            using var response = await client.PostAsync(url, content, ct);
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
 
-        try
-        {
-            return XElement.Parse(responseBody);
+            if (!response.IsSuccessStatusCode)
+            {
+                var esTransitorio = reintentarServicioNoDisponible
+                    && response.StatusCode is System.Net.HttpStatusCode.RequestTimeout
+                        or System.Net.HttpStatusCode.TooManyRequests
+                        or System.Net.HttpStatusCode.InternalServerError
+                        or System.Net.HttpStatusCode.BadGateway
+                        or System.Net.HttpStatusCode.ServiceUnavailable
+                        or System.Net.HttpStatusCode.GatewayTimeout;
+
+                if (esTransitorio && intento < 3)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(intento), ct);
+                    continue;
+                }
+
+                throw new ArcaWsfeException(
+                    ResumirErrorHttp((int)response.StatusCode, responseBody),
+                    (int)response.StatusCode);
+            }
+
+            try
+            {
+                return XElement.Parse(responseBody);
+            }
+            catch (Exception ex)
+            {
+                throw new ArcaWsfeException("La respuesta de WSFEv1 no es XML válido.", ex);
+            }
         }
-        catch (Exception ex)
+    }
+
+    private static string ResumirErrorHttp(int statusCode, string body)
+    {
+        if (body.Contains("Connection request timed out", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("OracleException", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArcaWsfeException("La respuesta de WSFEv1 no es XML válido.", ex);
+            return $"WSFEv1 respondió {statusCode}: el servicio remoto no pudo conectarse a su base Oracle (Connection request timed out).";
         }
+
+        var detalle = body.Trim();
+        if (detalle.Length > 600)
+            detalle = detalle[..600] + "...";
+
+        return $"WSFEv1 respondió {statusCode}: {detalle}";
+    }
+
+    private static string NormalizarEndpoint(string url)
+    {
+        var resultado = url.Trim();
+        var indice = resultado.IndexOf('?', StringComparison.Ordinal);
+        return indice >= 0 && resultado[(indice + 1)..].Equals("wsdl", StringComparison.OrdinalIgnoreCase)
+            ? resultado[..indice]
+            : resultado;
     }
 }
 
 public sealed class ArcaWsfeException : Exception
 {
-    public ArcaWsfeException(string message) : base(message) { }
+    public int? StatusCode { get; }
+
+    public ArcaWsfeException(string message, int? statusCode = null) : base(message)
+        => StatusCode = statusCode;
+
     public ArcaWsfeException(string message, Exception inner) : base(message, inner) { }
 }

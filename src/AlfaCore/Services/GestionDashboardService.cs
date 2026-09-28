@@ -828,22 +828,26 @@ public sealed class GestionDashboardService(
             await cn.OpenAsync(token);
 
             const string libWhere = """
-                WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
-                  AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
-                  AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
-                  AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
-                  AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
+                WHERE (c.TC LIKE 'FC%'
+                       OR c.TC LIKE 'NC%'
+                       OR c.TC LIKE 'ND%'
+                       OR c.TC LIKE 'FP%')
+                  AND (@FechaDesde IS NULL OR c.FECHA >= @FechaDesde)
+                  AND (@FechaHastaExclusive IS NULL OR c.FECHA < @FechaHastaExclusive)
+                  AND (@ClienteLike IS NULL OR c.CUENTA LIKE @ClienteLike OR c.NOMBRE LIKE @ClienteLike)
+                  AND (@Usuario IS NULL OR c.Usuario = @Usuario)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), c.SUCURSAL))) + ',%')
+                  AND (@TipoComprobante IS NULL OR c.TC = @TipoComprobante)
                 """;
 
             var kpis = await QuerySingleAsync($"""
                 SELECT
-                    ISNULL(SUM(l.IMPORTE), 0) AS TotalImporte,
-                    COUNT(DISTINCT l.TC + l.IdComprobante) AS TotalComprobantes,
-                    COUNT(DISTINCT l.CUENTA) AS ClientesActivos,
-                    ISNULL(CASE WHEN COUNT(DISTINCT l.TC + l.IdComprobante) = 0 THEN 0
-                                ELSE SUM(l.IMPORTE) / COUNT(DISTINCT l.TC + l.IdComprobante) END, 0) AS TicketPromedio
-                FROM dbo.Libro_VentasConFP l
+                    ISNULL(SUM(c.IMPORTE), 0) AS TotalImporte,
+                    COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) AS TotalComprobantes,
+                    COUNT(DISTINCT c.CUENTA) AS ClientesActivos,
+                    ISNULL(CASE WHEN COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) = 0 THEN 0
+                                ELSE SUM(c.IMPORTE) / COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) END, 0) AS TicketPromedio
+                FROM dbo.V_MV_Cpte c
                 {libWhere}
                 """, cn, r => new VentasComprobantesPageDto
                 {
@@ -855,16 +859,16 @@ public sealed class GestionDashboardService(
 
             var rows = await QueryVentasComprobantesAsync($"""
                 SELECT TOP (501)
-                    l.TC,
-                    l.IdComprobante,
-                    l.FECHA,
-                    l.CUENTA,
-                    ISNULL(NULLIF(LTRIM(RTRIM(l.CABNOMBRE)), ''), l.CUENTA) AS Cliente,
-                    l.IMPORTE,
-                    LTRIM(RTRIM(ISNULL(l.USUARIO_LOGEADO, ''))) AS Usuario
-                FROM dbo.Libro_VentasConFP l
+                    c.TC,
+                    c.IDCOMPROBANTE AS IdComprobante,
+                    c.FECHA,
+                    c.CUENTA,
+                    ISNULL(NULLIF(LTRIM(RTRIM(c.NOMBRE)), ''), c.CUENTA) AS Cliente,
+                    c.IMPORTE,
+                    LTRIM(RTRIM(ISNULL(c.Usuario, ''))) AS Usuario
+                FROM dbo.V_MV_Cpte c
                 {libWhere}
-                ORDER BY l.FECHA DESC, l.IdComprobante DESC
+                ORDER BY c.FECHA DESC, c.IDCOMPROBANTE DESC, c.ID DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var hayMas = rows.Count > 500;

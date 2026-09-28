@@ -1,6 +1,7 @@
 @page "/consultas/{Id:int}"
 @page "/{idweb}/{idbase:int}/consultas/{Id:int}"
 @inject AlfaCore.Services.IConsultasService ConsultasSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject IJSRuntime JS
 @using AlfaCore.Models
 
@@ -16,7 +17,7 @@ else if (_consulta is null)
 {
     <div class="consultas-error">
         <i class="bi bi-exclamation-triangle"></i> Consulta no encontrada.
-        <a href="/consultas">Volver a la lista</a>
+        <a href="@RouteContext.BuildRoute("/consultas")">Volver a la lista</a>
     </div>
 }
 else
@@ -24,14 +25,14 @@ else
     <div class="consulta-detalle">
 
         <div class="consulta-detalle__topbar">
-            <a class="consulta-detalle__back" href="/consultas">
+            <a class="consulta-detalle__back" href="@RouteContext.BuildRoute("/consultas")">
                 <i class="bi bi-arrow-left"></i> Volver a consultas
             </a>
             <div style="display:flex; gap:.5rem;">
-                <a class="btn btn--ghost btn--sm" href="/consultas/nueva?from=@_consulta!.Id">
+                <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/consultas/nueva?from={_consulta!.Id}")">
                     <i class="bi bi-copy"></i> Duplicar
                 </a>
-                <a class="btn btn--ghost btn--sm" href="/consultas/@_consulta!.Id/editar">
+                <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/consultas/{_consulta!.Id}/editar")">
                     <i class="bi bi-pencil"></i> Editar
                 </a>
             </div>
