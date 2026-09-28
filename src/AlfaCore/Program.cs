@@ -101,6 +101,20 @@ public class Program
             return;
         }
 
+        // Modo one-shot administrativo: dry-run por defecto (sólo GET); con --commit llama UNA vez a
+        // EnsureWabaSubscriptionAsync para actualizar el override de callback de un WABA existente.
+        // No arranca Kestrel ni hosted services, no toca onboarding ni SQL. Ver
+        // WhatsAppWabaSubscriptionRepairCommand.
+        if (WhatsAppWabaSubscriptionRepairCommand.IsRequested(args))
+        {
+            var wabaRepairExitCode = WhatsAppWabaSubscriptionRepairCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(wabaRepairExitCode);
+            return;
+        }
+
         // Modo one-shot 100% de prueba manual (Fase 1 de facturación electrónica AFIP/ARCA): autentica
         // WSAA, consulta último autorizado y opcionalmente pide un CAE de prueba. Nunca toca
         // V_MV_Cpte/V_MV_CPTE_ELECTRONICOS. Ver ArcaCaeDiagnosticCommand.

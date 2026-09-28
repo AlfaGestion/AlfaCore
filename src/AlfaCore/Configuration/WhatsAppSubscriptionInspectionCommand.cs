@@ -420,13 +420,25 @@ internal static class WhatsAppSubscriptionInspectionCommand
         foreach (var (level, callbackUrl) in levels)
             WriteMaskedCallback(output, $"PHONE_WEBHOOK_LEVEL[{level}]", callbackUrl, expectedCallback);
 
-        var effective = PhoneWebhookLevelPrecedence
-            .Select(level => levels.FirstOrDefault(x => string.Equals(x.Level, level, StringComparison.Ordinal)))
-            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.CallbackUrl));
+        var effective = SelectEffectivePhoneWebhook(levels);
         output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_LEVEL = {(effective.Level is null ? "N/A" : effective.Level)}");
         output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_HOST = {FormatCallbackHost(effective.CallbackUrl)}");
         output.WriteLine($"PHONE_WEBHOOK_EFFECTIVE_PATH = {MaskWebhookPath(effective.CallbackUrl)}");
         output.WriteLine($"PHONE_WEBHOOK_MATCHES_EXPECTED = {CallbackMatchesExpected(effective.CallbackUrl, expectedCallback)}");
+    }
+
+    /// <summary>Nivel efectivo según <see cref="PhoneWebhookLevelPrecedence"/>; (null, null) si ninguno
+    /// trae URL. Informativo: la precedencia no está verificada contra documentación de Meta.</summary>
+    internal static (string? Level, string? CallbackUrl) SelectEffectivePhoneWebhook(IReadOnlyList<(string Level, string CallbackUrl)> levels)
+    {
+        foreach (var level in PhoneWebhookLevelPrecedence)
+        {
+            var match = levels.FirstOrDefault(x => string.Equals(x.Level, level, StringComparison.Ordinal));
+            if (!string.IsNullOrWhiteSpace(match.CallbackUrl))
+                return (match.Level, match.CallbackUrl);
+        }
+
+        return (null, null);
     }
 
     private static void WritePhoneWebhookUnavailable(TextWriter output)
@@ -527,10 +539,10 @@ internal static class WhatsAppSubscriptionInspectionCommand
 
     /// <summary>Defensa extra para textos libres de Graph (mensajes de error): si Meta llegara a
     /// incluir una URL de webhook, el segmento que sigue a "/webhook/" nunca se imprime.</summary>
-    private static string RedactWebhookTokens(string text)
+    internal static string RedactWebhookTokens(string text)
         => Regex.Replace(text, @"(?i)(/webhook/)[^/\s?&""']+", "$1<token>");
 
-    private static string BuildGraphRoot(string graphBaseUrl, WhatsAppRuntimeCredential credential)
+    internal static string BuildGraphRoot(string graphBaseUrl, WhatsAppRuntimeCredential credential)
     {
         var baseUrl = (string.IsNullOrWhiteSpace(graphBaseUrl) ? "https://graph.facebook.com" : graphBaseUrl).TrimEnd('/');
         var version = (string.IsNullOrWhiteSpace(credential.GraphVersion) ? "v26.0" : credential.GraphVersion).Trim('/');
@@ -780,7 +792,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return $"BASE{failing.IdBase} falla por {failing.RoutingFailureReason}; BASE{ok.IdBase} tiene routing valido";
     }
 
-    private static IReadOnlyList<SubscribedAppItem> ParseSubscribedApps(string body)
+    internal static IReadOnlyList<SubscribedAppItem> ParseSubscribedApps(string body)
     {
         var items = new List<SubscribedAppItem>();
         try
@@ -805,7 +817,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return items;
     }
 
-    private static GraphErrorInfo ParseGraphError(string body)
+    internal static GraphErrorInfo ParseGraphError(string body)
     {
         try
         {
@@ -825,7 +837,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return new GraphErrorInfo(string.Empty, string.Empty, Sanitize(body));
     }
 
-    private static bool IsOurSubscriptionConfirmed(IReadOnlyList<SubscribedAppItem> items, string expectedAppId, string expectedCallback)
+    internal static bool IsOurSubscriptionConfirmed(IReadOnlyList<SubscribedAppItem> items, string expectedAppId, string expectedCallback)
     {
         foreach (var item in items)
         {
@@ -927,7 +939,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return "TEXT";
     }
 
-    private static string NormalizeCallbackUri(string? value)
+    internal static string NormalizeCallbackUri(string? value)
     {
         var trimmed = (value ?? string.Empty).Trim();
         if (trimmed.Length == 0) return string.Empty;
@@ -957,10 +969,10 @@ internal static class WhatsAppSubscriptionInspectionCommand
     private static string TryGetHost(string callbackUrl)
         => Uri.TryCreate(callbackUrl, UriKind.Absolute, out var uri) ? uri.Host : "N/A";
 
-    private static string ResolveCallbackExceptionType(Exception ex)
+    internal static string ResolveCallbackExceptionType(Exception ex)
         => ex is TaskCanceledException ? "Timeout" : ex.GetType().Name;
 
-    private static string Sanitize(string? value)
+    internal static string Sanitize(string? value)
     {
         var text = Regex.Replace(value ?? string.Empty, @"[\u0000-\u001F]+", " ").Trim();
         if (text.Length == 0)
@@ -973,7 +985,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return text.Length <= 300 ? text : text[..300] + "...";
     }
 
-    private static string ValueOrEmpty(string? value)
+    internal static string ValueOrEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? "N/A" : Sanitize(value);
 
     private static void WriteOwnershipBlocked(TextWriter output, string expectedAppId)
@@ -1074,10 +1086,10 @@ internal static class WhatsAppSubscriptionInspectionCommand
 
     private sealed record CallbackInspectionResult(bool RoutingResolved, bool Reachable, string NormalizedCallbackUrl, RoutingSourceInspection? Source);
     private sealed record SubscribedAppsInspectionResult(bool GraphSuccess, bool AppAlreadySubscribed, bool ExpectedAppIdFound);
-    private sealed record SubscribedAppItem(string? AppId, string OverrideCallbackUri);
-    private sealed record GraphErrorInfo(string Code, string Type, string Summary);
+    internal sealed record SubscribedAppItem(string? AppId, string OverrideCallbackUri);
+    internal sealed record GraphErrorInfo(string Code, string Type, string Summary);
 
-    private sealed class ReadOnlyCentralBasesService(IConfiguration configuration) : ICentralBasesService
+    internal sealed class ReadOnlyCentralBasesService(IConfiguration configuration) : ICentralBasesService
     {
         private const string SelectColumns = """
             id AS IdBase,
@@ -1117,7 +1129,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
             => Task.FromException<string>(new InvalidOperationException("La base central no tiene WebhookToken y el inspector read-only no puede generarlo."));
     }
 
-    private sealed class OneShotConexionClienteService : IConexionClienteService
+    internal sealed class OneShotConexionClienteService : IConexionClienteService
     {
         private SessionDto? _session;
         public event Action? SessionChanged;
@@ -1147,7 +1159,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         public void ClearActiveSession() => ClearWebhookOverride();
     }
 
-    private sealed class NullAppEventService : IAppEventService
+    internal sealed class NullAppEventService : IAppEventService
     {
         public Task<string> LogErrorAsync(string module, string action, Exception exception, string userMessage, object? data = null, AppEventSeverity severity = AppEventSeverity.Error, CancellationToken ct = default)
             => Task.FromResult(Guid.NewGuid().ToString("N"));
@@ -1171,7 +1183,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
             => Task.FromResult(new AuditSchemaAvailabilityDto { Available = false });
     }
 
-    private sealed class OneShotAppUserSessionService : IAppUserSessionService
+    internal sealed class OneShotAppUserSessionService : IAppUserSessionService
     {
         public event Action? StateChanged { add { } remove { } }
         public bool IsAuthenticated => false;
@@ -1188,7 +1200,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
     }
 
-    private sealed class AllowAllConversacionesAuthorizationService : IConversacionesAuthorizationService
+    internal sealed class AllowAllConversacionesAuthorizationService : IConversacionesAuthorizationService
     {
         public Task<bool> CanManageAsync(CancellationToken ct = default) => Task.FromResult(true);
         public Task<bool> CanManageAsync(int? expectedBaseId, CancellationToken ct = default) => Task.FromResult(true);
@@ -1200,7 +1212,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         public Task EnsureCanUseWhatsAppNumeroAsync(int idNumero, string connectionString, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
+    internal sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
     }
