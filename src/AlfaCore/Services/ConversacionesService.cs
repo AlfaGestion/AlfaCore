@@ -8136,10 +8136,13 @@ public sealed class ConversacionesService(
                 else
                 {
                     await TraceDiagAsync($"Paso:AntesResponderAsync:herramientas={herramientas.Count}", idConversacion, ct).ConfigureAwait(false);
+                    await TraceDiagAsync($"BotTools|ofrecidas={BuildToolNamesTrace(herramientas)}", idConversacion, ct).ConfigureAwait(false);
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
-                        herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+                        herramientas, ejecutarHerramientaAsync,
+                        (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
+                        token).ConfigureAwait(false);
                     await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
@@ -8160,6 +8163,7 @@ public sealed class ConversacionesService(
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
                     : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+                await TraceDiagAsync($"BotResult|tipo={SanitizeTraceValue(tipo)}", idConversacion, ct).ConfigureAwait(false);
                 if (usoFallbackBot)
                     tipo = "DERIVA";
 
@@ -9536,6 +9540,27 @@ public sealed class ConversacionesService(
         {
             // Best-effort: un fallo acá nunca debe interrumpir el flujo real.
         }
+    }
+
+    private static string BuildToolNamesTrace(IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> herramientas)
+        => herramientas.Count == 0
+            ? "(ninguna)"
+            : string.Join(",", herramientas.Select(h => SanitizeTraceValue(h.Nombre)).Where(x => x.Length > 0));
+
+    private static string SanitizeTraceValue(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(text.Length);
+        foreach (var ch in text)
+        {
+            if (char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.')
+                sb.Append(ch);
+        }
+
+        return sb.Length == 0 ? string.Empty : sb.ToString()[..Math.Min(sb.Length, 120)];
     }
 
     private async Task RunWithConversationAutomationLockAsync(
