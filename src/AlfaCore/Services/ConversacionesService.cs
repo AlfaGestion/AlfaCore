@@ -168,6 +168,18 @@ public sealed class ConversacionesService(
         return $"{label}-{scope.ScopeKey}";
     }
 
+    private string GetAttachmentUploadsBasePath(int? expectedBaseId, string connectionString)
+    {
+        if (expectedBaseId is not > 0)
+            return UploadsBasePath;
+
+        var builder = new SqlConnectionStringBuilder(connectionString);
+        var database = FirstNonEmpty(builder.InitialCatalog, "base");
+        var source = $"{expectedBaseId.Value}|{builder.DataSource}|{database}";
+        var scopeKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToUpperInvariant())))[..16].ToLowerInvariant();
+        return Path.Combine(LegacyUploadsBasePath, $"{SanitizePathSegment(database)}-{scopeKey}");
+    }
+
     private (string Database, string ScopeKey) GetAttachmentScope()
     {
         var activeSession = sessionService.GetActiveSession();
@@ -5307,7 +5319,7 @@ public sealed class ConversacionesService(
                     FechaHora = rd.IsDBNull(11) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(11))
                 };
 
-                var rutaLocal = ResolveExistingAttachmentPath(record);
+                var rutaLocal = ResolveExistingAttachmentPath(record, UploadsBasePath);
                 var hasSqlContent = !rd.IsDBNull(12) && rd.GetBoolean(12);
                 var estadoAlmacenamiento = GetString(rd, 13);
                 if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
@@ -5539,7 +5551,8 @@ public sealed class ConversacionesService(
                     fechaHoraArchivo = rd.GetDateTime(12);
             }
 
-            var rutaLocal = ResolveExistingAttachmentPath(record);
+            var attachmentUploadsBasePath = GetAttachmentUploadsBasePath(idBase, connectionString);
+            var rutaLocal = ResolveExistingAttachmentPath(record, attachmentUploadsBasePath);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
             {
                 await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, connectionString, token);
@@ -5922,7 +5935,7 @@ public sealed class ConversacionesService(
         return ids;
     }
 
-    private string ResolveExistingAttachmentPath(AttachmentServeRecord record)
+    private string ResolveExistingAttachmentPath(AttachmentServeRecord record, string attachmentUploadsBasePath)
     {
         if (!string.IsNullOrWhiteSpace(record.RutaLocal))
         {
@@ -5931,7 +5944,7 @@ public sealed class ConversacionesService(
                 return directPath;
         }
 
-        foreach (var candidate in BuildAttachmentPathCandidates(record))
+        foreach (var candidate in BuildAttachmentPathCandidates(record, attachmentUploadsBasePath))
         {
             if (File.Exists(candidate))
                 return candidate;
@@ -5940,12 +5953,12 @@ public sealed class ConversacionesService(
         return string.Empty;
     }
 
-    private IEnumerable<string> BuildAttachmentPathCandidates(AttachmentServeRecord record)
+    private IEnumerable<string> BuildAttachmentPathCandidates(AttachmentServeRecord record, string attachmentUploadsBasePath)
     {
         var fileName = Path.GetFileName(record.RutaLocal);
         if (!string.IsNullOrWhiteSpace(fileName))
         {
-            yield return Path.Combine(UploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+            yield return Path.Combine(attachmentUploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
             yield return Path.Combine(LegacyUploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
         }
 
