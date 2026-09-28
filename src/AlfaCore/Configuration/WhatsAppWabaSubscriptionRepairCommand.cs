@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using AlfaCore.Models;
 using AlfaCore.Services;
@@ -33,6 +34,7 @@ internal static class WhatsAppWabaSubscriptionRepairCommand
     internal const int ExitUsage = 2;
     internal const int ExitMetaFailed = 3;
     internal const int ExitPostVerifyFailed = 4;
+    internal const int ExitPhoneUnverified = 5;
 
     private const string Usage =
         "Uso: AlfaCore --repair-whatsapp-waba-subscription --id-base <N> --waba-id <ID> --phone-number-id <ID> " +
@@ -335,23 +337,19 @@ internal static class WhatsAppWabaSubscriptionRepairCommand
         output.WriteLine($"CURRENT_OVERRIDE_MATCHES_TARGET = {CallbackMatches(currentItem?.OverrideCallbackUri, targetNormalized)}");
         output.WriteLine($"CURRENT_OVERRIDE_TOKEN_MATCHES_BASE_TOKEN = {currentTokenMatches}");
 
+        // Un override a nivel número taparía el del WABA. Fail-closed para --commit: si no se pudo
+        // VERIFICAR la configuración del número (GET fallido, JSON inválido, schema desconocido o
+        // phone_number presente pero no interpretable) no se asume "sin override".
         var phone = await GetPhoneWebhookAsync(httpClient, graphRoot, options.PhoneNumberId, credential.AccessToken, ct);
-        output.WriteLine($"PHONE_WEBHOOK_HTTP = {phone.HttpStatusText}");
-        if (!phone.Success)
-            WriteGraphError(output, "PHONE_WEBHOOK", phone.Error);
-        output.WriteLine($"PHONE_EFFECTIVE_LEVEL = {phone.EffectiveLevel ?? "N/A"}");
-        output.WriteLine($"PHONE_EFFECTIVE_HOST = {FormatCallbackHost(phone.EffectiveCallback)}");
-        output.WriteLine($"PHONE_EFFECTIVE_PATH = {MaskWebhookPath(phone.EffectiveCallback)}");
-        // Un override a nivel número taparía el del WABA: si existe y no es el objetivo, --commit no
-        // lograría mover el tráfico (informativo en dry-run, bloqueante en commit).
-        var phoneLevelBlocks = phone.PhoneLevelCallback is not null && !CallbackMatches(phone.PhoneLevelCallback, targetNormalized);
-        output.WriteLine($"PHONE_LEVEL_OVERRIDE_PRESENT = {phone.PhoneLevelCallback is not null}");
+        WritePhoneWebhookState(output, "PHONE", phone, targetNormalized);
+        var phoneLevelConflict = phone.Verified && phone.PhoneLevelPresent && !CallbackMatches(phone.PhoneLevelCallback, targetNormalized);
 
         var wouldPost = !alreadyConfirmed;
         output.WriteLine($"WOULD_POST = {wouldPost}");
 
         var commitBlocker = !currentTokenMatches ? "CURRENT_OVERRIDE_TOKEN_MISMATCH"
-            : phoneLevelBlocks ? "PHONE_LEVEL_OVERRIDE_PRESENT"
+            : !phone.Verified ? "PHONE_WEBHOOK_UNVERIFIABLE"
+            : phoneLevelConflict ? "PHONE_LEVEL_OVERRIDE_PRESENT"
             : null;
         output.WriteLine($"COMMIT_ALLOWED = {commitBlocker is null}");
         if (commitBlocker is not null)
@@ -412,23 +410,25 @@ internal static class WhatsAppWabaSubscriptionRepairCommand
         output.WriteLine($"FINAL_OVERRIDE_MATCHES_TARGET = {finalConfirmed}");
 
         var finalPhone = await GetPhoneWebhookAsync(httpClient, graphRoot, options.PhoneNumberId, credential.AccessToken, ct);
-        var phoneFinalMatches = CallbackMatches(finalPhone.EffectiveCallback, targetNormalized);
-        output.WriteLine($"PHONE_FINAL_WEBHOOK_HTTP = {finalPhone.HttpStatusText}");
-        output.WriteLine($"PHONE_FINAL_EFFECTIVE_LEVEL = {finalPhone.EffectiveLevel ?? "N/A"}");
-        output.WriteLine($"PHONE_FINAL_EFFECTIVE_HOST = {FormatCallbackHost(finalPhone.EffectiveCallback)}");
+        WritePhoneWebhookState(output, "PHONE_FINAL", finalPhone, targetNormalized);
+        var phoneFinalMatches = finalPhone.Verified && CallbackMatches(finalPhone.EffectiveCallback, targetNormalized);
         output.WriteLine($"PHONE_FINAL_MATCHES_TARGET = {phoneFinalMatches}");
 
-        // El teléfono sólo invalida el resultado si Meta devolvió una configuración y no apunta al
-        // objetivo; si el GET no está disponible queda informado pero no decide.
-        var phoneContradicts = finalPhone.Success && finalPhone.EffectiveCallback is not null && !phoneFinalMatches;
-        if (!finalConfirmed || phoneContradicts)
+        output.WriteLine("POST_EXECUTED = True");
+        if (!finalConfirmed || (finalPhone.Verified && !phoneFinalMatches))
         {
-            output.WriteLine("POST_EXECUTED = True");
             output.WriteLine("RESULT = POST_VERIFY_FAILED");
             return ExitPostVerifyFailed;
         }
 
-        output.WriteLine("POST_EXECUTED = True");
+        // subscribed_apps confirma, pero el callback efectivo del número no pudo verificarse: el POST
+        // quedó hecho, pero no se reporta como éxito completo.
+        if (!finalPhone.Verified)
+        {
+            output.WriteLine("RESULT = COMMITTED_PHONE_UNVERIFIED");
+            return ExitPhoneUnverified;
+        }
+
         output.WriteLine("RESULT = COMMITTED");
         return ExitOk;
     }
@@ -486,7 +486,29 @@ internal static class WhatsAppWabaSubscriptionRepairCommand
 
     private sealed record SubscribedAppsResult(bool Success, string HttpStatusText, IReadOnlyList<SubscribedAppItem> Items, GraphErrorInfo? Error);
 
-    private sealed record PhoneWebhookResult(bool Success, string HttpStatusText, string? EffectiveLevel, string? EffectiveCallback, string? PhoneLevelCallback, GraphErrorInfo? Error);
+    /// <summary>
+    /// Estado explícito del GET /{phone}?fields=webhook_configuration. Nunca se reduce a un null
+    /// ambiguo: <see cref="Verified"/> sólo es true si el GET respondió 2xx, el schema se entendió y,
+    /// si existe el nivel phone_number, su valor también se entendió.
+    /// </summary>
+    internal sealed record PhoneWebhookState(
+        bool GetOk,
+        string HttpStatusText,
+        GraphErrorInfo? Error,
+        bool ConfigParseable,
+        bool PhoneLevelPresent,
+        bool PhoneLevelParseable,
+        string? PhoneLevelCallback,
+        string? EffectiveLevel,
+        string? EffectiveCallback)
+    {
+        public bool Verified => GetOk && ConfigParseable && (!PhoneLevelPresent || PhoneLevelParseable);
+
+        public static PhoneWebhookState GetFailed(string httpStatusText, GraphErrorInfo? error)
+            => new(false, httpStatusText, error, false, false, false, null, null, null);
+    }
+
+    private static readonly string[] KnownPhoneWebhookLevels = ["phone_number", "whatsapp_business_account", "application"];
 
     private static async Task<GraphGetResult> GraphGetAsync(HttpClient httpClient, string uri, string accessToken, CancellationToken ct)
     {
@@ -516,21 +538,117 @@ internal static class WhatsAppWabaSubscriptionRepairCommand
             : new SubscribedAppsResult(false, result.HttpStatusText, [], result.Error);
     }
 
-    private static async Task<PhoneWebhookResult> GetPhoneWebhookAsync(HttpClient httpClient, string graphRoot, string phoneNumberId, string accessToken, CancellationToken ct)
+    private static async Task<PhoneWebhookState> GetPhoneWebhookAsync(HttpClient httpClient, string graphRoot, string phoneNumberId, string accessToken, CancellationToken ct)
     {
         var uri = $"{graphRoot}/{Uri.EscapeDataString(phoneNumberId)}?fields={Uri.EscapeDataString("webhook_configuration")}";
         var result = await GraphGetAsync(httpClient, uri, accessToken, ct);
-        if (!result.Success)
-            return new PhoneWebhookResult(false, result.HttpStatusText, null, null, null, result.Error);
+        return result.Success
+            ? ParsePhoneWebhookState(result.HttpStatusText, result.Body)
+            : PhoneWebhookState.GetFailed(result.HttpStatusText, result.Error);
+    }
 
-        var levels = ParsePhoneWebhookConfiguration(result.Body);
-        if (levels is null)
-            return new PhoneWebhookResult(true, result.HttpStatusText, null, null, null, null);
+    /// <summary>
+    /// Parser estricto (más que el del inspector, que es sólo informativo):
+    ///  - JSON inválido, raíz no-objeto o webhook_configuration ausente/no-objeto => no interpretable;
+    ///  - webhook_configuration sin ningún nivel conocido interpretable => schema desconocido;
+    ///  - un nivel es interpretable sólo si trae una URL https absoluta (string u objeto con
+    ///    override_callback_uri/callback_uri/callback_url/url/uri); null u otra forma => no interpretable;
+    ///  - phone_number presente pero no interpretable queda marcado aparte (bloquea --commit).
+    /// </summary>
+    internal static PhoneWebhookState ParsePhoneWebhookState(string httpStatusText, string body)
+    {
+        var unparseable = new PhoneWebhookState(true, httpStatusText, null, false, false, false, null, null, null);
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "null" : body);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("webhook_configuration", out var config)
+                || config.ValueKind != JsonValueKind.Object)
+                return unparseable;
 
-        var (level, callback) = SelectEffectivePhoneWebhook(levels);
-        var phoneLevel = levels.FirstOrDefault(x => string.Equals(x.Level, "phone_number", StringComparison.Ordinal)).CallbackUrl;
-        return new PhoneWebhookResult(true, result.HttpStatusText, level, callback,
-            string.IsNullOrWhiteSpace(phoneLevel) ? null : phoneLevel, null);
+            var parsedLevels = new List<(string Level, string CallbackUrl)>();
+            var phoneLevelPresent = false;
+            string? phoneLevelCallback = null;
+            foreach (var property in config.EnumerateObject())
+            {
+                var level = property.Name.Trim().ToLowerInvariant();
+                if (!KnownPhoneWebhookLevels.Contains(level, StringComparer.Ordinal))
+                    continue;
+
+                var callback = TryReadStrictCallback(property.Value);
+                if (level == "phone_number")
+                {
+                    phoneLevelPresent = true;
+                    phoneLevelCallback = callback;
+                }
+
+                if (callback is not null)
+                    parsedLevels.Add((level, callback));
+            }
+
+            if (parsedLevels.Count == 0)
+                return unparseable with { PhoneLevelPresent = phoneLevelPresent };
+
+            var (effectiveLevel, effectiveCallback) = SelectEffectivePhoneWebhook(parsedLevels);
+            return new PhoneWebhookState(
+                GetOk: true,
+                HttpStatusText: httpStatusText,
+                Error: null,
+                ConfigParseable: true,
+                PhoneLevelPresent: phoneLevelPresent,
+                PhoneLevelParseable: phoneLevelPresent && phoneLevelCallback is not null,
+                PhoneLevelCallback: phoneLevelCallback,
+                EffectiveLevel: effectiveLevel,
+                EffectiveCallback: effectiveCallback);
+        }
+        catch (JsonException)
+        {
+            return unparseable;
+        }
+    }
+
+    private static string? TryReadStrictCallback(JsonElement value)
+    {
+        string? candidate = null;
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            candidate = value.GetString();
+        }
+        else if (value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in new[] { "override_callback_uri", "callback_uri", "callback_url", "url", "uri" })
+            {
+                if (value.TryGetProperty(name, out var inner) && inner.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(inner.GetString()))
+                {
+                    candidate = inner.GetString();
+                    break;
+                }
+            }
+        }
+
+        candidate = candidate?.Trim();
+        return !string.IsNullOrEmpty(candidate)
+               && Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+               && uri.Scheme == Uri.UriSchemeHttps
+            ? candidate
+            : null;
+    }
+
+    private static void WritePhoneWebhookState(RedactingOutput output, string prefix, PhoneWebhookState state, string targetNormalized)
+    {
+        output.WriteLine($"{prefix}_WEBHOOK_HTTP = {state.HttpStatusText}");
+        if (!state.GetOk)
+            WriteGraphError(output, $"{prefix}_WEBHOOK", state.Error);
+        output.WriteLine($"{prefix}_WEBHOOK_CONFIG_PARSEABLE = {(state.GetOk ? state.ConfigParseable.ToString() : "N/A")}");
+        output.WriteLine($"{prefix}_WEBHOOK_VERIFIED = {state.Verified}");
+        // Estado desconocido => N/A, nunca un False inventado.
+        var levelKnown = state.GetOk && (state.ConfigParseable || state.PhoneLevelPresent);
+        output.WriteLine($"{prefix}_LEVEL_OVERRIDE_PRESENT = {(levelKnown ? state.PhoneLevelPresent.ToString() : "N/A")}");
+        output.WriteLine($"{prefix}_LEVEL_OVERRIDE_PARSEABLE = {(state.PhoneLevelPresent ? state.PhoneLevelParseable.ToString() : "N/A")}");
+        output.WriteLine($"{prefix}_LEVEL_OVERRIDE_MATCHES_TARGET = {(state.PhoneLevelPresent && state.PhoneLevelParseable ? CallbackMatches(state.PhoneLevelCallback, targetNormalized).ToString() : "N/A")}");
+        output.WriteLine($"{prefix}_EFFECTIVE_LEVEL = {(state.Verified ? state.EffectiveLevel ?? "N/A" : "N/A")}");
+        output.WriteLine($"{prefix}_EFFECTIVE_HOST = {(state.Verified ? FormatCallbackHost(state.EffectiveCallback) : "N/A")}");
+        output.WriteLine($"{prefix}_EFFECTIVE_PATH = {(state.Verified ? MaskWebhookPath(state.EffectiveCallback) : "N/A")}");
     }
 
     private static void WriteGraphError(RedactingOutput output, string prefix, GraphErrorInfo? error)

@@ -217,6 +217,145 @@ public sealed class WhatsAppWabaSubscriptionRepairCommandTests
         Assert.Contains("ABORT_REASON = PHONE_LEVEL_OVERRIDE_PRESENT", output);
     }
 
+    private static MetaSimulator UnverifiablePhoneSimulator(string caseName) => caseName switch
+    {
+        "phone-500" => new MetaSimulator { Override = AlfaCentralCallback, PhoneStatus = HttpStatusCode.InternalServerError },
+        "http-request-exception" => new MetaSimulator { Override = AlfaCentralCallback, PhoneException = new HttpRequestException("socket closed") },
+        "timeout" => new MetaSimulator { Override = AlfaCentralCallback, PhoneException = new TaskCanceledException("timeout") },
+        "200-no-json" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = "<html>proxy</html>" },
+        "sin-webhook-configuration" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = """{"id":"1243405415530992"}""" },
+        "schema-desconocido" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = """{"webhook_configuration":{"callbacks":[{"x":"https://a.example.com/webhook/T"}]}}""" },
+        "webhook-configuration-array" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = """{"webhook_configuration":["https://a.example.com/webhook/T"]}""" },
+        "phone-number-objeto-no-reconocido" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = $$$"""{"webhook_configuration":{"phone_number":{"endpoint":"https://x.example.com/webhook/T"},"whatsapp_business_account":"{{{AlfaCentralCallback}}}","application":"{{{AppLevelCallback}}}"}}""" },
+        "phone-number-null" => new MetaSimulator { Override = AlfaCentralCallback, PhoneBody = $$$"""{"webhook_configuration":{"phone_number":null,"whatsapp_business_account":"{{{AlfaCentralCallback}}}"}}""" },
+        _ => throw new ArgumentOutOfRangeException(nameof(caseName), caseName, null)
+    };
+
+    [Theory]
+    [InlineData("phone-500")]
+    [InlineData("http-request-exception")]
+    [InlineData("timeout")]
+    [InlineData("200-no-json")]
+    [InlineData("sin-webhook-configuration")]
+    [InlineData("schema-desconocido")]
+    [InlineData("webhook-configuration-array")]
+    [InlineData("phone-number-objeto-no-reconocido")]
+    [InlineData("phone-number-null")]
+    public async Task Commit_PhoneWebhookUnverifiable_FailsClosed_WithoutEnsure(string caseName)
+    {
+        var meta = UnverifiablePhoneSimulator(caseName);
+
+        var (exit, output) = await RunAsync(meta, commit: true);
+
+        Assert.True(exit == ExitGuardFailed, $"{caseName}: exit {exit}");
+        Assert.Equal(0, meta.PostCount);
+        Assert.Equal(1, meta.ChallengeCount);          // Ensure hace su propio challenge: no hubo.
+        Assert.Equal(1, meta.SubscribedAppsGetCount);  // ni su GET de subscribed_apps.
+        Assert.Contains("PHONE_WEBHOOK_VERIFIED = False", output);
+        Assert.Contains("COMMIT_ALLOWED = False", output);
+        Assert.Contains("COMMIT_BLOCKED_REASON = PHONE_WEBHOOK_UNVERIFIABLE", output);
+        Assert.Contains("ABORT_REASON = PHONE_WEBHOOK_UNVERIFIABLE", output);
+        Assert.Equal(AlfaCentralCallback, meta.Override);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task DryRun_PhoneWebhookUnverifiable_ReportsUnknownInsteadOfFalse()
+    {
+        var meta = new MetaSimulator { Override = AlfaCentralCallback, PhoneStatus = HttpStatusCode.InternalServerError };
+
+        var (exit, output) = await RunAsync(meta, commit: false);
+
+        Assert.Equal(ExitOk, exit);
+        Assert.Equal(0, meta.PostCount);
+        Assert.Contains("PHONE_WEBHOOK_HTTP = 500", output);
+        Assert.Contains("PHONE_WEBHOOK_VERIFIED = False", output);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_PRESENT = N/A", output);
+        Assert.DoesNotContain("PHONE_LEVEL_OVERRIDE_PRESENT = False", output);
+        Assert.Contains("COMMIT_ALLOWED = False", output);
+        Assert.Contains("COMMIT_BLOCKED_REASON = PHONE_WEBHOOK_UNVERIFIABLE", output);
+        Assert.Contains("RESULT = DRY_RUN_OK", output);
+    }
+
+    [Fact]
+    public async Task Commit_PhoneLevelAbsentInValidConfig_Continues()
+    {
+        var meta = new MetaSimulator { Override = AlfaCentralCallback };
+
+        var (exit, output) = await RunAsync(meta, commit: true);
+
+        Assert.Equal(ExitOk, exit);
+        Assert.Contains("PHONE_WEBHOOK_VERIFIED = True", output);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_PRESENT = False", output);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_PARSEABLE = N/A", output);
+        Assert.Equal(1, meta.PostCount);
+        Assert.Contains("RESULT = COMMITTED", output);
+    }
+
+    [Fact]
+    public async Task Commit_PhoneLevelMatchingTarget_Continues()
+    {
+        var meta = new MetaSimulator { Override = AlfaCentralCallback, PhoneLevelOverride = AlfaWebCallback };
+
+        var (exit, output) = await RunAsync(meta, commit: true);
+
+        Assert.Equal(ExitOk, exit);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_PRESENT = True", output);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_MATCHES_TARGET = True", output);
+        Assert.Contains("COMMIT_ALLOWED = True", output);
+        Assert.Equal(1, meta.PostCount);
+        Assert.Contains("RESULT = COMMITTED", output);
+    }
+
+    [Fact]
+    public async Task Commit_PhoneLevelPointingElsewhere_FailsClosed_WithoutEnsure()
+    {
+        var meta = new MetaSimulator { Override = AlfaCentralCallback, PhoneLevelOverride = AlfaCentralCallback };
+
+        var (exit, output) = await RunAsync(meta, commit: true);
+
+        Assert.Equal(ExitGuardFailed, exit);
+        Assert.Equal(0, meta.PostCount);
+        Assert.Equal(1, meta.ChallengeCount);
+        Assert.Contains("PHONE_LEVEL_OVERRIDE_MATCHES_TARGET = False", output);
+        Assert.Contains("ABORT_REASON = PHONE_LEVEL_OVERRIDE_PRESENT", output);
+    }
+
+    [Fact]
+    public async Task PostCommit_PhoneUnverifiable_IsNotReportedAsFullSuccess()
+    {
+        var meta = new MetaSimulator { Override = AlfaCentralCallback, PhoneFailsAfterPost = true };
+
+        var (exit, output) = await RunAsync(meta, commit: true);
+
+        Assert.Equal(ExitPhoneUnverified, exit);
+        Assert.NotEqual(ExitOk, exit);
+        Assert.Equal(1, meta.PostCount);
+        Assert.Contains("FINAL_OVERRIDE_MATCHES_TARGET = True", output);
+        Assert.Contains("PHONE_FINAL_WEBHOOK_HTTP = 500", output);
+        Assert.Contains("PHONE_FINAL_WEBHOOK_VERIFIED = False", output);
+        Assert.Contains("PHONE_FINAL_MATCHES_TARGET = False", output);
+        Assert.Contains("POST_EXECUTED = True", output);
+        Assert.Contains("RESULT = COMMITTED_PHONE_UNVERIFIED", output);
+        Assert.DoesNotContain("RESULT = COMMITTED\n", output.Replace("\r\n", "\n"));
+    }
+
+    [Theory]
+    [InlineData("""{"webhook_configuration":{"whatsapp_business_account":"https://h.example.com/webhook/T","application":"https://a.example.com/webhook/A"}}""", true, false)]
+    [InlineData("""{"webhook_configuration":{"phone_number":{"override_callback_uri":"https://p.example.com/webhook/P"},"application":"https://a.example.com/webhook/A"}}""", true, true)]
+    [InlineData("""{"webhook_configuration":{"phone_number":"http://inseguro.example.com/webhook/P","application":"https://a.example.com/webhook/A"}}""", false, true)]
+    [InlineData("""{"webhook_configuration":{}}""", false, false)]
+    [InlineData("""{"webhook_configuration":{"application":null}}""", false, false)]
+    [InlineData("no-json", false, false)]
+    [InlineData("", false, false)]
+    public void ParsePhoneWebhookState_IsStrict(string body, bool verified, bool phoneLevelPresent)
+    {
+        var state = ParsePhoneWebhookState("200", body);
+
+        Assert.Equal(verified, state.Verified);
+        Assert.Equal(phoneLevelPresent, state.PhoneLevelPresent);
+    }
+
     [Fact]
     public async Task CallbackBaseUrl_RollbackToAlfaCentral_KeepsPathAndToken()
     {
@@ -465,8 +604,17 @@ public sealed class WhatsAppWabaSubscriptionRepairCommandTests
         public bool IgnorePost { get; init; }
         public int RevertAfterGetsPostPost { get; init; } = -1;
         public HttpStatusCode SubscribedAppsGetStatus { get; init; } = HttpStatusCode.OK;
+        public HttpStatusCode PhoneStatus { get; init; } = HttpStatusCode.OK;
+        public Exception? PhoneException { get; init; }
+        public string? PhoneBody { get; init; }
+        public bool PhoneFailsAfterPost { get; init; }
         public List<(HttpMethod Method, Uri Uri, string Body)> Requests { get; } = [];
         public int PostCount => Requests.Count(r => r.Method == HttpMethod.Post);
+        // El challenge propio del comando es 1; EnsureWabaSubscriptionAsync hace otro. Con 1 solo
+        // challenge y 1 solo GET de subscribed_apps queda probado que Ensure no se llamó.
+        public int ChallengeCount => Requests.Count(r => r.Uri.Host != "graph.facebook.com");
+        public int SubscribedAppsGetCount => Requests.Count(r => r.Method == HttpMethod.Get && r.Uri.AbsolutePath.EndsWith("/subscribed_apps", StringComparison.Ordinal));
+        private bool Posted => _getsAfterPost >= 0;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -492,6 +640,15 @@ public sealed class WhatsAppWabaSubscriptionRepairCommandTests
                     : $$"""{"id":"{{AppId}}","override_callback_uri":"{{Override}}"}""";
                 return Json(HttpStatusCode.OK, $$"""{"data":[{{item}}]}""");
             }
+
+            if (PhoneFailsAfterPost && Posted)
+                return Json(HttpStatusCode.InternalServerError, """{"error":{"code":1,"type":"OAuthException","message":"An unknown error occurred"}}""");
+            if (PhoneException is not null)
+                throw PhoneException;
+            if (PhoneStatus != HttpStatusCode.OK)
+                return Json(PhoneStatus, """{"error":{"code":1,"type":"OAuthException","message":"An unknown error occurred"}}""");
+            if (PhoneBody is not null)
+                return Json(HttpStatusCode.OK, PhoneBody);
 
             var levels = new List<string>();
             if (PhoneLevelOverride is not null)
