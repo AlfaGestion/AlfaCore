@@ -24,6 +24,7 @@ public interface IConversacionAsistenteService
         string? contextoCliente = null,
         IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
+        Func<string, CancellationToken, Task>? traceDiagAsync = null,
         CancellationToken ct = default);
 
     /// <summary>

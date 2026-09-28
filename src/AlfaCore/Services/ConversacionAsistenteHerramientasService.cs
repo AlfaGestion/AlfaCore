@@ -21,10 +21,11 @@ namespace AlfaCore.Services;
 public sealed class ConversacionAsistenteHerramientasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppUserSessionService appUserSession,
     ICrmCotizacionService crmCotizacionService,
     IInterfacesCatalogosService catalogosService,
     ICentralPublicLinkService publicLinkService,
+    ICentralBasesService centralBasesService,
+    ICentralClientesService centralClientesService,
     IPortalClienteService portalClienteService,
     IProveedorSaldoService proveedorSaldoService,
     IConversacionesConfigService conversacionesConfigService) : IConversacionAsistenteHerramientasService
@@ -73,6 +74,38 @@ public sealed class ConversacionAsistenteHerramientasService(
         return texto.Length > 0 && PalabrasClaveHerramientas.Any(texto.Contains);
     }
 
+    private static bool MensajePideCatalogo(string mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return texto.Contains("catalogo", StringComparison.Ordinal)
+            || texto.Contains("ver productos", StringComparison.Ordinal)
+            || texto.Contains("ver los productos", StringComparison.Ordinal)
+            || texto.Contains("mostrar productos", StringComparison.Ordinal)
+            || texto.Contains("pasame productos", StringComparison.Ordinal)
+            || texto.Contains("pasar productos", StringComparison.Ordinal)
+            || texto.Contains("lista de productos", StringComparison.Ordinal);
+    }
+
+    private static string NormalizarTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        var normalized = texto.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category != UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        }
+
+        return sb.ToString().Normalize(NormalizationForm.FormC);
+    }
+
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
         ConversacionCuentaVinculadaDto? cuenta,
@@ -91,6 +124,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         var esCliente = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Cliente;
         var esProveedor = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Proveedor;
         var puedeInformarPrecio = !esAmbigua && (esCliente || config.CatalogoMuestraPrecioConsumidor);
+        var pideCatalogo = MensajePideCatalogo(mensajeCliente);
 
         if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
@@ -146,7 +180,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
-        if (!esCliente)
+        if (!esCliente || pideCatalogo)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
@@ -347,24 +381,19 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     private async Task<string> EjecutarGenerarLinkCatalogoPublicoAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
     {
-        // Ambigua comparte Tipo=Cliente (no hay un tercer valor de enum para "ambiguo", ver
-        // ConversacionCuentaVinculadaDto) -- por eso EsAmbigua se evalúa PRIMERO acá. Un contacto
-        // ambiguo no es un Cliente identificado: no puede ir al Portal (elegiría una cuenta por él)
-        // y sí debe poder recibir el catálogo público como fallback seguro, igual que un lead.
-        if (cuenta?.EsAmbigua != true && cuenta?.Tipo == CuentaComercialTipo.Cliente)
-            return "El cliente identificado debe usar el Portal Cliente para ver su catálogo y precios.";
-
-        var idWeb = appUserSession.CurrentUser?.IdWeb?.Trim() ?? string.Empty;
-        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
-        if (string.IsNullOrWhiteSpace(idWeb) || idBase <= 0)
+        // El catálogo público no expone datos privados de cuenta: puede compartirse con Cliente,
+        // Lead, Proveedor o identidad ambigua. La empresa/base se resuelve server-side.
+        var contexto = await ResolverContextoCatalogoPublicoAsync(ct);
+        if (contexto is null)
             return "El catálogo público está disponible, pero no se pudo resolver la empresa/base actual para generar el link. Avisale que un asesor lo comparte.";
 
+        var (idWeb, idBase) = contexto.Value;
         var whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
         var baseUrl = (whatsAppConfig.PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
         if (string.IsNullOrWhiteSpace(baseUrl))
             return "El catálogo público está disponible, pero todavía no se configuró la URL pública del sistema; avisale que un asesor le manda el link.";
 
-        var catalogo = await catalogosService.GetCatalogoAsync(0, ct);
+        var catalogo = await catalogosService.GetCatalogoPublicoAsync(0, expectedBaseId: idBase, ct);
         if (catalogo is null)
             return "No hay un catálogo público predeterminado disponible para compartir en este momento.";
 
@@ -372,6 +401,24 @@ public sealed class ConversacionAsistenteHerramientasService(
             ?? await publicLinkService.GetOrCreateAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, catalogo.Nombre, ct);
 
         return $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
+    }
+
+    private async Task<(string IdWeb, int IdBase)?> ResolverContextoCatalogoPublicoAsync(CancellationToken ct)
+    {
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (idBase <= 0)
+            return null;
+
+        var baseCentral = await centralBasesService.GetByIdAsync(idBase, ct);
+        if (baseCentral is null || baseCentral.IdBase != idBase || string.IsNullOrWhiteSpace(baseCentral.IdCliente))
+            return null;
+
+        var clienteCentral = await centralClientesService.GetByIdClienteAsync(baseCentral.IdCliente, ct);
+        var idWeb = clienteCentral?.IdWeb?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(idWeb))
+            return null;
+
+        return (idWeb, idBase);
     }
 
     private static string? LeerArgumentoString(string argumentosJson, string nombre)

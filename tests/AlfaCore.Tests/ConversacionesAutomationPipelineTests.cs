@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using System.Reflection;
 using AlfaCore.Models;
 using AlfaCore.Services;
@@ -785,15 +788,17 @@ public sealed class ConversacionesAutomationPipelineTests
         IPortalClienteService? portal = null,
         IProveedorSaldoService? proveedor = null,
         IConversacionesConfigService? config = null,
-        IAppUserSessionService? appUser = null,
+        ICentralBasesService? centralBases = null,
+        ICentralClientesService? centralClientes = null,
         ISessionService? session = null)
         => new(
             new FakeConfiguration(),
             session ?? new FakeSessionService(),
-            appUser ?? new FakeAppUserSessionService(),
             crm ?? new ThrowingCrmCotizacionService(),
             catalogos ?? new ThrowingInterfacesCatalogosService(),
             publicLinks ?? new ThrowingCentralPublicLinkService(),
+            centralBases ?? new FakeCentralBasesService(),
+            centralClientes ?? new FakeCentralClientesService(),
             portal ?? new ThrowingPortalClienteService(),
             proveedor ?? new ThrowingProveedorSaldoService(),
             config ?? new FakeConversacionesConfigService());
@@ -842,6 +847,21 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Tools_IdentifiedClient_WithExplicitCatalogIntent_GetsPublicCatalogPlusClientTools()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "Quiero comprar pilas, tienen catálogo?");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
+    }
+
+    [Fact]
     public void Tools_LeadWithConsumerPricesOff_GetsPublicCatalogButNoPriceTool()
     {
         var service = CreateToolsService();
@@ -850,6 +870,20 @@ public sealed class ConversacionesAutomationPipelineTests
             ToolsConfig(precioConsumidor: false),
             null,
             "quiero precio del catalogo");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_LeadCommercialQuestionWithoutCatalogIntent_KeepsPublicCatalogFallback()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            null,
+            "cuanto salen las pilas?");
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
@@ -915,6 +949,20 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_IdentifiedClient_PriceOnlyQuestion_DoesNotOfferPublicCatalog()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "cuánto salen las pilas?");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
     }
 
     [Fact]
@@ -1012,28 +1060,80 @@ public sealed class ConversacionesAutomationPipelineTests
     public async Task Tools_PublicCatalogLink_UsesCurrentCompanyAndBaseOnly()
     {
         var publicLinks = new FakeCentralPublicLinkService();
+        var catalogos = new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } };
+        var service = CreateToolsService(
+            catalogos: catalogos,
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Equal(4271, catalogos.LastPublicExpectedBaseId);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
+        Assert.DoesNotContain(publicLinks.Requests, r => r.IdWeb == "empresa-b" || r.IdBase == 9999);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_WebhookContextWithoutUiUser_ResolvesIdWebServerSide()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
         var service = CreateToolsService(
             catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
             publicLinks: publicLinks,
-            appUser: new FakeAppUserSessionService("empresa-a"),
             session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
 
         var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
 
         Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
         Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
-        Assert.DoesNotContain(publicLinks.Requests, r => r.IdWeb == "empresa-b" || r.IdBase == 9999);
     }
 
     [Fact]
-    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsRejectedInFavorOfPortalCliente()
+    public async Task Tools_PublicCatalogLink_CrossTenantContextFailsClosed()
     {
-        var service = CreateToolsService();
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            centralBases: new FakeCentralBasesService { ForceMismatchedBaseId = true },
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("no se pudo resolver la empresa/base actual", result);
+        Assert.Empty(publicLinks.Requests);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_RequiresPublicCatalog()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = null },
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("No hay un catálogo público predeterminado disponible", result);
+        Assert.Empty(publicLinks.Requests);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsAllowedBecauseCatalogIsPublic()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
         var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
 
         var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
 
-        Assert.Contains("debe usar el Portal Cliente", result);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
     }
 
     [Fact]
@@ -1046,7 +1146,6 @@ public sealed class ConversacionesAutomationPipelineTests
         var service = CreateToolsService(
             catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
             publicLinks: publicLinks,
-            appUser: new FakeAppUserSessionService("empresa-a"),
             session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
         var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
 
@@ -1082,6 +1181,248 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("más de una cuenta vinculada", saldo);
         Assert.Contains("más de una cuenta vinculada", portalLink);
     }
+
+    [Fact]
+    public async Task Assistant_ExplicitCatalogIntent_ForcesCatalogToolBeforeFinalAnswer()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catálogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+            var executedTools = new List<string>();
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Quiero comprar pilas, tienen catálogo?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (nombre, _, _) =>
+                {
+                    executedTools.Add(nombre);
+                    return Task.FromResult("https://portal.example.com/empresa-a/catalogo/catalogo-tok123");
+                },
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            using var firstPayload = JsonDocument.Parse(handler.RequestBodies[0]);
+            var forcedTool = firstPayload.RootElement.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString();
+
+            Assert.Equal("generar_link_catalogo_publico", forcedTool);
+            Assert.Equal(["generar_link_catalogo_publico"], executedTools);
+            Assert.Equal("RESUELVE", result?.Tipo);
+            Assert.Contains(traces, t => t == "BotToolCall|tool=generar_link_catalogo_publico");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_ToolCallsPresentWithStopFinishReason_StillExecutesToolDefensively()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catálogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+            var executedTools = new List<string>();
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Quiero comprar pilas, tienen catálogo?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (nombre, _, _) =>
+                {
+                    executedTools.Add(nombre);
+                    return Task.FromResult("https://portal.example.com/empresa-a/catalogo/catalogo-tok123");
+                });
+
+            Assert.Equal(["generar_link_catalogo_publico"], executedTools);
+            Assert.Equal("RESUELVE", result?.Tipo);
+            Assert.Equal(2, handler.RequestBodies.Count);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_LeadCommercialQuestionWithoutCatalogIntent_DoesNotForceCatalogToolChoice()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"respuesta\":\"Un asesor lo confirma.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => throw new InvalidOperationException("No debe forzar tool."));
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            Assert.False(payload.RootElement.TryGetProperty("tool_choice", out _));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_LeadCatalogIntent_WithoutUiUser_ExecutesPublicCatalogAndDoesNotDerive()
+    {
+        var result = await RunCatalogIntentConversationThroughRealToolAsync(cuenta: null);
+
+        Assert.Contains("generar_link_catalogo_publico", result.AvailableTools);
+        Assert.Equal(["generar_link_catalogo_publico"], result.ExecutedTools);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result.ToolResults.Single());
+        Assert.Equal("RESUELVE", result.Answer?.Tipo);
+        Assert.NotEqual("DERIVA", result.Answer?.Tipo);
+    }
+
+    [Fact]
+    public async Task Assistant_IdentifiedClientCatalogIntent_WithoutUiUser_ExecutesPublicCatalogAndDoesNotDerive()
+    {
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await RunCatalogIntentConversationThroughRealToolAsync(cuenta);
+
+        Assert.Contains("generar_link_catalogo_publico", result.AvailableTools);
+        Assert.Equal(["generar_link_catalogo_publico"], result.ExecutedTools);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result.ToolResults.Single());
+        Assert.Equal("RESUELVE", result.Answer?.Tipo);
+        Assert.NotEqual("DERIVA", result.Answer?.Tipo);
+    }
+
+    private static async Task<CatalogIntentConversationResult> RunCatalogIntentConversationThroughRealToolAsync(ConversacionCuentaVinculadaDto? cuenta)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var toolsService = CreateToolsService(
+                catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+                publicLinks: new FakeCentralPublicLinkService(),
+                session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+            const string mensaje = "Quiero comprar pilas, tienen catalogo?";
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cuenta, mensaje);
+            var executedTools = new List<string>();
+            var toolResults = new List<string>();
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catalogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var assistant = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            var answer = await assistant.ResponderAsync(
+                comportamiento: "Sos un asistente comercial.",
+                informacion: "Info real.",
+                politica: "GENERAL_AVISA",
+                mensajeCliente: mensaje,
+                historial: [],
+                herramientas: herramientas,
+                ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
+                {
+                    executedTools.Add(nombre);
+                    var toolResult = await toolsService.EjecutarAsync(nombre, argumentos, cuenta, ct);
+                    toolResults.Add(toolResult);
+                    return toolResult;
+                });
+
+            return new CatalogIntentConversationResult(
+                herramientas.Select(h => h.Nombre).ToArray(),
+                executedTools.ToArray(),
+                toolResults.ToArray(),
+                answer);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    private sealed record CatalogIntentConversationResult(
+        IReadOnlyList<string> AvailableTools,
+        IReadOnlyList<string> ExecutedTools,
+        IReadOnlyList<string> ToolResults,
+        ConversacionAsistenteRespuesta? Answer);
 
     [Fact]
     public async Task Tools_SaldoQuery_AlwaysUsesTheLinkedAccount_NeverAnyIdentifierFromModelArguments()
@@ -1407,21 +1748,35 @@ public sealed class ConversacionesAutomationPipelineTests
         public void ClearActiveSession() { }
     }
 
-    private sealed class FakeAppUserSessionService(string idWeb = "empresa-a") : IAppUserSessionService
+    private sealed class FakeCentralBasesService : ICentralBasesService
     {
-        public event Action? StateChanged;
-        public bool IsAuthenticated => true;
-        public AppUserSessionInfo? CurrentUser { get; } = new() { UserName = "admin", IdWeb = idWeb };
-        public bool RequiresInternalLogin => false;
-        public string? CurrentToken => "test-token";
-        public Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default) => throw new NotSupportedException();
-        public void AdoptInternalUser(AppUserSessionInfo internalUser) => throw new NotSupportedException();
-        public bool TryRestoreFromToken(string token) => throw new NotSupportedException();
-        public void Logout() => throw new NotSupportedException();
-        public void HandleSqlSessionChanged() { }
-        public string GetCurrentUserName(string fallback = "") => CurrentUser?.UserName ?? fallback;
-        public bool IsAuthorizedForSession(Guid? activeSessionId) => true;
-        public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
+        public bool ForceMismatchedBaseId { get; set; }
+
+        public Task<BaseCentralDto?> GetByIdAsync(int idBase, CancellationToken ct = default)
+            => Task.FromResult<BaseCentralDto?>(new BaseCentralDto
+            {
+                IdBase = ForceMismatchedBaseId ? idBase + 1 : idBase,
+                IdCliente = "CLI-A",
+                Nombre = "Base A"
+            });
+
+        public Task<IReadOnlyList<BaseCentralDto>> GetByClienteAsync(string idCliente, bool includeAllForSuperAdmin = false, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BaseCentralDto>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BaseCentralDto?> GetByWebhookTokenAsync(string webhookToken, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> EnsureWebhookTokenAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeCentralClientesService : ICentralClientesService
+    {
+        public string IdWeb { get; set; } = "empresa-a";
+
+        public Task<ClienteCentralDto?> GetByIdClienteAsync(string idCliente, CancellationToken ct = default)
+            => Task.FromResult<ClienteCentralDto?>(new ClienteCentralDto { IdCliente = idCliente, IdWeb = IdWeb, RazonSocial = "Empresa A" });
+
+        public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeCentralPublicLinkService : ICentralPublicLinkService
@@ -1472,9 +1827,19 @@ public sealed class ConversacionesAutomationPipelineTests
     private class FakeInterfacesCatalogosService : IInterfacesCatalogosService
     {
         public CatalogosCatalogoDetalleDto? Catalogo { get; set; } = new() { IdInsert = 123, Nombre = "Catálogo público" };
+        public int? LastPublicExpectedBaseId { get; private set; }
 
         public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)
             => Task.FromResult(Catalogo);
+
+        public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default)
+            => Task.FromResult(Catalogo);
+
+        public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default)
+        {
+            LastPublicExpectedBaseId = expectedBaseId;
+            return Task.FromResult(Catalogo);
+        }
 
         public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();
@@ -1488,8 +1853,6 @@ public sealed class ConversacionesAutomationPipelineTests
         public Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, string? idWeb = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PagedResult<CatalogosCatalogoResumenDto>> SearchCatalogosAsync(string? texto, int pageNumber = 1, int pageSize = 50, DateTime? fechaFiltro = null, string? tipoFiltro = null, string? estadoFiltro = null, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> GetCatalogoPredeterminadoIdAsync(CancellationToken ct = default) => throw new NotSupportedException();
@@ -1515,12 +1878,52 @@ public sealed class ConversacionesAutomationPipelineTests
     private sealed class ThrowingInterfacesCatalogosService : FakeInterfacesCatalogosService
     {
         public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeConversacionesConfigService : ThrowingConversacionesConfigService
     {
         public override Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
             => Task.FromResult(new ConversacionWhatsAppConfigDto { PublicBaseUrl = "https://portal.example.com" });
+    }
+
+    private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class QueueHttpHandler(params string[] responses) : HttpMessageHandler
+    {
+        private readonly Queue<string> _responses = new(responses);
+        public List<string> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestBodies.Add(request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken));
+            if (_responses.Count == 0)
+                throw new InvalidOperationException("No hay más respuestas HTTP fake configuradas.");
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_responses.Dequeue(), Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    private sealed class FakeAppEventService : IAppEventService
+    {
+        public Task<string> LogErrorAsync(string module, string action, Exception exception, string userMessage, object? data = null, AppEventSeverity severity = AppEventSeverity.Error, CancellationToken ct = default)
+            => Task.FromResult(Guid.NewGuid().ToString("N"));
+
+        public Task<string> LogAuditAsync(string module, string action, string entityType, string entityId, string message, object? data = null, CancellationToken ct = default)
+            => Task.FromResult(Guid.NewGuid().ToString("N"));
+
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction transaction, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditActivityPageDto> GetActivityAsync(string entityType, string recordId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction? transaction = null, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeCrmCotizacionService : ICrmCotizacionService

@@ -24,6 +24,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         string? contextoCliente = null,
         IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
+        Func<string, CancellationToken, Task>? traceDiagAsync = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -35,7 +36,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             model = "gpt-4o-mini";
 
         var haySaldoEntreHerramientas = herramientas?.Any(h => h.Nombre.StartsWith("consultar_saldo", StringComparison.Ordinal)) ?? false;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas);
+        var hayCatalogoEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)) ?? false;
+        var debeForzarCatalogo = hayCatalogoEntreHerramientas && MensajePideCatalogo(mensajeCliente);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -86,7 +89,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools);
+                var toolChoice = debeForzarCatalogo && ronda == 0
+                    ? new { type = "function", function = new { name = "generar_link_catalogo_publico" } }
+                    : null;
+                var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools, toolChoice);
 
                 using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
@@ -116,8 +122,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 var toolCalls = message.TryGetProperty("tool_calls", out var tc) && tc.ValueKind == JsonValueKind.Array
                     ? tc
                     : (JsonElement?)null;
+                var tieneToolCalls = toolCalls is not null && toolCalls.Value.GetArrayLength() > 0;
 
-                if (!string.Equals(finishReason, "tool_calls", StringComparison.Ordinal) || toolCalls is null || ejecutarHerramientaAsync is null || ronda == MaxRondasHerramientas)
+                if (!tieneToolCalls || ejecutarHerramientaAsync is null || ronda == MaxRondasHerramientas)
                 {
                     var texto = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
                     var respuestaParseada = ParseRespuesta(texto);
@@ -138,6 +145,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                             textoCrudo = Truncar(texto, 800)
                         },
                         ct);
+                    await TraceDiagAsync(traceDiagAsync, $"BotOpenAiResponse|finishReason={SanitizeDiag(finishReason)}|tipo={SanitizeDiag(respuestaParseada?.Tipo)}", ct);
 
                     return respuestaParseada;
                 }
@@ -145,12 +153,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 // El modelo pidió usar una o más herramientas: se ejecutan en C# (nunca del lado del
                 // modelo) y se le devuelve el resultado para que redacte la respuesta final.
                 messages.Add(message.Clone());
-                foreach (var call in toolCalls.Value.EnumerateArray())
+                var toolCallsValue = toolCalls.GetValueOrDefault();
+                foreach (var call in toolCallsValue.EnumerateArray())
                 {
                     var callId = call.GetProperty("id").GetString() ?? string.Empty;
                     var function = call.GetProperty("function");
                     var nombreHerramienta = function.GetProperty("name").GetString() ?? string.Empty;
                     var argumentos = function.TryGetProperty("arguments", out var argsEl) ? argsEl.GetString() ?? "{}" : "{}";
+                    await TraceDiagAsync(traceDiagAsync, $"BotToolCall|tool={SanitizeDiag(nombreHerramienta)}", ct);
 
                     string resultado;
                     try
@@ -165,6 +175,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     {
                         resultado = "No se pudo obtener el dato en este momento.";
                     }
+                    await TraceDiagAsync(traceDiagAsync, $"BotToolResult|tool={SanitizeDiag(nombreHerramienta)}|status={ClasificarResultadoTool(resultado)}", ct);
 
                     messages.Add(new { role = "tool", tool_call_id = callId, content = resultado });
                 }
@@ -229,7 +240,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         IReadOnlyList<object> messages,
         double? temperature = null,
         object? responseFormat = null,
-        object? tools = null)
+        object? tools = null,
+        object? toolChoice = null)
     {
         var payload = new Dictionary<string, object?>
         {
@@ -242,6 +254,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
         if (tools is not null)
             payload["tools"] = tools;
+        if (toolChoice is not null)
+            payload["tool_choice"] = toolChoice;
 
         if (temperature.HasValue && SupportsCustomTemperature(model))
             payload["temperature"] = temperature.Value;
@@ -255,7 +269,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
-        string? contextoCliente, bool haySaldoEntreHerramientas = false)
+        string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -302,6 +316,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
+        if (hayCatalogoEntreHerramientas)
+            sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
 
         if (haySaldoEntreHerramientas)
         {
@@ -364,6 +380,71 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     {
         var t = texto ?? string.Empty;
         return t.Length <= maxLength ? t : t[..maxLength] + "…";
+    }
+
+    private static bool MensajePideCatalogo(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return texto.Contains("catalogo", StringComparison.Ordinal)
+            || texto.Contains("ver productos", StringComparison.Ordinal)
+            || texto.Contains("ver los productos", StringComparison.Ordinal)
+            || texto.Contains("mostrar productos", StringComparison.Ordinal)
+            || texto.Contains("pasame productos", StringComparison.Ordinal)
+            || texto.Contains("pasar productos", StringComparison.Ordinal)
+            || texto.Contains("lista de productos", StringComparison.Ordinal);
+    }
+
+    private static string NormalizarTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        var normalized = texto.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category != System.Globalization.UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        }
+
+        return sb.ToString().Normalize(NormalizationForm.FormC);
+    }
+
+    private static Task TraceDiagAsync(Func<string, CancellationToken, Task>? traceDiagAsync, string paso, CancellationToken ct)
+        => traceDiagAsync is null ? Task.CompletedTask : traceDiagAsync(paso, ct);
+
+    private static string ClasificarResultadoTool(string? resultado)
+    {
+        if (string.IsNullOrWhiteSpace(resultado))
+            return "EMPTY";
+
+        var texto = resultado.Trim();
+        return texto.Contains("No se pudo", StringComparison.OrdinalIgnoreCase)
+            || texto.Contains("no se pudo", StringComparison.OrdinalIgnoreCase)
+            || texto.Contains("no hay", StringComparison.OrdinalIgnoreCase)
+            || texto.Contains("todavía no se configur", StringComparison.OrdinalIgnoreCase)
+            ? "ERROR"
+            : "OK";
+    }
+
+    private static string SanitizeDiag(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(text.Length);
+        foreach (var ch in text)
+        {
+            if (char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.')
+                sb.Append(ch);
+        }
+
+        return sb.Length == 0 ? string.Empty : sb.ToString()[..Math.Min(sb.Length, 80)];
     }
 
     private static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)

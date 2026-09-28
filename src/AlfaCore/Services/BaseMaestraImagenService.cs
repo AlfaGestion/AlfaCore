@@ -298,13 +298,26 @@ public sealed partial class BaseMaestraImagenService(
             if (oficiales.Count == 0)
                 return resultado;
 
-            var carpetaBase = await ResolveRutaImagenesAsync(token);
-            if (string.IsNullOrWhiteSpace(carpetaBase))
-                throw new InvalidOperationException("No se pudo resolver la carpeta oficial de imágenes (RutaImagenes).");
-
-            Directory.CreateDirectory(carpetaBase);
-            var thumbsDir = Path.Combine(carpetaBase, "thumbs4");
-            Directory.CreateDirectory(thumbsDir);
+            // RUTAIMAGENES apunta a la carpeta "oficial" que usaba el sistema de escritorio (una
+            // carpeta de red local/compartida) -- un resabio que hoy no sirve de nada para el catálogo
+            // web, que se sirve entero por FTP (ArticuloImagenFtpService, sin ninguna referencia a esta
+            // ruta). Si no está configurada -- o, peor, si por venir del escritorio quedó con una ruta
+            // relativa, cae dentro de la propia carpeta de la app (ContentRootPath) -- se omite la copia
+            // local en vez de romper la asignación entera: lo único que de verdad hace falta es el FTP.
+            var carpetaBase = await ResolveRutaImagenesAsync(idClienteFtp, idBase, token);
+            var guardarCopiaLocal = !string.IsNullOrWhiteSpace(carpetaBase);
+            var thumbsDir = string.Empty;
+            if (guardarCopiaLocal)
+            {
+                Directory.CreateDirectory(carpetaBase);
+                thumbsDir = Path.Combine(carpetaBase, "thumbs4");
+                Directory.CreateDirectory(thumbsDir);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "RUTAIMAGENES no está configurada (o no se pudo resolver) -- se omite la copia local oficial y se sube solo al FTP.");
+            }
 
             for (var index = 0; index < oficiales.Count; index++)
             {
@@ -352,12 +365,15 @@ public sealed partial class BaseMaestraImagenService(
                     var extension = TryDecodeDataUrl(articulo.ImageUrl, out _, out var pastedMimeForExtension)
                         ? NormalizeExtension(MimeTypeToExtension(string.IsNullOrWhiteSpace(pastedMimeForExtension) ? manualMimeType : pastedMimeForExtension))
                         : NormalizeExtensionFromUrl(imageUrl, articulo.Extension, articulo.MimeType ?? string.Empty);
-                    var officialFileName = BuildOfficialFileName(articulo.IdArticulo, extension);
-                    var destination = Path.Combine(carpetaBase, officialFileName);
-                    await File.WriteAllBytesAsync(destination, bytes, token);
+                    if (guardarCopiaLocal)
+                    {
+                        var officialFileName = BuildOfficialFileName(articulo.IdArticulo, extension);
+                        var destination = Path.Combine(carpetaBase, officialFileName);
+                        await File.WriteAllBytesAsync(destination, bytes, token);
 
-                    var thumbDestination = Path.Combine(thumbsDir, officialFileName);
-                    await File.WriteAllBytesAsync(thumbDestination, bytes, token);
+                        var thumbDestination = Path.Combine(thumbsDir, officialFileName);
+                        await File.WriteAllBytesAsync(thumbDestination, bytes, token);
+                    }
 
                     if (!string.IsNullOrWhiteSpace(idClienteFtp))
                     {
@@ -2132,7 +2148,7 @@ public sealed partial class BaseMaestraImagenService(
         return (url, apiKey);
     }
 
-    private async Task<string> ResolveRutaImagenesAsync(CancellationToken ct)
+    private async Task<string> ResolveRutaImagenesAsync(string? idClienteFtp, int? idBase, CancellationToken ct)
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -2155,11 +2171,51 @@ public sealed partial class BaseMaestraImagenService(
         if (string.IsNullOrWhiteSpace(raw))
             return string.Empty;
 
+        // AlfaCore es multi-tenant sobre un único proceso web compartido (cada base se resuelve por
+        // connection string, no por servidor dedicado) -- así que este disco es el MISMO para todos
+        // los clientes. RUTAIMAGENES es texto libre por base, y dos clientes en servidores SQL
+        // distintos pueden perfectamente configurar el mismo valor (misma base clonada de una
+        // plantilla, mismo nombre comercial, un instructivo copiado tal cual). Sin un segmento propio
+        // de cada cliente, esa coincidencia mezclaría imágenes entre clientes distintos en la misma
+        // carpeta física. Se exige el mismo identificador real y único que ya usa
+        // ArticuloImagenFtpService (idCliente de la base central) como subcarpeta obligatoria; si no
+        // se puede resolver, se prefiere no guardar copia local antes que arriesgar la mezcla.
+        var segmentoCliente = NormalizeTenantSegment(idClienteFtp);
+        if (segmentoCliente.Length == 0)
+        {
+            logger.LogWarning(
+                "RUTAIMAGENES está configurada pero no hay un idCliente FTP resuelto para esta base -- se omite la copia local oficial para no arriesgar mezclar imágenes con otro cliente.");
+            return string.Empty;
+        }
+
+        var carpetaTenant = idBase.HasValue ? $"{segmentoCliente}_{idBase.Value}" : segmentoCliente;
         var trimmed = raw.Trim();
         if (Path.IsPathRooted(trimmed))
-            return trimmed;
+            return Path.Combine(trimmed, carpetaTenant);
 
-        return Path.Combine(environment.ContentRootPath, trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        // Valor heredado del escritorio (ruta relativa a la carpeta de instalación de esa época) que
+        // nadie actualizó a una ruta absoluta real para este deployment web -- resolverlo tal cual
+        // termina escribiendo adentro de la propia carpeta de la app (y, en un checkout de desarrollo,
+        // directo dentro del repo de git). Se resuelve igual por compatibilidad, pero se deja constancia
+        // en el log para que se corrija la configuración de esta base.
+        logger.LogWarning(
+            "TA_CONFIGURACION.RUTAIMAGENES = '{Valor}' es una ruta relativa -- se resuelve dentro de la carpeta de la app ({ContentRoot}) en vez de una ubicación real. Debería ser una ruta absoluta, o quedar vacía si esta base ya no usa el sistema de escritorio.",
+            trimmed,
+            environment.ContentRootPath);
+
+        return Path.Combine(environment.ContentRootPath, trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), carpetaTenant);
+    }
+
+    /// <summary>Deja solo letras/dígitos/guiones del idCliente FTP para usarlo como nombre de carpeta
+    /// -- ese valor sale de la base central (ver ArticuloImagenFtpService), no de texto libre del
+    /// tenant, pero igual se sanitiza antes de usarlo para construir una ruta de disco.</summary>
+    private static string NormalizeTenantSegment(string? idClienteFtp)
+    {
+        var value = (idClienteFtp ?? string.Empty).Trim();
+        if (value.Length == 0)
+            return string.Empty;
+
+        return new string(value.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
     }
 
     private async Task<string> GetPreviewCacheRootAsync(CancellationToken ct)

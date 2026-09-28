@@ -15,6 +15,11 @@ public sealed class ArticuloFilters
     public bool? Activo { get; set; } = true;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
+
+    /// <summary>Clave de columna (ver ArticuloViewColumnKeys) por la que se ordena el listado al hacer
+    /// clic en un encabezado -- vacío usa el orden por defecto (activos primero, por descripción).</summary>
+    public string SortBy { get; set; } = string.Empty;
+    public bool SortDescending { get; set; }
 }
 
 public sealed class ArticuloGridItemDto
