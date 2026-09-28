@@ -14,11 +14,12 @@ public sealed class ArcaPadronService(
     IAppEventService appEvents) : IArcaPadronService
 {
     private const string ModuleName = "ArcaPadron";
-    // El componente VB6 usa este servicio específico del padrón A5. No es el
-    // servicio genérico de constancia de inscripción.
-    private const string Servicio = "ws_sr_padron_a5";
+    // ARCA reemplazó el servicio histórico ws_sr_padron_a5 por la consulta de
+    // constancia de inscripción. El endpoint SOAP conserva personaServiceA5,
+    // pero el nombre del servicio usado para obtener el ticket cambió.
+    private const string Servicio = "ws_sr_constancia_inscripcion";
     private const string UrlHomologacion = "https://awshomo.arca.gov.ar/sr-padron/webservices/personaServiceA5";
-    private const string UrlProduccion = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5";
+    private const string UrlProduccion = "https://aws.arca.gov.ar/sr-padron/webservices/personaServiceA5";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()

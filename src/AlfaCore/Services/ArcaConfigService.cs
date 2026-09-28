@@ -13,8 +13,8 @@ public sealed class ArcaConfigService(
     private const string ModuleName = "ArcaFacturacionElectronica";
     private const string ClaveGlobal = "GLOBAL";
     private const int ArcaSqlCommandTimeoutSeconds = 120;
-    private const string WsaaProduccionDefault = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl";
-    private const string WsaaHomologacionDefault = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsaaProduccionDefault = "https://wsaa.arca.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsaaHomologacionDefault = "https://wsaa.homo.arca.gov.ar/ws/services/LoginCms?wsdl";
     private const string WsfeProduccionDefault = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL";
     private const string WsfeHomologacionDefault = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL";
 

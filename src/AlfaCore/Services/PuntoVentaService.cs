@@ -28,6 +28,15 @@ public sealed class PuntoVentaService(
     private const int ArcaNumeracionTimeoutSeconds = 35;
     private const string SurchargeArticleCode = "RECARGO-TARJETA";
     private const string ConfigGroup = "PUNTOVENTA";
+    private static readonly IReadOnlyDictionary<string, string> DefaultEmailConfigKeys =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EMAIL_SERVER"] = "RegistroPublico:EmailServer",
+            ["EMAIL_PORT"] = "RegistroPublico:EmailPort",
+            ["EMAIL_CTA"] = "RegistroPublico:EmailAccount",
+            ["EMAIL_PASS"] = "RegistroPublico:EmailPassword",
+            ["EMAIL_SSL"] = "RegistroPublico:EmailSsl"
+        };
     private bool _requiredSaleProceduresChecked;
     private bool? _lineDetailParameterExists;
     /// <summary>sp_web_Alta_Comprobante graba siempre UNEGOCIO='   1' (literal, confirmado en el SP)
@@ -454,16 +463,16 @@ public sealed class PuntoVentaService(
             if (string.IsNullOrWhiteSpace(cliente))
                 throw new InvalidOperationException("No se pudo resolver la cuenta de consumidor final para grabar la venta.");
 
+            var ivaCliente = request.ClienteEventual is not null
+                ? await GetCondicionIvaAsync(cn, request.ClienteEventual.CondicionIva, token)
+                : await GetClienteIvaAsync(cn, cliente, token);
             var esConsumidorFinal = request.ClienteEventual is not null
-                ? EsConsumidorFinalIva(request.ClienteEventual.CondicionIva)
+                ? EsConsumidorFinalIva(ivaCliente.Codigo, ivaCliente.Descripcion)
                 : string.Equals(
                     cliente,
                     cuentaConsumidorFinal.Trim(),
-                    StringComparison.OrdinalIgnoreCase);
-            var ivaCliente = request.ClienteEventual is not null
-                && !string.IsNullOrWhiteSpace(request.ClienteEventual.CondicionIva)
-                    ? request.ClienteEventual.CondicionIva.Trim()
-                    : await GetClienteIvaAsync(cn, cliente, token);
+                    StringComparison.OrdinalIgnoreCase)
+                  || EsConsumidorFinalIva(ivaCliente.Codigo, ivaCliente.Descripcion);
             var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase)
                 ? "X"
@@ -471,9 +480,9 @@ public sealed class PuntoVentaService(
                     tc,
                     request.Letra,
                     esConsumidorFinal,
-                    ivaCliente,
-                    tcConfig,
-                    sucursal);
+                    ivaCliente.Codigo,
+                    ivaCliente.Descripcion,
+                    tcConfig);
 
             var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
 
@@ -1440,20 +1449,40 @@ public sealed class PuntoVentaService(
             cancellationToken: ct));
     }
 
-    private async Task<string> GetClienteIvaAsync(SqlConnection cn, string cliente, CancellationToken ct)
+    private async Task<ClienteIvaData> GetClienteIvaAsync(SqlConnection cn, string cliente, CancellationToken ct)
     {
         if (!await ObjectExistsAsync(cn, "VT_CLIENTES", null, ct))
-            return string.Empty;
+            return new ClienteIvaData(string.Empty, string.Empty);
 
-        return await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+        return await cn.QuerySingleOrDefaultAsync<ClienteIvaData>(new CommandDefinition(
             """
-            SELECT TOP (1) ISNULL(LTRIM(RTRIM(IVA)), '')
-            FROM dbo.VT_CLIENTES
-            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)));
+            SELECT TOP (1)
+                ISNULL(LTRIM(RTRIM(c.IVA)), '') AS Codigo,
+                ISNULL(LTRIM(RTRIM(ci.DESCRIPCION)), '') AS Descripcion
+            FROM dbo.VT_CLIENTES c
+            LEFT JOIN dbo.TA_CONDIVA ci
+                ON LTRIM(RTRIM(ci.CODIGO)) = LTRIM(RTRIM(c.IVA))
+            WHERE UPPER(LTRIM(RTRIM(c.CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)));
             """,
             new { Cliente = cliente },
             commandTimeout: SaleCommandTimeoutSeconds,
-            cancellationToken: ct)) ?? string.Empty;
+            cancellationToken: ct)) ?? new ClienteIvaData(string.Empty, string.Empty);
+    }
+
+    private async Task<ClienteIvaData> GetCondicionIvaAsync(SqlConnection cn, string codigo, CancellationToken ct)
+    {
+        return await cn.QuerySingleOrDefaultAsync<ClienteIvaData>(new CommandDefinition(
+            """
+            SELECT TOP (1)
+                ISNULL(LTRIM(RTRIM(CODIGO)), '') AS Codigo,
+                ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion
+            FROM dbo.TA_CONDIVA
+            WHERE LTRIM(RTRIM(CODIGO)) = LTRIM(RTRIM(@Codigo));
+            """,
+            new { Codigo = codigo ?? string.Empty },
+            commandTimeout: SaleCommandTimeoutSeconds,
+            cancellationToken: ct))
+            ?? new ClienteIvaData(codigo?.Trim() ?? string.Empty, string.Empty);
     }
 
     private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct)
@@ -2543,9 +2572,18 @@ public sealed class PuntoVentaService(
         if (!string.IsNullOrWhiteSpace(dbValue))
             return dbValue.Trim();
 
-        return configuration[key]
-               ?? configuration[$"PuntoVenta:{key}"]
-               ?? string.Empty;
+        if (DefaultEmailConfigKeys.TryGetValue(key, out var defaultKey)
+            && configuration[defaultKey] is { Length: > 0 } defaultValue)
+        {
+            return defaultValue.Trim();
+        }
+
+        return new[]
+            {
+                configuration[key],
+                configuration[$"PuntoVenta:{key}"]
+            }
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
     }
 
     private async Task<ReceiptCompanyRow> LoadCompanyMailInfoAsync(SqlConnection cn, CancellationToken ct)
@@ -2819,64 +2857,49 @@ public sealed class PuntoVentaService(
     private static string NormalizeOptionalSucursal(string value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : NormalizeSucursal(value);
 
-    private static string ResolveLetraDefault(TipoComprobanteRow? row, string sucursal)
-    {
-        if (row is null)
-            return "B";
-
-        if (row.SucursalB > 0 && sucursal == row.SucursalB.ToString("0000"))
-            return "B";
-
-        if (row.SucursalA > 0 && sucursal == row.SucursalA.ToString("0000"))
-            return "A";
-
-        if (row.SucursalC > 0 && sucursal == row.SucursalC.ToString("0000"))
-            return "C";
-
-        if (row.SucursalX > 0 && sucursal == row.SucursalX.ToString("0000"))
-            return "X";
-
-        var letras = row.Letras?.ToUpperInvariant() ?? string.Empty;
-        foreach (var letra in letras.Where(char.IsLetter))
-            return letra.ToString();
-
-        return "B";
-    }
-
     private static string ResolveLetraForCliente(
         string tc,
         string? requestedLetter,
         bool esConsumidorFinal,
         string ivaCliente,
-        TipoComprobanteRow? config,
-        string sucursal)
+        string ivaClienteDescripcion,
+        TipoComprobanteRow? config)
     {
         if (tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
             || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase))
             return "X";
 
-        // Para comprobantes fiscales la letra depende de la condición de IVA del cliente:
-        // RI (código 1) requiere A; consumidor final y las demás condiciones requieren B.
-        var codigoIva = (ivaCliente ?? string.Empty).Trim().TrimStart('0');
-        var letraPreferida = !esConsumidorFinal && codigoIva == "1" ? "A" : "B";
+        // Para comprobantes fiscales la letra depende de la combinación válida que informa
+        // ARCA. En particular, el monotributo (AFIP 6) requiere A; no es válido enviarlo
+        // como Factura B aunque el código local histórico sea distinto de 1.
+        var condicionIvaReceptorId = ArcaCodigosAfip.ResolverCondicionIvaReceptor(
+            ivaClienteDescripcion,
+            ivaCliente);
+        var letraPreferida = esConsumidorFinal
+            ? "B"
+            : ArcaCodigosAfip.RequiereFacturaA(condicionIvaReceptorId) ? "A" : "B";
         var letrasDisponibles = config?.Letras?.ToUpperInvariant() ?? string.Empty;
 
         if (letrasDisponibles.Contains(letraPreferida, StringComparison.Ordinal))
             return letraPreferida;
 
-        // Si la base no informa las letras configuradas, conservamos la selección explícita
-        // y finalmente el comportamiento histórico como respaldo.
+        // Si la base no informa las letras configuradas, conservamos una selección explícita
+        // solamente cuando también es válida para la condición del receptor. Nunca devolvemos
+        // una letra incompatible solo porque venía como default de la pantalla.
         if (!string.IsNullOrWhiteSpace(requestedLetter))
-            return requestedLetter.Trim().ToUpperInvariant();
+        {
+            var solicitada = requestedLetter.Trim().ToUpperInvariant();
+            if (ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionIvaReceptorId, solicitada))
+                return solicitada;
+        }
 
-        return ResolveLetraDefault(config, sucursal);
+        return letraPreferida;
     }
 
-    private static bool EsConsumidorFinalIva(string? codigo)
-    {
-        var valor = (codigo ?? string.Empty).Trim().TrimStart('0');
-        return valor.Length == 0 || valor == "3";
-    }
+    private static bool EsConsumidorFinalIva(string? codigo, string? descripcion = null)
+        => ArcaCodigosAfip.ResolverCondicionIvaReceptor(descripcion, codigo) == 5;
+
+    private sealed record ClienteIvaData(string Codigo, string Descripcion);
 
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,

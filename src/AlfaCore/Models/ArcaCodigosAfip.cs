@@ -5,9 +5,8 @@ namespace AlfaCore.Models;
 /// resuelve CbteTipo -- no se repite acá.
 ///
 /// Los switches de DocTipo/CondicionIvaReceptor se arman por coincidencia de texto sobre la
-/// DESCRIPCION local, porque esas tablas no tienen columna de código AFIP. Antes de habilitar en
-/// producción hay que confirmar contra una base cliente real que cubren todos los valores que existen
-/// (ver plan, sección de verificación) -- no asumir que esta lista es exhaustiva.</summary>
+/// DESCRIPCION local, porque esas tablas no tienen columna de código AFIP. El código local se usa
+/// como respaldo para las bases legacy que no tienen una descripción cargada.</summary>
 public static class ArcaCodigosAfip
 {
     public const int DocTipoCuit = 80;
@@ -38,9 +37,11 @@ public static class ArcaCodigosAfip
         return docTipo == DocTipoConsumidorFinal ? (docTipo, "0") : (docTipo, numero);
     }
 
-    /// <summary>CondicionIVAReceptorId (RG 5616) -- campo que la referencia Python nunca envía pero que
-    /// WSFEv1 hoy exige para Factura A/B. Default seguro: Consumidor Final (5).</summary>
-    public static int ResolverCondicionIvaReceptor(string? descripcionCondIvaLocal)
+    /// <summary>CondicionIVAReceptorId (RG 5616). Los códigos 1, 6, 13 y 16
+    /// corresponden a receptores de comprobantes clase A; 4, 5, 7, 8, 9, 10 y 15
+    /// corresponden a clase B. El segundo parámetro conserva compatibilidad con los
+    /// códigos locales históricos de TA_CONDIVA.</summary>
+    public static int ResolverCondicionIvaReceptor(string? descripcionCondIvaLocal, string? codigoLocal = null)
     {
         var descripcion = (descripcionCondIvaLocal ?? string.Empty).Trim().ToUpperInvariant();
         return descripcion switch
@@ -48,14 +49,42 @@ public static class ArcaCodigosAfip
             var d when d.Contains("RESPONSABLE INSCRIPTO") || d.Contains("RESP. INSCRIPTO") => 1,
             var d when d.Contains("EXENTO") => 4,
             var d when d.Contains("CONSUMIDOR FINAL") => 5,
+            var d when d.Contains("MONOTRIBUTISTA SOCIAL") => 13,
+            var d when d.Contains("TRABAJADOR INDEPENDIENTE") && d.Contains("PROMOVIDO") => 16,
             var d when d.Contains("MONOTRIBUT") => 6,
             var d when d.Contains("NO CATEGORIZAD") => 7,
             var d when d.Contains("PROVEEDOR DEL EXTERIOR") => 8,
             var d when d.Contains("CLIENTE DEL EXTERIOR") => 9,
+            var d when d.Contains("LIBERADO") => 10,
             var d when d.Contains("NO ALCANZADO") => 15,
-            _ => 5
+            _ => ResolverCondicionIvaReceptorPorCodigoLocal(codigoLocal)
         };
     }
+
+    public static bool RequiereFacturaA(int condicionIvaReceptorId)
+        => condicionIvaReceptorId is 1 or 6 or 13 or 16;
+
+    public static bool EsCondicionValidaParaLetra(int condicionIvaReceptorId, string? letra)
+    {
+        var normalizada = (letra ?? string.Empty).Trim().ToUpperInvariant();
+        return normalizada switch
+        {
+            "A" => RequiereFacturaA(condicionIvaReceptorId),
+            "B" => condicionIvaReceptorId is 4 or 5 or 7 or 8 or 9 or 10 or 15,
+            "C" => condicionIvaReceptorId is 1 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 13 or 15 or 16,
+            _ => false
+        };
+    }
+
+    private static int ResolverCondicionIvaReceptorPorCodigoLocal(string? codigoLocal)
+        => (codigoLocal ?? string.Empty).Trim() switch
+        {
+            "1" => 1, // Responsable inscripto
+            "3" => 5, // Consumidor final
+            "4" => 4, // Exento
+            "5" => 6, // Responsable monotributo
+            _ => 5
+        };
 
     /// <summary>Id AFIP de alícuota de IVA -- tabla completa vigente, no solo las 4 que conocía la
     /// referencia Python (que además categorizaba mal el 0%: acá la comparación es exacta por valor,

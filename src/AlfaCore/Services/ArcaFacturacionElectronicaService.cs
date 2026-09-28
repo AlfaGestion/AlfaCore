@@ -53,7 +53,14 @@ public sealed class ArcaFacturacionElectronicaService(
             ?? throw new InvalidOperationException($"La letra '{contexto.Letra}' no tiene un tipo fiscal AFIP asociado.");
 
         var (docTipo, docNro) = ArcaCodigosAfip.ResolverDocumento(cabecera.DocumentoTipoDescripcion, cabecera.DocumentoNumero);
-        var condicionIvaReceptorId = ArcaCodigosAfip.ResolverCondicionIvaReceptor(cabecera.CondicionIvaDescripcion);
+        var condicionIvaReceptorId = ArcaCodigosAfip.ResolverCondicionIvaReceptor(
+            cabecera.CondicionIvaDescripcion,
+            cabecera.CondicionIvaCodigo);
+        if (!ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionIvaReceptorId, contexto.Letra))
+        {
+            throw new InvalidOperationException(
+                $"La condición de IVA del receptor ({cabecera.CondicionIvaDescripcion}) no es válida para comprobantes clase {contexto.Letra}. Revisá la condición del cliente.");
+        }
         var (impNeto, impTotConc, impOpEx, ivas) = CalcularDesglose(contexto.Items, contexto.ImpTotal);
 
         var numero = long.Parse(contexto.Numero.TrimStart('0').Length == 0 ? "0" : contexto.Numero.TrimStart('0'));
@@ -206,6 +213,7 @@ public sealed class ArcaFacturacionElectronicaService(
             SELECT v.FECHA AS Fecha, LTRIM(RTRIM(ISNULL(v.MONEDA, ''))) AS Moneda,
                    ISNULL(LTRIM(RTRIM(v.DOCUMENTONUMERO)), '') AS DocumentoNumero,
                    ISNULL(td.DESCRIPCION, '') AS DocumentoTipoDescripcion,
+                   ISNULL(LTRIM(RTRIM(v.CONDICIONIVA)), '') AS CondicionIvaCodigo,
                    {condIvaSelect} AS CondicionIvaDescripcion
             FROM dbo.V_MV_Cpte v
             LEFT JOIN dbo.TA_TIPODOCUMENTO td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.DOCUMENTOTIPO, ''))))
@@ -228,7 +236,8 @@ public sealed class ArcaFacturacionElectronicaService(
             rd.IsDBNull(1) ? string.Empty : rd.GetString(1),
             rd.IsDBNull(2) ? string.Empty : rd.GetString(2),
             rd.IsDBNull(3) ? string.Empty : rd.GetString(3),
-            rd.IsDBNull(4) ? string.Empty : rd.GetString(4));
+            rd.IsDBNull(4) ? string.Empty : rd.GetString(4),
+            rd.IsDBNull(5) ? string.Empty : rd.GetString(5));
     }
 
     private static async Task PersistirIntentoAsync(
@@ -330,5 +339,11 @@ public sealed class ArcaFacturacionElectronicaService(
         return result is not null and not DBNull;
     }
 
-    private sealed record CabeceraRow(DateTime Fecha, string Moneda, string DocumentoNumero, string DocumentoTipoDescripcion, string CondicionIvaDescripcion);
+    private sealed record CabeceraRow(
+        DateTime Fecha,
+        string Moneda,
+        string DocumentoNumero,
+        string DocumentoTipoDescripcion,
+        string CondicionIvaCodigo,
+        string CondicionIvaDescripcion);
 }
