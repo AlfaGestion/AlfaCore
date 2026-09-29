@@ -11,7 +11,8 @@ namespace AlfaCore.Services;
 public sealed class TicketsService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ITicketsService
+    IAppEventService appEvents,
+    IConversacionesService conversacionesService) : ITicketsService
 {
     private const string ModuleName = "Tickets";
     private const string ConfigGroup = "TICKETS";
@@ -1412,7 +1413,7 @@ public sealed class TicketsService(
         }
     }
 
-    private static async Task<IReadOnlyList<TicketMensajeOrigenDto>> GetSourceMessagesAsync(SqlConnection cn, long idTicket, CancellationToken ct)
+    private async Task<IReadOnlyList<TicketMensajeOrigenDto>> GetSourceMessagesAsync(SqlConnection cn, long idTicket, CancellationToken ct)
     {
         const string sql = """
             SELECT
@@ -1429,58 +1430,58 @@ public sealed class TicketsService(
             LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = m.IdTecnicoAutor
             WHERE tm.IdTicket = @IdTicket
             ORDER BY tm.Orden, m.FechaHora, m.IdMensaje;
-
-            SELECT
-                a.IdAdjunto,
-                a.IdMensaje,
-                ISNULL(a.TipoArchivo, ''),
-                ISNULL(a.NombreArchivo, ''),
-                ISNULL(a.MimeType, ''),
-                ISNULL(a.TamanoBytes, 0)
-            FROM dbo.TICK_TICKET_MENSAJES tm
-            INNER JOIN dbo.CONV_ADJUNTOS a ON a.IdMensaje = tm.IdMensaje
-            WHERE tm.IdTicket = @IdTicket
-            ORDER BY a.IdAdjunto;
             """;
 
         var messages = new List<TicketMensajeOrigenDto>();
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@IdTicket", idTicket);
-        await using var rd = await cmd.ExecuteReaderAsync(ct);
-        while (await rd.ReadAsync(ct))
+        await using (var cmd = new SqlCommand(sql, cn))
         {
-            var direction = GetString(rd, 2);
-            var techName = GetString(rd, 7);
-            var user = GetString(rd, 6);
-            messages.Add(new TicketMensajeOrigenDto
-            {
-                IdMensaje = rd.GetInt64(0),
-                IdConversacion = rd.GetInt64(1),
-                Direccion = direction,
-                TipoMensaje = GetString(rd, 3),
-                Texto = GetString(rd, 4),
-                FechaHora = rd.IsDBNull(5) ? DateTime.MinValue : rd.GetDateTime(5),
-                Autor = direction == "ENTRANTE" ? "Cliente / Contacto" : FirstNonEmpty(techName, user, "Equipo Alfa")
-            });
-        }
-
-        if (await rd.NextResultAsync(ct))
-        {
-            var byMessage = messages.ToDictionary(x => x.IdMensaje);
+            cmd.Parameters.AddWithValue("@IdTicket", idTicket);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
             while (await rd.ReadAsync(ct))
             {
-                var idMensaje = rd.GetInt64(1);
-                if (!byMessage.TryGetValue(idMensaje, out var message))
+                var direction = GetString(rd, 2);
+                var techName = GetString(rd, 7);
+                var user = GetString(rd, 6);
+                messages.Add(new TicketMensajeOrigenDto
+                {
+                    IdMensaje = rd.GetInt64(0),
+                    IdConversacion = rd.GetInt64(1),
+                    Direccion = direction,
+                    TipoMensaje = GetString(rd, 3),
+                    Texto = GetString(rd, 4),
+                    FechaHora = rd.IsDBNull(5) ? DateTime.MinValue : rd.GetDateTime(5),
+                    Autor = direction == "ENTRANTE" ? "Cliente / Contacto" : FirstNonEmpty(techName, user, "Equipo Alfa")
+                });
+            }
+        }
+
+        // Adjuntos: se reutiliza IConversacionesService.GetMessageAttachmentsAsync (mismo camino que
+        // usa Conversaciones.razor) en vez de leer CONV_ADJUNTOS acá con una query propia -- así
+        // Tickets hereda automáticamente ArchivoDisponible/PuedeRecuperarse/EstadoAlmacenamiento ya
+        // resueltos (columnas durables, RutaLocal confinada al tenant, SQL-first sobre disco) sin
+        // duplicar esa lógica. Se agrupa por IdConversacion porque el método toma una sola conversación
+        // por llamada; en la práctica casi todos los mensajes de un ticket son de la misma conversación.
+        var byMessage = messages.ToDictionary(x => x.IdMensaje);
+        foreach (var group in messages.GroupBy(x => x.IdConversacion))
+        {
+            var messageIds = group.Select(x => x.IdMensaje).ToArray();
+            var adjuntos = await conversacionesService.GetMessageAttachmentsAsync(group.Key, messageIds, ct);
+            foreach (var adjunto in adjuntos)
+            {
+                if (!byMessage.TryGetValue(adjunto.IdMensaje, out var message))
                     continue;
 
                 message.Adjuntos.Add(new TicketAdjuntoOrigenDto
                 {
-                    IdAdjunto = rd.GetInt64(0),
-                    IdMensaje = idMensaje,
-                    TipoArchivo = GetString(rd, 2),
-                    NombreArchivo = GetString(rd, 3),
-                    MimeType = GetString(rd, 4),
-                    TamanoBytes = rd.IsDBNull(5) ? 0 : Convert.ToInt64(rd.GetValue(5), CultureInfo.InvariantCulture)
+                    IdAdjunto = adjunto.IdAdjunto,
+                    IdMensaje = adjunto.IdMensaje,
+                    TipoArchivo = adjunto.TipoArchivo,
+                    NombreArchivo = adjunto.NombreArchivo,
+                    MimeType = adjunto.MimeType,
+                    TamanoBytes = adjunto.TamanoBytes,
+                    ArchivoDisponible = adjunto.ArchivoDisponible,
+                    PuedeRecuperarse = adjunto.PuedeRecuperarse,
+                    EstadoAlmacenamiento = adjunto.EstadoAlmacenamiento
                 });
             }
         }
