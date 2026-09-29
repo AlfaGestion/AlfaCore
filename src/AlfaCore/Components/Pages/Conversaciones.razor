@@ -12744,16 +12744,25 @@
         return text.Length <= 90 ? text : $"{text[..90]}...";
     }
 
-    private static string GetUnsupportedMessageTrace(ConversacionMensajeDto message)
+    /// <summary>
+    /// BUG REAL encontrado al auditar (foundation de tipos WhatsApp, a9133409): esto leía "type" en la
+    /// RAÍZ de PayloadJson con ExtractPayloadString, pero BuildIncomingWhatsAppMessagePayloadJson
+    /// siempre envuelve el mensaje real como {metadata:{...}, message:{...}} -- el tipo real está en
+    /// message.type. "Tipo recibido:" quedaba vacío aunque el tipo sí hubiera llegado. Reusa el mismo
+    /// extractor consciente del envelope que ya usa la foundation (WhatsAppMessageClassifier) en vez de
+    /// un parser JSON paralelo, y agrega el origen (ordinary/history/echo) para poder diagnosticar
+    /// tipos nuevos (edit, view-once, futuros) sin tener que mirar el PayloadJson crudo en la base.
+    /// </summary>
+    internal static string GetUnsupportedMessageTrace(ConversacionMensajeDto message)
     {
         var parts = new List<string>();
-        var originalType = ExtractPayloadString(message.PayloadJson, "type");
+        var originalType = SanitizeMessageTypeForDisplay(WhatsAppMessageClassifier.ExtractRawMessageType(message.PayloadJson));
         if (!string.IsNullOrWhiteSpace(originalType))
             parts.Add($"Tipo recibido: {originalType}");
 
-        var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
-        if (!string.IsNullOrWhiteSpace(unsupportedType))
-            parts.Add($"Formato no compatible: {unsupportedType}");
+        var source = GetMessageSourceLabel(message);
+        if (!string.IsNullOrWhiteSpace(source))
+            parts.Add($"Origen: {source}");
 
         var metaReason = ExtractUnsupportedReason(message.PayloadJson);
         if (!string.IsNullOrWhiteSpace(metaReason))
@@ -12767,6 +12776,22 @@
             : string.Join(" · ", parts);
     }
 
+    /// <summary>
+    /// "ordinary"/"history"/"echo" a partir de Origen ya persistido (CONV_MENSAJES.Origen) -- nunca
+    /// inventa una fuente nueva: sólo los tres valores que el pipeline actual ya escribe (vacío para
+    /// webhook en vivo, HISTORY para Coexistence history sync, WHATSAPP_BUSINESS_APP para
+    /// smb_message_echoes). Si algún día aparece otro valor de Origen no reconocido, no se muestra nada
+    /// en vez de inventar una etiqueta.
+    /// </summary>
+    internal static string GetMessageSourceLabel(ConversacionMensajeDto message)
+        => (message.Origen ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "" => "ordinary",
+            "HISTORY" => "history",
+            "WHATSAPP_BUSINESS_APP" => "echo",
+            _ => string.Empty
+        };
+
     private static bool IsUnsupportedMessage(ConversacionMensajeDto message)
     {
         var text = (message.Texto ?? string.Empty).Trim();
@@ -12774,24 +12799,6 @@
                || string.Equals(message.MessageType, "UNSUPPORTED", StringComparison.OrdinalIgnoreCase)
                || string.Equals(text, "[unsupported]", StringComparison.OrdinalIgnoreCase)
                || string.Equals(text, "[unknown]", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string ExtractPayloadString(string payloadJson, string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(payloadJson))
-            return string.Empty;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(payloadJson);
-            return doc.RootElement.TryGetProperty(propertyName, out var prop)
-                ? prop.GetString() ?? string.Empty
-                : string.Empty;
-        }
-        catch (JsonException)
-        {
-            return string.Empty;
-        }
     }
 
     /// <summary>
