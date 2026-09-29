@@ -12253,11 +12253,26 @@
     /// extractor de media_id ya público del backend en vez de reimplementar el parseo de PayloadJson.
     /// </summary>
     internal static ConversacionMediaRecoveryVisualState ResolveHistoricalMessageVisualState(ConversacionMensajeDto message)
+        => ResolveHistoricalMessageVisualState(
+            message,
+            WhatsAppMessageClassifier.Classify(message.MessageType, message.Origen, message.PayloadJson));
+
+    /// <summary>
+    /// Overload que recibe la clasificación ya calculada -- permite testear la exclusión de
+    /// visualización única sin depender de que WhatsAppMessageClassifier.Classify pueda producir
+    /// EsVisualizacionUnica=true hoy (no hay campo confirmado, ver WhatsAppMessageClassification.cs).
+    /// Un mensaje view-once puede traer un media_id real y descargable en el payload -- WhatsApp igual
+    /// prohíbe re-descargarlo, así que nunca debe resolver "pendiente de recuperación" aunque el
+    /// media_id esté técnicamente presente.
+    /// </summary>
+    internal static ConversacionMediaRecoveryVisualState ResolveHistoricalMessageVisualState(
+        ConversacionMensajeDto message,
+        WhatsAppMessageClassification classification)
         => ResolveMediaRecoveryVisualState(
             archivoDisponible: false,
             estadoAlmacenamiento: null,
-            tieneMediaIdRecuperable: !string.IsNullOrWhiteSpace(
-                ConversacionesService.TryExtractWhatsAppMediaId(message.PayloadJson, message.MessageType)));
+            tieneMediaIdRecuperable: !classification.EsVisualizacionUnica
+                && !string.IsNullOrWhiteSpace(ConversacionesService.TryExtractWhatsAppMediaId(message.PayloadJson, message.MessageType)));
 
     internal static string GetHistoricalMediaStateText(ConversacionMediaRecoveryVisualState state, string tipoLabel)
         => state switch
@@ -12368,8 +12383,22 @@
                && Path.HasExtension(text);
     }
 
+    internal const string ViewOnceMessageText = "Este contenido de visualización única solo puede abrirse desde WhatsApp en el celular.";
+
     internal static string GetMessageDisplayText(ConversacionMensajeDto message)
+        => GetMessageDisplayText(message, WhatsAppMessageClassifier.Classify(message.MessageType, message.Origen, message.PayloadJson));
+
+    /// <summary>
+    /// Overload testeable con la clasificación ya calculada -- ver el mismo motivo documentado en
+    /// ResolveHistoricalMessageVisualState(message, classification): hoy Classify nunca produce
+    /// EsVisualizacionUnica=true (sin campo confirmado), así que el comportamiento "view-once" sólo se
+    /// puede probar inyectando la clasificación directamente.
+    /// </summary>
+    internal static string GetMessageDisplayText(ConversacionMensajeDto message, WhatsAppMessageClassification classification)
     {
+        if (classification.EsVisualizacionUnica)
+            return ViewOnceMessageText;
+
         if (!IsUnsupportedMessage(message))
         {
             // BUG REAL encontrado al auditar (Prioridad 5/6): para un mensaje de media (imagen/video/
@@ -12387,10 +12416,30 @@
             return message.Texto;
         }
 
-        var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
+        // Antes decía "WhatsApp envió un formato no compatible: <tipo crudo>." -- para un tipo que
+        // Meta agrega y AlfaCore todavía no reconoce (edits, tipos futuros, etc.) esto sonaba a error
+        // del sistema en vez de "no lo mostramos todavía". Nunca se arma con el PayloadJson completo,
+        // sólo con el nombre del tipo ya sanitizado (letras/dígitos/guion/guion bajo, longitud acotada).
+        var unsupportedType = SanitizeMessageTypeForDisplay(classification.TipoOriginal);
         return string.IsNullOrWhiteSpace(unsupportedType)
-            ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
-            : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
+            ? "WhatsApp envió un tipo de mensaje que AlfaCore todavía no puede mostrar."
+            : $"WhatsApp envió un tipo de mensaje que AlfaCore todavía no puede mostrar. Tipo: {unsupportedType}.";
+    }
+
+    private static readonly Regex SafeMessageTypeRegex = new(@"^[a-z][a-z0-9_]{0,24}$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Nunca debe devolver algo que no sea un nombre corto de tipo -- se muestra directamente al
+    /// usuario. Nunca AccessToken/URLs firmadas/IDs internos/payload: eso ni siquiera llega acá, porque
+    /// WhatsAppMessageClassifier.ExtractRawMessageType sólo lee message.type (un string corto), nunca
+    /// el objeto completo -- pero además se exige la forma real que usa Meta (snake_case en minúsculas,
+    /// ej. "unsupported"/"edited_message"): cualquier valor que no calce esa forma (mayúsculas, texto
+    /// con espacios/URLs/símbolos) se descarta entero en vez de mostrarlo a medio sanitizar.
+    /// </summary>
+    private static string SanitizeMessageTypeForDisplay(string? rawType)
+    {
+        var trimmed = (rawType ?? string.Empty).Trim();
+        return SafeMessageTypeRegex.IsMatch(trimmed) ? trimmed : string.Empty;
     }
 
     private static string? GetUnavailableHistoricalMediaText(ConversacionMensajeDto message)
@@ -12721,7 +12770,7 @@
     private static bool IsUnsupportedMessage(ConversacionMensajeDto message)
     {
         var text = (message.Texto ?? string.Empty).Trim();
-        return string.Equals(message.MessageType, "UNKNOWN", StringComparison.OrdinalIgnoreCase)
+        return WhatsAppMessageClassifier.Classify(message.MessageType, message.Origen, message.PayloadJson).EsDesconocido
                || string.Equals(message.MessageType, "UNSUPPORTED", StringComparison.OrdinalIgnoreCase)
                || string.Equals(text, "[unsupported]", StringComparison.OrdinalIgnoreCase)
                || string.Equals(text, "[unknown]", StringComparison.OrdinalIgnoreCase);
