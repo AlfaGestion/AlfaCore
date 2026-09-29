@@ -533,6 +533,7 @@ public sealed class ConversacionUploadAdjuntoRequest
 public sealed class ConversacionAdjuntoServeDto
 {
     public string RutaLocal { get; set; } = string.Empty;
+    public bool RutaLocalConfiable { get; set; }
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
     public string NombreDescarga { get; set; } = string.Empty;

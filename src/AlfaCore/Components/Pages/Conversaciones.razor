@@ -13055,19 +13055,24 @@
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
     private string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}{GetAttachmentUserTokenQuery()}";
 
     private string GetAttachmentPreviewUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?preview=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?preview=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}{GetAttachmentUserTokenQuery()}";
 
     private string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}{GetAttachmentUserTokenQuery()}";
 
     private int GetAttachmentBaseId()
         => SessionSvc.GetActiveSession()?.BaseId ?? 0;
 
     private string GetAttachmentScopeKey()
         => ConversacionesSvc.GetAttachmentScopeKey();
+
+    private string GetAttachmentUserTokenQuery()
+        => string.IsNullOrWhiteSpace(AppUserSession.CurrentToken)
+            ? string.Empty
+            : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
@@ -13155,7 +13160,7 @@
     }
 
     private string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
-        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}{GetAttachmentUserTokenQuery()}";
 
     private static string GetAttachmentMime(ConversacionAdjuntoDto adjunto)
     {

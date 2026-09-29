@@ -2929,21 +2929,29 @@ public class Program
         app.MapGet("/api/conversaciones/adjuntos/{idAdjunto:long}", async (
             long idAdjunto,
             HttpRequest request,
+            ISessionService sessionService,
+            IAppUserSessionService appUserSession,
             IConversacionesService svc,
             CancellationToken ct) =>
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+            request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
             var idBaseRaw = request.Query["idBase"].ToString();
             var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
                 ? parsedIdBase
                 : (int?)null;
             var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            if (!TryActivateAuthorizedAttachmentBase(idBase, sessionService, appUserSession))
+                return Results.NotFound();
+
             var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
             if (adjunto is null)
                 return Results.NotFound();
 
-            var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var hasLocalFile = !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
+            var servePolicy = BuildAttachmentServePolicy(adjunto.MimeType, adjunto.NombreArchivo, adjunto.NombreDescarga, download);
+            var hasLocalFile = adjunto.RutaLocalConfiable && !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
             var hasSqlContent = adjunto.Contenido.Length > 0;
             if (!hasLocalFile && !hasSqlContent)
                 return Results.NotFound();
@@ -2963,19 +2971,15 @@ public class Program
                 request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            var downloadName = download
-                ? string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga
-                : null;
-
-            if (!hasLocalFile)
+            if (hasSqlContent)
             {
                 var fechaArchivo = adjunto.FechaHoraModificacion?.ToUniversalTime() ?? DateTime.UtcNow;
                 var lastModifiedSql = new DateTimeOffset(fechaArchivo, TimeSpan.Zero);
                 var entityTagSql = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"sql-{adjunto.Contenido.Length:x}-{lastModifiedSql.UtcTicks:x}\"");
                 return Results.File(
                     adjunto.Contenido,
-                    contentType: mime,
-                    fileDownloadName: downloadName,
+                    contentType: servePolicy.ContentType,
+                    fileDownloadName: servePolicy.FileDownloadName,
                     lastModified: lastModifiedSql,
                     entityTag: entityTagSql,
                     enableRangeProcessing: false);
@@ -2986,8 +2990,8 @@ public class Program
             var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
             return Results.File(
                 adjunto.RutaLocal,
-                contentType: mime,
-                fileDownloadName: downloadName,
+                contentType: servePolicy.ContentType,
+                fileDownloadName: servePolicy.FileDownloadName,
                 lastModified: lastModified,
                 entityTag: entityTag,
                 enableRangeProcessing: true);
@@ -3259,10 +3263,58 @@ public class Program
         return "DOCUMENT";
     }
 
+    public readonly record struct AttachmentServePolicy(string ContentType, string? FileDownloadName);
+
+    public static AttachmentServePolicy BuildAttachmentServePolicy(
+        string? mimeType,
+        string? fileName,
+        string? downloadName,
+        bool forceDownload)
+    {
+        var normalized = NormalizeAttachmentMime(mimeType, fileName);
+        var safeName = SanitizeHttpDownloadFileName(
+            string.IsNullOrWhiteSpace(downloadName) ? fileName : downloadName,
+            Path.GetExtension(fileName ?? string.Empty));
+
+        if (forceDownload)
+            return new AttachmentServePolicy(normalized, safeName);
+
+        return IsSafeInlineAttachmentMime(normalized)
+            ? new AttachmentServePolicy(normalized, null)
+            : new AttachmentServePolicy("application/octet-stream", safeName);
+    }
+
+    public static bool IsSafeInlineAttachmentMime(string? mimeType)
+    {
+        var normalized = NormalizeAttachmentMime(mimeType, string.Empty);
+        return normalized is "image/jpeg" or "image/png" or "image/gif" or "image/webp" or "application/pdf"
+            || normalized.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string SanitizeHttpDownloadFileName(string? fileName, string? fallbackExtension = null)
+    {
+        var name = Path.GetFileName(string.IsNullOrWhiteSpace(fileName) ? "adjunto" : fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            name = name.Replace(invalid, '_');
+
+        name = Regex.Replace(name, @"[\x00-\x1F\x7F]", "_").Trim('.', ' ', '_');
+        if (string.IsNullOrWhiteSpace(name))
+            name = "adjunto";
+
+        if (!Path.HasExtension(name) && !string.IsNullOrWhiteSpace(fallbackExtension))
+            name += fallbackExtension.StartsWith('.') ? fallbackExtension : "." + fallbackExtension;
+
+        return name;
+    }
+
     private static string NormalizeAttachmentMime(string? mimeType, string? fileName)
     {
         if (!string.IsNullOrWhiteSpace(mimeType))
-            return mimeType.Trim();
+        {
+            var normalizedMime = mimeType.Split(';', 2)[0].Trim().ToLowerInvariant();
+            return normalizedMime.Length == 0 ? "application/octet-stream" : normalizedMime;
+        }
 
         var ext = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
         return ext switch
@@ -3280,6 +3332,34 @@ public class Program
             ".txt" => "text/plain",
             _ => "application/octet-stream"
         };
+    }
+
+    private static bool TryActivateAuthorizedAttachmentBase(
+        int? idBase,
+        ISessionService sessionService,
+        IAppUserSessionService appUserSession)
+    {
+        if (!appUserSession.IsAuthenticated)
+            return false;
+
+        var active = sessionService.GetActiveSession();
+        if (idBase is > 0)
+        {
+            if (active?.BaseId != idBase.Value)
+            {
+                var session = sessionService.GetAllSessions().FirstOrDefault(s => s.BaseId == idBase.Value);
+                if (session is null || !appUserSession.IsAuthorizedForSession(session.Id))
+                    return false;
+
+                sessionService.SetWebhookOverride(session);
+                active = sessionService.GetActiveSession();
+            }
+
+            if (active?.BaseId != idBase.Value)
+                return false;
+        }
+
+        return TenantDataAccessGuard.IsActiveSessionAuthorized(sessionService, appUserSession);
     }
 
     private static bool TryGetApiUser(HttpRequest request, AppUserSessionStore sessionStore, out AppUserSessionInfo? user)

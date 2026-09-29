@@ -18,7 +18,6 @@ public sealed class ConversacionesService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
-    ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
     IWhatsAppWebSessionService whatsAppWebSessionService,
     INotificacionesPushService notificacionesPushService,
@@ -136,28 +135,6 @@ public sealed class ConversacionesService(
             filters.IdNumeroWhatsApp);
     }
 
-    private async Task<string> ResolveConnectionStringAsync(int? idBase, CancellationToken ct)
-    {
-        var resolvedIdBase = idBase.GetValueOrDefault();
-        if (resolvedIdBase > 0)
-        {
-            var baseInfo = await centralBasesService.GetByIdAsync(resolvedIdBase, ct);
-            if (baseInfo is null)
-                throw new InvalidOperationException("La base indicada para el adjunto no existe.");
-
-            return new SqlConnectionStringBuilder
-            {
-                DataSource = baseInfo.DbServer,
-                InitialCatalog = baseInfo.DbName,
-                UserID = baseInfo.DbUser,
-                Password = baseInfo.DbPassword,
-                TrustServerCertificate = true
-            }.ConnectionString;
-        }
-
-        return ConnectionString;
-    }
-
     public string GetAttachmentScopeKey()
         => GetAttachmentScope().ScopeKey;
 
@@ -189,10 +166,30 @@ public sealed class ConversacionesService(
             }
         }
 
-        var source = $"{baseId}|{server}|{database}".Trim('|');
+        return BuildAttachmentScope(baseId, server, database);
+    }
+
+    private static (string Database, string ScopeKey) BuildAttachmentScope(int? baseId, string server, string database)
+    {
+        var normalizedBaseId = baseId.GetValueOrDefault();
+        var source = $"{normalizedBaseId}|{server}|{database}".Trim('|');
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToUpperInvariant())))[..16].ToLowerInvariant();
         return (database, hash);
     }
+
+    private string GetAttachmentStorageScope(TenantConnectionContext tenant)
+    {
+        var builder = new SqlConnectionStringBuilder(tenant.ConnectionString);
+        var scope = BuildAttachmentScope(tenant.BaseId, builder.DataSource, builder.InitialCatalog);
+        var label = SanitizePathSegment(FirstNonEmpty(scope.Database, "base"));
+        return $"{label}-{scope.ScopeKey}";
+    }
+
+    private string GetUploadsBasePath(TenantConnectionContext tenant)
+        => Path.Combine(LegacyUploadsBasePath, GetAttachmentStorageScope(tenant));
+
+    private TenantConnectionContext ResolveActiveTenantContext(int? expectedBaseId, string operation)
+        => ResolveTenantConnection(expectedBaseId, operation);
 
     public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
     {
@@ -5230,6 +5227,7 @@ public sealed class ConversacionesService(
 
             var items = new List<ConversacionAdjuntoDto>();
             var pathUpdates = new List<(long IdAdjunto, string RutaLocal)>();
+            var tenant = ResolveActiveTenantContext(null, "GetConversationAttachments");
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, token);
@@ -5307,7 +5305,7 @@ public sealed class ConversacionesService(
                     FechaHora = rd.IsDBNull(11) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(11))
                 };
 
-                var rutaLocal = ResolveExistingAttachmentPath(record);
+                var rutaLocal = ResolveExistingAttachmentPath(record, tenant);
                 var hasSqlContent = !rd.IsDBNull(12) && rd.GetBoolean(12);
                 var estadoAlmacenamiento = GetString(rd, 13);
                 if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
@@ -5462,7 +5460,8 @@ public sealed class ConversacionesService(
         CancellationToken ct)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
-            var connectionString = await ResolveConnectionStringAsync(idBase, token);
+            var tenant = ResolveActiveTenantContext(idBase, "GetAttachmentForServe");
+            var connectionString = tenant.ConnectionString;
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, token);
@@ -5539,7 +5538,9 @@ public sealed class ConversacionesService(
                     fechaHoraArchivo = rd.GetDateTime(12);
             }
 
-            var rutaLocal = ResolveExistingAttachmentPath(record);
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(record.IdConversacion, connectionString, token);
+
+            var rutaLocal = ResolveExistingAttachmentPath(record, tenant);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
             {
                 await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, connectionString, token);
@@ -5570,6 +5571,7 @@ public sealed class ConversacionesService(
                 NombreArchivo = record.NombreArchivo,
                 NombreDescarga = nombreDescarga,
                 Contenido = contenido,
+                RutaLocalConfiable = !string.IsNullOrWhiteSpace(rutaLocal),
                 FechaHoraModificacion = fechaHoraArchivo
             };
         }, "No se pudo obtener el adjunto.", ct);
@@ -5922,31 +5924,31 @@ public sealed class ConversacionesService(
         return ids;
     }
 
-    private string ResolveExistingAttachmentPath(AttachmentServeRecord record)
+    private string ResolveExistingAttachmentPath(AttachmentServeRecord record, TenantConnectionContext tenant)
     {
+        var tenantRoot = GetUploadsBasePath(tenant);
         if (!string.IsNullOrWhiteSpace(record.RutaLocal))
         {
             var directPath = ToAbsoluteAttachmentPath(record.RutaLocal);
-            if (File.Exists(directPath))
+            if (IsAttachmentPathAllowedForRoot(directPath, tenantRoot) && File.Exists(directPath))
                 return directPath;
         }
 
-        foreach (var candidate in BuildAttachmentPathCandidates(record))
+        foreach (var candidate in BuildAttachmentPathCandidates(record, tenantRoot))
         {
-            if (File.Exists(candidate))
+            if (IsAttachmentPathAllowedForRoot(candidate, tenantRoot) && File.Exists(candidate))
                 return candidate;
         }
 
         return string.Empty;
     }
 
-    private IEnumerable<string> BuildAttachmentPathCandidates(AttachmentServeRecord record)
+    private IEnumerable<string> BuildAttachmentPathCandidates(AttachmentServeRecord record, string tenantRoot)
     {
         var fileName = Path.GetFileName(record.RutaLocal);
         if (!string.IsNullOrWhiteSpace(fileName))
         {
-            yield return Path.Combine(UploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
-            yield return Path.Combine(LegacyUploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+            yield return Path.Combine(tenantRoot, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
         }
 
         if (!string.IsNullOrWhiteSpace(record.RutaLocal))
@@ -5971,6 +5973,54 @@ public sealed class ConversacionesService(
                 .Replace('\\', Path.DirectorySeparatorChar);
             yield return Path.Combine(environment.ContentRootPath, relativeUrl);
         }
+    }
+
+    internal bool IsAttachmentPathAllowed(string candidatePath, int? expectedBaseId = null)
+    {
+        var tenant = ResolveActiveTenantContext(expectedBaseId, "IsAttachmentPathAllowed");
+        return IsAttachmentPathAllowedForRoot(candidatePath, GetUploadsBasePath(tenant));
+    }
+
+    public static bool IsAttachmentPathAllowedForRoot(string candidatePath, string tenantRoot)
+    {
+        if (string.IsNullOrWhiteSpace(candidatePath) || string.IsNullOrWhiteSpace(tenantRoot))
+            return false;
+
+        try
+        {
+            var root = Path.GetFullPath(tenantRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            var candidate = Path.GetFullPath(candidatePath);
+            if (!candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return !HasReparsePointEscape(candidate, root);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasReparsePointEscape(string candidatePath, string rootWithSeparator)
+    {
+        var root = rootWithSeparator.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var current = Path.GetDirectoryName(candidatePath);
+        while (!string.IsNullOrWhiteSpace(current) && current.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            if (Directory.Exists(current)
+                && new DirectoryInfo(current).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                return true;
+
+            if (string.Equals(current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), root, StringComparison.OrdinalIgnoreCase))
+                break;
+
+            current = Path.GetDirectoryName(current);
+        }
+
+        return File.Exists(candidatePath)
+            && new FileInfo(candidatePath).Attributes.HasFlag(FileAttributes.ReparsePoint);
     }
 
     private string ToAbsoluteAttachmentPath(string rutaLocal)
