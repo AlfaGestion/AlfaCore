@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/tickets"
 @using Microsoft.AspNetCore.WebUtilities
 @using AlfaCore.Models
+@using AlfaCore.Components.Pages
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
@@ -418,17 +419,37 @@
                                             {
                                                 @if (IsImageAttachment(adj))
                                                 {
-                                                    <a href="@GetAttachmentUrl(adj.IdAdjunto)" target="_blank" class="tickets-attachment tickets-attachment--image">
-                                                        <img src="@GetAttachmentUrl(adj.IdAdjunto)" alt="@adj.NombreArchivo" loading="lazy" />
-                                                        <span>@GetAttachmentLabel(adj)</span>
-                                                    </a>
+                                                    @if (adj.ArchivoDisponible)
+                                                    {
+                                                        <a href="@GetAttachmentUrl(adj.IdAdjunto)" target="_blank" class="tickets-attachment tickets-attachment--image">
+                                                            <img src="@GetAttachmentUrl(adj.IdAdjunto)" alt="@adj.NombreArchivo" loading="lazy" />
+                                                            <span>@GetAttachmentLabel(adj)</span>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="tickets-attachment tickets-attachment--image tickets-attachment--unavailable" title="@GetAttachmentUnavailableText(adj, "imagen")">
+                                                            <i class="bi bi-image-alt"></i>
+                                                            <span>@GetAttachmentUnavailableText(adj, "imagen")</span>
+                                                        </div>
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    <a href="@GetAttachmentDownloadUrl(adj.IdAdjunto)" class="tickets-attachment">
-                                                        <i class="bi bi-file-earmark-arrow-down"></i>
-                                                        <span>@GetAttachmentLabel(adj)</span>
-                                                    </a>
+                                                    @if (adj.ArchivoDisponible)
+                                                    {
+                                                        <a href="@GetAttachmentDownloadUrl(adj.IdAdjunto)" class="tickets-attachment">
+                                                            <i class="bi bi-file-earmark-arrow-down"></i>
+                                                            <span>@GetAttachmentLabel(adj)</span>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="tickets-attachment tickets-attachment--unavailable" title="@GetAttachmentUnavailableText(adj, "documento")">
+                                                            <i class="bi bi-file-earmark-x"></i>
+                                                            <span>@GetAttachmentUnavailableText(adj, "documento")</span>
+                                                        </div>
+                                                    }
                                                 }
                                             }
                                         </div>
@@ -2967,6 +2988,16 @@
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    // Reusa el mismo enum/resolver de estado que Conversaciones.razor (Mejora estados UI media
+    // historica WhatsApp) en vez de duplicarlo: dado ArchivoDisponible/EstadoAlmacenamiento/
+    // PuedeRecuperarse (ya resueltos por ConversacionesService.GetMessageAttachmentsAsync), arma el
+    // mismo texto coherente por estado -- nunca dice "no disponible" para un adjunto todavía
+    // recuperable, y nunca le atribuye a WhatsApp una pérdida que no fue confirmada.
+    internal static string GetAttachmentUnavailableText(TicketAdjuntoOrigenDto adjunto, string tipoLabel)
+        => Conversaciones.GetHistoricalMediaStateText(
+            Conversaciones.ResolveMediaRecoveryVisualState(adjunto.ArchivoDisponible, adjunto.EstadoAlmacenamiento, adjunto.PuedeRecuperarse),
+            tipoLabel);
 
     private string GetAttachmentUrl(long idAdjunto)
         => $"/api/conversaciones/adjuntos/{idAdjunto}?idBase={GetAttachmentBaseId()}{GetAttachmentUserTokenQuery()}";
