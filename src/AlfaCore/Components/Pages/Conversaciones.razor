@@ -1795,7 +1795,7 @@
                                                         {
                                                             <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
                                                                 <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-image-alt")"></i>
-                                                                <span>@GetAttachmentUnavailableText(adj, "Imagen no disponible")</span>
+                                                                <span>@GetAttachmentUnavailableText(adj, "imagen")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1840,7 +1840,7 @@
                                                         {
                                                             <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
                                                                 <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-music")"></i>
-                                                                <span>@GetAttachmentUnavailableText(adj, "Audio no disponible")</span>
+                                                                <span>@GetAttachmentUnavailableText(adj, "audio")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1874,7 +1874,7 @@
                                                         {
                                                             <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
                                                                 <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-camera-video-off")"></i>
-                                                                <span>@GetAttachmentUnavailableText(adj, "Video no disponible")</span>
+                                                                <span>@GetAttachmentUnavailableText(adj, "video")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1897,7 +1897,7 @@
                                                         {
                                                             <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
                                                                 <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-x")"></i>
-                                                                <span>@GetAttachmentUnavailableText(adj, "Archivo no disponible")</span>
+                                                                <span>@GetAttachmentUnavailableText(adj, "documento")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -6174,26 +6174,20 @@
         _ = RecoverConversationAttachmentsInBackgroundAsync(idConversacion);
     }
 
-    private static bool ShouldRecoverConversationAttachments(
+    internal static bool ShouldRecoverConversationAttachments(
         IReadOnlyList<ConversacionMensajeDto> messages,
         IReadOnlyList<ConversacionAdjuntoDto> attachments)
     {
         if (attachments.Any(x => !x.ArchivoDisponible && x.PuedeRecuperarse))
             return true;
 
+        // Dispara por media_id recuperable, no por antigüedad del mensaje: el backend (ver
+        // WhatsAppHistoricalMediaRecoveryTests, GetPendingMediaHydrationAsync) ya no tiene cutoff de
+        // 30 días y puede recuperar media vieja mientras conserve media_id. Un mensaje sin adjunto y
+        // sin media_id (SinReferenciaRecuperable) nunca dispara -- no tiene nada que recuperar.
         return messages.Any(message =>
             !message.TieneAdjuntos
-            && IsRecentRecoverableMediaMessage(message)
-            && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
-    }
-
-    private static bool IsRecentRecoverableMediaMessage(ConversacionMensajeDto message)
-    {
-        if (message.FechaHora == DateTime.MinValue)
-            return false;
-
-        var age = DateTime.Now - message.FechaHora;
-        return age >= TimeSpan.Zero && age <= TimeSpan.FromDays(30);
+            && ResolveHistoricalMessageVisualState(message) == ConversacionMediaRecoveryVisualState.PendienteRecuperacion);
     }
 
     private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
@@ -12206,11 +12200,96 @@
     private bool IsRecoveringAttachment(ConversacionAdjuntoDto adjunto)
         => adjunto.PuedeRecuperarse && IsRecoveringSelectedConversationAttachments();
 
-    private string GetAttachmentUnavailableText(ConversacionAdjuntoDto adjunto, string fallbackText)
+    /// <summary>
+    /// Estado visual único para un media histórico de WhatsApp -- reemplaza el mensaje genérico
+    /// "no disponible" que se mostraba igual estuviera confirmado por Meta, pendiente de recuperación
+    /// o caído por un error transitorio. Un solo punto de decisión para no duplicar el if/else en cada
+    /// bloque IMAGE/AUDIO/DOCUMENT/VIDEO de la burbuja de mensaje.
+    /// </summary>
+    internal enum ConversacionMediaRecoveryVisualState
     {
-        if (!IsRecoveringAttachment(adjunto))
-            return fallbackText;
+        Disponible,
+        PendienteRecuperacion,
+        FalloTemporal,
+        NoDisponibleMeta,
+        SinReferenciaRecuperable
+    }
 
+    /// <summary>
+    /// Único helper de decisión: recibe únicamente señales ya expuestas por el backend (nunca
+    /// AccessToken/URLs firmadas/PayloadJson completo). RECUPERACION_FALLIDA es un estado legacy --
+    /// versiones previas al fix de clasificación de errores lo escribían incluso ante fallas
+    /// transitorias/de red (ver WhatsAppHistoricalMediaRecoveryTests) -- por eso nunca se presenta como
+    /// pérdida definitiva, sólo "no se pudo por ahora". Sólo NO_DISPONIBLE_META es definitivo.
+    /// </summary>
+    internal static ConversacionMediaRecoveryVisualState ResolveMediaRecoveryVisualState(
+        bool archivoDisponible,
+        string? estadoAlmacenamiento,
+        bool tieneMediaIdRecuperable)
+    {
+        if (archivoDisponible)
+            return ConversacionMediaRecoveryVisualState.Disponible;
+
+        var estado = (estadoAlmacenamiento ?? string.Empty).Trim().ToUpperInvariant();
+        if (estado == "NO_DISPONIBLE_META")
+            return ConversacionMediaRecoveryVisualState.NoDisponibleMeta;
+
+        if (tieneMediaIdRecuperable)
+            return ConversacionMediaRecoveryVisualState.PendienteRecuperacion;
+
+        if (estado == "RECUPERACION_FALLIDA")
+            return ConversacionMediaRecoveryVisualState.FalloTemporal;
+
+        return ConversacionMediaRecoveryVisualState.SinReferenciaRecuperable;
+    }
+
+    private static ConversacionMediaRecoveryVisualState ResolveAttachmentVisualState(ConversacionAdjuntoDto adjunto)
+        => ResolveMediaRecoveryVisualState(adjunto.ArchivoDisponible, adjunto.EstadoAlmacenamiento, adjunto.PuedeRecuperarse);
+
+    /// <summary>
+    /// Para un mensaje de media sin ninguna fila CONV_ADJUNTOS todavía (nunca se intentó recuperar, o
+    /// el último intento falló de forma transitoria -- StoreIncomingAttachmentsAsync sólo deja una fila
+    /// placeholder NO_DISPONIBLE_META cuando Meta confirma que el media ya no existe). Reusa el
+    /// extractor de media_id ya público del backend en vez de reimplementar el parseo de PayloadJson.
+    /// </summary>
+    internal static ConversacionMediaRecoveryVisualState ResolveHistoricalMessageVisualState(ConversacionMensajeDto message)
+        => ResolveMediaRecoveryVisualState(
+            archivoDisponible: false,
+            estadoAlmacenamiento: null,
+            tieneMediaIdRecuperable: !string.IsNullOrWhiteSpace(
+                ConversacionesService.TryExtractWhatsAppMediaId(message.PayloadJson, message.MessageType)));
+
+    internal static string GetHistoricalMediaStateText(ConversacionMediaRecoveryVisualState state, string tipoLabel)
+        => state switch
+        {
+            ConversacionMediaRecoveryVisualState.Disponible => string.Empty,
+            ConversacionMediaRecoveryVisualState.NoDisponibleMeta => GetNoDisponibleMetaText(tipoLabel),
+            ConversacionMediaRecoveryVisualState.PendienteRecuperacion => "Archivo histórico pendiente de recuperación.",
+            ConversacionMediaRecoveryVisualState.FalloTemporal => "No se pudo recuperar el archivo por ahora.",
+            _ => "No se pudo recuperar este archivo histórico."
+        };
+
+    private static string GetNoDisponibleMetaText(string tipoLabel)
+        => tipoLabel.Trim().ToLowerInvariant() switch
+        {
+            "imagen" => "Esta imagen ya no está disponible en WhatsApp.",
+            "audio" => "Este audio ya no está disponible en WhatsApp.",
+            "video" => "Este video ya no está disponible en WhatsApp.",
+            "documento" => "Este documento ya no está disponible en WhatsApp.",
+            "sticker" => "Este sticker ya no está disponible en WhatsApp.",
+            _ => "Este archivo ya no está disponible en WhatsApp."
+        };
+
+    private string GetAttachmentUnavailableText(ConversacionAdjuntoDto adjunto, string tipoLabel)
+    {
+        if (IsRecoveringAttachment(adjunto))
+            return GetRecoveringAttachmentText(adjunto);
+
+        return GetHistoricalMediaStateText(ResolveAttachmentVisualState(adjunto), tipoLabel);
+    }
+
+    private static string GetRecoveringAttachmentText(ConversacionAdjuntoDto adjunto)
+    {
         if (IsImageAttachment(adjunto))
             return "Buscando imagen...";
         if (IsAudioAttachment(adjunto))
@@ -12222,7 +12301,16 @@
     }
 
     private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
-        => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
+        => ResolveAttachmentVisualState(adjunto) switch
+        {
+            ConversacionMediaRecoveryVisualState.NoDisponibleMeta =>
+                $"{GetAttachmentLabel(adjunto)}: ya no está disponible en WhatsApp.",
+            ConversacionMediaRecoveryVisualState.PendienteRecuperacion =>
+                $"{GetAttachmentLabel(adjunto)}: pendiente de recuperación, todavía puede aparecer.",
+            ConversacionMediaRecoveryVisualState.FalloTemporal =>
+                $"{GetAttachmentLabel(adjunto)}: no se pudo recuperar por ahora, se puede reintentar.",
+            _ => $"{GetAttachmentLabel(adjunto)}: no se pudo recuperar este archivo histórico."
+        };
 
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
@@ -12314,15 +12402,19 @@
         if (!text.StartsWith('[') || !text.Contains(']'))
             return null;
 
-        return (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() switch
+        var tipoLabel = (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() switch
         {
-            "IMAGE" => "Imagen histórica no disponible.",
-            "VIDEO" => "Video histórico no disponible.",
-            "AUDIO" => "Audio histórico no disponible.",
-            "DOCUMENT" => "Documento histórico no disponible.",
-            "STICKER" => "Sticker no disponible.",
-            _ => null
+            "IMAGE" => "imagen",
+            "VIDEO" => "video",
+            "AUDIO" => "audio",
+            "DOCUMENT" => "documento",
+            "STICKER" => "sticker",
+            _ => (string?)null
         };
+        if (tipoLabel is null)
+            return null;
+
+        return GetHistoricalMediaStateText(ResolveHistoricalMessageVisualState(message), tipoLabel);
     }
 
     private static readonly Regex MessageUrlRegex = new(
