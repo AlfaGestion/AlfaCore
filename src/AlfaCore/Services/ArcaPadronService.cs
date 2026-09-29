@@ -58,7 +58,7 @@ public sealed class ArcaPadronService(
                 || ex.Message.Contains("Certificado expirado", StringComparison.OrdinalIgnoreCase);
             var ambiente = emisor?.Ambiente == ArcaAmbiente.Produccion ? "producción" : "homologación";
             var mensaje = noAutorizado
-                ? $"ARCA no autorizó el certificado para consultar el padrón A5. Habilitá este computador/certificado para el servicio ws_sr_padron_a5 en {ambiente}."
+                ? $"ARCA no autorizó el certificado para consultar el padrón. Habilitá este computador/certificado para el servicio ws_sr_constancia_inscripcion en {ambiente}."
                 : certificadoVencido
                     ? "El certificado configurado para consultar el padrón ARCA está vencido. Reemplazalo por un certificado vigente de padrón."
                 : "No se pudo autenticar contra ARCA para consultar el padrón.";

@@ -17,8 +17,8 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
     // aumentando la probabilidad de timeout contra ARCA.
     private static readonly TimeSpan MargenRenovacion = TimeSpan.FromSeconds(30);
 
-    private const string UrlWsaaHomologacion = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms";
-    private const string UrlWsaaProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
+    private const string UrlWsaaHomologacion = "https://wsaa.homo.arca.gov.ar/ws/services/LoginCms";
+    private const string UrlWsaaProduccion = "https://wsaa.arca.gov.ar/ws/services/LoginCms";
     private WsaaTicket? _ticketWsfeMemoria;
     private string? _claveTicketWsfeMemoria;
 
