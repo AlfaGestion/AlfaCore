@@ -10626,18 +10626,46 @@ public sealed class ConversacionesService(
                     ELSE FechaHoraCierre
                 END,
                 FechaHora_Modificacion = GETDATE()
+            OUTPUT deleted.CodigoEstado, inserted.CodigoEstado
             FROM dbo.CONV_CONVERSACIONES c
             WHERE c.IdConversacion = @IdConversacion
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
-        await cn.OpenAsync(ct);
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
-        cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(text)));
-        cmd.Parameters.AddWithValue("@FechaHora", fechaHora);
-        cmd.Parameters.AddWithValue("@Reabrir", reopenIfClosed);
-        await cmd.ExecuteNonQueryAsync(ct);
+        string? estadoAnterior = null;
+        string? estadoNuevo = null;
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(text)));
+            cmd.Parameters.AddWithValue("@FechaHora", fechaHora);
+            cmd.Parameters.AddWithValue("@Reabrir", reopenIfClosed);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (await rd.ReadAsync(ct))
+            {
+                estadoAnterior = GetString(rd, 0);
+                estadoNuevo = GetString(rd, 1);
+            }
+        }
+
+        // reopenIfClosed sólo puede reabrir (CASE arriba); si el estado devuelto cambió, fue por eso --
+        // el timeline debe reflejar la reapertura automática con la misma fuerza que el cierre manual
+        // (ver AddInternalEventCoreAsync), si no la UI puede mostrar "Abierta" sin ningún evento que lo
+        // explique, contradiciendo el último "cerró la conversación" que sigue en el timeline.
+        if (reopenIfClosed
+            && !string.IsNullOrWhiteSpace(estadoAnterior)
+            && !string.Equals(estadoAnterior, estadoNuevo, StringComparison.OrdinalIgnoreCase))
+        {
+            await AddInternalEventCoreAsync(
+                idConversacion,
+                "AlfaCore reabrió la conversación automáticamente: llegó un mensaje nuevo después del cierre.",
+                idTecnicoAutor: null,
+                nombreTecnicoAccion: null,
+                usuarioAccion: "AlfaCore",
+                sistemaAccion: "AUTOAPERTURA",
+                ct);
+        }
     }
 
     /// <summary>
@@ -10663,13 +10691,16 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task ReopenClosedConversationsWithIncomingAfterCloseAsync(SqlConnection cn, long? idConversacion, CancellationToken ct)
+    private async Task ReopenClosedConversationsWithIncomingAfterCloseAsync(SqlConnection cn, long? idConversacion, CancellationToken ct)
     {
         const string sql = """
+            DECLARE @Reopened TABLE (IdConversacion BIGINT);
+
             UPDATE c
                SET CodigoEstado = N'ABIERTA',
                    FechaHoraCierre = NULL,
                    FechaHora_Modificacion = GETDATE()
+            OUTPUT inserted.IdConversacion INTO @Reopened
             FROM dbo.CONV_CONVERSACIONES c
             LEFT JOIN dbo.CONV_ESTADOS e
                 ON e.CodigoEstado = c.CodigoEstado
@@ -10690,11 +10721,33 @@ public sealed class ConversacionesService(
                         OR m.FechaHora > c.FechaHoraCierre
                     )
               );
+
+            SELECT IdConversacion FROM @Reopened;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion.HasValue ? idConversacion.Value : DBNull.Value);
-        await cmd.ExecuteNonQueryAsync(ct);
+        var reopenedIds = new List<long>();
+        await using (var cmd = new SqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion.HasValue ? idConversacion.Value : DBNull.Value);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+                reopenedIds.Add(rd.GetInt64(0));
+        }
+
+        // Mismo motivo que en RefreshConversationAsync: esta reapertura corre en un sweep de
+        // mantenimiento (bandeja de entrada) que puede atrapar conversaciones que el camino en tiempo
+        // real no reabrió todavía -- también necesita dejar constancia en el timeline por conversación.
+        foreach (var reopenedId in reopenedIds)
+        {
+            await AddInternalEventCoreAsync(
+                reopenedId,
+                "AlfaCore reabrió la conversación automáticamente: llegó un mensaje nuevo después del cierre.",
+                idTecnicoAutor: null,
+                nombreTecnicoAccion: null,
+                usuarioAccion: "AlfaCore",
+                sistemaAccion: "AUTOAPERTURA",
+                ct);
+        }
     }
 
     private async Task UpdateMessageDeliveryAsync(long idMensaje, string estadoEnvio, string whatsAppMessageId, string payloadJson, CancellationToken ct)
