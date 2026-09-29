@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
@@ -2967,11 +2968,19 @@
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
-    private static string GetAttachmentUrl(long idAdjunto)
-        => $"/api/conversaciones/adjuntos/{idAdjunto}";
+    private string GetAttachmentUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}?idBase={GetAttachmentBaseId()}{GetAttachmentUserTokenQuery()}";
 
-    private static string GetAttachmentDownloadUrl(long idAdjunto)
-        => $"/api/conversaciones/adjuntos/{idAdjunto}?download=1";
+    private string GetAttachmentDownloadUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}?download=1&idBase={GetAttachmentBaseId()}{GetAttachmentUserTokenQuery()}";
+
+    private int GetAttachmentBaseId()
+        => SessionSvc.GetActiveSession()?.BaseId ?? 0;
+
+    private string GetAttachmentUserTokenQuery()
+        => string.IsNullOrWhiteSpace(AppUserSession.CurrentToken)
+            ? string.Empty
+            : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
 
     private static bool IsImageAttachment(TicketAdjuntoOrigenDto adjunto)
         => string.Equals(adjunto.TipoArchivo, "IMAGE", StringComparison.OrdinalIgnoreCase)

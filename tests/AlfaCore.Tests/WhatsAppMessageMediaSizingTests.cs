@@ -130,7 +130,13 @@ public sealed class WhatsAppMessageMediaSizingTests
     {
         // Ya confirmado por auditorías previas de esta rama, se re-documenta acá porque es parte del
         // mismo criterio "video: si hay media, preview; si no, mensaje" -- sin reescribirlo.
-        Assert.Contains("GetAttachmentUnavailableText(adj, \"Video no disponible\")", RazorSource, StringComparison.Ordinal);
+        // El literal pasado a GetAttachmentUnavailableText cambió de la frase genérica vieja
+        // ("Video no disponible") al sustantivo de tipo ("video") con la UI de media histórica
+        // (Mejora estados UI media historica WhatsApp): el texto final ahora lo arma
+        // GetHistoricalMediaStateText según el estado real (disponible/pendiente/temporal/definitivo),
+        // no un fallback fijo -- lo que este test sigue confirmando es que el bloque de video pasa por
+        // ese mismo mecanismo de estado, igual que imagen/audio/documento.
+        Assert.Contains("GetAttachmentUnavailableText(adj, \"video\")", RazorSource, StringComparison.Ordinal);
     }
 
     [Fact]
