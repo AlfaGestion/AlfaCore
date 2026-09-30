@@ -75,6 +75,24 @@ public sealed class ConversacionAsistenteHerramientasService(
         return texto.Length > 0 && PalabrasClaveHerramientas.Any(texto.Contains);
     }
 
+    /// <summary>
+    /// Intención explícita de precio ("precio", "cuánto sale/cuesta/vale", "a cuánto", "valor",
+    /// "cotización"). Se usa para decidir la respuesta a un contacto sin identificar cuando la empresa
+    /// no informa precios a leads -- no para ofrecer herramientas (eso sigue siendo
+    /// MensajeNecesitaHerramientas).
+    /// </summary>
+    internal static bool MensajePidePrecio(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return Regex.IsMatch(texto,
+            @"\b(precio|precios|valor|valores|cotizacion|cotizar|cotizame)\b"
+            + @"|\bcuanto\s+(sale|salen|cuesta|cuestan|vale|valen|esta|estan)\b"
+            + @"|\ba\s+cuanto\b");
+    }
+
     private static bool MensajePideCatalogo(string mensajeCliente)
     {
         var texto = NormalizarTexto(mensajeCliente);

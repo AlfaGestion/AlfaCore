@@ -8377,6 +8377,7 @@ public sealed class ConversacionesService(
                     ? null
                     : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
                 var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto, mensajePrevioCliente);
+                var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada, texto, mensajePrevioCliente);
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
@@ -8430,8 +8431,9 @@ public sealed class ConversacionesService(
                         config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync,
-                        (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
-                        token).ConfigureAwait(false);
+                        traceDiagAsync: (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
+                        precioRequiereIdentificacion: precioRequiereIdentificacion,
+                        ct: token).ConfigureAwait(false);
                     await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
@@ -8444,6 +8446,21 @@ public sealed class ConversacionesService(
                             PuedeResponder = false,
                             Respuesta = knowledgeContext.ClarificationQuestion
                         };
+                    }
+
+                    // Red de seguridad: la regla del prompt es una instrucción, no una garantía. Si aun
+                    // así el modelo derivó (o no respondió) ante un precio pedido por un contacto sin
+                    // identificar, se responde con el texto acordado en vez de la contención.
+                    if (precioRequiereIdentificacion && EsRespuestaNoResuelta(result))
+                    {
+                        var linkCatalogo = await ObtenerLinkCatalogoSiDisponibleAsync(herramientas, cuentaVinculada, token).ConfigureAwait(false);
+                        result = new ConversacionAsistenteRespuesta
+                        {
+                            Tipo = "RESUELVE",
+                            PuedeResponder = true,
+                            Respuesta = ConstruirRespuestaPrecioRequiereIdentificacion(linkCatalogo)
+                        };
+                        await TraceDiagAsync($"BotPrecioRequiereIdentificacion|fallback=True|catalogo={linkCatalogo is not null}", idConversacion, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -9096,6 +9113,52 @@ public sealed class ConversacionesService(
         var referencia = actualEnHistorial ? entrantes[0].FechaHora : ahora;
         var previo = entrantes[indicePrevio];
         return referencia - previo.FechaHora <= ventana ? previo.Texto.Trim() : null;
+    }
+
+    /// <summary>
+    /// Contacto sin identificar (lead o identidad ambigua) que pide un precio, cuando la empresa sí
+    /// usa la herramienta de precios pero NO informa precios a consumidores finales/leads. En ese caso
+    /// la respuesta correcta es pedir que se identifique (no "no tengo el precio" ni derivar).
+    /// </summary>
+    internal static bool PrecioRequiereIdentificacion(
+        ConversacionAutomatizacionesConfigDto config,
+        ConversacionCuentaVinculadaDto? cuenta,
+        string texto,
+        string? mensajePrevioCliente)
+    {
+        var sinIdentificar = cuenta is null || cuenta.EsAmbigua;
+        return sinIdentificar
+            && config.AsistenteHerramientaPrecios
+            && !config.CatalogoMuestraPrecioConsumidor
+            && (ConversacionAsistenteHerramientasService.MensajePidePrecio(texto)
+                || ConversacionAsistenteHerramientasService.MensajePidePrecio(mensajePrevioCliente));
+    }
+
+    internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo)
+    {
+        var respuesta = "Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos.";
+        return string.IsNullOrWhiteSpace(linkCatalogo)
+            ? respuesta
+            : $"{respuesta} También podés ver nuestros productos acá: {linkCatalogo}";
+    }
+
+    private static bool EsRespuestaNoResuelta(ConversacionAsistenteRespuesta? result)
+        => result is null
+           || string.IsNullOrWhiteSpace(result.Respuesta)
+           || string.Equals(result.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Link del catálogo público sólo si la herramienta se ofreció en este turno y devolvió
+    /// una URL https; cualquier otro resultado (sin catálogo, error) se omite del texto.</summary>
+    private async Task<string?> ObtenerLinkCatalogoSiDisponibleAsync(
+        IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> herramientas,
+        ConversacionCuentaVinculadaDto? cuenta,
+        CancellationToken ct)
+    {
+        if (!herramientas.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)))
+            return null;
+
+        var resultado = (await asistenteHerramientasService.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta, ct).ConfigureAwait(false)).Trim();
+        return Uri.TryCreate(resultado, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? resultado : null;
     }
 
     private static bool EsMensajeSocial(string texto)

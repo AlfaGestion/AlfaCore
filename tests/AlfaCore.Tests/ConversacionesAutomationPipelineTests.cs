@@ -1126,6 +1126,97 @@ public sealed class ConversacionesAutomationPipelineTests
         }
     }
 
+    [Theory]
+    [InlineData("Que precio tienen las pilas AAA", true)]
+    [InlineData("¿Cuánto salen las pilas?", true)]
+    [InlineData("a cuánto están?", true)]
+    [InlineData("me pasás el valor?", true)]
+    [InlineData("cotización de pilas", true)]
+    [InlineData("hola", false)]
+    [InlineData("tienen catálogo?", false)]
+    [InlineData("quiero comprar pilas", false)]
+    [InlineData("cuánto debo?", false)]
+    [InlineData("qué pilas preciosas", false)]
+    public void MensajePidePrecio_DetectaIntencionExplicita(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecio(mensaje));
+
+    // Caso real Base4264 (2026-09-30): contacto sin identificar + "Que precio tienen las pilas AAA" con
+    // precios a leads OFF → el bot respondía "No tengo el precio en este momento..." y derivaba.
+    [Fact]
+    public void PrecioRequiereIdentificacion_SoloParaSinIdentificarConPreciosLeadsOff()
+    {
+        const string precio = "Que precio tienen las pilas AAA";
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+        var proveedor = new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno");
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, precio, null));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), ambigua, precio, null));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "y las AAA?", "cuánto salen las pilas?"));
+
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: true), null, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), cliente, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), proveedor, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precios: false, precioConsumidor: false), null, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "tienen catálogo?", null));
+    }
+
+    [Fact]
+    public void RespuestaPrecioRequiereIdentificacion_UsaElTextoAcordado_SinFrasesProhibidas()
+    {
+        const string link = "https://alfanetweb.ddns.net/ALFANET/catalogo/prueba-tok";
+        var conLink = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(link);
+        var sinLink = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(null);
+
+        Assert.Equal(
+            "Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. "
+            + "Si ya sos cliente, decime tu nombre o razón social y seguimos. También podés ver nuestros productos acá: " + link,
+            conLink);
+        Assert.DoesNotContain("acá:", sinLink);
+        foreach (var texto in new[] { conLink, sinLink })
+        {
+            Assert.DoesNotContain("no tengo el precio", texto, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("asesor", texto, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("precios en el catálogo", texto, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Assistant_PrecioRequiereIdentificacion_AgregaLaReglaAlPromptSoloCuandoCorresponde(bool requiere)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Que precio tienen las pilas AAA",
+                [],
+                precioRequiereIdentificacion: requiere);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            Assert.Equal(requiere, system.Contains("PRECIO SIN CLIENTE IDENTIFICADO", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
     [Fact]
     public async Task Tools_LeadWithConsumerPricesOn_UsesConsumerFinalSourceWithoutClientCode()
     {

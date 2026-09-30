@@ -25,6 +25,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
         Func<string, CancellationToken, Task>? traceDiagAsync = null,
+        bool precioRequiereIdentificacion = false,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -38,7 +39,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var haySaldoEntreHerramientas = herramientas?.Any(h => h.Nombre.StartsWith("consultar_saldo", StringComparison.Ordinal)) ?? false;
         var hayCatalogoEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)) ?? false;
         var debeForzarCatalogo = hayCatalogoEntreHerramientas && MensajePideCatalogo(mensajeCliente);
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -269,7 +270,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
-        string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false)
+        string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
+        bool precioRequiereIdentificacion = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -318,6 +320,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         if (hayCatalogoEntreHerramientas)
             sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
+        if (precioRequiereIdentificacion)
+        {
+            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: quien escribe todavía no está identificado como cliente y la empresa informa precios solo a clientes identificados. Ante una consulta de precio respondé tipo \"RESUELVE\" (NO derives): explicá que para pasarle el precio correcto primero necesitás identificarlo como cliente, porque puede variar según su cuenta; invitalo a decir su nombre o razón social si ya es cliente; y, si está disponible generar_link_catalogo_publico, ofrecé ver los productos en el catálogo.");
+            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios. Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos. También podés ver nuestros productos acá: [link del catálogo].\"");
+        }
 
         if (haySaldoEntreHerramientas)
         {
