@@ -2610,7 +2610,17 @@ public class Program
         // para el cliente actual) y una nueva con "/{token}" (resuelve el tenant desde
         // ALFA_CENTRAL.dbo.bases.WebhookToken ANTES de tocar cualquier tabla, sin depender de la
         // sesión del usuario — necesario porque un webhook entrante nunca tiene sesión).
-        app.MapGet("/api/conversaciones/whatsapp/webhook", HandleWhatsAppVerifyAsync);
+        app.MapGet("/api/conversaciones/whatsapp/webhook", (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConfiguration configuration,
+            IOptions<WhatsAppOptions> whatsAppOptions,
+            ISessionService sessionService,
+            IAppModeService appMode,
+            CancellationToken ct) =>
+            IsLegacyWhatsAppWebhookTenantAuthoritative(appMode, sessionService)
+                ? HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, sessionService, ct)
+                : Task.FromResult<IResult>(Results.NotFound()));
         app.MapGet("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
@@ -3518,26 +3528,26 @@ public class Program
     }
 
     /// <summary>
-    /// Guard de la ruta legacy sin token (POST /api/conversaciones/whatsapp/webhook, sin
-    /// "/{token}") -- se conserva para no romper lo que ya está configurado en Meta para el
-    /// cliente actual (instalación monobase/legacy), pero NUNCA debe resolver tenant por sesión de
-    /// UI en un host SaaS (multi-base): acá no hay circuito Blazor, así que
-    /// ISessionService.GetActiveSession()/GetAllSessions() en modo SaaS terminan intentando leer
+    /// Guard compartido por las dos rutas legacy sin token (GET de verificación y POST de mensajes en
+    /// /api/conversaciones/whatsapp/webhook, sin "/{token}") -- se conservan para no romper lo que ya
+    /// está configurado en Meta para el cliente actual (instalación monobase/legacy), pero NUNCA deben
+    /// resolver tenant por sesión de UI en un host SaaS (multi-base): acá no hay circuito Blazor, así
+    /// que ISessionService.GetActiveSession()/GetAllSessions() en modo SaaS terminan intentando leer
     /// NavigationManager.Uri y explotan con "RemoteNavigationManager has not been initialized" (ya
-    /// visto en producción tumbando este mismo webhook con 500, ver el comentario de
-    /// ConexionClienteService.GetActiveSession) -- se falla cerrado ANTES de tocar esa ruta de
-    /// código, sin excepción ruidosa.
+    /// visto en producción tumbando el POST de este mismo webhook con 500, ver el comentario de
+    /// ConexionClienteService.GetActiveSession) -- se falla cerrado ANTES de tocar esa ruta de código,
+    /// sin excepción ruidosa.
     ///
-    /// En legacy/monobase (el único consumidor real confirmado), sólo se autoriza si hay como
-    /// mucho una base local configurada: con exactamente una no hay ambigüedad posible (es "el
-    /// cliente actual"), y sigue funcionando exactamente igual que hoy. Con más de una base local
-    /// configurada (un mismo AlfaCore atendiendo varias empresas) tampoco hay forma autoritativa de
-    /// saber a cuál pertenece un webhook server-to-server sin token -- confiar en "la que esté
-    /// marcada activa en ese instante" sería justamente la sesión de UI accidental que se quiere
-    /// evitar, así que también falla cerrado.
+    /// En legacy/monobase (el único consumidor real confirmado) sólo se autoriza cuando hay
+    /// EXACTAMENTE una base local configurada -- ni cero (no hay tenant al que atribuirle nada; no se
+    /// depende de que BaseId=0 falle más abajo por falta de secreto, se corta acá mismo) ni más de una
+    /// (un mismo AlfaCore atendiendo varias empresas: tampoco hay forma autoritativa de saber a cuál
+    /// pertenece un webhook server-to-server sin token -- confiar en "la que esté marcada activa en ese
+    /// instante" sería justamente la sesión de UI accidental que se quiere evitar). Con exactamente una,
+    /// no hay ambigüedad posible (es "el cliente actual") y sigue funcionando igual que siempre.
     /// </summary>
     internal static bool IsLegacyWhatsAppWebhookTenantAuthoritative(IAppModeService appMode, ISessionService sessionService)
-        => !appMode.IsSaaSMode && sessionService.GetAllSessions().Count <= 1;
+        => !appMode.IsSaaSMode && sessionService.GetAllSessions().Count == 1;
 
     /// <summary>
     /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como

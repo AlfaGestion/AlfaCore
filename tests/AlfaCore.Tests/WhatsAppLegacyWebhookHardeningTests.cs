@@ -5,24 +5,26 @@ using Xunit;
 namespace AlfaCore.Tests;
 
 /// <summary>
-/// Ruta legacy sin token: POST /api/conversaciones/whatsapp/webhook (sin "/{token}"). Auditoría
-/// confirmó que NO está huérfana -- Program.cs la documenta explícitamente ("se conserva para no
-/// romper lo que ya está configurado en Meta/MercadoLibre para el cliente actual") y
-/// docs/modulos/integraciones/whatsapp_cloud_api.md confirma que "en instalaciones monobase o legacy
-/// puede usarse la ruta sin token". Decommission quedó descartado: hay un consumidor real (instalación
-/// monobase/legacy con Meta ya apuntando a esa URL).
+/// Rutas legacy sin token: GET (verificación de Meta) y POST (mensajes) en
+/// /api/conversaciones/whatsapp/webhook (sin "/{token}"). Auditoría confirmó que NO están huérfanas --
+/// Program.cs las documenta explícitamente ("se conserva para no romper lo que ya está configurado en
+/// Meta/MercadoLibre para el cliente actual") y docs/modulos/integraciones/whatsapp_cloud_api.md
+/// confirma que "en instalaciones monobase o legacy puede usarse la ruta sin token". Decommission
+/// quedó descartado: hay un consumidor real (instalación monobase/legacy con Meta ya apuntando a esa
+/// URL).
 ///
-/// El riesgo real no era "BaseId=0 y falla aguas abajo" (eso ya era fail-closed, sólo accidental) --
-/// es que ConexionClienteService.GetActiveSession(), en modo SaaS, intenta resolver
+/// El riesgo real no era "BaseId=0 y falla aguas abajo" -- es que
+/// ConexionClienteService.GetActiveSession(), en modo SaaS, intenta resolver
 /// ResolveRouteSessionOverride() -> NavigationManager.Uri antes de caer a cualquier fallback. Un
 /// request server-to-server sin circuito Blazor no tiene NavigationManager inicializado -- eso ya tumbó
 /// este mismo webhook con 500 en producción (ver el comentario de GetActiveSession). Y en legacy/
-/// monobase con MÁS de una base local configurada, "la que esté marcada Activa en sessions.json en ese
+/// monobase con más de una base local configurada, "la que esté marcada Activa en sessions.json en ese
 /// instante" es exactamente la sesión de UI accidental que no debe decidir un tenant server-to-server.
 ///
 /// IsLegacyWhatsAppWebhookTenantAuthoritative(appMode, sessionService) corta ANTES de que el request
 /// llegue a tocar esa ruta de código: sólo autoriza cuando NO es SaaS (nunca toca GetActiveSession/
-/// GetAllSessions en modo SaaS) y hay como mucho una base local configurada (sin ambigüedad real).
+/// GetAllSessions en modo SaaS) y hay EXACTAMENTE una base local configurada -- ni cero (no depende de
+/// que BaseId=0 falle más abajo, corta acá mismo) ni más de una (ambigüedad real).
 /// </summary>
 public sealed class WhatsAppLegacyWebhookHardeningTests
 {
@@ -96,17 +98,16 @@ public sealed class WhatsAppLegacyWebhookHardeningTests
     }
 
     [Fact]
-    public void Legacy_ConCeroBasesConfiguradas_AutorizaYCaeAlComportamientoDeSiempreYaFailClosed()
+    public void Legacy_ConCeroBasesConfiguradas_FallaCerrado_NoDependeDeQueBaseId0FalleAguasAbajo()
     {
-        // Sin ninguna base local configurada, GetActiveSession() ya devuelve null hoy (ver
-        // ConexionClienteService.GetLegacyActiveSession) -> BaseId=0 -> falla aguas abajo por falta
-        // de secreto, exactamente el comportamiento fail-closed preexistente. No hay ambigüedad que
-        // evitar acá (no hay entre qué elegir), así que el guard no necesita bloquear este caso.
+        // Sin ninguna base local configurada no hay tenant autoritativo al que atribuirle el
+        // request -- ya no se deja que BaseId=0 llegue a fallar más abajo por falta de secreto, se
+        // corta explícitamente acá.
         var sessionService = new FakeSessionService([]);
 
         var authorized = Program.IsLegacyWhatsAppWebhookTenantAuthoritative(new FakeAppModeService(isSaaSMode: false), sessionService);
 
-        Assert.True(authorized);
+        Assert.False(authorized);
     }
 
     [Fact]
@@ -164,6 +165,49 @@ public sealed class WhatsAppLegacyWebhookHardeningTests
         Assert.True(guardCheck > legacyRoute, "El guard debe evaluarse dentro del registro de la ruta legacy.");
         Assert.True(handlerCall > guardCheck, "HandleWhatsAppMessageAsync debe quedar condicionado al guard, no incondicional.");
         Assert.True(notFoundFallback > guardCheck, "Debe existir un fallback explícito a NotFound cuando el guard rechaza.");
+    }
+
+    [Fact]
+    public void RutaLegacyGet_UsaElMismoGuardAntesDeHandleWhatsAppVerifyAsync()
+    {
+        // GET legacy: "app.MapGet(\"/api/conversaciones/whatsapp/webhook\", (" -- ya no es una
+        // referencia directa a HandleWhatsAppVerifyAsync como método de grupo, está envuelta con el
+        // mismo guard que el POST legacy.
+        var legacyGetRoute = ProgramSource.IndexOf("app.MapGet(\"/api/conversaciones/whatsapp/webhook\", (", StringComparison.Ordinal);
+        Assert.True(legacyGetRoute >= 0, "No se encontró la ruta GET legacy envuelta en una lambda.");
+
+        var guardCheck = ProgramSource.IndexOf("IsLegacyWhatsAppWebhookTenantAuthoritative(appMode, sessionService)", legacyGetRoute, StringComparison.Ordinal);
+        var handlerCall = ProgramSource.IndexOf("HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, sessionService, ct)", legacyGetRoute, StringComparison.Ordinal);
+        var notFoundFallback = ProgramSource.IndexOf("Task.FromResult<IResult>(Results.NotFound())", legacyGetRoute, StringComparison.Ordinal);
+
+        Assert.True(guardCheck > legacyGetRoute, "El guard debe evaluarse dentro del registro del GET legacy.");
+        Assert.True(handlerCall > guardCheck, "HandleWhatsAppVerifyAsync debe quedar condicionado al guard, no incondicional.");
+        Assert.True(notFoundFallback > guardCheck, "Debe existir un fallback explícito a NotFound cuando el guard rechaza.");
+
+        // No debe haber quedado ninguna referencia directa de método de grupo (la forma vieja, sin
+        // guard) al handler para esta ruta.
+        Assert.DoesNotContain(
+            "app.MapGet(\"/api/conversaciones/whatsapp/webhook\", HandleWhatsAppVerifyAsync);",
+            ProgramSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RutaTokenizadaGet_SigueResolviendoTenantYSetWebhookOverride_SinTocarElGuardLegacy()
+    {
+        var tokenGetRoute = ProgramSource.IndexOf("app.MapGet(\"/api/conversaciones/whatsapp/webhook/{token}\"", StringComparison.Ordinal);
+        Assert.True(tokenGetRoute >= 0);
+
+        var resolveCall = ProgramSource.IndexOf("TryResolveWebhookTenantAsync(token, basesService, sessionService, ct)", tokenGetRoute, StringComparison.Ordinal);
+        var handlerCall = ProgramSource.IndexOf("HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, sessionService, ct, resolvedBaseId)", tokenGetRoute, StringComparison.Ordinal);
+
+        Assert.True(resolveCall > tokenGetRoute);
+        Assert.True(handlerCall > resolveCall);
+
+        // El guard legacy nunca debe aparecer en la ruta GET tokenizada -- su tenant siempre viene
+        // del token, nunca del guard de sesión-local.
+        var tokenGetRouteBlock = ProgramSource[tokenGetRoute..(tokenGetRoute + 900)];
+        Assert.DoesNotContain("IsLegacyWhatsAppWebhookTenantAuthoritative", tokenGetRouteBlock, StringComparison.Ordinal);
     }
 
     [Fact]
