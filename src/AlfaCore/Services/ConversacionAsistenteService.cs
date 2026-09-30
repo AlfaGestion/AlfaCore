@@ -160,7 +160,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     var function = call.GetProperty("function");
                     var nombreHerramienta = function.GetProperty("name").GetString() ?? string.Empty;
                     var argumentos = function.TryGetProperty("arguments", out var argsEl) ? argsEl.GetString() ?? "{}" : "{}";
-                    await TraceDiagAsync(traceDiagAsync, $"BotToolCall|tool={SanitizeDiag(nombreHerramienta)}", ct);
+                    await TraceDiagAsync(traceDiagAsync, $"BotToolCall|tool={SanitizeDiag(nombreHerramienta)}{DescribirArgumentoDiag(nombreHerramienta, argumentos)}", ct);
 
                     string resultado;
                     try
@@ -423,12 +423,50 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             return "EMPTY";
 
         var texto = resultado.Trim();
+        // "No se encontró ningún artículo..." antes salía como OK y ocultaba que la búsqueda no
+        // había traído nada (caso pilas, Base4264).
+        if (texto.StartsWith("No se encontró", StringComparison.OrdinalIgnoreCase)
+            || texto.StartsWith("No encontré", StringComparison.OrdinalIgnoreCase))
+            return "NOT_FOUND";
+
         return texto.Contains("No se pudo", StringComparison.OrdinalIgnoreCase)
             || texto.Contains("no se pudo", StringComparison.OrdinalIgnoreCase)
             || texto.Contains("no hay", StringComparison.OrdinalIgnoreCase)
             || texto.Contains("todavía no se configur", StringComparison.OrdinalIgnoreCase)
             ? "ERROR"
             : "OK";
+    }
+
+    /// <summary>Sólo para consultar_precio: el término que buscó el modelo, sanitizado y truncado
+    /// (letras, dígitos, espacios, '-', '.'). Nunca el JSON completo ni argumentos de otras tools.</summary>
+    private static string DescribirArgumentoDiag(string nombreHerramienta, string argumentosJson)
+    {
+        if (!string.Equals(nombreHerramienta, "consultar_precio", StringComparison.Ordinal))
+            return string.Empty;
+
+        string? articulo = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argumentosJson) ? "{}" : argumentosJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("articulo", out var valor)
+                && valor.ValueKind == JsonValueKind.String)
+                articulo = valor.GetString();
+        }
+        catch (JsonException)
+        {
+            return "|articulo=(invalido)";
+        }
+
+        var sb = new StringBuilder();
+        foreach (var ch in (articulo ?? string.Empty).Trim())
+        {
+            if (char.IsLetterOrDigit(ch) || ch is ' ' or '-' or '.')
+                sb.Append(ch);
+        }
+
+        var limpio = sb.ToString();
+        return $"|articulo={(limpio.Length == 0 ? "(vacio)" : limpio[..Math.Min(limpio.Length, 60)])}";
     }
 
     private static string SanitizeDiag(string? value)

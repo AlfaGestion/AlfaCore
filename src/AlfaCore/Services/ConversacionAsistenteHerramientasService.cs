@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -89,6 +90,48 @@ public sealed class ConversacionAsistenteHerramientasService(
             || texto.Contains("lista de productos", StringComparison.Ordinal);
     }
 
+    // Palabras que el cliente/modelo suele incluir pero nunca forman parte de la descripción de un
+    // artículo. Van sin tildes (se comparan contra el texto ya normalizado).
+    private static readonly HashSet<string> PalabrasVaciasBusqueda = new(StringComparer.Ordinal)
+    {
+        "de", "del", "la", "las", "el", "los", "lo", "un", "una", "unos", "unas", "al", "en", "y", "o",
+        "para", "con", "por", "que", "cual", "cuales", "es", "son", "me", "mi", "su", "sus",
+        "precio", "precios", "valor", "cuanto", "cuantos", "cuanta", "cuantas", "sale", "salen",
+        "cuesta", "cuestan", "vale", "valen", "tiene", "tienen", "tenes", "hay",
+        "quiero", "necesito", "busco", "pasame"
+    };
+
+    /// <summary>
+    /// Versión tolerante de lo que pidió el cliente, para reintentar la búsqueda de artículos:
+    /// sin tildes ni signos, "doble A"/"triple A" → AA/AAA, sin palabras vacías ni de una letra, y
+    /// en singular aproximado (la búsqueda es por substring: "pila" encuentra "PILA", "cabl" encuentra
+    /// "CABLE"). Devuelve "" si no queda ningún término útil.
+    /// </summary>
+    internal static string NormalizarBusquedaArticulo(string? texto)
+    {
+        var normalizado = Regex.Replace(NormalizarTexto(texto), "[^a-z0-9]+", " ");
+        normalizado = Regex.Replace(normalizado, @"\b(doble|dos)\s+a\b", "aa");
+        normalizado = Regex.Replace(normalizado, @"\b(triple|tres)\s+a\b", "aaa");
+
+        var terminos = normalizado
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length > 1 && !PalabrasVaciasBusqueda.Contains(t))
+            .Select(Singularizar)
+            .Distinct(StringComparer.Ordinal);
+        return string.Join(' ', terminos);
+    }
+
+    private static string Singularizar(string termino)
+    {
+        // "adaptadores" → "adaptador", "pilas" → "pila", "cables" → "cabl". Sólo plurales regulares;
+        // ante la duda queda más corto, que en una búsqueda por substring sigue encontrando "CABLE".
+        if (termino.Length >= 5 && termino.EndsWith("es", StringComparison.Ordinal) && "rlndj".Contains(termino[^3]))
+            return termino[..^2];
+        if (termino.Length >= 4 && termino.EndsWith('s') && !termino.EndsWith("ss", StringComparison.Ordinal))
+            return termino[..^1];
+        return termino;
+    }
+
     private static string NormalizarTexto(string? texto)
     {
         if (string.IsNullOrWhiteSpace(texto))
@@ -109,9 +152,13 @@ public sealed class ConversacionAsistenteHerramientasService(
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
         ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente)
+        string mensajeCliente,
+        string? mensajePrevioCliente = null)
     {
-        if (!MensajeNecesitaHerramientas(mensajeCliente))
+        // El seguimiento ("Pila duracell AA" después de "Que precio tienen las pilas?") no trae
+        // palabra clave propia: sin el mensaje previo quedaba sin herramientas y el bot derivaba. El
+        // previo sólo habilita la lista; catálogo forzado/ofrecido sigue dependiendo del mensaje actual.
+        if (!MensajeNecesitaHerramientas(mensajeCliente) && !MensajeNecesitaHerramientas(mensajePrevioCliente ?? string.Empty))
             return [];
 
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
@@ -135,7 +182,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                     ? "Busca el precio real de un artículo para el Cliente identificado. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
                     : "Busca el precio real de consumidor final usando la fuente/lista real configurada en AlfaCore. No inventar precios.",
                 ParametrosJsonSchema = """
-                    {"type":"object","properties":{"articulo":{"type":"string","description":"Nombre o código del artículo a buscar"}},"required":["articulo"]}
+                    {"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos clave cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila AA', 'pila duracell AA'. No incluir palabras como precio o cuánto."}},"required":["articulo"]}
                     """
             });
         }
@@ -233,6 +280,17 @@ public sealed class ConversacionAsistenteHerramientasService(
 
         var codigoCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente ? cuenta.Codigo : null;
         var resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, articulo, take: 5, ct: ct);
+
+        // La búsqueda compartida (POS/Cotizaciones) exige que CADA palabra aparezca en el artículo:
+        // "pilas doble A" no encuentra "PILA DURACELL - AA" (Base4264, 2026-09-30). No se toca ese
+        // motor; acá, sólo si no hubo resultados, se reintenta una vez con los términos normalizados.
+        if (resultados.Count == 0)
+        {
+            var normalizada = NormalizarBusquedaArticulo(articulo);
+            if (normalizada.Length > 0 && !string.Equals(normalizada, articulo.Trim(), StringComparison.OrdinalIgnoreCase))
+                resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, normalizada, take: 5, ct: ct);
+        }
+
         if (resultados.Count == 0)
             return $"No se encontró ningún artículo que coincida con \"{articulo}\".";
 

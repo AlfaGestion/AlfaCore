@@ -8371,7 +8371,12 @@ public sealed class ConversacionesService(
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
                 await TraceDiagAsync("Paso:CuentaVinculadaOk", idConversacion, ct).ConfigureAwait(false);
-                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
+                // Un saludo/cierre no hereda las herramientas del mensaje anterior: con tools ofrecidas
+                // gpt-4o-mini tiende a derivar en vez de responder lo social.
+                var mensajePrevioCliente = EsMensajeSocial(texto)
+                    ? null
+                    : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
+                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto, mensajePrevioCliente);
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
@@ -9060,6 +9065,38 @@ public sealed class ConversacionesService(
         "buenisimo", "excelente", "dale", "ok", "okay", "listo", "joya", "barbaro",
         "nada", "bien", "todo", "vos", "y", "che", "buen"
     };
+
+    private static readonly TimeSpan VentanaMensajePrevioHerramientas = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Mensaje ENTRANTE anterior al actual, sólo si llegó dentro de <paramref name="ventana"/>. Se usa
+    /// para que un seguimiento sin palabra clave ("Pila duracell AA" después de "Que precio tienen
+    /// las pilas doble A?") reciba las mismas herramientas. Si el historial ya incluye el mensaje
+    /// actual (último ENTRANTE con el mismo texto), se lo salta y la ventana se mide contra él; si no,
+    /// contra <paramref name="ahora"/>.
+    /// </summary>
+    internal static string? ObtenerMensajePrevioCliente(
+        IReadOnlyList<ConversacionMensajeDto> mensajes,
+        string textoActual,
+        DateTime ahora,
+        TimeSpan ventana)
+    {
+        var entrantes = mensajes
+            .Where(m => string.Equals(m.Direction, "ENTRANTE", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(m.Texto))
+            .OrderByDescending(m => m.FechaHora)
+            .ToList();
+        if (entrantes.Count == 0)
+            return null;
+
+        var actualEnHistorial = string.Equals(entrantes[0].Texto.Trim(), (textoActual ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+        var indicePrevio = actualEnHistorial ? 1 : 0;
+        if (indicePrevio >= entrantes.Count)
+            return null;
+
+        var referencia = actualEnHistorial ? entrantes[0].FechaHora : ahora;
+        var previo = entrantes[indicePrevio];
+        return referencia - previo.FechaHora <= ventana ? previo.Texto.Trim() : null;
+    }
 
     private static bool EsMensajeSocial(string texto)
     {

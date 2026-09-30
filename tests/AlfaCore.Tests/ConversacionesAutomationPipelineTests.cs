@@ -889,6 +889,243 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
     }
 
+    // Caso real Base4264 (2026-09-30): "Que precio tienen las pilas doble A?" → consultar_precio con
+    // "pilas doble A" no encontraba "PILA DURACELL - AA" (búsqueda AND por palabra) y el bot derivaba.
+    [Fact]
+    public async Task Tools_ConsultarPrecio_NaturalLanguageTerms_RetriesWithNormalizedSearch()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pilas doble A"}""", cliente);
+
+        Assert.Equal(["pilas doble A", "pila aa"], crm.Busquedas);
+        Assert.Contains("PILA DURACELL - AA", result);
+        Assert.Contains("$ 2.500,00", result);
+        Assert.DoesNotContain("No se encontró", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_DirectMatch_DoesNotRetry()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pila duracell AA"}""", cliente);
+
+        Assert.Equal(["pila duracell AA"], crm.Busquedas);
+        Assert.Contains("$ 2.500,00", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_NoMatch_ReturnsNotFoundWithoutRedundantRetry()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var sinCambios = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", cliente);
+        var normalizadoSinResultados = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillos de madera"}""", cliente);
+
+        Assert.StartsWith("No se encontró ningún artículo", sinCambios);
+        Assert.StartsWith("No se encontró ningún artículo", normalizadoSinResultados);
+        // "tornillo" normalizado es igual al original: no se repite la búsqueda.
+        Assert.Equal(["tornillo", "tornillos de madera", "tornillo madera"], crm.Busquedas);
+    }
+
+    [Theory]
+    [InlineData("pilas doble A", "pila aa")]
+    [InlineData("Que precio tienen las pilas doble A?", "pila aa")]
+    [InlineData("Pila Duracell AA", "pila duracell aa")]
+    [InlineData("pilas triple A", "pila aaa")]
+    [InlineData("¿Cuánto salen los adaptadores?", "adaptador")]
+    [InlineData("cables USB", "cabl usb")]
+    [InlineData("cuánto sale?", "")]
+    [InlineData("", "")]
+    public void NormalizarBusquedaArticulo_GeneraTerminosTolerantes(string entrada, string esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.NormalizarBusquedaArticulo(entrada));
+
+    [Fact]
+    public void Tools_FollowUpWithoutKeyword_UsesPreviousPriceMessage()
+    {
+        var service = CreateToolsService();
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var conPrevio = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Que precio tienen las pilas doble A?");
+        var sinPrevio = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA");
+
+        Assert.Contains(conPrevio, h => h.Nombre == "consultar_precio");
+        // El previo sólo habilita la lista: el catálogo sigue dependiendo del mensaje actual.
+        Assert.DoesNotContain(conPrevio, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.Empty(sinPrevio);
+    }
+
+    [Fact]
+    public void Tools_FollowUpAfterNonToolMessage_StaysWithoutTools()
+    {
+        var service = CreateToolsService();
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Hola, buen día");
+
+        Assert.Empty(herramientas);
+    }
+
+    [Fact]
+    public void MensajePrevioCliente_WithinWindow_SkipsCurrentMessageAndReturnsPrevious()
+    {
+        var t0 = new DateTime(2026, 9, 30, 10, 58, 22);
+        var mensajes = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas doble A?", FechaHora = t0 },
+            new() { Direction = "SALIENTE", Texto = "No encontré información...", FechaHora = t0.AddSeconds(5) },
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0.AddSeconds(25) }
+        };
+
+        var previo = ConversacionesService.ObtenerMensajePrevioCliente(mensajes, "Pila duracell AA", t0.AddSeconds(26), TimeSpan.FromMinutes(30));
+
+        Assert.Equal("Que precio tienen las pilas doble A?", previo);
+    }
+
+    [Fact]
+    public void MensajePrevioCliente_OutsideWindowOrNoPrevious_ReturnsNull()
+    {
+        var t0 = new DateTime(2026, 9, 30, 9, 0, 0);
+        var viejo = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas?", FechaHora = t0 },
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0.AddHours(2) }
+        };
+        var soloActual = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0 }
+        };
+        // El mensaje actual todavía no está en el historial: la ventana se mide contra "ahora".
+        var sinActual = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas?", FechaHora = t0 }
+        };
+
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(viejo, "Pila duracell AA", t0.AddHours(2), TimeSpan.FromMinutes(30)));
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(soloActual, "Pila duracell AA", t0, TimeSpan.FromMinutes(30)));
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(sinActual, "Pila duracell AA", t0.AddHours(1), TimeSpan.FromMinutes(30)));
+        Assert.Equal("Que precio tienen las pilas?",
+            ConversacionesService.ObtenerMensajePrevioCliente(sinActual, "Pila duracell AA", t0.AddMinutes(5), TimeSpan.FromMinutes(30)));
+    }
+
+    [Fact]
+    public async Task Assistant_PriceToolCall_TracesSearchTermAndNotFoundStatus()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas doble A\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"respuesta\":\"Lo consulto con un asesor.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "consultar_precio",
+                    Descripcion = "Busca el precio real de un artículo.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}"
+                }
+            };
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Que precio tienen las pilas doble A?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("No se encontró ningún artículo que coincida con \"pilas doble A\"."),
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            Assert.Contains("BotToolCall|tool=consultar_precio|articulo=pilas doble A", traces);
+            Assert.Contains("BotToolResult|tool=consultar_precio|status=NOT_FOUND", traces);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_RealCase4264_PriceQuestion_ToolReturnsPriceThroughRealToolsService()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var crm = new CatalogoCrmCotizacionService();
+            var toolsService = CreateToolsService(crm: crm);
+            var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+            const string mensaje = "Que precio tienen las pilas doble A?";
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cliente, mensaje);
+            var toolResults = new List<string>();
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas doble A\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"La pila Duracell AA sale $ 2.500,00 con IVA.\"}"}}]}
+                """);
+            var assistant = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            var answer = await assistant.ResponderAsync(
+                comportamiento: "Sos un asistente comercial.",
+                informacion: "Info real.",
+                politica: "GENERAL_AVISA",
+                mensajeCliente: mensaje,
+                historial: [],
+                herramientas: herramientas,
+                ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
+                {
+                    var r = await toolsService.EjecutarAsync(nombre, argumentos, cliente, ct);
+                    toolResults.Add(r);
+                    return r;
+                });
+
+            Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+            Assert.Contains("PILA DURACELL - AA", toolResults.Single());
+            Assert.Contains("$ 2.500,00", toolResults.Single());
+            Assert.Equal("RESUELVE", answer?.Tipo);
+
+            // El resultado de la tool que recibe el modelo en la segunda llamada es el precio real.
+            using var secondPayload = JsonDocument.Parse(handler.RequestBodies[1]);
+            var toolMessage = secondPayload.RootElement.GetProperty("messages").EnumerateArray()
+                .Last(m => m.GetProperty("role").GetString() == "tool");
+            Assert.Contains("$ 2.500,00", toolMessage.GetProperty("content").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
     [Fact]
     public async Task Tools_LeadWithConsumerPricesOn_UsesConsumerFinalSourceWithoutClientCode()
     {
@@ -1937,6 +2174,47 @@ public sealed class ConversacionesAutomationPipelineTests
             WasCalled = true;
             LastClienteCodigo = clienteCodigo;
             IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = PrecioUnitarioConIva }];
+            return Task.FromResult(result);
+        }
+
+        public Task<CrmCotizacionPricingContextDto> ResolvePricingContextAsync(string? clienteCodigo, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CrmCotizacionDto>> GetByOportunidadAsync(long idOportunidad, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CrmCotizacionDetailDto?> GetByIdAsync(long idCotizacion, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<long> SaveAsync(CrmCotizacionSaveRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task ChangeEstadoAsync(long idCotizacion, string estado, string? usuarioAccion = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task DeleteAsync(long idCotizacion, string? usuarioAccion = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateEmailMessageAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CrmCotizacionShareDto> EnsureShareAsync(long idCotizacion, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SendByEmailAsync(long idCotizacion, string destinatario, string? publicUrl = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Imita la búsqueda real de ArticuloPrecioResolverService.SearchArticulosAsync: CADA palabra
+    /// (en mayúsculas) tiene que aparecer como substring del código o la descripción. Los artículos
+    /// replican los de Base4264 (2026-09-30).
+    /// </summary>
+    private sealed class CatalogoCrmCotizacionService : ICrmCotizacionService
+    {
+        private readonly (string Id, string Descripcion, decimal PrecioConIva)[] _articulos =
+        [
+            ("01", "PILA DURACELL - AA", 2500m),
+            ("02", "PILA DURACELL - AAA", 2000m)
+        ];
+
+        public List<string> Busquedas { get; } = [];
+
+        public Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosAsync(string? clienteCodigo, string texto, int take = 25, CancellationToken ct = default)
+        {
+            Busquedas.Add(texto);
+            var palabras = (texto ?? string.Empty).ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            IReadOnlyList<CrmCotizacionArticuloDto> result = _articulos
+                .Where(a => palabras.All(p => a.Id.Contains(p, StringComparison.Ordinal) || a.Descripcion.Contains(p, StringComparison.Ordinal)))
+                .Take(take)
+                .Select(a => new CrmCotizacionArticuloDto { IdArticulo = a.Id, Codigo = a.Id, Descripcion = a.Descripcion, PrecioUnitarioConIva = a.PrecioConIva })
+                .ToList();
             return Task.FromResult(result);
         }
 
