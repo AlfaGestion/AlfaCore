@@ -15,6 +15,9 @@ public sealed class ArcaConfigService(
     private const int ArcaSqlCommandTimeoutSeconds = 120;
     private const string WsaaProduccionDefault = "https://wsaa.arca.gov.ar/ws/services/LoginCms?wsdl";
     private const string WsaaHomologacionDefault = "https://wsaa.homo.arca.gov.ar/ws/services/LoginCms?wsdl";
+    // La consulta de padrón es un circuito independiente de facturación y se
+    // ejecuta siempre contra producción.
+    private const string WsaaPadronProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
     private const string WsfeProduccionDefault = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL";
     private const string WsfeHomologacionDefault = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL";
 
@@ -115,7 +118,7 @@ public sealed class ArcaConfigService(
 
         var certificadoConfigurado = await ReadCertificadoAsync(cn, "PADRON", ct);
         var certificado = certificadoConfigurado is not null
-            ? (certificadoConfigurado.Value.Crt, certificadoConfigurado.Value.Key, Ambiente: string.Equals(ReadValue(global, "ARCA_PADRON_AMBIENTE", ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION")), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion)
+            ? (certificadoConfigurado.Value.Crt, certificadoConfigurado.Value.Key, Ambiente: ArcaAmbiente.Produccion)
             : ReadCertificadoPadronPorDefecto();
         if (certificado is null || certificado.Value.Crt is null || certificado.Value.Key is null)
             throw new InvalidOperationException("No hay un certificado propio configurado para consultar el padrón ARCA.");
@@ -128,7 +131,7 @@ public sealed class ArcaConfigService(
             Encoding.UTF8.GetString(certificado.Value.Crt),
             Encoding.UTF8.GetString(certificado.Value.Key),
             ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty)),
-            ReadValue(global, "WSAA_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsaaProduccionDefault : WsaaHomologacionDefault),
+            WsaaPadronProduccion,
             ReadValue(global, "WSFE_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsfeProduccionDefault : WsfeHomologacionDefault));
     }
 
@@ -153,7 +156,7 @@ public sealed class ArcaConfigService(
             {
                 var key = Path.Combine(carpeta, "Cprivada_CONSULTAPADRON.key");
                 if (File.Exists(key) && CertificadoVigente(crt))
-                    return (File.ReadAllBytes(crt), File.ReadAllBytes(key), ArcaAmbiente.Homologacion);
+                    return (File.ReadAllBytes(crt), File.ReadAllBytes(key), ArcaAmbiente.Produccion);
             }
 
             // En instalaciones antiguas de VB6 el padrón se consultaba con el

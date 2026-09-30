@@ -19,7 +19,10 @@ public sealed class ArcaPadronService(
     // pero el nombre del servicio usado para obtener el ticket cambió.
     private const string Servicio = "ws_sr_constancia_inscripcion";
     private const string UrlHomologacion = "https://awshomo.arca.gov.ar/sr-padron/webservices/personaServiceA5";
-    private const string UrlProduccion = "https://aws.arca.gov.ar/sr-padron/webservices/personaServiceA5";
+    // El endpoint documentado actualmente bajo aws.arca.gov.ar no resuelve
+    // desde este servidor. El alias productivo legado de AFIP sigue operativo
+    // y responde el mismo servicio migrado.
+    private const string UrlProduccion = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
