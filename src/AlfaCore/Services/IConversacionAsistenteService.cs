@@ -27,6 +27,7 @@ public interface IConversacionAsistenteService
         Func<string, CancellationToken, Task>? traceDiagAsync = null,
         bool precioRequiereIdentificacion = false,
         bool forzarConsultarPrecio = false,
+        string? linkCatalogoParaLead = null,
         CancellationToken ct = default);
 
     /// <summary>

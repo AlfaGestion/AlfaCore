@@ -341,7 +341,21 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     /// </summary>
     private SessionDto? ResolveRouteSessionOverride()
     {
-        var path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri);
+        // Un request HTTP sin circuito Blazor (p. ej. GET /api/conversaciones/adjuntos/{id} desde un
+        // <img src>) no tiene ruta de página: NavigationManager.Uri nunca se inicializa y tira
+        // InvalidOperationException. Antes eso tumbaba el endpoint con 500 en hosts SaaS (imágenes
+        // rotas en Base4264, 2026-10-01). Sin ruta no hay override de ruta que aplicar: se sigue con
+        // las bases del usuario autenticado (o ninguna si no hay usuario), igual que una ruta root.
+        string path;
+        try
+        {
+            path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
         if (!TenantRouteParser.TryParse(path, out var idWeb, out var baseId))
         {
             lock (_lock)

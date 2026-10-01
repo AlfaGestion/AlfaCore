@@ -3361,7 +3361,7 @@ public class Program
         };
     }
 
-    private static bool TryActivateAuthorizedAttachmentBase(
+    internal static bool TryActivateAuthorizedAttachmentBase(
         int? idBase,
         ISessionService sessionService,
         IAppUserSessionService appUserSession)
@@ -3517,6 +3517,20 @@ public class Program
         var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
         if (catalogo is null)
             return Results.NotFound();
+
+        // El PDF público es anónimo (no hay sesión de cliente del catálogo): respeta
+        // CATALOGO_MUESTRA_PRECIO_CONSUMIDOR. Si no se puede leer, falla cerrado (sin precios).
+        bool muestraPrecios;
+        try
+        {
+            muestraPrecios = await catalogosSvc.MuestraPreciosConsumidorFinalAsync(resolvedBaseId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            muestraPrecios = false;
+        }
+
+        catalogo = CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: false);
 
         var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
         var settings = await puntoVentaSvc.GetSettingsAsync(ct);

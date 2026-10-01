@@ -27,6 +27,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         Func<string, CancellationToken, Task>? traceDiagAsync = null,
         bool precioRequiereIdentificacion = false,
         bool forzarConsultarPrecio = false,
+        string? linkCatalogoParaLead = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -44,7 +45,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // La intención de precio la decide el llamador (incluye el seguimiento de una aclaración);
         // acá sólo se verifica que la tool realmente se ofreció.
         var debeForzarPrecio = forzarConsultarPrecio && hayPrecioEntreHerramientas;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -280,7 +281,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
-        bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false)
+        bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -336,8 +337,15 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
         if (precioRequiereIdentificacion)
         {
-            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: quien escribe todavía no está identificado como cliente y la empresa informa precios solo a clientes identificados. Ante una consulta de precio respondé tipo \"RESUELVE\" (NO derives): explicá que para pasarle el precio correcto primero necesitás identificarlo como cliente, porque puede variar según su cuenta; invitalo a decir su nombre o razón social si ya es cliente; y, si está disponible generar_link_catalogo_publico, ofrecé ver los productos en el catálogo.");
-            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios. Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos. También podés ver nuestros productos acá: [link del catálogo].\"");
+            var conLink = !string.IsNullOrWhiteSpace(linkCatalogoParaLead);
+            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: quien escribe todavía no está identificado como cliente y la empresa informa precios solo a clientes identificados. Ante una consulta de precio respondé tipo \"RESUELVE\" (NO derives): explicá que para pasarle el precio correcto primero necesitás identificarlo como cliente, porque puede variar según su cuenta; invitalo a decir su nombre o razón social si ya es cliente"
+                + (conLink
+                    ? $"; e incluí, tal cual, este link real del catálogo para que vea los productos disponibles: {linkCatalogoParaLead!.Trim()} (no lo cambies ni inventes otros links)."
+                    : ". No menciones el catálogo (no hay un link disponible para compartir)."));
+            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios."
+                + (conLink
+                    ? $" Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos. Mientras tanto podés ver los productos disponibles acá: {linkCatalogoParaLead!.Trim()}\""
+                    : " Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos.\""));
         }
 
         if (haySaldoEntreHerramientas)

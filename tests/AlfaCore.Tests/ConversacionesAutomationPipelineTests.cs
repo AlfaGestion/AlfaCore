@@ -1342,16 +1342,150 @@ public sealed class ConversacionesAutomationPipelineTests
         var sinLink = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(null);
 
         Assert.Equal(
-            "Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. "
-            + "Si ya sos cliente, decime tu nombre o razón social y seguimos. También podés ver nuestros productos acá: " + link,
+            "Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta.\n\n"
+            + "Si ya sos cliente, decime tu nombre o razón social y seguimos.\n\n"
+            + "Mientras tanto podés ver los productos disponibles acá: " + link,
             conLink);
         Assert.DoesNotContain("acá:", sinLink);
+        Assert.DoesNotContain("catálogo", sinLink, StringComparison.OrdinalIgnoreCase);
         foreach (var texto in new[] { conLink, sinLink })
         {
             Assert.DoesNotContain("no tengo el precio", texto, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("asesor", texto, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("precios en el catálogo", texto, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    // Caso real 4264 (2026-10-01): el lead recibía "podés ver el catálogo" SIN el link.
+    private const string LinkCatalogoLead = "https://alfanetweb.ddns.net/ALFANET/catalogo/prueba-tok123";
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_ModeloOmiteElLink_SeAgregaElLinkReal()
+    {
+        var modelo = new ConversacionAsistenteRespuesta
+        {
+            Tipo = "RESUELVE",
+            PuedeResponder = true,
+            Respuesta = "Para pasarte el precio necesito identificarte como cliente. Si ya sos cliente, decime tu razón social. También podés ver nuestros productos en el catálogo."
+        };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.False(plantilla);
+        Assert.Equal("RESUELVE", respuesta.Tipo);
+        Assert.True(respuesta.PuedeResponder);
+        Assert.StartsWith(modelo.Respuesta, respuesta.Respuesta);
+        Assert.EndsWith(LinkCatalogoLead, respuesta.Respuesta);
+    }
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_ModeloYaIncluyeElLink_NoLoDuplica()
+    {
+        var modelo = new ConversacionAsistenteRespuesta
+        {
+            Tipo = "RESUELVE",
+            PuedeResponder = true,
+            Respuesta = $"Para pasarte el precio necesito identificarte como cliente. Mirá los productos: [Catálogo]({LinkCatalogoLead})"
+        };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.False(plantilla);
+        Assert.Equal(modelo.Respuesta, respuesta.Respuesta);
+    }
+
+    [Theory]
+    [InlineData("DERIVA", "Lo veo con un compañero y te respondo.")]
+    [InlineData("RESUELVE", "No tengo el precio en este momento, mirá el catálogo.")]
+    [InlineData("RESUELVE", "Un asesor te va a pasar el precio.")]
+    [InlineData("RESUELVE", "Identificate como cliente. Catálogo: https://otro-sitio.example.com/catalogo")]
+    [InlineData("ACLARA", "")]
+    public void AsegurarRespuestaPrecioLead_RespuestaIncorrecta_UsaLaPlantillaConElLinkReal(string tipo, string texto)
+    {
+        var modelo = new ConversacionAsistenteRespuesta { Tipo = tipo, PuedeResponder = tipo == "RESUELVE", Respuesta = texto };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.True(plantilla);
+        Assert.Equal("RESUELVE", respuesta.Tipo);
+        Assert.True(respuesta.PuedeResponder);
+        Assert.Equal(ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(LinkCatalogoLead), respuesta.Respuesta);
+        Assert.DoesNotContain("otro-sitio", respuesta.Respuesta);
+    }
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_SinLinkDisponible_NoMencionaCatalogoNiInventaLinks()
+    {
+        var conLinkInventado = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = "Mirá acá: https://alfanetweb.ddns.net/catalogo" };
+        var limpio = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = "Necesito identificarte como cliente. Decime tu razón social." };
+
+        var (inventado, plantillaInventado) = ConversacionesService.AsegurarRespuestaPrecioLead(conLinkInventado, null);
+        var (sinCambios, plantillaLimpio) = ConversacionesService.AsegurarRespuestaPrecioLead(limpio, null);
+
+        Assert.True(plantillaInventado);
+        Assert.DoesNotContain("http", inventado.Respuesta);
+        Assert.False(plantillaLimpio);
+        Assert.Equal(limpio.Respuesta, sinCambios.Respuesta);
+    }
+
+    [Theory]
+    [InlineData(LinkCatalogoLead)]
+    [InlineData(null)]
+    public async Task Assistant_PrecioLead_PromptIncluyeElLinkRealOProhibeMencionarCatalogo(string? link)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.", "Info real.", "GENERAL_AVISA", "¿Cuánto salen las pilas?", [],
+                precioRequiereIdentificacion: true,
+                linkCatalogoParaLead: link);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            if (link is null)
+            {
+                Assert.Contains("No menciones el catálogo", system);
+            }
+            else
+            {
+                Assert.Contains(link, system);
+                Assert.DoesNotContain("No menciones el catálogo", system);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Caso real 4264 (2026-10-01): imagen sana (JPEG en SQL) → el bot sólo veía "[image]", contestaba
+    // "hay un problema con las imágenes" y derivaba.
+    [Theory]
+    [InlineData("[image]", "Recibí la imagen. ¿Qué querés que revise?")]
+    [InlineData("[document] factura.pdf", "Recibí el archivo. ¿Qué querés que revise?")]
+    [InlineData("[video]", "Recibí el video. ¿Qué querés que revise?")]
+    [InlineData("[audio]", "Recibí tu audio, pero por ahora no puedo escucharlo. ¿Me escribís tu consulta?")]
+    [InlineData("esta es la pila que necesito", null)]
+    [InlineData("[sticker]", null)]
+    [InlineData("hola", null)]
+    public void AclaracionMediaSinTexto_RepreguntaSinDerivarNiCulparAlArchivo(string texto, string? esperado)
+    {
+        var aclaracion = ConversacionesService.ConstruirAclaracionMediaSinTexto(texto);
+
+        Assert.Equal(esperado, aclaracion);
+        if (aclaracion is not null)
+            Assert.DoesNotContain("problema", aclaracion, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -2341,6 +2475,8 @@ public sealed class ConversacionesAutomationPipelineTests
             LastPublicExpectedBaseId = expectedBaseId;
             return Task.FromResult(Catalogo);
         }
+
+        public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default) => Task.FromResult(true);
 
         public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();

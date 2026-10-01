@@ -160,8 +160,11 @@
                                 <AlfaSelect Label="Seleccionar marca" Value="@_filtroMarca" ValueChanged="v => _filtroMarca = v ?? string.Empty" Options="@GetMarcaOptions()" Placeholder="Todas" Class="catalogo-publico-filters__field" />
                             </div>
                             <div class="smart-search__column smart-search__section">
-                                <h4><i class="bi bi-currency-dollar"></i> Precio</h4>
-                                <AlfaSelect Label="Ordenar por precio" Value="@_ordenPrecio" ValueChanged="v => _ordenPrecio = v ?? string.Empty" Options="@GetOrdenPrecioOptions()" Placeholder="Orden original" Class="catalogo-publico-filters__field" />
+                                @if (PreciosVisibles)
+                                {
+                                    <h4><i class="bi bi-currency-dollar"></i> Precio</h4>
+                                    <AlfaSelect Label="Ordenar por precio" Value="@_ordenPrecio" ValueChanged="v => _ordenPrecio = v ?? string.Empty" Options="@GetOrdenPrecioOptions()" Placeholder="Orden original" Class="catalogo-publico-filters__field" />
+                                }
                                 <AlfaCheckbox Value="@_agruparPorMarca" ValueChanged="v => _agruparPorMarca = v ?? false" Class="catalogo-publico-filters__toggle">
                                     Agrupar por marca
                                 </AlfaCheckbox>
@@ -243,7 +246,10 @@
                                         <th>Descripción</th>
                                         <th>Marca</th>
                                         <th>Rubro</th>
-                                        <th style="text-align:right;">Precio</th>
+                                        @if (PreciosVisibles)
+                                        {
+                                            <th style="text-align:right;">Precio</th>
+                                        }
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -296,9 +302,12 @@
                                             </td>
                                             <td>@Display(item.Marca)</td>
                                             <td>@Display(item.Rubro)</td>
-                                            <td style="text-align:right;">
-                                                @RenderPrecio(item)
-                                            </td>
+                                            @if (PreciosVisibles)
+                                            {
+                                                <td style="text-align:right;">
+                                                    @RenderPrecio(item)
+                                                </td>
+                                            }
                                         </tr>
                                     }
                                 </tbody>
@@ -362,9 +371,12 @@
                                             <span>@Display(item.Rubro)</span>
                                         </div>
 
-                                        <div class="catalogo-publico-grid__prices">
-                                            @RenderPrecio(item, alignEnd: false)
-                                        </div>
+                                        @if (PreciosVisibles)
+                                        {
+                                            <div class="catalogo-publico-grid__prices">
+                                                @RenderPrecio(item, alignEnd: false)
+                                            </div>
+                                        }
                                     </div>
                                 </article>
                             }
@@ -457,9 +469,12 @@
                             <span>@Display(_lightboxItem.Rubro)</span>
                         </div>
 
-                        <div class="catalogo-publico-lightbox__price">
-                            @RenderPrecio(_lightboxItem, alignEnd: false)
-                        </div>
+                        @if (PreciosVisibles)
+                        {
+                            <div class="catalogo-publico-lightbox__price">
+                                @RenderPrecio(_lightboxItem, alignEnd: false)
+                            </div>
+                        }
                     </aside>
                 </div>
             }
@@ -672,9 +687,13 @@
             return;
         }
 
+        // Si el visitante acaba de loguearse como cliente y venía viendo el catálogo sin precios, se
+        // vuelve a armar (desde el caché, que tiene el catálogo completo) para que vea los precios.
+        var debeMostrarPreciosAlCliente = _catalogo is { PreciosVisibles: false } && IsAuthenticatedForCurrentCatalog;
         if (_catalogo is not null
             && _catalogo.IdInsert == IdInsert
-            && _loadPhase == CatalogoLoadPhase.Ready)
+            && _loadPhase == CatalogoLoadPhase.Ready
+            && !debeMostrarPreciosAlCliente)
             return;
 
         await RefreshCatalogAsync();
@@ -988,7 +1007,7 @@
             idweb, GetEffectiveIdBase(), IdInsert, codigoCliente: null);
         if (cachedCatalogo is not null)
         {
-            _catalogo = cachedCatalogo;
+            _catalogo = await AplicarVisibilidadPreciosAsync(cachedCatalogo);
             _loadPhase = CatalogoLoadPhase.Ready;
             _imagesLoading = false;
             return;
@@ -1002,10 +1021,12 @@
             if (loadVersion != _catalogLoadVersion)
                 return;
 
-            _catalogo = result.Value;
-            if (_catalogo is not null)
+            // El caché guarda el catálogo completo; lo que se asigna a la página pasa siempre por
+            // la visibilidad de precios (un mismo caché sirve a anónimos y a clientes logueados).
+            if (result.Value is not null)
                 PortalCatalogoState.SetCatalogo(
-                    idweb, GetEffectiveIdBase(), IdInsert, codigoCliente: null, catalogo: _catalogo);
+                    idweb, GetEffectiveIdBase(), IdInsert, codigoCliente: null, catalogo: result.Value);
+            _catalogo = result.Value is null ? null : await AplicarVisibilidadPreciosAsync(result.Value);
             _loadPhase = CatalogoLoadPhase.LoadingImages;
             _imagesLoading = (_catalogo?.Articulos.Count ?? 0) > 0;
 
@@ -1277,6 +1298,35 @@
 
     private static string GetOfertaHastaTexto(CatalogosCatalogoItemDto item)
         => AlfaCore.Services.CatalogosPriceDisplayHelper.GetOfertaHastaTexto(item);
+
+    private bool PreciosVisibles => _catalogo?.PreciosVisibles ?? true;
+
+    /// <summary>
+    /// Visitante anónimo + CATALOGO_MUESTRA_PRECIO_CONSUMIDOR=0 → catálogo sin precios (quitados del
+    /// DTO del lado servidor, ver CatalogosPublicPriceVisibility). Un cliente logueado en el
+    /// catálogo conserva los precios, como antes. Si no se puede leer la configuración, se falla
+    /// cerrado: sin precios para el anónimo.
+    /// </summary>
+    private async Task<CatalogosCatalogoDetalleDto> AplicarVisibilidadPreciosAsync(CatalogosCatalogoDetalleDto catalogo)
+    {
+        if (IsAuthenticatedForCurrentCatalog)
+            return catalogo;
+
+        bool muestraPrecios;
+        try
+        {
+            muestraPrecios = await CatalogosSvc.MuestraPreciosConsumidorFinalAsync(GetEffectiveIdBase());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CatalogoPublico: no se pudo leer CATALOGO_MUESTRA_PRECIO_CONSUMIDOR; se ocultan precios. IdWeb={IdWeb}", idweb);
+            muestraPrecios = false;
+        }
+
+        if (!muestraPrecios)
+            _ordenPrecio = string.Empty;
+        return AlfaCore.Services.CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: false);
+    }
 
     private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
         @<div class="catalogo-publico-price @(alignEnd ? "catalogo-publico-price--list" : string.Empty) @(HasValidOffer(item) ? "catalogo-publico-price--offer" : string.Empty)">

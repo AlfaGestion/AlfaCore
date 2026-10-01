@@ -8393,7 +8393,11 @@ public sealed class ConversacionesService(
                 // igual en AlfaKnowledge puede traer una cita débil (ej. la página de presentación del
                 // bot) que después se le adjunta como link al cliente, aunque no preguntó nada. Se deja
                 // resolver por OpenAI directo, que ya sabe responder sin inventar un link.
-                var usaKnowledge = !EsMensajeSocial(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                // Imagen/video/archivo/audio sin texto: el asistente no tiene visión ni audio, sólo
+                // recibiría "[image]" y respondía "hay un problema con las imágenes" + DERIVA aunque el
+                // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
+                var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
+                var usaKnowledge = aclaracionMediaSinTexto is null && !EsMensajeSocial(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
@@ -8429,10 +8433,26 @@ public sealed class ConversacionesService(
                         Respuesta = respuestaConLink
                     };
                 }
+                else if (aclaracionMediaSinTexto is not null)
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = false,
+                        Respuesta = aclaracionMediaSinTexto
+                    };
+                    await TraceDiagAsync("BotMediaSinTexto|tipo=ACLARA", idConversacion, ct).ConfigureAwait(false);
+                }
                 else
                 {
                     await TraceDiagAsync($"Paso:AntesResponderAsync:herramientas={herramientas.Count}", idConversacion, ct).ConfigureAwait(false);
                     await TraceDiagAsync($"BotTools|ofrecidas={BuildToolNamesTrace(herramientas)}", idConversacion, ct).ConfigureAwait(false);
+                    // Lead + precio + precios a leads OFF: el link del catálogo se genera ACÁ, con la
+                    // herramienta productiva, antes de llamar al modelo -- no depende de que GPT decida
+                    // llamarla (caso real 4264: decía "podés ver el catálogo" sin mandar el link).
+                    var linkCatalogoParaLead = precioRequiereIdentificacion
+                        ? await ObtenerLinkCatalogoSiDisponibleAsync(herramientas, cuentaVinculada, token).ConfigureAwait(false)
+                        : null;
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
@@ -8440,6 +8460,7 @@ public sealed class ConversacionesService(
                         traceDiagAsync: (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
                         forzarConsultarPrecio: forzarConsultarPrecio,
+                        linkCatalogoParaLead: linkCatalogoParaLead,
                         ct: token).ConfigureAwait(false);
                     await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
@@ -8458,16 +8479,13 @@ public sealed class ConversacionesService(
                     // Red de seguridad: la regla del prompt es una instrucción, no una garantía. Si aun
                     // así el modelo derivó (o no respondió) ante un precio pedido por un contacto sin
                     // identificar, se responde con el texto acordado en vez de la contención.
-                    if (precioRequiereIdentificacion && EsRespuestaNoResuelta(result))
+                    // Además, si el modelo resolvió pero omitió el link (o lo cambió/inventó otro),
+                    // se garantiza el link real en la respuesta.
+                    if (precioRequiereIdentificacion)
                     {
-                        var linkCatalogo = await ObtenerLinkCatalogoSiDisponibleAsync(herramientas, cuentaVinculada, token).ConfigureAwait(false);
-                        result = new ConversacionAsistenteRespuesta
-                        {
-                            Tipo = "RESUELVE",
-                            PuedeResponder = true,
-                            Respuesta = ConstruirRespuestaPrecioRequiereIdentificacion(linkCatalogo)
-                        };
-                        await TraceDiagAsync($"BotPrecioRequiereIdentificacion|fallback=True|catalogo={linkCatalogo is not null}", idConversacion, ct).ConfigureAwait(false);
+                        var (respuestaLead, usoPlantilla) = AsegurarRespuestaPrecioLead(result, linkCatalogoParaLead);
+                        result = respuestaLead;
+                        await TraceDiagAsync($"BotPrecioRequiereIdentificacion|plantilla={usoPlantilla}|catalogo={linkCatalogoParaLead is not null}", idConversacion, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -9197,10 +9215,74 @@ public sealed class ConversacionesService(
 
     internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo)
     {
-        var respuesta = "Para pasarte el precio correcto primero necesito identificarte como cliente, ya que puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos.";
+        var respuesta = "Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta.\n\nSi ya sos cliente, decime tu nombre o razón social y seguimos.";
         return string.IsNullOrWhiteSpace(linkCatalogo)
             ? respuesta
-            : $"{respuesta} También podés ver nuestros productos acá: {linkCatalogo}";
+            : $"{respuesta}\n\n{TextoLinkCatalogoLead}{linkCatalogo.Trim()}";
+    }
+
+    private const string TextoLinkCatalogoLead = "Mientras tanto podés ver los productos disponibles acá: ";
+
+    /// <summary>
+    /// Para un mensaje que es SÓLO un adjunto ("[image]", "[document] factura.pdf", ...: el texto que
+    /// arma ExtractIncomingText cuando no hay caption) devuelve la repregunta fija; null si el mensaje
+    /// tiene texto propio (caption) o es un sticker -- esos siguen el flujo normal.
+    /// </summary>
+    internal static string? ConstruirAclaracionMediaSinTexto(string? texto)
+    {
+        var match = Regex.Match((texto ?? string.Empty).Trim(), @"^\[(image|video|document|audio)\](\s.*)?$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        return match.Groups[1].Value.ToLowerInvariant() switch
+        {
+            "image" => "Recibí la imagen. ¿Qué querés que revise?",
+            "video" => "Recibí el video. ¿Qué querés que revise?",
+            "document" => "Recibí el archivo. ¿Qué querés que revise?",
+            "audio" => "Recibí tu audio, pero por ahora no puedo escucharlo. ¿Me escribís tu consulta?",
+            _ => null
+        };
+    }
+
+    private static readonly string[] FrasesProhibidasPrecioLead =
+    [
+        "no tengo el precio", "no tengo precio", "no tengo información sobre el precio", "no encontré información sobre el precio",
+        "asesor", "operador", "un compañero", "precios en el catálogo", "catálogo con precios", "ver los precios en el catálogo"
+    ];
+
+    /// <summary>
+    /// Garantiza la respuesta acordada para "lead pide precio con precios a leads OFF": siempre
+    /// RESUELVE; si el modelo derivó, usó una frase prohibida (no tengo el precio / asesor /
+    /// catálogo con precios) o puso un link distinto del real → plantilla; si resolvió bien pero
+    /// omitió el link real → se lo agrega. Nunca deja un "podés ver el catálogo" sin link.
+    /// </summary>
+    internal static (ConversacionAsistenteRespuesta Respuesta, bool UsoPlantilla) AsegurarRespuestaPrecioLead(
+        ConversacionAsistenteRespuesta? result,
+        string? linkCatalogo)
+    {
+        var link = string.IsNullOrWhiteSpace(linkCatalogo) ? null : linkCatalogo.Trim();
+        var plantilla = new ConversacionAsistenteRespuesta
+        {
+            Tipo = "RESUELVE",
+            PuedeResponder = true,
+            Respuesta = ConstruirRespuestaPrecioRequiereIdentificacion(link)
+        };
+
+        if (EsRespuestaNoResuelta(result))
+            return (plantilla, true);
+
+        var texto = result!.Respuesta.Trim();
+        var tieneFraseProhibida = FrasesProhibidasPrecioLead.Any(f => texto.Contains(f, StringComparison.OrdinalIgnoreCase));
+        var linksAjenos = Regex.Matches(texto, @"https?://[^\s\)\]>""']+", RegexOptions.IgnoreCase)
+            .Select(m => m.Value.TrimEnd('.', ',', ';', ':', '!', '?'))
+            .Any(u => link is null || !string.Equals(u, link, StringComparison.OrdinalIgnoreCase));
+        if (tieneFraseProhibida || linksAjenos)
+            return (plantilla, true);
+
+        if (link is not null && !texto.Contains(link, StringComparison.OrdinalIgnoreCase))
+            texto = $"{texto}\n\n{TextoLinkCatalogoLead}{link}";
+
+        return (new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = texto }, false);
     }
 
     private static bool EsRespuestaNoResuelta(ConversacionAsistenteRespuesta? result)

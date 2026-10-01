@@ -245,6 +245,11 @@ public sealed class CatalogoPublicoPdfService(
 
     private static void ComposePrecioCelda(IContainer container, CatalogosCatalogoItemDto item, bool alignRight, float tamanioBase = 10f)
     {
+        // Catálogo público sin precios (CATALOGO_MUESTRA_PRECIO_CONSUMIDOR=0, ver
+        // CatalogosPublicPriceVisibility): no hay precio que mostrar, ni siquiera "$ 0,00".
+        if (item.Precio is null && item.PrecioOferta is null)
+            return;
+
         var hasOffer = HasValidOffer(item);
 
         container.Column(col =>
