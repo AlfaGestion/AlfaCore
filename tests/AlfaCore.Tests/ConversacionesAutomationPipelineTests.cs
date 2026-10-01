@@ -929,8 +929,9 @@ public sealed class ConversacionesAutomationPipelineTests
         var sinCambios = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", cliente);
         var normalizadoSinResultados = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillos de madera"}""", cliente);
 
-        Assert.StartsWith("No se encontró ningún artículo", sinCambios);
-        Assert.StartsWith("No se encontró ningún artículo", normalizadoSinResultados);
+        Assert.StartsWith("Sin coincidencias", sinCambios);
+        Assert.StartsWith("Sin coincidencias", normalizadoSinResultados);
+        Assert.Contains("ACLARA", sinCambios);
         // "tornillo" normalizado es igual al original: no se repite la búsqueda.
         Assert.Equal(["tornillo", "tornillos de madera", "tornillo madera"], crm.Busquedas);
     }
@@ -1118,6 +1119,178 @@ public sealed class ConversacionesAutomationPipelineTests
             var toolMessage = secondPayload.RootElement.GetProperty("messages").EnumerateArray()
                 .Last(m => m.GetProperty("role").GetString() == "tool");
             Assert.Contains("$ 2.500,00", toolMessage.GetProperty("content").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Flujo acordado (2026-10-01) para Cliente con precios: 1 coincidencia → RESUELVE; 2..5 → ACLARA
+    // mostrando opciones con precio; más de 5 → ACLARA pidiendo marca/medida; 0 → ACLARA.
+    [Fact]
+    public async Task Tools_ConsultarPrecio_GenericTerm_ReturnsOptionsWithAclaraInstruction()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pilas"}""", cliente);
+
+        Assert.Equal(["pilas", "pila"], crm.Busquedas);
+        Assert.StartsWith("2 coincidencias.", result);
+        Assert.Contains("ACLARA", result);
+        Assert.Contains("PILA DURACELL - AA (código 01): $ 2.500,00", result);
+        Assert.Contains("PILA DURACELL - AAA (código 02): $ 2.000,00", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_FollowUpMedida_PrefersWholeWordMatch()
+    {
+        // "AA" por substring también trae "AAA": la respuesta a la aclaración tiene que resolver la AA.
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var soloMedida = await service.EjecutarAsync("consultar_precio", """{"articulo":"AA"}""", cliente);
+        var combinado = await service.EjecutarAsync("consultar_precio", """{"articulo":"pila AA"}""", cliente);
+
+        foreach (var result in new[] { soloMedida, combinado })
+        {
+            Assert.StartsWith("1 coincidencia.", result);
+            Assert.Contains("RESUELVE", result);
+            Assert.Contains("PILA DURACELL - AA (código 01): $ 2.500,00", result);
+            Assert.DoesNotContain("AAA", result);
+        }
+    }
+
+    [Fact]
+    public void FormatearResultadoPrecio_MasDeCincoCoincidencias_PideMarcaOMedida()
+    {
+        var muchos = Enumerable.Range(1, ConversacionAsistenteHerramientasService.MaxOpcionesPrecio + 1)
+            .Select(i => new CrmCotizacionArticuloDto { IdArticulo = $"{i:00}", Codigo = $"{i:00}", Descripcion = $"PILA MARCA{i} AA", PrecioUnitarioConIva = 1000m + i })
+            .ToList();
+
+        var result = ConversacionAsistenteHerramientasService.FormatearResultadoPrecio("pilas", "pila", muchos, esConsumidorFinal: false);
+
+        Assert.StartsWith($"Más de {ConversacionAsistenteHerramientasService.MaxOpcionesPrecio} coincidencias", result);
+        Assert.Contains("ACLARA", result);
+        Assert.Contains("marca o medida", result);
+        Assert.Equal(ConversacionAsistenteHerramientasService.MaxOpcionesPrecio, result.Split('\n').Count(l => l.StartsWith("- ", StringComparison.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("¿Cuánto salen las pilas?", true)]
+    [InlineData("precio de la pila AA", true)]
+    [InlineData("¿Los precios incluyen IVA?", false)]
+    [InlineData("tienen lista de precios?", false)]
+    [InlineData("aumentaron los precios?", false)]
+    [InlineData("hola", false)]
+    public void MensajePidePrecioArticulo_ExcluyePreguntasGenerales(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensaje));
+
+    [Theory]
+    [InlineData(true, true, false, "consultar_precio")]
+    [InlineData(true, false, false, null)]
+    [InlineData(false, true, false, null)]
+    [InlineData(true, true, true, "required")]
+    public async Task Assistant_ForzarConsultarPrecio_ToolChoiceEnRondaCero(bool forzar, bool ofrecida, bool pideCatalogo, string? esperado)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new List<ConversacionAsistenteHerramientaDefinicionDto>
+            {
+                new() { Nombre = "generar_link_catalogo_publico", Descripcion = "Catálogo.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}" }
+            };
+            if (ofrecida)
+                tools.Add(new() { Nombre = "consultar_precio", Descripcion = "Precio.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}" });
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                pideCatalogo ? "¿Cuánto salen las pilas? ¿Tienen catálogo?" : "¿Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("ok"),
+                forzarConsultarPrecio: forzar);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var hasChoice = payload.RootElement.TryGetProperty("tool_choice", out var choice);
+            if (esperado is null)
+            {
+                Assert.False(hasChoice);
+            }
+            else if (esperado == "required")
+            {
+                Assert.Equal("required", choice.GetString());
+            }
+            else
+            {
+                Assert.Equal(esperado, choice.GetProperty("function").GetProperty("name").GetString());
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_PriceToolAmbiguousResult_IsTracedAsAmbiguous()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"ACLARA\",\"puede_responder\":false,\"respuesta\":\"Tenemos AA a $2.500 y AAA a $2.000. ¿Cuál necesitás?\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "consultar_precio",
+                    Descripcion = "Precio.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}"
+                }
+            };
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "¿Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("2 coincidencias. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA..."),
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            Assert.Contains("BotToolResult|tool=consultar_precio|status=AMBIGUOUS", traces);
+            Assert.Equal("ACLARA", result?.Tipo);
         }
         finally
         {

@@ -93,6 +93,24 @@ public sealed class ConversacionAsistenteHerramientasService(
             + @"|\ba\s+cuanto\b");
     }
 
+    /// <summary>
+    /// Pide el precio de un artículo puntual. Excluye preguntas generales sobre precios ("¿los precios
+    /// incluyen IVA?", "lista de precios", "¿aumentaron los precios?") que no se responden buscando un
+    /// artículo. Es la que decide forzar consultar_precio.
+    /// </summary>
+    internal static bool MensajePidePrecioArticulo(string? mensajeCliente)
+    {
+        if (!MensajePidePrecio(mensajeCliente))
+            return false;
+
+        var texto = NormalizarTexto(mensajeCliente);
+        return !Regex.IsMatch(texto,
+            @"\b(incluye|incluyen|con|sin|mas)\s+iva\b"
+            + @"|\blista\s+de\s+precios?\b"
+            + @"|\b(aumentaron|subieron|bajaron|cambiaron|actualizaron)\b"
+            + @"|\bprecios?\s+(actualizados?|vigentes?|nuevos?)\b");
+    }
+
     private static bool MensajePideCatalogo(string mensajeCliente)
     {
         var texto = NormalizarTexto(mensajeCliente);
@@ -297,7 +315,9 @@ public sealed class ConversacionAsistenteHerramientasService(
             return "No se especificó qué artículo buscar.";
 
         var codigoCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente ? cuenta.Codigo : null;
-        var resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, articulo, take: 5, ct: ct);
+        // Se piden MaxOpcionesPrecio + 1 para saber si hay "muchas" coincidencias sin traer todo.
+        var busquedaUsada = articulo.Trim();
+        var resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, busquedaUsada, take: MaxOpcionesPrecio + 1, ct: ct);
 
         // La búsqueda compartida (POS/Cotizaciones) exige que CADA palabra aparezca en el artículo:
         // "pilas doble A" no encuentra "PILA DURACELL - AA" (Base4264, 2026-09-30). No se toca ese
@@ -305,31 +325,73 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (resultados.Count == 0)
         {
             var normalizada = NormalizarBusquedaArticulo(articulo);
-            if (normalizada.Length > 0 && !string.Equals(normalizada, articulo.Trim(), StringComparison.OrdinalIgnoreCase))
-                resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, normalizada, take: 5, ct: ct);
+            if (normalizada.Length > 0 && !string.Equals(normalizada, busquedaUsada, StringComparison.OrdinalIgnoreCase))
+            {
+                busquedaUsada = normalizada;
+                resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, busquedaUsada, take: MaxOpcionesPrecio + 1, ct: ct);
+            }
         }
 
-        if (resultados.Count == 0)
-            return $"No se encontró ningún artículo que coincida con \"{articulo}\".";
+        return FormatearResultadoPrecio(articulo, busquedaUsada, resultados, esConsumidorFinal: codigoCliente is null);
+    }
 
-        // Consumidor final/lead (sin cuenta Cliente): si la base no tiene bien configurado el precio
-        // de consumidor final, el resolver general puede devolver 0 -- no rediseñamos ese motor (lo
-        // usan POS/Cotizaciones/Crm), pero acá no debe salir como si fuera un precio real.
-        var esConsumidorFinal = codigoCliente is null;
-        var sb = new StringBuilder();
-        foreach (var art in resultados)
+    internal const int MaxOpcionesPrecio = 5;
+
+    /// <summary>
+    /// Arma el resultado de consultar_precio con una instrucción explícita para el modelo según
+    /// cuántas coincidencias hubo (1 → RESUELVE; 2..5 → ACLARA mostrando opciones con precio; más de
+    /// 5 → ACLARA pidiendo marca/medida; 0 → ACLARA pidiendo marca/medida). La búsqueda es por
+    /// substring, así que "AA" también trae "AAA": si algunas coincidencias contienen TODOS los
+    /// términos como palabra completa, se usan sólo esas.
+    /// </summary>
+    internal static string FormatearResultadoPrecio(
+        string articuloPedido,
+        string busquedaUsada,
+        IReadOnlyList<CrmCotizacionArticuloDto> resultados,
+        bool esConsumidorFinal)
+    {
+        if (resultados.Count == 0)
+            return $"Sin coincidencias para \"{articuloPedido}\". Respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
+
+        var hayMas = resultados.Count > MaxOpcionesPrecio;
+        var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();
+        if (!hayMas)
         {
+            var terminos = PalabrasCompletas(busquedaUsada);
+            var exactos = candidatos.Where(a => terminos.IsSubsetOf(PalabrasCompletas($"{a.IdArticulo} {a.Codigo} {a.Descripcion}"))).ToList();
+            if (exactos.Count > 0 && exactos.Count < candidatos.Count)
+                candidatos = exactos;
+        }
+
+        var lineas = new StringBuilder();
+        foreach (var art in candidatos)
+        {
+            var codigo = string.IsNullOrWhiteSpace(art.Codigo) ? art.IdArticulo : art.Codigo;
+            // Consumidor final/lead (sin cuenta Cliente): si la base no tiene bien configurado el precio
+            // de consumidor final, el resolver general puede devolver 0 -- no rediseñamos ese motor (lo
+            // usan POS/Cotizaciones/Crm), pero acá no debe salir como si fuera un precio real.
             if (esConsumidorFinal && art.PrecioUnitarioConIva <= 0)
             {
-                sb.AppendLine($"- {art.Descripcion} (código {art.Codigo}): precio no disponible, hay que consultarlo.");
+                lineas.AppendLine($"- {art.Descripcion} (código {codigo}): precio no disponible, hay que consultarlo.");
                 continue;
             }
 
-            sb.AppendLine(
-                $"- {art.Descripcion} (código {art.Codigo}): $ {art.PrecioUnitarioConIva.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (IVA incluido)");
+            lineas.AppendLine(
+                $"- {art.Descripcion} (código {codigo}): $ {art.PrecioUnitarioConIva.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (IVA incluido)");
         }
-        return sb.ToString().Trim();
+
+        var detalle = lineas.ToString().Trim();
+        if (hayMas)
+            return $"Más de {MaxOpcionesPrecio} coincidencias para \"{articuloPedido}\" (se muestran {MaxOpcionesPrecio}). Respondé tipo ACLARA sin listar todos los precios: preguntale qué marca o medida busca, mencionando como ejemplo algunas de estas opciones.\n{detalle}";
+        if (candidatos.Count == 1)
+            return $"1 coincidencia. Respondé tipo RESUELVE informando este precio:\n{detalle}";
+        return $"{candidatos.Count} coincidencias. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA mostrando estas opciones con su precio y preguntando cuál necesita (una sola pregunta):\n{detalle}";
     }
+
+    private static HashSet<string> PalabrasCompletas(string? texto)
+        => Regex.Split(NormalizarTexto(texto), "[^a-z0-9]+")
+            .Where(p => p.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
 
     private async Task<string> EjecutarConsultarSaldoTotalAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
     {

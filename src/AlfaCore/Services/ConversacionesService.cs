@@ -8378,6 +8378,12 @@ public sealed class ConversacionesService(
                     : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
                 var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto, mensajePrevioCliente);
                 var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada, texto, mensajePrevioCliente);
+                // Si el bot ya repreguntó (ACLARA) y el cliente contesta, ese mensaje completa la
+                // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
+                var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
+                var forzarConsultarPrecio = !precioRequiereIdentificacion
+                    && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
+                        || (ultimaRespuestaFueAclaracion && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
@@ -8433,6 +8439,7 @@ public sealed class ConversacionesService(
                         herramientas, ejecutarHerramientaAsync,
                         traceDiagAsync: (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
+                        forzarConsultarPrecio: forzarConsultarPrecio,
                         ct: token).ConfigureAwait(false);
                     await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
@@ -8462,6 +8469,14 @@ public sealed class ConversacionesService(
                         };
                         await TraceDiagAsync($"BotPrecioRequiereIdentificacion|fallback=True|catalogo={linkCatalogo is not null}", idConversacion, ct).ConfigureAwait(false);
                     }
+                }
+
+                // Nunca dos aclaraciones seguidas: si el bot ya repreguntó y vuelve a necesitar
+                // preguntar, pasa a un operador (contención estándar) en vez de insistir.
+                if (ultimaRespuestaFueAclaracion && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                {
+                    await TraceDiagAsync("BotAclaracionRepetida|derivaEnLugarDeRepreguntar=True", idConversacion, ct).ConfigureAwait(false);
+                    result = null;
                 }
 
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
@@ -8508,6 +8523,10 @@ public sealed class ConversacionesService(
 
                 if (tipo == "ACLARA")
                 {
+                    // Además de informar al operador, es la marca persistida que usa
+                    // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
+                    await AddInternalEventCoreAsync(idConversacion, NotaBotAclaracion,
+                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                     await _appEvents.LogAuditAsync(
                         "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
                         idConversacion.ToString(CultureInfo.InvariantCulture),
@@ -9130,8 +9149,50 @@ public sealed class ConversacionesService(
         return sinIdentificar
             && config.AsistenteHerramientaPrecios
             && !config.CatalogoMuestraPrecioConsumidor
-            && (ConversacionAsistenteHerramientasService.MensajePidePrecio(texto)
-                || ConversacionAsistenteHerramientasService.MensajePidePrecio(mensajePrevioCliente));
+            && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
+                || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
+    }
+
+    internal const string NotaBotAclaracion = "🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
+    private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// True si lo último que salió hacia el cliente fue una aclaración del bot (marcada con
+    /// <see cref="NotaBotAclaracion"/>, que se agrega justo después del mensaje) y fue reciente. Si
+    /// después respondió un operador o el bot con otro tipo, el último SALIENTE es posterior a la
+    /// nota y da false.
+    /// </summary>
+    private async Task<bool> UltimaRespuestaBotFueAclaracionAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(Direction, N'') AS Direction, FechaHora
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id
+              AND (Direction = N'SALIENTE'
+                   OR (Direction = N'NOTA_INTERNA' AND MessageType = N'SYSTEM' AND CAST(Texto AS nvarchar(max)) = @Nota))
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Nota", NotaBotAclaracion);
+            await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            if (!await rd.ReadAsync(ct).ConfigureAwait(false))
+                return false;
+
+            var esNota = string.Equals(GetString(rd, 0), "NOTA_INTERNA", StringComparison.Ordinal);
+            var fecha = rd.IsDBNull(1) ? DateTime.MinValue : rd.GetDateTime(1);
+            return esNota && BusinessNow() - fecha <= VentanaUltimaAclaracion;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Sin el dato no se puede garantizar "no repreguntar": se asume que no hubo aclaración
+            // previa (comportamiento anterior), sin cortar la respuesta del bot.
+            return false;
+        }
     }
 
     internal static string ConstruirRespuestaPrecioRequiereIdentificacion(string? linkCatalogo)
