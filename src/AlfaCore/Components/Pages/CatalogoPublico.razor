@@ -11,6 +11,7 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.ICatalogoClienteLinkService ClienteLinkSvc
 @inject AlfaCore.Services.IPortalClienteCatalogoState PortalCatalogoState
 @inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -75,7 +76,43 @@
                     </AlfaButton>
                 </div>
                 }
+                else if (_clientePorLink is not null)
+                {
+                <div class="catalogo-publico-hero__actions">
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetClientePorLinkLabel()</AlfaTag>
+                </div>
+                }
+                else if (_catalogo is { PreciosVisibles: false } && _effectiveIdBase is > 0)
+                {
+                <div class="catalogo-publico-hero__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-person-check" Disabled="@_sessionBusy" OnClick="MostrarLoginCliente">
+                        Soy cliente
+                    </AlfaButton>
+                </div>
+                }
             </section>
+        }
+
+        @if (_mostrarLoginCliente && !IsAuthenticatedForCurrentCatalog)
+        {
+            @* Mismo login de cliente que ya usa el carrito (CatalogoCarrito): código + clave. *@
+            <CatalogoClienteLoginPanel CatalogoNombre="@_catalogo?.Nombre"
+                                        VigenciaTexto="@null"
+                                        BrandLogoUrl="@GetBrandingLogoUrl()"
+                                        BrandName="@GetBrandingName()"
+                                        IdWeb="@idweb"
+                                        IdBase="@_effectiveIdBase"
+                                        Codigo="@_loginCodigo"
+                                        CodigoChanged="v => _loginCodigo = v"
+                                        Password="@_loginPassword"
+                                        PasswordChanged="v => _loginPassword = v"
+                                        ShowPassword="@_loginShowPassword"
+                                        ShowPasswordChanged="v => _loginShowPassword = v"
+                                        Busy="@_sessionBusy"
+                                        Feedback="@_loginFeedback"
+                                        OnSubmit="LoginClienteAsync"
+                                        VolverUrl="@GetPublicCatalogUrl()"
+                                        VolverTexto="Volver al catálogo" />
         }
 
         @if (_catalogo is null)
@@ -489,6 +526,20 @@
     [Parameter] public bool Embedded { get; set; }
     [Parameter] public string? PublicToken { get; set; }
 
+    /// <summary>Credencial del link personal de cliente ("?c=", ver CatalogoClienteLinkService).
+    /// Inválida/vencida/de otra base → se ignora y el catálogo se ve como anónimo.</summary>
+    [SupplyParameterFromQuery(Name = AlfaCore.Services.CatalogoClienteLinkService.QueryParameter)]
+    public string? ClienteCredencial { get; set; }
+
+    private AlfaCore.Services.CatalogoClienteIdentificado? _clientePorLink;
+    private int _clientePorLinkIdReferencia;
+    private string? _pdfCredencialCliente;
+    private bool _mostrarLoginCliente;
+    private string _loginCodigo = string.Empty;
+    private string _loginPassword = string.Empty;
+    private bool _loginShowPassword;
+    private AppUiMessage? _loginFeedback;
+
     /// <summary>Segmento "slug-token" resuelto cuando se entró por /{idweb}/catalogo/{PublicToken}; null en la ruta legacy por idbase/IdInsert.</summary>
     private string? _publicLinkRouteSegment;
 
@@ -689,7 +740,7 @@
 
         // Si el visitante acaba de loguearse como cliente y venía viendo el catálogo sin precios, se
         // vuelve a armar (desde el caché, que tiene el catálogo completo) para que vea los precios.
-        var debeMostrarPreciosAlCliente = _catalogo is { PreciosVisibles: false } && IsAuthenticatedForCurrentCatalog;
+        var debeMostrarPreciosAlCliente = _catalogo is { PreciosVisibles: false } && ClienteIdentificadoParaCatalogo;
         if (_catalogo is not null
             && _catalogo.IdInsert == IdInsert
             && _loadPhase == CatalogoLoadPhase.Ready
@@ -962,6 +1013,8 @@
         _effectiveIdBase = link.IdBase;
         _publicLinkRouteSegment = link.RouteSegment;
         IdInsert = link.IdReferencia;
+        _clientePorLink = null;
+        _clientePorLinkIdReferencia = 0;
 
         SessionSvc.SetWebhookOverride(new SessionDto
         {
@@ -983,6 +1036,16 @@
         catch
         {
             // El override en memoria ya quedó activo; el storage solo acompaña la navegación.
+        }
+
+        // Link personal de cliente: el alcance lo fija el link público ya resuelto (base, idweb,
+        // catálogo), nunca la credencial. Cualquier falla → anónimo (sin precios si la base no los
+        // muestra a leads).
+        if (!string.IsNullOrWhiteSpace(ClienteCredencial))
+        {
+            _clientePorLink = await ClienteLinkSvc.ValidarCredencialAsync(ClienteCredencial, idweb ?? string.Empty, link.IdBase, link.IdReferencia);
+            _clientePorLinkIdReferencia = _clientePorLink is null ? 0 : link.IdReferencia;
+            _pdfCredencialCliente = _clientePorLink is null ? null : ClienteCredencial;
         }
 
         _routeSessionError = false;
@@ -1307,10 +1370,19 @@
     /// catálogo conserva los precios, como antes. Si no se puede leer la configuración, se falla
     /// cerrado: sin precios para el anónimo.
     /// </summary>
+    /// <summary>Cliente identificado para ESTE catálogo: logueado en el catálogo, o con link personal
+    /// válido emitido para este mismo catálogo.</summary>
+    private bool ClienteIdentificadoParaCatalogo
+        => IsAuthenticatedForCurrentCatalog
+           || (_clientePorLink is not null && _clientePorLinkIdReferencia > 0 && _clientePorLinkIdReferencia == IdInsert);
+
     private async Task<CatalogosCatalogoDetalleDto> AplicarVisibilidadPreciosAsync(CatalogosCatalogoDetalleDto catalogo)
     {
-        if (IsAuthenticatedForCurrentCatalog)
+        if (ClienteIdentificadoParaCatalogo)
+        {
+            await AsegurarCredencialPdfClienteAsync();
             return catalogo;
+        }
 
         bool muestraPrecios;
         try
@@ -1326,6 +1398,86 @@
         if (!muestraPrecios)
             _ordenPrecio = string.Empty;
         return AlfaCore.Services.CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: false);
+    }
+
+    /// <summary>
+    /// El PDF es un request HTTP aparte (sin la sesión de esta página): si el visitante está
+    /// identificado como cliente, el link del PDF lleva una credencial personal para que el
+    /// endpoint aplique la misma regla. Logueado → se emite una para su cliente; link personal →
+    /// se reutiliza la recibida.
+    /// </summary>
+    private async Task AsegurarCredencialPdfClienteAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_pdfCredencialCliente) || !IsAuthenticatedForCurrentCatalog)
+            return;
+
+        var cliente = CatalogoClienteSession.CurrentClient;
+        var idBase = GetEffectiveIdBase();
+        if (cliente is null || idBase is not > 0 || IdInsert <= 0 || string.IsNullOrWhiteSpace(idweb))
+            return;
+
+        try
+        {
+            _pdfCredencialCliente = await ClienteLinkSvc.CrearCredencialAsync(idweb, idBase.Value, IdInsert, cliente.CodigoCliente);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CatalogoPublico: no se pudo emitir la credencial del PDF de cliente. IdWeb={IdWeb}", idweb);
+        }
+    }
+
+    private string GetClientePorLinkLabel()
+        => string.IsNullOrWhiteSpace(_clientePorLink?.RazonSocial) ? _clientePorLink?.CodigoCliente ?? string.Empty : _clientePorLink.RazonSocial;
+
+    private void MostrarLoginCliente()
+    {
+        _loginFeedback = null;
+        _mostrarLoginCliente = true;
+    }
+
+    /// <summary>"Soy cliente": el mismo login de cliente del catálogo que usa el carrito
+    /// (ICatalogosClienteSessionService.LoginAsync, código + clave). Logueado → precios.</summary>
+    private async Task LoginClienteAsync()
+    {
+        _loginFeedback = null;
+        _sessionBusy = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogoClienteSession.LoginAsync(new CatalogosClienteLoginRequestDto
+            {
+                CodigoCliente = _loginCodigo,
+                Password = _loginPassword,
+                IdWeb = idweb,
+                IdBase = _effectiveIdBase,
+                IdInsert = IdInsert
+            }), "No pudimos validar el acceso en este momento. Intentá nuevamente.");
+
+            _loginPassword = string.Empty;
+            if (!result.Success || result.Value is null)
+            {
+                _loginFeedback = result.Feedback;
+                return;
+            }
+
+            try
+            {
+                await Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty);
+            }
+            catch
+            {
+                // La sesión ya quedó activa en el servidor; el storage sólo la recuerda en el navegador.
+            }
+
+            _mostrarLoginCliente = false;
+            await RefreshCatalogAsync();
+        }
+        finally
+        {
+            _sessionBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
@@ -1357,7 +1509,10 @@
         if (!string.IsNullOrWhiteSpace(_publicLinkRouteSegment) && !string.IsNullOrWhiteSpace(idweb))
         {
             var publicRelative = $"/api/catalogos/public/{Uri.EscapeDataString(idweb)}/{Uri.EscapeDataString(_publicLinkRouteSegment)}/pdf";
-            return $"{publicRelative}?vista={Uri.EscapeDataString(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}";
+            var credencial = ClienteIdentificadoParaCatalogo && !string.IsNullOrWhiteSpace(_pdfCredencialCliente)
+                ? $"&{AlfaCore.Services.CatalogoClienteLinkService.QueryParameter}={Uri.EscapeDataString(_pdfCredencialCliente)}"
+                : string.Empty;
+            return $"{publicRelative}?vista={Uri.EscapeDataString(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}{credencial}";
         }
 
         var query = new List<string>();

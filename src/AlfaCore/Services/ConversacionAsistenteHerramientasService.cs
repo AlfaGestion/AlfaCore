@@ -29,7 +29,8 @@ public sealed class ConversacionAsistenteHerramientasService(
     ICentralClientesService centralClientesService,
     IPortalClienteService portalClienteService,
     IProveedorSaldoService proveedorSaldoService,
-    IConversacionesConfigService conversacionesConfigService) : IConversacionAsistenteHerramientasService
+    IConversacionesConfigService conversacionesConfigService,
+    ICatalogoClienteLinkService catalogoClienteLinkService) : IConversacionAsistenteHerramientasService
 {
     private const string ToolConsultarPrecio = "consultar_precio";
     private const string ToolConsultarSaldoTotal = "consultar_saldo_total";
@@ -538,7 +539,20 @@ public sealed class ConversacionAsistenteHerramientasService(
         var link = await publicLinkService.TryGetExistingAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, ct)
             ?? await publicLinkService.GetOrCreateAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, catalogo.Nombre, ct);
 
-        return $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
+        var url = $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
+
+        // Cliente identificado (nunca ambiguo) → link PERSONAL: el mismo catálogo + una credencial
+        // firmada server-side con su identidad, para que vea los precios sin volver a loguearse.
+        // Lead/Proveedor/ambigua → link público (sin precios si la base no los muestra a leads).
+        // La cuenta viene resuelta por el servidor, nunca de los argumentos del modelo.
+        if (cuenta is { EsAmbigua: false, Tipo: CuentaComercialTipo.Cliente } && !string.IsNullOrWhiteSpace(cuenta.Codigo))
+        {
+            var credencial = await catalogoClienteLinkService.CrearCredencialAsync(idWeb, idBase, link.IdReferencia, cuenta.Codigo, ct);
+            if (!string.IsNullOrWhiteSpace(credencial))
+                url += $"?{CatalogoClienteLinkService.QueryParameter}={Uri.EscapeDataString(credencial)}";
+        }
+
+        return url;
     }
 
     private async Task<(string IdWeb, int IdBase)?> ResolverContextoCatalogoPublicoAsync(CancellationToken ct)

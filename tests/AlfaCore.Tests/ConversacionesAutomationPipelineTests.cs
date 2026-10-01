@@ -790,7 +790,8 @@ public sealed class ConversacionesAutomationPipelineTests
         IConversacionesConfigService? config = null,
         ICentralBasesService? centralBases = null,
         ICentralClientesService? centralClientes = null,
-        ISessionService? session = null)
+        ISessionService? session = null,
+        ICatalogoClienteLinkService? clienteLinks = null)
         => new(
             new FakeConfiguration(),
             session ?? new FakeSessionService(),
@@ -801,7 +802,25 @@ public sealed class ConversacionesAutomationPipelineTests
             centralClientes ?? new FakeCentralClientesService(),
             portal ?? new ThrowingPortalClienteService(),
             proveedor ?? new ThrowingProveedorSaldoService(),
-            config ?? new FakeConversacionesConfigService());
+            config ?? new FakeConversacionesConfigService(),
+            clienteLinks ?? new FakeCatalogoClienteLinkService());
+
+    /// <summary>Credencial reconocible ("CRED-{base}-{catálogo}-{cliente}") para afirmar que la tool
+    /// pidió el link personal con el alcance correcto. La criptografía real se prueba en
+    /// CatalogoClienteLinkTests.</summary>
+    private sealed class FakeCatalogoClienteLinkService : ICatalogoClienteLinkService
+    {
+        public List<(string IdWeb, int IdBase, int IdReferencia, string Cliente)> Emitidas { get; } = [];
+
+        public Task<string?> CrearCredencialAsync(string idWeb, int idBase, int idReferenciaCatalogo, string codigoCliente, CancellationToken ct = default)
+        {
+            Emitidas.Add((idWeb, idBase, idReferenciaCatalogo, codigoCliente));
+            return Task.FromResult<string?>($"CRED-{idBase}-{idReferenciaCatalogo}-{codigoCliente}");
+        }
+
+        public Task<CatalogoClienteIdentificado?> ValidarCredencialAsync(string? credencial, string idWeb, int idBase, int idReferenciaCatalogo, CancellationToken ct = default)
+            => Task.FromResult<CatalogoClienteIdentificado?>(null);
+    }
 
     [Fact]
     public void Tools_NoToolsAreOfferedWhenTheMessageHasNoKeywordSignal()
@@ -1522,6 +1541,52 @@ public sealed class ConversacionesAutomationPipelineTests
             Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
             Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
         }
+    }
+
+    // Link personal de catálogo (2026-10-01): Cliente identificado → credencial firmada con su
+    // identidad; Lead/ambigua/proveedor → link público sin credencial.
+    [Fact]
+    public async Task Tools_CatalogLink_IdentifiedClient_GetsPersonalSignedLink()
+    {
+        var clienteLinks = new FakeCatalogoClienteLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: new FakeCentralPublicLinkService(),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }),
+            clienteLinks: clienteLinks);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cliente);
+
+        var emitida = Assert.Single(clienteLinks.Emitidas);
+        Assert.Equal(("empresa-a", 4271, "112010002"), (emitida.IdWeb, emitida.IdBase, emitida.Cliente));
+        Assert.StartsWith("https://portal.example.com/empresa-a/catalogo/catalogo-tok123?c=", result);
+        Assert.EndsWith(Uri.EscapeDataString($"CRED-4271-{emitida.IdReferencia}-112010002"), result);
+    }
+
+    [Theory]
+    [InlineData("lead")]
+    [InlineData("ambigua")]
+    [InlineData("proveedor")]
+    public async Task Tools_CatalogLink_NotIdentifiedClient_GetsPublicLinkWithoutCredential(string tipo)
+    {
+        var clienteLinks = new FakeCatalogoClienteLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: new FakeCentralPublicLinkService(),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }),
+            clienteLinks: clienteLinks);
+        ConversacionCuentaVinculadaDto? cuenta = tipo switch
+        {
+            "ambigua" => new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true },
+            "proveedor" => new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"),
+            _ => null
+        };
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
+
+        Assert.Equal("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Empty(clienteLinks.Emitidas);
     }
 
     [Fact]

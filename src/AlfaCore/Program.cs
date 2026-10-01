@@ -252,6 +252,7 @@ public class Program
         builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
         builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
         builder.Services.AddScoped<ICentralPublicLinkService, CentralPublicLinkService>();
+        builder.Services.AddScoped<ICatalogoClienteLinkService, CatalogoClienteLinkService>();
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
@@ -963,6 +964,8 @@ public class Program
             ICentralBasesService centralBasesSvc,
             ICentralPublicLinkService publicLinkSvc,
             ISessionService sessionSvc,
+            ICatalogoClienteLinkService clienteLinkSvc,
+            HttpRequest request,
             CancellationToken ct) =>
         {
             var link = await publicLinkSvc.ResolveAsync(idweb, PublicLinkTipos.Catalogo, token, ct);
@@ -986,7 +989,15 @@ public class Program
                 Activa = true
             });
 
-            return await GenerarPdfCatalogoAsync(link.IdReferencia, idweb, vista, link.IdBase, catalogosSvc, puntoVentaSvc, pdfSvc, ct);
+            // Misma identidad que la página: credencial personal "?c=" validada con el alcance del
+            // link ya resuelto (base, idweb, catálogo). Inválida/ausente → PDF anónimo.
+            var credencial = request.Query[CatalogoClienteLinkService.QueryParameter].ToString();
+            var clienteIdentificado = string.IsNullOrWhiteSpace(credencial)
+                ? null
+                : await clienteLinkSvc.ValidarCredencialAsync(credencial, idweb, link.IdBase, link.IdReferencia, ct);
+
+            return await GenerarPdfCatalogoAsync(link.IdReferencia, idweb, vista, link.IdBase, catalogosSvc, puntoVentaSvc, pdfSvc, ct,
+                visitanteIdentificado: clienteIdentificado is not null);
         }).AllowAnonymous();
 
         async Task<(bool Ok, string CodigoCliente, string NombreCliente, string NombreEmpresa, byte[]? LogoBytes, IResult? Error)> ResolvePortalClienteExportContextAsync(
@@ -3512,14 +3523,17 @@ public class Program
         IInterfacesCatalogosService catalogosSvc,
         IPuntoVentaService puntoVentaSvc,
         ICatalogoPublicoPdfService pdfSvc,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool visitanteIdentificado = false)
     {
         var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
         if (catalogo is null)
             return Results.NotFound();
 
-        // El PDF público es anónimo (no hay sesión de cliente del catálogo): respeta
-        // CATALOGO_MUESTRA_PRECIO_CONSUMIDOR. Si no se puede leer, falla cerrado (sin precios).
+        // Misma regla que la página: anónimo respeta CATALOGO_MUESTRA_PRECIO_CONSUMIDOR (si no se
+        // puede leer, falla cerrado: sin precios); cliente identificado por credencial personal
+        // validada (sólo en la ruta con token) → con precios. La ruta legacy por IdInsert siempre es
+        // anónima.
         bool muestraPrecios;
         try
         {
@@ -3530,7 +3544,7 @@ public class Program
             muestraPrecios = false;
         }
 
-        catalogo = CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: false);
+        catalogo = CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: visitanteIdentificado);
 
         var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
         var settings = await puntoVentaSvc.GetSettingsAsync(ct);
