@@ -87,17 +87,55 @@ public sealed class CatalogoPublicoPreciosVisibilityTests
         Assert.DoesNotContain("2000", json);
     }
 
+    // Semántica única (autoridad: checkbox de Configuración, que se ve tildado sólo con "1").
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData(" 1 ", true)]
+    [InlineData("0", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("SI", false)]
+    [InlineData("true", false)]
+    public void CatalogoPrecioConsumidorSetting_SoloUnoEsOn_AusenteEsOff(string? valor, bool esperado)
+        => Assert.Equal(esperado, CatalogoPrecioConsumidorSetting.EstaActivo(valor));
+
+    /// <summary>clave=0 / clave=1 / clave ausente: UI+bot (ConversacionesConfigService.ReadValue + el
+    /// helper, que es exactamente cómo se arma CatalogoMuestraPrecioConsumidor) y catálogo público/PDF
+    /// (helper sobre el valor guardado, null si no hay fila) deciden lo mismo, y el catálogo que ve el
+    /// anónimo es coherente con esa decisión.</summary>
     [Theory]
     [InlineData("0", false)]
-    [InlineData(" 0 ", false)]
-    [InlineData("NO", false)]
-    [InlineData("false", false)]
     [InlineData("1", true)]
-    [InlineData("SI", true)]
-    [InlineData("", true)]
-    [InlineData(null, true)]
-    public void InterpretarMuestraPrecioConsumidor_SoloUnApagadoExplicitoOcultaPrecios(string? valor, bool esperado)
-        => Assert.Equal(esperado, InterfacesCatalogosService.InterpretarMuestraPrecioConsumidor(valor));
+    [InlineData(null, false)]
+    public void ClaveCeroUnoAusente_UiBotYCatalogoInterpretanIgual(string? valorGuardado, bool esperado)
+    {
+        var valores = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (valorGuardado is not null)
+            valores[CatalogoPrecioConsumidorSetting.Clave] = valorGuardado;
+
+        var uiYBot = CatalogoPrecioConsumidorSetting.EstaActivo(ConversacionesConfigService.ReadValue(valores, CatalogoPrecioConsumidorSetting.Clave, string.Empty));
+        var catalogoYPdf = CatalogoPrecioConsumidorSetting.EstaActivo(valorGuardado);
+        var catalogoAnonimo = CatalogosPublicPriceVisibility.ParaVisitante(Catalogo(), catalogoYPdf, visitanteAutenticado: false);
+
+        Assert.Equal(esperado, uiYBot);
+        Assert.Equal(esperado, catalogoYPdf);
+        Assert.Equal(esperado, catalogoAnonimo.PreciosVisibles);
+        Assert.Equal(esperado, catalogoAnonimo.Articulos.All(a => a.Precio is not null));
+    }
+
+    /// <summary>Ninguna otra interpretación de la clave: los dos lectores usan el helper.</summary>
+    [Fact]
+    public void Source_LectoresDeLaClaveUsanElHelperUnico()
+    {
+        var root = FindRepositoryRoot();
+        var config = File.ReadAllText(Path.Combine(root, "src", "AlfaCore", "Services", "ConversacionesConfigService.cs"));
+        var catalogos = File.ReadAllText(Path.Combine(root, "src", "AlfaCore", "Services", "InterfacesCatalogosService.cs"));
+
+        Assert.Contains("CatalogoMuestraPrecioConsumidor = CatalogoPrecioConsumidorSetting.EstaActivo(", config);
+        Assert.Contains("CatalogoPrecioConsumidorSetting.EstaActivo(", catalogos);
+        Assert.DoesNotContain("\"CATALOGO_MUESTRA_PRECIO_CONSUMIDOR\", string.Empty) == \"1\"", config);
+        Assert.DoesNotContain("InterpretarMuestraPrecioConsumidor", catalogos);
+    }
 
     /// <summary>Todas las salidas públicas anónimas pasan por la visibilidad de precios; el carrito
     /// (cliente autenticado) y la confirmación de pedido no.</summary>

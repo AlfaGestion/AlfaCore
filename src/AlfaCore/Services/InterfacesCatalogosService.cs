@@ -948,16 +948,16 @@ public sealed class InterfacesCatalogosService(
     public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default)
         => GetCatalogoInternalAsync(idInsert, soloPublico: true, ct, expectedBaseId);
 
-    private const string MuestraPrecioConsumidorConfigKey = "CATALOGO_MUESTRA_PRECIO_CONSUMIDOR";
-
     public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "MuestraPreciosConsumidorFinal", async token =>
         {
             var connectionString = ResolveConnectionString(expectedBaseId, "Catalogos.MuestraPreciosConsumidorFinal");
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            // Misma semántica que el checkbox de Configuración (ver CatalogoPrecioConsumidorSetting):
+            // sin tabla o sin clave → OFF.
             if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", token))
-                return true;
+                return false;
 
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
             var row = await cn.QuerySingleOrDefaultAsync<(string? Valor, string? ValorAux)?>(new CommandDefinition(
@@ -966,23 +966,12 @@ public sealed class InterfacesCatalogosService(
                 FROM dbo.TA_CONFIGURACION
                 WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
                 """,
-                new { Clave = MuestraPrecioConsumidorConfigKey },
+                new { Clave = CatalogoPrecioConsumidorSetting.Clave },
                 cancellationToken: token));
-            if (row is null)
-                return true;
 
-            return InterpretarMuestraPrecioConsumidor(ResolveStoredValue(row.Value.Valor ?? string.Empty, row.Value.ValorAux ?? string.Empty));
+            return CatalogoPrecioConsumidorSetting.EstaActivo(
+                row is null ? null : ResolveStoredValue(row.Value.Valor ?? string.Empty, row.Value.ValorAux ?? string.Empty));
         }, "No se pudo leer la visibilidad de precios del catálogo.", ct);
-
-    /// <summary>Sólo un "0"/"NO"/"FALSE" explícito oculta precios; vacío o ausente conserva el
-    /// comportamiento histórico (el catálogo público siempre mostró precios).</summary>
-    internal static bool InterpretarMuestraPrecioConsumidor(string? valor)
-    {
-        var v = (valor ?? string.Empty).Trim();
-        return !(v == "0"
-                 || string.Equals(v, "NO", StringComparison.OrdinalIgnoreCase)
-                 || string.Equals(v, "FALSE", StringComparison.OrdinalIgnoreCase));
-    }
 
     public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveCatalogoVigencia", async token =>

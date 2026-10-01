@@ -27,9 +27,10 @@ public interface IInterfacesCatalogosService
     Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default);
 
     /// <summary>
-    /// false sólo si la base tiene CATALOGO_MUESTRA_PRECIO_CONSUMIDOR=0 explícito ("Mostrar precios a
-    /// consumidores finales / leads" desactivado): entonces un catálogo servido a un visitante anónimo
-    /// no debe mostrar precios. Sin la clave se conserva el comportamiento histórico (con precios).
+    /// "Mostrar precios a consumidores finales / leads" (CATALOGO_MUESTRA_PRECIO_CONSUMIDOR) con la
+    /// misma semántica que el checkbox de Configuración y el bot (CatalogoPrecioConsumidorSetting):
+    /// sólo "1" = true; ausente/vacío/otro = false. Con false, un catálogo servido a un visitante
+    /// anónimo no muestra precios.
     /// </summary>
     Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default);
     Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default);
