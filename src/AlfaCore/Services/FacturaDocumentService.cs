@@ -147,6 +147,7 @@ public sealed class FacturaDocumentService(
             var tc = tipoDocumento switch
             {
                 TiposDocumentoCore.RemitoR or TiposDocumentoCore.RemitoX => "RM",
+                TiposDocumentoCore.NotaPedido => "NP",
                 TiposDocumentoCore.CobranzaContado => "CBCT",
                 TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaProforma => "CB",
                 _ => string.Empty

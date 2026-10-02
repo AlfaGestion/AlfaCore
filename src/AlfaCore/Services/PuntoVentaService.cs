@@ -392,18 +392,26 @@ public sealed class PuntoVentaService(
             if (items.Count == 0)
                 throw new InvalidOperationException("No hay artículos cargados para cobrar.");
 
+            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? DefaultTc : request.TipoComprobante.Trim();
+            // Remito interno (RM) y Nota de pedido (NP): quedan pendientes de facturar -- no piden
+            // medio de pago, no generan cobranza ni asiento contable, ni mueven stock (igual que hoy no
+            // lo mueve ningún otro tipo de comprobante en este flujo). La factura real se sigue
+            // generando después, por ahora desde el sistema de escritorio.
+            var esRemitoONotaPedido = tc.Equals("RM", StringComparison.OrdinalIgnoreCase)
+                || tc.Equals("NP", StringComparison.OrdinalIgnoreCase);
+
             var pagos = request.Pagos
                 .Where(x => !string.IsNullOrWhiteSpace(x.CodigoMedioPago) && x.Importe > 0)
                 .ToList();
 
-            if (pagos.Count == 0)
+            if (!esRemitoONotaPedido && pagos.Count == 0)
                 throw new InvalidOperationException("No se informaron medios de pago.");
 
             var totalItems = decimal.Round(items.Sum(x => x.Subtotal), 2);
             var totalRecargos = decimal.Round(pagos.Sum(x => Math.Max(x.Recargo, 0m)), 2);
             var totalFactura = decimal.Round(totalItems + totalRecargos, 2);
             var totalPagos = decimal.Round(pagos.Sum(x => x.Importe), 2);
-            if (totalPagos + 0.01m < totalFactura)
+            if (!esRemitoONotaPedido && totalPagos + 0.01m < totalFactura)
                 throw new InvalidOperationException("El total cobrado debe cubrir al menos el total del carrito.");
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -438,7 +446,6 @@ public sealed class PuntoVentaService(
             // (incluye usuario, permisos y varias consultas adicionales).
             var cuentaConsumidorFinal = await TryReadConfigValueAsync(cn, "CUENTACONSUMIDORFINAL", token);
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
-            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? DefaultTc : request.TipoComprobante.Trim();
             if (tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase))
             {
@@ -475,6 +482,7 @@ public sealed class PuntoVentaService(
                   || EsConsumidorFinalIva(ivaCliente.Codigo, ivaCliente.Descripcion);
             var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase)
+                || esRemitoONotaPedido
                 ? "X"
                 : ResolveLetraForCliente(
                     tc,
@@ -610,67 +618,71 @@ public sealed class PuntoVentaService(
             }
 
             var caeIntento = ArcaCaeIntentoDto.NoAplica;
-            if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+            var idCobranza = 0;
+            if (!esRemitoONotaPedido)
             {
-                if (request.Progreso is not null) await request.Progreso("Enviando la factura a ARCA y obteniendo el CAE...");
-                var contextoCae = new PuntoVentaCaeContextoDto(
-                    comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
-                    comprobante.Letra, PosUNegocio, itemsFactura, totalFactura);
-                caeIntento = await EjecutarEtapaVentaAsync(
-                    "solicitar y guardar el CAE de ARCA",
-                    () => arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token, request.Progreso));
-
-                if (caeIntento.Aplica && !caeIntento.Aprobado)
+                if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
                 {
-                    if (modoFalloCae == ArcaModoFalloCae.Estricto)
-                        throw new InvalidOperationException($"AFIP no autorizó el comprobante ({caeIntento.Motivo}). La venta no se completó -- el comprobante quedó grabado sin cobranza para reintentar.");
+                    if (request.Progreso is not null) await request.Progreso("Enviando la factura a ARCA y obteniendo el CAE...");
+                    var contextoCae = new PuntoVentaCaeContextoDto(
+                        comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
+                        comprobante.Letra, PosUNegocio, itemsFactura, totalFactura);
+                    caeIntento = await EjecutarEtapaVentaAsync(
+                        "solicitar y guardar el CAE de ARCA",
+                        () => arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token, request.Progreso));
 
-                    caeIntento = caeIntento with { Estado = ArcaCaeEstado.Pendiente };
+                    if (caeIntento.Aplica && !caeIntento.Aprobado)
+                    {
+                        if (modoFalloCae == ArcaModoFalloCae.Estricto)
+                            throw new InvalidOperationException($"AFIP no autorizó el comprobante ({caeIntento.Motivo}). La venta no se completó -- el comprobante quedó grabado sin cobranza para reintentar.");
+
+                        caeIntento = caeIntento with { Estado = ArcaCaeEstado.Pendiente };
+                    }
                 }
-            }
 
-            if (request.Progreso is not null) await request.Progreso("Generando el asiento de la factura...");
-            // MV_Asientos_ValidaFechas es un trigger histórico que convierte
-            // valores dd/MM/yyyy de TA_CONFIGURACION usando el DATEFORMAT de
-            // la sesión. Fijamos DMY antes del asiento para que las bases
-            // antiguas no dependan del idioma de la conexión SQL.
-            await SetDateFormatDmyAsync(cn, token);
-            await EjecutarEtapaVentaAsync(
-                "crear el asiento de la factura",
-                () => CreateInvoiceAccountingAsync(cn, comprobante.IdComprobante, token));
-
-            // Las bases antiguas tienen procedimientos de cobranza que convierten
-            // temporalmente la fecha a dd/mm/yyyy. Fijamos el formato de sesión
-            // antes de ejecutarlos para que no dependan de la configuración regional
-            // de la conexión SQL activa.
-            if (request.Progreso is not null) await request.Progreso("Preparando la cobranza...");
-            await SetDateFormatDmyAsync(cn, token);
-            if (request.Progreso is not null) await request.Progreso("Creando la cobranza...");
-            var idCobranza = await EjecutarEtapaVentaAsync(
-                "crear la cobranza",
-                () => CreateCollectionAsync(cn, comprobante.IdComprobante, token));
-            if (request.Progreso is not null) await request.Progreso("Normalizando los datos de la cobranza...");
-            await EjecutarEtapaVentaAsync(
-                "normalizar las claves de la cobranza",
-                () => NormalizeComprobanteKeysAsync(cn, idCobranza, token));
-            if (request.Progreso is not null) await request.Progreso("Generando el asiento inicial...");
-            await EjecutarEtapaVentaAsync(
-                "crear el asiento inicial de la cobranza",
-                () => CreatePaymentSeedAsync(cn, idCobranza, token));
-
-            foreach (var pago in pagos)
-            {
-                if (request.Progreso is not null)
-                    await request.Progreso($"Registrando el medio de pago {pago.DescripcionMedioPago.Trim()}...");
+                if (request.Progreso is not null) await request.Progreso("Generando el asiento de la factura...");
+                // MV_Asientos_ValidaFechas es un trigger histórico que convierte
+                // valores dd/MM/yyyy de TA_CONFIGURACION usando el DATEFORMAT de
+                // la sesión. Fijamos DMY antes del asiento para que las bases
+                // antiguas no dependan del idioma de la conexión SQL.
+                await SetDateFormatDmyAsync(cn, token);
                 await EjecutarEtapaVentaAsync(
-                    $"grabar el medio de pago {pago.CodigoMedioPago}",
-                    () => CreatePaymentLineAsync(cn, idCobranza, pago, token));
-            }
+                    "crear el asiento de la factura",
+                    () => CreateInvoiceAccountingAsync(cn, comprobante.IdComprobante, token));
 
-            if (request.Progreso is not null) await request.Progreso("Aplicando la cobranza a la factura...");
-            await EjecutarEtapaVentaAsync(
-                "aplicar la cobranza a la factura",
-                () => CreateCollectionApplicationAsync(cn, idCobranza, comprobante.IdComprobante, token));
+                // Las bases antiguas tienen procedimientos de cobranza que convierten
+                // temporalmente la fecha a dd/mm/yyyy. Fijamos el formato de sesión
+                // antes de ejecutarlos para que no dependan de la configuración regional
+                // de la conexión SQL activa.
+                if (request.Progreso is not null) await request.Progreso("Preparando la cobranza...");
+                await SetDateFormatDmyAsync(cn, token);
+                if (request.Progreso is not null) await request.Progreso("Creando la cobranza...");
+                idCobranza = await EjecutarEtapaVentaAsync(
+                    "crear la cobranza",
+                    () => CreateCollectionAsync(cn, comprobante.IdComprobante, token));
+                if (request.Progreso is not null) await request.Progreso("Normalizando los datos de la cobranza...");
+                await EjecutarEtapaVentaAsync(
+                    "normalizar las claves de la cobranza",
+                    () => NormalizeComprobanteKeysAsync(cn, idCobranza, token));
+                if (request.Progreso is not null) await request.Progreso("Generando el asiento inicial...");
+                await EjecutarEtapaVentaAsync(
+                    "crear el asiento inicial de la cobranza",
+                    () => CreatePaymentSeedAsync(cn, idCobranza, token));
+
+                foreach (var pago in pagos)
+                {
+                    if (request.Progreso is not null)
+                        await request.Progreso($"Registrando el medio de pago {pago.DescripcionMedioPago.Trim()}...");
+                    await EjecutarEtapaVentaAsync(
+                        $"grabar el medio de pago {pago.CodigoMedioPago}",
+                        () => CreatePaymentLineAsync(cn, idCobranza, pago, token));
+                }
+
+                if (request.Progreso is not null) await request.Progreso("Aplicando la cobranza a la factura...");
+                await EjecutarEtapaVentaAsync(
+                    "aplicar la cobranza a la factura",
+                    () => CreateCollectionApplicationAsync(cn, idCobranza, comprobante.IdComprobante, token));
+            }
 
             if (request.Progreso is not null) await request.Progreso("Finalizando la operación...");
 
@@ -679,7 +691,9 @@ public sealed class PuntoVentaService(
                 "CreateSale",
                 "V_MV_CPTE",
                 comprobante.IdComprobante.ToString(),
-                "Venta POS generada con cobranza inmediata.",
+                esRemitoONotaPedido
+                    ? "Remito/Nota de pedido generado sin cobro, pendiente de facturar."
+                    : "Venta POS generada con cobranza inmediata.",
                 new
                 {
                     comprobante.IdComprobante,

@@ -3715,9 +3715,9 @@
                         }
                         else
                         {
-                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))" title="Cobrar">
-                                <i class="bi bi-cash-stack pos-charge__icon"></i>
-                                <span class="pos-charge__label">Cobrar</span>
+                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))" title="@(EsRemitoONotaPedido ? TipoComprobanteSeleccionadoLabel() : "Cobrar")">
+                                <i class="bi @(EsRemitoONotaPedido ? "bi-file-earmark-text" : "bi-cash-stack") pos-charge__icon"></i>
+                                <span class="pos-charge__label">@(EsRemitoONotaPedido ? "Generar" : "Cobrar")</span>
                             </button>
                         }
 
@@ -3744,6 +3744,8 @@
                                 <option value="FP">FP · Factura proforma</option>
                                 <option value="NCFP">NCFP · Nota de crédito proforma</option>
                             }
+                            <option value="RM">RM · Remito interno</option>
+                            <option value="NP">NP · Nota de pedido</option>
                         </select>
                     </div>
 
@@ -3974,7 +3976,7 @@
     <section class="pos-charge-modal" aria-label="Cobranza del punto de venta">
         <div class="pos-charge-modal__header">
             <div>
-                <h3>Cobranza</h3>
+                <h3>@(EsRemitoONotaPedido ? TipoComprobanteSeleccionadoLabel() : "Cobranza")</h3>
             </div>
             <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal" disabled="@_chargeSaving"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -4059,20 +4061,37 @@
                 <span>Total</span>
                 <strong>@FmtMoney(TotalCarrito)</strong>
             </div>
-            <div class="@(VueltoCobro > 0 ? "pos-charge-modal__totals-head--change" : "pos-charge-modal__totals-head--pending")">
-                @if (VueltoCobro > 0)
-                {
-                    <span>Vuelto</span>
-                    <strong>@FmtMoney(VueltoCobro)</strong>
-                }
-                else
-                {
-                    <span>Faltante</span>
-                    <strong>@FmtMoney(PendienteCobro)</strong>
-                }
-            </div>
+            @if (!EsRemitoONotaPedido)
+            {
+                <div class="@(VueltoCobro > 0 ? "pos-charge-modal__totals-head--change" : "pos-charge-modal__totals-head--pending")">
+                    @if (VueltoCobro > 0)
+                    {
+                        <span>Vuelto</span>
+                        <strong>@FmtMoney(VueltoCobro)</strong>
+                    }
+                    else
+                    {
+                        <span>Faltante</span>
+                        <strong>@FmtMoney(PendienteCobro)</strong>
+                    }
+                </div>
+            }
         </div>
 
+        @if (EsRemitoONotaPedido)
+        {
+            <div class="pos-charge-modal__body">
+                <section class="pos-charge-modal__section">
+                    <div class="pos-grid-status">
+                        Este documento queda pendiente de facturar -- no pide medio de pago, no genera
+                        cobranza ni asiento contable. La factura real se hace después, por ahora desde
+                        el sistema de escritorio.
+                    </div>
+                </section>
+            </div>
+        }
+        else
+        {
         <div class="pos-charge-modal__payment-entry">
             <input class="pos-charge-modal__code-filter"
                    @ref="_paymentMethodCodeFilterRef"
@@ -4217,13 +4236,14 @@
                 </div>
             </section>
         </div>
+        }
 
         <div class="pos-charge-modal__actions">
             <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
-                ACEPTAR E IMPRIMIR
+                @(EsRemitoONotaPedido ? "GENERAR E IMPRIMIR" : "ACEPTAR E IMPRIMIR")
             </button>
             <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
-                @(_chargeSaving ? "Grabando..." : "ACEPTAR")
+                @(_chargeSaving ? "Grabando..." : EsRemitoONotaPedido ? "GENERAR" : "ACEPTAR")
             </button>
             <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
         </div>
@@ -6620,7 +6640,7 @@
                 comprobante = "FC";
         }
 
-        _tipoComprobanteSeleccionado = comprobante is "FC" or "NC" or "FP" or "NCFP"
+        _tipoComprobanteSeleccionado = comprobante is "FC" or "NC" or "FP" or "NCFP" or "RM" or "NP"
             ? comprobante
             : "FC";
     }
@@ -6628,12 +6648,20 @@
     private void OnTipoComprobanteChanged(ChangeEventArgs args)
         => SeleccionarTipoComprobante(args.Value?.ToString() ?? "FC");
 
+    /// <summary>Remito interno (RM) y Nota de pedido (NP) quedan pendientes de facturar: no piden medio
+    /// de pago, no generan cobranza ni asiento contable (ver PuntoVentaService.CreateSaleAsync). El
+    /// checkout del POS salta directo a confirmar en vez de pedir forma de pago para estos dos.</summary>
+    private bool EsRemitoONotaPedido
+        => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "RM" or "NP";
+
     private string TipoComprobanteSeleccionadoLabel()
         => _tipoComprobanteSeleccionado switch
         {
             "NC" => "NC · Nota de crédito",
             "FP" => "FP · Factura proforma",
             "NCFP" => "NCFP · Nota de crédito proforma",
+            "RM" => "RM · Remito interno",
+            "NP" => "NP · Nota de pedido",
             _ => "EFC · Factura electrónica (FC)"
         };
 
@@ -7231,26 +7259,32 @@
             return;
         }
 
-        // Si todavía no hay líneas cargadas, aprovechamos el medio seleccionado
-        // y el importe del formulario. Así ACEPTAR y ACEPTAR E IMPRIMIR también
-        // funcionan como una carga rápida del primer medio de pago.
-        if (!_paymentLines.Any())
-            await AddSelectedPaymentAsync(focusFilterAfterAdd: false);
-
-        if (!_paymentLines.Any())
+        // Remito interno (RM) y Nota de pedido (NP) quedan pendientes de facturar: no piden medio de
+        // pago (ver EsRemitoONotaPedido / PuntoVentaService.CreateSaleAsync), así que se salta toda la
+        // validación de cobro y se confirma directo con el carrito.
+        if (!EsRemitoONotaPedido)
         {
-            if (string.IsNullOrWhiteSpace(_chargeError))
-                _chargeError = "Seleccioná un medio de pago e ingresá un importe válido.";
-            return;
-        }
+            // Si todavía no hay líneas cargadas, aprovechamos el medio seleccionado
+            // y el importe del formulario. Así ACEPTAR y ACEPTAR E IMPRIMIR también
+            // funcionan como una carga rápida del primer medio de pago.
+            if (!_paymentLines.Any())
+                await AddSelectedPaymentAsync(focusFilterAfterAdd: false);
 
-        if (!string.IsNullOrWhiteSpace(_chargeError))
-            return;
+            if (!_paymentLines.Any())
+            {
+                if (string.IsNullOrWhiteSpace(_chargeError))
+                    _chargeError = "Seleccioná un medio de pago e ingresá un importe válido.";
+                return;
+            }
 
-        if (PendienteCobro > 0.01m)
-        {
-            _chargeError = "El total cobrado debe cubrir al menos el total del carrito.";
-            return;
+            if (!string.IsNullOrWhiteSpace(_chargeError))
+                return;
+
+            if (PendienteCobro > 0.01m)
+            {
+                _chargeError = "El total cobrado debe cubrir al menos el total del carrito.";
+                return;
+            }
         }
 
         if (_idPuntoVentaActual > 0 && _turnoActual is null)

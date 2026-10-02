@@ -59,7 +59,7 @@ public static class TiposDocumentoCore
     {
         [FacturaA] = "A",
         [FacturaB] = "B",
-        [FacturaC] = "C", [RemitoR] = "R", [RemitoX] = "X",
+        [FacturaC] = "C", [RemitoR] = "R", [RemitoX] = "X", [NotaPedido] = "X",
         [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaProforma] = "X", [CobranzaContado] = "X",
         [NotaDebitoA] = "A", [NotaDebitoB] = "B", [NotaDebitoC] = "C",
         [NotaCreditoA] = "A", [NotaCreditoB] = "B", [NotaCreditoC] = "C"
@@ -113,6 +113,7 @@ public static class TiposDocumentoCore
         return codigo switch
         {
             "RM" => l == "X" ? RemitoX : RemitoR,
+            "NP" => NotaPedido,
             "CBCT" => CobranzaContado,
             "CB" => l == "X" ? CobranzaProforma : l == "B" ? CobranzaB : l == "C" ? CobranzaC : CobranzaA,
             "ND" => l == "B" ? NotaDebitoB : l == "C" ? NotaDebitoC : NotaDebitoA,
