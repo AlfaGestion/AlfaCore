@@ -948,6 +948,31 @@ public sealed class InterfacesCatalogosService(
     public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default)
         => GetCatalogoInternalAsync(idInsert, soloPublico: true, ct, expectedBaseId);
 
+    public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "MuestraPreciosConsumidorFinal", async token =>
+        {
+            var connectionString = ResolveConnectionString(expectedBaseId, "Catalogos.MuestraPreciosConsumidorFinal");
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(token);
+            // Misma semántica que el checkbox de Configuración (ver CatalogoPrecioConsumidorSetting):
+            // sin tabla o sin clave → OFF.
+            if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", token))
+                return false;
+
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var row = await cn.QuerySingleOrDefaultAsync<(string? Valor, string? ValorAux)?>(new CommandDefinition(
+                $"""
+                SELECT TOP (1) ISNULL(VALOR, ''), ISNULL({detailColumn}, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """,
+                new { Clave = CatalogoPrecioConsumidorSetting.Clave },
+                cancellationToken: token));
+
+            return CatalogoPrecioConsumidorSetting.EstaActivo(
+                row is null ? null : ResolveStoredValue(row.Value.Valor ?? string.Empty, row.Value.ValorAux ?? string.Empty));
+        }, "No se pudo leer la visibilidad de precios del catálogo.", ct);
+
     public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveCatalogoVigencia", async token =>
         {

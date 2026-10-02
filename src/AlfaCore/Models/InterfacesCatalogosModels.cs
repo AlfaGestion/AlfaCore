@@ -228,6 +228,13 @@ public sealed class CatalogosCatalogoDetalleDto
     public int? ClasePrecioGeneral { get; set; }
     public string DescripcionClasePrecioGeneral { get; set; } = string.Empty;
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
+
+    /// <summary>
+    /// false cuando el catálogo se sirve a un visitante anónimo y la base tiene
+    /// CATALOGO_MUESTRA_PRECIO_CONSUMIDOR=0: los precios de los artículos vienen en null y la UI/PDF
+    /// no deben mostrar precio. Ver CatalogosPublicPriceVisibility.
+    /// </summary>
+    public bool PreciosVisibles { get; set; } = true;
 }
 
 public sealed class CatalogosCatalogoSaveRequestDto

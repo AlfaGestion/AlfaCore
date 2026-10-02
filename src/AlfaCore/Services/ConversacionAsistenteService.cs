@@ -25,6 +25,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
         Func<string, CancellationToken, Task>? traceDiagAsync = null,
+        bool precioRequiereIdentificacion = false,
+        bool forzarConsultarPrecio = false,
+        string? linkCatalogoParaLead = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -38,7 +41,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var haySaldoEntreHerramientas = herramientas?.Any(h => h.Nombre.StartsWith("consultar_saldo", StringComparison.Ordinal)) ?? false;
         var hayCatalogoEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)) ?? false;
         var debeForzarCatalogo = hayCatalogoEntreHerramientas && MensajePideCatalogo(mensajeCliente);
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas);
+        var hayPrecioEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_precio", StringComparison.Ordinal)) ?? false;
+        // La intención de precio la decide el llamador (incluye el seguimiento de una aclaración);
+        // acá sólo se verifica que la tool realmente se ofreció.
+        var debeForzarPrecio = forzarConsultarPrecio && hayPrecioEntreHerramientas;
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -89,8 +96,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                var toolChoice = debeForzarCatalogo && ronda == 0
-                    ? new { type = "function", function = new { name = "generar_link_catalogo_publico" } }
+                // Ronda 0: catálogo y/o precio explícitos → se fuerza la tool (o cualquiera si piden
+                // ambas). Desde la ronda 1, auto: el modelo decide con el resultado en mano.
+                object? toolChoice = ronda != 0 ? null
+                    : debeForzarCatalogo && debeForzarPrecio ? "required"
+                    : debeForzarCatalogo ? new { type = "function", function = new { name = "generar_link_catalogo_publico" } }
+                    : debeForzarPrecio ? new { type = "function", function = new { name = "consultar_precio" } }
                     : null;
                 var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools, toolChoice);
 
@@ -269,7 +280,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
-        string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false)
+        string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
+        bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -318,6 +330,23 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         if (hayCatalogoEntreHerramientas)
             sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
+        if (hayPrecioEntreHerramientas)
+        {
+            sb.AppendLine("- PRECIOS: ante una consulta de precio usá consultar_precio con términos cortos del artículo (si el mensaje actual completa una aclaración anterior, combiná ambos: \"pila\" + \"AA\" → \"pila AA\"). El resultado de la herramienta trae la instrucción de qué tipo responder (RESUELVE o ACLARA): seguila. No derives una consulta de precio porque falte un dato que el cliente puede darte: preguntá.");
+            sb.AppendLine("- Nunca repitas una pregunta de aclaración que ya le hiciste en esta conversación (mirá tus mensajes anteriores).");
+        }
+        if (precioRequiereIdentificacion)
+        {
+            var conLink = !string.IsNullOrWhiteSpace(linkCatalogoParaLead);
+            sb.AppendLine("- PRECIO SIN CLIENTE IDENTIFICADO: quien escribe todavía no está identificado como cliente y la empresa informa precios solo a clientes identificados. Ante una consulta de precio respondé tipo \"RESUELVE\" (NO derives): explicá que para pasarle el precio correcto primero necesitás identificarlo como cliente, porque puede variar según su cuenta; invitalo a decir su nombre o razón social si ya es cliente"
+                + (conLink
+                    ? $"; e incluí, tal cual, este link real del catálogo para que vea los productos disponibles: {linkCatalogoParaLead!.Trim()} (no lo cambies ni inventes otros links)."
+                    : ". No menciones el catálogo (no hay un link disponible para compartir)."));
+            sb.AppendLine("  No digas que no tenés el precio, no digas que un asesor le va a responder y no digas que el catálogo muestra precios."
+                + (conLink
+                    ? $" Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos. Mientras tanto podés ver los productos disponibles acá: {linkCatalogoParaLead!.Trim()}\""
+                    : " Ejemplo: \"Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta. Si ya sos cliente, decime tu nombre o razón social y seguimos.\""));
+        }
 
         if (haySaldoEntreHerramientas)
         {
@@ -426,8 +455,13 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // "No se encontró ningún artículo..." antes salía como OK y ocultaba que la búsqueda no
         // había traído nada (caso pilas, Base4264).
         if (texto.StartsWith("No se encontró", StringComparison.OrdinalIgnoreCase)
-            || texto.StartsWith("No encontré", StringComparison.OrdinalIgnoreCase))
+            || texto.StartsWith("No encontré", StringComparison.OrdinalIgnoreCase)
+            || texto.StartsWith("Sin coincidencias", StringComparison.OrdinalIgnoreCase))
             return "NOT_FOUND";
+        // consultar_precio: "Más de N coincidencias..." o "N coincidencias. Si el cliente no especificó..."
+        if (texto.StartsWith("Más de ", StringComparison.OrdinalIgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(texto, @"^[2-9]\d* coincidencias\."))
+            return "AMBIGUOUS";
 
         return texto.Contains("No se pudo", StringComparison.OrdinalIgnoreCase)
             || texto.Contains("no se pudo", StringComparison.OrdinalIgnoreCase)
