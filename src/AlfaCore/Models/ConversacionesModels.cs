@@ -234,6 +234,7 @@ public sealed class ConversacionDetalleDto
     public string MercadoLibreItemPermalink { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
+    public List<ConversacionClienteAsociadoDto> ClientesAsociados { get; set; } = [];
     /// <summary>Descripción de TA_CLASIFICACIONES para el código en VT_CLIENTES.Clasificacion — vacío si no hay cliente identificado o no tiene clasificación cargada.</summary>
     public string ClasificacionDescripcion { get; set; } = string.Empty;
     /// <summary>Ver <see cref="ConversacionAbonoEstados"/> — solo tiene sentido cuando ClienteCodigo no está vacío.</summary>
@@ -286,6 +287,12 @@ public sealed class ConversacionClienteCandidateDto
     public string Provincia { get; set; } = string.Empty;
     public string Telefono { get; set; } = string.Empty;
     public string Mail { get; set; } = string.Empty;
+}
+
+public sealed class ConversacionClienteAsociadoDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionRelacionarClienteRequest

@@ -109,7 +109,7 @@
                     <div class="ia-chip-list">
                         @foreach (var item in _result.SugerenciasRelacionadas)
                         {
-                            <a class="ia-chip ia-chip--secondary" href="/compras/informesia">
+                            <a class="ia-chip ia-chip--secondary" href="@RouteContext.BuildRoute("/compras/informesia")">
                                 <span class="ia-chip__title">@item.Texto</span>
                             </a>
                         }

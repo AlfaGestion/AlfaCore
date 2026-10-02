@@ -193,6 +193,12 @@ public sealed class CuentaComercialContactoLinkRequest
     public int ContactoId { get; set; }
 }
 
+public sealed class CuentaComercialContactoUnlinkRequest
+{
+    public string CuentaCodigo { get; set; } = string.Empty;
+    public int ContactoId { get; set; }
+}
+
 public sealed class CuentaComercialViewSettingsDto
 {
     public string AgruparPor { get; set; } = CuentaComercialViewGroupKeys.None;

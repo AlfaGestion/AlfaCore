@@ -8,6 +8,7 @@
 @inject IPageHeaderService PageHeader
 @inject ISessionService SessionSvc
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 @implements IDisposable
 
 @* Módulo Archivos > Maestros > Artículos (MVP) -- mismo patrón estructural que Clientes
@@ -226,7 +227,7 @@
             @if (_activeTab == ArticuloTab.Datos)
             {
                 <div class="articulos-form-grid">
-                    <AlfaInput Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
+                    <AlfaInput Id="articulo-codigo-editor" Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
                                OnBlur="VerificarCodigoNuevoAsync"
                                Disabled="@(!_isNewMode)" Required="true" MaxLength="25"
                                HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- se propone el próximo libre, pero podés cambiarlo; si ya existe, se abre para editar." : "No se puede modificar en un artículo existente.")" />
@@ -312,8 +313,12 @@
                 <div class="articulos-form-grid">
                     <AlfaInput Label="Costo" Type="number" Value="@_form.Costo.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                ValueChanged="OnCostoChangedAsync" />
-                    <AlfaInput Label="Precio de venta" Type="number" Value="@_form.Precio.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                               ValueChanged="OnPrecioChangedAsync" />
+                    @for (var clase = 1; clase <= 8; clase++)
+                    {
+                        var claseActual = clase;
+                        <AlfaInput Label="@GetPrecioLabel(claseActual)" Type="number" Value="@GetPrecioClase(claseActual).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   ValueChanged="v => OnPrecioClaseChangedAsync(claseActual, v)" />
+                    }
                     <AlfaInput Label="Utilidad %" Type="number" Value="@_form.Utilidad.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                ValueChanged="OnUtilidadChangedAsync" />
                     <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
@@ -353,6 +358,7 @@
     private bool _showViewSettings;
     private bool _showEditor;
     private bool _isNewMode;
+    private bool _focusCodigoNuevoAfterRender;
     private bool _selectedActivo = true;
     private string _selectedCodigo = string.Empty;
     private ArticuloTab _activeTab = ArticuloTab.Datos;
@@ -422,10 +428,16 @@
         UpdatePageHeader();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
             UpdatePageHeader();
+
+        if (_focusCodigoNuevoAfterRender && _showEditor && _isNewMode)
+        {
+            _focusCodigoNuevoAfterRender = false;
+            await Js.InvokeVoidAsync("eval", "document.getElementById('articulo-codigo-editor')?.focus()");
+        }
     }
 
     private void OnHeaderChanged() => _ = InvokeAsync(StateHasChanged);
@@ -964,6 +976,7 @@
         _showEditor = true;
         _showViewSettings = false;
         _isNewMode = true;
+        _focusCodigoNuevoAfterRender = true;
         _selectedCodigo = string.Empty;
         _selectedActivo = true;
         _activeTab = ArticuloTab.Datos;
@@ -1376,10 +1389,14 @@
         return Task.CompletedTask;
     }
 
-    private Task OnPrecioChangedAsync(string? value)
+    private Task OnPrecioClaseChangedAsync(int clase, string? value)
     {
-        _form.Precio = ParseDecimal(value);
-        RecalcularUtilidadDesdePrecio();
+        SetPrecioClase(clase, ParseDecimal(value));
+        if (clase == _lookups.ClasePrecioVenta)
+        {
+            _form.Precio = GetPrecioClase(clase);
+            RecalcularUtilidadDesdePrecio();
+        }
         return Task.CompletedTask;
     }
 
@@ -1393,6 +1410,7 @@
         }
 
         _form.Precio = Math.Round(precio, 2);
+        SetPrecioClase(_lookups.ClasePrecioVenta, _form.Precio);
     }
 
     private void RecalcularUtilidadDesdePrecio()
@@ -1413,6 +1431,40 @@
         }
 
         _form.Utilidad = _form.Costo >= precioNeto ? 0 : Math.Round(((precioNeto * 100m) / _form.Costo) - 100m, 2);
+    }
+
+    private string GetPrecioLabel(int clase)
+    {
+        var nombre = _lookups.NombresPrecios.ElementAtOrDefault(clase - 1)?.Trim();
+        return string.IsNullOrWhiteSpace(nombre) ? $"Precio {clase}" : nombre;
+    }
+
+    private decimal GetPrecioClase(int clase) => clase switch
+    {
+        1 => _form.Precio1,
+        2 => _form.Precio2,
+        3 => _form.Precio3,
+        4 => _form.Precio4,
+        5 => _form.Precio5,
+        6 => _form.Precio6,
+        7 => _form.Precio7,
+        8 => _form.Precio8,
+        _ => 0m
+    };
+
+    private void SetPrecioClase(int clase, decimal value)
+    {
+        switch (clase)
+        {
+            case 1: _form.Precio1 = value; break;
+            case 2: _form.Precio2 = value; break;
+            case 3: _form.Precio3 = value; break;
+            case 4: _form.Precio4 = value; break;
+            case 5: _form.Precio5 = value; break;
+            case 6: _form.Precio6 = value; break;
+            case 7: _form.Precio7 = value; break;
+            case 8: _form.Precio8 = value; break;
+        }
     }
 
     private string GetArticuloInitial()

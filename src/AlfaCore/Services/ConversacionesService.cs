@@ -1814,10 +1814,66 @@ public sealed class ConversacionesService(
                 EsWhatsAppQr = !rd.IsDBNull(42) && rd.GetBoolean(42)
             };
 
+            await rd.DisposeAsync();
+            item.ClientesAsociados = (await GetContactoClientesAsync(cn, item.IdContacto, token)).ToList();
             await TryRefreshFacebookConversationProfileAsync(item, token);
             ApplyWhatsAppWindow(item);
             return item;
         }, "No se pudo cargar la conversación.", ct);
+
+    private static async Task<IReadOnlyList<ConversacionClienteAsociadoDto>> GetContactoClientesAsync(
+        SqlConnection cn,
+        int? idContacto,
+        CancellationToken ct)
+    {
+        if (!idContacto.HasValue || idContacto.Value <= 0)
+            return [];
+
+        const string sql = """
+            WITH ContactoBase AS
+            (
+                SELECT TOP (1)
+                    ISNULL(NULLIF(idContacto, 0), id) AS IdContactoRel,
+                    UPPER(LTRIM(RTRIM(ISNULL(CuentaRel, '')))) AS CuentaRel
+                FROM dbo.MA_CONTACTOS
+                WHERE id = @IdContacto
+            ), Cuentas AS
+            (
+                SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Codigo
+                FROM ContactoBase cb
+                INNER JOIN dbo.MA_CONTACTOS_CUENTAS rel ON rel.IdContacto = cb.IdContactoRel
+                WHERE LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+
+                UNION
+
+                SELECT CuentaRel
+                FROM ContactoBase
+                WHERE CuentaRel <> ''
+            )
+            SELECT DISTINCT
+                UPPER(LTRIM(RTRIM(cli.CODIGO))) AS Codigo,
+                ISNULL(cli.RAZON_SOCIAL, '') AS RazonSocial
+            FROM Cuentas c
+            INNER JOIN dbo.VT_CLIENTES cli
+                ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = c.Codigo
+            ORDER BY RazonSocial, Codigo;
+            """;
+
+        var rows = new List<ConversacionClienteAsociadoDto>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            rows.Add(new ConversacionClienteAsociadoDto
+            {
+                Codigo = GetString(rd, 0),
+                RazonSocial = GetString(rd, 1)
+            });
+        }
+
+        return rows;
+    }
 
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
@@ -2231,6 +2287,14 @@ public sealed class ConversacionesService(
                         SET idContacto = @IdContactoRel
                         WHERE id = @IdContacto
                           AND ISNULL(idContacto, 0) = 0;
+
+                        -- CuentaRel sigue siendo consumido por pantallas y rutinas
+                        -- legacy de contactos. Mantenerlo sincronizado con la
+                        -- relación elegida desde la conversación evita que la
+                        -- ficha del contacto conserve un cliente anterior.
+                        UPDATE dbo.MA_CONTACTOS
+                        SET CuentaRel = @ClienteCodigo
+                        WHERE id = @IdContacto;
 
                         IF NOT EXISTS (
                             SELECT 1

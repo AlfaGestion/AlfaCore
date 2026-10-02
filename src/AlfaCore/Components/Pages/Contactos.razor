@@ -145,7 +145,9 @@
                              SearchAccounts="SearchAccountsForRecordAsync"
                              LinkAccount="LinkAccountToRecordAsync"
                              AccountLinked="ShowAccountLinkedFeedback"
-                             LinkingAccount="@_linkingAccount" />
+                             LinkingAccount="@_linkingAccount"
+                             UnlinkClientAccount="RequestUnlinkClientAsync"
+                             UnlinkingClient="@_unlinkingClient" />
     }
     else
     {
@@ -470,6 +472,17 @@
                    OnConfirm="ConfirmDeactivateAsync"
                    OnCancel="CloseDeactivateConfirm" />
 
+<AlfaConfirmDialog Open="@_showUnlinkClientConfirm"
+                   Title="Desvincular cliente"
+                   Message="¿Querés desvincular este contacto del cliente seleccionado?"
+                   SecondaryMessage="La ficha del contacto y sus demás relaciones no se eliminan."
+                   ConfirmLabel="Desvincular"
+                   LoadingLabel="Desvinculando..."
+                   Loading="@_unlinkingClient"
+                   ErrorMessage="@_unlinkClientError"
+                   OnConfirm="ConfirmUnlinkClientAsync"
+                   OnCancel="CloseUnlinkClientConfirm" />
+
 <AlfaConfirmDialog Open="@_showDiscardEditConfirm"
                    Title="@(_pageMode == ContactosPageMode.New ? "Descartar contacto nuevo" : "Descartar cambios")"
                    Message="Hay cambios sin guardar. Si salís ahora, se perderán."
@@ -518,6 +531,7 @@
     private bool _saving;
     private bool _openingConversation;
     private bool _linkingAccount;
+    private bool _unlinkingClient;
     private bool _isNewMode = true;
     private ContactosPageMode _pageMode = ContactosPageMode.Browse;
     private bool _showEditor => _pageMode is ContactosPageMode.Edit or ContactosPageMode.New;
@@ -532,6 +546,7 @@
     private bool _loadingEdit;
     private bool _editDirty;
     private bool _showDiscardEditConfirm;
+    private bool _showUnlinkClientConfirm;
     private bool _allowEditNavigation;
     private string _editInitialState = string.Empty;
     private string _editErrorMessage = string.Empty;
@@ -555,6 +570,7 @@
     private string _recordReturnViewMode = ContactosViewModeKeys.Listado;
     private string _recordErrorMessage = string.Empty;
     private string _recordNavigationError = string.Empty;
+    private string _unlinkClientError = string.Empty;
     private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
@@ -564,6 +580,7 @@
     private bool _mergeSearchExecuted;
     private bool _mergingContact;
     private ContactoMergeCandidateDto? _mergeConfirmCandidate;
+    private ContactoCuentaDto? _pendingUnlinkClient;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
     private bool _showDeactivateConfirm;
@@ -1939,6 +1956,71 @@
         => (_recordDetail?.CuentasVinculadas ?? []).Any(linked =>
             string.Equals(linked.Codigo.Trim(), account.Codigo.Trim(), StringComparison.OrdinalIgnoreCase));
 
+    private Task RequestUnlinkClientAsync(ContactoCuentaDto account)
+    {
+        if (_recordDetail is null
+            || !string.Equals(account.Tipo, "Cliente", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(account.Codigo)
+            || _unlinkingClient)
+            return Task.CompletedTask;
+
+        _pendingUnlinkClient = account;
+        _unlinkClientError = string.Empty;
+        _showUnlinkClientConfirm = true;
+        return Task.CompletedTask;
+    }
+
+    private void CloseUnlinkClientConfirm()
+    {
+        if (_unlinkingClient)
+            return;
+
+        _showUnlinkClientConfirm = false;
+        _pendingUnlinkClient = null;
+        _unlinkClientError = string.Empty;
+    }
+
+    private async Task ConfirmUnlinkClientAsync()
+    {
+        if (_recordDetail is null || _pendingUnlinkClient is null)
+            return;
+
+        _unlinkingClient = true;
+        _unlinkClientError = string.Empty;
+        try
+        {
+            var account = _pendingUnlinkClient;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.UnlinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoUnlinkRequest
+                {
+                    CuentaCodigo = account.Codigo,
+                    ContactoId = _recordDetail.Id
+                }),
+                "No se pudo desvincular el contacto del cliente.");
+
+            if (!result.Success)
+            {
+                _unlinkClientError = result.Feedback?.Message ?? "No se pudo desvincular el contacto del cliente.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _showUnlinkClientConfirm = false;
+            _pendingUnlinkClient = null;
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = "Contacto desvinculado",
+                Message = $"El contacto ya no está vinculado a {account.RazonSocial}."
+            });
+            await CargarFichaAsync(_recordDetail.Id);
+        }
+        finally
+        {
+            _unlinkingClient = false;
+        }
+    }
+
     private void ShowAccountLinkedFeedback(ContactoCuentaLookupOptionDto account)
     {
         var accountName = string.IsNullOrWhiteSpace(account.RazonSocial)
@@ -2824,7 +2906,7 @@
 
             SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversación(es). Nuevas: {created}."));
             if (contacts.Count == 1 && firstConversation.HasValue)
-                Nav.NavigateTo($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
         }
         finally
         {
@@ -3094,7 +3176,7 @@
     {
         if (contact.IdConversacionWhatsApp.HasValue)
         {
-            Nav.NavigateTo($"/conversaciones?id={contact.IdConversacionWhatsApp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={contact.IdConversacionWhatsApp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
             return;
         }
 
@@ -3123,7 +3205,7 @@
                 return;
             }
 
-            Nav.NavigateTo($"/conversaciones?id={result.Value.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={result.Value.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
         }
         finally
         {

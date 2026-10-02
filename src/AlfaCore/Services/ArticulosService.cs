@@ -10,8 +10,8 @@ namespace AlfaCore.Services;
 // C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md ("Módulo Archivos > Maestros >
 // Artículos"). Columnas de V_MA_ARTICULOS/v_ta_rubros/v_ta_tipoArticulo/v_ta_unidad verificadas contra
 // una base real (ALFANET2007) antes de escribir este servicio -- no se asumió ninguna estructura.
-// Alcance: datos básicos + un único precio de venta (la clase que indique Cfg("ClasePrecioVenta")),
-// calcado del formulario legacy FrmArtAlta.frm pero sin la sección "Precios de referencia" (web
+// Alcance: datos básicos + las ocho clases de precio de V_MA_ARTICULOS (con la clase configurada como
+// precio de venta), calcado del formulario legacy FrmArtAlta.frm pero sin la sección "Precios de referencia" (web
 // service externo) ni la replicación multi-empresa (ActualizaGEmpresas), que el usuario confirmó que
 // ya no se usa.
 public sealed class ArticulosService(
@@ -57,6 +57,14 @@ public sealed class ArticulosService(
                     ISNULL(LTRIM(RTRIM(a.IDUNIDAD)), '') AS UnidadCodigo,
                     ISNULL(u.Descripcion, '') AS UnidadDescripcion,
                     ISNULL(a.COSTO, 0) AS Costo,
+                    ISNULL(a.PRECIO1, 0) AS Precio1,
+                    ISNULL(a.PRECIO2, 0) AS Precio2,
+                    ISNULL(a.PRECIO3, 0) AS Precio3,
+                    ISNULL(a.PRECIO4, 0) AS Precio4,
+                    ISNULL(a.PRECIO5, 0) AS Precio5,
+                    ISNULL(a.PRECIO6, 0) AS Precio6,
+                    ISNULL(a.PRECIO7, 0) AS Precio7,
+                    ISNULL(a.PRECIO8, 0) AS Precio8,
                     ISNULL(a.{precioColumn}, 0) AS Precio,
                     ISNULL(a.TasaIVA, 0) AS TasaIva,
                     ISNULL(a.EXENTO, 0) AS Exento,
@@ -196,7 +204,13 @@ public sealed class ArticulosService(
                 "SELECT LTRIM(RTRIM(IdUnidad)) AS Codigo, ISNULL(Descripcion, '') AS Descripcion FROM dbo.v_ta_unidad ORDER BY Descripcion;",
                 cancellationToken: token));
 
-            var cfg = await ReadConfigMapAsync(cn, ["PIVA", "MAESTROARTICULOCONIVA", "RETAIL"], token);
+            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta" };
+            claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
+            var cfg = await ReadConfigMapAsync(cn, claves, token);
+            var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 1;
+            var nombresPrecios = Enumerable.Range(1, 8)
+                .Select(i => Get(cfg, $"NOM_PCLASE{i}").Trim())
+                .ToList();
 
             return new ArticuloLookupDataDto
             {
@@ -205,7 +219,9 @@ public sealed class ArticulosService(
                 Unidades = unidades.ToList(),
                 TasaIvaDefault = ParseDecimal(Get(cfg, "PIVA")),
                 PrecioIncluyeIva = ParseBool(Get(cfg, "MAESTROARTICULOCONIVA")),
-                ModoRetail = ParseBool(Get(cfg, "RETAIL"))
+                ModoRetail = ParseBool(Get(cfg, "RETAIL")),
+                ClasePrecioVenta = clasePrecioVenta,
+                NombresPrecios = nombresPrecios
             };
         }, "No se pudieron cargar las referencias de artículos.", ct);
 
@@ -305,8 +321,6 @@ public sealed class ArticulosService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
-
             var esAlta = string.IsNullOrWhiteSpace(request.CodigoOriginal);
             if (esAlta)
             {
@@ -361,6 +375,14 @@ public sealed class ArticulosService(
                 request.Pesable,
                 request.Costo,
                 Precio = request.Precio,
+                request.Precio1,
+                request.Precio2,
+                request.Precio3,
+                request.Precio4,
+                request.Precio5,
+                request.Precio6,
+                request.Precio7,
+                request.Precio8,
                 request.Utilidad,
                 TasaIva = tasaIva,
                 request.Exento
@@ -371,10 +393,10 @@ public sealed class ArticulosService(
                 var insertSql = $"""
                     INSERT INTO dbo.V_MA_ARTICULOS
                         (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
-                         CodigoArtProveedor, Pesable, COSTO, {precioColumn}, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA)
+                        CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA)
                     VALUES
                         (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
-                         @CodigoArtProveedor, @Pesable, @Costo, @Precio, @Utilidad, @TasaIva, @Exento, 0, GETDATE());
+                         @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE());
                     """;
                 await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, cancellationToken: token));
             }
@@ -396,7 +418,14 @@ public sealed class ArticulosService(
                         CodigoArtProveedor = @CodigoArtProveedor,
                         Pesable = @Pesable,
                         COSTO = @Costo,
-                        {precioColumn} = @Precio,
+                        PRECIO1 = @Precio1,
+                        PRECIO2 = @Precio2,
+                        PRECIO3 = @Precio3,
+                        PRECIO4 = @Precio4,
+                        PRECIO5 = @Precio5,
+                        PRECIO6 = @Precio6,
+                        PRECIO7 = @Precio7,
+                        PRECIO8 = @Precio8,
                         UTILIDAD = @Utilidad,
                         TasaIVA = @TasaIva,
                         EXENTO = @Exento

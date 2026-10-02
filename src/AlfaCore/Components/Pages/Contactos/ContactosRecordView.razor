@@ -217,13 +217,23 @@ else
                             <div class="contactos-record-accounts">
                                 @foreach (var account in Contact.CuentasVinculadas)
                                 {
-                                    <a class="contactos-record-account" href="@BuildCuentaLink(account)">
-                                        <span>
-                                            <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
-                                            <small>@account.Tipo · @DisplayValue(account.Codigo)</small>
-                                        </span>
-                                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                                    </a>
+                                    <div class="contactos-record-account-row">
+                                        <a class="contactos-record-account" href="@BuildCuentaLink(account)">
+                                            <span>
+                                                <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
+                                                <small>@account.Tipo · @DisplayValue(account.Codigo)</small>
+                                            </span>
+                                            <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                                        </a>
+                                        @if (string.Equals(account.Tipo, "Cliente", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                        Size="AlfaSize.Sm"
+                                                        Icon="bi bi-person-dash"
+                                                        Disabled="@UnlinkingClient"
+                                                        OnClick="_ => UnlinkClientAccountAsync(account)">Desvincular</AlfaButton>
+                                        }
+                                    </div>
                                 }
                             </div>
                             <div class="contactos-record-accounts__actions">
@@ -354,6 +364,8 @@ else
     [Parameter] public Func<ContactoCuentaLookupOptionDto, Task<bool>>? LinkAccount { get; set; }
     [Parameter] public EventCallback<ContactoCuentaLookupOptionDto> AccountLinked { get; set; }
     [Parameter] public bool LinkingAccount { get; set; }
+    [Parameter] public Func<ContactoCuentaDto, Task>? UnlinkClientAccount { get; set; }
+    [Parameter] public bool UnlinkingClient { get; set; }
 
     private bool HasContextPanel => Contact is not null
         && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
@@ -558,6 +570,9 @@ else
 
     private Task HandleRetryActionAsync(MouseEventArgs _)
         => OnRetry.InvokeAsync();
+
+    private Task UnlinkClientAccountAsync(ContactoCuentaDto account)
+        => UnlinkClientAccount?.Invoke(account) ?? Task.CompletedTask;
 
     private Task HandleConversationActionAsync()
         => OnConversation.InvokeAsync();

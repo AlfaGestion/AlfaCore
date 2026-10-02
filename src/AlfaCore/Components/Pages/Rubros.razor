@@ -13,7 +13,7 @@
     <div class="page-intro">
         <div>
             <h2 class="page-intro__title">Rubros</h2>
-            <p class="page-intro__text">Visión estratégica del gasto por categoría, concentración, variación y movimiento reciente. <a class="help-link" href="/ayuda#7-rubros">Ver ayuda</a></p>
+            <p class="page-intro__text">Visión estratégica del gasto por categoría, concentración, variación y movimiento reciente. <a class="help-link" href="@RouteContext.BuildRoute("/ayuda#7-rubros")">Ver ayuda</a></p>
         </div>
     </div>
     <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
@@ -99,7 +99,7 @@
                     <div class="detail-row"><span class="detail-row__label">Artículos</span><strong>@_detalle.Resumen.CantidadArticulos</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Ticket promedio</span><strong>@Moneda(_detalle.Resumen.TicketPromedio)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Drill down</span><a class="action-link" href="/compras/articulos?rubro=@Uri.EscapeDataString(_detalle.Resumen.Rubro)">Ver artículos</a></div>
+                    <div class="detail-row"><span class="detail-row__label">Drill down</span><a class="action-link" href="@RouteContext.BuildRoute($"/compras/articulos?rubro={Uri.EscapeDataString(_detalle.Resumen.Rubro)}")">Ver artículos</a></div>
                 </DetailCard>
             }
         </div>
@@ -138,7 +138,7 @@
                                 <td>@item.IdComprobante</td>
                                 <td>@item.RazonSocial</td>
                                 <td style="text-align:right;">@Moneda(item.ImporteDashboard)</td>
-                                <td><a class="action-link" href="/compras/comprobantes?tc=@item.Tc&id=@item.IdComprobante&cuenta=@Uri.EscapeDataString(item.Cuenta)">Abrir</a></td>
+                                <td><a class="action-link" href="@RouteContext.BuildRoute($"/compras/comprobantes?tc={item.Tc}&id={item.IdComprobante}&cuenta={Uri.EscapeDataString(item.Cuenta)}")">Abrir</a></td>
                             </tr>
                         }
                     </tbody>

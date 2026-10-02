@@ -216,7 +216,7 @@
             <p class="page-intro__text">Panel rapido para ver volumen, respuestas, cierres, tickets y actividad del equipo.</p>
         </div>
         <div class="actions">
-            <a class="btn btn--ghost" href="/conversaciones">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/conversaciones")">
                 <i class="bi bi-inbox-fill"></i> Inbox
             </a>
         </div>
@@ -373,7 +373,7 @@
                                 <h3 class="panel-card__title">Estado actual</h3>
                                 <p class="panel-card__subtitle">@FormatNumber(_stats.ConversacionesTotales) conversaciones totales</p>
                             </div>
-                            <a class="conversation-badge conversation-badge--state conv-stats-link" href="/conversaciones?modo=sin_asignar">@FormatNumber(_stats.ConversacionesSinAsignar) sin asignar</a>
+                            <a class="conversation-badge conversation-badge--state conv-stats-link" href="@RouteContext.BuildRoute("/conversaciones?modo=sin_asignar")">@FormatNumber(_stats.ConversacionesSinAsignar) sin asignar</a>
                         </div>
                         <div class="conv-stats-state-list">
                             @foreach (var item in _stats.PorEstado)

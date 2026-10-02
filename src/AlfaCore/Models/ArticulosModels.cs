@@ -4,7 +4,7 @@ namespace AlfaCore.Models;
 // C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md ("Módulo Archivos > Maestros >
 // Artículos"). Mismo shape que CuentasComercialesModels.cs (patrón Clientes), reducido a los campos
 // básicos confirmados contra V_MA_ARTICULOS/V_MA_PRECIOS de una base real: sin insumos/BOM, talles/
-// colores, lotes/series, múltiples clases de precio ni imágenes -- eso queda para una fase 2 sobre el
+// colores, lotes/series ni imágenes -- eso queda para una fase 2 sobre el
 // maestro legacy completo (Ma_art.frm).
 
 public sealed class ArticuloFilters
@@ -68,6 +68,14 @@ public class ArticuloSaveRequest
     public bool Pesable { get; set; }
     public decimal Costo { get; set; }
     public decimal Precio { get; set; }
+    public decimal Precio1 { get; set; }
+    public decimal Precio2 { get; set; }
+    public decimal Precio3 { get; set; }
+    public decimal Precio4 { get; set; }
+    public decimal Precio5 { get; set; }
+    public decimal Precio6 { get; set; }
+    public decimal Precio7 { get; set; }
+    public decimal Precio8 { get; set; }
     public decimal Utilidad { get; set; }
     public decimal TasaIva { get; set; }
     public bool Exento { get; set; }
@@ -99,6 +107,8 @@ public sealed class ArticuloLookupDataDto
     public decimal TasaIvaDefault { get; set; }
     public bool PrecioIncluyeIva { get; set; }
     public bool ModoRetail { get; set; }
+    public int ClasePrecioVenta { get; set; } = 1;
+    public List<string> NombresPrecios { get; set; } = [];
 }
 
 public sealed class ArticuloViewSettingsDto

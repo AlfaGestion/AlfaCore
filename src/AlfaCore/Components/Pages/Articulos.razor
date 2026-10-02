@@ -13,7 +13,7 @@
 <PageTitle>Artículos | Dashboard de Compras</PageTitle>
 
 <section class="page-grid articulos-page">
-    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de costo desde historial, proveedor principal y últimas compras por artículo. <a class="help-link" href="/ayuda#9-artículos">Ver ayuda</a></p></div></div>
+    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de costo desde historial, proveedor principal y últimas compras por artículo. <a class="help-link" href="@RouteCtx.BuildRoute("/ayuda#9-artículos")">Ver ayuda</a></p></div></div>
     <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
 
     @if (_page?.Kpis is not null)

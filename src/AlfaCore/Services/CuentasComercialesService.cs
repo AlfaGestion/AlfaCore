@@ -1092,6 +1092,86 @@ public sealed class CuentasComercialesService(
                 token);
         }, "No se pudo vincular el contacto existente.", ct);
 
+    public Task UnlinkContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoUnlinkRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(GetModuleLabel(tipo), "UnlinkContacto", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var cuenta = request.CuentaCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(cuenta))
+                throw new InvalidOperationException($"No se recibió el {GetSingularLabel(tipo).ToLowerInvariant()} del contacto.");
+            if (request.ContactoId <= 0)
+                throw new InvalidOperationException("No se recibió el contacto a desvincular.");
+
+            var descriptor = ResolveDescriptor(tipo);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+
+            var accountExists = await ExistsAsync(cn, sqlTx, descriptor.ViewName, "CODIGO", cuenta, token);
+            if (!accountExists)
+                throw new InvalidOperationException($"El {GetSingularLabel(tipo).ToLowerInvariant()} seleccionado ya no existe en la base activa.");
+
+            const string unlinkSql = """
+                DECLARE @IdContacto INT;
+                DECLARE @Removidas INT = 0;
+
+                SELECT @IdContacto = CONVERT(int, ISNULL(NULLIF(c.idContacto, 0), c.id))
+                FROM dbo.MA_CONTACTOS c
+                WHERE c.id = @ContactoId;
+
+                IF @IdContacto IS NULL
+                    THROW 50001, 'El contacto seleccionado ya no existe en la base activa.', 1;
+
+                DELETE FROM dbo.MA_CONTACTOS_CUENTAS
+                WHERE IdContacto = @IdContacto
+                  AND UPPER(LTRIM(RTRIM(Cuenta))) = @Cuenta;
+                SET @Removidas += @@ROWCOUNT;
+
+                UPDATE dbo.MA_CONTACTOS
+                SET CuentaRel = ''
+                WHERE id = @ContactoId
+                  AND UPPER(LTRIM(RTRIM(ISNULL(CuentaRel, '')))) = @Cuenta;
+                SET @Removidas += @@ROWCOUNT;
+
+                -- La relación manual desde Conversaciones también queda
+                -- persistida en CONV_CONVERSACIONES.ClienteCodigo. Al quitar
+                -- el vínculo del contacto, limpiar solo ese cliente evita que
+                -- la conversación siga mostrando una asociación obsoleta.
+                IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
+                BEGIN
+                    UPDATE dbo.CONV_CONVERSACIONES
+                    SET ClienteCodigo = NULL
+                    WHERE IdContacto IN (@ContactoId, @IdContacto)
+                      AND UPPER(LTRIM(RTRIM(ISNULL(ClienteCodigo, '')))) = @Cuenta;
+                END;
+
+                IF @Removidas = 0
+                    THROW 50002, 'El contacto seleccionado ya no está vinculado a este cliente.', 1;
+
+                SELECT @IdContacto;
+                """;
+
+            var idContacto = await cn.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    unlinkSql,
+                    new { ContactoId = request.ContactoId, Cuenta = cuenta },
+                    sqlTx,
+                    cancellationToken: token));
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                GetModuleLabel(tipo),
+                "UnlinkContacto",
+                "MA_CONTACTOS_CUENTAS",
+                cuenta,
+                $"Contacto desvinculado del {GetSingularLabel(tipo).ToLowerInvariant()} sin eliminar su ficha.",
+                new { Cuenta = cuenta, ContactoId = request.ContactoId, IdContacto = idContacto },
+                token);
+        }, "No se pudo desvincular el contacto del cliente.", ct);
+
     public Task UpdateContactoQuickAsync(CuentaComercialTipo tipo, CuentaComercialContactoQuickUpdateRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "UpdateContactoQuick", async token =>
         {

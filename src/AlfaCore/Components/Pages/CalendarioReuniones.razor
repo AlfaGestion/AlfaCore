@@ -4,6 +4,7 @@
 @inject AlfaCore.Services.IReunionesPublicasService ReunionesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 
 <PageTitle>Reuniones | Calendario</PageTitle>
@@ -16,7 +17,7 @@
             <span>Agendas para que los clientes reserven capacitaciones online.</span>
         </div>
         <div>
-            <a class="btn btn--ghost" href="/calendario">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/calendario")">
                 <i class="bi bi-calendar3"></i>
                 <span>Calendario</span>
             </a>

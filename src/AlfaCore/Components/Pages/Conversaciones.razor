@@ -2417,13 +2417,33 @@
                     {
                         <div class="context-card">
                             <span class="context-card__label">Cliente</span>
-                            <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
-                            <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
-                            @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            @if (_selectedConversation.ClientesAsociados.Count > 0)
                             {
-                                <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedClient">
+                                @foreach (var cliente in _selectedConversation.ClientesAsociados)
+                                {
+                                    <div class="context-card__related-account">
+                                        <strong>@DisplayOrFallback(cliente.RazonSocial)</strong>
+                                        <span class="context-card__muted">@DisplayOrFallback(cliente.Codigo)</span>
+                                        <a class="btn btn--ghost btn--sm context-card__action"
+                                           href="@BuildClientRoute(cliente.Codigo)"
+                                           target="_blank"
+                                           rel="noopener noreferrer">
+                                            <i class="bi bi-building"></i> Ver cliente
+                                        </a>
+                                    </div>
+                                }
+                            }
+                            else if (!_selectedConversation.IdContacto.HasValue
+                                     && !string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
+                                <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
+                                <a class="btn btn--ghost btn--sm context-card__action"
+                                   href="@BuildClientRoute(_selectedConversation.ClienteCodigo)"
+                                   target="_blank"
+                                   rel="noopener noreferrer">
                                     <i class="bi bi-building"></i> Ver cliente
-                                </button>
+                                </a>
                             }
                             else
                             {
@@ -2441,9 +2461,12 @@
                             <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ContactoEmail)</span>
                             @if (_selectedConversation.IdContacto.HasValue)
                             {
-                                <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedContact">
+                                <a class="btn btn--ghost btn--sm context-card__action"
+                                   href="@BuildContactRoute(_selectedConversation.IdContacto.Value)"
+                                   target="_blank"
+                                   rel="noopener noreferrer">
                                     <i class="bi bi-person-lines-fill"></i> Ver contacto
-                                </button>
+                                </a>
                             }
                             else
                             {
@@ -6246,7 +6269,7 @@
         if (_selectedConversation is null)
             return;
 
-        Nav.NavigateTo($"/crm?conv={_selectedConversation.IdConversacion}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/crm?conv={_selectedConversation.IdConversacion}"));
     }
 
     private void StartTicketSelection()
@@ -10403,19 +10426,19 @@
     }
 
     private void OpenContactEditor(ContactoGridItemDto contact)
-        => Nav.NavigateTo($"/contactos?editar={contact.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        => Nav.NavigateTo(BuildContactRoute(contact.Id));
 
-    private void OpenSelectedContact()
-    {
-        if (_selectedConversation?.IdContacto is int idContacto)
-            Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-    }
+    private string BuildContactRoute(int idContacto)
+        => QueryHelpers.AddQueryString(
+            RouteContext.BuildRoute("/contactos"),
+            "editar",
+            idContacto.ToString(CultureInfo.InvariantCulture));
 
-    private void OpenSelectedClient()
-    {
-        if (!string.IsNullOrWhiteSpace(_selectedConversation?.ClienteCodigo))
-            Nav.NavigateTo($"/clientes?editar={Uri.EscapeDataString(_selectedConversation.ClienteCodigo)}");
-    }
+    private string BuildClientRoute(string codigoCliente)
+        => QueryHelpers.AddQueryString(
+            RouteContext.BuildRoute("/clientes"),
+            "editar",
+            codigoCliente.Trim());
 
     private void OpenRelacionarClienteModal()
     {
@@ -10533,7 +10556,7 @@
         if (!string.IsNullOrWhiteSpace(email))
             query.Add($"email={Uri.EscapeDataString(email)}");
 
-        Nav.NavigateTo($"/contactos?{string.Join("&", query)}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/contactos?{string.Join("&", query)}"));
     }
 
     private void OpenNewContactFromSearch()
@@ -10542,7 +10565,7 @@
         var query = IsPotentialPhone(value)
             ? $"nuevo=1&celular={Uri.EscapeDataString(value)}"
             : $"nuevo=1&nombre={Uri.EscapeDataString(value)}";
-        Nav.NavigateTo($"/contactos?{query}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/contactos?{query}"));
     }
 
     private void OpenNewContactFromConversation(ConversacionInboxItemDto conversation)
@@ -10556,7 +10579,7 @@
         if (!string.IsNullOrWhiteSpace(phone))
             query.Add($"celular={Uri.EscapeDataString(phone)}");
 
-        Nav.NavigateTo($"/contactos?{string.Join("&", query)}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/contactos?{string.Join("&", query)}"));
     }
 
     private void OpenNewContactFromSharedContact(SharedContactPayload contact)
@@ -10570,7 +10593,7 @@
         if (!string.IsNullOrWhiteSpace(contact.Email))
             query.Add($"email={Uri.EscapeDataString(contact.Email)}");
 
-        Nav.NavigateTo($"/contactos?{string.Join("&", query)}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/contactos?{string.Join("&", query)}"));
     }
 
     private async Task SelectConversationFromSuggestionAsync(long idConversacion)

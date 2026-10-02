@@ -1037,6 +1037,15 @@ else
                                                         <i class="bi bi-send"></i>
                                                         @(_enviandoInvitacionContactoId == contacto.IdContacto ? "Enviando..." : "Enviar invitación")
                                                     </span>
+                                                    <span role="button"
+                                                          tabindex="0"
+                                                          class="btn btn--ghost btn--sm cuentas-contacto-item__invite"
+                                                          title="Desvincular del cliente"
+                                                          @onclick:stopPropagation="true"
+                                                          @onclick="() => MostrarConfirmarDesvincularContacto(contacto)">
+                                                        <i class="bi bi-person-dash"></i>
+                                                        Desvincular
+                                                    </span>
                                                 </div>
                                             }
                                         </div>
@@ -1550,6 +1559,17 @@ else
                     <i class="bi bi-intersect"></i>
                     <span>Unificar contacto</span>
                 </button>
+                @if (Tipo == CuentaComercialTipo.Cliente)
+                {
+                    <button type="button"
+                            class="btn btn--ghost cuentas-action-reveal"
+                            title="Desvincular del cliente"
+                            aria-label="Desvincular del cliente"
+                            @onclick="MostrarConfirmarDesvincularContacto">
+                        <i class="bi bi-person-dash"></i>
+                        <span>Desvincular del cliente</span>
+                    </button>
+                }
                 <button type="button"
                         class="btn btn--ghost cuentas-action-reveal"
                         title="Cerrar"
@@ -1562,6 +1582,17 @@ else
         </section>
     </div>
 }
+
+<AlfaConfirmDialog Open="@_showDesvincularContactoConfirm"
+                   Title="Desvincular contacto"
+                   Message="¿Querés desvincular este contacto del cliente?"
+                   SecondaryMessage="La ficha del contacto no se elimina y puede seguir vinculada a otros clientes."
+                   ConfirmLabel="Desvincular"
+                   CancelLabel="Cancelar"
+                   ErrorMessage="@_contactoError"
+                   Loading="@_desvinculandoContacto"
+                   OnConfirm="ConfirmarDesvincularContactoAsync"
+                   OnCancel="CancelarDesvincularContacto" />
 
 @if (_showLinkContactoModal && !_isNewMode)
 {
@@ -1698,6 +1729,7 @@ else
     private CuentaComercialContactoCreateRequest _contactoDraft = new();
     private CuentaComercialContactoQuickUpdateRequest _contactoQuickDraft = new();
     private CuentaComercialContactoDto? _contactoPreview;
+    private CuentaComercialContactoDto? _contactoPendienteDesvincular;
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private string _viewMode = CuentaComercialViewModeKeys.Listado;
@@ -1719,6 +1751,7 @@ else
     private bool _showContactoForm;
     private bool _showContactoPreview;
     private bool _showLinkContactoModal;
+    private bool _showDesvincularContactoConfirm;
     private bool _showViewSettings;
     private bool _showSearchPanel;
     private bool _showBulkDeactivateConfirm;
@@ -1732,6 +1765,7 @@ else
     private bool _selectedActivo = true;
     private bool _loadingLinkCandidates;
     private bool _linkingContacto;
+    private bool _desvinculandoContacto;
     private bool _linkSearchExecuted;
     private string _selectedCodigo = string.Empty;
     private string _linkSearchText = string.Empty;
@@ -2938,21 +2972,89 @@ else
         _showContactoPreview = false;
     }
 
-    private void AbrirContactoCompleto()
+    private void MostrarConfirmarDesvincularContacto()
+        => MostrarConfirmarDesvincularContacto(_contactoPreview);
+
+    private void MostrarConfirmarDesvincularContacto(CuentaComercialContactoDto? contacto)
+    {
+        if (Tipo != CuentaComercialTipo.Cliente || contacto is null || _desvinculandoContacto)
+            return;
+
+        _contactoError = string.Empty;
+        _contactoPendienteDesvincular = contacto;
+        _showDesvincularContactoConfirm = true;
+    }
+
+    private void CancelarDesvincularContacto()
+    {
+        if (_desvinculandoContacto)
+            return;
+
+        _showDesvincularContactoConfirm = false;
+        _contactoPendienteDesvincular = null;
+        _contactoError = string.Empty;
+    }
+
+    private async Task ConfirmarDesvincularContactoAsync()
+    {
+        if (Tipo != CuentaComercialTipo.Cliente || _contactoPendienteDesvincular is null)
+            return;
+
+        _contactoError = string.Empty;
+        _desvinculandoContacto = true;
+        try
+        {
+            var contacto = _contactoPendienteDesvincular;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.UnlinkContactoAsync(Tipo, new CuentaComercialContactoUnlinkRequest
+                {
+                    CuentaCodigo = _selectedCodigo,
+                    ContactoId = contacto.Id
+                }),
+                "No se pudo desvincular el contacto del cliente.");
+
+            if (!result.Success)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudo desvincular el contacto del cliente.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _showDesvincularContactoConfirm = false;
+            _contactoPendienteDesvincular = null;
+            _showContactoPreview = false;
+            _contactoPreview = null;
+            _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
+            SetFeedback(AppUiMessage.Success("Contacto desvinculado", $"{contacto.NombreApellido} ya no está vinculado a {_form.RazonSocial}."));
+            await LoadContactosCuentaAsync();
+        }
+        finally
+        {
+            _desvinculandoContacto = false;
+        }
+    }
+
+    private async Task AbrirContactoCompleto()
     {
         if (_contactoPreview is null)
             return;
 
         var contactoId = _contactoPreview.Id;
-        CerrarVistaContacto();
-        Nav.NavigateTo(BuildContactEditUrl(contactoId));
+        await AbrirContactoEnNuevaPestanaAsync(contactoId);
     }
 
-    private void AbrirContactoCompleto(CuentaComercialContactoDto contacto)
+    private Task AbrirContactoCompleto(CuentaComercialContactoDto contacto)
     {
         var contactoId = contacto.Id;
-        Nav.NavigateTo(BuildContactEditUrl(contactoId));
+        return AbrirContactoEnNuevaPestanaAsync(contactoId);
     }
+
+    private Task AbrirContactoEnNuevaPestanaAsync(int contactoId)
+        => Js.InvokeVoidAsync(
+            "window.open",
+            BuildContactEditUrl(contactoId),
+            "_blank",
+            "noopener,noreferrer").AsTask();
 
     private string BuildContactEditUrl(int contactoId, bool openMerge = false)
     {
@@ -3072,7 +3174,9 @@ else
         _showContactoForm = false;
         _showContactoPreview = false;
         _showLinkContactoModal = false;
+        _showDesvincularContactoConfirm = false;
         _contactoPreview = null;
+        _contactoPendienteDesvincular = null;
         _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
         _linkSearchText = string.Empty;
         _linkCandidates.Clear();
@@ -3082,6 +3186,7 @@ else
         _savingContactoQuick = false;
         _loadingLinkCandidates = false;
         _linkingContacto = false;
+        _desvinculandoContacto = false;
     }
 
     private void ResetClavePortalState()

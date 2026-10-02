@@ -1875,7 +1875,7 @@
     private void OpenConversationFromDetail()
     {
         if (_detail?.IdConversacion is long idConv)
-            Nav.NavigateTo($"/conversaciones?id={idConv}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={idConv}"));
         else
             ShowOk("Origen", "Esta oportunidad todavía no tiene una conversación vinculada.");
     }
