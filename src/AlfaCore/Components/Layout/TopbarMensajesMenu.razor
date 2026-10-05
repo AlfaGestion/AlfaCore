@@ -1,0 +1,251 @@
+@using AlfaCore.Services
+@implements IAsyncDisposable
+@inject ISessionService SessionSvc
+@inject IAppUserSessionService AppUserSession
+@inject IConversacionesService ConversacionesSvc
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+@* Burbuja de la barra superior: vista previa de conversaciones sin leer / sin responder del usuario
+   (estilo Odoo). Usa la misma bandeja y permisos que Conversaciones. *@
+
+<div class="tb-msg">
+    <button type="button" class="alfa-app-topbar__global-icon tb-msg__trigger @(_open ? "is-active" : null)"
+            title="Mensajes" aria-label="@AriaLabel" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+            @onclick="ToggleAsync">
+        <i class="bi bi-chat-left-text" aria-hidden="true"></i>
+        @if (_sinLeer.Count > 0)
+        {
+            <span class="tb-msg__badge">@BadgeText(_sinLeer.Count)</span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="tb-msg__backdrop" @onclick="Close"></div>
+        <section class="tb-msg__panel" role="dialog" aria-label="Mensajes" @onkeydown="OnKeyDown">
+            <header class="tb-msg__header">
+                <AlfaTabs Items="Tabs" ActiveKey="@_tab" ActiveKeyChanged="@((string? k) => _tab = k ?? TabSinLeer)" AriaLabel="Filtro de mensajes" />
+                <a class="tb-msg__open-all" href="@RouteContext.BuildRoute("/conversaciones")" @onclick="Close">Abrir Conversaciones</a>
+            </header>
+
+            <div class="tb-msg__body">
+                @if (_loading && _items.Count == 0)
+                {
+                    <p class="tb-msg__hint">Cargando…</p>
+                }
+                else if (_error)
+                {
+                    <p class="tb-msg__hint">No se pudieron cargar los mensajes. Probá de nuevo en un momento.</p>
+                }
+                else if (Visibles.Count == 0)
+                {
+                    <div class="tb-msg__empty">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        <span>@(_tab == TabSinLeer ? "No tenés mensajes sin leer." : "No hay conversaciones esperando respuesta.")</span>
+                    </div>
+                }
+                else
+                {
+                    <ul class="tb-msg__list">
+                        @foreach (var item in Visibles)
+                        {
+                            <li>
+                                <a class="tb-msg__item" href="@ConversationUrl(item)" @onclick="Close">
+                                    <span class="tb-msg__avatar" aria-hidden="true">
+                                        @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
+                                        {
+                                            <img src="@item.FotoPerfilUrl" alt="" loading="lazy" />
+                                        }
+                                        else if (Iniciales(Nombre(item)) is { Length: > 0 } iniciales)
+                                        {
+                                            @iniciales
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-person"></i>
+                                        }
+                                        <i class="bi @CanalIcono(item.Canal) tb-msg__channel"></i>
+                                    </span>
+                                    <span class="tb-msg__text">
+                                        <span class="tb-msg__row">
+                                            <strong class="tb-msg__name">@Nombre(item)</strong>
+                                            <span class="tb-msg__time">@Hora(item)</span>
+                                        </span>
+                                        <span class="tb-msg__row">
+                                            <span class="tb-msg__summary">@Resumen(item)</span>
+                                            @if (item.MensajesNoLeidosUsuario > 0)
+                                            {
+                                                <span class="tb-msg__count">@BadgeText(item.MensajesNoLeidosUsuario)</span>
+                                            }
+                                        </span>
+                                    </span>
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private const string TabSinLeer = "sin-leer";
+    private const string TabSinResponder = "sin-responder";
+    private static readonly TimeSpan Intervalo = TimeSpan.FromSeconds(30);
+
+    private GlobalConversationNotificationsSource? _source;
+    private IReadOnlyList<ConversacionInboxItemDto> _items = [];
+    private IReadOnlyList<ConversacionInboxItemDto> _sinLeer = [];
+    private IReadOnlyList<ConversacionInboxItemDto> _sinResponder = [];
+    private string _tab = TabSinLeer;
+    private bool _open;
+    private bool _loading;
+    private bool _error;
+    private CancellationTokenSource? _cts;
+    private Task? _pollingTask;
+
+    private GlobalConversationNotificationsSource Source
+        => _source ??= new GlobalConversationNotificationsSource(SessionSvc, AppUserSession, ConversacionesSvc);
+
+    private IReadOnlyList<AlfaTabItem> Tabs =>
+    [
+        new(TabSinLeer, "Sin leer", Badge: _sinLeer.Count > 0 ? BadgeText(_sinLeer.Count) : null),
+        new(TabSinResponder, "Sin responder", Badge: _sinResponder.Count > 0 ? BadgeText(_sinResponder.Count) : null)
+    ];
+
+    private IReadOnlyList<ConversacionInboxItemDto> Visibles => _tab == TabSinLeer ? _sinLeer : _sinResponder;
+
+    private string AriaLabel => _sinLeer.Count > 0 ? $"Mensajes: {_sinLeer.Count} conversaciones sin leer" : "Mensajes";
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+        _pollingTask = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        await RefreshAsync(ct);
+        using var timer = new PeriodicTimer(Intervalo);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await InvokeAsync(() => RefreshAsync(ct));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        if (_loading)
+            return;
+
+        _loading = true;
+        try
+        {
+            var result = await Source.FetchBandejaAsync(30, ct);
+            if (!result.Executed)
+            {
+                _items = [];
+                _sinLeer = [];
+                _sinResponder = [];
+                _error = false;
+                return;
+            }
+
+            _items = result.Value ?? [];
+            (_sinLeer, _sinResponder) = GlobalConversationNotificationsSource.Clasificar(_items);
+            _error = false;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // La burbuja nunca debe romper la barra superior: se muestra el aviso dentro del panel.
+            _error = true;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            _tab = _sinLeer.Count == 0 && _sinResponder.Count > 0 ? TabSinResponder : TabSinLeer;
+            await RefreshAsync(_cts?.Token ?? CancellationToken.None);
+        }
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            Close();
+    }
+
+    private string ConversationUrl(ConversacionInboxItemDto item)
+        => RouteContext.BuildRoute($"/conversaciones?id={item.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+    internal static string Nombre(ConversacionInboxItemDto item)
+        => new[] { item.ContactoNombre, item.NombreVisible, item.ClienteNombre, item.TelefonoWhatsApp }
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? "Sin nombre";
+
+    internal static string Iniciales(string nombre)
+    {
+        var partes = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => char.IsLetter(p[0]))
+            .ToArray();
+        return partes.Length switch
+        {
+            0 => string.Empty,
+            1 => partes[0][..1].ToUpperInvariant(),
+            _ => string.Concat(partes[0][0], partes[1][0]).ToUpperInvariant()
+        };
+    }
+
+    internal static string BadgeText(int count) => count > 9 ? "9+" : count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Resumen(ConversacionInboxItemDto item)
+        => string.IsNullOrWhiteSpace(item.ResumenUltimoMensaje) ? "Mensaje nuevo" : item.ResumenUltimoMensaje.Trim();
+
+    private static string Hora(ConversacionInboxItemDto item)
+    {
+        var fecha = item.FechaHoraUltimoMensaje;
+        return fecha.Date == DateTime.Today ? fecha.ToString("HH:mm") : fecha.ToString("dd/MM");
+    }
+
+    internal static string CanalIcono(string? canal)
+        => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "INSTAGRAM" => "bi-instagram",
+            "FACEBOOK" => "bi-messenger",
+            "MERCADOLIBRE" => "bi-bag",
+            "INTERNO" => "bi-people",
+            _ => "bi-whatsapp"
+        };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_cts is null)
+            return;
+
+        _cts.Cancel();
+        if (_pollingTask is not null)
+        {
+            try { await _pollingTask; } catch { }
+        }
+        _cts.Dispose();
+        _cts = null;
+    }
+}

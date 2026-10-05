@@ -845,9 +845,10 @@ else
                             <i class="bi bi-file-earmark-pdf"></i>
                         </button>
                     }
-                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones")" title="Conversaciones" aria-label="Conversaciones">
-                        <i class="bi bi-chat-left-text"></i>
-                    </a>
+                    @if (AppUserSession.IsAuthenticated && !IsDirectMode)
+                    {
+                        <TopbarMensajesMenu />
+                    }
                     @if (AppUserSession.IsAuthenticated)
                     {
                         <button type="button" class="alfa-app-topbar__global-icon" @onclick="TogglePushPanelAsync" title="Notificaciones" aria-label="Notificaciones">
