@@ -337,6 +337,11 @@
                    OnCancel="ContinueEditingWithPendingUser" />
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     // ── Estado de lista ──────────────────────────────────────────────────────
     private readonly TecnicosFilters          _filters          = new();
     private readonly List<TecnicoGridItemDto> _items            = [];
@@ -506,7 +511,7 @@
             actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleSearchPanelAsync });
         }
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = _showEditor ? (_isNewMode ? "Nuevo técnico" : $"Editar {_form.Nombre}") : "Técnicos",
             Breadcrumb = ["Soporte", "Técnicos"],
@@ -538,7 +543,8 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 
     private async Task CargarCombosAsync()

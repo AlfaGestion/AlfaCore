@@ -733,6 +733,11 @@
                            OnClose="CloseBaseMaestraImagenesAsync" />
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private const string SectionCatalogos = "catalogo";
     private const string SectionNuevo = "nuevo";
     private const string SectionPredeterminado = "predeterminado";
@@ -880,7 +885,8 @@
     {
         Nav.LocationChanged -= OnLocationChanged;
         _disposeCts.Cancel();
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 
     private async Task LoadAsync()
@@ -1818,7 +1824,7 @@
     private void UpdatePageHeader()
     {
         var showEditorActions = ShouldShowEditorHeaderActions();
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),

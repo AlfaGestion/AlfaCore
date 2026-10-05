@@ -116,6 +116,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private ConfiguracionEmpresaDto _empresa = new();
     private IReadOnlyList<AlfaSelectOption> _condIvaOptions = [];
     private bool _saving;
@@ -129,7 +134,11 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -142,7 +151,7 @@
             _condIvaOptions = condIvaResult.Value.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} - {c.Descripcion}")).ToList();
     }
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         Title = "Empresa",
         Breadcrumb = ["Configuración General", "Empresa"],

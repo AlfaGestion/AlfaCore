@@ -264,6 +264,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private readonly UsuariosFilters _filters = new();
     private readonly UsuarioSaveRequest _form = new();
     private readonly List<UsuarioGridItemDto> _items = [];
@@ -451,7 +456,7 @@
             actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleUsuariosSearchPanelAsync });
         }
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = _showEditor ? (_isNewMode ? "Nuevo usuario" : $"Editar {_form.Nombre}") : "Usuarios",
             Breadcrumb = ["Seguridad", "Usuarios"],
@@ -486,7 +491,8 @@
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         ClearEditorDirtyState();
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 
     private async Task RecargarAsync()

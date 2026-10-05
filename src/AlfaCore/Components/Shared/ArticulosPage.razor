@@ -341,6 +341,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private readonly List<ArticuloGridItemDto> _items = [];
     private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
     private ArticuloFilters _filters = new();
@@ -446,7 +451,8 @@
     {
         Nav.LocationChanged -= OnLocationChanged;
         PageHeader.Changed -= OnHeaderChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
     }
@@ -525,7 +531,7 @@
                 });
             }
 
-            PageHeader.Set(new PageHeaderConfig
+            PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
             {
                 Title = _isNewMode ? "Nuevo artículo" : $"Editar {_form.Descripcion}",
                 Breadcrumb = ["Archivos", "Maestros", "Artículos"],
@@ -552,7 +558,7 @@
         actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
         actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = "Artículos",
             Breadcrumb = ["Archivos", "Maestros", "Artículos"],

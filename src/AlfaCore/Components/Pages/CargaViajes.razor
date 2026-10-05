@@ -3327,6 +3327,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private static readonly System.Globalization.CultureInfo MoneyCulture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
 
     [Parameter] public string? Vista { get; set; }
@@ -3607,7 +3612,7 @@
         if (isEditingOverlayOpen)
             AddEditorHeaderActions(actions);
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = GetHeaderTitle(),
             Breadcrumb = [],
@@ -3950,7 +3955,8 @@
     public void Dispose()
     {
         Nav.LocationChanged -= OnLocationChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _reportesCancellationCts?.Cancel();
         _reportesCancellationCts?.Dispose();
         _feedbackAutoClearCts?.Cancel();

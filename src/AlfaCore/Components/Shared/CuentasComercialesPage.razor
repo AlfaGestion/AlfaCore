@@ -1709,6 +1709,11 @@ else
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
 
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
@@ -1908,7 +1913,8 @@ else
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
     }
@@ -2215,7 +2221,7 @@ else
                 });
             }
 
-            PageHeader.Set(new PageHeaderConfig
+            PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
             {
                 Title = _isNewMode ? $"Nuevo {SingularLabelLower}" : $"Editar {_form.RazonSocial}",
                 Breadcrumb = ["Comercial", PluralLabel],
@@ -2242,7 +2248,7 @@ else
         actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
         actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleSearchPanelAsync });
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = PluralLabel,
             Breadcrumb = ["Comercial", PluralLabel],

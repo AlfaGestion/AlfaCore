@@ -679,6 +679,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     [SupplyParameterFromQuery(Name = "oportunidad")] public long? OportunidadQuery { get; set; }
     [SupplyParameterFromQuery(Name = "empresa")] public string? EmpresaQuery { get; set; }
     [SupplyParameterFromQuery(Name = "contacto")] public string? ContactoQuery { get; set; }
@@ -814,7 +819,11 @@
         }
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -904,7 +913,7 @@
             actions.Add(new PageHeaderAction { Key = "volver", Label = "Volver al listado", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => { CerrarEditor(); return Task.CompletedTask; } });
         }
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = !_showEditor ? "Cotizaciones" : _detail is null ? "Cotización" : $"{_detail.CodigoVisible} · v{_detail.NumeroVersion}",
             Breadcrumb = ["Cotizaciones"],

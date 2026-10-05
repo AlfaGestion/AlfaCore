@@ -741,6 +741,11 @@
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     // Llega desde el botón "Crear oportunidad" de Conversaciones: /crm?conv={IdConversacion}.
     [Parameter]
     [SupplyParameterFromQuery(Name = "conv")]
@@ -1407,7 +1412,7 @@
             });
         }
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = _showEditor ? (_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible} {_form.Titulo}" : "Nueva oportunidad") : "CRM oportunidades",
             Breadcrumb = _showEditor ? ["CRM", "Oportunidades", "Detalle"] : ["CRM", "Oportunidades"],
@@ -2693,7 +2698,11 @@
         return new MarkupString(System.Net.WebUtility.HtmlEncode(value));
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     private sealed record Feedback(string Title, string Message, string? Code, bool Success = false);
     private sealed record FilterChip(string Key, string Label);

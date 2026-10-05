@@ -72,6 +72,11 @@
 </AlfaDialog>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private bool _mostrarFiltros = true;
     private bool _ocupado;
     private string _estado = "", _feedback = "", _dialogo = "", _destinatario = "", _busqueda = "";
@@ -243,7 +248,7 @@
         if (firstRender) UpdateHeader();
     }
 
-    private void UpdateHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdateHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         SearchContent = RenderFiltros(),
         Actions = [
@@ -293,6 +298,7 @@
     {
         _cts.Cancel();
         _cts.Dispose();
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 }

@@ -378,6 +378,11 @@
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
     private readonly string[] _dayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
     private CalendarioMonthRequest _request = new();
@@ -474,7 +479,8 @@
 
     public void Dispose()
     {
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }
@@ -607,7 +613,7 @@
 
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = "Calendario",
             Breadcrumb = ["Calendario"],

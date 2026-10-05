@@ -67,6 +67,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private sealed class ArticulosFormModel
     {
         public string TasaIvaDefaultText { get; set; } = "0";
@@ -91,7 +96,11 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -114,7 +123,7 @@
         RutaImagenes = dto.RutaImagenes
     };
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         Title = "Artículos",
         Breadcrumb = ["Configuración General", "Artículos"],

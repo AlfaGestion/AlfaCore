@@ -84,6 +84,11 @@
 </section>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private bool _loading = true;
     private bool _esAdministrador;
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
@@ -97,9 +102,13 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
         TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "punto-venta")
