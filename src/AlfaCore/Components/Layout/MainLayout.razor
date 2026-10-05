@@ -849,32 +849,10 @@ else
                     {
                         <TopbarMensajesMenu />
                     }
-                    @if (AppUserSession.IsAuthenticated)
+                    @if (AppUserSession.IsAuthenticated && !IsDirectMode)
                     {
-                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="TogglePushPanelAsync" title="Notificaciones" aria-label="Notificaciones">
-                            <i class="bi bi-bell"></i>
-                        </button>
-                    }
-                    @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "usuarios", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "clientes", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "ventas", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "contabilidad", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "caja-bancos", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "stock", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "crm", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "tickets", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "configuracion-web-portal", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "documentos", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase))
-                    {
-                        <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
-                            <i class="bi bi-gear"></i>
-                        </a>
+                        <TopbarAvisosMenu OnConfigurarPush="TogglePushPanelAsync" />
+                        <TopbarConfiguracionMenu ModuloActual="@_currentModule" OnConfigurarPush="TogglePushPanelAsync" />
                     }
                     <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
                         <i class="bi bi-database"></i>
@@ -1529,6 +1507,7 @@ else
     // rutas internas -- ej. Clientes: alta/edición vía el mismo componente, sin cambiar de ruta).
     private static readonly HashSet<string> AlfaDesignManagedModules = new(StringComparer.OrdinalIgnoreCase)
     {
+        "configuracion",
         "contactos",
         "usuarios",
         "clientes",

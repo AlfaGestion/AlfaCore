@@ -1,0 +1,203 @@
+.tb-av {
+    position: relative;
+    display: inline-flex;
+}
+
+.tb-av__trigger {
+    position: relative;
+}
+
+.tb-av__trigger.is-active {
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.tb-av__trigger:focus-visible,
+.tb-av__item:focus-visible,
+.tb-av__link:focus-visible {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: 2px;
+}
+
+.tb-av__badge {
+    position: absolute;
+    top: 2px;
+    right: 1px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--alfa-danger, #ef5350);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+}
+
+.tb-av__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+}
+
+.tb-av__panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    width: min(380px, calc(100vw - 24px));
+    max-height: min(540px, calc(100vh - 80px));
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+    overflow: hidden;
+}
+
+.tb-av__header,
+.tb-av__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-8, 8px);
+    padding: var(--alfa-space-12, 12px);
+}
+
+.tb-av__header {
+    border-bottom: 1px solid var(--alfa-border-default, #333640);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.tb-av__footer {
+    border-top: 1px solid var(--alfa-border-default, #333640);
+}
+
+.tb-av__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4, 4px);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--alfa-accent, #4f9efa);
+    font: inherit;
+    font-size: var(--alfa-font-small, 12px);
+    cursor: pointer;
+}
+
+.tb-av__body {
+    overflow-y: auto;
+}
+
+.tb-av__hint {
+    margin: 0;
+    padding: var(--alfa-space-16, 16px);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.tb-av__empty {
+    display: grid;
+    justify-items: center;
+    gap: var(--alfa-space-8, 8px);
+    padding: var(--alfa-space-24, 24px) var(--alfa-space-16, 16px);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    text-align: center;
+}
+
+.tb-av__empty i {
+    font-size: 22px;
+}
+
+.tb-av__empty small {
+    max-width: 32ch;
+    line-height: 1.5;
+}
+
+.tb-av__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tb-av__list li + li .tb-av__item {
+    border-top: 1px solid var(--alfa-border-default, #333640);
+}
+
+.tb-av__item {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 8px;
+    align-items: start;
+    gap: var(--alfa-space-12, 12px);
+    width: 100%;
+    padding: var(--alfa-space-12, 12px);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tb-av__item:hover {
+    background: var(--alfa-state-hover, #22262e);
+}
+
+.tb-av__item.is-read {
+    opacity: .65;
+}
+
+.tb-av__icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-accent, #4f9efa);
+    font-size: 15px;
+}
+
+.tb-av__icon--guardia {
+    color: var(--alfa-warning, #e3b25a);
+}
+
+.tb-av__icon--reserva,
+.tb-av__icon--capacitacion {
+    color: var(--alfa-success, #5cc58b);
+}
+
+.tb-av__text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.tb-av__text strong {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-body, 13px);
+    line-height: 1.35;
+}
+
+.tb-av__text > span {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    overflow-wrap: anywhere;
+}
+
+.tb-av__text > .tb-av__content {
+    margin-top: var(--alfa-space-4, 4px);
+    color: var(--alfa-text-primary, #f5f5f7);
+    line-height: 1.5;
+}
+
+.tb-av__dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--alfa-accent, #4f9efa);
+}

@@ -1,0 +1,237 @@
+@using AlfaCore.Services
+@implements IAsyncDisposable
+@inject ICentroAvisosService AvisosSvc
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+@* Campana de la barra superior: recordatorios y avisos del usuario (guardias, reuniones y
+   capacitaciones del Calendario, reservas públicas, eventos agendados por otros y novedades). *@
+
+<div class="tb-av">
+    <button type="button" class="alfa-app-topbar__global-icon tb-av__trigger @(_open ? "is-active" : null)"
+            title="Avisos" aria-label="@AriaLabel" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+            @onclick="ToggleAsync">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        @if (NoLeidos > 0)
+        {
+            <span class="tb-av__badge">@(NoLeidos > 9 ? "9+" : NoLeidos.ToString(System.Globalization.CultureInfo.InvariantCulture))</span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="tb-av__backdrop" @onclick="Close"></div>
+        <section class="tb-av__panel" role="dialog" aria-label="Avisos" @onkeydown="OnKeyDown">
+            <header class="tb-av__header">
+                <strong>Avisos</strong>
+                @if (NoLeidos > 0)
+                {
+                    <button type="button" class="tb-av__link" @onclick="MarcarTodosAsync">Marcar todo como leído</button>
+                }
+            </header>
+
+            <div class="tb-av__body">
+                @if (_loading && _avisos.Count == 0)
+                {
+                    <p class="tb-av__hint">Cargando…</p>
+                }
+                else if (_error)
+                {
+                    <p class="tb-av__hint">No se pudieron cargar los avisos. Probá de nuevo en un momento.</p>
+                }
+                else if (_avisos.Count == 0)
+                {
+                    <div class="tb-av__empty">
+                        <i class="bi bi-bell-slash" aria-hidden="true"></i>
+                        <span>No tenés avisos por ahora.</span>
+                        <small>Acá vas a ver tus guardias, reuniones, capacitaciones, reservas de clientes y novedades.</small>
+                    </div>
+                }
+                else
+                {
+                    <ul class="tb-av__list">
+                        @foreach (var aviso in _avisos)
+                        {
+                            <li>
+                                <button type="button" class="tb-av__item @(aviso.Leido ? "is-read" : null)" @onclick="() => AbrirAsync(aviso)">
+                                    <span class="tb-av__icon tb-av__icon--@aviso.Tipo.ToLowerInvariant()" aria-hidden="true">
+                                        <i class="bi @Icono(aviso.Tipo)"></i>
+                                    </span>
+                                    <span class="tb-av__text">
+                                        <strong>@aviso.Titulo</strong>
+                                        <span>@aviso.Detalle</span>
+                                        @if (_expandida == aviso.Clave && !string.IsNullOrWhiteSpace(aviso.Contenido))
+                                        {
+                                            <span class="tb-av__content">@aviso.Contenido</span>
+                                        }
+                                    </span>
+                                    @if (!aviso.Leido)
+                                    {
+                                        <span class="tb-av__dot" aria-label="Sin leer"></span>
+                                    }
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            @if (OnConfigurarPush.HasDelegate)
+            {
+                <footer class="tb-av__footer">
+                    <button type="button" class="tb-av__link" @onclick="ConfigurarPushAsync">
+                        <i class="bi bi-phone-vibrate" aria-hidden="true"></i> Notificaciones en este dispositivo
+                    </button>
+                </footer>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan Intervalo = TimeSpan.FromSeconds(60);
+
+    [Parameter] public EventCallback OnConfigurarPush { get; set; }
+
+    private IReadOnlyList<AvisoDto> _avisos = [];
+    private bool _open;
+    private bool _loading;
+    private bool _error;
+    private string? _expandida;
+    private CancellationTokenSource? _cts;
+    private Task? _pollingTask;
+
+    private int NoLeidos => _avisos.Count(a => !a.Leido);
+    private string AriaLabel => NoLeidos > 0 ? $"Avisos: {NoLeidos} sin leer" : "Avisos";
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+        _pollingTask = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        await RefreshAsync(ct);
+        using var timer = new PeriodicTimer(Intervalo);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await InvokeAsync(() => RefreshAsync(ct));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        if (_loading)
+            return;
+
+        _loading = true;
+        try
+        {
+            var result = await AvisosSvc.GetAsync(ct);
+            _avisos = result.Executed ? result.Value ?? [] : [];
+            _error = false;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // El error ya quedó registrado en AUX_ERR por el servicio; la barra superior no se rompe.
+            _error = true;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        _expandida = null;
+        if (_open)
+            await RefreshAsync(_cts?.Token ?? CancellationToken.None);
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            Close();
+    }
+
+    private async Task AbrirAsync(AvisoDto aviso)
+    {
+        if (!aviso.Leido)
+            await MarcarAsync([aviso.Clave]);
+
+        if (!string.IsNullOrWhiteSpace(aviso.Ruta))
+        {
+            Close();
+            Nav.NavigateTo(RouteContext.BuildRoute(aviso.Ruta));
+            return;
+        }
+
+        _expandida = _expandida == aviso.Clave ? null : aviso.Clave;
+    }
+
+    private Task MarcarTodosAsync()
+        => MarcarAsync(_avisos.Where(a => !a.Leido).Select(a => a.Clave).ToList());
+
+    private async Task MarcarAsync(IReadOnlyCollection<string> claves)
+    {
+        if (claves.Count == 0)
+            return;
+
+        try
+        {
+            await AvisosSvc.MarcarLeidosAsync(claves, _cts?.Token ?? CancellationToken.None);
+            var set = new HashSet<string>(claves, StringComparer.OrdinalIgnoreCase);
+            foreach (var aviso in _avisos.Where(a => set.Contains(a.Clave)))
+                aviso.Leido = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private async Task ConfigurarPushAsync()
+    {
+        Close();
+        await OnConfigurarPush.InvokeAsync();
+    }
+
+    internal static string Icono(string tipo)
+        => tipo switch
+        {
+            AvisoTipos.Guardia => "bi-shield-check",
+            AvisoTipos.Reunion => "bi-people",
+            AvisoTipos.Capacitacion => "bi-mortarboard",
+            AvisoTipos.Reserva => "bi-calendar-plus",
+            AvisoTipos.Asignado => "bi-calendar-event",
+            AvisoTipos.Novedad => "bi-megaphone",
+            _ => "bi-calendar3"
+        };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_cts is null)
+            return;
+
+        _cts.Cancel();
+        if (_pollingTask is not null)
+        {
+            try { await _pollingTask; } catch { }
+        }
+        _cts.Dispose();
+        _cts = null;
+    }
+}

@@ -1,0 +1,112 @@
+@page "/configuracion"
+@page "/{idweb}/{idbase:int}/configuracion"
+@implements IDisposable
+@inject AlfaCore.Services.IMenuService MenuSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@using AlfaCore.Services
+
+<PageTitle>Configuración | Alfa Gestión</PageTitle>
+
+@* Punto de entrada único a la configuración del sistema (2026-10-05). Cada módulo sigue siendo dueño de
+   su pantalla; acá se listan todas, agrupadas y con buscador (ConfiguracionCatalogo). *@
+
+<div class="hub-page">
+    <div class="hub">
+        <header class="hub__header">
+            <div>
+                <h2>Configuración</h2>
+                <p>Todas las configuraciones del sistema a las que tenés acceso, en un solo lugar.</p>
+            </div>
+            <div class="hub__search">
+                <AlfaInput Id="hub-buscar" Type="search" Placeholder="Buscar: horario, logo, permisos, WhatsApp…"
+                           Value="@_texto" ValueChanged="OnTextoChanged" />
+            </div>
+        </header>
+
+        @if (Resultados.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin resultados"
+                            Message="@($"No encontramos configuraciones para «{_texto}». Probá con otra palabra.")" />
+        }
+        else
+        {
+            @foreach (var area in ConfiguracionCatalogo.Areas)
+            {
+                var entradas = Resultados.Where(e => e.Area == area).ToList();
+                if (entradas.Count == 0)
+                {
+                    continue;
+                }
+
+                <section class="hub__area" aria-label="@area">
+                    <h3>@area</h3>
+                    <div class="hub__grid">
+                        @foreach (var entrada in entradas)
+                        {
+                            <a class="hub__card @(entrada.Principal ? "is-main" : null)" href="@RouteContext.BuildRoute(entrada.Ruta)">
+                                <i class="bi @entrada.Icono" aria-hidden="true"></i>
+                                <span class="hub__card-text">
+                                    <strong>@entrada.Titulo</strong>
+                                    <span>@entrada.Descripcion</span>
+                                </span>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    [SupplyParameterFromQuery(Name = "buscar")] public string? BuscarQuery { get; set; }
+
+    private string _texto = string.Empty;
+    private IReadOnlyList<ConfiguracionEntrada> _visibles = ConfiguracionCatalogo.Entradas;
+
+    private IReadOnlyList<ConfiguracionEntrada> Resultados => ConfiguracionCatalogo.Buscar(_visibles, _texto);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _texto = BuscarQuery ?? string.Empty;
+        try
+        {
+            var modulos = await MenuSvc.GetModulesAsync();
+            var rutas = await MenuSvc.GetSearchItemsAsync();
+            _visibles = ConfiguracionCatalogo.Visibles(modulos.Select(m => m.RutaWeb), rutas.Select(r => r.RutaWeb));
+        }
+        catch
+        {
+            // Sin menú dinámico se listan todas: cada pantalla aplica su propio control de acceso.
+            _visibles = ConfiguracionCatalogo.Entradas;
+        }
+    }
+
+    private void OnTextoChanged(string? value) => _texto = value ?? string.Empty;
+
+    private void UpdatePageHeader()
+        => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "configuracion",
+            Title = "Configuración"
+        });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+}

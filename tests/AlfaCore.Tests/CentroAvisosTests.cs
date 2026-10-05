@@ -1,0 +1,127 @@
+using AlfaCore.Models;
+using AlfaCore.Services;
+using Xunit;
+
+namespace AlfaCore.Tests;
+
+/// <summary>
+/// Campana de avisos (2026-10-05): reglas que convierten eventos del Calendario, reservas públicas y
+/// novedades en avisos del usuario.
+/// </summary>
+public sealed class CentroAvisosTests
+{
+    private static readonly DateTime Ahora = new(2026, 10, 5, 15, 0, 0);
+    private static readonly IReadOnlySet<string> SinLeidos = new HashSet<string>();
+
+    private static AvisoEventoFuente Evento(long id, string tipo, DateTime inicio, string tecnico = "T1",
+        int? minutosAntes = null, string usuarioAlta = "", DateTime? alta = null, bool todoElDia = false)
+        => new()
+        {
+            IdEvento = id,
+            Titulo = $"Evento {id}",
+            Tipo = tipo,
+            FechaInicio = inicio,
+            FechaFin = inicio.AddHours(2),
+            TodoElDia = todoElDia,
+            IdTecnico = tecnico,
+            MinutosAntes = minutosAntes,
+            UsuarioAlta = usuarioAlta,
+            FechaAlta = alta
+        };
+
+    private static IReadOnlyList<AvisoDto> Construir(IEnumerable<AvisoEventoFuente> eventos, IReadOnlySet<string>? leidos = null,
+        IEnumerable<AvisoNovedadFuente>? novedades = null)
+        => CentroAvisosService.ConstruirAvisos(eventos, novedades ?? [], ["T1"], "evelyn", leidos ?? SinLeidos, Ahora);
+
+    [Fact]
+    public void Guardia_AvisaElDiaAnteriorYElMismoDia()
+    {
+        var mañana = Construir([Evento(1, "GUARDIA", Ahora.Date.AddDays(1), todoElDia: true)]);
+        var hoy = Construir([Evento(2, "GUARDIA", Ahora.Date.AddHours(16))]);
+        var pasadoMañana = Construir([Evento(3, "GUARDIA", Ahora.Date.AddDays(2))]);
+
+        Assert.Equal("cal:1:dia-antes", Assert.Single(mañana).Clave);
+        Assert.Equal("Mañana tenés guardia", mañana[0].Titulo);
+        Assert.Equal("cal:2:mismo-dia", Assert.Single(hoy).Clave);
+        Assert.Empty(pasadoMañana);
+    }
+
+    [Fact]
+    public void Capacitacion_UsaLaAnticipacionDelRecordatorio()
+    {
+        var enDosHoras = Ahora.AddHours(2);
+
+        Assert.Empty(Construir([Evento(1, "CAPACITACION", enDosHoras, minutosAntes: 60)]));
+        var aviso = Assert.Single(Construir([Evento(2, "CAPACITACION", enDosHoras, minutosAntes: 180)]));
+        Assert.Equal(AvisoTipos.Capacitacion, aviso.Tipo);
+        Assert.StartsWith("Próxima capacitación", aviso.Titulo);
+        // Sin recordatorio: 24 h por defecto.
+        Assert.Single(Construir([Evento(3, "REUNION", Ahora.AddHours(20))]));
+        Assert.Empty(Construir([Evento(4, "REUNION", Ahora.AddHours(30))]));
+    }
+
+    [Fact]
+    public void EventosDeOtroTecnico_NoSeAvisan()
+        => Assert.Empty(Construir([Evento(1, "GUARDIA", Ahora.Date.AddDays(1), tecnico: "T2")]));
+
+    [Fact]
+    public void EventoAgendadoPorOtraPersona_AvisaTeAgendaron()
+    {
+        var avisos = Construir([Evento(1, "REUNION", Ahora.AddDays(5), usuarioAlta: "matias", alta: Ahora.AddDays(-1))]);
+
+        var aviso = Assert.Single(avisos);
+        Assert.Equal("cal:1:alta", aviso.Clave);
+        Assert.Contains("por matias", aviso.Detalle);
+        // Si lo cargó el mismo usuario, no se avisa.
+        Assert.Empty(Construir([Evento(2, "REUNION", Ahora.AddDays(5), usuarioAlta: "EVELYN", alta: Ahora.AddDays(-1))]));
+    }
+
+    [Fact]
+    public void ReservaPublica_SeAvisaAlTecnicoOATodosSiNoTieneTecnico()
+    {
+        var reserva = Evento(1, "CAPACITACION", Ahora.AddDays(3), tecnico: "");
+        reserva.IdReserva = 45;
+        reserva.ReservaCliente = "Juan";
+        reserva.ReservaRazonSocial = "Ferretería Sur";
+        reserva.ReservaTipoCapacitacion = "Facturación";
+        reserva.ReservaFechaAlta = Ahora.AddHours(-3);
+
+        var aviso = Assert.Single(Construir([reserva]));
+        Assert.Equal("res:45", aviso.Clave);
+        Assert.Equal("Nueva reserva: Facturación", aviso.Titulo);
+        Assert.StartsWith("Juan (Ferretería Sur)", aviso.Detalle);
+
+        reserva.IdTecnico = "T2";
+        Assert.Empty(Construir([reserva]));
+    }
+
+    [Fact]
+    public void Leidos_QuedanAlFinalYMarcados()
+    {
+        var avisos = Construir(
+            [Evento(1, "GUARDIA", Ahora.Date.AddDays(1)), Evento(2, "REUNION", Ahora.AddHours(1))],
+            new HashSet<string>(["cal:1:dia-antes"], StringComparer.OrdinalIgnoreCase));
+
+        Assert.Equal(["cal:2:aviso", "cal:1:dia-antes"], avisos.Select(a => a.Clave));
+        Assert.False(avisos[0].Leido);
+        Assert.True(avisos[1].Leido);
+    }
+
+    [Fact]
+    public void Novedades_SeMuestranConSuContenido()
+    {
+        var aviso = Assert.Single(Construir([], novedades:
+        [
+            new AvisoNovedadFuente { IdNovedad = 7, Titulo = "Nueva versión", Bajada = "Mejoras en Conversaciones", Version = "4.2", FechaPublicacion = Ahora.AddDays(-1) }
+        ]));
+
+        Assert.Equal("nov:7", aviso.Clave);
+        Assert.Equal("Mejoras en Conversaciones", aviso.Contenido);
+        Assert.Contains("versión 4.2", aviso.Detalle);
+        Assert.Empty(aviso.Ruta);
+    }
+
+    [Fact]
+    public void EventosTerminados_NoGeneranAvisos()
+        => Assert.Empty(Construir([Evento(1, "REUNION", Ahora.AddHours(-5))]));
+}

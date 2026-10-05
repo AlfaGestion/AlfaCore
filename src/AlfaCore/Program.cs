@@ -303,6 +303,7 @@ public class Program
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
+        builder.Services.AddScoped<ICentroAvisosService, CentroAvisosService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
