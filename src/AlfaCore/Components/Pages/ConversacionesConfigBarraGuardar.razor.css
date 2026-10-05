@@ -1,0 +1,28 @@
+.cfg-savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--alfa-space-8, 8px);
+    padding: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+}
+
+.cfg-savebar__status {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    margin-right: auto;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.cfg-savebar__status i {
+    font-size: 8px;
+    color: var(--alfa-warning, #e3b25a);
+}

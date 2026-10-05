@@ -1,0 +1,17 @@
+@* Dato de solo lectura seleccionable (URLs de webhook, callbacks). AlfaInput no tiene modo readonly. *@
+
+<div class="cfg-ro @Class">
+    <span class="cfg-ro__label">@Label</span>
+    <span class="cfg-ro__value">@(string.IsNullOrWhiteSpace(Valor) ? "—" : Valor)</span>
+    @if (!string.IsNullOrWhiteSpace(HelpText))
+    {
+        <span class="cfg-ro__hint">@HelpText</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Valor { get; set; }
+    [Parameter] public string? HelpText { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

@@ -1,0 +1,44 @@
+@* Tarjeta de Configuración (AlfaDesign v1). Además del marco, define utilidades para su contenido
+   (cfg-full, cfg-hint, cfg-checks, cfg-list, cfg-kv, cfg-actions...), que se aplican con ::deep para
+   que funcionen también sobre el markup de la página que la usa. *@
+
+<section class="cfg-card @Class">
+    @if (!string.IsNullOrWhiteSpace(Titulo) || Extra is not null)
+    {
+        <header class="cfg-card__header">
+            <div class="cfg-card__heading">
+                @if (!string.IsNullOrWhiteSpace(Titulo))
+                {
+                    <h3>
+                        @if (!string.IsNullOrWhiteSpace(Icono))
+                        {
+                            <i class="bi @Icono" aria-hidden="true"></i>
+                        }
+                        @Titulo
+                    </h3>
+                }
+                @if (!string.IsNullOrWhiteSpace(Descripcion))
+                {
+                    <p>@Descripcion</p>
+                }
+            </div>
+            @if (Extra is not null)
+            {
+                <div class="cfg-card__extra">@Extra</div>
+            }
+        </header>
+    }
+    <div class="cfg-card__body @(Columnas == 2 ? "cfg-card__body--2" : null)">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter] public string? Titulo { get; set; }
+    [Parameter] public string? Descripcion { get; set; }
+    [Parameter] public string? Icono { get; set; }
+    [Parameter] public int Columnas { get; set; } = 1;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? Extra { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

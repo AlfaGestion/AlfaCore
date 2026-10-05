@@ -1,0 +1,113 @@
+@* Configuración → Operación y accesos: prioridad de la cola, accesos por número y administradores.
+   El estado y el guardado siguen en la página. *@
+
+@switch (Seccion)
+{
+    case "accesos-numero":
+        <ConversacionesConfigPagina Titulo="Accesos por número" Descripcion="Qué usuarios ven y responden las conversaciones de cada número de WhatsApp. Los administradores ven todos.">
+            <ConversacionesConfigTarjeta Titulo="Números de WhatsApp">
+                @if (!Numeros.Any(n => n.Activo))
+                {
+                    <AlfaEmptyState Title="No hay números conectados" Message="Conectá un número en Canales → WhatsApp para asignarle usuarios." />
+                }
+                else
+                {
+                    <ul class="cfg-list">
+                        @foreach (var numero in Numeros.Where(n => n.Activo))
+                        {
+                            var esBusiness = ConversacionesConfiguracion.IsWhatsAppWebManagedNumero(numero);
+                            <li class="cfg-list__item">
+                                <i class="bi @(esBusiness ? "bi-qr-code" : "bi-cloud") cfg-list__icon" aria-hidden="true"></i>
+                                <div class="cfg-list__text">
+                                    <span class="cfg-list__title">@ConversacionesConfiguracion.GetNumeroDisplayName(numero)</span>
+                                    <span class="cfg-list__desc">
+                                        @(esBusiness ? "WhatsApp Business (QR)" : "WhatsApp API") ·
+                                        @(numero.Usuarios.Count == 0 ? "Sin usuarios asignados (solo administradores)" : string.Join(", ", numero.Usuarios))
+                                    </span>
+                                </div>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-pencil" Size="AlfaSize.Sm"
+                                            OnClick="@(() => OnIrACanal.InvokeAsync(esBusiness ? "whatsapp-business" : "whatsapp-api"))">Editar accesos</AlfaButton>
+                            </li>
+                        }
+                    </ul>
+                }
+            </ConversacionesConfigTarjeta>
+        </ConversacionesConfigPagina>
+        break;
+
+    case "administradores":
+        <ConversacionesConfigPagina Titulo="Administradores" Descripcion="Ven y pueden responder por cualquier número de WhatsApp, sin importar a cuáles estén vinculados.">
+            <Estado><AlfaTag Tone="AlfaTagTone.Neutral">@Administradores.Count administrador(es)</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Usuarios">
+                    @if (UsuariosSistema.Count == 0)
+                    {
+                        <AlfaEmptyState Title="No hay usuarios activos" Message="No hay usuarios activos en este sistema." />
+                    }
+                    else
+                    {
+                        <div class="cfg-checks" role="group" aria-label="Administradores de conversaciones">
+                            @foreach (var usuario in UsuariosSistema)
+                            {
+                                <div class="cfg-check-tile">
+                                    <AlfaCheckbox Value="@Administradores.Contains(usuario.Nombre)"
+                                                  ValueChanged="@((bool? v) => OnToggleAdministrador.InvokeAsync((usuario.Nombre, v == true)))">
+                                        @usuario.Nombre
+                                    </AlfaCheckbox>
+                                </div>
+                            }
+                        </div>
+                    }
+                </ConversacionesConfigTarjeta>
+                <ConversacionesConfigAyuda>
+                    <ol>
+                        <li>Es propio de Conversaciones: alguien puede administrar conversaciones sin ser administrador del sistema, y al revés.</li>
+                        <li>Pensado para quien coordina la atención: supervisores, encargados de WhatsApp, etc.</li>
+                    </ol>
+                </ConversacionesConfigAyuda>
+                <ConversacionesConfigBarraGuardar HayCambios="@AdministradoresConCambios" Busy="@Busy"
+                                                  OnGuardar="OnGuardarAdministradores" OnDescartar="OnDescartarAdministradores" />
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+
+    default:
+        <ConversacionesConfigPagina Titulo="Prioridades" Descripcion="Qué clasificación de cliente se atiende primero en la cola de espera. El resto queda al final.">
+            <ConversacionesConfigTarjeta Titulo="Orden de atención" Columnas="2">
+                <AlfaSelect Id="prioridad-1" Label="Prioridad 1 (más importante)" Options="ClasificacionOptions"
+                            Value="@Prioridad.Clasifica1" ValueChanged="@((string? v) => Prioridad.Clasifica1 = v ?? string.Empty)" />
+                <AlfaSelect Id="prioridad-2" Label="Prioridad 2" Options="ClasificacionOptions"
+                            Value="@Prioridad.Clasifica2" ValueChanged="@((string? v) => Prioridad.Clasifica2 = v ?? string.Empty)" />
+                <AlfaSelect Id="prioridad-3" Label="Prioridad 3" Options="ClasificacionOptions"
+                            Value="@Prioridad.Clasifica3" ValueChanged="@((string? v) => Prioridad.Clasifica3 = v ?? string.Empty)" />
+                <p class="cfg-hint cfg-full">Esta configuración es compartida con Alfa Gestión de escritorio: cambiarla acá también la cambia allá.</p>
+            </ConversacionesConfigTarjeta>
+            <ConversacionesConfigAyuda>
+                <ol>
+                    <li>La bandeja ordena primero por prioridad (1, 2, 3, resto) y dentro de cada grupo por tiempo de espera.</li>
+                    <li>La clasificación de cada cliente se carga en Clientes; acá solo se define cuál pesa más.</li>
+                </ol>
+            </ConversacionesConfigAyuda>
+            <ConversacionesConfigBarraGuardar Etiqueta="Guardar prioridades" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardarPrioridad" />
+        </ConversacionesConfigPagina>
+        break;
+}
+
+@code {
+    [Parameter] public string Seccion { get; set; } = "prioridades";
+    [Parameter, EditorRequired] public ConversacionPrioridadConfigDto Prioridad { get; set; } = new();
+    [Parameter] public IReadOnlyList<ConversacionClasificacionOptionDto> Clasificaciones { get; set; } = [];
+    [Parameter] public IReadOnlyList<UsuarioSistemaDto> UsuariosSistema { get; set; } = [];
+    [Parameter] public IReadOnlySet<string> Administradores { get; set; } = new HashSet<string>();
+    [Parameter] public bool AdministradoresConCambios { get; set; }
+    [Parameter] public IReadOnlyList<ConversacionWhatsAppNumeroDto> Numeros { get; set; } = [];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardarPrioridad { get; set; }
+    [Parameter] public EventCallback OnGuardarAdministradores { get; set; }
+    [Parameter] public EventCallback OnDescartarAdministradores { get; set; }
+    [Parameter] public EventCallback<(string Usuario, bool Seleccionado)> OnToggleAdministrador { get; set; }
+    [Parameter] public EventCallback<string> OnIrACanal { get; set; }
+
+    private IReadOnlyList<AlfaSelectOption> ClasificacionOptions
+        => [new AlfaSelectOption("", "Sin asignar"), .. Clasificaciones.Select(c => new AlfaSelectOption(c.Codigo, c.Descripcion))];
+}

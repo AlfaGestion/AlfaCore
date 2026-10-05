@@ -1,0 +1,60 @@
+@* Configuración → Canales → Facebook Messenger (AlfaDesign v1). Mismos campos y guardado que antes. *@
+
+<ConversacionesConfigPagina Titulo="Facebook Messenger" Descripcion="Mensajes que recibe tu página de Facebook por Messenger.">
+    <Estado>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForSend)">Envío: @(Config.IsConfiguredForSend ? "listo" : "pendiente")</AlfaTag>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForVerify)">Webhook: @(Config.IsConfiguredForVerify ? "listo" : "pendiente")</AlfaTag>
+    </Estado>
+    <ChildContent>
+        <ConversacionesConfigTarjeta Titulo="Página" Columnas="2">
+            <AlfaInput Id="fb-page-id" Label="Facebook Page ID" Placeholder="ID de la página"
+                       Value="@Config.PageId" ValueChanged="@((string? v) => Config.PageId = v ?? string.Empty)" />
+            <AlfaInput Id="fb-page-username" Label="Usuario o slug de la página" Placeholder="Ej. mi.pagina"
+                       Value="@Config.PageUsername" ValueChanged="@((string? v) => Config.PageUsername = v ?? string.Empty)" />
+            <AlfaInput Id="fb-app-id" Label="App ID de Meta"
+                       Value="@Config.AppId" ValueChanged="@((string? v) => Config.AppId = v ?? string.Empty)" />
+            <AlfaInput Id="fb-api-version" Label="Versión Graph API" Placeholder="v22.0"
+                       Value="@Config.ApiVersion" ValueChanged="@((string? v) => Config.ApiVersion = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Credenciales" Columnas="2">
+            <ConversacionesConfigTexto Id="fb-access-token" Label="Page Access Token" Filas="3" Monoespaciado="true" Class="cfg-full"
+                                       Placeholder="Token de página con permisos de Messenger"
+                                       Value="@Config.AccessToken" ValueChanged="@((string? v) => Config.AccessToken = v ?? string.Empty)" />
+            <AlfaInput Id="fb-app-secret" Label="App Secret"
+                       Value="@Config.AppSecret" ValueChanged="@((string? v) => Config.AppSecret = v ?? string.Empty)" />
+            <AlfaInput Id="fb-verify-token" Label="Verify Token" Placeholder="Texto secreto que definís vos"
+                       Value="@Config.VerifyToken" ValueChanged="@((string? v) => Config.VerifyToken = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Webhook">
+            <AlfaInput Id="fb-public-url" Label="Base pública HTTPS" Placeholder="@SugerenciaBaseUrl"
+                       Value="@Config.PublicBaseUrl" ValueChanged="@((string? v) => Config.PublicBaseUrl = v ?? string.Empty)" />
+            <ConversacionesConfigSoloLectura Label="URL de callback para cargar en Meta" Valor="@UrlCallback()"
+                                             HelpText="@($"Suscribí la página al evento messages. {AyudaToken}")" />
+            <ConversacionesConfigSoloLectura Label="Ruta interna" Valor="@Config.WebhookPath" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigAyuda Titulo="Qué necesitás en Meta">
+            <ol>
+                <li>Una app de Meta con el producto Messenger habilitado.</li>
+                <li>Un Page Access Token de la página que va a recibir mensajes.</li>
+                <li>El webhook configurado con la URL de callback y el verify token, suscripto al evento <code>messages</code>.</li>
+            </ol>
+            <p>Cuando entra el primer mensaje, AlfaCore intenta traer nombre y foto del perfil (PSID + User Profile API). Meta no garantiza una URL pública del perfil personal.</p>
+        </ConversacionesConfigAyuda>
+
+        <ConversacionesConfigBarraGuardar Etiqueta="Guardar Facebook" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+@code {
+    [Parameter, EditorRequired] public ConversacionFacebookConfigDto Config { get; set; } = new();
+    [Parameter] public string SugerenciaBaseUrl { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public Func<string> UrlCallback { get; set; } = () => string.Empty;
+    [Parameter] public string AyudaToken { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+
+    private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
+}

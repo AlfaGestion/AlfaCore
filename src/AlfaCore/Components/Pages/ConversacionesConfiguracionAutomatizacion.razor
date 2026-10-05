@@ -1,0 +1,139 @@
+@using System.Globalization
+
+@* Configuración → Automatización (Horario, Bienvenida, Auto-cierre, SLA) e Informes. Edita el mismo DTO
+   que el Asistente IA; cada pantalla guarda solo su sección (ver ConversacionAutomatizacionSeccion). *@
+
+@switch (Seccion)
+{
+    case "bienvenida":
+        <ConversacionesConfigPagina Titulo="Bienvenida" Descripcion="Saludo automático, una sola vez, en el primer mensaje de una conversación nueva de WhatsApp.">
+            <Estado><AlfaTag Tone="@Tono(Config.BienvenidaActivo)">@(Config.BienvenidaActivo ? "Activa" : "Apagada")</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Mensaje de bienvenida" Descripcion="Se manda cuando llega el primer mensaje de una conversación nueva y todavía no le respondimos nada.">
+                    <AlfaCheckbox Value="@Config.BienvenidaActivo" ValueChanged="@((bool? v) => Config.BienvenidaActivo = v == true)">Activar mensaje de bienvenida</AlfaCheckbox>
+                    <ConversacionesConfigTexto Id="bienvenida-msg" Label="Mensaje" Filas="3"
+                                               Value="@Config.BienvenidaMensaje" ValueChanged="@((string? v) => Config.BienvenidaMensaje = v ?? string.Empty)" />
+                </ConversacionesConfigTarjeta>
+                @Barra
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+
+    case "auto-cierre":
+        <ConversacionesConfigPagina Titulo="Auto-cierre por inactividad" Descripcion="Avisa y cierra las conversaciones en las que estamos esperando al cliente y no responde. Aplica a todos los canales.">
+            <Estado><AlfaTag Tone="@Tono(Config.AutoCierreActivo)">@(Config.AutoCierreActivo ? "Activo" : "Apagado")</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Tiempos" Columnas="2">
+                    <AlfaCheckbox Class="cfg-full" Value="@Config.AutoCierreActivo" ValueChanged="@((bool? v) => Config.AutoCierreActivo = v == true)">Activar auto-cierre por inactividad</AlfaCheckbox>
+                    <AlfaInput Id="ac-aviso" Label="Horas sin respuesta para mandar el aviso" Type="number"
+                               Value="@Num(Config.AutoCierreHorasAviso)" ValueChanged="@((string? v) => Config.AutoCierreHorasAviso = Parse(v, Config.AutoCierreHorasAviso, 1))" />
+                    <AlfaInput Id="ac-cierre" Label="Horas después del aviso para cerrar" Type="number"
+                               Value="@Num(Config.AutoCierreHorasCierre)" ValueChanged="@((string? v) => Config.AutoCierreHorasCierre = Parse(v, Config.AutoCierreHorasCierre, 1))" />
+                </ConversacionesConfigTarjeta>
+                <ConversacionesConfigTarjeta Titulo="Mensajes al cliente">
+                    <ConversacionesConfigTexto Id="ac-msg-aviso" Label="Mensaje de aviso" Filas="2"
+                                               Value="@Config.AutoCierreMensajeAviso" ValueChanged="@((string? v) => Config.AutoCierreMensajeAviso = v ?? string.Empty)" />
+                    <ConversacionesConfigTexto Id="ac-msg-cierre" Label="Mensaje de cierre (opcional)" Filas="2"
+                                               Value="@Config.AutoCierreMensajeCierre" ValueChanged="@((string? v) => Config.AutoCierreMensajeCierre = v ?? string.Empty)" />
+                </ConversacionesConfigTarjeta>
+                @Barra
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+
+    case "sla":
+        <ConversacionesConfigPagina Titulo="Seguimientos / SLA" Descripcion="Vigila las conversaciones en las que el cliente espera respuesta. No le manda nada al cliente.">
+            <Estado><AlfaTag Tone="@Tono(Config.SlaActivo)">@(Config.SlaActivo ? "Activo" : "Apagado")</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Tiempos de respuesta" Columnas="2"
+                                             Descripcion="Al cumplirse el primer plazo se deja una nota interna de recordatorio; si sigue sin respuesta y estaba asignada, se libera para que otra persona la tome.">
+                    <AlfaCheckbox Class="cfg-full" Value="@Config.SlaActivo" ValueChanged="@((bool? v) => Config.SlaActivo = v == true)">Activar seguimientos</AlfaCheckbox>
+                    <AlfaInput Id="sla-recordatorio" Label="Horas sin respuesta para el recordatorio" Type="number"
+                               Value="@Num(Config.SlaHorasRecordatorio)" ValueChanged="@((string? v) => Config.SlaHorasRecordatorio = Parse(v, Config.SlaHorasRecordatorio, 1))" />
+                    <AlfaInput Id="sla-reasignar" Label="Horas sin respuesta para liberar la conversación" Type="number"
+                               Value="@Num(Config.SlaHorasReasignar)" ValueChanged="@((string? v) => Config.SlaHorasReasignar = Parse(v, Config.SlaHorasReasignar, 1))" />
+                </ConversacionesConfigTarjeta>
+                @Barra
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+
+    case SeccionInforme:
+        <ConversacionesConfigPagina Titulo="Informes" Descripcion="Estilo del resumen de atención por cliente que redacta la IA en Informes.">
+            <ConversacionesConfigTarjeta Titulo="Informe mensual" Descripcion="Definís solo el tono; el formato (viñetas, largo, no inventar, sin saludo ni firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío se usa el texto por defecto.">
+                <ConversacionesConfigTexto Id="informe-instrucciones" Label="Instrucciones de tono y estilo" Filas="5"
+                                           Placeholder="@ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"
+                                           Value="@Config.InformeInstrucciones" ValueChanged="@((string? v) => Config.InformeInstrucciones = v ?? string.Empty)" />
+            </ConversacionesConfigTarjeta>
+            @Barra
+        </ConversacionesConfigPagina>
+        break;
+
+    default:
+        <ConversacionesConfigPagina Titulo="Horario y mensaje fijo" Descripcion="Días y horario de atención, y la respuesta automática cuando escriben fuera de ese horario.">
+            <Estado><AlfaTag Tone="@Tono(Config.Activo)">@(Config.Activo ? "Respuesta fuera de horario activa" : "Respuesta fuera de horario apagada")</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Horario de atención" Columnas="2"
+                                             Descripcion="Lo usan la respuesta fuera de horario, las reglas por horario y el asistente IA.">
+                    <AlfaInput Id="auto-desde" Label="Desde" Placeholder="09:00"
+                               Value="@Config.HoraDesde" ValueChanged="@((string? v) => Config.HoraDesde = v ?? string.Empty)" />
+                    <AlfaInput Id="auto-hasta" Label="Hasta" Placeholder="18:00"
+                               Value="@Config.HoraHasta" ValueChanged="@((string? v) => Config.HoraHasta = v ?? string.Empty)" />
+                    <div class="cfg-full cfg-stack">
+                        <span class="cfg-label">Días de atención</span>
+                        <div class="cfg-inline" role="group" aria-label="Días de atención">
+                            <AlfaCheckbox Value="@Config.Lunes" ValueChanged="@((bool? v) => Config.Lunes = v == true)">Lun</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Martes" ValueChanged="@((bool? v) => Config.Martes = v == true)">Mar</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Miercoles" ValueChanged="@((bool? v) => Config.Miercoles = v == true)">Mié</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Jueves" ValueChanged="@((bool? v) => Config.Jueves = v == true)">Jue</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Viernes" ValueChanged="@((bool? v) => Config.Viernes = v == true)">Vie</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Sabado" ValueChanged="@((bool? v) => Config.Sabado = v == true)">Sáb</AlfaCheckbox>
+                            <AlfaCheckbox Value="@Config.Domingo" ValueChanged="@((bool? v) => Config.Domingo = v == true)">Dom</AlfaCheckbox>
+                        </div>
+                    </div>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Respuesta fuera de horario" Descripcion="Mensaje fijo, sin IA, para los WhatsApp que llegan fuera del horario.">
+                    <AlfaCheckbox Value="@Config.Activo" ValueChanged="@((bool? v) => Config.Activo = v == true)">Activar respuesta fuera de horario</AlfaCheckbox>
+                    <ConversacionesConfigTexto Id="auto-mensaje" Label="Mensaje" Filas="3"
+                                               Value="@Config.MensajeFueraHorario" ValueChanged="@((string? v) => Config.MensajeFueraHorario = v ?? string.Empty)" />
+                    @if (Config.AsistenteFueraHorario)
+                    {
+                        <p class="cfg-hint cfg-hint--warning">El Asistente IA está configurado para atender fuera de horario: en ese caso responde el asistente en lugar de este mensaje.</p>
+                    }
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigAyuda>
+                    <ol>
+                        <li>Se manda solo a mensajes entrantes de WhatsApp fuera de los días y horario configurados.</li>
+                        <li>Como máximo una vez por día y por conversación, para no repetirlo en cada mensaje del cliente.</li>
+                        <li>Queda registrado como un mensaje saliente normal, marcado como automático.</li>
+                    </ol>
+                </ConversacionesConfigAyuda>
+                @Barra
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+}
+
+@code {
+    internal const string SeccionInforme = "informe";
+
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Config { get; set; } = new();
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Original { get; set; } = new();
+    [Parameter] public string Seccion { get; set; } = "horario";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public EventCallback OnDescartar { get; set; }
+
+    private bool HayCambios => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
+
+    private RenderFragment Barra => @<ConversacionesConfigBarraGuardar HayCambios="@HayCambios" Busy="@Busy" OnGuardar="OnGuardar" OnDescartar="OnDescartar" />;
+
+    private static AlfaTagTone Tono(bool activo) => activo ? AlfaTagTone.Success : AlfaTagTone.Neutral;
+
+    private static string Num(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static int Parse(string? value, int actual, int minimo)
+        => ConversacionesConfiguracionAsistente.ParseEntero(value, actual, minimo);
+}

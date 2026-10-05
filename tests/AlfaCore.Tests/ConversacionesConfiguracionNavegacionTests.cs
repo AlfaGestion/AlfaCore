@@ -88,6 +88,25 @@ public sealed class ConversacionesConfiguracionNavegacionTests
     }
 
     [Fact]
+    public void DescribirRegla_ResumeCanalCoincidenciaAccionesYCondiciones()
+    {
+        var regla = new ConversacionReglaDto
+        {
+            Canal = "WHATSAPP",
+            TipoCoincidencia = "CONTIENE",
+            Palabras = "turnos, horario",
+            RespuestaTexto = "Atendemos de 9 a 18.",
+            Prioridad = "ALTA",
+            Horario = "FUERA",
+            Detener = true
+        };
+
+        Assert.Equal(
+            "WhatsApp · contiene: turnos, horario · responde · prioridad alta · fuera de horario · detiene",
+            ConversacionesConfiguracionReglas.DescribirRegla(regla));
+    }
+
+    [Fact]
     public void AutomatizacionesEquals_DetectaCambiosDelAsistente()
     {
         var original = new ConversacionAutomatizacionesConfigDto { AsistenteInformacion = "Abrimos de 9 a 18." };

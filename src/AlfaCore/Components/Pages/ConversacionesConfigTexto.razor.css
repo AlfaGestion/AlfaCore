@@ -1,0 +1,44 @@
+.cfg-text {
+    display: grid;
+    gap: var(--alfa-space-4, 4px);
+    min-width: 0;
+}
+
+.cfg-text__label {
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.cfg-text__control {
+    width: 100%;
+    padding: var(--alfa-space-8, 8px) var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-4, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font: inherit;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.cfg-text__control.is-mono {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: var(--alfa-font-small, 12px);
+    word-break: break-all;
+}
+
+.cfg-text__control:focus-visible {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: -2px;
+}
+
+.cfg-text__control:disabled {
+    opacity: .6;
+}
+
+.cfg-text__hint {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}

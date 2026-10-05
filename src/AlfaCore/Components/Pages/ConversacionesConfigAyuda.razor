@@ -1,0 +1,17 @@
+@* Ayuda plegable de Configuración ("Cómo funciona", pasos de alta). Cerrada por defecto para que la
+   configuración sea lo principal de la pantalla. *@
+
+<details class="cfg-help" open="@Abierta">
+    <summary class="cfg-help__summary">
+        <i class="bi bi-question-circle" aria-hidden="true"></i>
+        <span class="cfg-help__title">@Titulo</span>
+        <i class="bi bi-chevron-down cfg-help__chevron" aria-hidden="true"></i>
+    </summary>
+    <div class="cfg-help__body">@ChildContent</div>
+</details>
+
+@code {
+    [Parameter] public string Titulo { get; set; } = "Cómo funciona";
+    [Parameter] public bool Abierta { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

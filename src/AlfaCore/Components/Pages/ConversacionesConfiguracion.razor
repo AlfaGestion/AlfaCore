@@ -33,7 +33,7 @@
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
 <section class="page-grid settings-page">
-    <AlfaNotification Message="@WhatsAppFeedback" OnDismiss="DismissWhatsAppFeedback" />
+    <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
 
     <AlfaDialog Open="@_showWhatsAppOnboardingModeDialog"
                 Title="Conectar WhatsApp"
@@ -147,22 +147,6 @@
             <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@ApiAccessSaving" OnClick="@(_ => SaveApiAccessAsync())">Guardar</AlfaButton>
         </Footer>
     </AlfaDialog>
-
-    @if (_feedback is not null && _feedbackScope != "whatsapp")
-    {
-        <div class="conversations-inline @GetFeedbackClass(_feedback)">
-            <strong>@_feedback.Title</strong>
-            <div>@_feedback.Message</div>
-            @if (_feedback.HasCode)
-            {
-                <div>Código: @_feedback.Code</div>
-            }
-            @if (_feedback.HasSuggestion)
-            {
-                <div>@_feedback.Suggestion</div>
-            }
-        </div>
-    }
 
     <div class="settings-workspace">
         <nav class="settings-nav" aria-label="Secciones de Configuración">
@@ -514,376 +498,34 @@
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "instagram")
     {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form conv-config-form--instagram">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title"><i class="bi bi-instagram"></i> Instagram</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_instagramConfig.ConfigSource)</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_INSTAGRAM_*</span>
-                </div>
-
-                <div class="conv-config-status-grid">
-                    <article class="context-card">
-                        <span class="context-card__label">Envío Messaging API</span>
-                        <strong class="@GetStatusClass(_instagramConfig.IsConfiguredForSend)">@GetStatusLabel(_instagramConfig.IsConfiguredForSend)</strong>
-                        <span class="context-card__muted">Requiere <code>access token</code> e <code>instagram account id</code>.</span>
-                    </article>
-                    <article class="context-card">
-                        <span class="context-card__label">Webhook</span>
-                        <strong class="@GetStatusClass(_instagramConfig.IsConfiguredForVerify)">@GetStatusLabel(_instagramConfig.IsConfiguredForVerify)</strong>
-                        <span class="context-card__muted">Requiere <code>verify token</code> y URL pública HTTPS.</span>
-                    </article>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="ig-public-url">Base pública HTTPS</label>
-                        <input id="ig-public-url" @bind="_instagramConfig.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
-                    </div>
-
-                    <div class="field">
-                        <label for="ig-api-version">Versión Graph API</label>
-                        <input id="ig-api-version" @bind="_instagramConfig.ApiVersion" placeholder="v22.0" />
-                    </div>
-
-                    <div class="field">
-                        <label for="ig-app-id">App ID</label>
-                        <input id="ig-app-id" @bind="_instagramConfig.AppId" placeholder="App ID de Meta" />
-                    </div>
-
-                    <div class="field">
-                        <label for="ig-page-id">Facebook Page ID</label>
-                        <input id="ig-page-id" @bind="_instagramConfig.FacebookPageId" placeholder="Página vinculada a Instagram" />
-                    </div>
-
-                    <div class="field">
-                        <label for="ig-account-id">Instagram Account ID</label>
-                        <input id="ig-account-id" @bind="_instagramConfig.InstagramAccountId" placeholder="Cuenta profesional de Instagram" />
-                    </div>
-
-                    <div class="field">
-                        <label for="ig-verify-token">Verify Token</label>
-                        <input id="ig-verify-token" @bind="_instagramConfig.VerifyToken" placeholder="Texto secreto que definís vos" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ig-access-token">Access Token</label>
-                        <textarea id="ig-access-token" rows="4" @bind="_instagramConfig.AccessToken" placeholder="Token de página u OAuth con permisos de Instagram Messaging"></textarea>
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ig-app-secret">App Secret</label>
-                        <input id="ig-app-secret" @bind="_instagramConfig.AppSecret" placeholder="App Secret de Meta" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ig-webhook-path">Webhook interno</label>
-                        <input id="ig-webhook-path" value="@_instagramConfig.WebhookPath" readonly />
-                    </div>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL de callback a informar en Meta</span>
-                    <strong>@GetInstagramWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">
-                        El endpoint queda preparado para la siguiente etapa de recepción y envío de mensajes.
-                        @GetWebhookTenantHelp("los mensajes de Instagram")
-                    </span>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveInstagramAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar Instagram
-                    </button>
-                </div>
-            </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Credenciales Meta</h3>
-                        <p class="panel-card__subtitle">Resumen de lo que tenés que conseguir.</p>
-                    </div>
-                    <span class="panel-card__tag">Instagram</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Usar una cuenta Instagram profesional vinculada a una página de Facebook.</li>
-                    <li>Crear una app en Meta for Developers y agregar Instagram/Messaging según el flujo elegido.</li>
-                    <li>Configurar el webhook con la URL pública de AlfaCore y el verify token.</li>
-                    <li>Solicitar permisos de mensajería para producción mediante App Review.</li>
-                    <li>Guardar en AlfaCore el token, la cuenta de Instagram y la página asociada.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Guía interna</span>
-                    <strong><code>docs/modulos/conversaciones_instagram_meta.md</code></strong>
-                    <span class="context-card__muted">Incluye el paso a paso para crear la app y pedir permisos.</span>
-                </div>
-            </aside>
-    </div>
+        <ConversacionesConfiguracionInstagram Config="_instagramConfig"
+                                              SugerenciaBaseUrl="@_suggestedBaseUrl"
+                                              UrlCallback="GetInstagramWebhookUrlPreview"
+                                              AyudaToken="@(GetWebhookTenantHelp("los mensajes de Instagram"))"
+                                              Busy="@(Loading || Saving)"
+                                              OnGuardar="SaveInstagramAsync" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "facebook")
     {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form conv-config-form--facebook">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title"><i class="bi bi-facebook"></i> Facebook Messenger</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_facebookConfig.ConfigSource)</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_FACEBOOK_*</span>
-                </div>
-
-                <div class="conv-config-status-grid">
-                    <article class="context-card">
-                        <span class="context-card__label">Envío Messenger API</span>
-                        <strong class="@GetStatusClass(_facebookConfig.IsConfiguredForSend)">@GetStatusLabel(_facebookConfig.IsConfiguredForSend)</strong>
-                        <span class="context-card__muted">Requiere <code>page access token</code> y <code>page id</code>.</span>
-                    </article>
-                    <article class="context-card">
-                        <span class="context-card__label">Webhook</span>
-                        <strong class="@GetStatusClass(_facebookConfig.IsConfiguredForVerify)">@GetStatusLabel(_facebookConfig.IsConfiguredForVerify)</strong>
-                        <span class="context-card__muted">Requiere <code>verify token</code>, App Secret y URL pública HTTPS.</span>
-                    </article>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="fb-public-url">Base pública HTTPS</label>
-                        <input id="fb-public-url" @bind="_facebookConfig.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
-                    </div>
-
-                    <div class="field">
-                        <label for="fb-api-version">Versión Graph API</label>
-                        <input id="fb-api-version" @bind="_facebookConfig.ApiVersion" placeholder="v22.0" />
-                    </div>
-
-                    <div class="field">
-                        <label for="fb-app-id">App ID</label>
-                        <input id="fb-app-id" @bind="_facebookConfig.AppId" placeholder="App ID de Meta" />
-                    </div>
-
-                    <div class="field">
-                        <label for="fb-page-id">Facebook Page ID</label>
-                        <input id="fb-page-id" @bind="_facebookConfig.PageId" placeholder="ID de la página" />
-                    </div>
-
-                    <div class="field">
-                        <label for="fb-page-username">Usuario o slug de página</label>
-                        <input id="fb-page-username" @bind="_facebookConfig.PageUsername" placeholder="Ej. mi.pagina" />
-                    </div>
-
-                    <div class="field">
-                        <label for="fb-verify-token">Verify Token</label>
-                        <input id="fb-verify-token" @bind="_facebookConfig.VerifyToken" placeholder="Texto secreto que definís vos" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="fb-access-token">Page Access Token</label>
-                        <textarea id="fb-access-token" rows="4" @bind="_facebookConfig.AccessToken" placeholder="Token de página con permisos de Messenger"></textarea>
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="fb-app-secret">App Secret</label>
-                        <input id="fb-app-secret" @bind="_facebookConfig.AppSecret" placeholder="App Secret de Meta" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="fb-webhook-path">Webhook interno</label>
-                        <input id="fb-webhook-path" value="@_facebookConfig.WebhookPath" readonly />
-                    </div>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL de callback a informar en Meta</span>
-                    <strong>@GetFacebookWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">
-                        Suscribir el producto Messenger al evento <code>messages</code> de la página.
-                        @GetWebhookTenantHelp("los mensajes de Facebook")
-                    </span>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveFacebookAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar Facebook
-                    </button>
-                </div>
-            </section>
-
-            <aside class="panel-card conv-config-help conv-config-help--facebook">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Messenger</h3>
-                        <p class="panel-card__subtitle">Datos técnicos de la página y del webhook.</p>
-                    </div>
-                    <span class="panel-card__tag">Facebook</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Usar una app de Meta con el producto Messenger habilitado.</li>
-                    <li>Generar un Page Access Token para la página que va a recibir mensajes.</li>
-                    <li>Configurar el webhook con la URL pública y el verify token.</li>
-                    <li>Suscribir la página al webhook de Messenger, al menos al evento <code>messages</code>.</li>
-                    <li>Completar el usuario o slug de página para tener una referencia pública de la página conectada.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Perfil del cliente</span>
-                    <strong>PSID + User Profile API</strong>
-                    <span class="context-card__muted">AlfaCore intenta traer nombre, apellido y foto de perfil cuando entra el primer mensaje. Meta no garantiza una URL pública del perfil personal.</span>
-                </div>
-            </aside>
-    </div>
+        <ConversacionesConfiguracionFacebook Config="_facebookConfig"
+                                             SugerenciaBaseUrl="@_suggestedBaseUrl"
+                                             UrlCallback="GetFacebookWebhookUrlPreview"
+                                             AyudaToken="@(GetWebhookTenantHelp("los mensajes de Facebook"))"
+                                             Busy="@(Loading || Saving)"
+                                             OnGuardar="SaveFacebookAsync" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "mercadolibre")
     {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form conv-config-form--mercadolibre">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title"><i class="bi bi-bag-fill"></i> Mercado Libre</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_mercadoLibreConfig.ConfigSource)</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_MELI_*</span>
-                </div>
-
-                <div class="conv-config-status-grid">
-                    <article class="context-card">
-                        <span class="context-card__label">OAuth vendedor</span>
-                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsConfiguredForAuth)">@GetStatusLabel(_mercadoLibreConfig.IsConfiguredForAuth)</strong>
-                        <span class="context-card__muted">Requiere <code>client id</code> y <code>client secret</code>.</span>
-                    </article>
-                    <article class="context-card">
-                        <span class="context-card__label">API preguntas</span>
-                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsConfiguredForApi)">@GetStatusLabel(_mercadoLibreConfig.IsConfiguredForApi)</strong>
-                        <span class="context-card__muted">Requiere <code>access token</code> de la cuenta vendedora.</span>
-                    </article>
-                    <article class="context-card">
-                        <span class="context-card__label">Notificaciones</span>
-                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsReadyForWebhook)">@GetStatusLabel(_mercadoLibreConfig.IsReadyForWebhook)</strong>
-                        <span class="context-card__muted">Requiere una URL pública HTTPS.</span>
-                    </article>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="meli-public-url">Base pública HTTPS</label>
-                        <input id="meli-public-url" @bind="_mercadoLibreConfig.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
-                    </div>
-
-                    <div class="field">
-                        <label for="meli-site-id">Sitio</label>
-                        <input id="meli-site-id" @bind="_mercadoLibreConfig.SiteId" placeholder="MLA" />
-                    </div>
-
-                    <div class="field">
-                        <label for="meli-client-id">Client ID</label>
-                        <input id="meli-client-id" @bind="_mercadoLibreConfig.ClientId" placeholder="App ID de Mercado Libre" />
-                    </div>
-
-                    <div class="field">
-                        <label for="meli-seller-id">Seller/User ID</label>
-                        <input id="meli-seller-id" @bind="_mercadoLibreConfig.SellerId" placeholder="ID de la cuenta vendedora" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-client-secret">Client Secret</label>
-                        <input id="meli-client-secret" @bind="_mercadoLibreConfig.ClientSecret" placeholder="Client Secret de la app" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-access-token">Access Token</label>
-                        <textarea id="meli-access-token" rows="4" @bind="_mercadoLibreConfig.AccessToken" placeholder="Token OAuth de la cuenta vendedora"></textarea>
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-refresh-token">Refresh Token</label>
-                        <textarea id="meli-refresh-token" rows="3" @bind="_mercadoLibreConfig.RefreshToken" placeholder="Refresh token para renovar el acceso"></textarea>
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-api-base">Base API</label>
-                        <input id="meli-api-base" @bind="_mercadoLibreConfig.ApiBaseUrl" placeholder="https://api.mercadolibre.com" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-webhook-path">Webhook interno</label>
-                        <input id="meli-webhook-path" value="@_mercadoLibreConfig.WebhookPath" readonly />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="meli-oauth-path">Callback OAuth interno</label>
-                        <input id="meli-oauth-path" value="@_mercadoLibreConfig.OAuthCallbackPath" readonly />
-                    </div>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL de notificaciones a informar en Mercado Libre</span>
-                    <strong>@GetMercadoLibreWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">
-                        Suscribir el topic <code>questions</code> para preguntas de publicaciones.
-                        @GetWebhookTenantHelp("las notificaciones de Mercado Libre")
-                    </span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Redirect URI OAuth</span>
-                    <strong>@GetMercadoLibreOAuthCallbackUrlPreview()</strong>
-                    <span class="context-card__muted">Usala en la app de Mercado Libre para autorizar la cuenta vendedora.</span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL para autorizar vendedor</span>
-                    @if (!string.IsNullOrWhiteSpace(GetMercadoLibreAuthorizationUrl()))
-                    {
-                        <a href="@GetMercadoLibreAuthorizationUrl()" target="_blank" rel="noopener noreferrer">
-                            Abrir autorización OAuth
-                        </a>
-                    }
-                    else
-                    {
-                        <strong>Completá Client ID para generarla</strong>
-                    }
-                    <span class="context-card__muted">Al volver del login, AlfaCore intenta guardar access token, refresh token y seller id.</span>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveMercadoLibreAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar Mercado Libre
-                    </button>
-                </div>
-            </section>
-
-            <aside class="panel-card conv-config-help conv-config-help--mercadolibre">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Chatter preventa</h3>
-                        <p class="panel-card__subtitle">Preguntas de publicaciones dentro de Conversaciones.</p>
-                    </div>
-                    <span class="panel-card__tag">Meli</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Crear una app en Mercado Libre Developers.</li>
-                    <li>Cargar la Redirect URI de OAuth mostrada por AlfaCore.</li>
-                    <li>Autorizar la cuenta vendedora para obtener access token y refresh token.</li>
-                    <li>Configurar la URL de notificaciones y suscribir el topic <code>questions</code>.</li>
-                    <li>Cuando entra una notificación, AlfaCore consulta la API y crea o actualiza la conversación.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Visual</span>
-                    <strong>Amarillo Mercado Libre</strong>
-                    <span class="context-card__muted">El canal queda separado de Facebook/Instagram con acentos amarillos para evitar confusiones.</span>
-                </div>
-            </aside>
-    </div>
-
+        <ConversacionesConfiguracionMercadoLibre Config="_mercadoLibreConfig"
+                                                 SugerenciaBaseUrl="@_suggestedBaseUrl"
+                                                 UrlNotificaciones="GetMercadoLibreWebhookUrlPreview"
+                                                 UrlOAuthCallback="GetMercadoLibreOAuthCallbackUrlPreview"
+                                                 UrlAutorizacion="GetMercadoLibreAuthorizationUrl"
+                                                 AyudaToken="@(GetWebhookTenantHelp("las notificaciones de Mercado Libre"))"
+                                                 Busy="@(Loading || Saving)"
+                                                 OnGuardar="SaveMercadoLibreAsync" />
     }
 
     @if (_activePrimaryTab == "asistente-ia")
@@ -904,443 +546,53 @@
 
     @if (_activePrimaryTab == "informes")
     {
-    <header class="settings-content-header">
-        <h3>Informes</h3>
-        <p>Tono y estilo del resumen de atención por cliente que redacta la IA en Informes.</p>
-    </header>
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Informe mensual</h3>
-                    </div>
-                </div>
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
-                        <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
-                                  placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="() => SaveAutomatizacionesAsync(GetSeccionAutomatizacionActiva())" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
-                        <i class="bi bi-floppy-fill"></i> Guardar
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CancelAutomatizacionesEdit" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                </div>
-            </section>
-    </div>
+        <ConversacionesConfiguracionAutomatizacion Config="_automatizacionesConfig"
+                                                   Original="_automatizacionesOriginal"
+                                                   Seccion="@ConversacionesConfiguracionAutomatizacion.SeccionInforme"
+                                                   Busy="@(Loading || Saving)"
+                                                   OnGuardar="() => SaveAutomatizacionesAsync(ConversacionAutomatizacionSeccion.Informe)"
+                                                   OnDescartar="CancelAutomatizacionesEdit" />
     }
 
     @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab != "reglas")
     {
-    <header class="settings-content-header">
-        <h3>@GetAutomatizacionTitulo()</h3>
-        <p>@GetAutomatizacionDescripcion()</p>
-    </header>
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                @switch (_activeSecondaryTab)
-                {
-                    case "bienvenida":
-                        <div class="conv-config-fields conv-bot-config">
-                            <div class="conv-config-fields__full">
-                                <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
-                                    <span>Activar mensaje de bienvenida</span>
-                                </label>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label for="bienvenida-msg">Mensaje de bienvenida</label>
-                                <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
-                            </div>
-                        </div>
-                        break;
-                    case "auto-cierre":
-                        <div class="conv-config-fields conv-bot-config">
-                            <div class="conv-config-fields__full">
-                                <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
-                                    <span>Activar auto-cierre por inactividad</span>
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label for="ac-aviso">Horas de inactividad para el aviso</label>
-                                <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
-                            </div>
-                            <div class="field">
-                                <label for="ac-cierre">Horas tras el aviso para cerrar</label>
-                                <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label for="ac-msg-aviso">Mensaje de aviso</label>
-                                <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
-                                <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
-                            </div>
-                        </div>
-                        break;
-                    case "sla":
-                        <div class="conv-config-fields conv-bot-config">
-                            <div class="conv-config-fields__full">
-                                <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
-                                    <span>Activar seguimientos / SLA</span>
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
-                                <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
-                            </div>
-                            <div class="field">
-                                <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
-                                <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
-                            </div>
-                        </div>
-                        break;
-                    default:
-                        <div class="conv-config-fields">
-                            <div class="field">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.Activo" />
-                                    <span>Activar respuesta fuera de horario</span>
-                                </label>
-                            </div>
-
-                            <div class="field conv-config-fields__full">
-                                <label for="auto-mensaje">Mensaje fuera de horario</label>
-                                <textarea id="auto-mensaje" rows="3" @bind="_automatizacionesConfig.MensajeFueraHorario"></textarea>
-                            </div>
-
-                            <div class="field">
-                                <label for="auto-desde">Horario de atención — desde</label>
-                                <input id="auto-desde" type="text" placeholder="09:00" @bind="_automatizacionesConfig.HoraDesde" />
-                            </div>
-
-                            <div class="field">
-                                <label for="auto-hasta">Horario de atención — hasta</label>
-                                <input id="auto-hasta" type="text" placeholder="18:00" @bind="_automatizacionesConfig.HoraHasta" />
-                            </div>
-
-                            <div class="field conv-config-fields__full">
-                                <label>Días de atención</label>
-                                <div class="conv-config-dias">
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Lunes" /><span>Lun</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Martes" /><span>Mar</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Miercoles" /><span>Mié</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Jueves" /><span>Jue</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Viernes" /><span>Vie</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Sabado" /><span>Sáb</span></label>
-                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Domingo" /><span>Dom</span></label>
-                                </div>
-                            </div>
-                        </div>
-                        break;
-                }
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="() => SaveAutomatizacionesAsync(GetSeccionAutomatizacionActiva())" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
-                        <i class="bi bi-floppy-fill"></i> Guardar
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CancelAutomatizacionesEdit" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                </div>
-            </section>
-
-            @if (_activeSecondaryTab is "horario" or "")
-            {
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Regla fija, sin IA.</p>
-                    </div>
-                    <span class="panel-card__tag">WhatsApp</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Se manda solo para mensajes entrantes de WhatsApp fuera del horario/días configurados.</li>
-                    <li>Como máximo una vez por día y por conversación mientras siga fuera de horario, para no repetir el mensaje en cada respuesta del cliente.</li>
-                    <li>Queda registrado como un mensaje saliente normal, marcado como automático.</li>
-                    <li>Si en Asistente IA elegís que fuera de horario responda el asistente, se usa el asistente en lugar de este mensaje.</li>
-                </ol>
-            </aside>
-            }
-    </div>
+        <ConversacionesConfiguracionAutomatizacion Config="_automatizacionesConfig"
+                                                   Original="_automatizacionesOriginal"
+                                                   Seccion="@_activeSecondaryTab"
+                                                   Busy="@(Loading || Saving)"
+                                                   OnGuardar="() => SaveAutomatizacionesAsync(GetSeccionAutomatizacionActiva())"
+                                                   OnDescartar="CancelAutomatizacionesEdit" />
     }
 
     @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab == "reglas")
     {
-    <header class="settings-content-header">
-        <h3>Reglas</h3>
-        <p>Respuestas, derivaciones y prioridad por palabras clave, sin IA.</p>
-    </header>
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Reglas / palabras clave</h3>
-                        <p class="panel-card__subtitle">Cuando llega un mensaje entrante (cualquier canal) y coincide una palabra clave, la regla puede responder, derivar a un técnico y/o fijar la prioridad. Se evalúan por orden; la primera que coincide y tiene «detener» corta el resto.</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_REGLAS</span>
-                </div>
-
-                @if (_reglas.Count == 0)
-                {
-                    <p class="panel-card__subtitle">Todavía no hay reglas cargadas. El motor está inactivo hasta que agregues al menos una.</p>
-                }
-                else
-                {
-                    @foreach (var regla in _reglas)
-                    {
-                        <div class="conv-whatsapp-numero-card">
-                            <div class="conv-config-fields__full">
-                                <strong>#@regla.Orden — @regla.Nombre</strong>
-                                @if (!regla.Activa)
-                                {
-                                    <span class="panel-card__tag">inactiva</span>
-                                }
-                                <p class="panel-card__subtitle">@DescribirCanalRegla(regla.Canal) · @regla.TipoCoincidencia.ToLowerInvariant(): @regla.Palabras · @DescribirAccionesRegla(regla)@DescribirCondicionesRegla(regla)@(regla.Detener ? " · detiene" : "")</p>
-                            </div>
-                            <div class="actions">
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarRegla(regla)" disabled="@(Loading || Saving)">
-                                    <i class="bi bi-pencil"></i> Editar
-                                </button>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EliminarReglaAsync(regla)" disabled="@(Loading || Saving)">
-                                    <i class="bi bi-trash"></i> Eliminar
-                                </button>
-                            </div>
-                        </div>
-                    }
-                }
-
-                @if (_reglaEdicion is null)
-                {
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="NuevaRegla" disabled="@(Loading || Saving)">
-                            <i class="bi bi-plus-lg"></i> Nueva regla
-                        </button>
-                    </div>
-                }
-                else
-                {
-                    <div class="conv-whatsapp-numero-card conv-whatsapp-numero-card--nuevo">
-                        <div class="conv-config-fields conv-bot-config">
-                            <div class="conv-config-fields__full">
-                                <h4 class="conv-bot-config__title"><i class="bi bi-sliders"></i> @(_reglaEsNueva ? "Nueva regla" : $"Editar regla: {_reglaEdicion.Nombre}")</h4>
-                            </div>
-                            <div class="field">
-                                <label>Nombre</label>
-                                <input @bind="_reglaEdicion.Nombre" placeholder="Ej: Horarios de atención" />
-                            </div>
-                            <div class="field">
-                                <label>Orden (menor = mayor prioridad)</label>
-                                <input type="number" min="1" @bind="_reglaEdicion.Orden" />
-                            </div>
-                            <div class="field">
-                                <label>Canal</label>
-                                <select @bind="_reglaEdicion.Canal">
-                                    <option value="">Todos los canales</option>
-                                    <option value="WHATSAPP">WhatsApp</option>
-                                    <option value="INSTAGRAM">Instagram</option>
-                                    <option value="FACEBOOK">Facebook</option>
-                                    <option value="MERCADOLIBRE">Mercado Libre</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Tipo de coincidencia</label>
-                                <select @bind="_reglaEdicion.TipoCoincidencia">
-                                    <option value="CONTIENE">El mensaje contiene…</option>
-                                    <option value="EMPIEZA">El mensaje empieza con…</option>
-                                    <option value="IGUAL">El mensaje es exactamente…</option>
-                                </select>
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label>Palabras / frases (separadas por coma; coincide con cualquiera)</label>
-                                <input @bind="_reglaEdicion.Palabras" placeholder="turnos, horario, atención" />
-                            </div>
-                            <div class="field conv-config-fields__full">
-                                <label>Respuesta automática (opcional)</label>
-                                <textarea rows="2" @bind="_reglaEdicion.RespuestaTexto" placeholder="Atendemos de 9 a 18 h. ¿En qué te ayudamos?"></textarea>
-                            </div>
-                            <div class="field">
-                                <label>Derivar a técnico (opcional)</label>
-                                <select @bind="_reglaEdicion.AsignarTecnico">
-                                    <option value="">No derivar</option>
-                                    @foreach (var t in _tecnicos)
-                                    {
-                                        <option value="@t.IdTecnico">@t.Nombre</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Fijar prioridad (opcional)</label>
-                                <select @bind="_reglaEdicion.Prioridad">
-                                    <option value="">No cambiar</option>
-                                    <option value="BAJA">Baja</option>
-                                    <option value="MEDIA">Media</option>
-                                    <option value="ALTA">Alta</option>
-                                    <option value="URGENTE">Urgente</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_reglaEdicion.Activa" />
-                                    <span>Activa</span>
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_reglaEdicion.SoloSinAsignar" />
-                                    <span>Solo si nadie la tiene asignada</span>
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_reglaEdicion.Detener" />
-                                    <span>Detener otras reglas y auto-respuestas si coincide</span>
-                                </label>
-                            </div>
-                            <div class="field">
-                                <label>Horario</label>
-                                <select @bind="_reglaEdicion.Horario">
-                                    <option value="SIEMPRE">Siempre</option>
-                                    <option value="DENTRO">Solo dentro del horario</option>
-                                    <option value="FUERA">Solo fuera del horario</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label class="conv-config-checkbox">
-                                    <input type="checkbox" @bind="_reglaEdicion.SoloPrimerContacto" />
-                                    <span>Solo en el primer contacto</span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="actions">
-                            <button type="button" class="btn btn--primary" @onclick="GuardarReglaAsync" disabled="@(Loading || Saving)">
-                                <i class="bi bi-floppy-fill"></i> Guardar regla
-                            </button>
-                            <button type="button" class="btn btn--ghost" @onclick="CancelarEdicionRegla" disabled="@(Loading || Saving)">
-                                Cancelar
-                            </button>
-                        </div>
-                    </div>
-                }
-            </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Menú por palabras clave, sin IA.</p>
-                    </div>
-                    <span class="panel-card__tag">Todos los canales</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>En cada mensaje entrante se evalúan las reglas activas por orden (menor primero).</li>
-                    <li>La primera que coincide aplica sus acciones: responde, deriva a un técnico y/o fija la prioridad.</li>
-                    <li>Si esa regla tiene «detener», no se evalúan más reglas ni se dispara la bienvenida/bot.</li>
-                    <li>«Solo si nadie la tiene asignada» evita pisar una conversación que ya atiende una persona.</li>
-                    <li>La respuesta se manda si el canal/ventana lo permiten; la derivación y la prioridad se aplican igual.</li>
-                </ol>
-            </aside>
-    </div>
-
+        <ConversacionesConfiguracionReglas Reglas="_reglas"
+                                           Edicion="_reglaEdicion"
+                                           EsNueva="_reglaEsNueva"
+                                           Tecnicos="_tecnicos"
+                                           Busy="@(Loading || Saving)"
+                                           OnNueva="NuevaRegla"
+                                           OnEditar="EditarRegla"
+                                           OnEliminar="EliminarReglaAsync"
+                                           OnGuardar="GuardarReglaAsync"
+                                           OnCancelar="CancelarEdicionRegla" />
     }
 
     @if (_activePrimaryTab == "operacion-accesos")
     {
-    <header class="settings-content-header">
-        <h3>Operación y accesos</h3>
-        <p>Prioridad de atención y administradores de Conversaciones.</p>
-    </header>
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Prioridad de atención</h3>
-                        <p class="panel-card__subtitle">Qué clasificación de cliente cuenta como prioridad 1 (más importante), 2 o 3 para ordenar la cola de espera. El resto (sin clasificar o con otra clasificación) queda al final.</p>
-                    </div>
-                    <span class="panel-card__tag">CLASIFICA1/2/3</span>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="prioridad-1">Prioridad 1 (más importante)</label>
-                        <select id="prioridad-1" @bind="_prioridadConfig.Clasifica1">
-                            <option value="">Sin asignar</option>
-                            @foreach (var opcion in _clasificaciones)
-                            {
-                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="prioridad-2">Prioridad 2 (media)</label>
-                        <select id="prioridad-2" @bind="_prioridadConfig.Clasifica2">
-                            <option value="">Sin asignar</option>
-                            @foreach (var opcion in _clasificaciones)
-                            {
-                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="prioridad-3">Prioridad 3 (baja)</label>
-                        <select id="prioridad-3" @bind="_prioridadConfig.Clasifica3">
-                            <option value="">Sin asignar</option>
-                            @foreach (var opcion in _clasificaciones)
-                            {
-                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SavePrioridadAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar prioridad
-                    </button>
-                </div>
-            </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Cómo se arma la cola de espera con esto.</p>
-                    </div>
-                    <span class="panel-card__tag">Cola de espera</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>El inbox ordena primero por prioridad (1, 2, 3, resto) y dentro de cada grupo por cuánto tiempo lleva esperando respuesta.</li>
-                    <li>La clasificación de cada cliente se carga desde Clientes (Cuentas Comerciales) — acá solo se define qué clasificación pesa más.</li>
-                    <li>Estas claves (<code>CLASIFICA1/2/3</code>) son las mismas que ya usa Desktop, no son propias de Conversaciones: configurarlas acá también las cambia allá.</li>
-                </ol>
-            </aside>
-    </div>
+        <ConversacionesConfiguracionOperacion Seccion="@_activeSecondaryTab"
+                                              Prioridad="_prioridadConfig"
+                                              Clasificaciones="_clasificaciones"
+                                              UsuariosSistema="_usuariosSistema"
+                                              Administradores="_administradores"
+                                              AdministradoresConCambios="@IsAdministradoresDirty"
+                                              Numeros="_numeros"
+                                              Busy="@(Loading || Saving)"
+                                              OnGuardarPrioridad="SavePrioridadAsync"
+                                              OnGuardarAdministradores="SaveAdministradoresAsync"
+                                              OnDescartarAdministradores="CancelAdministradoresEdit"
+                                              OnToggleAdministrador="@(((string Usuario, bool Seleccionado) cambio) => ToggleAdministrador(cambio.Usuario, cambio.Seleccionado))"
+                                              OnIrACanal="@((string subseccion) => SelectSecondaryTab("canales", subseccion))" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
@@ -1619,135 +871,19 @@
                            OnCancel="CancelStopWhatsAppWebSession" />
     }
 
-    @if (_activePrimaryTab == "operacion-accesos")
-    {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Administradores de conversaciones</h3>
-                        <p class="panel-card__subtitle">Ven y pueden responder por cualquier número de WhatsApp, sin importar a cuáles estén vinculados.</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_ADMINISTRADORES</span>
-                </div>
-
-                <div class="conv-config-checklist">
-                    @foreach (var usuario in _usuariosSistema)
-                    {
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox"
-                                   checked="@_administradores.Contains(usuario.Nombre)"
-                                   @onchange="args => ToggleAdministrador(usuario.Nombre, args.Value is bool b && b)" />
-                            <span>@usuario.Nombre</span>
-                        </label>
-                    }
-                    @if (_usuariosSistema.Count == 0)
-                    {
-                        <span class="panel-card__subtitle">No hay usuarios activos en este sistema.</span>
-                    }
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAdministradoresAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar administradores
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CancelAdministradoresEdit" disabled="@(Loading || Saving || !IsAdministradoresDirty)">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                </div>
-            </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Es propio de Conversaciones, no el admin general del sistema.</p>
-                    </div>
-                    <span class="panel-card__tag">Solo este módulo</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Es independiente de "Administrador del sistema" (Autorización de tareas) — alguien puede ser admin de conversaciones sin serlo del sistema, y viceversa.</li>
-                    <li>Pensado para quien coordina el equipo de atención: supervisores, encargados de WhatsApp, etc.</li>
-                </ol>
-            </aside>
-    </div>
-    }
-
     @if (_activePrimaryTab == "soporte")
     {
-    <header class="settings-content-header">
-        <h3>Soporte</h3>
-        <p>Herramientas técnicas y de diagnóstico. No reemplaza la configuración funcional de cada canal.</p>
-    </header>
-    @if (AppMode.IsSaaSMode)
-    {
-        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
-            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
-            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
-        </div>
-    }
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title"><i class="bi bi-display"></i> AnyDesk</h3>
-                        <p class="panel-card__subtitle">Generá un archivo para registrar AnyDesk en tu propia PC, no en el servidor.</p>
-                    </div>
-                    <span class="panel-card__tag">Un paso por PC</span>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field conv-config-fields__full">
-                        <label for="anydesk-path">Ruta del ejecutable de AnyDesk en TU PC</label>
-                        <input id="anydesk-path" @bind="_anyDeskPath" placeholder="Ej: C:\Program Files (x86)\AnyDesk\AnyDesk.exe" />
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="DownloadAnyDeskScript" disabled="@AnyDeskSaving">
-                        <i class="bi bi-download"></i> Descargar script de registro (.reg)
-                    </button>
-                </div>
-
-                @if (_anyDeskFeedback is not null)
-                {
-                    <div class="conversations-inline @GetFeedbackClass(_anyDeskFeedback)">
-                        <strong>@_anyDeskFeedback.Title</strong>
-                        <div>@_anyDeskFeedback.Message</div>
-                        @if (_anyDeskFeedback.HasSuggestion)
-                        {
-                            <div>@_anyDeskFeedback.Suggestion</div>
-                        }
-                    </div>
-                }
-            </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Por qué esto es distinto al resto de esta página.</p>
-                    </div>
-                    <span class="panel-card__tag">AnyDesk</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>AlfaCore corre en un servidor compartido, así que no puede tocar el registro de Windows de tu PC directamente.</li>
-                    <li>Cargá acá la ruta a tu AnyDesk (buscala en tu PC: click derecho al acceso directo → Propiedades → Destino).</li>
-                    <li>Al descargar, se genera un archivo <code>.reg</code> con esa ruta ya cargada.</li>
-                    <li>Hacé doble clic en el archivo descargado (una sola vez) y confirmá el cartel de Windows para agregarlo al registro.</li>
-                    <li>Listo: cualquier link "Conectar por AnyDesk" del inbox de Conversaciones va a abrir tu AnyDesk ya conectando al ID. Probalo haciendo clic en un ID de una conversación real.</li>
-                    <li>Cada técnico repite esto una vez, en su propia PC.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Qué NO hace esto</span>
-                    <strong>No guarda nada en la base de datos</strong>
-                    <span class="context-card__muted">La ruta que cargues acá solo se usa para armar el archivo que descargás; no queda guardada en AlfaCore ni se comparte con otros técnicos.</span>
-                </div>
-            </aside>
-    </div>
+        <ConversacionesConfiguracionSoporte Seccion="@_activeSecondaryTab"
+                                            EsSaaS="@AppMode.IsSaaSMode"
+                                            TieneTokenWebhook="@HasWebhookToken"
+                                            AyudaToken="@(GetWebhookTenantHelp("los mensajes entrantes"))"
+                                            Webhooks="BuildSoporteWebhooks()"
+                                            Canales="BuildSoporteCanales()"
+                                            AnyDeskRuta="@_anyDeskPath"
+                                            AnyDeskRutaChanged="@((string ruta) => _anyDeskPath = ruta)"
+                                            AnyDeskBusy="@AnyDeskSaving"
+                                            AnyDeskFeedback="_anyDeskFeedback"
+                                            OnDescargarAnyDesk="DownloadAnyDeskScript" />
     }
 
         </div>
@@ -1888,7 +1024,6 @@
     private bool AnyDeskSaving { get; set; }
     private AppUiMessage? _feedback;
     private string? _feedbackScope;
-    private AppUiMessage? WhatsAppFeedback => _feedbackScope == "whatsapp" ? _feedback : null;
     private AppUiMessage? _anyDeskFeedback;
     private string _suggestedBaseUrl = string.Empty;
     private string? _webhookToken;
@@ -3389,7 +2524,7 @@
                 SelectSecondaryTabState(tab, category.Children[0].Key);
         }
         if (tab != "canales")
-            _feedbackScope = null;
+            LeaveWhatsAppFeedbackScope();
 
         SyncWhatsAppPollingWithNavigation();
         UpdatePageHeader();
@@ -3430,7 +2565,7 @@
         _expandedSettingsCategories.Add(category);
         SelectSecondaryTabState(category, subsection);
         if (category != "canales")
-            _feedbackScope = null;
+            LeaveWhatsAppFeedbackScope();
 
         SyncWhatsAppPollingWithNavigation();
         UpdatePageHeader();
@@ -3558,7 +2693,7 @@
         _activeChannelTab = tab;
         _activeSecondaryTab = GetActiveSecondaryTab();
         if (tab != "whatsapp")
-            _feedbackScope = null;
+            LeaveWhatsAppFeedbackScope();
 
         SyncWhatsAppPollingWithNavigation();
         UpdatePageHeader();
@@ -3938,7 +3073,7 @@
         Saving = false;
     }
 
-    private static string DescribirCanalRegla(string? canal)
+    internal static string DescribirCanalRegla(string? canal)
         => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "WHATSAPP" => "WhatsApp",
@@ -3948,7 +3083,7 @@
             _ => "Todos los canales"
         };
 
-    private static string DescribirAccionesRegla(ConversacionReglaDto regla)
+    internal static string DescribirAccionesRegla(ConversacionReglaDto regla)
     {
         var acciones = new List<string>();
         if (!string.IsNullOrWhiteSpace(regla.RespuestaTexto)) acciones.Add("responde");
@@ -3957,7 +3092,7 @@
         return acciones.Count == 0 ? "—" : string.Join(" · ", acciones);
     }
 
-    private static string DescribirCondicionesRegla(ConversacionReglaDto regla)
+    internal static string DescribirCondicionesRegla(ConversacionReglaDto regla)
     {
         var cond = new List<string>();
         if (string.Equals(regla.Horario, "DENTRO", StringComparison.OrdinalIgnoreCase)) cond.Add("dentro de horario");
@@ -5992,9 +5127,21 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void DismissWhatsAppFeedback()
+    private void DismissFeedback()
     {
         _feedback = null;
+        _feedbackScope = null;
+    }
+
+    /// <summary>
+    /// Al salir de WhatsApp, un aviso de una operación de WhatsApp (QR, sesión, guardado) no debe
+    /// seguir visible en otra sección de Configuración.
+    /// </summary>
+    private void LeaveWhatsAppFeedbackScope()
+    {
+        if (_feedbackScope == "whatsapp")
+            _feedback = null;
+
         _feedbackScope = null;
     }
 
@@ -6280,6 +5427,59 @@
             return string.Empty;
 
         return $"{uri.Scheme}://{uri.Authority}";
+    }
+
+    private IReadOnlyList<ConversacionesConfiguracionSoporte.WebhookCanal> BuildSoporteWebhooks()
+        =>
+        [
+            new("WhatsApp (Meta Cloud API)", GetWebhookUrlPreview()),
+            new("Instagram", GetInstagramWebhookUrlPreview()),
+            new("Facebook Messenger", GetFacebookWebhookUrlPreview()),
+            new("Mercado Libre: notificaciones", GetMercadoLibreWebhookUrlPreview()),
+            new("Mercado Libre: callback OAuth", GetMercadoLibreOAuthCallbackUrlPreview())
+        ];
+
+    private IReadOnlyList<ConversacionesConfiguracionSoporte.CanalEstado> BuildSoporteCanales()
+    {
+        var business = ActiveBusinessNumeros.ToList();
+        var conectados = business.Count(n => n.IsWebSessionReady);
+        var canales = new List<ConversacionesConfiguracionSoporte.CanalEstado>
+        {
+            new("WhatsApp Business (QR)", "bi-whatsapp",
+            [
+                new("Números conectados", conectados > 0, $"{conectados} de {business.Count} número(s) con sesión activa.")
+            ]),
+            new("WhatsApp API", "bi-cloud",
+            [
+                new("Datos para Meta Cloud API", _config.IsReadyForMetaSetup, GetPublicationLabel())
+            ]),
+            new("Instagram", "bi-instagram",
+            [
+                new("Envío de mensajes", _instagramConfig.IsConfiguredForSend, "Access token e Instagram Account ID."),
+                new("Webhook", _instagramConfig.IsConfiguredForVerify, "Verify token y URL pública HTTPS.")
+            ]),
+            new("Facebook Messenger", "bi-facebook",
+            [
+                new("Envío de mensajes", _facebookConfig.IsConfiguredForSend, "Page access token y Page ID."),
+                new("Webhook", _facebookConfig.IsConfiguredForVerify, "Verify token, App Secret y URL pública HTTPS.")
+            ]),
+            new("Mercado Libre", "bi-bag",
+            [
+                new("Autorización (OAuth)", _mercadoLibreConfig.IsConfiguredForAuth, "Client ID y Client Secret."),
+                new("Preguntas", _mercadoLibreConfig.IsConfiguredForApi, "Access token de la cuenta vendedora."),
+                new("Notificaciones", _mercadoLibreConfig.IsReadyForWebhook, "URL pública HTTPS.")
+            ])
+        };
+
+        if (AppMode.IsSaaSMode)
+        {
+            canales.Insert(0, new("Enrutamiento por base", "bi-signpost-split",
+            [
+                new("Token de webhook de la base", HasWebhookToken, GetWebhookTenantHelp("los mensajes entrantes"))
+            ]));
+        }
+
+        return canales;
     }
 
     private string GetWebhookUrlPreview()
@@ -6571,7 +5771,7 @@
             UpdatePageHeader();
     }
 
-    private static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
+    internal static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
     {
         var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
         if (phoneNumberId.Length > 0
@@ -6694,7 +5894,7 @@
     private static bool IsGenericNumeroName(string? nombre)
         => System.Text.RegularExpressions.Regex.IsMatch((nombre ?? string.Empty).Trim(), @"^WhatsApp Business \d+$");
 
-    private static string GetNumeroDisplayName(ConversacionWhatsAppNumeroDto numero)
+    internal static string GetNumeroDisplayName(ConversacionWhatsAppNumeroDto numero)
     {
         if (!IsGenericNumeroName(numero.Nombre))
             return string.IsNullOrWhiteSpace(numero.Nombre) ? "Número sin nombre" : numero.Nombre;
@@ -6737,26 +5937,4 @@
 
     private static string GetWhatsAppApiStatusChipClass(bool ready)
         => ready ? "wa-status-chip wa-status-chip--ok" : "wa-status-chip wa-status-chip--pending";
-
-    private static string GetStatusClass(bool ready)
-        => ready ? "conv-config-status conv-config-status--ok" : "conv-config-status conv-config-status--pending";
-
-    private static string DisplaySource(string? value)
-        => value switch
-        {
-            "TA_CONFIGURACION" => "TA_CONFIGURACION",
-            "sin_configurar" => "Sin configurar en esta base",
-            "mixta" => "Mixta (TA_CONFIGURACION + appsettings)",
-            "appsettings" => "appsettings",
-            _ => "No determinado"
-        };
-
-    private static string GetFeedbackClass(AppUiMessage message)
-        => message.Severity switch
-        {
-            AppUiFeedbackSeverity.Success => "conversations-inline--ok",
-            AppUiFeedbackSeverity.Warning => "conversations-inline--error",
-            AppUiFeedbackSeverity.Error => "conversations-inline--error",
-            _ => "conversations-inline--ok"
-        };
 }

@@ -1,0 +1,82 @@
+@* Configuración → Canales → Mercado Libre (AlfaDesign v1). Mismos campos, OAuth y guardado que antes. *@
+
+<ConversacionesConfigPagina Titulo="Mercado Libre" Descripcion="Preguntas de tus publicaciones dentro de Conversaciones.">
+    <Estado>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForAuth)">Autorización: @(Config.IsConfiguredForAuth ? "lista" : "pendiente")</AlfaTag>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForApi)">Preguntas: @(Config.IsConfiguredForApi ? "listas" : "pendientes")</AlfaTag>
+        <AlfaTag Tone="@Tono(Config.IsReadyForWebhook)">Notificaciones: @(Config.IsReadyForWebhook ? "listas" : "pendientes")</AlfaTag>
+    </Estado>
+    <ChildContent>
+        <ConversacionesConfigTarjeta Titulo="Aplicación y cuenta vendedora" Columnas="2">
+            <AlfaInput Id="meli-client-id" Label="Client ID" Placeholder="App ID de Mercado Libre"
+                       Value="@Config.ClientId" ValueChanged="@((string? v) => Config.ClientId = v ?? string.Empty)" />
+            <AlfaInput Id="meli-seller-id" Label="Seller / User ID" Placeholder="ID de la cuenta vendedora"
+                       Value="@Config.SellerId" ValueChanged="@((string? v) => Config.SellerId = v ?? string.Empty)" />
+            <AlfaInput Id="meli-site-id" Label="Sitio" Placeholder="MLA"
+                       Value="@Config.SiteId" ValueChanged="@((string? v) => Config.SiteId = v ?? string.Empty)" />
+            <AlfaInput Id="meli-api-base" Label="Base API" Placeholder="https://api.mercadolibre.com"
+                       Value="@Config.ApiBaseUrl" ValueChanged="@((string? v) => Config.ApiBaseUrl = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Autorizar la cuenta vendedora" Descripcion="Al volver del login de Mercado Libre, AlfaCore intenta guardar el access token, el refresh token y el seller id.">
+            <ConversacionesConfigSoloLectura Label="Redirect URI para cargar en la app de Mercado Libre" Valor="@UrlOAuthCallback()" />
+            <div class="cfg-actions">
+                @if (string.IsNullOrWhiteSpace(UrlAutorizacion()))
+                {
+                    <span class="cfg-hint">Completá el Client ID para generar el link de autorización.</span>
+                }
+                else
+                {
+                    <a class="cfg-link" href="@UrlAutorizacion()" target="_blank" rel="noopener noreferrer">
+                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Abrir autorización en Mercado Libre
+                    </a>
+                }
+            </div>
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Credenciales">
+            <AlfaInput Id="meli-client-secret" Label="Client Secret"
+                       Value="@Config.ClientSecret" ValueChanged="@((string? v) => Config.ClientSecret = v ?? string.Empty)" />
+            <ConversacionesConfigTexto Id="meli-access-token" Label="Access Token" Filas="3" Monoespaciado="true"
+                                       Placeholder="Token OAuth de la cuenta vendedora"
+                                       Value="@Config.AccessToken" ValueChanged="@((string? v) => Config.AccessToken = v ?? string.Empty)" />
+            <ConversacionesConfigTexto Id="meli-refresh-token" Label="Refresh Token" Filas="2" Monoespaciado="true"
+                                       Placeholder="Refresh token para renovar el acceso"
+                                       Value="@Config.RefreshToken" ValueChanged="@((string? v) => Config.RefreshToken = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Notificaciones">
+            <AlfaInput Id="meli-public-url" Label="Base pública HTTPS" Placeholder="@SugerenciaBaseUrl"
+                       Value="@Config.PublicBaseUrl" ValueChanged="@((string? v) => Config.PublicBaseUrl = v ?? string.Empty)" />
+            <ConversacionesConfigSoloLectura Label="URL de notificaciones para cargar en Mercado Libre" Valor="@UrlNotificaciones()"
+                                             HelpText="@($"Suscribí el topic questions. {AyudaToken}")" />
+            <ConversacionesConfigSoloLectura Label="Ruta interna de notificaciones" Valor="@Config.WebhookPath" />
+            <ConversacionesConfigSoloLectura Label="Ruta interna del callback OAuth" Valor="@Config.OAuthCallbackPath" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigAyuda Titulo="Pasos en Mercado Libre">
+            <ol>
+                <li>Crear una app en Mercado Libre Developers.</li>
+                <li>Cargar la Redirect URI que muestra AlfaCore.</li>
+                <li>Autorizar la cuenta vendedora para obtener el access token y el refresh token.</li>
+                <li>Configurar la URL de notificaciones y suscribir el topic <code>questions</code>.</li>
+                <li>Cuando llega una notificación, AlfaCore consulta la API y crea o actualiza la conversación.</li>
+            </ol>
+        </ConversacionesConfigAyuda>
+
+        <ConversacionesConfigBarraGuardar Etiqueta="Guardar Mercado Libre" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+@code {
+    [Parameter, EditorRequired] public ConversacionMercadoLibreConfigDto Config { get; set; } = new();
+    [Parameter] public string SugerenciaBaseUrl { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public Func<string> UrlNotificaciones { get; set; } = () => string.Empty;
+    [Parameter, EditorRequired] public Func<string> UrlOAuthCallback { get; set; } = () => string.Empty;
+    [Parameter, EditorRequired] public Func<string> UrlAutorizacion { get; set; } = () => string.Empty;
+    [Parameter] public string AyudaToken { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+
+    private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
+}

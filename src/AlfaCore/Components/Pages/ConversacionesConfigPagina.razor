@@ -1,0 +1,26 @@
+@* Contenedor estándar de cada pantalla de Conversaciones → Configuración (AlfaDesign v1):
+   título, descripción, estado opcional (tags) y el contenido en tarjetas. *@
+
+<div class="cfg-page">
+    <header class="cfg-page__header">
+        <div class="cfg-page__title">
+            <h2>@Titulo</h2>
+            @if (!string.IsNullOrWhiteSpace(Descripcion))
+            {
+                <p>@Descripcion</p>
+            }
+        </div>
+        @if (Estado is not null)
+        {
+            <div class="cfg-page__status">@Estado</div>
+        }
+    </header>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = string.Empty;
+    [Parameter] public string? Descripcion { get; set; }
+    [Parameter] public RenderFragment? Estado { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

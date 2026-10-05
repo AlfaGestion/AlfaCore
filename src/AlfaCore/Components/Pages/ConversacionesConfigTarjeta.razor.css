@@ -1,0 +1,275 @@
+.cfg-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    min-width: 0;
+}
+
+.cfg-card__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-8, 8px);
+}
+
+.cfg-card__heading {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.cfg-card__heading h3 {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    margin: 0;
+    font-size: var(--alfa-font-body, 13px);
+    font-weight: 600;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.cfg-card__heading h3 i {
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.cfg-card__heading p {
+    margin: 0;
+    max-width: 72ch;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}
+
+.cfg-card__extra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+}
+
+.cfg-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12, 12px);
+    min-width: 0;
+}
+
+.cfg-card__body--2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Utilidades para el contenido de la tarjeta. */
+.cfg-card__body ::deep .cfg-full {
+    grid-column: 1 / -1;
+}
+
+.cfg-card__body ::deep .cfg-hint {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}
+
+.cfg-card__body ::deep .cfg-hint--warning {
+    color: var(--alfa-warning, #e3b25a);
+}
+
+.cfg-card__body ::deep .cfg-label {
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.cfg-card__body ::deep .cfg-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-8, 8px);
+    min-width: 0;
+}
+
+.cfg-card__body ::deep .cfg-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-8, 8px) var(--alfa-space-16, 16px);
+}
+
+.cfg-card__body ::deep .cfg-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+}
+
+.cfg-card__body ::deep .cfg-checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--alfa-space-8, 8px);
+}
+
+.cfg-card__body ::deep .cfg-check-tile {
+    padding: var(--alfa-space-8, 8px) var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-4, 4px);
+    min-width: 0;
+}
+
+.cfg-card__body ::deep .cfg-check-tile.is-disabled {
+    opacity: .6;
+}
+
+.cfg-card__body ::deep .cfg-strong {
+    display: block;
+    font-weight: 600;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.cfg-card__body ::deep .cfg-muted {
+    display: block;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}
+
+/* Lista de filas (reglas, herramientas, estados por canal). */
+.cfg-card__body ::deep .cfg-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cfg-card__body ::deep .cfg-list__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-12, 12px) 0;
+}
+
+.cfg-card__body ::deep .cfg-list__item + .cfg-list__item {
+    border-top: 1px solid var(--alfa-border-default, #333640);
+}
+
+.cfg-card__body ::deep .cfg-list__icon {
+    width: 28px;
+    text-align: center;
+    font-size: 16px;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.cfg-card__body ::deep .cfg-list__text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.cfg-card__body ::deep .cfg-list__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    font-weight: 600;
+    font-size: var(--alfa-font-body, 13px);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.cfg-card__body ::deep .cfg-list__desc {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.cfg-card__body ::deep .cfg-list__actions {
+    display: flex;
+    gap: var(--alfa-space-4, 4px);
+}
+
+/* Pares dato / valor de solo lectura (URLs, estados). */
+.cfg-card__body ::deep .cfg-kv {
+    display: grid;
+    gap: var(--alfa-space-4, 4px);
+    padding: var(--alfa-space-12, 12px);
+    border-radius: var(--alfa-radius-4, 4px);
+    background: var(--alfa-bg-input, #252830);
+    min-width: 0;
+}
+
+.cfg-card__body ::deep .cfg-kv__value {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: var(--alfa-font-small, 12px);
+    color: var(--alfa-text-primary, #f5f5f7);
+    overflow-wrap: anywhere;
+    user-select: all;
+}
+
+.cfg-card__body ::deep .cfg-notice {
+    display: flex;
+    gap: var(--alfa-space-8, 8px);
+    align-items: flex-start;
+    padding: var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-warning, #e3b25a);
+    border-radius: var(--alfa-radius-4, 4px);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}
+
+.cfg-card__body ::deep .cfg-notice > i {
+    color: var(--alfa-warning, #e3b25a);
+}
+
+.cfg-card__body ::deep .cfg-notice--ok {
+    border-color: var(--alfa-success, #5cc58b);
+}
+
+.cfg-card__body ::deep .cfg-notice--ok > i {
+    color: var(--alfa-success, #5cc58b);
+}
+
+.cfg-card__body ::deep .cfg-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--alfa-accent, #4f9efa);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.cfg-card__body ::deep .cfg-link:focus-visible {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: 2px;
+}
+
+.cfg-card__body ::deep .cfg-meter {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--alfa-space-8, 8px);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-variant-numeric: tabular-nums;
+}
+
+.cfg-card__body ::deep .cfg-meter.is-warning {
+    color: var(--alfa-warning, #e3b25a);
+}
+
+.cfg-card__body ::deep code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: .92em;
+}
+
+@media (max-width: 720px) {
+    .cfg-card__body--2 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

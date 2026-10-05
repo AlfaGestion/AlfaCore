@@ -10,6 +10,33 @@
 
 ---
 
+## C3.1 — AlfaDesign en toda Configuración (2026-10-05)
+
+Todas las pantallas de Configuración usan ahora AlfaDesign v1. Se eliminó el markup legacy (`panel-card`, `conv-config-*`, inputs/checkbox nativos, banner `conversations-inline`) y su CSS sin uso.
+
+**Piezas comunes del módulo** (en `Components/Pages`, prefijo `ConversacionesConfig*`, sin tocar `Shared/AlfaDesign`):
+
+- `ConversacionesConfigPagina`: título, descripción y tags de estado de cada pantalla.
+- `ConversacionesConfigTarjeta`: tarjeta con 1 o 2 columnas. Define utilidades para su contenido vía `::deep` (`cfg-full`, `cfg-hint`, `cfg-stack`, `cfg-inline`, `cfg-checks`, `cfg-check-tile`, `cfg-list*`, `cfg-kv`, `cfg-notice`, `cfg-meter`, `cfg-link`, `cfg-actions`).
+- `ConversacionesConfigTexto`: textarea con el aspecto de `AlfaInput` (que no es multilínea), opción monoespaciada para tokens.
+- `ConversacionesConfigSoloLectura`: URLs/rutas seleccionables (`AlfaInput` no tiene readonly).
+- `ConversacionesConfigBarraGuardar`: Guardar/Descartar fija al pie, con indicador de cambios si la pantalla lo soporta.
+- `ConversacionesConfigAyuda`: "Cómo funciona" plegable, cerrado por defecto.
+
+**Componentes por sección:** `ConversacionesConfiguracionAsistente`, `…Automatizacion` (Horario, Bienvenida, Auto-cierre, SLA, Informe), `…Reglas`, `…Operacion` (Prioridades, Accesos por número, Administradores), `…Soporte` (Estado de webhooks, Diagnóstico de canales, AnyDesk), `…Instagram`, `…Facebook`, `…MercadoLibre`. El estado y los `Save*Async` siguen en `ConversacionesConfiguracion.razor`: los componentes editan el DTO recibido y avisan por callbacks. Mismos DTOs, claves y servicios.
+
+**Cambios de comportamiento visibles:**
+
+- Las subsecciones de Operación y Soporte ahora muestran solo su contenido (antes mostraban todo junto).
+- "Accesos por número" lista los números con sus usuarios y lleva a editarlos en WhatsApp Business / WhatsApp API (sigue habiendo una sola fuente de edición).
+- "Diagnóstico de canales" muestra qué datos tiene cargados cada canal ("Listo"/"Pendiente"); no es una prueba en vivo.
+- Eliminar una regla pide confirmación (`AlfaConfirmDialog`).
+- Todo el feedback de guardado usa `AlfaNotification`; un aviso de WhatsApp se descarta al salir de Canales.
+
+**Sin cambios:** secretos visibles en Instagram/Facebook/Mercado Libre/AlfaKnowledge (deuda SEC-1), OAuth de Mercado Libre, webhooks. **Pendiente:** validación visual en 2048/1440/1024.
+
+---
+
 ## C3 — Asistente IA como sección propia + Automatización dividida (2026-10-05)
 
 **Navegación nueva (Nivel 1):** `Resumen | Canales | Asistente IA | Automatización | Informes | Operación y accesos | Soporte`. Desaparece "Integraciones IA".
