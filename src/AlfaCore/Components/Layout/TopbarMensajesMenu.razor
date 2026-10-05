@@ -26,7 +26,7 @@
         <section class="tb-msg__panel" role="dialog" aria-label="Mensajes" @onkeydown="OnKeyDown">
             <header class="tb-msg__header">
                 <AlfaTabs Items="Tabs" ActiveKey="@_tab" ActiveKeyChanged="@((string? k) => _tab = k ?? TabSinLeer)" AriaLabel="Filtro de mensajes" />
-                <a class="tb-msg__open-all" href="@RouteContext.BuildRoute("/conversaciones")" @onclick="Close">Abrir Conversaciones</a>
+                <a class="tb-msg__open-all" href="@RouteContext.BuildRoute("/conversaciones")" @onclick="Close">Ver todas</a>
             </header>
 
             <div class="tb-msg__body">

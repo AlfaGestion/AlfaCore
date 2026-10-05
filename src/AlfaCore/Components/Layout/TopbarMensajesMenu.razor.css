@@ -47,7 +47,7 @@
     z-index: 1000;
     display: flex;
     flex-direction: column;
-    width: min(380px, calc(100vw - 24px));
+    width: min(420px, calc(100vw - 24px));
     max-height: min(520px, calc(100vh - 80px));
     border: 1px solid var(--alfa-border-default, #333640);
     border-radius: var(--alfa-radius-8, 8px);
@@ -205,4 +205,20 @@
     font-weight: 700;
     line-height: 18px;
     text-align: center;
+}
+
+/* Encabezado: las pestañas no se parten en dos líneas cuando aparece el contador de no leídos. */
+.tb-msg__header ::deep .alfa-tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tb-msg__header ::deep .alfa-tabs__item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.tb-msg__open-all {
+    flex: 0 0 auto;
+    padding-bottom: var(--alfa-space-8, 8px);
 }
