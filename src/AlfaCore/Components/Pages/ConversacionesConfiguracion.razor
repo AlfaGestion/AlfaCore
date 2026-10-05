@@ -886,445 +886,178 @@
 
     }
 
-    @if (_activePrimaryTab == "integraciones-ia")
+    @if (_activePrimaryTab == "asistente-ia")
+    {
+        <ConversacionesConfiguracionAsistente Config="_automatizacionesConfig"
+                                              Original="_automatizacionesOriginal"
+                                              AlfaKnowledge="_alfaKnowledgeConfig"
+                                              Seccion="@_activeSecondaryTab"
+                                              Tecnicos="_tecnicos"
+                                              OpenAiConfigurado="AsistenteSvc.IsConfigured"
+                                              Busy="@(Loading || Saving)"
+                                              OnGuardar="() => SaveAutomatizacionesAsync(ConversacionAutomatizacionSeccion.Asistente)"
+                                              OnDescartar="CancelAutomatizacionesEdit"
+                                              OnGuardarAlfaKnowledge="SaveAlfaKnowledgeAsync"
+                                              OnProbarAlfaKnowledge="TestAlfaKnowledgeConnectionAsync"
+                                              OnIrASeccion="@((string seccion) => SelectSecondaryTab("asistente-ia", seccion))" />
+    }
+
+    @if (_activePrimaryTab == "informes")
     {
     <header class="settings-content-header">
-        <h3>Integraciones IA</h3>
-        <p>Conectá AlfaKnowledge como base de conocimiento del asistente y del copiloto.</p>
+        <h3>Informes</h3>
+        <p>Tono y estilo del resumen de atención por cliente que redacta la IA en Informes.</p>
     </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">AlfaKnowledge</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_alfaKnowledgeConfig.ConfigSource)</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_ALFAKNOWLEDGE_*</span>
-                </div>
-
-                <div class="conv-config-status-grid">
-                    <article class="context-card">
-                        <span class="context-card__label">Asistente contextual</span>
-                        <strong class="@GetStatusClass(_alfaKnowledgeConfig.IsConfigured)">@GetStatusLabel(_alfaKnowledgeConfig.IsConfigured)</strong>
-                        <span class="context-card__muted">Se usa desde Conversaciones para sugerencias y correcciones.</span>
-                    </article>
-                </div>
-
-                <div class="conv-config-fields">
-                    <div class="field conv-config-fields__full">
-                        <label for="ak-base-url">Base URL</label>
-                        <input id="ak-base-url" @bind="_alfaKnowledgeConfig.BaseUrl" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ak-api-key">API Key</label>
-                        <input id="ak-api-key" @bind="_alfaKnowledgeConfig.ApiKey" placeholder="Clave X-Api-Key de AlfaKnowledge" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ak-kb-id">Knowledge Base Id</label>
-                        <input id="ak-kb-id" @bind="_alfaKnowledgeConfig.KnowledgeBaseId" placeholder="GUID de la base/sector en AlfaKnowledgeMaster" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="ak-instrucciones">Instrucciones del asistente</label>
-                        <textarea id="ak-instrucciones" rows="6" maxlength="4000"
-                                  @bind="_alfaKnowledgeConfig.Instrucciones"
-                                  placeholder="Cómo debe actuar y responder el asistente: persona, tono, reglas, qué escalar a un humano, qué NO responder. Ej: 'Sos el asistente de Alfa Net. Respondé cordial y breve, en español rioplatense. No inventes precios: si preguntan precio, ofrecé pasar con un vendedor...'"></textarea>
-                        <small>Se anteponen a cada sugerencia de respuesta. Es el "sector Conversaciones": combinalas con la base de conocimiento (Knowledge Base Id) para guiar al asistente.</small>
-                    </div>
-
-                    <div class="field">
-                        <label for="ak-timeout">Timeout (segundos)</label>
-                        <input id="ak-timeout" type="number" min="1" @bind="_alfaKnowledgeConfig.TimeoutSeconds" />
+                        <h3 class="panel-card__title">Informe mensual</h3>
                     </div>
                 </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Acceso directo</span>
-                    <strong>@GetAlfaKnowledgeUrlPreview()</strong>
-                    <span class="context-card__muted">Esta URL se usa para abrir AlfaKnowledge completo y para llamar a <code>/api/external/suggest-reply</code>.</span>
+                <div class="conv-config-fields conv-bot-config">
+                    <div class="conv-config-fields__full">
+                        <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
+                        <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
+                                  placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
+                    </div>
                 </div>
 
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAlfaKnowledgeAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar AlfaKnowledge
+                    <button type="button" class="btn btn--primary" @onclick="() => SaveAutomatizacionesAsync(GetSeccionAutomatizacionActiva())" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
+                        <i class="bi bi-floppy-fill"></i> Guardar
                     </button>
-                    <button type="button" class="btn btn--ghost" @onclick="TestAlfaKnowledgeConnectionAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-plug"></i> Probar conexión
+                    <button type="button" class="btn btn--ghost" @onclick="CancelAutomatizacionesEdit" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
+                        <i class="bi bi-x-circle"></i> Cancelar
                     </button>
                 </div>
             </section>
-
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Uso en Conversaciones</h3>
-                        <p class="panel-card__subtitle">Parámetros del panel lateral de asistencia.</p>
-                    </div>
-                    <span class="panel-card__tag">IA</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Cargar la URL base pública o interna con la que AlfaCore puede llegar a AlfaKnowledge.</li>
-                    <li>Definir la misma API Key configurada en AlfaKnowledge para el endpoint externo.</li>
-                    <li>Copiar el `Knowledge Base Id` exacto de la base habilitada en AlfaKnowledge para que el copiloto consulte la base correcta.</li>
-                    <li>Probar desde una conversación real para validar sugerencias, citas y guardado de correcciones.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Persistencia</span>
-                    <strong>dbo.TA_CONFIGURACION</strong>
-                    <span class="context-card__muted">Claves usadas: <code>CONV_ALFAKNOWLEDGE_BASE_URL</code>, <code>CONV_ALFAKNOWLEDGE_API_KEY</code>, <code>CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID</code> y <code>CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS</code>.</span>
-                </div>
-            </aside>
     </div>
     }
 
-    @if (_activePrimaryTab == "automatizacion")
+    @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab != "reglas")
     {
     <header class="settings-content-header">
-        <h3>Automatización</h3>
-        <p>Horarios, bienvenida, asistente, auto-cierre, SLA y reglas por palabras clave.</p>
+        <h3>@GetAutomatizacionTitulo()</h3>
+        <p>@GetAutomatizacionDescripcion()</p>
     </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Automatizaciones</h3>
-                        <p class="panel-card__subtitle">Respuesta automática fija cuando llega un WhatsApp fuera del horario de atención — sin IA, sin aprobación de operador.</p>
-                    </div>
-                    <span class="panel-card__tag">CONV_AUTOMATIZACIONES_*</span>
-                </div>
-
-                <div class="conv-config-status-grid">
-                    <article class="context-card">
-                        <span class="context-card__label">Estado</span>
-                        <strong class="@GetStatusClass(_automatizacionesConfig.IsConfigured)">@GetStatusLabel(_automatizacionesConfig.IsConfigured)</strong>
-                        <span class="context-card__muted">Activa y con mensaje cargado.</span>
-                    </article>
-                </div>
-
-                <details class="conv-config-collapsible" open>
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-clock-history"></i> Horario y mensaje fijo</span>
-                        <span class="conv-config-collapsible__hint">Fuera de horario, días de atención y mensaje automático base.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields">
-                        <div class="field">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.Activo" />
-                                <span>Activar respuesta fuera de horario</span>
-                            </label>
-                        </div>
-
-                        <div class="field conv-config-fields__full">
-                            <label for="auto-mensaje">Mensaje fuera de horario</label>
-                            <textarea id="auto-mensaje" rows="3" @bind="_automatizacionesConfig.MensajeFueraHorario"></textarea>
-                        </div>
-
-                        <div class="field">
-                            <label for="auto-desde">Horario de atención — desde</label>
-                            <input id="auto-desde" type="text" placeholder="09:00" @bind="_automatizacionesConfig.HoraDesde" />
-                        </div>
-
-                        <div class="field">
-                            <label for="auto-hasta">Horario de atención — hasta</label>
-                            <input id="auto-hasta" type="text" placeholder="18:00" @bind="_automatizacionesConfig.HoraHasta" />
-                        </div>
-
-                        <div class="field conv-config-fields__full">
-                            <label>Días de atención</label>
-                            <div class="conv-config-dias">
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Lunes" /><span>Lun</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Martes" /><span>Mar</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Miercoles" /><span>Mié</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Jueves" /><span>Jue</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Viernes" /><span>Vie</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Sabado" /><span>Sáb</span></label>
-                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Domingo" /><span>Dom</span></label>
+                @switch (_activeSecondaryTab)
+                {
+                    case "bienvenida":
+                        <div class="conv-config-fields conv-bot-config">
+                            <div class="conv-config-fields__full">
+                                <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
                             </div>
-                        </div>
-                    </div>
-                </details>
-
-                <details class="conv-config-collapsible">
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-hand-thumbs-up"></i> Bienvenida al primer contacto</span>
-                        <span class="conv-config-collapsible__hint">Saludo inicial una sola vez por conversación nueva.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
-                                <span>Activar mensaje de bienvenida</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="bienvenida-msg">Mensaje de bienvenida</label>
-                            <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
-                        </div>
-                    </div>
-                </details>
-
-                <details class="conv-config-collapsible">
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-robot"></i> Asistente IA</span>
-                        <span class="conv-config-collapsible__hint">Persona, conocimiento, guardarraíles y escalado a humano.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
-                        </div>
-                        <div class="conv-config-fields__full">
-                            <strong class="@GetStatusClass(AsistenteSvc.IsConfigured)">OpenAI en el servidor: @GetStatusLabel(AsistenteSvc.IsConfigured)</strong>
-                            @if (!AsistenteSvc.IsConfigured)
-                            {
-                                <p class="panel-card__subtitle">No se encontró la variable de entorno <code>OPENAI_API_KEY</code> en este servidor: aunque actives el asistente y tildes todo lo de abajo, no va a responder nada hasta que se configure ahí (no es algo que se pueda cargar desde esta pantalla).</p>
-                            }
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.BotActivo" />
-                                <span>Activar el asistente (responde automáticamente)</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="asis-comportamiento">Comportamiento (quién es, tono, qué puede y qué no)</label>
-                            <textarea id="asis-comportamiento" rows="3" @bind="_automatizacionesConfig.AsistenteComportamiento"
-                                      placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."></textarea>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="asis-informacion">Información del negocio (la fuente de verdad para responder)</label>
-                            <textarea id="asis-informacion" rows="8" @bind="_automatizacionesConfig.AsistenteInformacion"
-                                      placeholder="Pegá acá lo que el asistente tiene que saber: horario de soporte, canales, cómo actualizar el sistema, pasos de las consultas más frecuentes, qué derivar a una persona… Cuanto más concreto, mejor responde."></textarea>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="asis-politica">¿Qué hace cuando la información no alcanza?</label>
-                            <select id="asis-politica" @bind="_automatizacionesConfig.AsistentePolitica">
-                                <option value="SOLO_INFO">Responder solo con la información dada; si no sabe, pasar a un humano</option>
-                                <option value="GENERAL_AVISA">Responder igual con conocimiento general, avisando que un asesor confirmará</option>
-                                <option value="GENERAL">Responder igual con conocimiento general (mayor cobertura, más riesgo)</option>
-                            </select>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteUsaKnowledge" />
-                                <span>Usar AlfaKnowledge como fuente: además del comportamiento y la información pegada, busca en los documentos/instructivos subidos a tu base de conocimiento</span>
-                            </label>
-                        </div>
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Qué datos reales puede consultar y responder (además del texto de arriba). Cada uno se ofrece solo si la conversación está vinculada a la cuenta correspondiente (Cliente o Proveedor, según Contactos).</p>
-                        </div>
-                        <div class="conv-config-fields__full conv-config-tools-list">
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-tag" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Precios</span>
-                                    <span class="conv-config-tool-row__desc">Puede buscar y responder el precio real de un artículo (respeta la lista de precios del cliente si está identificado).</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPrecios" />
+                            <div class="field conv-config-fields__full">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
+                                    <span>Activar mensaje de bienvenida</span>
                                 </label>
                             </div>
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-wallet2" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Saldo de Cliente</span>
-                                    <span class="conv-config-tool-row__desc">Puede responder el saldo de cuenta corriente (total, detalle o link al portal, según lo que pida) cuando la conversación está vinculada a un Cliente.</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoCliente" />
+                            <div class="field conv-config-fields__full">
+                                <label for="bienvenida-msg">Mensaje de bienvenida</label>
+                                <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
+                            </div>
+                        </div>
+                        break;
+                    case "auto-cierre":
+                        <div class="conv-config-fields conv-bot-config">
+                            <div class="conv-config-fields__full">
+                                <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
+                                    <span>Activar auto-cierre por inactividad</span>
                                 </label>
                             </div>
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-truck" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Saldo de Proveedor</span>
-                                    <span class="conv-config-tool-row__desc">Igual que el anterior, cuando la conversación está vinculada a un Proveedor.</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoProveedor" />
+                            <div class="field">
+                                <label for="ac-aviso">Horas de inactividad para el aviso</label>
+                                <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
+                            </div>
+                            <div class="field">
+                                <label for="ac-cierre">Horas tras el aviso para cerrar</label>
+                                <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label for="ac-msg-aviso">Mensaje de aviso</label>
+                                <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
+                                <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
+                            </div>
+                        </div>
+                        break;
+                    case "sla":
+                        <div class="conv-config-fields conv-bot-config">
+                            <div class="conv-config-fields__full">
+                                <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
+                                    <span>Activar seguimientos / SLA</span>
                                 </label>
                             </div>
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-clipboard-check" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Pedidos</span>
-                                    <span class="conv-config-tool-row__desc">Puede responder el estado de una Nota de Pedido (Pendiente, Aprobado, Finalizado o Anulado) de un Cliente identificado.</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPedidos" />
+                            <div class="field">
+                                <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
+                                <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
+                            </div>
+                            <div class="field">
+                                <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
+                                <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
+                            </div>
+                        </div>
+                        break;
+                    default:
+                        <div class="conv-config-fields">
+                            <div class="field">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.Activo" />
+                                    <span>Activar respuesta fuera de horario</span>
                                 </label>
                             </div>
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Portal de autogestión</span>
-                                    <span class="conv-config-tool-row__desc">Puede ofrecer el link para ver la cuenta corriente online (hoy disponible para Cliente; Proveedor está en camino).</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPortalLink" />
-                                </label>
-                            </div>
-                            <div class="conv-config-tool-row">
-                                <div class="conv-config-tool-row__icon"><i class="bi bi-cash-coin" aria-hidden="true"></i></div>
-                                <div class="conv-config-tool-row__text">
-                                    <span class="conv-config-tool-row__title">Mostrar precios a consumidores finales / leads</span>
-                                    <span class="conv-config-tool-row__desc">Si está desactivado, el asistente puede mostrar productos y catálogo, pero no informa precios hasta identificar al comprador como cliente.</span>
-                                </div>
-                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
-                                    <input type="checkbox" @bind="_automatizacionesConfig.CatalogoMuestraPrecioConsumidor" />
-                                </label>
-                            </div>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteFueraHorario" />
-                                <span>Fuera de horario, que atienda el asistente (en vez del mensaje fijo): se presenta como IA, intenta ayudar y, si no puede, deja el mensaje para un operador</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="asis-urgencia">Palabras que marcan urgencia (se atienden en cualquier horario: suben prioridad y avisan al operador)</label>
-                            <input id="asis-urgencia" @bind="_automatizacionesConfig.AsistenteUrgenciaPalabras"
-                                   placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido" />
-                        </div>
-                        <div class="field">
-                            <label for="asis-urgencia-template">Template para alertar técnicos</label>
-                            <input id="asis-urgencia-template" @bind="_automatizacionesConfig.AsistenteUrgenciaTemplate"
-                                   placeholder="cliente_consultando_urgencia" />
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label>Técnicos que reciben alertas de urgencia</label>
-                            <div class="conv-config-tech-multiselect" role="group" aria-label="Técnicos que reciben alertas de urgencia">
-                                @foreach (var tecnico in _tecnicos)
-                                {
-                                    var disabled = string.IsNullOrWhiteSpace(tecnico.Telefono);
-                                    <label class="conv-config-tech-option @(disabled ? "is-disabled" : string.Empty)">
-                                        <input type="checkbox"
-                                               checked="@IsUrgencyTechnicianSelected(tecnico.IdTecnico)"
-                                               disabled="@disabled"
-                                               @onchange="args => ToggleUrgencyTechnician(tecnico.IdTecnico, args)" />
-                                        <span>
-                                            <strong>@tecnico.Nombre</strong>
-                                            <small>@(disabled ? "Sin teléfono cargado" : tecnico.Telefono)</small>
-                                        </span>
-                                    </label>
-                                }
-                            </div>
-                            <small class="field__hint">Solo se guardan IDs de técnicos existentes; en el envío se vuelve a resolver el teléfono desde la base actual.</small>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
-                                <span>Responder solo conversaciones sin asignar (si un humano la tomó, el asistente calla)</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.BotSoloFueraHorario" />
-                                <span>Responder solo fuera del horario de atención (en horario, lo dejan los agentes humanos)</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="bot-escalado">Palabras que fuerzan pasar a un humano</label>
-                            <input id="bot-escalado" @bind="_automatizacionesConfig.BotPalabrasEscalado" placeholder="humano, persona, reclamo, operador" />
-                        </div>
-                        <div class="field">
-                            <label for="bot-max">Máx. respuestas del asistente por conversación</label>
-                            <input id="bot-max" type="number" min="1" @bind="_automatizacionesConfig.BotMaxRespuestas" />
-                        </div>
-                        <div class="field">
-                            <label for="bot-espera">Esperar minutos antes de responder</label>
-                            <input id="bot-espera" type="number" min="0" @bind="_automatizacionesConfig.BotEsperaMinutos" />
-                            <small class="field__hint">Le da tiempo a un agente humano a responder primero. 0 = el asistente responde de inmediato.</small>
-                        </div>
-                    </div>
-                </details>
 
-                <details class="conv-config-collapsible">
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-door-closed"></i> Auto-cierre por inactividad</span>
-                        <span class="conv-config-collapsible__hint">Aviso y cierre automático cuando el cliente no responde.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
-                                <span>Activar auto-cierre por inactividad</span>
-                            </label>
-                        </div>
-                        <div class="field">
-                            <label for="ac-aviso">Horas de inactividad para el aviso</label>
-                            <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
-                        </div>
-                        <div class="field">
-                            <label for="ac-cierre">Horas tras el aviso para cerrar</label>
-                            <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="ac-msg-aviso">Mensaje de aviso</label>
-                            <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
-                            <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
-                        </div>
-                    </div>
-                </details>
+                            <div class="field conv-config-fields__full">
+                                <label for="auto-mensaje">Mensaje fuera de horario</label>
+                                <textarea id="auto-mensaje" rows="3" @bind="_automatizacionesConfig.MensajeFueraHorario"></textarea>
+                            </div>
 
-                <details class="conv-config-collapsible">
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-alarm"></i> Seguimientos / SLA</span>
-                        <span class="conv-config-collapsible__hint">Recordatorios internos y reasignación cuando el cliente espera.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
-                                <span>Activar seguimientos / SLA</span>
-                            </label>
-                        </div>
-                        <div class="field">
-                            <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
-                            <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
-                        </div>
-                        <div class="field">
-                            <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
-                            <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
-                        </div>
-                    </div>
-                </details>
+                            <div class="field">
+                                <label for="auto-desde">Horario de atención — desde</label>
+                                <input id="auto-desde" type="text" placeholder="09:00" @bind="_automatizacionesConfig.HoraDesde" />
+                            </div>
 
-                <details class="conv-config-collapsible">
-                    <summary class="conv-config-collapsible__summary">
-                        <span class="conv-config-collapsible__title"><i class="bi bi-file-earmark-bar-graph-fill"></i> Informe mensual</span>
-                        <span class="conv-config-collapsible__hint">Tono y estilo del resumen IA por cliente.</span>
-                    </summary>
-                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
-                        <div class="conv-config-fields__full">
-                            <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
+                            <div class="field">
+                                <label for="auto-hasta">Horario de atención — hasta</label>
+                                <input id="auto-hasta" type="text" placeholder="18:00" @bind="_automatizacionesConfig.HoraHasta" />
+                            </div>
+
+                            <div class="field conv-config-fields__full">
+                                <label>Días de atención</label>
+                                <div class="conv-config-dias">
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Lunes" /><span>Lun</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Martes" /><span>Mar</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Miercoles" /><span>Mié</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Jueves" /><span>Jue</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Viernes" /><span>Vie</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Sabado" /><span>Sáb</span></label>
+                                    <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Domingo" /><span>Dom</span></label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="field conv-config-fields__full">
-                            <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
-                            <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
-                                      placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
-                        </div>
-                    </div>
-                </details>
+                        break;
+                }
 
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar automatizaciones
+                    <button type="button" class="btn btn--primary" @onclick="() => SaveAutomatizacionesAsync(GetSeccionAutomatizacionActiva())" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
+                        <i class="bi bi-floppy-fill"></i> Guardar
                     </button>
                     <button type="button" class="btn btn--ghost" @onclick="CancelAutomatizacionesEdit" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
                         <i class="bi bi-x-circle"></i> Cancelar
@@ -1332,11 +1065,13 @@
                 </div>
             </section>
 
+            @if (_activeSecondaryTab is "horario" or "")
+            {
             <aside class="panel-card conv-config-help">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Nivel 0: regla fija, sin IA.</p>
+                        <p class="panel-card__subtitle">Regla fija, sin IA.</p>
                     </div>
                     <span class="panel-card__tag">WhatsApp</span>
                 </div>
@@ -1345,10 +1080,19 @@
                     <li>Se manda solo para mensajes entrantes de WhatsApp fuera del horario/días configurados.</li>
                     <li>Como máximo una vez por día y por conversación mientras siga fuera de horario, para no repetir el mensaje en cada respuesta del cliente.</li>
                     <li>Queda registrado como un mensaje saliente normal, marcado como automático.</li>
+                    <li>Si en Asistente IA elegís que fuera de horario responda el asistente, se usa el asistente en lugar de este mensaje.</li>
                 </ol>
             </aside>
+            }
     </div>
+    }
 
+    @if (_activePrimaryTab == "automatizacion" && _activeSecondaryTab == "reglas")
+    {
+    <header class="settings-content-header">
+        <h3>Reglas</h3>
+        <p>Respuestas, derivaciones y prioridad por palabras clave, sin IA.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -2228,19 +1972,24 @@
             new("facebook", "Facebook"),
             new("mercadolibre", "Mercado Libre")
         ]),
+        new("asistente-ia", "Asistente IA",
+        [
+            new("general", "General"),
+            new("personalidad", "Personalidad"),
+            new("informacion", "Información del negocio"),
+            new("herramientas", "Herramientas"),
+            new("derivacion", "Derivación y urgencias"),
+            new("conocimiento", "Conocimiento externo")
+        ]),
         new("automatizacion", "Automatización",
         [
-            new("horario-bienvenida", "Horario y bienvenida"),
+            new("horario", "Horario y mensaje fijo"),
+            new("bienvenida", "Bienvenida"),
             new("reglas", "Reglas"),
             new("auto-cierre", "Auto-cierre"),
             new("sla", "SLA")
         ]),
-        new("integraciones-ia", "Integraciones IA",
-        [
-            new("asistente-ia", "Asistente IA"),
-            new("alfaknowledge", "AlfaKnowledge"),
-            new("informes-ia", "Informes IA")
-        ]),
+        new("informes", "Informes", []),
         new("operacion-accesos", "Operación y accesos",
         [
             new("prioridades", "Prioridades"),
@@ -2431,6 +2180,7 @@
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
         var seccion = query.TryGetValue("seccion", out var seccionRaw) ? seccionRaw.ToString() : string.Empty;
         var subseccion = query.TryGetValue("subseccion", out var subseccionRaw) ? subseccionRaw.ToString() : string.Empty;
+        (seccion, subseccion) = NormalizarSeccionLegacy(seccion, subseccion);
         var canal = query.TryGetValue("canal", out var canalRaw) ? canalRaw.ToString() : string.Empty;
         var legacyWhatsAppQrOnboarding =
             string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase);
@@ -5442,7 +5192,7 @@
             ConfigSource = source.ConfigSource
         };
 
-    private static bool AutomatizacionesEquals(
+    internal static bool AutomatizacionesEquals(
         ConversacionAutomatizacionesConfigDto left,
         ConversacionAutomatizacionesConfigDto right)
         => left.Activo == right.Activo
@@ -5514,30 +5264,6 @@
     private static bool UrgencyTechniciansEquals(IEnumerable<string>? left, IEnumerable<string>? right)
         => NormalizeUrgencyTechnicians(left).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .SequenceEqual(NormalizeUrgencyTechnicians(right).OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
-
-    private bool IsUrgencyTechnicianSelected(string idTecnico)
-        => _automatizacionesConfig.AsistenteUrgenciaTecnicos.Any(x => string.Equals(x, idTecnico, StringComparison.OrdinalIgnoreCase));
-
-    private void ToggleUrgencyTechnician(string idTecnico, ChangeEventArgs args)
-    {
-        var normalized = (idTecnico ?? string.Empty).Trim();
-        if (normalized.Length == 0)
-            return;
-
-        var selected = args.Value is bool value && value;
-        var current = NormalizeUrgencyTechnicians(_automatizacionesConfig.AsistenteUrgenciaTecnicos);
-        if (selected)
-        {
-            if (!current.Contains(normalized, StringComparer.OrdinalIgnoreCase))
-                current.Add(normalized);
-        }
-        else
-        {
-            current.RemoveAll(x => string.Equals(x, normalized, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _automatizacionesConfig.AsistenteUrgenciaTecnicos = current;
-    }
 
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
@@ -5674,17 +5400,17 @@
         Saving = false;
     }
 
-    private async Task SaveAutomatizacionesAsync()
+    private async Task SaveAutomatizacionesAsync(ConversacionAutomatizacionSeccion seccion)
     {
         Saving = true;
         _feedback = null;
 
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.SaveAutomatizacionesConfigAsync(_automatizacionesConfig),
-            "No se pudo guardar la configuración de automatizaciones.");
+            () => ConfigSvc.SaveAutomatizacionesConfigAsync(_automatizacionesConfig, seccion),
+            "No se pudo guardar la configuración.");
 
         _feedback = result.Success
-            ? AppUiMessage.Success("Automatizaciones guardadas", "La respuesta fuera de horario ya está activa con estos parámetros.")
+            ? AppUiMessage.Success(GetMensajeGuardado(seccion), "Los cambios ya están activos.")
             : result.Feedback;
 
         if (result.Success)
@@ -5698,6 +5424,74 @@
     private void CancelAutomatizacionesEdit()
     {
         _automatizacionesConfig = CloneAutomatizaciones(_automatizacionesOriginal);
+    }
+
+    private ConversacionAutomatizacionSeccion GetSeccionAutomatizacionActiva()
+        => GetSeccionAutomatizacion(_activePrimaryTab, _activeSecondaryTab);
+
+    /// <summary>Qué sección de automatizaciones graba el botón Guardar de cada pantalla.</summary>
+    internal static ConversacionAutomatizacionSeccion GetSeccionAutomatizacion(string? categoria, string? subseccion)
+        => categoria switch
+        {
+            "asistente-ia" => ConversacionAutomatizacionSeccion.Asistente,
+            "informes" => ConversacionAutomatizacionSeccion.Informe,
+            "automatizacion" => subseccion switch
+            {
+                "bienvenida" => ConversacionAutomatizacionSeccion.Bienvenida,
+                "auto-cierre" => ConversacionAutomatizacionSeccion.AutoCierre,
+                "sla" => ConversacionAutomatizacionSeccion.Sla,
+                "reglas" => ConversacionAutomatizacionSeccion.Ninguna,
+                _ => ConversacionAutomatizacionSeccion.Horario
+            },
+            _ => ConversacionAutomatizacionSeccion.Ninguna
+        };
+
+    private static string GetMensajeGuardado(ConversacionAutomatizacionSeccion seccion)
+        => seccion switch
+        {
+            ConversacionAutomatizacionSeccion.Asistente => "Asistente IA guardado",
+            ConversacionAutomatizacionSeccion.Informe => "Informe mensual guardado",
+            ConversacionAutomatizacionSeccion.Bienvenida => "Bienvenida guardada",
+            ConversacionAutomatizacionSeccion.AutoCierre => "Auto-cierre guardado",
+            ConversacionAutomatizacionSeccion.Sla => "Seguimientos guardados",
+            _ => "Horario guardado"
+        };
+
+    private string GetAutomatizacionTitulo()
+        => _activeSecondaryTab switch
+        {
+            "bienvenida" => "Bienvenida",
+            "auto-cierre" => "Auto-cierre por inactividad",
+            "sla" => "Seguimientos / SLA",
+            _ => "Horario y mensaje fijo"
+        };
+
+    private string GetAutomatizacionDescripcion()
+        => _activeSecondaryTab switch
+        {
+            "bienvenida" => "Saludo automático una sola vez, en el primer mensaje de una conversación nueva.",
+            "auto-cierre" => "Aviso y cierre automático cuando el cliente deja de responder.",
+            "sla" => "Recordatorios internos y reasignación cuando el cliente espera respuesta.",
+            _ => "Días y horario de atención, y el mensaje automático fuera de ese horario."
+        };
+
+    /// <summary>
+    /// Traduce links viejos de Configuración (antes de 2026-10-05) a la navegación actual:
+    /// "Integraciones IA" se dividió entre Asistente IA e Informes, y "Horario y bienvenida" en dos pantallas.
+    /// </summary>
+    internal static (string Seccion, string Subseccion) NormalizarSeccionLegacy(string? seccion, string? subseccion)
+    {
+        var sec = (seccion ?? string.Empty).Trim().ToLowerInvariant();
+        var sub = (subseccion ?? string.Empty).Trim().ToLowerInvariant();
+
+        return (sec, sub) switch
+        {
+            ("integraciones-ia", "alfaknowledge") => ("asistente-ia", "conocimiento"),
+            ("integraciones-ia", "informes-ia") => ("informes", string.Empty),
+            ("integraciones-ia", _) => ("asistente-ia", "general"),
+            ("automatizacion", "horario-bienvenida") => ("automatizacion", "horario"),
+            _ => (seccion ?? string.Empty, subseccion ?? string.Empty)
+        };
     }
 
     private async Task SaveAsync()
@@ -6636,8 +6430,9 @@
         => category switch
         {
             "canales" => $"{_numeros.Count} número(s) registrados",
+            "asistente-ia" => _automatizacionesConfig.BotActivo ? "Asistente activo" : "Asistente apagado",
             "automatizacion" => $"{CountActiveAutomations()} automatización(es) activa(s)",
-            "integraciones-ia" => _alfaKnowledgeConfig.IsConfigured ? "AlfaKnowledge configurado" : "Integraciones pendientes",
+            "informes" => "Informe mensual por cliente",
             "operacion-accesos" => $"{_administradores.Count} administrador(es)",
             "soporte" => HasWebhookToken ? "Webhook SaaS configurado" : "Webhook Token no configurado",
             _ => string.Empty
@@ -6648,7 +6443,8 @@
         {
             "canales" => $"WhatsApp: {GetStatusLabel(_config.IsReadyForMetaSetup)} · Instagram: {GetStatusLabel(_instagramConfig.IsReadyForMetaSetup)}",
             "automatizacion" => $"{_reglas.Count} regla(s) cargada(s) · SLA: {(_automatizacionesConfig.SlaActivo ? "Activo" : "Inactivo")}",
-            "integraciones-ia" => $"Asistente: {(!string.IsNullOrWhiteSpace(_automatizacionesConfig.AsistenteComportamiento) ? "Configurado" : "Pendiente")}",
+            "asistente-ia" => $"Personalidad: {(!string.IsNullOrWhiteSpace(_automatizacionesConfig.AsistenteComportamiento) ? "cargada" : "pendiente")} · AlfaKnowledge: {(_alfaKnowledgeConfig.IsConfigured ? "conectado" : "sin conectar")}",
+            "informes" => string.IsNullOrWhiteSpace(_automatizacionesConfig.InformeInstrucciones) ? "Estilo por defecto" : "Estilo personalizado",
             "operacion-accesos" => $"{_numeros.Count(x => x.Usuarios.Count > 0)} número(s) con usuarios asignados",
             "soporte" => "Estado calculado con la configuración actualmente cargada",
             _ => string.Empty
@@ -6658,8 +6454,7 @@
         => (_automatizacionesConfig.Activo ? 1 : 0)
            + (_automatizacionesConfig.BienvenidaActivo ? 1 : 0)
            + (_automatizacionesConfig.AutoCierreActivo ? 1 : 0)
-           + (_automatizacionesConfig.SlaActivo ? 1 : 0)
-           + (_automatizacionesConfig.BotActivo ? 1 : 0);
+           + (_automatizacionesConfig.SlaActivo ? 1 : 0);
 
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
 

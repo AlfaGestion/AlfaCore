@@ -858,57 +858,21 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
 
     public Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default)
+        => SaveAutomatizacionesConfigAsync(config, ConversacionAutomatizacionSeccion.Todas, ct);
+
+    public Task SaveAutomatizacionesConfigAsync(
+        ConversacionAutomatizacionesConfigDto config,
+        ConversacionAutomatizacionSeccion secciones,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        if ((secciones & ConversacionAutomatizacionSeccion.Todas) == ConversacionAutomatizacionSeccion.Ninguna)
+            throw new ArgumentException("Indicá al menos una sección de automatizaciones para guardar.", nameof(secciones));
 
         return ExecuteLoggedAsync("Conversaciones", "SaveAutomatizacionesConfig", async token =>
         {
             await conversacionesAuthorizationService.EnsureCanManageAsync(token);
-            var dias = new List<string>();
-            if (config.Lunes) dias.Add("LUN");
-            if (config.Martes) dias.Add("MAR");
-            if (config.Miercoles) dias.Add("MIE");
-            if (config.Jueves) dias.Add("JUE");
-            if (config.Viernes) dias.Add("VIE");
-            if (config.Sabado) dias.Add("SAB");
-            if (config.Domingo) dias.Add("DOM");
-
-            var items = new[]
-            {
-                ("CONV_AUTOMATIZACIONES_ACTIVO", config.Activo ? "1" : "0"),
-                ("CONV_AUTOMATIZACIONES_MENSAJE", (config.MensajeFueraHorario ?? string.Empty).Trim()),
-                ("CONV_AUTOMATIZACIONES_DIAS", string.Join(',', dias)),
-                ("CONV_AUTOMATIZACIONES_HORA_DESDE", (config.HoraDesde ?? string.Empty).Trim()),
-                ("CONV_AUTOMATIZACIONES_HORA_HASTA", (config.HoraHasta ?? string.Empty).Trim()),
-                ("CONV_BIENVENIDA_ACTIVO", config.BienvenidaActivo ? "1" : "0"),
-                ("CONV_BIENVENIDA_MENSAJE", (config.BienvenidaMensaje ?? string.Empty).Trim()),
-                ("CONV_BOT_ACTIVO", config.BotActivo ? "1" : "0"),
-                ("CONV_BOT_SOLO_SIN_ASIGNAR", config.BotSoloSinAsignar ? "1" : "0"),
-                ("CONV_BOT_PALABRAS_ESCALADO", (config.BotPalabrasEscalado ?? string.Empty).Trim()),
-                ("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_BOT_SOLO_FUERA_HORARIO", config.BotSoloFueraHorario ? "1" : "0"),
-                ("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_AUTOCIERRE_ACTIVO", config.AutoCierreActivo ? "1" : "0"),
-                ("CONV_AUTOCIERRE_HORAS_AVISO", (config.AutoCierreHorasAviso <= 0 ? 23 : config.AutoCierreHorasAviso).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_AUTOCIERRE_HORAS_CIERRE", (config.AutoCierreHorasCierre <= 0 ? 24 : config.AutoCierreHorasCierre).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_AUTOCIERRE_MENSAJE_AVISO", (config.AutoCierreMensajeAviso ?? string.Empty).Trim()),
-                ("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim()),
-                ("CONV_SLA_ACTIVO", config.SlaActivo ? "1" : "0"),
-                ("CONV_SLA_HORAS_RECORDATORIO", (config.SlaHorasRecordatorio <= 0 ? 2 : config.SlaHorasRecordatorio).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"),
-                ("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()),
-                ("CONV_ASISTENTE_URGENCIA_TEMPLATE", string.IsNullOrWhiteSpace(config.AsistenteUrgenciaTemplate) ? "cliente_consultando_urgencia" : config.AsistenteUrgenciaTemplate.Trim()),
-                ("CONV_ASISTENTE_URGENCIA_TECNICOS", string.Join(',', NormalizeDelimitedList(config.AsistenteUrgenciaTecnicos))),
-                ("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0"),
-                ("CONV_ASISTENTE_HERRAMIENTA_PRECIOS", config.AsistenteHerramientaPrecios ? "1" : "0"),
-                ("CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", config.AsistenteHerramientaSaldoCliente ? "1" : "0"),
-                ("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"),
-                ("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"),
-                ("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"),
-                (CatalogoPrecioConsumidorSetting.Clave, CatalogoPrecioConsumidorSetting.Serializar(config.CatalogoMuestraPrecioConsumidor)),
-                ("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim())
-            };
+            var items = BuildAutomatizacionesItems(config, secciones);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -917,7 +881,7 @@ public sealed class ConversacionesConfigService(
 
             foreach (var item in items)
             {
-                var stored = SplitStoredValue(item.Item2);
+                var stored = SplitStoredValue(item.Valor);
                 var sql = $"""
                     UPDATE dbo.TA_CONFIGURACION
                     SET
@@ -934,15 +898,16 @@ public sealed class ConversacionesConfigService(
                     """;
 
                 await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
-                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Item1.ToUpperInvariant());
-                cmd.Parameters.AddWithValue("@Clave", item.Item1);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Clave.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Clave);
                 cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
                 cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
                 cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
                 await cmd.ExecuteNonQueryAsync(token);
             }
 
-            await SaveAsistenteAsync(cn, (SqlTransaction)tx, config, token);
+            if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Asistente))
+                await SaveAsistenteAsync(cn, (SqlTransaction)tx, config, token);
 
             await tx.CommitAsync(token);
 
@@ -952,11 +917,90 @@ public sealed class ConversacionesConfigService(
                 "TA_CONFIGURACION",
                 ConfigGroup,
                 "Configuración de automatizaciones actualizada.",
-                new { config.Activo, Dias = dias },
+                new { Secciones = secciones.ToString(), Claves = items.Select(x => x.Clave).ToArray() },
                 token);
 
             return true;
         }, "No se pudo guardar la configuración de automatizaciones.", ct);
+    }
+
+    /// <summary>
+    /// Claves de TA_CONFIGURACION que graba cada sección de automatizaciones. Cada clave pertenece a
+    /// una sola sección; el contenido de CONV_ASISTENTE (comportamiento, información, política) va
+    /// aparte y se graba solo con <see cref="ConversacionAutomatizacionSeccion.Asistente"/>.
+    /// </summary>
+    internal static IReadOnlyList<(string Clave, string Valor)> BuildAutomatizacionesItems(
+        ConversacionAutomatizacionesConfigDto config,
+        ConversacionAutomatizacionSeccion secciones)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var items = new List<(string Clave, string Valor)>();
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Horario))
+        {
+            var dias = new List<string>();
+            if (config.Lunes) dias.Add("LUN");
+            if (config.Martes) dias.Add("MAR");
+            if (config.Miercoles) dias.Add("MIE");
+            if (config.Jueves) dias.Add("JUE");
+            if (config.Viernes) dias.Add("VIE");
+            if (config.Sabado) dias.Add("SAB");
+            if (config.Domingo) dias.Add("DOM");
+
+            items.Add(("CONV_AUTOMATIZACIONES_ACTIVO", config.Activo ? "1" : "0"));
+            items.Add(("CONV_AUTOMATIZACIONES_MENSAJE", (config.MensajeFueraHorario ?? string.Empty).Trim()));
+            items.Add(("CONV_AUTOMATIZACIONES_DIAS", string.Join(',', dias)));
+            items.Add(("CONV_AUTOMATIZACIONES_HORA_DESDE", (config.HoraDesde ?? string.Empty).Trim()));
+            items.Add(("CONV_AUTOMATIZACIONES_HORA_HASTA", (config.HoraHasta ?? string.Empty).Trim()));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Bienvenida))
+        {
+            items.Add(("CONV_BIENVENIDA_ACTIVO", config.BienvenidaActivo ? "1" : "0"));
+            items.Add(("CONV_BIENVENIDA_MENSAJE", (config.BienvenidaMensaje ?? string.Empty).Trim()));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Asistente))
+        {
+            items.Add(("CONV_BOT_ACTIVO", config.BotActivo ? "1" : "0"));
+            items.Add(("CONV_BOT_SOLO_SIN_ASIGNAR", config.BotSoloSinAsignar ? "1" : "0"));
+            items.Add(("CONV_BOT_PALABRAS_ESCALADO", (config.BotPalabrasEscalado ?? string.Empty).Trim()));
+            items.Add(("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(inv)));
+            items.Add(("CONV_BOT_SOLO_FUERA_HORARIO", config.BotSoloFueraHorario ? "1" : "0"));
+            items.Add(("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(inv)));
+            items.Add(("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()));
+            items.Add(("CONV_ASISTENTE_URGENCIA_TEMPLATE", string.IsNullOrWhiteSpace(config.AsistenteUrgenciaTemplate) ? "cliente_consultando_urgencia" : config.AsistenteUrgenciaTemplate.Trim()));
+            items.Add(("CONV_ASISTENTE_URGENCIA_TECNICOS", string.Join(',', NormalizeDelimitedList(config.AsistenteUrgenciaTecnicos))));
+            items.Add(("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_PRECIOS", config.AsistenteHerramientaPrecios ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", config.AsistenteHerramientaSaldoCliente ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"));
+            items.Add((CatalogoPrecioConsumidorSetting.Clave, CatalogoPrecioConsumidorSetting.Serializar(config.CatalogoMuestraPrecioConsumidor)));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.AutoCierre))
+        {
+            items.Add(("CONV_AUTOCIERRE_ACTIVO", config.AutoCierreActivo ? "1" : "0"));
+            items.Add(("CONV_AUTOCIERRE_HORAS_AVISO", (config.AutoCierreHorasAviso <= 0 ? 23 : config.AutoCierreHorasAviso).ToString(inv)));
+            items.Add(("CONV_AUTOCIERRE_HORAS_CIERRE", (config.AutoCierreHorasCierre <= 0 ? 24 : config.AutoCierreHorasCierre).ToString(inv)));
+            items.Add(("CONV_AUTOCIERRE_MENSAJE_AVISO", (config.AutoCierreMensajeAviso ?? string.Empty).Trim()));
+            items.Add(("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim()));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Sla))
+        {
+            items.Add(("CONV_SLA_ACTIVO", config.SlaActivo ? "1" : "0"));
+            items.Add(("CONV_SLA_HORAS_RECORDATORIO", (config.SlaHorasRecordatorio <= 0 ? 2 : config.SlaHorasRecordatorio).ToString(inv)));
+            items.Add(("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(inv)));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Informe))
+            items.Add(("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim()));
+
+        return items;
     }
 
     public Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(CancellationToken ct = default)

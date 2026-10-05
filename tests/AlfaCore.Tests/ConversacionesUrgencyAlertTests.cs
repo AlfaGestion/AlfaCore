@@ -8,7 +8,7 @@ public sealed class ConversacionesUrgencyAlertTests
     private static readonly string ServiceSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
     private static readonly string ConfigSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesConfigService.cs"));
     private static readonly string ConfigModelSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Models", "ConversacionesConfiguracionModels.cs"));
-    private static readonly string ConfigPageSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracion.razor"));
+    private static readonly string ConfigPageSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracionAsistente.razor"));
     private static readonly string SqlSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "App_Data", "updates", "2026-09-22-003__conversaciones_alertas_urgencia.sql"));
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class ConversacionesUrgencyAlertTests
         Assert.Contains("CONV_ASISTENTE_URGENCIA_TEMPLATE", ConfigSource, StringComparison.Ordinal);
         Assert.Contains("CONV_ASISTENTE_URGENCIA_TECNICOS", ConfigSource, StringComparison.Ordinal);
         Assert.Contains("Técnicos que reciben alertas de urgencia", ConfigPageSource, StringComparison.Ordinal);
-        Assert.Contains("ToggleUrgencyTechnician", ConfigPageSource, StringComparison.Ordinal);
+        Assert.Contains("AlternarTecnico", ConfigPageSource, StringComparison.Ordinal);
     }
 
     private static string ExtractMethodBody(string source, string signature)

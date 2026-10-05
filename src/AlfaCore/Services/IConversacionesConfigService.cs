@@ -34,6 +34,7 @@ public interface IConversacionesConfigService
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default);
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default);
+    Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, ConversacionAutomatizacionSeccion secciones, CancellationToken ct = default);
 
     /// <summary>
     /// Prioridad de atención por clasificación de cliente (CLASIFICA1/2/3 en TA_CONFIGURACION —

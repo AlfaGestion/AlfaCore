@@ -1,0 +1,409 @@
+@using System.Globalization
+
+@* Configuración → Asistente IA. Se separó de ConversacionesConfiguracion.razor (2026-10-05) para que el
+   asistente tenga su propia sección con sub-pantallas. El estado (DTO, original, guardado) sigue
+   viviendo en la página: este componente solo edita el DTO recibido y avisa Guardar/Descartar. *@
+
+<div class="asis">
+    <header class="asis-header">
+        <div class="asis-header__text">
+            <h2>@GetTitulo()</h2>
+            <p>@GetDescripcion()</p>
+        </div>
+        <div class="asis-header__status">
+            <AlfaTag Tone="@(Config.BotActivo ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+                @(Config.BotActivo ? "Asistente activo" : "Asistente apagado")
+            </AlfaTag>
+            @if (!OpenAiConfigurado)
+            {
+                <AlfaTag Tone="AlfaTagTone.Warning">OpenAI sin configurar</AlfaTag>
+            }
+        </div>
+    </header>
+
+    @switch (Seccion)
+    {
+        case "personalidad":
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Comportamiento</h3>
+                    <p>Quién es, con qué tono habla y qué puede o no puede hacer.</p>
+                </header>
+                <div class="asis-field">
+                    <label class="asis-field__label" for="asis-comportamiento">Instrucciones de comportamiento</label>
+                    <textarea id="asis-comportamiento" class="asis-textarea" rows="7"
+                              @bind="Config.AsistenteComportamiento" @bind:event="oninput"
+                              placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."></textarea>
+                    <span class="asis-field__hint">Escribilo como si le explicaras el puesto a una persona nueva.</span>
+                </div>
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Cuando no sabe la respuesta</h3>
+                    <p>Qué hace si la información cargada no alcanza para responder.</p>
+                </header>
+                <AlfaSelect Id="asis-politica" Label="Política" Options="PoliticaOptions"
+                            Value="@Config.AsistentePolitica"
+                            ValueChanged="@((string? v) => Config.AsistentePolitica = v ?? "GENERAL_AVISA")" />
+            </section>
+            break;
+
+        case "informacion":
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Información del negocio</h3>
+                    <p>Es la fuente de verdad del asistente: horarios, sucursales, envíos, medios de pago, preguntas frecuentes, qué derivar a una persona.</p>
+                </header>
+                <div class="asis-field">
+                    <label class="asis-field__label" for="asis-informacion">Información</label>
+                    <textarea id="asis-informacion" class="asis-textarea asis-textarea--large" rows="18"
+                              @bind="Config.AsistenteInformacion" @bind:event="oninput"
+                              placeholder="Pegá acá lo que el asistente tiene que saber. Cuanto más concreto, mejor responde."></textarea>
+                    <div class="asis-meter @(InformacionExtensa(Config.AsistenteInformacion) ? "is-warning" : null)">
+                        <span>@((Config.AsistenteInformacion ?? string.Empty).Length.ToString("N0", Es)) caracteres</span>
+                        <span>≈ @EstimarTokens(Config.AsistenteInformacion).ToString("N0", Es) tokens en cada respuesta</span>
+                    </div>
+                    @if (InformacionExtensa(Config.AsistenteInformacion))
+                    {
+                        <span class="asis-field__hint asis-field__hint--warning">
+                            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                            Todo este texto se envía a la IA en cada respuesta. Con tanto contenido cada respuesta cuesta más y tarda más; conviene dejar solo lo que el asistente realmente necesita.
+                        </span>
+                    }
+                </div>
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Fuentes adicionales</h3>
+                    <p>Además del texto de arriba, el asistente puede buscar en documentos externos.</p>
+                </header>
+                <div class="asis-option">
+                    <AlfaCheckbox Value="@Config.AsistenteUsaKnowledge" ValueChanged="@((bool? v) => Config.AsistenteUsaKnowledge = v == true)">
+                        Buscar también en AlfaKnowledge (documentos e instructivos de tu base de conocimiento)
+                    </AlfaCheckbox>
+                    @if (!AlfaKnowledge.IsConfigured)
+                    {
+                        <span class="asis-field__hint">
+                            AlfaKnowledge no está conectado.
+                            <button type="button" class="asis-link" @onclick="() => OnIrASeccion.InvokeAsync(SeccionConocimiento)">Conectarlo en Conocimiento externo</button>
+                        </span>
+                    }
+                </div>
+            </section>
+            break;
+
+        case "herramientas":
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Datos que puede consultar</h3>
+                    <p>Cada herramienta se usa solo si la conversación está vinculada a la cuenta correspondiente (Cliente o Proveedor, según Contactos).</p>
+                </header>
+                <div class="asis-tools">
+                    @foreach (var tool in Herramientas)
+                    {
+                        <div class="asis-tool">
+                            <i class="bi @tool.Icono asis-tool__icon" aria-hidden="true"></i>
+                            <div class="asis-tool__text">
+                                <span class="asis-tool__title">@tool.Titulo</span>
+                                <span class="asis-tool__desc">@tool.Descripcion</span>
+                            </div>
+                            <AlfaCheckbox Value="@tool.Leer(Config)" ValueChanged="@((bool? v) => tool.Escribir(Config, v == true))" />
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Precios y catálogo</h3>
+                    <p>Qué ve un comprador que todavía no está identificado como cliente.</p>
+                </header>
+                <div class="asis-tool">
+                    <i class="bi bi-cash-coin asis-tool__icon" aria-hidden="true"></i>
+                    <div class="asis-tool__text">
+                        <span class="asis-tool__title">Mostrar precios a consumidores finales y leads</span>
+                        <span class="asis-tool__desc">Si está desactivado, el asistente y el catálogo público muestran productos sin precios hasta que el comprador se identifique como cliente.</span>
+                    </div>
+                    <AlfaCheckbox Value="@Config.CatalogoMuestraPrecioConsumidor" ValueChanged="@((bool? v) => Config.CatalogoMuestraPrecioConsumidor = v == true)" />
+                </div>
+            </section>
+            break;
+
+        case "derivacion":
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Pasar a una persona</h3>
+                    <p>Si el cliente escribe alguna de estas palabras, el asistente deja de responder y la conversación queda para un operador.</p>
+                </header>
+                <AlfaInput Id="bot-escalado" Label="Palabras que derivan a un humano"
+                           Value="@Config.BotPalabrasEscalado" ValueChanged="@((string? v) => Config.BotPalabrasEscalado = v ?? string.Empty)"
+                           Placeholder="humano, persona, reclamo, operador"
+                           HelpText="Separadas por coma." />
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Urgencias</h3>
+                    <p>Se atienden en cualquier horario: suben la prioridad de la conversación y avisan a los técnicos elegidos.</p>
+                </header>
+                <div class="asis-grid">
+                    <AlfaInput Id="asis-urgencia" Label="Palabras que marcan urgencia" Class="asis-grid__full"
+                               Value="@Config.AsistenteUrgenciaPalabras" ValueChanged="@((string? v) => Config.AsistenteUrgenciaPalabras = v ?? string.Empty)"
+                               Placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido"
+                               HelpText="Separadas por coma." />
+                    <AlfaInput Id="asis-urgencia-template" Label="Plantilla de WhatsApp para avisar a técnicos"
+                               Value="@Config.AsistenteUrgenciaTemplate" ValueChanged="@((string? v) => Config.AsistenteUrgenciaTemplate = v ?? string.Empty)"
+                               Placeholder="cliente_consultando_urgencia" />
+                </div>
+                <div class="asis-field">
+                    <span class="asis-field__label">Técnicos que reciben el aviso</span>
+                    @if (Tecnicos.Count == 0)
+                    {
+                        <span class="asis-field__hint">No hay técnicos cargados.</span>
+                    }
+                    else
+                    {
+                        <div class="asis-tech-grid" role="group" aria-label="Técnicos que reciben alertas de urgencia">
+                            @foreach (var tecnico in Tecnicos)
+                            {
+                                var sinTelefono = string.IsNullOrWhiteSpace(tecnico.Telefono);
+                                <div class="asis-tech @(sinTelefono ? "is-disabled" : null)">
+                                    <AlfaCheckbox Value="@TecnicoSeleccionado(Config, tecnico.IdTecnico)" Disabled="@sinTelefono"
+                                                  ValueChanged="@((bool? v) => AlternarTecnico(Config, tecnico.IdTecnico, v == true))">
+                                        <span class="asis-tech__name">@tecnico.Nombre</span>
+                                        <span class="asis-tech__phone">@(sinTelefono ? "Sin teléfono cargado" : tecnico.Telefono)</span>
+                                    </AlfaCheckbox>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+            break;
+
+        case SeccionConocimiento:
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>AlfaKnowledge</h3>
+                    <p>Base de conocimiento externa con documentos e instructivos. La usan el asistente (si lo activás en Información del negocio) y el panel de sugerencias de la bandeja.</p>
+                </header>
+                <div class="asis-header__status">
+                    <AlfaTag Tone="@(AlfaKnowledge.IsConfigured ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+                        @(AlfaKnowledge.IsConfigured ? "Conectado" : "Sin conectar")
+                    </AlfaTag>
+                </div>
+                <div class="asis-grid">
+                    <AlfaInput Id="ak-base-url" Label="URL de AlfaKnowledge" Class="asis-grid__full"
+                               Value="@AlfaKnowledge.BaseUrl" ValueChanged="@((string? v) => AlfaKnowledge.BaseUrl = v ?? string.Empty)" />
+                    <AlfaInput Id="ak-api-key" Label="API Key" Class="asis-grid__full"
+                               Value="@AlfaKnowledge.ApiKey" ValueChanged="@((string? v) => AlfaKnowledge.ApiKey = v ?? string.Empty)"
+                               Placeholder="Clave X-Api-Key de AlfaKnowledge" />
+                    <AlfaInput Id="ak-kb-id" Label="Knowledge Base Id"
+                               Value="@AlfaKnowledge.KnowledgeBaseId" ValueChanged="@((string? v) => AlfaKnowledge.KnowledgeBaseId = v ?? string.Empty)"
+                               Placeholder="GUID de la base o sector" />
+                    <AlfaInput Id="ak-timeout" Label="Tiempo máximo de espera (segundos)" Type="number"
+                               Value="@AlfaKnowledge.TimeoutSeconds.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => AlfaKnowledge.TimeoutSeconds = ParseEntero(v, AlfaKnowledge.TimeoutSeconds, minimo: 1))" />
+                </div>
+                <div class="asis-field">
+                    <label class="asis-field__label" for="ak-instrucciones">Instrucciones para las sugerencias de la bandeja</label>
+                    <textarea id="ak-instrucciones" class="asis-textarea" rows="5" maxlength="4000"
+                              @bind="AlfaKnowledge.Instrucciones" @bind:event="oninput"
+                              placeholder="Cómo debe sugerir respuestas: tono, reglas, qué escalar a un humano, qué no responder."></textarea>
+                    <span class="asis-field__hint">Se anteponen a cada sugerencia de respuesta en la bandeja. No cambian el comportamiento del asistente automático.</span>
+                </div>
+                <div class="asis-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@Busy" OnClick="() => OnGuardarAlfaKnowledge.InvokeAsync()">Guardar conexión</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-plug" Disabled="@Busy" OnClick="() => OnProbarAlfaKnowledge.InvokeAsync()">Probar conexión</AlfaButton>
+                </div>
+            </section>
+            break;
+
+        default:
+            @if (!OpenAiConfigurado)
+            {
+                <div class="asis-notice">
+                    <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                    <span>Falta la API key de OpenAI en el servidor (<code>OPENAI_API_KEY</code>). Aunque actives el asistente, no va a responder hasta que se configure. No se puede cargar desde esta pantalla.</span>
+                </div>
+            }
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Estado</h3>
+                    <p>El asistente responde solo los mensajes entrantes, en todos los canales.</p>
+                </header>
+                <div class="asis-option">
+                    <AlfaCheckbox Value="@Config.BotActivo" ValueChanged="@((bool? v) => Config.BotActivo = v == true)">
+                        Activar el asistente (responde automáticamente)
+                    </AlfaCheckbox>
+                </div>
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Cuándo responde</h3>
+                    <p>Combiná estas opciones para que el asistente no se superponga con tu equipo.</p>
+                </header>
+                <div class="asis-options">
+                    <AlfaCheckbox Value="@Config.BotSoloSinAsignar" ValueChanged="@((bool? v) => Config.BotSoloSinAsignar = v == true)">
+                        Solo conversaciones sin asignar (si una persona la tomó, el asistente no interviene)
+                    </AlfaCheckbox>
+                    <AlfaCheckbox Value="@Config.BotSoloFueraHorario" ValueChanged="@((bool? v) => Config.BotSoloFueraHorario = v == true)">
+                        Solo fuera del horario de atención (en horario atiende tu equipo)
+                    </AlfaCheckbox>
+                    <AlfaCheckbox Value="@Config.AsistenteFueraHorario" ValueChanged="@((bool? v) => Config.AsistenteFueraHorario = v == true)">
+                        Fuera de horario, responde el asistente en lugar del mensaje fijo
+                    </AlfaCheckbox>
+                </div>
+                <span class="asis-field__hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</span>
+            </section>
+
+            <section class="asis-card">
+                <header class="asis-card__header">
+                    <h3>Límites</h3>
+                    <p>Evitan que el asistente se extienda o que se adelante a tu equipo.</p>
+                </header>
+                <div class="asis-grid">
+                    <AlfaInput Id="bot-max" Label="Máximo de respuestas por conversación" Type="number"
+                               Value="@Config.BotMaxRespuestas.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotMaxRespuestas = ParseEntero(v, Config.BotMaxRespuestas, minimo: 1))" />
+                    <AlfaInput Id="bot-espera" Label="Minutos de espera antes de responder" Type="number"
+                               Value="@Config.BotEsperaMinutos.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
+                               HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
+                </div>
+            </section>
+            break;
+    }
+
+    @if (Seccion != SeccionConocimiento)
+    {
+        <footer class="asis-footer">
+            <span class="asis-footer__status">
+                @if (IsDirty)
+                {
+                    <i class="bi bi-circle-fill" aria-hidden="true"></i>
+                    <span>Hay cambios sin guardar</span>
+                }
+                else
+                {
+                    <span>Sin cambios</span>
+                }
+            </span>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(Busy || !IsDirty)" OnClick="() => OnDescartar.InvokeAsync()">Descartar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@(Busy || !IsDirty)" Loading="@Busy" OnClick="() => OnGuardar.InvokeAsync()">Guardar asistente</AlfaButton>
+        </footer>
+    }
+</div>
+
+@code {
+    internal const string SeccionConocimiento = "conocimiento";
+
+    /// <summary>Por encima de esto se avisa que la información enviada en cada respuesta es mucha.</summary>
+    internal const int TokensInformacionAviso = 6000;
+
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
+
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Config { get; set; } = new();
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Original { get; set; } = new();
+    [Parameter, EditorRequired] public ConversacionAlfaKnowledgeConfigDto AlfaKnowledge { get; set; } = new();
+    [Parameter] public string Seccion { get; set; } = "general";
+    [Parameter] public IReadOnlyList<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
+    [Parameter] public bool OpenAiConfigurado { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public EventCallback OnDescartar { get; set; }
+    [Parameter] public EventCallback OnGuardarAlfaKnowledge { get; set; }
+    [Parameter] public EventCallback OnProbarAlfaKnowledge { get; set; }
+    [Parameter] public EventCallback<string> OnIrASeccion { get; set; }
+
+    private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
+
+    private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =
+    [
+        new("SOLO_INFO", "Responder solo con la información cargada; si no sabe, pasar a una persona"),
+        new("GENERAL_AVISA", "Responder con conocimiento general, avisando que un asesor va a confirmar"),
+        new("GENERAL", "Responder con conocimiento general (más cobertura, más riesgo)")
+    ];
+
+    private sealed record Herramienta(
+        string Icono,
+        string Titulo,
+        string Descripcion,
+        Func<ConversacionAutomatizacionesConfigDto, bool> Leer,
+        Action<ConversacionAutomatizacionesConfigDto, bool> Escribir);
+
+    private static readonly IReadOnlyList<Herramienta> Herramientas =
+    [
+        new("bi-tag", "Precios",
+            "Busca y responde el precio real de un artículo. Respeta la lista de precios del cliente si está identificado.",
+            c => c.AsistenteHerramientaPrecios, (c, v) => c.AsistenteHerramientaPrecios = v),
+        new("bi-wallet2", "Saldo de cliente",
+            "Responde el saldo de cuenta corriente (total, detalle o link al portal) cuando la conversación está vinculada a un cliente.",
+            c => c.AsistenteHerramientaSaldoCliente, (c, v) => c.AsistenteHerramientaSaldoCliente = v),
+        new("bi-truck", "Saldo de proveedor",
+            "Lo mismo, cuando la conversación está vinculada a un proveedor.",
+            c => c.AsistenteHerramientaSaldoProveedor, (c, v) => c.AsistenteHerramientaSaldoProveedor = v),
+        new("bi-clipboard-check", "Pedidos",
+            "Informa el estado de una nota de pedido (pendiente, aprobada, finalizada o anulada) de un cliente identificado.",
+            c => c.AsistenteHerramientaPedidos, (c, v) => c.AsistenteHerramientaPedidos = v),
+        new("bi-box-arrow-up-right", "Portal de autogestión",
+            "Ofrece el link para ver la cuenta corriente online. Hoy disponible para clientes.",
+            c => c.AsistenteHerramientaPortalLink, (c, v) => c.AsistenteHerramientaPortalLink = v)
+    ];
+
+    private string GetTitulo() => Seccion switch
+    {
+        "personalidad" => "Personalidad",
+        "informacion" => "Información del negocio",
+        "herramientas" => "Herramientas",
+        "derivacion" => "Derivación y urgencias",
+        SeccionConocimiento => "Conocimiento externo",
+        _ => "Asistente IA"
+    };
+
+    private string GetDescripcion() => Seccion switch
+    {
+        "personalidad" => "Cómo se presenta y cómo responde el asistente.",
+        "informacion" => "Lo que el asistente sabe de tu negocio para responder.",
+        "herramientas" => "Datos reales del sistema que el asistente puede consultar.",
+        "derivacion" => "Cuándo pasar la conversación a una persona y a quién avisar ante una urgencia.",
+        SeccionConocimiento => "Conexión con AlfaKnowledge.",
+        _ => "Encendido, horarios en los que responde y límites."
+    };
+
+    /// <summary>Estimación aproximada (≈ 4 caracteres por token en español) para orientar al usuario.</summary>
+    internal static int EstimarTokens(string? texto)
+        => string.IsNullOrEmpty(texto) ? 0 : (texto.Length + 3) / 4;
+
+    internal static bool InformacionExtensa(string? texto)
+        => EstimarTokens(texto) > TokensInformacionAviso;
+
+    internal static int ParseEntero(string? valor, int actual, int minimo)
+        => int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= minimo ? n : actual;
+
+    internal static bool TecnicoSeleccionado(ConversacionAutomatizacionesConfigDto config, string idTecnico)
+        => config.AsistenteUrgenciaTecnicos.Any(x => string.Equals(x?.Trim(), idTecnico?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    internal static void AlternarTecnico(ConversacionAutomatizacionesConfigDto config, string idTecnico, bool seleccionado)
+    {
+        var normalizado = (idTecnico ?? string.Empty).Trim();
+        if (normalizado.Length == 0)
+            return;
+
+        var actuales = config.AsistenteUrgenciaTecnicos
+            .Select(x => (x ?? string.Empty).Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        actuales.RemoveAll(x => string.Equals(x, normalizado, StringComparison.OrdinalIgnoreCase));
+        if (seleccionado)
+            actuales.Add(normalizado);
+
+        config.AsistenteUrgenciaTecnicos = actuales;
+    }
+}

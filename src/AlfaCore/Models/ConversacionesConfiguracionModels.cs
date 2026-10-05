@@ -245,6 +245,24 @@ public sealed class ConversacionAlfaKnowledgeConfigDto
 }
 
 /// <summary>
+/// Secciones de <see cref="ConversacionAutomatizacionesConfigDto"/> que se pueden guardar por separado.
+/// Cada pantalla de Configuración graba solo las claves de su sección, así un guardado no pisa con
+/// valores viejos lo que otro usuario cambió en otra sección.
+/// </summary>
+[Flags]
+public enum ConversacionAutomatizacionSeccion
+{
+    Ninguna = 0,
+    Horario = 1,
+    Bienvenida = 2,
+    Asistente = 4,
+    AutoCierre = 8,
+    Sla = 16,
+    Informe = 32,
+    Todas = Horario | Bienvenida | Asistente | AutoCierre | Sla | Informe
+}
+
+/// <summary>
 /// Automatizaciones "Nivel 0" (sin IA, sin aprobación de operador): respuesta fija cuando llega
 /// un mensaje de WhatsApp fuera del horario de atención configurado.
 /// </summary>
