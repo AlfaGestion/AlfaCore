@@ -99,6 +99,13 @@
     transform: none;
 }
 
+/* Paneles de la barra (mensajes, avisos, configuración): mientras uno está abierto, la barra sube
+   por encima de las capas altas de cada página (ej. el encabezado del chat de Conversaciones usa
+   z-index 10000 para sus menús); al cerrarlo vuelve a 1910 y no tapa modales ni drawers. */
+.alfa-app-topbar:has(.tb-msg__panel, .tb-av__panel, .tb-cfg__panel) {
+    z-index: 2147483100;
+}
+
 .alfa-app-topbar__brand,
 .alfa-app-topbar__global-actions,
 .alfa-app-topbar__nav {
