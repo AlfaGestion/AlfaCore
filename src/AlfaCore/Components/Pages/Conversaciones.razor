@@ -3711,6 +3711,11 @@
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private static class AiContextScopes
     {
         public const string CurrentCycle = "current-cycle";
@@ -4381,7 +4386,7 @@
     // propio toolbar del inbox; el único cambio visible es sidebar -> barra superior.
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems()
@@ -13506,7 +13511,8 @@
 
     public async ValueTask DisposeAsync()
     {
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         Nav.LocationChanged -= OnLocationChanged;
         SessionSvc.SessionChanged -= OnSessionChanged;
         _tenantRequestCts?.Cancel();

@@ -922,6 +922,11 @@
 </section>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private ConversacionWhatsAppConfigDto _config = new();
     private ConversacionInstagramConfigDto _instagramConfig = new();
     private ConversacionFacebookConfigDto _facebookConfig = new();
@@ -1360,7 +1365,8 @@
         SessionSvc.SessionChanged -= HandleSessionChanged;
         StopPolling();
         StopEmbeddedSignupPolling();
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _lifetimeCts.Dispose();
     }
 
@@ -2418,7 +2424,7 @@
         // resultado ya calculado en vez de re-derivar la condición, para no perder ningún caso.
         var hasRealContextActions = actions.Count > 1
             || (actions.Count == 1 && actions[0].Key != "recargar");
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = hasRealContextActions ? GetContextToolbarTitle() : string.Empty,
             State = CurrentEditorMode switch

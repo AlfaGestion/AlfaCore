@@ -10,6 +10,14 @@
 
 ---
 
+## C3.2 — Estadísticas e Informes en AlfaDesign + parpadeo del sidebar (2026-10-05)
+
+**Estadísticas, Informes y Detalle de informe** usan las mismas piezas que Configuración (`ConversacionesConfigPagina` con `Amplia="true"`, `ConversacionesConfigTarjeta`, `ConversacionesConfigTexto`) y componentes AlfaDesign (`AlfaInput` fecha/email, `AlfaSelect`, `AlfaTabs` para rangos rápidos, `AlfaButton`, `AlfaTag`, `AlfaEmptyState`, `AlfaNotification`). Se eliminaron los `<style>` inline con colores fijos y `!important`; cada página tiene CSS aislado con tokens `--alfa-*` (`ConversacionesEstadisticas.razor.css`, `ConversacionesInformes.razor.css`, `ConversacionesInformeDetalle.razor.css`). Mismas consultas, filtros, links de auditoría, orden de columnas, exportación a Excel y envíos.
+
+**Parpadeo del sidebar legacy al cambiar de pantalla:** Blazor inicializa la página nueva (que publica su `PageHeader` AlfaDesignPilot) y recién después dispone la anterior, cuyo `Dispose()` hacía `PageHeader.Clear()` sin condición y borraba el header de la página nueva. Durante un render `MainLayout` veía el shell legacy y mostraba el sidebar hasta el `OnAfterRender` de la página nueva. Las seis páginas de Conversaciones guardan el header que publicaron (`_pageHeaderPublicado`) y solo lo limpian si sigue siendo el actual. **Pendiente (fuera del módulo):** el mismo patrón en las páginas de otros módulos AlfaDesign (Contactos, Clientes, etc.) sigue pudiendo producir el parpadeo al venir desde ellas hacia Conversaciones.
+
+---
+
 ## C3.1 — AlfaDesign en toda Configuración (2026-10-05)
 
 Todas las pantallas de Configuración usan ahora AlfaDesign v1. Se eliminó el markup legacy (`panel-card`, `conv-config-*`, inputs/checkbox nativos, banner `conversations-inline`) y su CSS sin uso.

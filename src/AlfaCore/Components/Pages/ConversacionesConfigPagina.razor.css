@@ -7,6 +7,10 @@
     min-width: 0;
 }
 
+.cfg-page--wide {
+    max-width: 1320px;
+}
+
 .cfg-page__header {
     display: flex;
     flex-wrap: wrap;

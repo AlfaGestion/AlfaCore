@@ -1,0 +1,91 @@
+/* Conversaciones → Informes → Detalle (AlfaDesign v1). */
+.infdet-page {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--alfa-space-16, 16px) var(--alfa-space-24, 24px) var(--alfa-space-48, 48px);
+}
+
+.infdet-metrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--alfa-space-12, 12px);
+}
+
+.infdet-metric {
+    display: grid;
+    gap: var(--alfa-space-4, 4px);
+    padding: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+}
+
+.infdet-metric strong {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.infdet-metric span {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.inf-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--alfa-space-8, 8px);
+    height: 170px;
+}
+
+.inf-chart__col {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    min-width: 0;
+}
+
+.inf-chart__bar {
+    width: 70%;
+    max-width: 40px;
+    border-radius: var(--alfa-radius-4, 4px) var(--alfa-radius-4, 4px) 0 0;
+    background: var(--alfa-accent, #4f9efa);
+}
+
+.inf-chart__value,
+.inf-chart__label {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.inf-chart__value {
+    margin-bottom: var(--alfa-space-4, 4px);
+}
+
+.inf-chart__label {
+    margin-top: var(--alfa-space-4, 4px);
+}
+
+@media (max-width: 900px) {
+    .infdet-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .infdet-page {
+        padding-inline: var(--alfa-space-16, 16px);
+    }
+
+    .inf-chart__label {
+        writing-mode: vertical-rl;
+    }
+}

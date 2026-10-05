@@ -8,603 +8,340 @@
 @implements IDisposable
 @using AlfaCore.Models
 
-<PageTitle>Estadisticas de conversaciones | Alfa Gestion</PageTitle>
+<PageTitle>Estadísticas de conversaciones | Alfa Gestión</PageTitle>
 
-<style>
-    .conv-stats-page {
-        min-height: 100vh !important;
-        height: 100vh !important;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-    }
+<div class="est-page">
+    <ConversacionesConfigPagina Titulo="Estadísticas" Amplia="true"
+                                Descripcion="Volumen, respuestas, cierres, tickets y actividad del equipo en el rango elegido.">
+        <Estado>
+            @if (_stats is not null)
+            {
+                <AlfaTag Tone="AlfaTagTone.Neutral">@RangeLabel</AlfaTag>
+            }
+        </Estado>
+        <ChildContent>
+            <ConversacionesConfigTarjeta>
+                <div class="est-filtros">
+                    <AlfaInput Id="stats-desde" Label="Desde" Type="date" Value="@_desdeText" ValueChanged="HandleDesdeChanged" />
+                    <AlfaInput Id="stats-hasta" Label="Hasta" Type="date" Value="@_hastaText" ValueChanged="HandleHastaChanged" />
+                    <AlfaSelect Id="stats-tecnico" Label="Técnico" Options="TecnicoOptions"
+                                Value="@_idTecnico" ValueChanged="@((string? v) => _idTecnico = v ?? string.Empty)" />
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-funnel" Disabled="@_loading" Loading="@_loading"
+                                OnClick="LoadStatsAsync">Aplicar</AlfaButton>
+                </div>
+                <AlfaTabs Items="RangeItems" ActiveKey="@_activeRange" ActiveKeyChanged="OnRangeChangedAsync" AriaLabel="Rangos rápidos" />
+            </ConversacionesConfigTarjeta>
 
-    .conv-stats-page .conv-stats-board {
-        display: grid !important;
-        grid-template-columns: 1fr !important;
-        gap: 1.5rem !important;
-        overflow: visible !important;
-    }
-
-    .conv-stats-page .conv-stats-summary-panel {
-        display: grid !important;
-        gap: .9rem !important;
-    }
-
-    .conv-stats-page .conv-stats-summary {
-        display: grid !important;
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-        grid-auto-rows: minmax(148px, auto) !important;
-        align-items: stretch !important;
-        gap: 1rem !important;
-        margin-bottom: .15rem !important;
-        width: 100% !important;
-    }
-
-    .conv-stats-page .conv-stats-columns {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr) !important;
-        gap: .85rem !important;
-        align-items: start !important;
-        width: 100% !important;
-    }
-
-    .conv-stats-page .conv-stats-column {
-        display: grid !important;
-        gap: .85rem !important;
-        align-content: start !important;
-        min-width: 0 !important;
-    }
-
-    .conv-stats-page .conv-stat-card {
-        display: grid !important;
-        align-content: start !important;
-        gap: .35rem !important;
-        min-height: 148px !important;
-        height: 100% !important;
-        background: #091220 !important;
-        border-color: rgba(148, 163, 184, .18) !important;
-        box-shadow: 0 14px 32px rgba(2, 6, 23, .32) !important;
-    }
-
-    .conv-stats-page .conv-stat-card strong {
-        margin: 0 !important;
-        line-height: 1.05 !important;
-        font-size: clamp(1.35rem, 2.4vw, 2rem) !important;
-    }
-
-    .conv-stats-page .conv-stats-client-panel {
-        display: grid !important;
-        gap: .9rem !important;
-        margin-top: .1rem !important;
-        background: #08101d !important;
-        border-color: rgba(45, 212, 191, .22) !important;
-        box-shadow: 0 16px 38px rgba(2, 6, 23, .28) !important;
-    }
-
-    .conv-stats-page .conv-stats-client-focus {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) auto !important;
-        align-items: center !important;
-        gap: 1rem !important;
-        padding: 1rem 1rem !important;
-        border: 1px solid rgba(45, 212, 191, .22) !important;
-        border-radius: 8px !important;
-        background: #0d2030 !important;
-    }
-
-    .conv-stats-page .conv-stats-client-focus span,
-    .conv-stats-page .conv-stats-client-focus small,
-    .conv-stats-page .conv-stats-client-row span {
-        color: var(--color-muted) !important;
-    }
-
-    .conv-stats-page .conv-stats-client-focus strong {
-        display: block !important;
-        margin-top: .18rem !important;
-        color: var(--color-text) !important;
-        font-size: 1.08rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-focus__numbers {
-        min-width: 96px !important;
-        text-align: right !important;
-    }
-
-    .conv-stats-page .conv-stats-client-focus__numbers strong {
-        font-size: 1.65rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-list {
-        display: grid !important;
-        gap: .55rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) !important;
-        align-items: center !important;
-        gap: .9rem !important;
-        padding: .72rem .8rem !important;
-        border: 1px solid rgba(148, 163, 184, .13) !important;
-        border-radius: 8px !important;
-        background: #0b1320 !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__main {
-        display: grid !important;
-        min-width: 0 !important;
-        gap: .3rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__main strong,
-    .conv-stats-page .conv-stats-client-row__main > span {
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        white-space: nowrap !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__main strong {
-        color: var(--color-text) !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__main > span {
-        font-size: .78rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__metrics {
-        display: grid !important;
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-        gap: .45rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__metrics span {
-        min-width: 0 !important;
-        padding: .45rem .5rem !important;
-        border: 1px solid rgba(148, 163, 184, .12) !important;
-        border-radius: 8px !important;
-        background: #07101c !important;
-        font-size: .75rem !important;
-    }
-
-    .conv-stats-page .conv-stats-client-row__metrics strong {
-        display: block !important;
-        color: var(--color-text) !important;
-        font-size: .94rem !important;
-    }
-
-    @@media (max-width: 1180px) {
-        .conv-stats-page .conv-stats-summary {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-
-        .conv-stats-page .conv-stats-columns {
-            grid-template-columns: 1fr !important;
-        }
-
-        .conv-stats-page .conv-stats-client-row {
-            grid-template-columns: 1fr !important;
-        }
-    }
-
-    @@media (max-width: 760px) {
-        .conv-stats-page .conv-stats-client-row__metrics {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        }
-    }
-
-    @@media (max-width: 520px) {
-        .conv-stats-page .conv-stats-summary {
-            grid-template-columns: 1fr !important;
-        }
-
-        .conv-stats-page .conv-stats-client-focus,
-        .conv-stats-page .conv-stats-client-row__metrics {
-            grid-template-columns: 1fr !important;
-        }
-
-        .conv-stats-page .conv-stats-client-focus__numbers {
-            min-width: 0 !important;
-            text-align: left !important;
-        }
-    }
-</style>
-
-<section class="page-grid conv-stats-page templates-page--odoo">
-    <div class="page-intro conversations-topbar conv-stats-hero">
-        <div>
-            <h2 class="page-intro__title">Estadisticas</h2>
-            <p class="page-intro__text">Panel rapido para ver volumen, respuestas, cierres, tickets y actividad del equipo.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/conversaciones")">
-                <i class="bi bi-inbox-fill"></i> Inbox
-            </a>
-        </div>
-    </div>
-
-    <section class="panel-card conv-stats-filters">
-        <div class="conv-stats-filter-grid">
-            <div class="field">
-                <label for="stats-desde">Desde</label>
-                <input id="stats-desde" type="date" value="@_desdeText" @onchange="HandleDesdeChanged" />
-            </div>
-            <div class="field">
-                <label for="stats-hasta">Hasta</label>
-                <input id="stats-hasta" type="date" value="@_hastaText" @onchange="HandleHastaChanged" />
-            </div>
-            <div class="field">
-                <label for="stats-tecnico">Tecnico</label>
-                <select id="stats-tecnico" @bind="_idTecnico">
-                    <option value="">Todos</option>
-                    @foreach (var tecnico in _technicians)
-                    {
-                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
-                    }
-                </select>
-            </div>
-            <button type="button" class="btn btn--primary" @onclick="LoadStatsAsync" disabled="@_loading">
-                <i class="bi bi-funnel"></i> Aplicar
-            </button>
-        </div>
-        <div class="conv-stats-range-tabs" aria-label="Rangos rapidos">
-            <button type="button" class="@GetRangeButtonClass(StatsRange.Today)" @onclick="() => SetRangeAsync(StatsRange.Today)" disabled="@_loading">Hoy</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.TwoDays)" @onclick="() => SetRangeAsync(StatsRange.TwoDays)" disabled="@_loading">2 dias</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.Week)" @onclick="() => SetRangeAsync(StatsRange.Week)" disabled="@_loading">7 dias</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.Month)" @onclick="() => SetRangeAsync(StatsRange.Month)" disabled="@_loading">1 mes</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.ThreeMonths)" @onclick="() => SetRangeAsync(StatsRange.ThreeMonths)" disabled="@_loading">3 meses</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.Year)" @onclick="() => SetRangeAsync(StatsRange.Year)" disabled="@_loading">1 año</button>
-        </div>
-    </section>
-
-    @if (_error is not null)
-    {
-        <div class="panel-card empty-state">
-            <span class="empty-state__eyebrow">Estadisticas</span>
-            <h3>No fue posible cargar el panel</h3>
-            <p>@_error</p>
-        </div>
-    }
-    else if (_loading || _stats is null)
-    {
-        <div class="panel-card loading">Cargando estadisticas...</div>
-    }
-    else
-    {
-        <div class="conv-stats-board">
-            <section class="panel-card conv-stats-summary-panel">
-                <section class="conv-stats-summary">
-                    <a class="conv-stat-card conv-stat-card--primary conv-stats-row-link" href="@GetAuditUrl("entrantes")">
-                        <span>Mensajes entrantes</span>
-                        <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
-                        <small>@_stats.ConversacionesConRespuesta con respuesta</small>
+            @if (_error is not null)
+            {
+                <ConversacionesConfigTarjeta>
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No fue posible cargar las estadísticas" Message="@_error" />
+                </ConversacionesConfigTarjeta>
+            }
+            else if (_loading || _stats is null)
+            {
+                <ConversacionesConfigTarjeta>
+                    <p class="cfg-hint">Cargando estadísticas…</p>
+                </ConversacionesConfigTarjeta>
+            }
+            else
+            {
+                <section class="est-kpis" aria-label="Indicadores del rango">
+                    <a class="est-kpi est-kpi--accent" href="@GetAuditUrl("entrantes")">
+                        <span class="est-kpi__label">Mensajes entrantes</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.MensajesEntrantes)</strong>
+                        <span class="est-kpi__detail">@FormatNumber(_stats.ConversacionesConRespuesta) con respuesta</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("activas")">
-                        <span>Conversaciones activas</span>
-                        <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
-                        <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
+                    <a class="est-kpi" href="@GetAuditUrl("activas")">
+                        <span class="est-kpi__label">Conversaciones activas</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
+                        <span class="est-kpi__detail">@FormatNumber(_stats.ClientesUnicos) clientes/contactos</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("salientes")">
-                        <span>Mensajes enviados</span>
-                        <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
-                        <small>@ResponseRateText</small>
+                    <a class="est-kpi" href="@GetAuditUrl("salientes")">
+                        <span class="est-kpi__label">Mensajes enviados</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.MensajesSalientes)</strong>
+                        <span class="est-kpi__detail">@ResponseRateText</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("cerradas_rango", "cerradas")">
-                        <span>Cerradas</span>
-                        <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
-                        <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
+                    <a class="est-kpi" href="@GetAuditUrl("cerradas_rango", "cerradas")">
+                        <span class="est-kpi__label">Cerradas</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
+                        <span class="est-kpi__detail">@FormatDuration(_stats.PromedioCierre) promedio de cierre</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("tickets")">
-                        <span>Tickets creados</span>
-                        <strong>@FormatNumber(_stats.TicketsCreados)</strong>
-                        <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
+                    <a class="est-kpi" href="@GetAuditUrl("tickets")">
+                        <span class="est-kpi__label">Tickets creados</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.TicketsCreados)</strong>
+                        <span class="est-kpi__detail">@FormatNumber(_stats.Asignaciones) asignaciones</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("entrantes")">
-                        <span>Primera respuesta</span>
-                        <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
-                        <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
+                    <a class="est-kpi" href="@GetAuditUrl("entrantes")">
+                        <span class="est-kpi__label">Primera respuesta</span>
+                        <strong class="est-kpi__value">@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
+                        <span class="est-kpi__detail">@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("adjuntos")">
-                        <span>Adjuntos</span>
-                        <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
-                        <small>@TotalMessagesText</small>
+                    <a class="est-kpi" href="@GetAuditUrl("adjuntos")">
+                        <span class="est-kpi__label">Adjuntos</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.MensajesConAdjuntos)</strong>
+                        <span class="est-kpi__detail">@TotalMessagesText</span>
                     </a>
-                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("reabiertas")">
-                        <span>Reabiertas</span>
-                        <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
-                        <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
+                    <a class="est-kpi" href="@GetAuditUrl("reabiertas")">
+                        <span class="est-kpi__label">Reabiertas</span>
+                        <strong class="est-kpi__value">@FormatNumber(_stats.ConversacionesReabiertas)</strong>
+                        <span class="est-kpi__detail">@FormatNumber(_stats.CambiosEstado) cambios de estado</span>
                     </a>
                 </section>
-            </section>
 
-            <article class="panel-card conv-stats-panel conv-stats-client-panel">
-                <div class="conv-stats-panel__head">
-                    <div>
-                        <h3 class="panel-card__title">Clientes que requieren mas atencion</h3>
-                        <p class="panel-card__subtitle">Ranking por demanda operativa: pendientes, entrantes, tickets y movimiento real del rango.</p>
-                    </div>
-                </div>
-
-                @if (TopCliente is not null)
-                {
-                    <a class="conv-stats-client-focus conv-stats-row-link" href="@GetClientUrl(TopCliente)">
-                        <div>
-                            <span>Mayor demanda actual</span>
-                            <strong>@DisplayOrFallback(TopCliente.ClienteNombre)</strong>
-                            <small>@ClientDemandText(TopCliente)</small>
-                        </div>
-                        <div class="conv-stats-client-focus__numbers">
-                            <strong>@FormatNumber(TopCliente.TotalMensajes)</strong>
-                            <span>mensajes</span>
-                        </div>
-                    </a>
-                }
-
-                <div class="conv-stats-client-list">
-                    @foreach (var item in _stats.PorCliente)
-                    {
-                        <a class="conv-stats-client-row conv-stats-row-link" href="@GetClientUrl(item)">
-                            <div class="conv-stats-client-row__main">
-                                <strong>@DisplayOrFallback(item.ClienteNombre)</strong>
-                                <span>@ClientDemandText(item)</span>
-                                <div class="conv-stats-bar">
-                                    <span style="width:@GetPercent(GetClientDemandScore(item), MaxClientDemandScore)%"></span>
-                                </div>
-                            </div>
-                            <div class="conv-stats-client-row__metrics">
-                                <span><strong>@FormatNumber(item.TotalMensajes)</strong> mensajes</span>
-                                <span><strong>@FormatNumber(item.Conversaciones)</strong> conversaciones</span>
-                                <span><strong>@FormatNumber(item.Entrantes)</strong> entrantes</span>
-                                <span><strong>@FormatNumber(item.Tickets)</strong> tickets</span>
-                            </div>
-                        </a>
-                    }
+                <ConversacionesConfigTarjeta Titulo="Clientes que requieren más atención"
+                                             Descripcion="Ranking por demanda: pendientes, entrantes, tickets y movimiento real del rango.">
                     @if (_stats.PorCliente.Count == 0)
                     {
-                        <div class="conversations-empty">No hay clientes con movimiento en este rango.</div>
+                        <AlfaEmptyState Title="Sin movimiento" Message="No hay clientes con movimiento en este rango." />
                     }
-                </div>
-            </article>
-
-            <section class="conv-stats-columns">
-                <div class="conv-stats-column">
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Estado actual</h3>
-                                <p class="panel-card__subtitle">@FormatNumber(_stats.ConversacionesTotales) conversaciones totales</p>
-                            </div>
-                            <a class="conversation-badge conversation-badge--state conv-stats-link" href="@RouteContext.BuildRoute("/conversaciones?modo=sin_asignar")">@FormatNumber(_stats.ConversacionesSinAsignar) sin asignar</a>
-                        </div>
-                        <div class="conv-stats-state-list">
-                            @foreach (var item in _stats.PorEstado)
+                    else
+                    {
+                        <div class="est-clientes">
+                            @foreach (var item in _stats.PorCliente)
                             {
-                                <a class="conv-stats-bar-row conv-stats-row-link" href="@GetStateUrl(item)">
-                                    <div class="conv-stats-bar-row__label">
-                                        <span>@DisplayOrFallback(item.Descripcion)</span>
-                                        <strong>@FormatNumber(item.Cantidad)</strong>
+                                <a class="est-cliente @(ReferenceEquals(item, TopCliente) ? "is-top" : null)" href="@GetClientUrl(item)">
+                                    <div class="est-cliente__main">
+                                        @if (ReferenceEquals(item, TopCliente))
+                                        {
+                                            <span class="est-eyebrow">Mayor demanda</span>
+                                        }
+                                        <strong>@DisplayOrFallback(item.ClienteNombre)</strong>
+                                        <span class="est-muted">@ClientDemandText(item)</span>
+                                        <div class="est-bar"><span style="width:@GetPercent(GetClientDemandScore(item), MaxClientDemandScore)%"></span></div>
                                     </div>
-                                    <div class="conv-stats-bar">
-                                        <span style="width:@GetPercent(item.Cantidad, MaxStateCount)%"></span>
+                                    <div class="est-cliente__metrics">
+                                        <span><strong>@FormatNumber(item.TotalMensajes)</strong> mensajes</span>
+                                        <span><strong>@FormatNumber(item.Conversaciones)</strong> conversaciones</span>
+                                        <span><strong>@FormatNumber(item.Entrantes)</strong> entrantes</span>
+                                        <span><strong>@FormatNumber(item.Tickets)</strong> tickets</span>
                                     </div>
                                 </a>
                             }
                         </div>
-                    </article>
+                    }
+                </ConversacionesConfigTarjeta>
 
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Tipos de mensaje</h3>
-                                <p class="panel-card__subtitle">Formato de lo que se movio en el rango.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-chip-grid">
-                            @foreach (var item in _stats.PorTipoMensaje)
-                            {
-                                <a class="conv-stats-metric-chip conv-stats-row-link" href="@GetMessageTypeUrl(item.Tipo)">
-                                    <span>@item.Tipo</span>
-                                    <strong>@FormatNumber(item.Cantidad)</strong>
-                                </a>
-                            }
+                <section class="est-columns">
+                    <div class="est-column">
+                        <ConversacionesConfigTarjeta Titulo="Estado actual" Descripcion="@($"{FormatNumber(_stats.ConversacionesTotales)} conversaciones en total")">
+                            <Extra>
+                                <a class="est-pill" href="@RouteContext.BuildRoute("/conversaciones?modo=sin_asignar")">@FormatNumber(_stats.ConversacionesSinAsignar) sin asignar</a>
+                            </Extra>
+                            <ChildContent>
+                                <div class="est-rows">
+                                    @foreach (var item in _stats.PorEstado)
+                                    {
+                                        <a class="est-bar-row" href="@GetStateUrl(item)">
+                                            <span class="est-bar-row__label">@DisplayOrFallback(item.Descripcion)</span>
+                                            <strong>@FormatNumber(item.Cantidad)</strong>
+                                            <div class="est-bar"><span style="width:@GetPercent(item.Cantidad, MaxStateCount)%"></span></div>
+                                        </a>
+                                    }
+                                </div>
+                            </ChildContent>
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Tipos de mensaje" Descripcion="Formato de lo que se movió en el rango.">
                             @if (_stats.PorTipoMensaje.Count == 0)
                             {
-                                <div class="conversations-empty">No hay mensajes para clasificar.</div>
+                                <p class="cfg-hint">No hay mensajes para clasificar.</p>
                             }
-                        </div>
-                    </article>
-
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Equipo</h3>
-                                <p class="panel-card__subtitle">Actividad por tecnico en el rango seleccionado.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-table">
-                            <div class="conv-stats-table__head">
-                                <span>Tecnico</span>
-                                <span>Asignadas</span>
-                                <span>Enviados</span>
-                                <span>Cierres</span>
-                                <span>Tickets</span>
-                            </div>
-                            @foreach (var item in _stats.PorTecnico)
+                            else
                             {
-                                <a class="conv-stats-table__row conv-stats-row-link" href="@GetTechnicianUrl(item)">
-                                    <span>@DisplayOrFallback(item.Nombre)</span>
-                                    <strong>@FormatNumber(item.ConversacionesAsignadas)</strong>
-                                    <strong>@FormatNumber(item.MensajesEnviados)</strong>
-                                    <strong>@FormatNumber(item.Cierres)</strong>
-                                    <strong>@FormatNumber(item.TicketsCreados)</strong>
-                                </a>
+                                <div class="est-chips">
+                                    @foreach (var item in _stats.PorTipoMensaje)
+                                    {
+                                        <a class="est-chip" href="@GetMessageTypeUrl(item.Tipo)">
+                                            <span>@item.Tipo</span>
+                                            <strong>@FormatNumber(item.Cantidad)</strong>
+                                        </a>
+                                    }
+                                </div>
                             }
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Equipo" Descripcion="Actividad por técnico en el rango.">
                             @if (_stats.PorTecnico.Count == 0)
                             {
-                                <div class="conversations-empty">No hay actividad de tecnicos para este rango.</div>
+                                <p class="cfg-hint">No hay actividad de técnicos en este rango.</p>
                             }
-                        </div>
-                    </article>
-
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Palabras y problemas frecuentes</h3>
-                                <p class="panel-card__subtitle">Terminos repetidos en mensajes entrantes.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-topic-list">
-                            @foreach (var item in _stats.TemasFrecuentes)
+                            else
                             {
-                                <a class="conv-stats-topic conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
-                                    <span>@item.Texto</span>
-                                    <strong>@FormatNumber(item.Cantidad)</strong>
-                                </a>
+                                <div class="est-table-wrap">
+                                    <table class="est-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Técnico</th>
+                                                <th class="num">Asignadas</th>
+                                                <th class="num">Enviados</th>
+                                                <th class="num">Cierres</th>
+                                                <th class="num">Tickets</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in _stats.PorTecnico)
+                                            {
+                                                <tr @onclick="() => Nav.NavigateTo(GetTechnicianUrl(item))">
+                                                    <td><a href="@GetTechnicianUrl(item)" @onclick:stopPropagation="true">@DisplayOrFallback(item.Nombre)</a></td>
+                                                    <td class="num">@FormatNumber(item.ConversacionesAsignadas)</td>
+                                                    <td class="num">@FormatNumber(item.MensajesEnviados)</td>
+                                                    <td class="num">@FormatNumber(item.Cierres)</td>
+                                                    <td class="num">@FormatNumber(item.TicketsCreados)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
                             }
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Palabras frecuentes" Descripcion="Términos que más se repiten en los mensajes entrantes.">
                             @if (_stats.TemasFrecuentes.Count == 0)
                             {
-                                <div class="conversations-empty">No hay terminos frecuentes para mostrar.</div>
+                                <p class="cfg-hint">No hay términos frecuentes para mostrar.</p>
                             }
-                        </div>
-                    </article>
-                </div>
-
-                <div class="conv-stats-column">
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Flujo del rango</h3>
-                                <p class="panel-card__subtitle">@RangeLabel</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-flow">
-                            <a href="@GetAuditUrl("nuevas")">
-                                <span>Nuevas</span>
-                                <strong>@FormatNumber(_stats.ConversacionesNuevas)</strong>
-                            </a>
-                            <a href="@GetAuditUrl("salientes")">
-                                <span>Respondidas</span>
-                                <strong>@FormatNumber(_stats.ConversacionesConRespuesta)</strong>
-                            </a>
-                            <a href="@GetAuditUrl("entrantes")">
-                                <span>Pendientes de respuesta</span>
-                                <strong>@FormatNumber(_stats.ConversacionesSinRespuesta)</strong>
-                            </a>
-                            <a href="@GetAuditUrl("internos")">
-                                <span>Internos</span>
-                                <strong>@FormatNumber(_stats.MensajesInternos)</strong>
-                            </a>
-                        </div>
-                        <div class="conv-stats-activity-list">
-                            @foreach (var item in _stats.Actividad)
+                            else
                             {
-                                <a class="conv-stats-activity-item conv-stats-row-link" href="@GetActivityUrl(item.Tipo)">
-                                    <span>@item.Tipo</span>
-                                    <strong>@FormatNumber(item.Cantidad)</strong>
-                                </a>
-                            }
-                        </div>
-                    </article>
-
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Conversaciones con mas movimiento</h3>
-                                <p class="panel-card__subtitle">Top 8 por cantidad de mensajes.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-top-list">
-                            @foreach (var item in _stats.TopConversaciones)
-                            {
-                                <div class="conv-stats-top-item conv-stats-row-link" role="link" tabindex="0" @onclick="() => OpenConversation(item.IdConversacion)">
-                                    <div>
-                                        <strong>@DisplayOrFallback(item.Nombre)</strong>
-                                        <span>
-                                            @DisplayOrFallback(item.Telefono)
-                                            @if (item.IdContacto.HasValue)
-                                            {
-                                                <span> · </span>
-                                                <span class="conv-stats-inline-link">
-                                                    <a href="@GetContactUrl(item.IdContacto.Value)" @onclick:stopPropagation="true">Ver contacto</a>
-                                                </span>
-                                            }
-                                            <span> · @DisplayOrFallback(item.Tecnico)</span>
-                                        </span>
-                                    </div>
-                                    <div class="conv-stats-top-item__numbers">
-                                        <strong>@FormatNumber(item.Total)</strong>
-                                        <span>@item.Entrantes in / @item.Salientes out</span>
-                                    </div>
+                                <div class="est-chips">
+                                    @foreach (var item in _stats.TemasFrecuentes)
+                                    {
+                                        <a class="est-chip" href="@GetSearchUrl(item.Texto)">
+                                            <span>@item.Texto</span>
+                                            <strong>@FormatNumber(item.Cantidad)</strong>
+                                        </a>
+                                    }
                                 </div>
                             }
+                        </ConversacionesConfigTarjeta>
+                    </div>
+
+                    <div class="est-column">
+                        <ConversacionesConfigTarjeta Titulo="Flujo del rango" Descripcion="@RangeLabel">
+                            <div class="est-flow">
+                                <a href="@GetAuditUrl("nuevas")"><span>Nuevas</span><strong>@FormatNumber(_stats.ConversacionesNuevas)</strong></a>
+                                <a href="@GetAuditUrl("salientes")"><span>Respondidas</span><strong>@FormatNumber(_stats.ConversacionesConRespuesta)</strong></a>
+                                <a href="@GetAuditUrl("entrantes")"><span>Pendientes de respuesta</span><strong>@FormatNumber(_stats.ConversacionesSinRespuesta)</strong></a>
+                                <a href="@GetAuditUrl("internos")"><span>Internos</span><strong>@FormatNumber(_stats.MensajesInternos)</strong></a>
+                            </div>
+                            @if (_stats.Actividad.Count > 0)
+                            {
+                                <div class="est-rows">
+                                    @foreach (var item in _stats.Actividad)
+                                    {
+                                        <a class="est-line" href="@GetActivityUrl(item.Tipo)">
+                                            <span>@item.Tipo</span>
+                                            <strong>@FormatNumber(item.Cantidad)</strong>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Conversaciones con más movimiento" Descripcion="Las 8 con más mensajes.">
                             @if (_stats.TopConversaciones.Count == 0)
                             {
-                                <div class="conversations-empty">No hay conversaciones con movimiento en este rango.</div>
+                                <p class="cfg-hint">No hay conversaciones con movimiento en este rango.</p>
                             }
-                        </div>
-                    </article>
-
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Frases repetidas</h3>
-                                <p class="panel-card__subtitle">Mensajes entrantes repetidos por clientes/contactos.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-phrase-list">
-                            @foreach (var item in _stats.FrasesFrecuentes)
+                            else
                             {
-                                <a class="conv-stats-phrase conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
-                                    <span>@item.Texto</span>
-                                    <strong>@FormatNumber(item.Cantidad)</strong>
-                                </a>
-                            }
-                            @if (_stats.FrasesFrecuentes.Count == 0)
-                            {
-                                <div class="conversations-empty">No hay frases repetidas en este rango.</div>
-                            }
-                        </div>
-                    </article>
-
-                    <article class="panel-card conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
-                                <h3 class="panel-card__title">Actividad diaria</h3>
-                                <p class="panel-card__subtitle">Entrantes, salientes, cierres y tickets.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-days">
-                            @foreach (var item in _stats.PorDia)
-                            {
-                                <div class="conv-stats-day">
-                                    <div class="conv-stats-day__date">
-                                        <strong>@item.Fecha.ToString("dd/MM")</strong>
-                                        <span>@item.Fecha.ToString("ddd")</span>
-                                    </div>
-                                    <div class="conv-stats-day__bars">
-                                        <span class="is-in" style="width:@GetPercent(item.Entrantes, MaxDailyCount)%"></span>
-                                        <span class="is-out" style="width:@GetPercent(item.Salientes, MaxDailyCount)%"></span>
-                                        <span class="is-close" style="width:@GetPercent(item.Cerradas + item.Tickets, MaxDailyCount)%"></span>
-                                    </div>
-                                    <div class="conv-stats-day__values">
-                                        <span>@item.Entrantes</span>
-                                        <span>@item.Salientes</span>
-                                        <span>@(item.Cerradas + item.Tickets)</span>
-                                    </div>
+                                <div class="est-rows">
+                                    @foreach (var item in _stats.TopConversaciones)
+                                    {
+                                        <div class="est-top" role="link" tabindex="0"
+                                             @onclick="() => OpenConversation(item.IdConversacion)"
+                                             @onkeydown="args => OpenConversationOnKey(args, item.IdConversacion)">
+                                            <div class="est-top__main">
+                                                <strong>@DisplayOrFallback(item.Nombre)</strong>
+                                                <span class="est-muted">
+                                                    @DisplayOrFallback(item.Telefono)
+                                                    @if (item.IdContacto.HasValue)
+                                                    {
+                                                        <span> · </span>
+                                                        <a href="@GetContactUrl(item.IdContacto.Value)" @onclick:stopPropagation="true">Ver contacto</a>
+                                                    }
+                                                    <span> · @DisplayOrFallback(item.Tecnico)</span>
+                                                </span>
+                                            </div>
+                                            <div class="est-top__numbers">
+                                                <strong>@FormatNumber(item.Total)</strong>
+                                                <span class="est-muted">@item.Entrantes entrantes · @item.Salientes enviados</span>
+                                            </div>
+                                        </div>
+                                    }
                                 </div>
                             }
-                            @if (_stats.PorDia.Count == 0)
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Frases repetidas" Descripcion="Mensajes entrantes que los clientes repiten.">
+                            @if (_stats.FrasesFrecuentes.Count == 0)
                             {
-                                <div class="conversations-empty">No hay movimiento diario para mostrar.</div>
+                                <p class="cfg-hint">No hay frases repetidas en este rango.</p>
                             }
-                        </div>
-                    </article>
-                </div>
-            </section>
-        </div>
-    }
-</section>
+                            else
+                            {
+                                <div class="est-rows">
+                                    @foreach (var item in _stats.FrasesFrecuentes)
+                                    {
+                                        <a class="est-line" href="@GetSearchUrl(item.Texto)">
+                                            <span>@item.Texto</span>
+                                            <strong>@FormatNumber(item.Cantidad)</strong>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </ConversacionesConfigTarjeta>
+
+                        <ConversacionesConfigTarjeta Titulo="Actividad diaria">
+                            <Extra>
+                                <span class="est-legend"><i class="is-in"></i>Entrantes</span>
+                                <span class="est-legend"><i class="is-out"></i>Enviados</span>
+                                <span class="est-legend"><i class="is-close"></i>Cierres y tickets</span>
+                            </Extra>
+                            <ChildContent>
+                                @if (_stats.PorDia.Count == 0)
+                                {
+                                    <p class="cfg-hint">No hay movimiento diario para mostrar.</p>
+                                }
+                                else
+                                {
+                                    <div class="est-rows">
+                                        @foreach (var item in _stats.PorDia)
+                                        {
+                                            <div class="est-day">
+                                                <div class="est-day__date">
+                                                    <strong>@item.Fecha.ToString("dd/MM")</strong>
+                                                    <span class="est-muted">@item.Fecha.ToString("ddd", Es)</span>
+                                                </div>
+                                                <div class="est-day__bars">
+                                                    <span class="is-in" style="width:@GetPercent(item.Entrantes, MaxDailyCount)%"></span>
+                                                    <span class="is-out" style="width:@GetPercent(item.Salientes, MaxDailyCount)%"></span>
+                                                    <span class="is-close" style="width:@GetPercent(item.Cerradas + item.Tickets, MaxDailyCount)%"></span>
+                                                </div>
+                                                <div class="est-day__values">
+                                                    <span>@item.Entrantes</span>
+                                                    <span>@item.Salientes</span>
+                                                    <span>@(item.Cerradas + item.Tickets)</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </ChildContent>
+                        </ConversacionesConfigTarjeta>
+                    </div>
+                </section>
+            }
+        </ChildContent>
+    </ConversacionesConfigPagina>
+</div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private List<ConversacionTecnicoOptionDto> _technicians = [];
     private ConversacionesEstadisticasDto? _stats;
     private bool _loading;
@@ -672,7 +409,8 @@
     public void Dispose()
     {
         SessionSvc.SessionChanged -= OnTenantContextChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 
     private async Task LoadTenantAsync()
@@ -733,7 +471,7 @@
 
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems()
@@ -791,20 +529,43 @@
         await LoadStatsAsync();
     }
 
-    private void HandleDesdeChanged(ChangeEventArgs args)
+    private void HandleDesdeChanged(string? value)
     {
         _activeRange = string.Empty;
-        _desdeText = Convert.ToString(args.Value) ?? _desdeText;
+        if (!string.IsNullOrWhiteSpace(value))
+            _desdeText = value;
     }
 
-    private void HandleHastaChanged(ChangeEventArgs args)
+    private void HandleHastaChanged(string? value)
     {
         _activeRange = string.Empty;
-        _hastaText = Convert.ToString(args.Value) ?? _hastaText;
+        if (!string.IsNullOrWhiteSpace(value))
+            _hastaText = value;
     }
 
-    private string GetRangeButtonClass(string range)
-        => $"conv-stats-range-tab {(string.Equals(_activeRange, range, StringComparison.Ordinal) ? "is-active" : string.Empty)}";
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    private static readonly IReadOnlyList<AlfaTabItem> RangeItems =
+    [
+        new(StatsRange.Today, "Hoy"),
+        new(StatsRange.TwoDays, "2 días"),
+        new(StatsRange.Week, "7 días"),
+        new(StatsRange.Month, "1 mes"),
+        new(StatsRange.ThreeMonths, "3 meses"),
+        new(StatsRange.Year, "1 año")
+    ];
+
+    private IReadOnlyList<AlfaSelectOption> TecnicoOptions
+        => [new AlfaSelectOption(string.Empty, "Todos"), .. _technicians.Select(t => new AlfaSelectOption(t.IdTecnico, t.Nombre))];
+
+    private Task OnRangeChangedAsync(string? range)
+        => string.IsNullOrWhiteSpace(range) || _loading ? Task.CompletedTask : SetRangeAsync(range);
+
+    private void OpenConversationOnKey(KeyboardEventArgs args, long idConversacion)
+    {
+        if (args.Key is "Enter" or " ")
+            OpenConversation(idConversacion);
+    }
 
     private async Task LoadStatsAsync()
     {

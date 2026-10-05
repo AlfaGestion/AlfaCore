@@ -365,6 +365,11 @@
 </section>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private enum PageMode
     {
         Browse,
@@ -705,7 +710,8 @@
         _lifetimeCts.Cancel();
         SessionSvc.SessionChanged -= OnTenantContextChanged;
         AppUserSession.StateChanged -= OnTenantContextChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _lifetimeCts.Dispose();
     }
 
@@ -817,7 +823,7 @@
             _ => BuildBrowseActions()
         };
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = "Plantillas",
             Breadcrumb = ["Conversaciones", "Plantillas"],

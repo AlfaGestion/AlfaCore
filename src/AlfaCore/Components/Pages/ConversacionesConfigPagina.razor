@@ -1,7 +1,7 @@
 @* Contenedor estándar de cada pantalla de Conversaciones → Configuración (AlfaDesign v1):
    título, descripción, estado opcional (tags) y el contenido en tarjetas. *@
 
-<div class="cfg-page">
+<div class="cfg-page @(Amplia ? "cfg-page--wide" : null)">
     <header class="cfg-page__header">
         <div class="cfg-page__title">
             <h2>@Titulo</h2>
@@ -23,4 +23,6 @@
     [Parameter] public string? Descripcion { get; set; }
     [Parameter] public RenderFragment? Estado { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Tableros (Estadísticas, Informes): usa más ancho que los formularios de Configuración.</summary>
+    [Parameter] public bool Amplia { get; set; }
 }

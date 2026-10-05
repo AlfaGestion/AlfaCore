@@ -8,131 +8,110 @@
 @implements IDisposable
 @using AlfaCore.Models
 
-<PageTitle>Detalle de informe | Alfa Gestion</PageTitle>
+<PageTitle>Detalle de informe | Alfa Gestión</PageTitle>
 
-<style>
-    .conv-infdet-page { padding: 1.25rem 1.5rem 3rem; max-width: 1100px; margin: 0 auto; }
-    /* Bajo el shell AlfaDesign, .shell__content es display:flex + overflow:hidden y esta página
-       nunca declaraba su propia altura/scroll -- quedaba sin forma de bajar con mouse ni teclado. */
-    .shell.shell--alfa-design .conv-infdet-page { height: 100%; overflow-y: auto; }
-    .conv-infdet-head { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-bottom: .3rem; }
-    .conv-infdet-metrics { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0 1rem; }
-    .conv-infdet-metric { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.16); border-radius: 8px; padding: .35rem .7rem; font-size: .8rem; }
-    .conv-infdet-metric strong { display: block; font-size: 1.05rem; }
-    .conv-infdet-resumen { width: 100%; min-height: 220px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--surface-1, #0f172a); color: var(--color-text); padding: .7rem .85rem; font: inherit; line-height: 1.5; resize: vertical; }
-    .conv-infdet-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .6rem; }
-    .conv-infdet-envio { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
-    .conv-infdet-envio input { min-height: 34px; padding: .3rem .55rem; border-radius: 8px; border: 1px solid var(--color-border); background: var(--surface-1, #0f172a); color: var(--color-text); min-width: 240px; }
-    .conv-infdet-msgs { max-height: 340px; overflow-y: auto; border: 1px solid rgba(148,163,184,.16); border-radius: 10px; padding: .5rem .7rem; }
-    .conv-infdet-msg { padding: .25rem 0; border-bottom: 1px dashed rgba(148,163,184,.12); font-size: .82rem; }
-    .conv-infdet-msg .who { font-weight: 700; }
-    .conv-infdet-msg.in .who { color: #93c5fd; }
-    .conv-infdet-msg.out .who { color: #34d399; }
-    .conv-infdet-msg .ts { color: var(--color-muted); font-size: .72rem; margin-right: .35rem; }
-    .conv-infdet-chart { display: flex; align-items: flex-end; gap: .4rem; height: 170px; margin-top: .8rem; }
-    .conv-infdet-bar-wrap { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
-    .conv-infdet-bar { width: 70%; max-width: 40px; background: linear-gradient(180deg, #38bdf8, #0ea5e9); border-radius: 5px 5px 0 0; }
-    .conv-infdet-bar-val { font-size: .62rem; color: var(--color-muted); margin-bottom: .15rem; }
-    .conv-infdet-bar-lbl { font-size: .6rem; color: var(--color-muted); margin-top: .25rem; white-space: nowrap; }
-</style>
+<AlfaNotification Message="@FeedbackMessage" OnDismiss="() => _feedback = null" />
 
-<div class="conv-infdet-page">
+<div class="infdet-page">
     @if (_det is null)
     {
-        <div class="panel-card" style="padding:2rem; text-align:center; color:var(--color-muted);">
-            @(_error ?? "Cargando…")
-            <div style="margin-top:1rem;"><button type="button" class="btn btn--ghost btn--sm" @onclick="Volver"><i class="bi bi-arrow-left"></i> Volver</button></div>
-        </div>
+        <ConversacionesConfigPagina Titulo="Detalle de informe">
+            <Estado>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-arrow-left" OnClick="Volver">Volver al informe</AlfaButton>
+            </Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta>
+                    @if (_error is not null)
+                    {
+                        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo abrir el detalle" Message="@_error" />
+                    }
+                    else
+                    {
+                        <p class="cfg-hint">Cargando…</p>
+                    }
+                </ConversacionesConfigTarjeta>
+            </ChildContent>
+        </ConversacionesConfigPagina>
     }
     else
     {
-        <div class="conv-infdet-head">
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="Volver" title="Volver al informe"><i class="bi bi-arrow-left"></i></button>
-            <div>
-                <h2 class="panel-card__title" style="margin:0;">@_det.Fila.NombreMostrar</h2>
-                <p class="panel-card__subtitle" style="margin:.15rem 0 0;">
-                    Período @_det.PeriodoLabel
-                    @if (!string.IsNullOrWhiteSpace(_det.Fila.ClienteCodigo)) { <span> · N° @_det.Fila.ClienteCodigo</span> }
-                    @if (!string.IsNullOrWhiteSpace(_det.Fila.ClasificacionDesc)) { <span> · @_det.Fila.ClasificacionDesc</span> }
-                    @if (!string.IsNullOrWhiteSpace(_det.Fila.CategoriaDesc)) { <span> · @_det.Fila.CategoriaDesc</span> }
-                </p>
-            </div>
-        </div>
+        <ConversacionesConfigPagina Titulo="@_det.Fila.NombreMostrar" Descripcion="@Subtitulo">
+            <Estado>
+                @if (_det.Fila.EstadoEnvio == "ENVIADO")
+                {
+                    <AlfaTag Tone="AlfaTagTone.Success">Enviado por @_det.Fila.CanalEnvio.ToLowerInvariant()</AlfaTag>
+                }
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-arrow-left" OnClick="Volver">Volver al informe</AlfaButton>
+            </Estado>
+            <ChildContent>
+                <section class="infdet-metrics" aria-label="Indicadores del período">
+                    <div class="infdet-metric"><strong>@_det.Fila.CantConversaciones</strong><span>conversaciones</span></div>
+                    <div class="infdet-metric"><strong>@_det.Fila.CantDias</strong><span>días con actividad</span></div>
+                    <div class="infdet-metric"><strong>@_det.Fila.CantMensajes</strong><span>mensajes</span></div>
+                    <div class="infdet-metric"><strong>@_det.Fila.HorasTotalesLabel</strong><span>horas</span></div>
+                    <div class="infdet-metric"><strong>@_det.Fila.HorasFacturablesLabel</strong><span>horas facturables</span></div>
+                </section>
 
-        <div class="conv-infdet-metrics">
-            <div class="conv-infdet-metric"><strong>@_det.Fila.CantConversaciones</strong>conversaciones</div>
-            <div class="conv-infdet-metric"><strong>@_det.Fila.CantDias</strong>días</div>
-            <div class="conv-infdet-metric"><strong>@_det.Fila.CantMensajes</strong>mensajes</div>
-            <div class="conv-infdet-metric"><strong>@_det.Fila.HorasTotalesLabel</strong>horas</div>
-            <div class="conv-infdet-metric"><strong>@_det.Fila.HorasFacturablesLabel</strong>facturables</div>
-            @if (_det.Fila.EstadoEnvio == "ENVIADO")
-            {
-                <div class="conv-infdet-metric" style="border-color:rgba(16,185,129,.4);color:#34d399;"><strong><i class="bi bi-check2-circle"></i></strong>enviado @_det.Fila.CanalEnvio.ToLower()</div>
-            }
-        </div>
-
-        @if (_feedback is not null)
-        {
-            <div class="panel-card" style="padding:.6rem .9rem; margin-bottom:.9rem; border-color:@(_feedbackOk ? "rgba(16,185,129,.4)" : "rgba(239,68,68,.4)");">@_feedback</div>
-        }
-
-        <div class="panel-card" style="padding:1rem; margin-bottom:1rem;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem; flex-wrap:wrap; gap:.4rem;">
-                <strong><i class="bi bi-stars"></i> Resumen para el cliente</strong>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="GenerarAsync" disabled="@_trabajando">
-                    <i class="bi @(_trabajando ? "bi-hourglass-split" : "bi-arrow-repeat")"></i> @(string.IsNullOrWhiteSpace(_texto) ? "Generar con IA" : "Regenerar")
-                </button>
-            </div>
-            <textarea class="conv-infdet-resumen" @bind="_texto" @bind:event="oninput"
-                      placeholder="Tocá &quot;Generar con IA&quot; para que redacte el resumen del mes, o escribilo vos. Después podés editarlo antes de enviar."></textarea>
-            <div class="conv-infdet-actions">
-                <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarAsync" disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))">
-                    <i class="bi bi-save"></i> Guardar cambios
-                </button>
-                <span class="panel-card__subtitle" style="margin:0;">Se envía el texto que quede acá.</span>
-            </div>
-        </div>
-
-        <div class="panel-card" style="padding:1rem; margin-bottom:1rem;">
-            <strong style="display:block; margin-bottom:.6rem;"><i class="bi bi-send"></i> Enviar</strong>
-            <div class="conv-infdet-envio">
-                <div>
-                    <input type="email" placeholder="email@cliente.com" @bind="_email" />
-                </div>
-                <button type="button" class="btn btn--primary btn--sm" @onclick="EnviarEmailAsync" disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))">
-                    <i class="bi bi-envelope-fill"></i> Enviar por email
-                </button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="EnviarWhatsAppAsync"
-                        disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto) || !_det.IdConversacionWhatsApp.HasValue)"
-                        title="@(_det.IdConversacionWhatsApp.HasValue ? "Enviar a la conversación de WhatsApp (si la ventana de 24 h está abierta)" : "Este cliente no tiene conversación de WhatsApp")">
-                    <i class="bi bi-whatsapp"></i> Enviar por WhatsApp
-                </button>
-            </div>
-            <p class="panel-card__subtitle" style="margin:.5rem 0 0;">WhatsApp solo funciona si el cliente escribió en las últimas 24 h; si no, usá email (o una plantilla aprobada).</p>
-        </div>
-
-        @if (_tendencia.Count > 0)
-        {
-            <div class="panel-card" style="padding:1rem; margin-top:1rem;">
-                <strong><i class="bi bi-graph-up"></i> Evolución de mensajes — últimos 12 meses</strong>
-                <p class="panel-card__subtitle" style="margin:.15rem 0 0;">Actividad de este cliente mes a mes.</p>
-                <div class="conv-infdet-chart">
-                    @foreach (var t in _tendencia)
-                    {
-                        var h = _tendenciaMax > 0 ? (int)Math.Round(100.0 * t.CantMensajes / _tendenciaMax) : 0;
-                        <div class="conv-infdet-bar-wrap" title="@t.Label: @t.CantMensajes mensajes">
-                            <span class="conv-infdet-bar-val">@t.CantMensajes</span>
-                            <div class="conv-infdet-bar" style="height:@Math.Max(h, 2)%;"></div>
-                            <span class="conv-infdet-bar-lbl">@t.Label</span>
+                <ConversacionesConfigTarjeta Titulo="Resumen para el cliente" Descripcion="Se envía el texto que quede acá. Podés generarlo con IA y ajustarlo antes de enviar.">
+                    <Extra>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-stars" Disabled="@_trabajando" OnClick="GenerarAsync">
+                            @(string.IsNullOrWhiteSpace(_texto) ? "Generar con IA" : "Regenerar con IA")
+                        </AlfaButton>
+                    </Extra>
+                    <ChildContent>
+                        <ConversacionesConfigTexto Id="infdet-resumen" Filas="10"
+                                                   Placeholder="Tocá «Generar con IA» para que redacte el resumen del mes, o escribilo vos."
+                                                   Value="@_texto" ValueChanged="@((string? v) => _texto = v ?? string.Empty)" />
+                        <div class="cfg-actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Loading="@_trabajando"
+                                        Disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))" OnClick="GuardarAsync">Guardar cambios</AlfaButton>
                         </div>
+                    </ChildContent>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Enviar" Descripcion="WhatsApp solo funciona si el cliente escribió en las últimas 24 h; si no, usá email.">
+                    <AlfaInput Id="infdet-email" Label="Email del cliente" Type="email" Placeholder="email@cliente.com"
+                               Value="@_email" ValueChanged="@((string? v) => _email = v ?? string.Empty)" />
+                    <div class="cfg-actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-envelope"
+                                    Disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))" OnClick="EnviarEmailAsync">Enviar por email</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi-whatsapp"
+                                    Disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto) || !_det.IdConversacionWhatsApp.HasValue)"
+                                    OnClick="EnviarWhatsAppAsync">Enviar por WhatsApp</AlfaButton>
+                    </div>
+                    @if (!_det.IdConversacionWhatsApp.HasValue)
+                    {
+                        <p class="cfg-hint">Este cliente no tiene conversación de WhatsApp.</p>
                     }
-                </div>
-            </div>
-        }
+                </ConversacionesConfigTarjeta>
+
+                @if (_tendencia.Count > 0)
+                {
+                    <ConversacionesConfigTarjeta Titulo="Evolución de mensajes" Descripcion="Actividad de este cliente en los últimos 12 meses.">
+                        <div class="inf-chart" role="img" aria-label="Mensajes por mes de este cliente">
+                            @foreach (var t in _tendencia)
+                            {
+                                var h = _tendenciaMax > 0 ? (int)Math.Round(100.0 * t.CantMensajes / _tendenciaMax) : 0;
+                                <div class="inf-chart__col" title="@t.Label: @t.CantMensajes mensajes">
+                                    <span class="inf-chart__value">@t.CantMensajes</span>
+                                    <div class="inf-chart__bar" style="height:@Math.Max(h, 2)%;"></div>
+                                    <span class="inf-chart__label">@t.Label</span>
+                                </div>
+                            }
+                        </div>
+                    </ConversacionesConfigTarjeta>
+                }
+            </ChildContent>
+        </ConversacionesConfigPagina>
     }
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse, solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header de la página nueva (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     [Parameter] public int IdDetalle { get; set; }
 
     private ConversacionInformeDetalleDto? _det;
@@ -158,11 +137,15 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems()
@@ -283,6 +266,47 @@
     }
 
     private void SetFeedback(bool ok, string msg) { _feedbackOk = ok; _feedback = msg; }
+
+    private string Subtitulo
+    {
+        get
+        {
+            if (_det is null)
+                return string.Empty;
+
+            var partes = new List<string> { $"Período {_det.PeriodoLabel}" };
+            if (!string.IsNullOrWhiteSpace(_det.Fila.ClienteCodigo)) partes.Add($"N° {_det.Fila.ClienteCodigo}");
+            if (!string.IsNullOrWhiteSpace(_det.Fila.ClasificacionDesc)) partes.Add(_det.Fila.ClasificacionDesc);
+            if (!string.IsNullOrWhiteSpace(_det.Fila.CategoriaDesc)) partes.Add(_det.Fila.CategoriaDesc);
+            return string.Join(" · ", partes);
+        }
+    }
+
+    // AlfaNotification detecta un aviso nuevo por referencia: se reutiliza la misma instancia mientras
+    // el texto no cambie, para no reiniciar el aviso en cada render.
+    private AppUiMessage? _feedbackMessage;
+
+    private AppUiMessage? FeedbackMessage
+    {
+        get
+        {
+            if (_feedback is null)
+                return _feedbackMessage = null;
+
+            if (_feedbackMessage is null || _feedbackMessage.Message != _feedback
+                || (_feedbackMessage.Severity == AppUiFeedbackSeverity.Success) != _feedbackOk)
+            {
+                _feedbackMessage = new AppUiMessage
+                {
+                    Severity = _feedbackOk ? AppUiFeedbackSeverity.Success : AppUiFeedbackSeverity.Error,
+                    Title = _feedbackOk ? "Listo" : "No se pudo completar",
+                    Message = _feedback
+                };
+            }
+
+            return _feedbackMessage;
+        }
+    }
 
     private int? CurrentExpectedBaseIdOrNull()
         => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
