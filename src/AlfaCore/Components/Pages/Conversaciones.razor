@@ -2396,39 +2396,36 @@
                 }
             </section>
 
-            <aside class="panel-card conversations-context conversations-context-drawer @(_showContextPanel ? "is-open" : string.Empty)">
-                <button type="button" class="conversations-drawer-close" title="Cerrar contexto" @onclick="ToggleContextPanel">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-                <div class="conversations-context__section">
-                    <h3 class="panel-card__title">Contexto</h3>
-                    <p class="panel-card__subtitle">Cliente, contacto y gestión</p>
-                </div>
+            <aside class="panel-card conversations-context conversations-context-drawer ctx @(_showContextPanel ? "is-open" : string.Empty)">
+                <header class="ctx__header">
+                    <div class="ctx__heading">
+                        <h3>Contexto</h3>
+                        <p>Cliente, contacto y gestión</p>
+                    </div>
+                    <AlfaIconButton Icon="bi-x-lg" Label="Cerrar contexto" Size="AlfaSize.Sm" OnClick="ToggleContextPanel" />
+                </header>
 
                 @if (_selectedConversation is null)
                 {
-                    <div class="conversations-empty">
-                        Seleccioná una conversación para ver sus datos.
-                    </div>
+                    <AlfaEmptyState Title="Sin conversación" Message="Seleccioná una conversación para ver sus datos." />
                 }
                 else
                 {
                     @if (_selectedConversation.Canal != "INTERNO")
                     {
-                        <div class="context-card">
-                            <span class="context-card__label">Cliente</span>
+                        <section class="ctx-card">
+                            <span class="ctx-card__label"><i class="bi bi-building" aria-hidden="true"></i> Cliente</span>
                             @if (_selectedConversation.ClientesAsociados.Count > 0)
                             {
                                 @foreach (var cliente in _selectedConversation.ClientesAsociados)
                                 {
-                                    <div class="context-card__related-account">
-                                        <strong>@DisplayOrFallback(cliente.RazonSocial)</strong>
-                                        <span class="context-card__muted">@DisplayOrFallback(cliente.Codigo)</span>
-                                        <a class="btn btn--ghost btn--sm context-card__action"
-                                           href="@BuildClientRoute(cliente.Codigo)"
-                                           target="_blank"
-                                           rel="noopener noreferrer">
-                                            <i class="bi bi-building"></i> Ver cliente
+                                    <div class="ctx-entity">
+                                        <div class="ctx-entity__text">
+                                            <strong>@DisplayOrFallback(cliente.RazonSocial)</strong>
+                                            <span>@DisplayOrFallback(cliente.Codigo)</span>
+                                        </div>
+                                        <a class="ctx-link-button" href="@BuildClientRoute(cliente.Codigo)" target="_blank" rel="noopener noreferrer">
+                                            <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Ver cliente
                                         </a>
                                     </div>
                                 }
@@ -2436,117 +2433,120 @@
                             else if (!_selectedConversation.IdContacto.HasValue
                                      && !string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
                             {
-                                <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
-                                <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
-                                <a class="btn btn--ghost btn--sm context-card__action"
-                                   href="@BuildClientRoute(_selectedConversation.ClienteCodigo)"
-                                   target="_blank"
-                                   rel="noopener noreferrer">
-                                    <i class="bi bi-building"></i> Ver cliente
-                                </a>
+                                <div class="ctx-entity">
+                                    <div class="ctx-entity__text">
+                                        <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
+                                        <span>@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
+                                    </div>
+                                    <a class="ctx-link-button" href="@BuildClientRoute(_selectedConversation.ClienteCodigo)" target="_blank" rel="noopener noreferrer">
+                                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Ver cliente
+                                    </a>
+                                </div>
                             }
                             else
                             {
-                                <button type="button" class="btn btn--primary btn--sm context-card__action" @onclick="OpenRelacionarClienteModal">
-                                    <i class="bi bi-building-add"></i> Relacionar cliente
-                                </button>
+                                <p class="ctx-muted">Esta conversación no está vinculada a un cliente.</p>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-building-add" OnClick="OpenRelacionarClienteModal">Relacionar cliente</AlfaButton>
                             }
-                        </div>
+                        </section>
 
-                        <div class="context-card">
-                            <span class="context-card__label">Contacto</span>
-                            <strong>@DisplayOrFallback(_selectedConversation.ContactoNombre)</strong>
-                            <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ContactoCargo)</span>
-                            <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ContactoCelular, _selectedConversation.ContactoTelefono)</span>
-                            <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ContactoEmail)</span>
+                        <section class="ctx-card">
+                            <span class="ctx-card__label"><i class="bi bi-person" aria-hidden="true"></i> Contacto</span>
+                            <strong class="ctx-card__title">@DisplayOrFallback(_selectedConversation.ContactoNombre)</strong>
+                            <dl class="ctx-facts">
+                                @if (!string.IsNullOrWhiteSpace(_selectedConversation.ContactoCargo))
+                                {
+                                    <div><dt><i class="bi bi-briefcase" aria-label="Cargo"></i></dt><dd>@_selectedConversation.ContactoCargo.Trim()</dd></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_selectedConversation.ContactoCelular) || !string.IsNullOrWhiteSpace(_selectedConversation.ContactoTelefono))
+                                {
+                                    <div><dt><i class="bi bi-telephone" aria-label="Teléfono"></i></dt><dd>@DisplayOrFallback(_selectedConversation.ContactoCelular, _selectedConversation.ContactoTelefono)</dd></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_selectedConversation.ContactoEmail))
+                                {
+                                    <div><dt><i class="bi bi-envelope" aria-label="Email"></i></dt><dd>@_selectedConversation.ContactoEmail.Trim()</dd></div>
+                                }
+                            </dl>
                             @if (_selectedConversation.IdContacto.HasValue)
                             {
-                                <a class="btn btn--ghost btn--sm context-card__action"
-                                   href="@BuildContactRoute(_selectedConversation.IdContacto.Value)"
-                                   target="_blank"
-                                   rel="noopener noreferrer">
-                                    <i class="bi bi-person-lines-fill"></i> Ver contacto
+                                <a class="ctx-link-button" href="@BuildContactRoute(_selectedConversation.IdContacto.Value)" target="_blank" rel="noopener noreferrer">
+                                    <i class="bi bi-person-lines-fill" aria-hidden="true"></i> Ver contacto
                                 </a>
                             }
                             else
                             {
-                                <button type="button" class="btn btn--primary btn--sm context-card__action" @onclick="OpenNewContactFromSelectedConversation">
-                                    <i class="bi bi-person-plus-fill"></i> Crear contacto
-                                </button>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-person-plus" OnClick="OpenNewContactFromSelectedConversation">Crear contacto</AlfaButton>
                             }
-                        </div>
+                        </section>
 
                         @if (_loadingContextNotes)
                         {
-                            <div class="context-card">
-                                <span class="context-card__label">Observaciones</span>
-                                <span class="context-card__muted">Cargando notas...</span>
-                            </div>
+                            <section class="ctx-card">
+                                <span class="ctx-card__label"><i class="bi bi-journal-text" aria-hidden="true"></i> Observaciones</span>
+                                <p class="ctx-muted">Cargando notas…</p>
+                            </section>
                         }
                         else if (HasContextNotes)
                         {
-                            <button type="button"
-                                    class="context-card"
-                                    style="width:100%;text-align:left;cursor:pointer;border-color:rgba(34,211,238,.78);background:#071524;color:#e5f4ff;box-shadow:inset 3px 0 0 #22d3ee,0 0 0 1px rgba(34,211,238,.14);"
-                                    @onclick="OpenContextNotesModal">
-                                <span class="context-card__label">Observaciones</span>
-                                <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">@ContextNotesPreview</strong>
-                                <span class="context-card__muted">Ver notas de cliente/contacto</span>
+                            <button type="button" class="ctx-card ctx-card--accent ctx-card--button" @onclick="OpenContextNotesModal">
+                                <span class="ctx-card__label"><i class="bi bi-journal-text" aria-hidden="true"></i> Observaciones</span>
+                                <strong class="ctx-card__title ctx-ellipsis">@ContextNotesPreview</strong>
+                                <span class="ctx-muted">Ver notas del cliente y del contacto</span>
                             </button>
                         }
 
-                        <div class="conversations-context__section">
-                            <h4 class="panel-card__title">Tickets</h4>
-                            <p class="panel-card__subtitle">@GetContextTicketsSubtitle()</p>
+                        <section class="ctx-card">
+                            <div class="ctx-card__row">
+                                <span class="ctx-card__label"><i class="bi bi-ticket-perforated" aria-hidden="true"></i> Tickets</span>
+                                @if (_contextTicketMatches.Count > 0)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Accent">@_contextTicketMatches.Count</AlfaTag>
+                                }
+                            </div>
+                            <p class="ctx-muted">@GetContextTicketsSubtitle()</p>
                             @if (_contextTicketMatches.Count > 0)
                             {
-                                <div class="conversations-context-tickets">
+                                <ul class="ctx-tickets">
                                     @foreach (var match in _contextTicketMatches.Take(6))
                                     {
-                                        <article class="conversations-context-ticket">
-                                            <div>
+                                        <li class="ctx-ticket">
+                                            <div class="ctx-ticket__text">
                                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
                                                 <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
                                                 <small>@BuildContextTicketPreview(match)</small>
                                             </div>
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
-                                                <i class="bi bi-box-arrow-up-right"></i>
-                                            </button>
-                                        </article>
+                                            <AlfaIconButton Icon="bi-box-arrow-up-right" Label="Abrir ticket" Size="AlfaSize.Sm" OnClick="() => OpenTicket(match.Ticket.IdTicket)" />
+                                        </li>
                                     }
-                                </div>
+                                </ul>
                             }
-                        </div>
-                        <div class="conversations-context__section">
-                            <h4 class="panel-card__title">Plantillas</h4>
-                            <p class="panel-card__subtitle">Mensajes aprobados por Meta</p>
-                            <button type="button" class="btn btn--primary" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
-                                <i class="bi bi-send-fill"></i> Enviar plantilla
-                            </button>
-                        </div>
+                        </section>
+
+                        <section class="ctx-card">
+                            <span class="ctx-card__label"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Plantillas</span>
+                            <p class="ctx-muted">Mensajes aprobados por Meta, para escribir fuera de la ventana de 24 h.</p>
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi-send" Disabled="@(!CanOpenTemplatePanel)" OnClick="OpenTemplatePanel">Enviar plantilla</AlfaButton>
+                        </section>
                     }
 
-                    <div class="conversations-context__section">
-                        <h4 class="panel-card__title">Asignación</h4>
-                        <div class="field">
-                            <label for="conv-tech">Técnico</label>
-                            <select id="conv-tech" value="@_assignmentTechnicianId" @onchange="OnAssignmentChangedAsync" disabled="@_busyAction">
-                                <option value="">Sin asignar</option>
-                                @foreach (var tech in GetAssignableTechnicians())
-                                {
-                                    <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
-                                }
-                            </select>
-                        </div>
-                    </div>
+                    <section class="ctx-card">
+                        <span class="ctx-card__label"><i class="bi bi-person-check" aria-hidden="true"></i> Asignación</span>
+                        <AlfaSelect Id="conv-tech" Label="Técnico" Options="AssignmentOptions" Disabled="@_busyAction"
+                                    Value="@_assignmentTechnicianId"
+                                    ValueChanged="@((string? v) => OnAssignmentChangedAsync(new ChangeEventArgs { Value = v ?? string.Empty }))" />
+                    </section>
 
                     @if (_actionMessage is not null)
                     {
-                        <div class="conversations-inline conversations-inline--ok conversations-notice @GetConversationNoticeLeavingClass()">@_actionMessage</div>
+                        <div class="ctx-notice ctx-notice--ok conversations-notice @GetConversationNoticeLeavingClass()" role="status">
+                            <i class="bi bi-check-circle" aria-hidden="true"></i><span>@_actionMessage</span>
+                        </div>
                     }
                     @if (_actionError is not null)
                     {
-                        <div class="conversations-inline conversations-inline--error conversations-notice @GetConversationNoticeLeavingClass()">@_actionError</div>
+                        <div class="ctx-notice ctx-notice--error conversations-notice @GetConversationNoticeLeavingClass()" role="alert">
+                            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i><span>@_actionError</span>
+                        </div>
                     }
                 }
             </aside>
@@ -4857,6 +4857,10 @@
     /// que ve la lista completa). Sin número fijado, sin usuarios vinculados, o sin poder resolver
     /// nada de esto, se muestra la lista completa como siempre.
     /// </summary>
+    private IReadOnlyList<AlfaSelectOption> AssignmentOptions
+        => [new AlfaSelectOption(string.Empty, "Sin asignar"),
+            .. GetAssignableTechnicians().Select(t => new AlfaSelectOption(t.IdTecnico, $"{t.Nombre} ({t.IdTecnico})"))];
+
     private IReadOnlyList<ConversacionTecnicoOptionDto> GetAssignableTechnicians()
     {
         if (_esAdministradorConversaciones || _selectedConversation?.IdNumeroWhatsApp is not int idNumero)
