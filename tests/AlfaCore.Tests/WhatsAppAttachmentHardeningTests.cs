@@ -100,10 +100,16 @@ public sealed class WhatsAppAttachmentHardeningTests
         Assert.Contains("AppUserSession.StateChanged += OnAppUserSessionChanged;", source);
         Assert.Contains("AppUserSession.StateChanged -= OnAppUserSessionChanged;", source);
         Assert.Contains("private string _attachmentUrlUserToken = string.Empty;", source);
+        Assert.Contains("private string _attachmentUrlAuthSignature = string.Empty;", source);
+        Assert.Contains("private int _attachmentUrlVersion;", source);
         Assert.Contains("private void OnAppUserSessionChanged()", source);
         Assert.Contains("NormalizeAttachmentUserToken(AppUserSession.CurrentToken)", source);
+        Assert.Contains("BuildAttachmentAuthSignature(currentToken)", source);
+        Assert.Contains("_attachmentUrlVersion++;", source);
         Assert.Contains("StateHasChanged();", source);
         Assert.Contains("Uri.EscapeDataString(_attachmentUrlUserToken)", source);
+        Assert.Contains("return $\"{query}&av={_attachmentUrlVersion.ToString(CultureInfo.InvariantCulture)}\";", source);
+        Assert.Contains("localStorage.getItem\", \"alfacore_user_token\"", source);
     }
 
     [Fact]

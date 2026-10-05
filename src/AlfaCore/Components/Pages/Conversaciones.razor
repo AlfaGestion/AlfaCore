@@ -4183,6 +4183,8 @@
     private int? _whatsAppInboxNumeroId;
     private bool _startupHasInboxQuery;
     private string _attachmentUrlUserToken = string.Empty;
+    private string _attachmentUrlAuthSignature = string.Empty;
+    private int _attachmentUrlVersion;
     private const string WhatsAppDefaultApiOptionValue = "__DEFAULT_META_API__";
 
     protected override async Task OnInitializedAsync()
@@ -4191,6 +4193,7 @@
         Nav.LocationChanged += OnLocationChanged;
         SessionSvc.SessionChanged += OnSessionChanged;
         _attachmentUrlUserToken = NormalizeAttachmentUserToken(AppUserSession.CurrentToken);
+        _attachmentUrlAuthSignature = BuildAttachmentAuthSignature();
         AppUserSession.StateChanged += OnAppUserSessionChanged;
         UpdatePageHeader();
         ApplyStartupQuery();
@@ -4243,10 +4246,13 @@
         => _ = InvokeAsync(() =>
         {
             var currentToken = NormalizeAttachmentUserToken(AppUserSession.CurrentToken);
-            if (string.Equals(currentToken, _attachmentUrlUserToken, StringComparison.Ordinal))
+            var currentSignature = BuildAttachmentAuthSignature(currentToken);
+            if (string.Equals(currentSignature, _attachmentUrlAuthSignature, StringComparison.Ordinal))
                 return;
 
             _attachmentUrlUserToken = currentToken;
+            _attachmentUrlAuthSignature = currentSignature;
+            _attachmentUrlVersion++;
             StateHasChanged();
         });
 
@@ -4528,6 +4534,8 @@
                 }
             }
         }
+
+        await SyncAttachmentUserTokenFromBrowserAsync();
 
         try
         {
@@ -13255,12 +13263,51 @@
         => ConversacionesSvc.GetAttachmentScopeKey();
 
     private string GetAttachmentUserTokenQuery()
-        => string.IsNullOrWhiteSpace(_attachmentUrlUserToken)
+    {
+        var query = string.IsNullOrWhiteSpace(_attachmentUrlUserToken)
             ? string.Empty
             : $"&token={Uri.EscapeDataString(_attachmentUrlUserToken)}";
+        return $"{query}&av={_attachmentUrlVersion.ToString(CultureInfo.InvariantCulture)}";
+    }
 
     private static string NormalizeAttachmentUserToken(string? token)
         => string.IsNullOrWhiteSpace(token) ? string.Empty : token.Trim();
+
+    private string BuildAttachmentAuthSignature(string? normalizedToken = null)
+    {
+        var user = AppUserSession.CurrentUser;
+        return string.Join("|",
+            normalizedToken ?? NormalizeAttachmentUserToken(AppUserSession.CurrentToken),
+            user?.UserName?.Trim() ?? string.Empty,
+            user?.SystemCode?.Trim() ?? string.Empty,
+            user?.RequiresInternalLogin == true ? "internal-pending" : "internal-ok",
+            user?.AuthorizedSessionId?.ToString("N") ?? string.Empty);
+    }
+
+    private async Task SyncAttachmentUserTokenFromBrowserAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_attachmentUrlUserToken))
+            return;
+
+        string? browserToken;
+        try
+        {
+            browserToken = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+        }
+        catch
+        {
+            return;
+        }
+
+        var normalized = NormalizeAttachmentUserToken(browserToken);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        _attachmentUrlUserToken = normalized;
+        _attachmentUrlAuthSignature = BuildAttachmentAuthSignature(normalized);
+        _attachmentUrlVersion++;
+        StateHasChanged();
+    }
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
