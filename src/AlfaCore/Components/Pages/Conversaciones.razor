@@ -4182,6 +4182,7 @@
     private int? _overrideWhatsAppSendNumeroId;
     private int? _whatsAppInboxNumeroId;
     private bool _startupHasInboxQuery;
+    private string _attachmentUrlUserToken = string.Empty;
     private const string WhatsAppDefaultApiOptionValue = "__DEFAULT_META_API__";
 
     protected override async Task OnInitializedAsync()
@@ -4189,6 +4190,8 @@
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
         Nav.LocationChanged += OnLocationChanged;
         SessionSvc.SessionChanged += OnSessionChanged;
+        _attachmentUrlUserToken = NormalizeAttachmentUserToken(AppUserSession.CurrentToken);
+        AppUserSession.StateChanged += OnAppUserSessionChanged;
         UpdatePageHeader();
         ApplyStartupQuery();
         await InitializeTenantAsync();
@@ -4235,6 +4238,17 @@
 
     private void OnSessionChanged()
         => _ = InvokeAsync(HandleTenantSessionChangedAsync);
+
+    private void OnAppUserSessionChanged()
+        => _ = InvokeAsync(() =>
+        {
+            var currentToken = NormalizeAttachmentUserToken(AppUserSession.CurrentToken);
+            if (string.Equals(currentToken, _attachmentUrlUserToken, StringComparison.Ordinal))
+                return;
+
+            _attachmentUrlUserToken = currentToken;
+            StateHasChanged();
+        });
 
     private async Task HandleTenantSessionChangedAsync()
     {
@@ -13241,9 +13255,12 @@
         => ConversacionesSvc.GetAttachmentScopeKey();
 
     private string GetAttachmentUserTokenQuery()
-        => string.IsNullOrWhiteSpace(AppUserSession.CurrentToken)
+        => string.IsNullOrWhiteSpace(_attachmentUrlUserToken)
             ? string.Empty
-            : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
+            : $"&token={Uri.EscapeDataString(_attachmentUrlUserToken)}";
+
+    private static string NormalizeAttachmentUserToken(string? token)
+        => string.IsNullOrWhiteSpace(token) ? string.Empty : token.Trim();
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
@@ -13483,6 +13500,7 @@
         _pollingCts?.Dispose();
         _dotNetRef?.Dispose();
         _floatingWindowRegistration?.Dispose();
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
 
         try
         {

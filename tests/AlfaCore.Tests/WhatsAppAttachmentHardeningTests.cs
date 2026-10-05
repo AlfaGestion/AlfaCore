@@ -93,6 +93,20 @@ public sealed class WhatsAppAttachmentHardeningTests
     }
 
     [Fact]
+    public void ConversationsPage_AttachmentUrls_RepaintWhenUserTokenChanges()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
+
+        Assert.Contains("AppUserSession.StateChanged += OnAppUserSessionChanged;", source);
+        Assert.Contains("AppUserSession.StateChanged -= OnAppUserSessionChanged;", source);
+        Assert.Contains("private string _attachmentUrlUserToken = string.Empty;", source);
+        Assert.Contains("private void OnAppUserSessionChanged()", source);
+        Assert.Contains("NormalizeAttachmentUserToken(AppUserSession.CurrentToken)", source);
+        Assert.Contains("StateHasChanged();", source);
+        Assert.Contains("Uri.EscapeDataString(_attachmentUrlUserToken)", source);
+    }
+
+    [Fact]
     public void WebhookStorageScope_Audit_TokenizedRouteSetsOverride_LegacyRouteDoesNotRewriteStorage()
     {
         var program = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
