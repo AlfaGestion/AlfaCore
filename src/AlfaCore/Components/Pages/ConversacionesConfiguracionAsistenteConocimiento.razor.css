@@ -1,0 +1,48 @@
+.conoc-editor {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+    gap: var(--alfa-space-12, 12px);
+}
+
+.conoc-upload {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4, 4px);
+    height: 28px;
+    padding: 0 var(--alfa-space-12, 12px);
+    border-radius: var(--alfa-radius-4, 4px);
+    background: var(--alfa-accent, #4f9efa);
+    color: #fff;
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.conoc-upload:hover {
+    filter: brightness(1.08);
+}
+
+.conoc-upload:focus-within {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: 2px;
+}
+
+.conoc-upload.is-busy {
+    opacity: .7;
+    cursor: progress;
+}
+
+.conoc-upload ::deep input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+@media (max-width: 720px) {
+    .conoc-editor {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

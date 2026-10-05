@@ -33,8 +33,8 @@
                 break;
 
             case "informacion":
-                <ConversacionesConfigTarjeta Titulo="Información del negocio" Descripcion="Es la fuente de verdad del asistente: horarios, sucursales, envíos, medios de pago, preguntas frecuentes, qué derivar a una persona.">
-                    <ConversacionesConfigTexto Id="asis-informacion" Label="Información" Filas="18"
+                <ConversacionesConfigTarjeta Titulo="Información general" Descripcion="Texto libre que el asistente recibe siempre. Para información por tema (horarios, envíos, pagos, preguntas frecuentes) usá los bloques de abajo; para documentos largos, los archivos. Se guarda con «Guardar asistente».">
+                    <ConversacionesConfigTexto Id="asis-informacion" Label="Información" Filas="10"
                                                Placeholder="Pegá acá lo que el asistente tiene que saber. Cuanto más concreto, mejor responde."
                                                Value="@Config.AsistenteInformacion" ValueChanged="@((string? v) => Config.AsistenteInformacion = v ?? string.Empty)">
                         <Pie>
@@ -52,6 +52,8 @@
                         </p>
                     }
                 </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfiguracionAsistenteConocimiento />
 
                 <ConversacionesConfigTarjeta Titulo="Fuentes adicionales" Descripcion="Además del texto de arriba, el asistente puede buscar en documentos externos.">
                     <AlfaCheckbox Value="@Config.AsistenteUsaKnowledge" ValueChanged="@((bool? v) => Config.AsistenteUsaKnowledge = v == true)">

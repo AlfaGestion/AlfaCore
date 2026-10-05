@@ -451,6 +451,7 @@ public class Program
         builder.Services.AddScoped<IConversacionAsistenteService, ConversacionAsistenteService>();
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
+        builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddSingleton<IaUsoCola>();
         builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();

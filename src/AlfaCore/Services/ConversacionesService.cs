@@ -34,7 +34,8 @@ public sealed class ConversacionesService(
     IWhatsAppCoexistenceSyncStore whatsAppCoexistenceSyncStore,
     IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
     IWebHostEnvironment environment,
-    ILogger<ConversacionesService> logger) : IConversacionesService
+    ILogger<ConversacionesService> logger,
+    IConversacionAsistenteConocimientoService? asistenteConocimiento = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -8517,8 +8518,15 @@ public sealed class ConversacionesService(
                     var linkCatalogoParaLead = precioRequiereIdentificacion
                         ? await ObtenerLinkCatalogoSiDisponibleAsync(herramientas, cuentaVinculada, token).ConfigureAwait(false)
                         : null;
+                    // Información general + bloques activos + fragmentos de archivos (si hay archivos listos
+                    // y el mensaje no es un saludo). Nunca falla: ante un error queda la información general.
+                    var informacionAsistente = asistenteConocimiento is null
+                        ? config.AsistenteInformacion
+                        : await asistenteConocimiento.ComponerInformacionAsync(
+                            config.AsistenteInformacion, EsMensajeSocial(texto) ? null : texto, token).ConfigureAwait(false);
+                    await TraceDiagAsync($"Paso:InformacionAsistente:chars={informacionAsistente.Length}", idConversacion, ct).ConfigureAwait(false);
                     result = await asistenteService.ResponderAsync(
-                        config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                        config.AsistenteComportamiento, informacionAsistente, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync,
                         traceDiagAsync: (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
