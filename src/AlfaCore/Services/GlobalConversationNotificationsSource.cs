@@ -13,6 +13,12 @@ public sealed class GlobalConversationNotificationsSource(
     IAppUserSessionService appUserSession,
     IConversacionesService conversacionesService)
 {
+    // Mismo usuario/sistema que usa la página de Conversaciones (ApplyCurrentUserToFilters): los no
+    // leídos (CONV_CONVERSACIONES_LECTURA_USUARIO) y las fijadas se calculan por usuario. Sin esto la
+    // bandeja se calculaba para un usuario vacío y la burbuja no coincidía con la lista.
+    private string UsuarioActual => appUserSession.GetCurrentUserName(string.Empty).Trim();
+    private string SistemaActual => appUserSession.CurrentUser?.SystemCode?.Trim() ?? string.Empty;
+
     public Task<TenantScopedResult<IReadOnlyList<ConversacionInboxItemDto>>> FetchPendingAsync(CancellationToken ct = default)
         => TenantDataAccessGuard.RunForAuthorizedSessionAsync<IReadOnlyList<ConversacionInboxItemDto>>(
             sessionService,
@@ -26,7 +32,9 @@ public sealed class GlobalConversationNotificationsSource(
                 {
                     Canal = "WHATSAPP",
                     Modo = "pendientes",
-                    Limit = 10
+                    Limit = 10,
+                    UsuarioActual = UsuarioActual,
+                    SistemaActual = SistemaActual
                 }, token).ConfigureAwait(false);
             },
             ct);
@@ -48,7 +56,9 @@ public sealed class GlobalConversationNotificationsSource(
                 return await conversacionesService.GetInboxAsync(new ConversacionesInboxFilters
                 {
                     Modo = "pendientes",
-                    Limit = Math.Clamp(limit, 1, 50)
+                    Limit = Math.Clamp(limit, 1, 50),
+                    UsuarioActual = UsuarioActual,
+                    SistemaActual = SistemaActual
                 }, token).ConfigureAwait(false);
             },
             ct);

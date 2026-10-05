@@ -3656,3 +3656,47 @@
 .ctx-notice--error > i {
     color: var(--alfa-danger, #ef8a80);
 }
+
+/* Capas del encabezado del chat bajo el shell AlfaDesign (2026-10-05). app.css le da z-index 10000-10060
+   (encabezado, selector de estado y su menú) para que el menú de estado flote sobre el chat, pero con
+   esos valores tapaba todo lo global de la app: el selector de bases (5003), los paneles de la barra
+   superior (1910) y los modales globales. Alcanza con estar por encima del contenido del chat; se
+   respetan el orden interno (encabezado < estado < fila abierta < menú) y la excepción de Parte de horas. */
+.shell.shell--alfa-design .conversations-page--odoo .conversations-chat__header {
+    z-index: 1000 !important;
+}
+
+.shell.shell--alfa-design .conversations-page--odoo .conversation-header-state {
+    z-index: 1020 !important;
+}
+
+.shell.shell--alfa-design .conversations-page--odoo .conversation-header-state__row.is-open {
+    z-index: 1040 !important;
+}
+
+.shell.shell--alfa-design .conversations-page--odoo .conversation-header-state__menu {
+    z-index: 1060 !important;
+}
+
+.shell.shell--alfa-design .conversations-page--odoo.conversations-page--hours-open .conversations-chat__header {
+    z-index: 0 !important;
+}
+
+/* Drawers de Contexto y de la IA bajo el shell AlfaDesign: arrancan debajo de la barra superior (antes
+   cubrían la barra desde top:0) y usan una capa por encima del chat y de la barra de acciones (1900) pero por
+   debajo de lo global (selector de bases 5003, modales). Superficie con tokens AlfaDesign. */
+.shell.shell--alfa-design .conversations-page--odoo .conversations-context-drawer,
+.shell.shell--alfa-design .conversations-page--odoo .conversations-context-drawer.is-open {
+    top: var(--alfa-topbar-height, 56px) !important;
+    height: calc(100dvh - var(--alfa-topbar-height, 56px)) !important;
+    max-height: calc(100dvh - var(--alfa-topbar-height, 56px)) !important;
+    z-index: 1950 !important;
+    border-color: var(--alfa-border-default, #333640) !important;
+    background: var(--alfa-bg-surface, #16181d) !important;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, .4) !important;
+}
+
+.shell.shell--alfa-design .conversations-page--odoo .conversations-panel-backdrop {
+    top: var(--alfa-topbar-height, 56px) !important;
+    z-index: 1940 !important;
+}
