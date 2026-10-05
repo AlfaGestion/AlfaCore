@@ -211,6 +211,8 @@
                                ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
                                HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
                 </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfiguracionAsistenteConsumo />
                 break;
         }
 

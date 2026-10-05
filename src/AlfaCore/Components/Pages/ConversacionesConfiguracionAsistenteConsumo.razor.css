@@ -1,0 +1,54 @@
+.consumo-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--alfa-space-12, 12px);
+}
+
+.consumo-kpi {
+    display: grid;
+    gap: 2px;
+    padding: var(--alfa-space-12, 12px);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-input, #252830);
+}
+
+.consumo-kpi strong {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.consumo-kpi span {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.consumo-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--alfa-bg-input, #252830);
+    overflow: hidden;
+}
+
+.consumo-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--alfa-accent, #4f9efa);
+}
+
+.consumo-bar.is-warning > span {
+    background: var(--alfa-warning, #e3b25a);
+}
+
+.consumo-bar.is-over > span {
+    background: var(--alfa-danger, #ef5350);
+}
+
+.consumo-creditos {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-small, 12px);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

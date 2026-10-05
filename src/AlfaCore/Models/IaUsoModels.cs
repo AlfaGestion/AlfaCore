@@ -15,6 +15,21 @@ public static class IaUsoFunciones
     public const string Proxy = "PROXY";
     public const string ArchivosBusqueda = "ARCHIVOS_BUSQUEDA";
     public const string ArchivosAlmacenamiento = "ARCHIVOS_ALMACENAMIENTO";
+
+    public static string Nombre(string? funcion) => (funcion ?? string.Empty).Trim().ToUpperInvariant() switch
+    {
+        Bot => "Asistente (respuestas automáticas)",
+        Resumen => "Resúmenes del informe mensual",
+        Analisis => "Análisis de conversaciones",
+        Oportunidad => "Detección de oportunidades",
+        Reescritura => "Reescritura de mensajes",
+        InformesIa => "Informes con IA",
+        Cotizacion => "Cotizaciones del CRM",
+        Proxy => "Integraciones por licencia",
+        ArchivosBusqueda => "Búsquedas en archivos",
+        ArchivosAlmacenamiento => "Almacenamiento de archivos",
+        _ => funcion ?? string.Empty
+    };
 }
 
 /// <summary>Tokens informados por OpenAI en el campo <c>usage</c> de una respuesta.</summary>

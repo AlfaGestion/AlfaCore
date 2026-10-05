@@ -455,6 +455,7 @@ public class Program
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddSingleton<IaUsoCola>();
         builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();
+        builder.Services.AddScoped<IIaConsumoService, IaConsumoService>();
         builder.Services.AddHostedService<IaUsoFlushService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();

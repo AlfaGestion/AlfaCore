@@ -9,6 +9,10 @@
 --   quedan con CostoUsd NULL y se ven como "sin precio" en V_IA_USO_DIARIO.
 -- IA_USO: un registro por llamada a OpenAI (o por búsqueda/almacenamiento de archivos).
 -- V_IA_USO_DIARIO: totales por día, cliente, base, función y modelo.
+-- IA_CONFIG: USD_POR_CREDITO = costo de OpenAI que equivale a 1 crédito IA (por defecto 0,001).
+-- Módulo IA_CREDITOS: se le asigna a cada cliente un plan de tipo CREDITOS (CantidadIncluida = créditos
+--   incluidos por mes, Precio = abono fijo, PrecioExcedente = precio por crédito adicional). El cargo
+--   mensual se genera desde Administrar → Consumo IA.
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 IF OBJECT_ID(N'dbo.bases', N'U') IS NULL
@@ -79,6 +83,28 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.IA_US
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.IA_USO') AND name = N'IX_IA_USO_Base_Fecha')
     CREATE NONCLUSTERED INDEX IX_IA_USO_Base_Fecha ON dbo.IA_USO (IdBase, FechaHoraUtc)
         INCLUDE (Funcion, Modelo, TokensEntrada, TokensEntradaCacheados, TokensSalida, Busquedas, CostoUsd);
+
+IF OBJECT_ID(N'dbo.IA_CONFIG', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.IA_CONFIG
+    (
+        Clave nvarchar(60) NOT NULL,
+        Valor nvarchar(200) NOT NULL,
+        Observacion nvarchar(250) NULL,
+        CONSTRAINT PK_IA_CONFIG PRIMARY KEY CLUSTERED (Clave)
+    );
+END;
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_CONFIG WHERE Clave = N'USD_POR_CREDITO')
+    INSERT INTO dbo.IA_CONFIG (Clave, Valor, Observacion)
+    VALUES (N'USD_POR_CREDITO', N'0.001', N'Costo de OpenAI (USD) que equivale a 1 crédito IA. El margen va en el precio del plan.');
+
+IF OBJECT_ID(N'dbo.Modulos', N'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM dbo.Modulos WITH (UPDLOCK, HOLDLOCK) WHERE UPPER(LTRIM(RTRIM(Codigo))) = N'IA_CREDITOS')
+    INSERT INTO dbo.Modulos (Codigo, Nombre, Descripcion, MenuKeyRaiz, Precio, Activo)
+    VALUES (N'IA_CREDITOS', N'Créditos de IA',
+        N'Consumo de IA (asistente, análisis, informes, archivos). Asignar un plan de tipo CREDITOS: créditos incluidos por mes y precio por crédito excedente.',
+        N'', 0, 1);
 
 COMMIT TRANSACTION;
 GO

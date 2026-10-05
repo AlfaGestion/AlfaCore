@@ -1,0 +1,106 @@
+@using AlfaCore.Services
+@inject IIaConsumoService ConsumoSvc
+
+@* Asistente IA → General: consumo de IA del mes de la base (créditos). Solo en SaaS, con medición central. *@
+
+@if (_resumen is not null)
+{
+    <ConversacionesConfigTarjeta Titulo="Consumo de IA este mes"
+                                 Descripcion="Créditos que usaron el asistente y las demás funciones de IA en esta base. Se actualiza cada pocos minutos.">
+        <Extra>
+            <AlfaTag Tone="AlfaTagTone.Neutral">@NombreMes(_resumen.Mes) @_resumen.Anio</AlfaTag>
+        </Extra>
+        <ChildContent>
+            <div class="consumo-kpis">
+                <div class="consumo-kpi">
+                    <strong>@_resumen.CreditosBase.ToString("N0", Es)</strong>
+                    <span>créditos en esta base</span>
+                </div>
+                @if (_resumen.CreditosCliente != _resumen.CreditosBase)
+                {
+                    <div class="consumo-kpi">
+                        <strong>@_resumen.CreditosCliente.ToString("N0", Es)</strong>
+                        <span>créditos en todas tus bases</span>
+                    </div>
+                }
+                @if (_resumen.Plan is { } plan)
+                {
+                    <div class="consumo-kpi">
+                        <strong>@plan.CreditosIncluidos.ToString("N0", Es)</strong>
+                        <span>incluidos en tu plan</span>
+                    </div>
+                }
+            </div>
+
+            @if (_resumen.Plan is { CreditosIncluidos: > 0 } planConCupo)
+            {
+                var porcentaje = Porcentaje(_resumen.CreditosCliente, planConCupo.CreditosIncluidos);
+                <div class="consumo-bar @(porcentaje >= 100 ? "is-over" : porcentaje >= 80 ? "is-warning" : null)"
+                     role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Min(porcentaje, 100)">
+                    <span style="width:@Math.Min(porcentaje, 100)%"></span>
+                </div>
+                <p class="cfg-hint @(porcentaje >= 80 ? "cfg-hint--warning" : null)">
+                    @if (porcentaje >= 100)
+                    {
+                        @($"Superaste los créditos incluidos. Los excedentes se facturan a fin de mes{(planConCupo.PermiteExcedentes ? $" ({planConCupo.PrecioExcedente:N2} {planConCupo.Moneda} por crédito)" : string.Empty)}.")
+                    }
+                    else
+                    {
+                        @($"Usaste el {porcentaje}% de los créditos incluidos en tu plan este mes.")
+                    }
+                </p>
+            }
+
+            @if (_resumen.PorFuncion.Count > 0)
+            {
+                <ul class="cfg-list">
+                    @foreach (var funcion in _resumen.PorFuncion)
+                    {
+                        <li class="cfg-list__item">
+                            <i class="bi @Icono(funcion.Funcion) cfg-list__icon" aria-hidden="true"></i>
+                            <div class="cfg-list__text">
+                                <span class="cfg-list__title">@IaUsoFunciones.Nombre(funcion.Funcion)</span>
+                                <span class="cfg-list__desc">@funcion.Llamadas.ToString("N0", Es) uso(s)</span>
+                            </div>
+                            <strong class="consumo-creditos">@funcion.Creditos.ToString("N0", Es) créditos</strong>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="cfg-hint">Todavía no hubo consumo de IA este mes en esta base.</p>
+            }
+        </ChildContent>
+    </ConversacionesConfigTarjeta>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private IaConsumoBaseDto? _resumen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ConsumoSvc.Disponible)
+            return;
+
+        var hoy = DateTime.Today;
+        _resumen = await ConsumoSvc.GetResumenBaseActivaAsync(hoy.Year, hoy.Month);
+    }
+
+    internal static int Porcentaje(long usados, int incluidos)
+        => incluidos <= 0 ? 0 : (int)Math.Round(usados * 100d / incluidos, MidpointRounding.AwayFromZero);
+
+    private static string NombreMes(int mes)
+        => Es.DateTimeFormat.GetMonthName(mes) is { Length: > 0 } nombre ? char.ToUpper(nombre[0], Es) + nombre[1..] : mes.ToString(Es);
+
+    private static string Icono(string funcion) => funcion switch
+    {
+        IaUsoFunciones.Bot => "bi-robot",
+        IaUsoFunciones.ArchivosBusqueda => "bi-search",
+        IaUsoFunciones.ArchivosAlmacenamiento => "bi-hdd",
+        IaUsoFunciones.InformesIa or IaUsoFunciones.Resumen => "bi-bar-chart",
+        IaUsoFunciones.Cotizacion => "bi-file-earmark-ruled",
+        _ => "bi-stars"
+    };
+}

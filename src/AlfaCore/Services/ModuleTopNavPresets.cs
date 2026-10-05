@@ -108,6 +108,7 @@ public static class ModuleTopNavPresets
             ("modulos", "Módulos", "/admin/modulos"),
             ("cargos", "Cargos", "/admin/cargos"),
             ("pagos", "Pagos", "/admin/pagos"),
+            ("consumo-ia", "Consumo IA", "/admin/consumo-ia"),
             ("solicitudes", "Solicitudes", "/admin/solicitudes")
         ]);
 

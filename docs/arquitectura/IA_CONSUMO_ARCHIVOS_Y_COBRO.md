@@ -1,0 +1,29 @@
+# IA: archivos del asistente, medición de consumo y cobro por créditos
+
+Decisión del equipo (2026-10-05): archivos en **OpenAI vector store**, **medición propia en ALFA_CENTRAL con conciliación mensual** y **cobro por créditos IA** sobre todo el uso de IA.
+
+## 1. Medición (`Services/IaUsoService.cs`, `Models/IaUsoModels.cs`)
+
+- Cada llamada a OpenAI registra tokens de entrada, cacheados y de salida, el modelo efectivo y la función: `BOT`, `RESUMEN`, `ANALISIS`, `OPORTUNIDAD`, `REESCRITURA`, `INFORMES_IA`, `COTIZACION`, `PROXY`, `ARCHIVOS_BUSQUEDA`, `ARCHIVOS_ALMACENAMIENTO`.
+- La base sale de la sesión activa (incluida la base resuelta por un webhook). El proxy por licencia informa el cliente directamente.
+- `IIaUsoRecorder` (por solicitud) encola; `IaUsoFlushService` (en segundo plano) graba cada 10 s por lotes en `ALFA_CENTRAL.dbo.IA_USO`, calculando el costo con el precio vigente de `IA_PRECIO_MODELO` (coincidencia por prefijo más larga). Si la central no está o falta el script, el lote queda en `App_Data/ia-uso/ia-uso-pendiente-AAAAMM.jsonl`. La medición nunca interrumpe la función que consumió IA.
+- Script central: `docs/base-datos/sql-referencia/2026-10-05-002__alfa_central_ia_uso.sql` (`IA_PRECIO_MODELO`, `IA_USO`, `IA_CONFIG`, módulo `IA_CREDITOS`, vista `V_IA_USO_DIARIO`). **Se aplica a mano en ALFA_CENTRAL.**
+- **Precios:** el script carga `gpt-4o-mini`, `file_search` y `vector_store`. Si producción usa otro modelo (`OPENAI_MODEL`), cargar su precio en `IA_PRECIO_MODELO`; mientras falte, esos usos quedan con costo NULL y se marcan "sin precio".
+
+## 2. Archivos del asistente (`Services/ConversacionAsistenteConocimientoService.cs`)
+
+- Asistente IA → Información del negocio: **Información general** (texto libre, se guarda con el asistente), **Información por tema** (bloques en `CONV_ASISTENTE_BLOQUES`) y **Archivos** (`CONV_ASISTENTE_ARCHIVOS`). Script por base `App_Data/updates/2026-10-05-003__...` (se aplica solo al entrar a cada base).
+- Archivos: PDF, Word, PowerPoint, texto, Markdown, HTML, JSON; hasta 20 MB. Se suben a OpenAI (`/v1/files`) y a un **vector store propio de la base** (`/v1/vector_stores`, id en `TA_CONFIGURACION` clave `CONV_ASISTENTE_VECTOR_STORE_ID`). El estado (Procesando/Listo/Error) se consulta en OpenAI. Al eliminar, se borra también en OpenAI.
+- Bot: antes de responder arma la información con la general + bloques activos + hasta 5 fragmentos de `/v1/vector_stores/{id}/search` (no en saludos; máximo 6.000 caracteres de fragmentos).
+- **Aislamiento:** el vector store se crea con metadata `alfacore_base=<IdBase>` y se verifica contra la base activa antes de usarlo (cacheado por proceso). Si no coincide, no se usa y queda en `AUX_ERR`.
+- Medición: cada búsqueda (`ARCHIVOS_BUSQUEDA`) y una vez por día los bytes del vector store (`ARCHIVOS_ALMACENAMIENTO`, al usarse la base).
+- No lee PDFs escaneados (solo imagen).
+
+## 3. Consumo y cobro (`Services/IaConsumoService.cs`)
+
+- **1 crédito = `IA_CONFIG.USD_POR_CREDITO` de costo de OpenAI** (por defecto USD 0,001). El margen va en el precio del plan.
+- Cobro: asignar al cliente el módulo **Créditos de IA** (`IA_CREDITOS`) con un plan de tipo **CREDITOS**: `CantidadIncluida` = créditos incluidos por mes, `Precio` (o `PrecioContratado`) = abono fijo, `PermiteExcedentes` + `PrecioExcedente` = precio por crédito adicional.
+- Administrar → **Consumo IA** (`/admin/consumo-ia`, superadmin): consumo por cliente y función, créditos, plan, excedentes e importe estimado; **Generar cargos del mes** (solo meses terminados, idempotente, un cargo en `Cargos` por cliente: abono + excedentes × precio).
+- **Conciliación:** compara el costo medido con `/v1/organization/costs` de OpenAI. Requiere la variable `OPENAI_ADMIN_KEY` (clave de administración de la organización) en el servidor.
+- Cliente: Asistente IA → General muestra **Consumo de IA este mes** (créditos de la base, del cliente, incluidos y % usado).
+- Pendiente: tope mensual por base (no implementado).
