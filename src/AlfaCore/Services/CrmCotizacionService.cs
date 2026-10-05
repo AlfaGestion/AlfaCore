@@ -15,7 +15,8 @@ public sealed class CrmCotizacionService(
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
     ICentralBasesService centralBasesService,
-    IArticuloPrecioResolverService priceResolver) : ICrmCotizacionService
+    IArticuloPrecioResolverService priceResolver,
+    IIaUsoRecorder? iaUso = null) : ICrmCotizacionService
 {
     private const string ModuleName = "CRM";
     private const string DefaultTc = "CTZ";
@@ -723,6 +724,7 @@ public sealed class CrmCotizacionService(
             throw new InvalidOperationException("El asistente de IA no respondió en este momento. Probá de nuevo en unos segundos.");
 
         using var document = JsonDocument.Parse(body);
+        iaUso?.Registrar(IaUsoFunciones.Cotizacion, document.RootElement, model);
         return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
     }
 

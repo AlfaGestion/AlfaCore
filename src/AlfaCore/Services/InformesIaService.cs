@@ -16,7 +16,8 @@ public sealed partial class InformesIaService(
     IHttpContextAccessor httpContextAccessor,
     InformesIaHistoryStore historyStore,
     InformesIaResultStore resultStore,
-    ISessionService sessionService) : IInformesIaService
+    ISessionService sessionService,
+    IIaUsoRecorder? iaUso = null) : IInformesIaService
 {
     private const int MaxRows = 40;
 

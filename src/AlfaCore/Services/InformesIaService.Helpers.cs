@@ -129,6 +129,7 @@ public sealed partial class InformesIaService
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            iaUso?.Registrar(IaUsoFunciones.InformesIa, document.RootElement, model);
             var content = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim().ToLowerInvariant();
             return string.IsNullOrWhiteSpace(content) || content == "unsupported" ? null : content;
         }
@@ -250,6 +251,7 @@ public sealed partial class InformesIaService
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            iaUso?.Registrar(IaUsoFunciones.InformesIa, document.RootElement, model);
             var content = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
             if (string.IsNullOrWhiteSpace(content))
             {

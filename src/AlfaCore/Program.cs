@@ -452,6 +452,9 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
+        builder.Services.AddSingleton<IaUsoCola>();
+        builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();
+        builder.Services.AddHostedService<IaUsoFlushService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
         builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();

@@ -5,7 +5,7 @@ using AlfaCore.Models;
 
 namespace AlfaCore.Services;
 
-public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFactory, IAppEventService appEvents) : IConversacionAsistenteService
+public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFactory, IAppEventService appEvents, IIaUsoRecorder? iaUso = null) : IConversacionAsistenteService
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
@@ -126,6 +126,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 }
 
                 using var document = JsonDocument.Parse(body);
+                iaUso?.Registrar(IaUsoFunciones.Bot, document.RootElement, model);
                 var choice = document.RootElement.GetProperty("choices")[0];
                 var message = choice.GetProperty("message");
                 var finishReason = choice.TryGetProperty("finish_reason", out var fr) ? fr.GetString() : null;
@@ -234,6 +235,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             var body = await response.Content.ReadAsStringAsync(ct);
             using var document = JsonDocument.Parse(body);
+            iaUso?.Registrar(IaUsoFunciones.Resumen, document.RootElement, model);
             return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim();
         }
         catch (OperationCanceledException)
