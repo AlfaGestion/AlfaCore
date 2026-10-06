@@ -32,7 +32,22 @@ public sealed class IaConsumoBaseDto
     public long CreditosCliente { get; set; }
     public decimal CostoUsdBase { get; set; }
     public IaPlanCreditosDto? Plan { get; set; }
+    public IaTopeEstadoDto? Tope { get; set; }
     public List<IaConsumoFuncionDto> PorFuncion { get; set; } = [];
+}
+
+/// <summary>Estado del tope mensual de créditos IA del cliente (IA_TOPE_CREDITOS).</summary>
+public sealed class IaTopeEstadoDto
+{
+    public string IdCliente { get; set; } = string.Empty;
+    public int TopeCreditos { get; set; }
+    public int AvisoPorcentaje { get; set; } = 80;
+    public long CreditosUsados { get; set; }
+    public int Porcentaje { get; set; }
+    /// <summary>Se alcanzó el tope: el asistente deja de responder y pasa a una persona.</summary>
+    public bool Alcanzado { get; set; }
+    /// <summary>Se superó el porcentaje de aviso (sin llegar al tope).</summary>
+    public bool EnAviso { get; set; }
 }
 
 /// <summary>Fila de consumo por cliente para Administrar → Consumo IA.</summary>
@@ -48,6 +63,8 @@ public sealed class IaConsumoClienteDto
     public IaPlanCreditosDto? Plan { get; set; }
     public long CreditosExcedentes { get; set; }
     public decimal ImporteEstimado { get; set; }
+    public int? TopeCreditos { get; set; }
+    public int AvisoPorcentaje { get; set; } = 80;
     public List<IaConsumoFuncionDto> PorFuncion { get; set; } = [];
 }
 

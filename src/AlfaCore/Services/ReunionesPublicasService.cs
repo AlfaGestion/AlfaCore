@@ -9,7 +9,8 @@ namespace AlfaCore.Services;
 public sealed class ReunionesPublicasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IReunionesPublicasService
+    IAppEventService appEvents,
+    IAvisosPushNotifier? avisosPush = null) : IReunionesPublicasService
 {
     private const string ModuleName = "CalendarioReuniones";
 
@@ -147,6 +148,13 @@ public sealed class ReunionesPublicasService(
 
             await tx.CommitAsync(token);
             await appEvents.LogAuditAsync(ModuleName, "ReservaCreada", "CAL_RESERVAS_REUNION", idReserva.ToString(CultureInfo.InvariantCulture), tituloEvento, new { idEvento, request.Email }, token);
+
+            if (avisosPush is not null)
+            {
+                var cliente = string.IsNullOrWhiteSpace(request.RazonSocial) ? request.ClienteNombre.Trim() : request.RazonSocial.Trim();
+                await avisosPush.NotificarTecnicoAsync(tipo.IdTecnico, $"Nueva reserva: {request.TipoCapacitacion.Trim()}",
+                    $"{cliente} · {request.FechaInicio.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)}", "/calendario", token);
+            }
 
             return new ReunionPublicaReservaResult
             {

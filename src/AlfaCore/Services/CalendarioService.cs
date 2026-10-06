@@ -9,7 +9,8 @@ public sealed class CalendarioService(
     ISessionService sessionService,
     IAppUserSessionService appUserSession,
     IAppEventService appEvents,
-    IConversacionesService conversacionesService) : ICalendarioService
+    IConversacionesService conversacionesService,
+    IAvisosPushNotifier? avisosPush = null) : ICalendarioService
 {
     private const string ModuleName = "Calendario";
 
@@ -207,6 +208,16 @@ public sealed class CalendarioService(
                 $"Evento de calendario guardado: {request.Titulo}",
                 new { request.Tipo, request.FechaInicio, request.FechaFin, request.IdTecnico },
                 token);
+
+            // Evento nuevo agendado para un técnico: push a su usuario (si no es quien lo cargó).
+            if (isNew && avisosPush is not null && !string.IsNullOrWhiteSpace(request.IdTecnico))
+            {
+                var cuando = request.TodoElDia
+                    ? request.FechaInicio.ToString("dd/MM", CultureInfo.InvariantCulture)
+                    : request.FechaInicio.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture);
+                await avisosPush.NotificarTecnicoAsync(request.IdTecnico, $"Te agendaron: {request.Titulo.Trim()}",
+                    $"{cuando} · cargado por {user}", "/calendario", token);
+            }
 
             return idEvento;
         }, "No se pudo guardar el evento.", ct);

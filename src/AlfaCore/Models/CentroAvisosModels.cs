@@ -26,6 +26,21 @@ public static class AvisoTipos
     public const string Reserva = "RESERVA";
     public const string Asignado = "ASIGNADO";
     public const string Novedad = "NOVEDAD";
+    public const string Ticket = "TICKET";
+    public const string TopeIa = "TOPE_IA";
+}
+
+/// <summary>Ticket abierto asignado a un técnico del usuario.</summary>
+public sealed class AvisoTicketFuente
+{
+    public long IdTicket { get; set; }
+    public int Numero { get; set; }
+    public string Titulo { get; set; } = string.Empty;
+    public string IdTecnico { get; set; } = string.Empty;
+    public string EstadoNombre { get; set; } = string.Empty;
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public DateTime FechaAlta { get; set; }
+    public DateTime? FechaModificacion { get; set; }
 }
 
 /// <summary>Evento de calendario con los datos que necesita el centro de avisos.</summary>

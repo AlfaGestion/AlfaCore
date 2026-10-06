@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -23,6 +24,15 @@ public interface IIaConsumoService
 
     /// <summary>Genera (idempotente) el cargo del mes de cada cliente con plan de créditos IA. Solo superadmin.</summary>
     Task<IaCargosResultadoDto> GenerarCargosAsync(int anio, int mes, CancellationToken ct = default);
+
+    /// <summary>
+    /// Estado del tope mensual del cliente de la base activa (cacheado 2 minutos). Null si no hay tope,
+    /// central o esquema. Nunca lanza: ante cualquier falla devuelve null y el asistente sigue.
+    /// </summary>
+    Task<IaTopeEstadoDto?> GetTopeEstadoBaseActivaAsync(CancellationToken ct = default);
+
+    /// <summary>Define (o quita, con <paramref name="topeCreditos"/> null) el tope mensual del cliente. Solo superadmin.</summary>
+    Task SaveTopeAsync(string idCliente, int? topeCreditos, int avisoPorcentaje, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -41,6 +51,8 @@ public sealed class IaConsumoService(
     private const string ModuleName = "ConsumoIA";
     internal const decimal UsdPorCreditoPorDefecto = 0.001m;
     internal const string CodigoModulo = "IA_CREDITOS";
+    private static readonly TimeSpan DuracionCacheTope = TimeSpan.FromMinutes(2);
+    private static readonly ConcurrentDictionary<int, (DateTime HastaUtc, IaTopeEstadoDto? Estado)> TopeCache = new();
 
     public bool Disponible => !string.IsNullOrWhiteSpace(configuration.GetConnectionString("AlfaCentral"));
 
@@ -87,6 +99,7 @@ public sealed class IaConsumoService(
                 CreditosBase = Creditos(costoBase, usdPorCredito),
                 CreditosCliente = Creditos(costoCliente, usdPorCredito),
                 Plan = idCliente.Length == 0 ? null : (await GetPlanesAsync(cn, idCliente, ct)).FirstOrDefault(),
+                Tope = idCliente.Length == 0 ? null : await LeerTopeAsync(cn, idCliente, Creditos(costoCliente, usdPorCredito), ct),
                 PorFuncion = porFuncion
                     .Select(f => f.ToDto(usdPorCredito))
                     .OrderByDescending(f => f.CostoUsd)
@@ -130,6 +143,10 @@ public sealed class IaConsumoService(
         var planes = (await GetPlanesAsync(cn, null, ct))
             .GroupBy(p => p.IdCliente)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var topes = (await cn.QueryAsync<(string IdCliente, int TopeCreditos, int AvisoPorcentaje)>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(IdCliente)), TopeCreditos, AvisoPorcentaje FROM dbo.IA_TOPE_CREDITOS WHERE Activo = 1;",
+                cancellationToken: ct)))
+            .ToDictionary(t => t.IdCliente, t => t, StringComparer.OrdinalIgnoreCase);
 
         var clientes = filas
             .GroupBy(f => f.IdCliente)
@@ -151,6 +168,8 @@ public sealed class IaConsumoService(
                     Plan = plan,
                     CreditosExcedentes = excedentes,
                     ImporteEstimado = importe,
+                    TopeCreditos = topes.TryGetValue(g.Key, out var tope) ? tope.TopeCreditos : null,
+                    AvisoPorcentaje = topes.TryGetValue(g.Key, out var tope2) ? tope2.AvisoPorcentaje : 80,
                     PorFuncion = g.Select(x => x.ToDto(usdPorCredito)).OrderByDescending(x => x.CostoUsd).ToList()
                 };
             })
@@ -241,6 +260,7 @@ public sealed class IaConsumoService(
         var (desde, hasta) = RangoUtc(anio, mes);
         var usdPorCredito = await GetUsdPorCreditoAsync(cn, ct);
         var resultado = new IaCargosResultadoDto();
+        TopeCache.Clear();
 
         foreach (var plan in await GetPlanesAsync(cn, null, ct))
         {
@@ -300,7 +320,111 @@ public sealed class IaConsumoService(
         return resultado;
     }
 
+    public async Task<IaTopeEstadoDto?> GetTopeEstadoBaseActivaAsync(CancellationToken ct = default)
+    {
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (!Disponible || idBase <= 0)
+            return null;
+
+        if (TopeCache.TryGetValue(idBase, out var cache) && cache.HastaUtc > DateTime.UtcNow)
+            return cache.Estado;
+
+        IaTopeEstadoDto? estado = null;
+        try
+        {
+            await using var cn = new SqlConnection(CentralConnectionString);
+            await cn.OpenAsync(ct);
+            if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                    "SELECT CASE WHEN OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL THEN 1 ELSE 0 END;",
+                    cancellationToken: ct)) == 1)
+            {
+                var idCliente = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                    "SELECT LTRIM(RTRIM(idcliente)) FROM dbo.bases WHERE id = @IdBase;", new { IdBase = idBase }, cancellationToken: ct)) ?? string.Empty;
+                if (idCliente.Length > 0)
+                {
+                    var hoy = DateTime.Today;
+                    var (desde, hasta) = RangoUtc(hoy.Year, hoy.Month);
+                    var costo = await cn.ExecuteScalarAsync<decimal>(new CommandDefinition(
+                        "SELECT ISNULL(SUM(CostoUsd), 0) FROM dbo.IA_USO WHERE IdCliente = @IdCliente AND FechaHoraUtc >= @Desde AND FechaHoraUtc < @Hasta;",
+                        new { IdCliente = idCliente, Desde = desde, Hasta = hasta }, cancellationToken: ct));
+                    estado = await LeerTopeAsync(cn, idCliente, Creditos(costo, await GetUsdPorCreditoAsync(cn, ct)), ct);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // El tope nunca bloquea al asistente por una falla de la central.
+            estado = null;
+        }
+
+        TopeCache[idBase] = (DateTime.UtcNow.Add(DuracionCacheTope), estado);
+        return estado;
+    }
+
+    public async Task SaveTopeAsync(string idCliente, int? topeCreditos, int avisoPorcentaje, CancellationToken ct = default)
+    {
+        EnsureSuperAdmin();
+        var cliente = (idCliente ?? string.Empty).Trim();
+        if (cliente.Length == 0)
+            throw new InvalidOperationException("Elegí un cliente.");
+        if (topeCreditos is < 0)
+            throw new InvalidOperationException("El tope no puede ser negativo.");
+        var aviso = Math.Clamp(avisoPorcentaje, 1, 100);
+
+        const string desactivar = "UPDATE dbo.IA_TOPE_CREDITOS SET Activo = 0, FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario WHERE IdCliente = @IdCliente;";
+        const string guardar = """
+            UPDATE dbo.IA_TOPE_CREDITOS
+               SET TopeCreditos = @Tope, AvisoPorcentaje = @Aviso, Activo = 1, FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario
+             WHERE IdCliente = @IdCliente;
+            IF @@ROWCOUNT = 0
+                INSERT INTO dbo.IA_TOPE_CREDITOS (IdCliente, TopeCreditos, AvisoPorcentaje, Activo, UsuarioModificacion)
+                VALUES (@IdCliente, @Tope, @Aviso, 1, @Usuario);
+            """;
+
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        RequerirEsquema(await EsquemaListoAsync(cn, ct));
+        await cn.ExecuteAsync(new CommandDefinition(topeCreditos is null ? desactivar : guardar,
+            new { IdCliente = cliente, Tope = topeCreditos ?? 0, Aviso = aviso, Usuario = appUserSession.GetCurrentUserName("SYSTEM") },
+            cancellationToken: ct));
+        TopeCache.Clear();
+        await appEvents.LogAuditAsync(ModuleName, "SaveTopeCreditosIA", "IA_TOPE_CREDITOS", cliente,
+            topeCreditos is null ? "Se quitó el tope mensual de créditos IA." : "Se definió el tope mensual de créditos IA.",
+            new { cliente, topeCreditos, aviso }, ct);
+    }
+
+    private static async Task<IaTopeEstadoDto?> LeerTopeAsync(SqlConnection cn, string idCliente, long creditosUsados, CancellationToken ct)
+    {
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 0)
+            return null;
+
+        var filas = await cn.QueryAsync<(int TopeCreditos, int AvisoPorcentaje)>(new CommandDefinition(
+            "SELECT TopeCreditos, AvisoPorcentaje FROM dbo.IA_TOPE_CREDITOS WHERE LTRIM(RTRIM(IdCliente)) = @IdCliente AND Activo = 1;",
+            new { IdCliente = idCliente }, cancellationToken: ct));
+        foreach (var f in filas)
+            return EvaluarTope(idCliente, f.TopeCreditos, f.AvisoPorcentaje, creditosUsados);
+        return null;
+    }
+
     // ---------------------------------------------------------------- reglas (testeables)
+
+    /// <summary>Tope alcanzado si los créditos del mes llegan al tope; aviso desde el porcentaje configurado.</summary>
+    internal static IaTopeEstadoDto EvaluarTope(string idCliente, int topeCreditos, int avisoPorcentaje, long creditosUsados)
+    {
+        var porcentaje = topeCreditos <= 0 ? 100 : (int)Math.Min(999, Math.Floor(creditosUsados * 100d / topeCreditos));
+        var alcanzado = creditosUsados >= topeCreditos;
+        return new IaTopeEstadoDto
+        {
+            IdCliente = idCliente,
+            TopeCreditos = topeCreditos,
+            AvisoPorcentaje = avisoPorcentaje,
+            CreditosUsados = creditosUsados,
+            Porcentaje = porcentaje,
+            Alcanzado = alcanzado,
+            EnAviso = !alcanzado && porcentaje >= avisoPorcentaje
+        };
+    }
 
     /// <summary>Créditos de un costo: se redondea hacia arriba (un uso mínimo cuenta como 1 crédito).</summary>
     internal static long Creditos(decimal costoUsd, decimal usdPorCredito)

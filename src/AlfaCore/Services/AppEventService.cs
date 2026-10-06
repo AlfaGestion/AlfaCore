@@ -22,7 +22,10 @@ public sealed class AppEventService(
     };
 
     private readonly string _logDirectory = Path.Combine(env.ContentRootPath, "App_Data", "diagnostics");
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    // Estático: el servicio es scoped y dos requests simultáneos (ej. dos mensajes del webhook) escribían
+    // el mismo archivo con candados distintos → IOException → 500 en el webhook (2026-10-06).
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private const int IntentosArchivo = 3;
 
     public async Task<string> LogErrorAsync(
         string module,
@@ -270,20 +273,46 @@ public sealed class AppEventService(
         };
     }
 
+    /// <summary>
+    /// Copia del evento en App_Data/diagnostics. Es best-effort: nunca lanza, para que un archivo bloqueado
+    /// (otro proceso, antivirus, backup) no rompa la operación que se estaba registrando.
+    /// </summary>
     private async Task WriteAsync(AppEventRecord record, CancellationToken ct)
     {
-        Directory.CreateDirectory(_logDirectory);
-        var path = Path.Combine(_logDirectory, $"app-events-{DateTime.Now:yyyyMM}.jsonl");
-        var line = JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine;
-
-        await _gate.WaitAsync(ct);
         try
         {
-            await File.AppendAllTextAsync(path, line, ct);
+            Directory.CreateDirectory(_logDirectory);
+            var path = Path.Combine(_logDirectory, $"app-events-{DateTime.Now:yyyyMM}.jsonl");
+            var line = JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine;
+
+            await Gate.WaitAsync(ct);
+            try
+            {
+                for (var intento = 1; ; intento++)
+                {
+                    try
+                    {
+                        await File.AppendAllTextAsync(path, line, ct);
+                        return;
+                    }
+                    catch (IOException) when (intento < IntentosArchivo)
+                    {
+                        await Task.Delay(50 * intento, ct);
+                    }
+                }
+            }
+            finally
+            {
+                Gate.Release();
+            }
         }
-        finally
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            _gate.Release();
+            // Request cancelado: no hace falta la copia en archivo.
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo escribir el evento {EventId} en el archivo de diagnóstico.", record.Id);
         }
     }
 

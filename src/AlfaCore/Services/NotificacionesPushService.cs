@@ -1,4 +1,4 @@
-﻿using AlfaCore.Configuration;
+using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -406,6 +406,56 @@ public sealed class NotificacionesPushService(
                 },
                 token);
         }, "No se pudo enviar la notificación push de mensaje nuevo.", ct);
+
+    public Task<NotificacionesPushSendResultDto> NotifyAvisoAsync(IReadOnlyCollection<string> userNames, string titulo, string cuerpo, string url, CancellationToken ct = default)
+        => ExecuteLoggedAsync<NotificacionesPushSendResultDto>("NotifyAviso", async token =>
+        {
+            var normalizedUsers = (userNames ?? [])
+                .Select(NormalizeUser)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (normalizedUsers.Length == 0)
+                return new NotificacionesPushSendResultDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var toSend = new List<StoredSubscription>();
+            foreach (var userName in normalizedUsers)
+            {
+                foreach (var subscription in (await ReadUserSubscriptionsAsync(cn, userName, token)).Where(x => x.Activo))
+                {
+                    var preferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
+                    if (preferences.Habilitadas)
+                        toSend.Add(subscription);
+                }
+            }
+
+            if (toSend.Count == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
+            {
+                Title = SanitizeText(titulo, 80),
+                Body = SanitizeText(cuerpo, 180),
+                Url = string.IsNullOrWhiteSpace(url) ? "/" : url,
+                Preview = SanitizeText(cuerpo, 180),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Renotify = true
+            }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyAvisoResult",
+                "AVISOS",
+                string.Join(",", normalizedUsers),
+                "Resultado de envío push de un aviso (campana).",
+                new { Usuarios = normalizedUsers, SuscripcionesAEnviar = toSend.Count, titulo, url },
+                token);
+
+            return result;
+        }, "No se pudo enviar el aviso push.", ct);
 
     public Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default)
         => ExecuteLoggedAsync("NotifyMention", async token =>
@@ -908,12 +958,13 @@ public sealed class NotificacionesPushService(
         return PushNotificationEvaluation.Blocked($"Alcance no soportado: {preferences.Alcance}.", "Canal válido.");
     }
 
-    private static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
+    internal static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
     {
         preferences ??= new();
-        var alcance = string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase)
-            ? NotificacionesPushScopes.Accesibles
-            : NotificacionesPushScopes.Asignadas;
+        // Solo queda en "asignadas" si el usuario lo eligió; sin preferencia, todas las accesibles.
+        var alcance = string.Equals(preferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase)
+            ? NotificacionesPushScopes.Asignadas
+            : NotificacionesPushScopes.Accesibles;
 
         var canales = preferences.Canales
             .Where(x => !string.IsNullOrWhiteSpace(x))

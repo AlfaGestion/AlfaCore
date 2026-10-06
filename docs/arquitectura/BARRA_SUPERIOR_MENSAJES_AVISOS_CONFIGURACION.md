@@ -18,12 +18,15 @@ Los avisos se **calculan al momento**; solo se guarda qué marcó leído cada us
 | Reunión / capacitación / otro | `CAL_EVENTOS` + `CAL_RECORDATORIOS.MinutosAntes` | Desde la anticipación del recordatorio (24 h si no tiene) hasta que termina. |
 | Nueva reserva | `CAL_RESERVAS_REUNION` (reservas públicas desde `/reuniones`) | Reservas de los últimos 7 días para eventos del técnico; si el tipo de reunión no tiene técnico, se avisa a todos. |
 | Te agendaron | `CAL_EVENTOS.UsuarioAlta` / `FechaHora_Grabacion` | Evento del técnico cargado por otro usuario en los últimos 7 días. |
+| Ticket asignado | `TICK_TICKETS` abiertos (`TICK_ESTADOS.EsCerrado = 0`) del técnico | Con alta o modificación en los últimos 7 días, salvo los que el usuario se cargó a sí mismo sin cambios posteriores. La clave incluye el técnico: una reasignación vuelve a avisar. |
+| Tope de créditos IA | `IIaConsumoService.GetTopeEstadoBaseActivaAsync` (central) | Al pasar el % de aviso y al alcanzar el tope del mes; lleva a Asistente IA → General. |
 | Novedad | `ALFACORE_NOVEDADES` publicadas, vigentes, de los últimos 30 días, sin lectura en `ALFACORE_NOVEDADES_LECTURAS` | Se lee dentro del panel; al marcarla se registra con `INovedadesService.MarkReadAsync` (mismo registro que el popup). |
 
 - Las reglas están en `CentroAvisosService.ConstruirAvisos` (tests: `CentroAvisosTests`). Errores de carga → `AUX_ERR` vía `IAppEventService`.
 - Si alguna tabla no existe en la base, esa fuente se omite (sin error).
 - El pie del panel abre la configuración de notificaciones push del dispositivo (antes la abría la campana directamente).
-- Pendiente: avisos de tickets asignados; push/WhatsApp de estos avisos.
+- **Push al momento** (`Services/AvisosPushNotifier.cs` → `INotificacionesPushService.NotifyAvisoAsync`): reserva pública nueva, evento nuevo agendado para un técnico y ticket asignado (alta, edición, acción rápida o masiva; solo cuando cambia el técnico). Se envía al usuario del técnico (`V_TA_Tecnicos.UsuarioAsociado`) si tiene push habilitado en algún dispositivo, nunca a quien hizo la acción. Un fallo de push no corta la operación (queda en `AUX_ERR`). Los recordatorios por fecha (guardias, próximas reuniones) se ven en la campana, no tienen push.
+- El alcance por defecto del push de mensajes es **todas las conversaciones accesibles**; "solo asignadas" queda únicamente si el usuario lo eligió.
 
 ## Engranaje: configuración (`Components/Layout/TopbarConfiguracionMenu.razor`, `Services/ConfiguracionCatalogo.cs`, `Components/Pages/ConfiguracionHub.razor`)
 

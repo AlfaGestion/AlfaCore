@@ -117,6 +117,7 @@
                                     <th>Plan</th>
                                     <th class="num">Excedente</th>
                                     <th class="num">Importe</th>
+                                    <th class="num">Tope</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -148,11 +149,21 @@
                                         </td>
                                         <td class="num">@cliente.CreditosExcedentes.ToString("N0", Es)</td>
                                         <td class="num">@(cliente.Plan is null ? "—" : $"{cliente.ImporteEstimado.ToString("N2", Es)} {cliente.Plan.Moneda}")</td>
+                                        <td class="num">
+                                            @if (cliente.TopeCreditos is int topeCliente)
+                                            {
+                                                <span class="@(cliente.Creditos >= topeCliente ? "is-danger" : null)">@topeCliente.ToString("N0", Es)</span>
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
                                     </tr>
                                     @if (_expandido == cliente.IdCliente)
                                     {
                                         <tr class="cia__detail">
-                                            <td colspan="8">
+                                            <td colspan="9">
                                                 <ul>
                                                     @foreach (var f in cliente.PorFuncion)
                                                     {
@@ -162,6 +173,23 @@
                                                         </li>
                                                     }
                                                 </ul>
+                                                @if (cliente.IdCliente.Length > 0)
+                                                {
+                                                    <div class="cia__tope" @onclick:stopPropagation="true">
+                                                        <AlfaInput Id="@($"tope-{cliente.IdCliente}")" Label="Tope mensual de créditos" Type="number"
+                                                                   Placeholder="Sin tope" HelpText="Al llegar, el asistente deja de responder y pasa a una persona."
+                                                                   Value="@_topeEdicion" ValueChanged="@((string? v) => _topeEdicion = v ?? string.Empty)" />
+                                                        <AlfaInput Id="@($"aviso-{cliente.IdCliente}")" Label="Avisar desde (%)" Type="number"
+                                                                   Value="@_avisoEdicion" ValueChanged="@((string? v) => _avisoEdicion = v ?? "80")" />
+                                                        <div class="cia__tope-acciones">
+                                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, quitar: false)">Guardar tope</AlfaButton>
+                                                            @if (cliente.TopeCreditos is not null)
+                                                            {
+                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, quitar: true)">Quitar tope</AlfaButton>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
                                             </td>
                                         </tr>
                                     }
@@ -270,7 +298,55 @@
         }
     }
 
-    private void Alternar(string idCliente) => _expandido = _expandido == idCliente ? null : idCliente;
+    private string _topeEdicion = string.Empty;
+    private string _avisoEdicion = "80";
+
+    private void Alternar(string idCliente)
+    {
+        _expandido = _expandido == idCliente ? null : idCliente;
+        var cliente = _resumen?.Clientes.FirstOrDefault(c => c.IdCliente == idCliente);
+        _topeEdicion = cliente?.TopeCreditos?.ToString(Inv) ?? string.Empty;
+        _avisoEdicion = (cliente?.AvisoPorcentaje ?? 80).ToString(Inv);
+    }
+
+    private async Task GuardarTopeAsync(string idCliente, bool quitar)
+    {
+        int? tope = null;
+        if (!quitar)
+        {
+            if (!int.TryParse(_topeEdicion, System.Globalization.NumberStyles.Integer, Inv, out var valor) || valor < 0)
+            {
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tope inválido", Message = "Ingresá una cantidad de créditos (0 o más), o usá «Quitar tope»." };
+                return;
+            }
+            tope = valor;
+        }
+
+        var aviso = int.TryParse(_avisoEdicion, System.Globalization.NumberStyles.Integer, Inv, out var a) ? a : 80;
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.SaveTopeAsync(idCliente, tope, aviso);
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = quitar ? "Tope quitado" : "Tope guardado",
+                Message = quitar ? "El asistente ya no tiene límite mensual para este cliente." : $"Tope de {tope:N0} créditos por mes, con aviso desde el {Math.Clamp(aviso, 1, 100)}%."
+            };
+            var expandido = _expandido;
+            await CargarAsync();
+            if (expandido is not null)
+                Alternar(expandido);
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo guardar el tope", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private void AlternarConTecla(KeyboardEventArgs args, string idCliente)
     {

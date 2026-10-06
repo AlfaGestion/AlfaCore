@@ -35,7 +35,8 @@ public sealed class ConversacionesService(
     IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
     IWebHostEnvironment environment,
     ILogger<ConversacionesService> logger,
-    IConversacionAsistenteConocimientoService? asistenteConocimiento = null) : IConversacionesService
+    IConversacionAsistenteConocimientoService? asistenteConocimiento = null,
+    IIaConsumoService? iaConsumo = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -8412,6 +8413,22 @@ public sealed class ConversacionesService(
                     return;
                 }
 
+                // Tope mensual de créditos IA del cliente (Administrar → Consumo IA): al alcanzarlo el
+                // asistente no responde y la conversación queda para una persona. Si la central no
+                // responde, el estado es null y el asistente sigue (nunca se corta por una falla).
+                if (iaConsumo is not null
+                    && await iaConsumo.GetTopeEstadoBaseActivaAsync(token).ConfigureAwait(false) is { Alcanzado: true } tope)
+                {
+                    await TraceDiagAsync($"EjecutarStop:TopeCreditosIA:{tope.CreditosUsados}/{tope.TopeCreditos}", idConversacion, ct).ConfigureAwait(false);
+                    if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaTopeCreditosIa, token).ConfigureAwait(false))
+                    {
+                        await AddInternalEventCoreAsync(idConversacion, NotaTopeCreditosIa, null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        if (!esUrgente)
+                            await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
+                    return;
+                }
+
                 await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
 
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
@@ -9252,6 +9269,35 @@ public sealed class ConversacionesService(
     /// después respondió un operador o el bot con otro tipo, el último SALIENTE es posterior a la
     /// nota y da false.
     /// </summary>
+    internal const string NotaTopeCreditosIa = "🤖⛔ Se alcanzó el tope mensual de créditos de IA: el asistente no responde. Requiere que un operador lo tome.";
+
+    /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
+    private async Task<bool> ExisteNotaInternaHoyAsync(long idConversacion, string nota, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id
+              AND Direction = N'NOTA_INTERNA'
+              AND CAST(Texto AS nvarchar(max)) = @Nota
+              AND FechaHora >= @Desde;
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Nota", nota);
+            cmd.Parameters.AddWithValue("@Desde", BusinessNow().Date);
+            return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> UltimaRespuestaBotFueAclaracionAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """

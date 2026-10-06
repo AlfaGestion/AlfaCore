@@ -85,4 +85,21 @@ public sealed class IaConsumoTests
         Assert.Equal("Búsquedas en archivos", IaUsoFunciones.Nombre(IaUsoFunciones.ArchivosBusqueda));
         Assert.Equal("OTRA", IaUsoFunciones.Nombre("OTRA"));
     }
+
+    [Theory]
+    [InlineData(1000, 80, 0, false, false, 0)]
+    [InlineData(1000, 80, 799, false, false, 79)]
+    [InlineData(1000, 80, 800, false, true, 80)]
+    [InlineData(1000, 80, 999, false, true, 99)]
+    [InlineData(1000, 80, 1000, true, false, 100)]
+    [InlineData(1000, 80, 1500, true, false, 150)]
+    public void EvaluarTope_MarcaAvisoYAlcanzado(int tope, int aviso, long usados, bool alcanzado, bool enAviso, int porcentaje)
+    {
+        var estado = IaConsumoService.EvaluarTope("C1", tope, aviso, usados);
+
+        Assert.Equal(alcanzado, estado.Alcanzado);
+        Assert.Equal(enAviso, estado.EnAviso);
+        Assert.Equal(porcentaje, estado.Porcentaje);
+        Assert.Equal("C1", estado.IdCliente);
+    }
 }

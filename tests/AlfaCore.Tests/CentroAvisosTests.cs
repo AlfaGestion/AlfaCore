@@ -124,4 +124,63 @@ public sealed class CentroAvisosTests
     [Fact]
     public void EventosTerminados_NoGeneranAvisos()
         => Assert.Empty(Construir([Evento(1, "REUNION", Ahora.AddHours(-5))]));
+
+    private static AvisoTicketFuente Ticket(long id, string tecnico = "T1", string usuarioAlta = "otro",
+        DateTime? alta = null, DateTime? modificacion = null)
+        => new()
+        {
+            IdTicket = id,
+            Numero = (int)id + 1000,
+            Titulo = $"Ticket {id}",
+            IdTecnico = tecnico,
+            EstadoNombre = "Abierto",
+            UsuarioAlta = usuarioAlta,
+            FechaAlta = alta ?? Ahora.AddHours(-1),
+            FechaModificacion = modificacion
+        };
+
+    private static IReadOnlyList<AvisoDto> ConTickets(params AvisoTicketFuente[] tickets)
+        => CentroAvisosService.ConstruirAvisos([], [], ["T1"], "evelyn", SinLeidos, Ahora, tickets);
+
+    [Fact]
+    public void TicketAsignado_AvisaAlTecnicoDelUsuario()
+    {
+        var aviso = Assert.Single(ConTickets(Ticket(5)));
+
+        Assert.Equal("tick:5:T1", aviso.Clave);
+        Assert.Equal(AvisoTipos.Ticket, aviso.Tipo);
+        Assert.Equal("Ticket asignado: Ticket 5", aviso.Titulo);
+        Assert.Equal("#1005 · Abierto", aviso.Detalle);
+        Assert.Equal("/tickets?id=5", aviso.Ruta);
+    }
+
+    [Fact]
+    public void TicketAsignado_IgnoraOtrosTecnicosViejosYPropiosSinTocar()
+    {
+        Assert.Empty(ConTickets(Ticket(1, tecnico: "T2")));
+        Assert.Empty(ConTickets(Ticket(2, alta: Ahora.AddDays(-10))));
+        Assert.Empty(ConTickets(Ticket(3, usuarioAlta: "EVELYN")));
+        // Viejo pero con movimiento reciente, o propio pero después modificado: sí avisa.
+        Assert.Single(ConTickets(Ticket(4, alta: Ahora.AddDays(-10), modificacion: Ahora.AddHours(-2))));
+        Assert.Single(ConTickets(Ticket(6, usuarioAlta: "evelyn", modificacion: Ahora)));
+    }
+
+    [Fact]
+    public void TopeIa_AvisaAlPasarElPorcentajeYAlAlcanzarlo()
+    {
+        static IReadOnlyList<AvisoDto> ConTope(IaTopeEstadoDto? tope)
+            => CentroAvisosService.ConstruirAvisos([], [], [], "evelyn", SinLeidos, Ahora, topeIa: tope);
+
+        Assert.Empty(ConTope(null));
+        Assert.Empty(ConTope(IaConsumoService.EvaluarTope("C1", 1000, 80, 500)));
+
+        var aviso = Assert.Single(ConTope(IaConsumoService.EvaluarTope("C1", 1000, 80, 850)));
+        Assert.Equal("ia-tope:202610:aviso", aviso.Clave);
+        Assert.Equal("Usaste el 85% del tope de créditos de IA", aviso.Titulo);
+
+        var tope = Assert.Single(ConTope(IaConsumoService.EvaluarTope("C1", 1000, 80, 1000)));
+        Assert.Equal("ia-tope:202610:tope", tope.Clave);
+        Assert.Equal(AvisoTipos.TopeIa, tope.Tipo);
+        Assert.StartsWith("/conversaciones/configuracion", tope.Ruta);
+    }
 }

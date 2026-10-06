@@ -13,15 +13,16 @@ public interface ICentroAvisosService
 
 /// <summary>
 /// Centro de avisos de la campana (2026-10-05). Los avisos se calculan al momento a partir de datos que
-/// ya existen —eventos del Calendario del técnico vinculado al usuario, reservas públicas de reuniones
-/// y novedades publicadas— y solo se guarda qué marcó leído cada usuario (ALFACORE_AVISOS_LEIDOS).
+/// ya existen —eventos del Calendario del técnico vinculado al usuario, reservas públicas de reuniones,
+/// tickets asignados, el tope mensual de créditos de IA y novedades publicadas— y solo se guarda qué marcó leído cada usuario (ALFACORE_AVISOS_LEIDOS).
 /// Cada usuario ve únicamente sus propios avisos.
 /// </summary>
 public sealed class CentroAvisosService(
     ISessionService sessionService,
     IAppUserSessionService appUserSession,
     INovedadesService novedadesService,
-    IAppEventService appEvents) : ICentroAvisosService
+    IAppEventService appEvents,
+    IIaConsumoService? iaConsumo = null) : ICentroAvisosService
 {
     private const string ModuleName = "CentroAvisos";
     internal const int DiasAvisoAlta = 7;
@@ -98,11 +99,16 @@ public sealed class CentroAvisosService(
         var novedades = tablas.Contains("ALFACORE_NOVEDADES") && tablas.Contains("ALFACORE_NOVEDADES_LECTURAS")
             ? await GetNovedadesAsync(cn, usuario, ahora, ct)
             : [];
+        var tickets = tablas.Contains("TICK_TICKETS") && tablas.Contains("TICK_ESTADOS") && tecnicos.Count > 0
+            ? await GetTicketsAsync(cn, tecnicos, ahora, ct)
+            : [];
         var leidos = tablas.Contains("ALFACORE_AVISOS_LEIDOS")
             ? await GetLeidosAsync(cn, usuario, ct)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Nunca lanza y está cacheado: si la central no responde, simplemente no hay aviso de tope.
+        var tope = iaConsumo is { Disponible: true } ? await iaConsumo.GetTopeEstadoBaseActivaAsync(ct) : null;
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora);
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope);
     }
 
     /// <summary>
@@ -110,7 +116,10 @@ public sealed class CentroAvisosService(
     /// reserva pública reciente (7 días) → "Nueva reserva"; evento que otra persona le agendó
     /// (7 días) → "Te agendaron"; guardia → aviso el día anterior y el mismo día; reunión,
     /// capacitación u otro → desde la anticipación de su recordatorio (24 h si no tiene) hasta que
-    /// termina. Las reservas de tipos sin técnico asignado se avisan a todos.
+    /// termina. Las reservas de tipos sin técnico asignado se avisan a todos. Tickets abiertos del
+    /// técnico con movimiento en los últimos 7 días (salvo los que el usuario se cargó a sí mismo y nadie
+    /// tocó); la clave incluye el técnico para que una reasignación vuelva a avisar. Tope de créditos de
+    /// IA del mes: un aviso al pasar el porcentaje y otro al alcanzarlo.
     /// </summary>
     internal static IReadOnlyList<AvisoDto> ConstruirAvisos(
         IEnumerable<AvisoEventoFuente> eventos,
@@ -118,7 +127,9 @@ public sealed class CentroAvisosService(
         IReadOnlyCollection<string> tecnicosDelUsuario,
         string usuario,
         IReadOnlySet<string> leidos,
-        DateTime ahora)
+        DateTime ahora,
+        IEnumerable<AvisoTicketFuente>? tickets = null,
+        IaTopeEstadoDto? topeIa = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -219,6 +230,46 @@ public sealed class CentroAvisosService(
             }
         }
 
+        foreach (var t in tickets ?? [])
+        {
+            var idTecnico = t.IdTecnico.Trim();
+            var movimiento = t.FechaModificacion is DateTime mod && mod > t.FechaAlta ? mod : t.FechaAlta;
+            if (idTecnico.Length == 0 || !esMio.Contains(idTecnico) || movimiento < ahora.AddDays(-DiasAvisoAlta))
+                continue;
+            if (t.FechaModificacion is null && string.Equals(t.UsuarioAlta.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var estado = string.IsNullOrWhiteSpace(t.EstadoNombre) ? string.Empty : $" · {t.EstadoNombre.Trim()}";
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"tick:{t.IdTicket}:{idTecnico}",
+                Tipo = AvisoTipos.Ticket,
+                Titulo = $"Ticket asignado: {t.Titulo.Trim()}",
+                Detalle = $"#{t.Numero.ToString(CultureInfo.InvariantCulture)}{estado}",
+                FechaHora = movimiento,
+                Ruta = $"/tickets?id={t.IdTicket.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
+        if (topeIa is { TopeCreditos: > 0 } && (topeIa.Alcanzado || topeIa.EnAviso))
+        {
+            var mes = ahora.ToString("yyyyMM", CultureInfo.InvariantCulture);
+            var creditos = topeIa.TopeCreditos.ToString("N0", CultureInfo.GetCultureInfo("es-AR"));
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"ia-tope:{mes}:{(topeIa.Alcanzado ? "tope" : "aviso")}",
+                Tipo = AvisoTipos.TopeIa,
+                Titulo = topeIa.Alcanzado
+                    ? "Se alcanzó el tope de créditos de IA"
+                    : $"Usaste el {topeIa.Porcentaje}% del tope de créditos de IA",
+                Detalle = topeIa.Alcanzado
+                    ? $"Tope de {creditos} créditos · el asistente no responde hasta el mes que viene"
+                    : $"Tope mensual de {creditos} créditos",
+                FechaHora = ahora.Date,
+                Ruta = "/conversaciones/configuracion?seccion=asistente-ia&subseccion=general"
+            });
+        }
+
         foreach (var n in novedades)
         {
             var version = string.IsNullOrWhiteSpace(n.Version) ? string.Empty : $" · versión {n.Version.Trim()}";
@@ -269,7 +320,8 @@ public sealed class CentroAvisosService(
         const string sql = """
             SELECT name FROM sys.tables
             WHERE name IN (N'CAL_EVENTOS', N'CAL_RECORDATORIOS', N'CAL_RESERVAS_REUNION',
-                           N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS');
+                           N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS',
+                           N'TICK_TICKETS', N'TICK_ESTADOS');
             """;
         var tablas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var cmd = new SqlCommand(sql, cn);
@@ -374,6 +426,46 @@ public sealed class CentroAvisosService(
         }
 
         return eventos;
+    }
+
+    private static async Task<List<AvisoTicketFuente>> GetTicketsAsync(
+        SqlConnection cn, IReadOnlyList<string> tecnicos, DateTime ahora, CancellationToken ct)
+    {
+        var tecnicoParams = tecnicos.Select((_, i) => $"@T{i}").ToList();
+        var sql = $"""
+            SELECT TOP (50)
+                t.IdTicket, t.Numero, ISNULL(t.Titulo, N''), LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))),
+                ISNULL(e.Nombre, t.CodigoEstado), LTRIM(RTRIM(ISNULL(t.UsuarioAlta, N''))),
+                t.FechaHoraAlta, t.FechaHoraModificacion
+            FROM dbo.TICK_TICKETS t
+            LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
+            WHERE ISNULL(t.Baja, 0) = 0
+              AND ISNULL(e.EsCerrado, 0) = 0
+              AND LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))) IN ({string.Join(", ", tecnicoParams)})
+              AND COALESCE(t.FechaHoraModificacion, t.FechaHoraAlta) >= @Desde
+            ORDER BY COALESCE(t.FechaHoraModificacion, t.FechaHoraAlta) DESC;
+            """;
+        var tickets = new List<AvisoTicketFuente>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Desde", ahora.AddDays(-DiasAvisoAlta));
+        for (var i = 0; i < tecnicos.Count; i++)
+            cmd.Parameters.AddWithValue(tecnicoParams[i], tecnicos[i]);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            tickets.Add(new AvisoTicketFuente
+            {
+                IdTicket = rd.GetInt64(0),
+                Numero = rd.GetInt32(1),
+                Titulo = rd.GetString(2),
+                IdTecnico = rd.GetString(3),
+                EstadoNombre = rd.GetString(4),
+                UsuarioAlta = rd.GetString(5),
+                FechaAlta = rd.GetDateTime(6),
+                FechaModificacion = rd.IsDBNull(7) ? null : rd.GetDateTime(7)
+            });
+        }
+        return tickets;
     }
 
     private static async Task<List<AvisoNovedadFuente>> GetNovedadesAsync(SqlConnection cn, string usuario, DateTime ahora, CancellationToken ct)

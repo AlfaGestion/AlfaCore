@@ -218,3 +218,24 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+.cia__tope {
+    display: grid;
+    grid-template-columns: minmax(0, 220px) minmax(0, 140px) auto;
+    align-items: end;
+    gap: var(--alfa-space-12, 12px);
+    margin-top: var(--alfa-space-12, 12px);
+    padding-top: var(--alfa-space-12, 12px);
+    border-top: 1px solid var(--alfa-border-default, #333640);
+    cursor: default;
+}
+
+.cia__tope-acciones {
+    display: flex;
+    gap: var(--alfa-space-8, 8px);
+}
+
+.cia__table .is-danger {
+    color: var(--alfa-danger, #ef5350);
+    font-weight: 600;
+}

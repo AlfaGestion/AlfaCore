@@ -51,6 +51,23 @@
                 </p>
             }
 
+            @if (_resumen.Tope is { } tope)
+            {
+                @if (tope.Alcanzado)
+                {
+                    <div class="cfg-notice">
+                        <i class="bi bi-slash-circle" aria-hidden="true"></i>
+                        <span>Se alcanzó el tope mensual de @tope.TopeCreditos.ToString("N0", Es) créditos: el asistente no responde y las conversaciones quedan para tu equipo hasta el mes que viene.</span>
+                    </div>
+                }
+                else
+                {
+                    <p class="cfg-hint @(tope.EnAviso ? "cfg-hint--warning" : null)">
+                        Tope mensual: @tope.TopeCreditos.ToString("N0", Es) créditos (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo.
+                    </p>
+                }
+            }
+
             @if (_resumen.PorFuncion.Count > 0)
             {
                 <ul class="cfg-list">
