@@ -1,3 +1,14 @@
+namespace AlfaCore.Services;
+
+/// <summary>
+/// Esquema de medición y cobro de IA en ALFA_CENTRAL (2026-10-05). Texto idéntico a
+/// docs/base-datos/sql-referencia/2026-10-05-002__alfa_central_ia_uso.sql (lo verifica un test).
+/// <see cref="IaUsoFlushService"/> lo aplica al arrancar si faltan las tablas, así no depende de que
+/// alguien lo corra a mano. Es idempotente: no borra consumos, precios ni topes cargados.
+/// </summary>
+public static class CentralIaSchema
+{
+    internal const string Script = """
 -- Ejecutar contra ALFA_CENTRAL. No ejecutar en las bases de clientes.
 -- AlfaCore lo aplica solo al arrancar (CentralIaSchema, mismo texto) si las tablas no existen y el
 -- usuario de la conexión central tiene permisos; también se puede correr a mano.
@@ -146,3 +157,22 @@ SELECT
 FROM dbo.IA_USO u
 GROUP BY CAST(u.FechaHoraUtc AS date), u.IdCliente, u.IdBase, u.Funcion, u.Modelo;
 GO
+""";
+
+    /// <summary>Objetos que tienen que existir para considerar aplicado el esquema.</summary>
+    internal const string VerificacionSql = """
+        SELECT CASE WHEN OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.IA_PRECIO_MODELO', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.IA_CONFIG', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.V_IA_USO_DIARIO', N'V') IS NOT NULL
+                    THEN 1 ELSE 0 END;
+        """;
+
+    /// <summary>Lotes separados por GO, en orden.</summary>
+    internal static IReadOnlyList<string> Lotes()
+        => System.Text.RegularExpressions.Regex
+            .Split(Script, @"^\s*GO\s*$", System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+}

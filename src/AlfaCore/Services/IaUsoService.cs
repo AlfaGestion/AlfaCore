@@ -106,7 +106,10 @@ public sealed class IaUsoFlushService(
 {
     internal const int MaxFilasPorInsert = 150;
     private static readonly TimeSpan Intervalo = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReintentoEsquema = TimeSpan.FromMinutes(10);
     private DateTime _ultimoAvisoUtc = DateTime.MinValue;
+    private DateTime _ultimoIntentoEsquemaUtc = DateTime.MinValue;
+    private bool _esquemaListo;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -129,39 +132,135 @@ public sealed class IaUsoFlushService(
         var lote = new List<IaUsoRegistro>();
         while (lote.Count < 2000 && cola.Lector.TryRead(out var registro))
             lote.Add(registro);
-        if (lote.Count == 0)
-            return;
 
         var connectionString = configuration.GetConnectionString("AlfaCentral");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            // Instalación sin central (no SaaS): no hay medición central; se conserva localmente.
+            if (lote.Count > 0)
+                GuardarPendientes(lote);
+            return;
+        }
+
+        if (lote.Count == 0 && _esquemaListo && !HayPendientesLocales())
+            return;
+
         try
         {
-            if (string.IsNullOrWhiteSpace(connectionString))
-                throw new InvalidOperationException("No está configurada la conexión central (ConnectionStrings:AlfaCentral).");
-
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
-            await using (var check = new SqlCommand("SELECT OBJECT_ID(N'dbo.IA_USO', N'U');", cn))
-            {
-                if (await check.ExecuteScalarAsync(ct) is null or DBNull)
-                    throw new InvalidOperationException("Falta aplicar en ALFA_CENTRAL el script de medición de IA (IA_USO).");
-            }
+            if (!await AsegurarEsquemaAsync(cn, ct))
+                throw new InvalidOperationException("Faltan las tablas de medición de IA en ALFA_CENTRAL (IA_USO) y no se pudieron crear.");
 
-            foreach (var parte in lote.Chunk(MaxFilasPorInsert))
-            {
-                await using var cmd = new SqlCommand(BuildInsertSql(parte.Length), cn);
-                AgregarParametros(cmd, parte);
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
+            await InsertarAsync(cn, null, lote, ct);
+            await ReimportarPendientesAsync(cn, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            GuardarPendientes(lote);
+            if (lote.Count > 0)
+                GuardarPendientes(lote);
             if (DateTime.UtcNow - _ultimoAvisoUtc > TimeSpan.FromHours(1))
             {
                 _ultimoAvisoUtc = DateTime.UtcNow;
                 logger.LogWarning(ex, "No se pudo grabar el consumo de IA en ALFA_CENTRAL; {Count} registros quedaron en App_Data/ia-uso.", lote.Count);
             }
         }
+    }
+
+    /// <summary>
+    /// Aplica <see cref="CentralIaSchema"/> si faltan las tablas (idempotente). Si el usuario central no
+    /// tiene permisos, se reintenta cada 10 minutos y mientras tanto el consumo queda en el archivo local.
+    /// </summary>
+    private async Task<bool> AsegurarEsquemaAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (_esquemaListo)
+            return true;
+
+        await using (var check = new SqlCommand(CentralIaSchema.VerificacionSql, cn))
+        {
+            if (Convert.ToInt32(await check.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture) == 1)
+                return _esquemaListo = true;
+        }
+
+        if (DateTime.UtcNow - _ultimoIntentoEsquemaUtc < ReintentoEsquema)
+            return false;
+
+        _ultimoIntentoEsquemaUtc = DateTime.UtcNow;
+        try
+        {
+            foreach (var lote in CentralIaSchema.Lotes())
+            {
+                await using var cmd = new SqlCommand(lote, cn) { CommandTimeout = 120 };
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            logger.LogInformation("Se aplicó en ALFA_CENTRAL el esquema de medición y cobro de IA (IA_USO, IA_PRECIO_MODELO, IA_CONFIG, IA_TOPE_CREDITOS).");
+            return _esquemaListo = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo aplicar en ALFA_CENTRAL el esquema de medición de IA; se reintenta en {Minutos} minutos.", ReintentoEsquema.TotalMinutes);
+            return false;
+        }
+    }
+
+    private static async Task InsertarAsync(SqlConnection cn, SqlTransaction? tx, IReadOnlyList<IaUsoRegistro> registros, CancellationToken ct)
+    {
+        foreach (var parte in registros.Chunk(MaxFilasPorInsert))
+        {
+            await using var cmd = new SqlCommand(BuildInsertSql(parte.Length), cn, tx);
+            AgregarParametros(cmd, parte);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private string DirectorioPendientes => Path.Combine(env.ContentRootPath, "App_Data", "ia-uso");
+
+    private bool HayPendientesLocales()
+        => Directory.Exists(DirectorioPendientes)
+           && Directory.EnumerateFiles(DirectorioPendientes, "ia-uso-pendiente-*.jsonl").Any();
+
+    /// <summary>
+    /// Sube a la central los consumos que quedaron en archivos locales (central caída o sin esquema).
+    /// Cada archivo se graba en una transacción y después se renombra a ".importado" para no repetirlo.
+    /// </summary>
+    private async Task ReimportarPendientesAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!HayPendientesLocales())
+            return;
+
+        foreach (var archivo in Directory.EnumerateFiles(DirectorioPendientes, "ia-uso-pendiente-*.jsonl").OrderBy(f => f).ToList())
+        {
+            var registros = LeerPendientes(File.ReadAllLines(archivo));
+            await using (var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct))
+            {
+                await InsertarAsync(cn, tx, registros, ct);
+                await tx.CommitAsync(ct);
+            }
+
+            File.Move(archivo, Path.ChangeExtension(archivo, $".importado-{DateTime.UtcNow:yyyyMMddHHmmss}.jsonl"));
+            logger.LogInformation("Se reimportaron {Count} consumos de IA pendientes desde {Archivo}.", registros.Count, Path.GetFileName(archivo));
+        }
+    }
+
+    /// <summary>Lee las líneas JSON de un archivo de pendientes; ignora líneas dañadas.</summary>
+    internal static IReadOnlyList<IaUsoRegistro> LeerPendientes(IEnumerable<string> lineas)
+    {
+        var registros = new List<IaUsoRegistro>();
+        foreach (var linea in lineas)
+        {
+            if (string.IsNullOrWhiteSpace(linea))
+                continue;
+            try
+            {
+                if (JsonSerializer.Deserialize<IaUsoRegistro>(linea) is { } r)
+                    registros.Add(r);
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        return registros;
     }
 
     /// <summary>INSERT de N filas: calcula IdCliente (bases) y el costo con el precio vigente del modelo.</summary>
@@ -229,9 +328,8 @@ public sealed class IaUsoFlushService(
     {
         try
         {
-            var dir = Path.Combine(env.ContentRootPath, "App_Data", "ia-uso");
-            Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, $"ia-uso-pendiente-{DateTime.UtcNow:yyyyMM}.jsonl");
+            Directory.CreateDirectory(DirectorioPendientes);
+            var path = Path.Combine(DirectorioPendientes, $"ia-uso-pendiente-{DateTime.UtcNow:yyyyMM}.jsonl");
             File.AppendAllLines(path, lote.Select(r => JsonSerializer.Serialize(r)));
         }
         catch (Exception ex)
