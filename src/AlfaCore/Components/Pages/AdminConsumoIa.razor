@@ -169,7 +169,7 @@
                                                     {
                                                         <li>
                                                             <span>@IaUsoFunciones.Nombre(f.Funcion)</span>
-                                                            <span>@f.Llamadas.ToString("N0", Es) usos · USD @f.CostoUsd.ToString("N4", Es) · @f.Creditos.ToString("N0", Es) créditos@(f.LlamadasSinPrecio > 0 ? $" · {f.LlamadasSinPrecio:N0} sin precio" : string.Empty)</span>
+                                                            <span>@f.Llamadas.ToString("N0", Es) usos · USD @f.CostoUsd.ToString("N4", Es) · @f.Creditos.ToString("N0", Es) @(f.Creditos == 1 ? "crédito" : "créditos")@(f.LlamadasSinPrecio > 0 ? $" · {f.LlamadasSinPrecio:N0} sin precio" : string.Empty)</span>
                                                         </li>
                                                     }
                                                 </ul>

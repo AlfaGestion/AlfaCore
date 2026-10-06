@@ -79,7 +79,7 @@
                                 <span class="cfg-list__title">@IaUsoFunciones.Nombre(funcion.Funcion)</span>
                                 <span class="cfg-list__desc">@funcion.Llamadas.ToString("N0", Es) uso(s)</span>
                             </div>
-                            <strong class="consumo-creditos">@funcion.Creditos.ToString("N0", Es) créditos</strong>
+                            <strong class="consumo-creditos">@Creditos(funcion.Creditos)</strong>
                         </li>
                     }
                 </ul>
@@ -105,7 +105,7 @@
         _resumen = await ConsumoSvc.GetResumenBaseActivaAsync(hoy.Year, hoy.Month);
     }
 
-    private static string Creditos(int cantidad)
+    private static string Creditos(long cantidad)
         => $"{cantidad.ToString("N0", Es)} {(cantidad == 1 ? "crédito" : "créditos")}";
 
     internal static int Porcentaje(long usados, int incluidos)
