@@ -8588,6 +8588,19 @@ public sealed class ConversacionesService(
                     result = null;
                 }
 
+                // Un saludo o un agradecimiento nunca se deriva (2026-10-06): a veces el modelo marca
+                // "Hola" como DERIVA y la conversación escalaba con la nota de "no pudo resolver".
+                if (EsMensajeSocial(texto) && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    await TraceDiagAsync($"BotSaludoNoDeriva|tipoModelo={SanitizeTraceValue(result?.Tipo ?? "(sin respuesta)")}", idConversacion, ct).ConfigureAwait(false);
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "RESUELVE",
+                        PuedeResponder = true,
+                        Respuesta = RespuestaSaludo(texto)
+                    };
+                }
+
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
@@ -9424,7 +9437,21 @@ public sealed class ConversacionesService(
         return Uri.TryCreate(resultado, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? resultado : null;
     }
 
-    private static bool EsMensajeSocial(string texto)
+    /// <summary>Respuesta estándar a un saludo o cierre que el modelo no marcó como resuelto.</summary>
+    internal static string RespuestaSaludo(string texto)
+    {
+        var palabras = Regex.Matches(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[a-z]+")
+            .Select(m => m.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (palabras.Contains("gracias"))
+            return "¡De nada! Si necesitás algo más, escribime cuando quieras.";
+        if (palabras.Overlaps(["ok", "okay", "dale", "listo", "perfecto", "genial", "joya", "barbaro", "excelente", "buenisimo"]))
+            return "¡Genial! Si necesitás algo más, avisame.";
+        return "¡Hola! ¿En qué te puedo ayudar?";
+    }
+
+    internal static bool EsMensajeSocial(string texto)
     {
         var normalizado = RemoveDiacritics(texto).ToLowerInvariant();
         var palabras = Regex.Matches(normalizado, "[a-z]+").Select(m => m.Value).ToArray();

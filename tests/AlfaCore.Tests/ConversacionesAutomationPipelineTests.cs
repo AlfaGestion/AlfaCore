@@ -1222,6 +1222,23 @@ public sealed class ConversacionesAutomationPipelineTests
     public void PuedeCompletarAclaracion_SoloRespuestasCortasNoPreguntasNuevas(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(mensaje));
 
+    [Theory]
+    [InlineData("Hola", true)]
+    [InlineData("Buenas tardes!", true)]
+    [InlineData("GRACIAS", true)]
+    [InlineData("Hola, cuánto salen las pilas?", false)]
+    [InlineData("Hola, se me cortó el sistema", false)]
+    public void EsMensajeSocial_SoloSaludosYCierres(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.EsMensajeSocial(mensaje));
+
+    [Theory]
+    [InlineData("Hola", "¡Hola! ¿En qué te puedo ayudar?")]
+    [InlineData("Buenos días", "¡Hola! ¿En qué te puedo ayudar?")]
+    [InlineData("Muchas gracias!", "¡De nada! Si necesitás algo más, escribime cuando quieras.")]
+    [InlineData("dale, perfecto", "¡Genial! Si necesitás algo más, avisame.")]
+    public void RespuestaSaludo_SegunElMensaje(string mensaje, string esperada)
+        => Assert.Equal(esperada, ConversacionesService.RespuestaSaludo(mensaje));
+
     [Fact]
     public void FormatearResultadoPrecio_SinCoincidencias_Prioriza_LaInformacionDelNegocio()
     {
