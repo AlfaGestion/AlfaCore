@@ -1210,6 +1210,30 @@ public sealed class ConversacionesAutomationPipelineTests
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensaje));
 
     [Theory]
+    [InlineData("AA", true)]
+    [InlineData("Duracell", true)]
+    [InlineData("la de 9 V", true)]
+    [InlineData("AAA?", true)]
+    [InlineData("¿Qué es el código RECICLA10?", false)]
+    [InlineData("¿Cómo pago con transferencia?", false)]
+    [InlineData("Tienen envío a Córdoba?", false)]
+    [InlineData("necesito las pilas para el control remoto de la tele del living", false)]
+    [InlineData("", false)]
+    public void PuedeCompletarAclaracion_SoloRespuestasCortasNoPreguntasNuevas(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(mensaje));
+
+    [Fact]
+    public void FormatearResultadoPrecio_SinCoincidencias_Prioriza_LaInformacionDelNegocio()
+    {
+        var result = ConversacionAsistenteHerramientasService.FormatearResultadoPrecio("envío GBA", "envio gba", [], esConsumidorFinal: false);
+
+        Assert.StartsWith("Sin coincidencias", result);
+        Assert.Contains("INFORMACIÓN DEL NEGOCIO", result);
+        Assert.Contains("RESUELVE", result);
+        Assert.Contains("ACLARA", result);
+    }
+
+    [Theory]
     [InlineData(true, true, false, "consultar_precio")]
     [InlineData(true, false, false, null)]
     [InlineData(false, true, false, null)]

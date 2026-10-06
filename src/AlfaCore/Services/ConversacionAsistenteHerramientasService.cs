@@ -112,6 +112,28 @@ public sealed class ConversacionAsistenteHerramientasService(
             + @"|\bprecios?\s+(actualizados?|vigentes?|nuevos?)\b");
     }
 
+    private static readonly string[] InicioPreguntaNueva =
+    [
+        "que ", "como ", "cual ", "cuales ", "donde ", "cuando ", "quien ", "por que ", "porque ",
+        "tienen ", "tenes ", "hacen ", "haces ", "venden ", "aceptan ", "puedo ", "se puede "
+    ];
+
+    /// <summary>
+    /// Si el mensaje puede ser la respuesta a una aclaración de precio ("AA", "Duracell", "la de 9 V").
+    /// Una pregunta nueva ("¿Qué es el código RECICLA10?") no completa la consulta anterior y no debe
+    /// forzar consultar_precio con el artículo del mensaje previo (2026-10-06).
+    /// </summary>
+    internal static bool PuedeCompletarAclaracion(string? mensajeCliente)
+    {
+        var texto = Regex.Replace(NormalizarTexto(mensajeCliente), @"[¿?¡!.,;:]", " ").Trim();
+        if (texto.Length == 0)
+            return false;
+
+        var palabras = texto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var conEspacio = string.Join(' ', palabras) + " ";
+        return palabras.Length <= 6 && !InicioPreguntaNueva.Any(conEspacio.StartsWith);
+    }
+
     private static bool MensajePideCatalogo(string mensajeCliente)
     {
         var texto = NormalizarTexto(mensajeCliente);
@@ -352,7 +374,9 @@ public sealed class ConversacionAsistenteHerramientasService(
         bool esConsumidorFinal)
     {
         if (resultados.Count == 0)
-            return $"Sin coincidencias para \"{articuloPedido}\". Respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
+            // "¿Cuánto sale el envío?" o "¿qué es el código X?" no son artículos: si la información del
+            // negocio (texto, bloques o archivos) lo responde, se usa eso en vez de repreguntar (2026-10-06).
+            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si no, respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
 
         var hayMas = resultados.Count > MaxOpcionesPrecio;
         var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();

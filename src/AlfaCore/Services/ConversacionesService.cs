@@ -8465,7 +8465,9 @@ public sealed class ConversacionesService(
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
                 var forzarConsultarPrecio = !precioRequiereIdentificacion
                     && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
-                        || (ultimaRespuestaFueAclaracion && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
+                        || (ultimaRespuestaFueAclaracion
+                            && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
+                            && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
