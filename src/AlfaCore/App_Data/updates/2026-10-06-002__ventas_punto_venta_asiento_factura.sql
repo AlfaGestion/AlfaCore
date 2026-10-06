@@ -4,6 +4,11 @@
    La cobranza (CBCT/CBFP) tiene su propio asiento y no debe utilizarse para
    contabilizar la factura. Las cuentas se resuelven desde la configuracion
    existente: cuenta del artículo, V_TA_Input_Ventas y CUENTAVENTASDEFAULTINS.
+
+   2026-10-06: era 2026-09-23-001, la misma versión que articulos_menu_web; las bases que ya
+   habían corrido ese script nunca lo aplicaban. Pasa a 2026-10-06-002 (DROP + CREATE, se puede
+   repetir) y usa CONVERT(..., 103) en lugar de TRY_CONVERT porque las bases en compatibilidad
+   SQL 2008 (nivel 100) no lo reconocen; el estilo 103 lee dd/MM/yyyy sin depender del DATEFORMAT.
 */
 IF OBJECT_ID(N'[dbo].[sp_web_CreaAsientoFactura]', N'P') IS NOT NULL
     DROP PROCEDURE [dbo].[sp_web_CreaAsientoFactura];
@@ -30,7 +35,7 @@ BEGIN
         @Tc = LTRIM(RTRIM(TC)), @Sucursal = LTRIM(RTRIM(SUCURSAL)),
         @Numero = LTRIM(RTRIM(NUMERO)), @Letra = LTRIM(RTRIM(LETRA)),
         @Cliente = LTRIM(RTRIM(CUENTA)), @Nombre = NOMBRE,
-        @Fecha = TRY_CONVERT(datetime, FECHA, 103), @Importe = ISNULL(IMPORTE, 0),
+        @Fecha = CONVERT(datetime, FECHA, 103), @Importe = ISNULL(IMPORTE, 0),
         @CondIva = LTRIM(RTRIM(CONDICIONIVA)),
         @Motivo = LTRIM(RTRIM(IDMOTIVOCPRAVTA)),
         @UNegocio = UNEGOCIO, @Vendedor = IDVENDEDOR
@@ -67,8 +72,8 @@ BEGIN
 
     SELECT TOP (1) @Periodo = LTRIM(RTRIM(PERIODO))
     FROM dbo.MV_EJERCICIOS
-    WHERE TRY_CONVERT(datetime, [FECHA DESDE], 103) <= @Fecha
-      AND TRY_CONVERT(datetime, [FECHA HASTA], 103) >= @Fecha;
+    WHERE CONVERT(datetime, [FECHA DESDE], 103) <= @Fecha
+      AND CONVERT(datetime, [FECHA HASTA], 103) >= @Fecha;
     IF @Periodo IS NULL
     BEGIN
         SET @pResultado = 21;
