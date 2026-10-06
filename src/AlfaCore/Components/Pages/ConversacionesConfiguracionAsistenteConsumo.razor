@@ -57,13 +57,13 @@
                 {
                     <div class="cfg-notice">
                         <i class="bi bi-slash-circle" aria-hidden="true"></i>
-                        <span>Se alcanzó el tope mensual de @tope.TopeCreditos.ToString("N0", Es) créditos: el asistente no responde y las conversaciones quedan para tu equipo hasta el mes que viene.</span>
+                        <span>Se alcanzó el tope mensual de @Creditos(tope.TopeCreditos): el asistente no responde y las conversaciones quedan para tu equipo hasta el mes que viene.</span>
                     </div>
                 }
                 else
                 {
                     <p class="cfg-hint @(tope.EnAviso ? "cfg-hint--warning" : null)">
-                        Tope mensual: @tope.TopeCreditos.ToString("N0", Es) créditos (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo.
+                        Tope mensual: @Creditos(tope.TopeCreditos) (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo.
                     </p>
                 }
             }
@@ -104,6 +104,9 @@
         var hoy = DateTime.Today;
         _resumen = await ConsumoSvc.GetResumenBaseActivaAsync(hoy.Year, hoy.Month);
     }
+
+    private static string Creditos(int cantidad)
+        => $"{cantidad.ToString("N0", Es)} {(cantidad == 1 ? "crédito" : "créditos")}";
 
     internal static int Porcentaje(long usados, int incluidos)
         => incluidos <= 0 ? 0 : (int)Math.Round(usados * 100d / incluidos, MidpointRounding.AwayFromZero);

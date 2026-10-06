@@ -254,7 +254,8 @@ public sealed class CentroAvisosService(
         if (topeIa is { TopeCreditos: > 0 } && (topeIa.Alcanzado || topeIa.EnAviso))
         {
             var mes = ahora.ToString("yyyyMM", CultureInfo.InvariantCulture);
-            var creditos = topeIa.TopeCreditos.ToString("N0", CultureInfo.GetCultureInfo("es-AR"));
+            var creditos = topeIa.TopeCreditos.ToString("N0", CultureInfo.GetCultureInfo("es-AR"))
+                + (topeIa.TopeCreditos == 1 ? " crédito" : " créditos");
             avisos.Add(new AvisoDto
             {
                 Clave = $"ia-tope:{mes}:{(topeIa.Alcanzado ? "tope" : "aviso")}",
@@ -263,8 +264,8 @@ public sealed class CentroAvisosService(
                     ? "Se alcanzó el tope de créditos de IA"
                     : $"Usaste el {topeIa.Porcentaje}% del tope de créditos de IA",
                 Detalle = topeIa.Alcanzado
-                    ? $"Tope de {creditos} créditos · el asistente no responde hasta el mes que viene"
-                    : $"Tope mensual de {creditos} créditos",
+                    ? $"Tope de {creditos} · el asistente no responde hasta el mes que viene"
+                    : $"Tope mensual de {creditos}",
                 FechaHora = ahora.Date,
                 Ruta = "/conversaciones/configuracion?seccion=asistente-ia&subseccion=general"
             });
