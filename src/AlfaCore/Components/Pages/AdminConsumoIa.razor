@@ -51,7 +51,7 @@
             <section class="cia__kpis" aria-label="Totales del mes">
                 <div class="cia__kpi">
                     <span>Costo medido</span>
-                    <strong>USD @_resumen.CostoUsdTotal.ToString("N2", Es)</strong>
+                    <strong>USD @Usd(_resumen.CostoUsdTotal)</strong>
                 </div>
                 <div class="cia__kpi">
                     <span>Créditos</span>
@@ -134,7 +134,7 @@
                                         </td>
                                         <td class="num">@cliente.Bases</td>
                                         <td class="num">@cliente.Llamadas.ToString("N0", Es)</td>
-                                        <td class="num">@cliente.CostoUsd.ToString("N2", Es)</td>
+                                        <td class="num">@Usd(cliente.CostoUsd)</td>
                                         <td class="num">@cliente.Creditos.ToString("N0", Es)</td>
                                         <td>
                                             @if (cliente.Plan is { } plan)
@@ -222,6 +222,11 @@
 
 @code {
     private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    // Montos chicos (centavos de dólar) con 4 decimales: con 2 un consumo real se veía como 0,00.
+    internal static string Usd(decimal valor)
+        => valor != 0 && Math.Abs(valor) < 1 ? valor.ToString("N4", Es) : valor.ToString("N2", Es);
+
     private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
     private PageHeaderConfig? _pageHeaderPublicado;
 

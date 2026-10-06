@@ -102,4 +102,12 @@ public sealed class IaConsumoTests
         Assert.Equal(porcentaje, estado.Porcentaje);
         Assert.Equal("C1", estado.IdCliente);
     }
+
+    [Fact]
+    public void Usd_MuestraCuatroDecimalesEnMontosChicos()
+    {
+        Assert.Equal("0,00", AlfaCore.Components.Pages.AdminConsumoIa.Usd(0m));
+        Assert.Equal("0,0005", AlfaCore.Components.Pages.AdminConsumoIa.Usd(0.000454m));
+        Assert.Equal("12,35", AlfaCore.Components.Pages.AdminConsumoIa.Usd(12.345m));
+    }
 }
