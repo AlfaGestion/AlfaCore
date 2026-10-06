@@ -27,7 +27,7 @@
                 {
                     <div class="consumo-kpi">
                         <strong>@plan.CreditosIncluidos.ToString("N0", Es)</strong>
-                        <span>incluidos en tu plan</span>
+                        <span>incluidos en @plan.PlanNombre</span>
                     </div>
                 }
             </div>
@@ -42,7 +42,9 @@
                 <p class="cfg-hint @(porcentaje >= 80 ? "cfg-hint--warning" : null)">
                     @if (porcentaje >= 100)
                     {
-                        @($"Superaste los créditos incluidos. Los excedentes se facturan a fin de mes{(planConCupo.PermiteExcedentes ? $" ({planConCupo.PrecioExcedente:N2} {planConCupo.Moneda} por crédito)" : string.Empty)}.")
+                        @(planConCupo.PermiteExcedentes
+                            ? $"Superaste los créditos incluidos. Los excedentes se facturan a fin de mes ({planConCupo.Moneda} {planConCupo.PrecioExcedente.ToString("N2", Es)} cada 1.000 créditos)."
+                            : "Usaste todos los créditos incluidos en tu plan este mes.")
                     }
                     else
                     {
@@ -63,7 +65,7 @@
                 else
                 {
                     <p class="cfg-hint @(tope.EnAviso ? "cfg-hint--warning" : null)">
-                        Tope mensual: @Creditos(tope.TopeCreditos) (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo.
+                        Tope mensual: @Creditos(tope.TopeCreditos) (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo@(_planes is { Planes.Count: > 1 } ? ". Si necesitás más, pedí otro plan acá abajo." : ".")
                     </p>
                 }
             }
@@ -92,9 +94,65 @@
     </ConversacionesConfigTarjeta>
 }
 
+@if (_planes is { Planes.Count: > 0 } planes)
+{
+    <ConversacionesConfigTarjeta Titulo="Plan de IA"
+                                 Descripcion="Créditos que incluye cada plan por mes. Si pedís un cambio, lo confirmamos y te avisamos.">
+        <ChildContent>
+            @if (planes.Pendiente is { } pendiente)
+            {
+                <div class="cfg-notice">
+                    <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                    <span>Pediste el plan @pendiente.PlanNombre el @pendiente.SolicitadoUtc.ToLocalTime().ToString("dd/MM", Es). Lo estamos revisando.</span>
+                </div>
+            }
+            <ul class="consumo-planes">
+                @foreach (var p in planes.Planes)
+                {
+                    var esActual = p.IdPlan == planes.IdPlanActual;
+                    <li class="consumo-plan @(esActual ? "is-actual" : null)">
+                        <div class="consumo-plan__info">
+                            <strong>@p.Nombre</strong>
+                            <span>@p.CreditosIncluidos.ToString("N0", Es) créditos por mes · @PrecioTexto(p)</span>
+                            @if (!string.IsNullOrWhiteSpace(p.Descripcion))
+                            {
+                                <small>@p.Descripcion</small>
+                            }
+                        </div>
+                        @if (esActual)
+                        {
+                            <AlfaTag Tone="AlfaTagTone.Success">Tu plan</AlfaTag>
+                        }
+                        else if (planes.Pendiente?.IdPlan == p.IdPlan)
+                        {
+                            <AlfaTag Tone="AlfaTagTone.Warning">Pedido</AlfaTag>
+                        }
+                        else
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_pidiendo" OnClick="() => _planAPedir = p">Pedir este plan</AlfaButton>
+                        }
+                    </li>
+                }
+            </ul>
+        </ChildContent>
+    </ConversacionesConfigTarjeta>
+}
+
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+<AlfaConfirmDialog Open="@(_planAPedir is not null)"
+                   Title="Pedir cambio de plan"
+                   Message="@($"Vas a pedir el plan {_planAPedir?.Nombre}: {_planAPedir?.CreditosIncluidos.ToString("N0", Es)} créditos por mes ({(_planAPedir is null ? string.Empty : PrecioTexto(_planAPedir))}).")"
+                   SecondaryMessage="Lo confirmamos desde Alfa y el cambio rige desde ese momento."
+                   ConfirmLabel="Pedir plan" LoadingLabel="Enviando..." Loading="@_pidiendo"
+                   OnConfirm="PedirPlanAsync" OnCancel="() => _planAPedir = null" />
+
 @code {
     private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private IaConsumoBaseDto? _resumen;
+    private IaPlanesClienteDto? _planes;
+    private IaPlanOpcionDto? _planAPedir;
+    private bool _pidiendo;
+    private AppUiMessage? _feedback;
 
     protected override async Task OnInitializedAsync()
     {
@@ -103,6 +161,39 @@
 
         var hoy = DateTime.Today;
         _resumen = await ConsumoSvc.GetResumenBaseActivaAsync(hoy.Year, hoy.Month);
+        _planes = await ConsumoSvc.GetPlanesBaseActivaAsync();
+    }
+
+    private async Task PedirPlanAsync()
+    {
+        if (_planAPedir is not { } plan)
+            return;
+
+        _pidiendo = true;
+        try
+        {
+            await ConsumoSvc.SolicitarPlanAsync(plan.IdPlan);
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Pedido enviado", Message = $"Pediste el plan {plan.Nombre}. Te avisamos cuando esté activo." };
+            _planes = await ConsumoSvc.GetPlanesBaseActivaAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo pedir el plan", Message = ex.Message };
+        }
+        finally
+        {
+            _pidiendo = false;
+            _planAPedir = null;
+        }
+    }
+
+    internal static string PrecioTexto(IaPlanOpcionDto plan)
+    {
+        var es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+        var abono = plan.Precio <= 0 ? "incluido" : $"{plan.Moneda} {plan.Precio.ToString("N2", es)} por mes";
+        return plan.PermiteExcedentes
+            ? $"{abono} + {plan.Moneda} {plan.PrecioExcedente.ToString("N2", es)} cada 1.000 créditos extra"
+            : $"{abono}, sin excedentes";
     }
 
     private static string Creditos(long cantidad)

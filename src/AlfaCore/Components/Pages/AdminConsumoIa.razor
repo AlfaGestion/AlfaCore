@@ -84,6 +84,51 @@
                 </div>
             }
 
+            @if (_solicitudes.Count > 0)
+            {
+                <section class="cia__card" aria-label="Pedidos de cambio de plan">
+                    <header class="cia__card-header">
+                        <div>
+                            <h3>Pedidos de cambio de plan</h3>
+                            <p>Los pide el cliente desde Asistente IA → General. Al aprobar, el plan nuevo rige para el cargo de este mes; si es una baja, conviene aprobarla a principio de mes.</p>
+                        </div>
+                    </header>
+                    <div class="cia__table-wrap">
+                        <table class="cia__table cia__table--static">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Plan pedido</th>
+                                    <th>Pedido por</th>
+                                    <th>Fecha</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in _solicitudes)
+                                {
+                                    <tr>
+                                        <td><strong>@FirstNonEmpty(s.Cliente, s.IdCliente)</strong><small>@s.IdCliente</small></td>
+                                        <td>
+                                            <span>@s.PlanNombre</span>
+                                            <small>@s.PlanCreditos.ToString("N0", Es) créditos@(PlanActualDe(s.IdCliente) is { Length: > 0 } actual ? $" · hoy: {actual}" : string.Empty)</small>
+                                        </td>
+                                        <td>@s.SolicitadoPor</td>
+                                        <td>@s.SolicitadoUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Es)</td>
+                                        <td>
+                                            <div class="cia__tope-acciones">
+                                                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Disabled="@_busy" OnClick="() => DecidirAsync(s, aprobar: true)">Aprobar</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => DecidirAsync(s, aprobar: false)">Rechazar</AlfaButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+
             <section class="cia__card">
                 <header class="cia__card-header">
                     <div>
@@ -140,7 +185,7 @@
                                             @if (cliente.Plan is { } plan)
                                             {
                                                 <span>@plan.PlanNombre</span>
-                                                <small>@plan.CreditosIncluidos.ToString("N0", Es) incluidos</small>
+                                                <small>@plan.CreditosIncluidos.ToString("N0", Es) incluidos@(plan.PorDefecto ? " · por defecto" : string.Empty)</small>
                                             }
                                             else
                                             {
@@ -153,10 +198,15 @@
                                             @if (cliente.TopeCreditos is int topeCliente)
                                             {
                                                 <span class="@(cliente.Creditos >= topeCliente ? "is-danger" : null)">@topeCliente.ToString("N0", Es)</span>
+                                                <small>@(cliente.TopeOrigen == IaTopeOrigenes.Plan ? "del plan" : "manual")</small>
                                             }
                                             else
                                             {
                                                 <span>—</span>
+                                                @if (cliente.SinTopeManual)
+                                                {
+                                                    <small>sin tope</small>
+                                                }
                                             }
                                         </td>
                                     </tr>
@@ -177,15 +227,19 @@
                                                 {
                                                     <div class="cia__tope" @onclick:stopPropagation="true">
                                                         <AlfaInput Id="@($"tope-{cliente.IdCliente}")" Label="Tope mensual de créditos" Type="number"
-                                                                   Placeholder="Sin tope" HelpText="Al llegar, el asistente deja de responder y pasa a una persona."
+                                                                   Placeholder="Del plan" HelpText="Al llegar, el asistente deja de responder y pasa a una persona."
                                                                    Value="@_topeEdicion" ValueChanged="@((string? v) => _topeEdicion = v ?? string.Empty)" />
                                                         <AlfaInput Id="@($"aviso-{cliente.IdCliente}")" Label="Avisar desde (%)" Type="number"
                                                                    Value="@_avisoEdicion" ValueChanged="@((string? v) => _avisoEdicion = v ?? "80")" />
                                                         <div class="cia__tope-acciones">
-                                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, quitar: false)">Guardar tope</AlfaButton>
-                                                            @if (cliente.TopeCreditos is not null)
+                                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.Guardar)">Guardar tope</AlfaButton>
+                                                            @if (cliente.TopeOrigen == IaTopeOrigenes.Manual || cliente.SinTopeManual)
                                                             {
-                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, quitar: true)">Quitar tope</AlfaButton>
+                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.UsarPlan)">Usar el del plan</AlfaButton>
+                                                            }
+                                                            @if (!cliente.SinTopeManual)
+                                                            {
+                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.SinTope)">Sin tope</AlfaButton>
                                                             }
                                                         </div>
                                                     </div>
@@ -200,11 +254,58 @@
                 }
             </section>
 
+            @if (_config is not null)
+            {
+                <section class="cia__card" aria-label="Configuración de créditos">
+                    <header class="cia__card-header">
+                        <div>
+                            <h3>Configuración de créditos</h3>
+                            <p>Plan que usan los clientes sin plan asignado y tope automático según el plan. Los planes se editan en Módulos → Créditos de IA → Planes.</p>
+                        </div>
+                        @if (_config.IdModulo > 0)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-pencil" OnClick="AbrirPlanes">Editar planes</AlfaButton>
+                        }
+                    </header>
+                    <div class="cia__config">
+                        <AlfaSelect Id="cia-plan-default" Label="Plan por defecto" Options="PlanDefaultOptions"
+                                    Value="@_cfgPlanDefault" ValueChanged="@((string? v) => _cfgPlanDefault = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-factor" Label="Tope de planes con excedente (× incluidos)" Type="number"
+                                   HelpText="0 = sin tope automático. Los planes sin excedente cortan en los incluidos."
+                                   Value="@_cfgFactor" ValueChanged="@((string? v) => _cfgFactor = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-aviso" Label="Avisar desde (%)" Type="number"
+                                   Value="@_cfgAviso" ValueChanged="@((string? v) => _cfgAviso = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-usd" Label="1 crédito = USD" Type="number"
+                                   HelpText="Costo de OpenAI que equivale a un crédito."
+                                   Value="@_cfgUsd" ValueChanged="@((string? v) => _cfgUsd = v ?? string.Empty)" />
+                    </div>
+                    @if (_config.Planes.Count > 0)
+                    {
+                        <ul class="cia__planes">
+                            @foreach (var p in _config.Planes)
+                            {
+                                <li class="@(p.Activo ? null : "is-off")">
+                                    <strong>@p.Nombre</strong>
+                                    <span>@p.CreditosIncluidos.ToString("N0", Es) créditos · @(p.Precio == 0 ? "sin abono" : $"{p.Moneda} {p.Precio.ToString("N2", Es)}/mes")@(p.PermiteExcedentes ? $" · excedente {p.Moneda} {p.PrecioExcedente.ToString("N2", Es)} c/ 1.000" : " · sin excedente")@(p.Activo ? string.Empty : " · inactivo")@(p.VisibleCatalogo ? string.Empty : " · no visible para el cliente")</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="cia__hint">Todavía no hay planes de créditos. Se crean solos al arrancar la aplicación, o cargalos en Módulos → Créditos de IA → Planes.</p>
+                    }
+                    <div class="cia__tope-acciones">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="GuardarConfigAsync">Guardar configuración</AlfaButton>
+                    </div>
+                </section>
+            }
+
             <details class="cia__help">
                 <summary><i class="bi bi-question-circle" aria-hidden="true"></i> Cómo se cobra</summary>
                 <ol>
-                    <li>Asigná al cliente el módulo <strong>Créditos de IA</strong> con un plan de tipo <strong>CREDITOS</strong>: créditos incluidos por mes, abono fijo (precio) y precio por crédito excedente.</li>
-                    <li>Al terminar el mes, «Generar cargos del mes» crea un cargo por cliente: abono + excedentes × precio de excedente. Es idempotente: no duplica cargos ya generados.</li>
+                    <li>Los clientes sin plan usan el <strong>plan por defecto</strong> (IA Inicial: incluido, sin abono). Para cobrarle a un cliente, asignale el módulo <strong>Créditos de IA</strong> con un plan de tipo <strong>CREDITOS</strong>, o aprobá el pedido que hace desde Asistente IA → General.</li>
+                    <li>Al terminar el mes, «Generar cargos del mes» crea un cargo por cliente con plan asignado: abono + excedentes × precio de excedente (por cada 1.000 créditos). Es idempotente: no duplica cargos ya generados.</li>
                     <li>Los cargos aparecen en Administrar → Cargos y se cobran como cualquier otro.</li>
                     <li>La conciliación compara el costo medido con el que factura OpenAI (requiere <code>OPENAI_ADMIN_KEY</code>). Una diferencia grande indica precios desactualizados o consumos fuera de AlfaCore.</li>
                 </ol>
@@ -277,6 +378,8 @@
         {
             _resumen = await ConsumoSvc.GetResumenCentralAsync(_anio, _mes);
             StateHasChanged();
+            await CargarExtrasAsync();
+            StateHasChanged();
             _conciliacion = await ConsumoSvc.GetConciliacionAsync(_anio, _mes);
         }
         catch (Exception ex)
@@ -305,23 +408,130 @@
 
     private string _topeEdicion = string.Empty;
     private string _avisoEdicion = "80";
+    private IReadOnlyList<IaSolicitudPlanDto> _solicitudes = [];
+    private IaConfigCreditosDto? _config;
+    private string _cfgPlanDefault = string.Empty;
+    private string _cfgFactor = "2";
+    private string _cfgAviso = "80";
+    private string _cfgUsd = "0.001";
+
+    private enum TopeAccion { Guardar, UsarPlan, SinTope }
+
+    private IReadOnlyList<AlfaSelectOption> PlanDefaultOptions
+        => new[] { new AlfaSelectOption(string.Empty, "Ninguno (sin plan por defecto)") }
+            .Concat((_config?.Planes ?? []).Where(p => p.Activo).Select(p => new AlfaSelectOption(p.Codigo, $"{p.Nombre} ({p.CreditosIncluidos.ToString("N0", Es)} créditos)")))
+            .ToList();
+
+    private string PlanActualDe(string idCliente)
+        => _resumen?.Clientes.FirstOrDefault(c => c.IdCliente == idCliente)?.Plan?.PlanNombre ?? string.Empty;
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
+
+    private void AbrirPlanes()
+    {
+        if (_config is { IdModulo: > 0 } c)
+            Nav.NavigateTo(RouteContext.BuildRoute($"/admin/modulos/{c.IdModulo.ToString(Inv)}/planes"));
+    }
+
+    private async Task CargarExtrasAsync()
+    {
+        try
+        {
+            _solicitudes = await ConsumoSvc.GetSolicitudesPlanAsync();
+            _config = await ConsumoSvc.GetConfigAsync();
+            _cfgPlanDefault = _config.PlanDefaultCodigo;
+            _cfgFactor = _config.TopeFactorExcedentes.ToString("0.##", Inv);
+            _cfgAviso = _config.AvisoPorcentaje.ToString(Inv);
+            _cfgUsd = _config.UsdPorCredito.ToString("0.########", Inv);
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "No se pudo cargar la configuración de créditos", Message = ex.Message };
+        }
+    }
+
+    private async Task GuardarConfigAsync()
+    {
+        if (!decimal.TryParse(_cfgFactor.Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var factor) || factor < 0
+            || !int.TryParse(_cfgAviso, System.Globalization.NumberStyles.Integer, Inv, out var aviso) || aviso is < 1 or > 100
+            || !decimal.TryParse(_cfgUsd.Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var usd) || usd <= 0)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Revisá los valores", Message = "El factor tiene que ser 0 o más, el aviso entre 1 y 100 y el valor del crédito mayor a cero." };
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.SaveConfigAsync(new IaConfigCreditosDto
+            {
+                PlanDefaultCodigo = _cfgPlanDefault,
+                TopeFactorExcedentes = factor,
+                AvisoPorcentaje = aviso,
+                UsdPorCredito = usd
+            });
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Configuración guardada", Message = "Los cambios se aplican al consumo y a los topes en un par de minutos." };
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo guardar la configuración", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DecidirAsync(IaSolicitudPlanDto solicitud, bool aprobar)
+    {
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.DecidirSolicitudPlanAsync(solicitud.Id, aprobar);
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = aprobar ? "Plan aprobado" : "Pedido rechazado",
+                Message = aprobar
+                    ? $"{FirstNonEmpty(solicitud.Cliente, solicitud.IdCliente)} ahora tiene el plan {solicitud.PlanNombre}."
+                    : $"Se rechazó el pedido de {FirstNonEmpty(solicitud.Cliente, solicitud.IdCliente)}."
+            };
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo completar el pedido", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private void Alternar(string idCliente)
     {
         _expandido = _expandido == idCliente ? null : idCliente;
         var cliente = _resumen?.Clientes.FirstOrDefault(c => c.IdCliente == idCliente);
-        _topeEdicion = cliente?.TopeCreditos?.ToString(Inv) ?? string.Empty;
+        // Solo se precarga el tope manual: el del plan se muestra como sugerencia (vacío = del plan).
+        _topeEdicion = cliente?.TopeOrigen == IaTopeOrigenes.Manual ? cliente.TopeCreditos?.ToString(Inv) ?? string.Empty : string.Empty;
         _avisoEdicion = (cliente?.AvisoPorcentaje ?? 80).ToString(Inv);
     }
 
-    private async Task GuardarTopeAsync(string idCliente, bool quitar)
+    private async Task GuardarTopeAsync(string idCliente, TopeAccion accion)
     {
-        int? tope = null;
-        if (!quitar)
+        int? tope = accion switch
         {
-            if (!int.TryParse(_topeEdicion, System.Globalization.NumberStyles.Integer, Inv, out var valor) || valor < 0)
+            TopeAccion.UsarPlan => null,
+            TopeAccion.SinTope => 0,
+            _ => -1
+        };
+        if (accion == TopeAccion.Guardar)
+        {
+            if (!int.TryParse(_topeEdicion, System.Globalization.NumberStyles.Integer, Inv, out var valor) || valor <= 0)
             {
-                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tope inválido", Message = "Ingresá una cantidad de créditos (0 o más), o usá «Quitar tope»." };
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tope inválido", Message = "Ingresá una cantidad de créditos mayor a cero, o usá «Usar el del plan» o «Sin tope»." };
                 return;
             }
             tope = valor;
@@ -335,8 +545,13 @@
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Success,
-                Title = quitar ? "Tope quitado" : "Tope guardado",
-                Message = quitar ? "El asistente ya no tiene límite mensual para este cliente." : $"Tope de {tope:N0} créditos por mes, con aviso desde el {Math.Clamp(aviso, 1, 100)}%."
+                Title = accion switch { TopeAccion.UsarPlan => "Tope del plan", TopeAccion.SinTope => "Sin tope", _ => "Tope guardado" },
+                Message = accion switch
+                {
+                    TopeAccion.UsarPlan => "El cliente vuelve a tener el tope automático de su plan.",
+                    TopeAccion.SinTope => "El asistente no tiene límite mensual para este cliente.",
+                    _ => $"Tope de {tope:N0} créditos por mes, con aviso desde el {Math.Clamp(aviso, 1, 100)}%."
+                }
             };
             var expandido = _expandido;
             await CargarAsync();

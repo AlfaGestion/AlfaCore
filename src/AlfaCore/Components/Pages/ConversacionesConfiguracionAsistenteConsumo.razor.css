@@ -1,3 +1,41 @@
+.consumo-planes {
+    display: grid;
+    gap: var(--alfa-space-8, 8px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.consumo-plan {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+}
+
+.consumo-plan.is-actual {
+    border-color: var(--alfa-accent, #4f9efa);
+}
+
+.consumo-plan__info {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.consumo-plan__info strong {
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.consumo-plan__info span,
+.consumo-plan__info small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
 .consumo-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

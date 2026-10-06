@@ -22,8 +22,19 @@ Decisión del equipo (2026-10-05): archivos en **OpenAI vector store**, **medici
 ## 3. Consumo y cobro (`Services/IaConsumoService.cs`)
 
 - **1 crédito = `IA_CONFIG.USD_POR_CREDITO` de costo de OpenAI** (por defecto USD 0,001). El margen va en el precio del plan.
-- Cobro: asignar al cliente el módulo **Créditos de IA** (`IA_CREDITOS`) con un plan de tipo **CREDITOS**: `CantidadIncluida` = créditos incluidos por mes, `Precio` (o `PrecioContratado`) = abono fijo, `PermiteExcedentes` + `PrecioExcedente` = precio por crédito adicional.
+- **Planes aprobados (2026-10-06)**, creados por el esquema central si no existen y editables en Administrar → Módulos → Créditos de IA → Planes:
+
+  | Plan | Créditos/mes | Abono | Excedente |
+  |---|---|---|---|
+  | `IA_INICIAL` (por defecto) | 3.000 | incluido | no tiene: corta en 3.000 |
+  | `IA_ESTANDAR` | 20.000 | USD 35 | USD 3 cada 1.000 |
+  | `IA_PRO` | 80.000 | USD 140 | USD 3 cada 1.000 |
+
+- Cobro: el cliente tiene el módulo **Créditos de IA** (`IA_CREDITOS`) con un plan de tipo **CREDITOS**: `CantidadIncluida` = créditos incluidos por mes, `Precio` (o `PrecioContratado`) = abono fijo, `PermiteExcedentes` + `PrecioExcedente` = **precio por cada 1.000 créditos** adicionales (la columna tiene 2 decimales y un crédito vale milésimas de dólar).
+- **Plan por defecto:** los clientes sin plan asignado usan el plan de `IA_CONFIG.PLAN_DEFAULT_CODIGO` (`IA_INICIAL`). No genera cargo (no hay `ClienteModulos`), pero define créditos incluidos y tope.
+- **Configuración** (`IA_CONFIG`, editable en Consumo IA → Configuración de créditos): `USD_POR_CREDITO`, `PLAN_DEFAULT_CODIGO`, `TOPE_FACTOR_EXCEDENTES` (2) y `AVISO_PORCENTAJE` (80).
 - Administrar → **Consumo IA** (`/admin/consumo-ia`, superadmin): consumo por cliente y función, créditos, plan, excedentes e importe estimado; **Generar cargos del mes** (solo meses terminados, idempotente, un cargo en `Cargos` por cliente: abono + excedentes × precio).
 - **Conciliación:** compara el costo medido con `/v1/organization/costs` de OpenAI. Requiere la variable `OPENAI_ADMIN_KEY` (clave de administración de la organización) en el servidor.
-- Cliente: Asistente IA → General muestra **Consumo de IA este mes** (créditos de la base, del cliente, incluidos y % usado).
-- **Tope mensual** (`IA_TOPE_CREDITOS`, por cliente): se define en Consumo IA (fila del cliente → "Tope de créditos" y "Avisar desde (%)", 80 por defecto). Al pasar el porcentaje aparece un aviso en la campana; al alcanzarlo **el bot deja de responder**: agrega una nota interna (una por día y conversación), sube la prioridad a media y la conversación queda para el equipo. Las demás funciones de IA no se cortan. El estado se cachea 2 minutos por base y, si la central no responde, el bot sigue respondiendo (falla abierta). Reglas: `IaConsumoService.EvaluarTope` (tests: `IaConsumoTests`).
+- Cliente: Asistente IA → General muestra **Consumo de IA este mes** (créditos de la base, del cliente, incluidos y % usado) y **Plan de IA**: los planes activos y visibles, el suyo marcado y "Pedir este plan".
+- **Pedidos de cambio de plan** (`IA_SOLICITUD_PLAN`): el cliente pide; en Consumo IA aparecen arriba para **Aprobar** (contrata el plan o lo cambia con `ICentralAdminService.ContratarPlanAsync`/`CambiarPlanAsync`; sin prorrateo, rige para el cargo del mes) o **Rechazar**. Un pedido nuevo reemplaza al pendiente.
+- **Tope mensual vigente:** el manual de `IA_TOPE_CREDITOS` si existe (0 = sin tope); si no, el **automático del plan**: sin excedentes, los créditos incluidos; con excedentes, incluidos × `TOPE_FACTOR_EXCEDENTES` (0 = sin tope automático). En Consumo IA, fila del cliente: "Guardar tope", "Usar el del plan" o "Sin tope" (por ejemplo, para las bases propias de Alfa). Al pasar el porcentaje aparece un aviso en la campana; al alcanzarlo **el bot deja de responder**: agrega una nota interna (una por día y conversación), sube la prioridad a media y la conversación queda para el equipo. Las demás funciones de IA no se cortan. El estado se cachea 2 minutos por base y, si la central no responde, el bot sigue respondiendo (falla abierta). Reglas: `IaConsumoService.EvaluarTope` (tests: `IaConsumoTests`).

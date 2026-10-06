@@ -25,10 +25,13 @@ public sealed class CentralIaSchemaTests
     {
         var lotes = CentralIaSchema.Lotes();
 
-        Assert.Equal(2, lotes.Count);
+        Assert.Equal(3, lotes.Count);
         Assert.Contains("CREATE TABLE dbo.IA_USO", lotes[0]);
         Assert.Contains("CREATE TABLE dbo.IA_TOPE_CREDITOS", lotes[0]);
+        Assert.Contains("CREATE TABLE dbo.IA_SOLICITUD_PLAN", lotes[0]);
         Assert.StartsWith("CREATE OR ALTER VIEW dbo.V_IA_USO_DIARIO", lotes[1].Trim());
+        Assert.Contains("N'IA_INICIAL'", lotes[2]);
+        Assert.Contains("BEGIN CATCH", lotes[2]);
         Assert.All(lotes, l => Assert.DoesNotMatch(@"(?im)^\s*GO\s*$", l));
     }
 

@@ -125,6 +125,39 @@ BEGIN
     );
 END;
 
+-- 2026-10-06: configuración de los planes de créditos (editable desde Administrar → Consumo IA).
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_CONFIG WHERE Clave = N'PLAN_DEFAULT_CODIGO')
+    INSERT INTO dbo.IA_CONFIG (Clave, Valor, Observacion)
+    VALUES (N'PLAN_DEFAULT_CODIGO', N'IA_INICIAL', N'Plan de créditos que aplica a los clientes sin plan asignado. Vacío = ninguno.');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_CONFIG WHERE Clave = N'TOPE_FACTOR_EXCEDENTES')
+    INSERT INTO dbo.IA_CONFIG (Clave, Valor, Observacion)
+    VALUES (N'TOPE_FACTOR_EXCEDENTES', N'2', N'Tope automático de los planes con excedentes = créditos incluidos × este factor. 0 = sin tope automático.');
+
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_CONFIG WHERE Clave = N'AVISO_PORCENTAJE')
+    INSERT INTO dbo.IA_CONFIG (Clave, Valor, Observacion)
+    VALUES (N'AVISO_PORCENTAJE', N'80', N'Porcentaje del tope automático desde el que se avisa en la campana.');
+
+-- IA_SOLICITUD_PLAN: pedidos de cambio de plan que hace el cliente desde Asistente IA → General.
+-- Se aprueban o rechazan en Administrar → Consumo IA.
+IF OBJECT_ID(N'dbo.IA_SOLICITUD_PLAN', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.IA_SOLICITUD_PLAN
+    (
+        Id int IDENTITY(1,1) NOT NULL,
+        IdCliente nvarchar(40) NOT NULL,
+        IdPlan int NOT NULL,
+        Estado nvarchar(20) NOT NULL CONSTRAINT DF_IA_SOLICITUD_PLAN_Estado DEFAULT (N'PENDIENTE'),
+        SolicitadoPor nvarchar(120) NULL,
+        SolicitadoUtc datetime NOT NULL CONSTRAINT DF_IA_SOLICITUD_PLAN_Solicitado DEFAULT (GETUTCDATE()),
+        DecididoPor nvarchar(80) NULL,
+        DecididoUtc datetime NULL,
+        CONSTRAINT PK_IA_SOLICITUD_PLAN PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT CK_IA_SOLICITUD_PLAN_Estado CHECK (Estado IN (N'PENDIENTE', N'APROBADA', N'RECHAZADA', N'CANCELADA'))
+    );
+    CREATE NONCLUSTERED INDEX IX_IA_SOLICITUD_PLAN_Cliente ON dbo.IA_SOLICITUD_PLAN (IdCliente, Estado);
+END;
+
 COMMIT TRANSACTION;
 GO
 
@@ -145,4 +178,30 @@ SELECT
     SUM(CASE WHEN u.CostoUsd IS NULL THEN 1 ELSE 0 END) AS LlamadasSinPrecio
 FROM dbo.IA_USO u
 GROUP BY CAST(u.FechaHoraUtc AS date), u.IdCliente, u.IdBase, u.Funcion, u.Modelo;
+GO
+
+-- 2026-10-06: planes de créditos aprobados (Inicial incluido con el sistema, Estándar y Pro). Solo se
+-- crean si no existen; después se editan en Administrar → Módulos → Planes. En los planes CREDITOS,
+-- PrecioExcedente es el precio por cada 1.000 créditos adicionales. Si falla (por ejemplo, una base
+-- central sin la tabla Planes) no frena el resto del esquema.
+BEGIN TRY
+    DECLARE @IdModuloIa int;
+    IF OBJECT_ID(N'dbo.Planes', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.Modulos', N'U') IS NOT NULL
+        SELECT TOP (1) @IdModuloIa = Id FROM dbo.Modulos WHERE UPPER(LTRIM(RTRIM(Codigo))) = N'IA_CREDITOS';
+
+    IF @IdModuloIa IS NOT NULL
+        INSERT INTO dbo.Planes (IdModulo, Codigo, Nombre, Descripcion, TipoFacturacion, Precio, Moneda,
+                                CantidadIncluida, PermiteExcedentes, PrecioExcedente, Activo, VisibleCatalogo)
+        SELECT @IdModuloIa, v.Codigo, v.Nombre, v.Descripcion, N'CREDITOS', v.Precio, N'USD',
+               v.Incluidos, v.Excedentes, v.PrecioExcedente, 1, 1
+        FROM (VALUES
+            (N'IA_INICIAL', N'IA Inicial', N'Viene con el sistema. Al llegar a los créditos incluidos, el asistente pasa las conversaciones al equipo.', 0, 3000, 0, NULL),
+            (N'IA_ESTANDAR', N'IA Estándar', N'Para la mayoría de los clientes, con archivos. El excedente se factura a fin de mes.', 35, 20000, 1, 3),
+            (N'IA_PRO', N'IA Pro', N'Uso intensivo o varias bases. El excedente se factura a fin de mes.', 140, 80000, 1, 3)
+        ) AS v (Codigo, Nombre, Descripcion, Precio, Incluidos, Excedentes, PrecioExcedente)
+        WHERE NOT EXISTS (SELECT 1 FROM dbo.Planes p WHERE p.IdModulo = @IdModuloIa AND p.Codigo = v.Codigo);
+END TRY
+BEGIN CATCH
+    PRINT N'No se pudieron crear los planes de créditos IA: ' + ERROR_MESSAGE();
+END CATCH;
 GO

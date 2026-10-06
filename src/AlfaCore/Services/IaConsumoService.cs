@@ -31,26 +31,50 @@ public interface IIaConsumoService
     /// </summary>
     Task<IaTopeEstadoDto?> GetTopeEstadoBaseActivaAsync(CancellationToken ct = default);
 
-    /// <summary>Define (o quita, con <paramref name="topeCreditos"/> null) el tope mensual del cliente. Solo superadmin.</summary>
+    /// <summary>
+    /// Tope manual del cliente. Solo superadmin. <paramref name="topeCreditos"/> null = usar el tope
+    /// automático del plan; 0 = sin tope (anula el del plan); mayor a 0 = ese tope.
+    /// </summary>
     Task SaveTopeAsync(string idCliente, int? topeCreditos, int avisoPorcentaje, CancellationToken ct = default);
+
+    /// <summary>Configuración de créditos y planes CREDITOS del catálogo. Solo superadmin.</summary>
+    Task<IaConfigCreditosDto> GetConfigAsync(CancellationToken ct = default);
+
+    /// <summary>Guarda la configuración de créditos (IA_CONFIG). Solo superadmin.</summary>
+    Task SaveConfigAsync(IaConfigCreditosDto config, CancellationToken ct = default);
+
+    /// <summary>Planes que puede pedir el cliente de la base activa, su plan actual y el pedido pendiente. Null si no aplica.</summary>
+    Task<IaPlanesClienteDto?> GetPlanesBaseActivaAsync(CancellationToken ct = default);
+
+    /// <summary>Pide el cambio al plan indicado para el cliente de la base activa (reemplaza un pedido pendiente).</summary>
+    Task SolicitarPlanAsync(int idPlan, CancellationToken ct = default);
+
+    /// <summary>Pedidos de cambio de plan pendientes. Solo superadmin.</summary>
+    Task<IReadOnlyList<IaSolicitudPlanDto>> GetSolicitudesPlanAsync(CancellationToken ct = default);
+
+    /// <summary>Aprueba (contrata o cambia el plan del módulo IA_CREDITOS) o rechaza un pedido. Solo superadmin.</summary>
+    Task DecidirSolicitudPlanAsync(int idSolicitud, bool aprobar, CancellationToken ct = default);
 }
 
 /// <summary>
 /// Consumo y cobro de IA (2026-10-05). Lee ALFA_CENTRAL.dbo.IA_USO. 1 crédito = USD_POR_CREDITO de costo
 /// de OpenAI (IA_CONFIG, por defecto 0,001); el margen va en el precio del plan. El cargo mensual por
 /// cliente sale del plan de tipo CREDITOS asignado al módulo IA_CREDITOS: abono fijo + créditos
-/// excedentes × precio de excedente.
+/// excedentes × precio de excedente (por cada 1.000 créditos). Los clientes sin plan asignado usan el
+/// plan por defecto (2026-10-06); el tope vigente es el manual o, si no hay, el automático del plan.
 /// </summary>
 public sealed class IaConsumoService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppUserSessionService appUserSession,
     IHttpClientFactory httpClientFactory,
-    IAppEventService appEvents) : IIaConsumoService
+    IAppEventService appEvents,
+    ICentralAdminService? centralAdmin = null) : IIaConsumoService
 {
     private const string ModuleName = "ConsumoIA";
     internal const decimal UsdPorCreditoPorDefecto = 0.001m;
     internal const string CodigoModulo = "IA_CREDITOS";
+    internal const decimal CreditosPorPrecioExcedente = 1000m;
     private static readonly TimeSpan DuracionCacheTope = TimeSpan.FromMinutes(2);
     private static readonly ConcurrentDictionary<int, (DateTime HastaUtc, IaTopeEstadoDto? Estado)> TopeCache = new();
 
@@ -73,7 +97,8 @@ public sealed class IaConsumoService(
                 return null;
 
             var (desde, hasta) = RangoUtc(anio, mes);
-            var usdPorCredito = await GetUsdPorCreditoAsync(cn, ct);
+            var config = await LeerConfigAsync(cn, ct);
+            var usdPorCredito = config.UsdPorCredito;
             var idCliente = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT LTRIM(RTRIM(idcliente)) FROM dbo.bases WHERE id = @IdBase;", new { IdBase = idBase }, cancellationToken: ct)) ?? string.Empty;
 
@@ -91,6 +116,7 @@ public sealed class IaConsumoService(
                 """, new { IdCliente = idCliente, Desde = desde, Hasta = hasta }, cancellationToken: ct));
 
             var costoBase = porFuncion.Sum(f => f.CostoUsd);
+            var plan = idCliente.Length == 0 ? null : await GetPlanEfectivoAsync(cn, idCliente, config, ct);
             return new IaConsumoBaseDto
             {
                 Anio = anio,
@@ -98,8 +124,8 @@ public sealed class IaConsumoService(
                 CostoUsdBase = costoBase,
                 CreditosBase = Creditos(costoBase, usdPorCredito),
                 CreditosCliente = Creditos(costoCliente, usdPorCredito),
-                Plan = idCliente.Length == 0 ? null : (await GetPlanesAsync(cn, idCliente, ct)).FirstOrDefault(),
-                Tope = idCliente.Length == 0 ? null : await LeerTopeAsync(cn, idCliente, Creditos(costoCliente, usdPorCredito), ct),
+                Plan = plan,
+                Tope = idCliente.Length == 0 ? null : await ResolverTopeAsync(cn, idCliente, Creditos(costoCliente, usdPorCredito), plan, config, ct),
                 PorFuncion = porFuncion
                     .Select(f => f.ToDto(usdPorCredito))
                     .OrderByDescending(f => f.CostoUsd)
@@ -122,7 +148,8 @@ public sealed class IaConsumoService(
         RequerirEsquema(await EsquemaListoAsync(cn, ct));
 
         var (desde, hasta) = RangoUtc(anio, mes);
-        var usdPorCredito = await GetUsdPorCreditoAsync(cn, ct);
+        var config = await LeerConfigAsync(cn, ct);
+        var usdPorCredito = config.UsdPorCredito;
         var filas = (await cn.QueryAsync<FilaClienteFuncion>(new CommandDefinition("""
             SELECT ISNULL(u.IdCliente, N'') AS IdCliente, ISNULL(MAX(c.nombre), N'') AS Cliente, u.Funcion,
                    COUNT_BIG(*) AS Llamadas, SUM(ISNULL(u.CostoUsd, 0)) AS CostoUsd,
@@ -143,10 +170,11 @@ public sealed class IaConsumoService(
         var planes = (await GetPlanesAsync(cn, null, ct))
             .GroupBy(p => p.IdCliente)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var planDefault = await GetPlanDefaultAsync(cn, config.PlanDefaultCodigo, ct);
         var topes = (await cn.QueryAsync<(string IdCliente, int TopeCreditos, int AvisoPorcentaje)>(new CommandDefinition(
                 "SELECT LTRIM(RTRIM(IdCliente)), TopeCreditos, AvisoPorcentaje FROM dbo.IA_TOPE_CREDITOS WHERE Activo = 1;",
                 cancellationToken: ct)))
-            .ToDictionary(t => t.IdCliente, t => t, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(t => t.IdCliente, t => ((int Tope, int Aviso)?)(t.TopeCreditos, t.AvisoPorcentaje), StringComparer.OrdinalIgnoreCase);
 
         var clientes = filas
             .GroupBy(f => f.IdCliente)
@@ -154,8 +182,10 @@ public sealed class IaConsumoService(
             {
                 var costo = g.Sum(x => x.CostoUsd);
                 var creditos = Creditos(costo, usdPorCredito);
-                planes.TryGetValue(g.Key, out var plan);
+                var plan = planes.GetValueOrDefault(g.Key) ?? (g.Key.Length == 0 ? null : ComoPlanDefault(planDefault, g.Key));
                 var (excedentes, importe) = CalcularCargo(creditos, plan);
+                var manual = topes.GetValueOrDefault(g.Key);
+                var tope = ResolverTope(g.Key, manual, plan, config.TopeFactorExcedentes, config.AvisoPorcentaje, creditos);
                 return new IaConsumoClienteDto
                 {
                     IdCliente = g.Key,
@@ -168,8 +198,10 @@ public sealed class IaConsumoService(
                     Plan = plan,
                     CreditosExcedentes = excedentes,
                     ImporteEstimado = importe,
-                    TopeCreditos = topes.TryGetValue(g.Key, out var tope) ? tope.TopeCreditos : null,
-                    AvisoPorcentaje = topes.TryGetValue(g.Key, out var tope2) ? tope2.AvisoPorcentaje : 80,
+                    TopeCreditos = tope?.TopeCreditos,
+                    AvisoPorcentaje = manual?.Aviso ?? config.AvisoPorcentaje,
+                    TopeOrigen = tope?.Origen ?? string.Empty,
+                    SinTopeManual = manual is { Tope: <= 0 },
                     PorFuncion = g.Select(x => x.ToDto(usdPorCredito)).OrderByDescending(x => x.CostoUsd).ToList()
                 };
             })
@@ -335,7 +367,7 @@ public sealed class IaConsumoService(
             await using var cn = new SqlConnection(CentralConnectionString);
             await cn.OpenAsync(ct);
             if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-                    "SELECT CASE WHEN OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL THEN 1 ELSE 0 END;",
+                    "SELECT CASE WHEN OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.IA_USO', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.IA_CONFIG', N'U') IS NOT NULL THEN 1 ELSE 0 END;",
                     cancellationToken: ct)) == 1)
             {
                 var idCliente = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
@@ -347,7 +379,9 @@ public sealed class IaConsumoService(
                     var costo = await cn.ExecuteScalarAsync<decimal>(new CommandDefinition(
                         "SELECT ISNULL(SUM(CostoUsd), 0) FROM dbo.IA_USO WHERE IdCliente = @IdCliente AND FechaHoraUtc >= @Desde AND FechaHoraUtc < @Hasta;",
                         new { IdCliente = idCliente, Desde = desde, Hasta = hasta }, cancellationToken: ct));
-                    estado = await LeerTopeAsync(cn, idCliente, Creditos(costo, await GetUsdPorCreditoAsync(cn, ct)), ct);
+                    var config = await LeerConfigAsync(cn, ct);
+                    var plan = await GetPlanEfectivoAsync(cn, idCliente, config, ct);
+                    estado = await ResolverTopeAsync(cn, idCliente, Creditos(costo, config.UsdPorCredito), plan, config, ct);
                 }
             }
         }
@@ -389,25 +423,347 @@ public sealed class IaConsumoService(
             cancellationToken: ct));
         TopeCache.Clear();
         await appEvents.LogAuditAsync(ModuleName, "SaveTopeCreditosIA", "IA_TOPE_CREDITOS", cliente,
-            topeCreditos is null ? "Se quitó el tope mensual de créditos IA." : "Se definió el tope mensual de créditos IA.",
+            topeCreditos switch
+            {
+                null => "Se volvió al tope automático del plan.",
+                0 => "Se dejó al cliente sin tope de créditos IA.",
+                _ => "Se definió el tope mensual de créditos IA."
+            },
             new { cliente, topeCreditos, aviso }, ct);
     }
 
-    private static async Task<IaTopeEstadoDto?> LeerTopeAsync(SqlConnection cn, string idCliente, long creditosUsados, CancellationToken ct)
+    public async Task<IaConfigCreditosDto> GetConfigAsync(CancellationToken ct = default)
     {
-        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-                "SELECT CASE WHEN OBJECT_ID(N'dbo.IA_TOPE_CREDITOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: ct)) == 0)
-            return null;
-
-        var filas = await cn.QueryAsync<(int TopeCreditos, int AvisoPorcentaje)>(new CommandDefinition(
-            "SELECT TopeCreditos, AvisoPorcentaje FROM dbo.IA_TOPE_CREDITOS WHERE LTRIM(RTRIM(IdCliente)) = @IdCliente AND Activo = 1;",
-            new { IdCliente = idCliente }, cancellationToken: ct));
-        foreach (var f in filas)
-            return EvaluarTope(idCliente, f.TopeCreditos, f.AvisoPorcentaje, creditosUsados);
-        return null;
+        EnsureSuperAdmin();
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        RequerirEsquema(await EsquemaListoAsync(cn, ct));
+        var config = await LeerConfigAsync(cn, ct);
+        config.Planes = await GetPlanesCatalogoAsync(cn, soloVisibles: false, ct);
+        config.IdModulo = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(
+            "SELECT TOP (1) Id FROM dbo.Modulos WHERE UPPER(LTRIM(RTRIM(Codigo))) = @Codigo;",
+            new { Codigo = CodigoModulo }, cancellationToken: ct)) ?? 0;
+        return config;
     }
 
+    public async Task SaveConfigAsync(IaConfigCreditosDto config, CancellationToken ct = default)
+    {
+        EnsureSuperAdmin();
+        ArgumentNullException.ThrowIfNull(config);
+        if (config.UsdPorCredito <= 0)
+            throw new InvalidOperationException("El valor del crédito tiene que ser mayor a cero.");
+        if (config.TopeFactorExcedentes < 0)
+            throw new InvalidOperationException("El factor del tope no puede ser negativo.");
+
+        var codigo = (config.PlanDefaultCodigo ?? string.Empty).Trim();
+        var aviso = Math.Clamp(config.AvisoPorcentaje, 1, 100);
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        RequerirEsquema(await EsquemaListoAsync(cn, ct));
+        if (codigo.Length > 0 && (await GetPlanesCatalogoAsync(cn, soloVisibles: false, ct)).All(p => !string.Equals(p.Codigo, codigo, StringComparison.OrdinalIgnoreCase) || !p.Activo))
+            throw new InvalidOperationException("El plan por defecto tiene que ser un plan de créditos activo.");
+
+        var valores = new (string Clave, string Valor)[]
+        {
+            ("USD_POR_CREDITO", config.UsdPorCredito.ToString("0.########", CultureInfo.InvariantCulture)),
+            ("PLAN_DEFAULT_CODIGO", codigo),
+            ("TOPE_FACTOR_EXCEDENTES", config.TopeFactorExcedentes.ToString("0.##", CultureInfo.InvariantCulture)),
+            ("AVISO_PORCENTAJE", aviso.ToString(CultureInfo.InvariantCulture))
+        };
+        foreach (var (clave, valor) in valores)
+        {
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.IA_CONFIG SET Valor = @Valor WHERE Clave = @Clave;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.IA_CONFIG (Clave, Valor) VALUES (@Clave, @Valor);
+                """, new { Clave = clave, Valor = valor }, cancellationToken: ct));
+        }
+
+        TopeCache.Clear();
+        await appEvents.LogAuditAsync(ModuleName, "SaveConfigCreditosIA", "IA_CONFIG", "CREDITOS",
+            "Se actualizó la configuración de créditos IA.", valores.ToDictionary(v => v.Clave, v => v.Valor), ct);
+    }
+
+    public async Task<IaPlanesClienteDto?> GetPlanesBaseActivaAsync(CancellationToken ct = default)
+    {
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (!Disponible || idBase <= 0)
+            return null;
+
+        try
+        {
+            await using var cn = new SqlConnection(CentralConnectionString);
+            await cn.OpenAsync(ct);
+            if (!await EsquemaListoAsync(cn, ct) || !await TablaExisteAsync(cn, "IA_SOLICITUD_PLAN", ct))
+                return null;
+
+            var idCliente = await GetIdClienteDeBaseAsync(cn, idBase, ct);
+            if (idCliente.Length == 0)
+                return null;
+
+            var config = await LeerConfigAsync(cn, ct);
+            var planes = await GetPlanesCatalogoAsync(cn, soloVisibles: true, ct);
+            if (planes.Count == 0)
+                return null;
+
+            return new IaPlanesClienteDto
+            {
+                IdPlanActual = (await GetPlanEfectivoAsync(cn, idCliente, config, ct))?.IdPlan,
+                Planes = planes,
+                Pendiente = (await GetSolicitudesAsync(cn, idCliente, ct)).FirstOrDefault()
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await appEvents.LogErrorAsync(ModuleName, "PlanesBase", ex, "No se pudieron leer los planes de créditos IA.", new { idBase }, AppEventSeverity.Warning, ct);
+            return null;
+        }
+    }
+
+    public async Task SolicitarPlanAsync(int idPlan, CancellationToken ct = default)
+    {
+        var session = sessionService.GetActiveSession();
+        var idBase = session?.BaseId ?? 0;
+        if (!Disponible || idBase <= 0)
+            throw new InvalidOperationException("No hay una base activa para pedir el plan.");
+
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        RequerirEsquema(await EsquemaListoAsync(cn, ct) && await TablaExisteAsync(cn, "IA_SOLICITUD_PLAN", ct));
+        var idCliente = await GetIdClienteDeBaseAsync(cn, idBase, ct);
+        if (idCliente.Length == 0)
+            throw new InvalidOperationException("La base activa no tiene un cliente asociado.");
+
+        var plan = (await GetPlanesCatalogoAsync(cn, soloVisibles: true, ct)).FirstOrDefault(p => p.IdPlan == idPlan)
+            ?? throw new InvalidOperationException("El plan elegido no está disponible.");
+        var actual = await GetPlanEfectivoAsync(cn, idCliente, await LeerConfigAsync(cn, ct), ct);
+        if (actual?.IdPlan == idPlan && actual.PorDefecto == false)
+            throw new InvalidOperationException("Ya tenés ese plan.");
+
+        var usuario = appUserSession.GetCurrentUserName("SYSTEM");
+        var solicitadoPor = $"{usuario} · {FirstNonEmpty(session?.Nombre, $"Base {idBase}")}";
+        var id = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            UPDATE dbo.IA_SOLICITUD_PLAN SET Estado = N'CANCELADA', DecididoUtc = GETUTCDATE(), DecididoPor = @Usuario
+            WHERE IdCliente = @IdCliente AND Estado = N'PENDIENTE';
+            INSERT INTO dbo.IA_SOLICITUD_PLAN (IdCliente, IdPlan, SolicitadoPor) OUTPUT INSERTED.Id
+            VALUES (@IdCliente, @IdPlan, @SolicitadoPor);
+            """, new { IdCliente = idCliente, IdPlan = idPlan, Usuario = usuario, SolicitadoPor = Recortar(solicitadoPor, 120) }, cancellationToken: ct));
+
+        await appEvents.LogAuditAsync(ModuleName, "SolicitarPlanCreditosIA", "IA_SOLICITUD_PLAN", id.ToString(CultureInfo.InvariantCulture),
+            $"El cliente {idCliente} pidió el plan {plan.Nombre}.", new { idCliente, idPlan, plan.Codigo, idBase }, ct);
+    }
+
+    public async Task<IReadOnlyList<IaSolicitudPlanDto>> GetSolicitudesPlanAsync(CancellationToken ct = default)
+    {
+        EnsureSuperAdmin();
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        if (!await TablaExisteAsync(cn, "IA_SOLICITUD_PLAN", ct))
+            return [];
+        return await GetSolicitudesAsync(cn, null, ct);
+    }
+
+    public async Task DecidirSolicitudPlanAsync(int idSolicitud, bool aprobar, CancellationToken ct = default)
+    {
+        EnsureSuperAdmin();
+        await using var cn = new SqlConnection(CentralConnectionString);
+        await cn.OpenAsync(ct);
+        RequerirEsquema(await TablaExisteAsync(cn, "IA_SOLICITUD_PLAN", ct));
+
+        var solicitud = await cn.QuerySingleOrDefaultAsync<(string IdCliente, int IdPlan)?>(new CommandDefinition(
+            "SELECT LTRIM(RTRIM(IdCliente)), IdPlan FROM dbo.IA_SOLICITUD_PLAN WHERE Id = @Id AND Estado = N'PENDIENTE';",
+            new { Id = idSolicitud }, cancellationToken: ct))
+            ?? throw new InvalidOperationException("El pedido ya no está pendiente.");
+        var usuario = appUserSession.GetCurrentUserName("SYSTEM");
+
+        if (aprobar)
+        {
+            if (centralAdmin is null)
+                throw new InvalidOperationException("No está disponible la administración central para cambiar el plan.");
+
+            var moduloActual = await cn.QuerySingleOrDefaultAsync<int?>(new CommandDefinition("""
+                SELECT TOP (1) cm.IdModulo
+                FROM dbo.ClienteModulos cm
+                INNER JOIN dbo.Modulos m ON m.Id = cm.IdModulo
+                WHERE LTRIM(RTRIM(cm.IdCliente)) = @IdCliente
+                  AND UPPER(LTRIM(RTRIM(m.Codigo))) = @Codigo
+                  AND cm.Estado IN (N'Activo', N'Prueba');
+                """, new { solicitud.IdCliente, Codigo = CodigoModulo }, cancellationToken: ct));
+
+            // Sin prorrateo: el plan nuevo rige para el cargo del mes en que se aprueba.
+            if (moduloActual is int idModulo)
+                await centralAdmin.CambiarPlanAsync(solicitud.IdCliente, idModulo, solicitud.IdPlan, usuario, ct);
+            else
+                await centralAdmin.ContratarPlanAsync(solicitud.IdCliente, solicitud.IdPlan, usuario, ct);
+        }
+
+        await cn.ExecuteAsync(new CommandDefinition("""
+            UPDATE dbo.IA_SOLICITUD_PLAN SET Estado = @Estado, DecididoUtc = GETUTCDATE(), DecididoPor = @Usuario
+            WHERE Id = @Id AND Estado = N'PENDIENTE';
+            """, new { Id = idSolicitud, Estado = aprobar ? "APROBADA" : "RECHAZADA", Usuario = usuario }, cancellationToken: ct));
+        TopeCache.Clear();
+        await appEvents.LogAuditAsync(ModuleName, aprobar ? "AprobarPlanCreditosIA" : "RechazarPlanCreditosIA", "IA_SOLICITUD_PLAN",
+            idSolicitud.ToString(CultureInfo.InvariantCulture),
+            aprobar ? "Se aprobó un cambio de plan de créditos IA." : "Se rechazó un cambio de plan de créditos IA.",
+            new { solicitud.IdCliente, solicitud.IdPlan }, ct);
+    }
+
+    // ---------------------------------------------------------------- planes, configuración y tope
+
+    private async Task<IaTopeEstadoDto?> ResolverTopeAsync(SqlConnection cn, string idCliente, long creditosUsados,
+        IaPlanCreditosDto? plan, IaConfigCreditosDto config, CancellationToken ct)
+    {
+        (int Tope, int Aviso)? manual = null;
+        if (await TablaExisteAsync(cn, "IA_TOPE_CREDITOS", ct))
+        {
+            var filas = await cn.QueryAsync<(int TopeCreditos, int AvisoPorcentaje)>(new CommandDefinition(
+                "SELECT TopeCreditos, AvisoPorcentaje FROM dbo.IA_TOPE_CREDITOS WHERE LTRIM(RTRIM(IdCliente)) = @IdCliente AND Activo = 1;",
+                new { IdCliente = idCliente }, cancellationToken: ct));
+            foreach (var f in filas)
+                manual = (f.TopeCreditos, f.AvisoPorcentaje);
+        }
+
+        return ResolverTope(idCliente, manual, plan, config.TopeFactorExcedentes, config.AvisoPorcentaje, creditosUsados);
+    }
+
+    private static async Task<IaConfigCreditosDto> LeerConfigAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var valores = (await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition(
+                "SELECT Clave, Valor FROM dbo.IA_CONFIG;", cancellationToken: ct)))
+            .ToDictionary(v => v.Clave.Trim(), v => (v.Valor ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase);
+        return ConfigDesde(valores);
+    }
+
+    /// <summary>Lee IA_CONFIG con valores por defecto para claves faltantes o inválidas.</summary>
+    internal static IaConfigCreditosDto ConfigDesde(IReadOnlyDictionary<string, string> valores)
+    {
+        static decimal Num(IReadOnlyDictionary<string, string> v, string clave, decimal porDefecto, decimal minimo)
+            => v.TryGetValue(clave, out var t) && decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) && d >= minimo ? d : porDefecto;
+
+        return new IaConfigCreditosDto
+        {
+            UsdPorCredito = Num(valores, "USD_POR_CREDITO", UsdPorCreditoPorDefecto, 0.00000001m),
+            // Sin la clave (centrales anteriores a 2026-10-06) no hay plan por defecto.
+            PlanDefaultCodigo = valores.TryGetValue("PLAN_DEFAULT_CODIGO", out var codigo) ? codigo : string.Empty,
+            TopeFactorExcedentes = Num(valores, "TOPE_FACTOR_EXCEDENTES", 2m, 0m),
+            AvisoPorcentaje = (int)Math.Clamp(Num(valores, "AVISO_PORCENTAJE", 80m, 1m), 1m, 100m)
+        };
+    }
+
+    private async Task<IaPlanCreditosDto?> GetPlanEfectivoAsync(SqlConnection cn, string idCliente, IaConfigCreditosDto config, CancellationToken ct)
+        => (await GetPlanesAsync(cn, idCliente, ct)).FirstOrDefault()
+           ?? ComoPlanDefault(await GetPlanDefaultAsync(cn, config.PlanDefaultCodigo, ct), idCliente);
+
+    private static IaPlanCreditosDto? ComoPlanDefault(IaPlanCreditosDto? planDefault, string idCliente)
+        => planDefault is null ? null : new IaPlanCreditosDto
+        {
+            IdCliente = idCliente,
+            IdPlan = planDefault.IdPlan,
+            Codigo = planDefault.Codigo,
+            PlanNombre = planDefault.PlanNombre,
+            PorDefecto = true,
+            Precio = planDefault.Precio,
+            Moneda = planDefault.Moneda,
+            CreditosIncluidos = planDefault.CreditosIncluidos,
+            PermiteExcedentes = planDefault.PermiteExcedentes,
+            PrecioExcedente = planDefault.PrecioExcedente
+        };
+
+    private static async Task<IaPlanCreditosDto?> GetPlanDefaultAsync(SqlConnection cn, string codigo, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+            return null;
+        return (await GetPlanesCatalogoAsync(cn, soloVisibles: false, ct))
+            .Where(p => p.Activo && string.Equals(p.Codigo, codigo.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Select(p => new IaPlanCreditosDto
+            {
+                IdPlan = p.IdPlan,
+                Codigo = p.Codigo,
+                PlanNombre = p.Nombre,
+                Precio = p.Precio,
+                Moneda = p.Moneda,
+                CreditosIncluidos = p.CreditosIncluidos,
+                PermiteExcedentes = p.PermiteExcedentes,
+                PrecioExcedente = p.PrecioExcedente
+            })
+            .FirstOrDefault();
+    }
+
+    private static async Task<List<IaPlanOpcionDto>> GetPlanesCatalogoAsync(SqlConnection cn, bool soloVisibles, CancellationToken ct)
+    {
+        if (!await TablaExisteAsync(cn, "Planes", ct) || !await TablaExisteAsync(cn, "Modulos", ct))
+            return [];
+
+        return (await cn.QueryAsync<IaPlanOpcionDto>(new CommandDefinition("""
+            SELECT p.Id AS IdPlan, LTRIM(RTRIM(p.Codigo)) AS Codigo, p.Nombre, ISNULL(p.Descripcion, N'') AS Descripcion,
+                   p.Precio, p.Moneda, ISNULL(p.CantidadIncluida, 0) AS CreditosIncluidos,
+                   p.PermiteExcedentes, ISNULL(p.PrecioExcedente, 0) AS PrecioExcedente, p.Activo, p.VisibleCatalogo
+            FROM dbo.Planes p
+            INNER JOIN dbo.Modulos m ON m.Id = p.IdModulo
+            WHERE UPPER(LTRIM(RTRIM(m.Codigo))) = @Codigo
+              AND p.TipoFacturacion = N'CREDITOS'
+              AND (@SoloVisibles = 0 OR (p.Activo = 1 AND p.VisibleCatalogo = 1))
+            ORDER BY ISNULL(p.CantidadIncluida, 0), p.Precio, p.Nombre;
+            """, new { Codigo = CodigoModulo, SoloVisibles = soloVisibles }, cancellationToken: ct))).ToList();
+    }
+
+    private static async Task<List<IaSolicitudPlanDto>> GetSolicitudesAsync(SqlConnection cn, string? idCliente, CancellationToken ct)
+        => (await cn.QueryAsync<IaSolicitudPlanDto>(new CommandDefinition("""
+            SELECT s.Id, LTRIM(RTRIM(s.IdCliente)) AS IdCliente, ISNULL(MAX(c.nombre), N'') AS Cliente, s.IdPlan,
+                   ISNULL(MAX(p.Nombre), N'') AS PlanNombre, ISNULL(MAX(p.CantidadIncluida), 0) AS PlanCreditos,
+                   ISNULL(s.SolicitadoPor, N'') AS SolicitadoPor, s.SolicitadoUtc
+            FROM dbo.IA_SOLICITUD_PLAN s
+            LEFT JOIN dbo.Clientes c ON LTRIM(RTRIM(c.idcliente)) = LTRIM(RTRIM(s.IdCliente))
+            LEFT JOIN dbo.Planes p ON p.Id = s.IdPlan
+            WHERE s.Estado = N'PENDIENTE' AND (@IdCliente IS NULL OR LTRIM(RTRIM(s.IdCliente)) = @IdCliente)
+            GROUP BY s.Id, s.IdCliente, s.IdPlan, s.SolicitadoPor, s.SolicitadoUtc
+            ORDER BY s.SolicitadoUtc DESC;
+            """, new { IdCliente = idCliente }, cancellationToken: ct))).ToList();
+
+    private static async Task<string> GetIdClienteDeBaseAsync(SqlConnection cn, int idBase, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT LTRIM(RTRIM(idcliente)) FROM dbo.bases WHERE id = @IdBase;", new { IdBase = idBase }, cancellationToken: ct)) ?? string.Empty;
+
+    private static async Task<bool> TablaExisteAsync(SqlConnection cn, string tabla, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN OBJECT_ID(N'dbo.' + @Tabla, N'U') IS NULL THEN 0 ELSE 1 END;", new { Tabla = tabla }, cancellationToken: ct)) == 1;
+
+    private static string Recortar(string texto, int max) => texto.Length <= max ? texto : texto[..max];
+
     // ---------------------------------------------------------------- reglas (testeables)
+
+    /// <summary>
+    /// Tope vigente: el manual si existe (0 = sin tope, anula el del plan); si no, el automático del
+    /// plan con el porcentaje de aviso general. Null = sin tope.
+    /// </summary>
+    internal static IaTopeEstadoDto? ResolverTope(string idCliente, (int Tope, int Aviso)? manual, IaPlanCreditosDto? plan,
+        decimal factorExcedentes, int avisoPorcentaje, long creditosUsados)
+    {
+        if (manual is { } m)
+            return m.Tope <= 0 ? null : EvaluarTope(idCliente, m.Tope, m.Aviso, creditosUsados);
+
+        if (TopeAutomatico(plan, factorExcedentes) is not int tope)
+            return null;
+
+        var estado = EvaluarTope(idCliente, tope, avisoPorcentaje, creditosUsados);
+        estado.Origen = IaTopeOrigenes.Plan;
+        return estado;
+    }
+
+    /// <summary>
+    /// Tope automático del plan: sin excedentes, los créditos incluidos; con excedentes, incluidos ×
+    /// factor (0 = sin tope automático). Null si el plan no incluye créditos.
+    /// </summary>
+    internal static int? TopeAutomatico(IaPlanCreditosDto? plan, decimal factorExcedentes)
+    {
+        if (plan is null || plan.CreditosIncluidos <= 0)
+            return null;
+        if (!plan.PermiteExcedentes)
+            return plan.CreditosIncluidos;
+        if (factorExcedentes <= 0)
+            return null;
+        return (int)Math.Min(int.MaxValue, Math.Ceiling(plan.CreditosIncluidos * factorExcedentes));
+    }
 
     /// <summary>Tope alcanzado si los créditos del mes llegan al tope; aviso desde el porcentaje configurado.</summary>
     internal static IaTopeEstadoDto EvaluarTope(string idCliente, int topeCreditos, int avisoPorcentaje, long creditosUsados)
@@ -430,14 +786,19 @@ public sealed class IaConsumoService(
     internal static long Creditos(decimal costoUsd, decimal usdPorCredito)
         => costoUsd <= 0 || usdPorCredito <= 0 ? 0 : (long)Math.Ceiling(costoUsd / usdPorCredito);
 
-    /// <summary>Cargo del mes: abono fijo del plan + créditos excedentes × precio de excedente (si el plan lo permite).</summary>
+    /// <summary>
+    /// Cargo del mes: abono fijo del plan + créditos excedentes × precio de excedente por cada 1.000
+    /// créditos (si el plan lo permite). Por 1.000 porque Planes.PrecioExcedente tiene 2 decimales y el
+    /// precio de un solo crédito es de milésimas de dólar.
+    /// </summary>
     internal static (long Excedentes, decimal Importe) CalcularCargo(long creditosUsados, IaPlanCreditosDto? plan)
     {
         if (plan is null)
             return (0, 0);
 
         var excedentes = Math.Max(0, creditosUsados - Math.Max(0, plan.CreditosIncluidos));
-        var importe = Math.Max(0, plan.Precio) + (plan.PermiteExcedentes ? excedentes * Math.Max(0, plan.PrecioExcedente) : 0);
+        var importe = Math.Max(0, plan.Precio)
+            + (plan.PermiteExcedentes ? excedentes * Math.Max(0, plan.PrecioExcedente) / CreditosPorPrecioExcedente : 0);
         return (excedentes, Math.Round(importe, 2));
     }
 
@@ -510,7 +871,8 @@ public sealed class IaConsumoService(
             return [];
 
         return (await cn.QueryAsync<IaPlanCreditosDto>(new CommandDefinition("""
-            SELECT cm.Id AS IdClienteModulo, LTRIM(RTRIM(cm.IdCliente)) AS IdCliente, ISNULL(p.Nombre, N'') AS PlanNombre,
+            SELECT cm.Id AS IdClienteModulo, LTRIM(RTRIM(cm.IdCliente)) AS IdCliente, p.Id AS IdPlan,
+                   LTRIM(RTRIM(p.Codigo)) AS Codigo, ISNULL(p.Nombre, N'') AS PlanNombre,
                    COALESCE(cm.PrecioContratado, p.Precio, 0) AS Precio,
                    COALESCE(NULLIF(LTRIM(RTRIM(cm.MonedaContratada)), N''), p.Moneda, N'ARS') AS Moneda,
                    ISNULL(p.CantidadIncluida, 0) AS CreditosIncluidos,
