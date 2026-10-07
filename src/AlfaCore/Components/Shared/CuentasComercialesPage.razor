@@ -265,7 +265,7 @@ else
         </section>
     }
 
-    @if (_feedback is not null)
+    @if (_feedback is not null && !(Tipo == CuentaComercialTipo.Cliente && _showEditor))
     {
         <section id="cuentas-feedback" class="panel-card" @onclick:stopPropagation>
             <div class="editor-msg @GetFeedbackClass(_feedback)">
@@ -423,6 +423,426 @@ else
 
     @if (_showEditor)
     {
+        @if (Tipo == CuentaComercialTipo.Cliente)
+        {
+            @* Ficha de Cliente en AlfaDesign v1. Proveedores sigue con la ficha legacy de abajo
+               (CuentasComercialesPage es compartido: ver docs/ui/alfadesign-module-guide.md). *@
+            <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
+            <section class="clientes-edit-shell" aria-label="@(_isNewMode ? "Nuevo cliente" : "Editar cliente")">
+                <header class="clientes-edit-header">
+                    <div class="clientes-edit-header__identity">
+                        <span class="clientes-edit-header__avatar cuentas-partner-summary__avatar @GetAccountAvatarClass()" aria-hidden="true">@GetAccountInitial()</span>
+                        <div class="clientes-edit-header__body">
+                            <h2>@DisplayOrFallback(_form.RazonSocial, "Nuevo cliente")</h2>
+                            <div class="clientes-edit-header__meta">
+                                @if (_isNewMode)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Neutral">Nuevo</AlfaTag>
+                                    <span>Sin guardar · Cuenta título: @_lookups.TituloCuenta</span>
+                                }
+                                else
+                                {
+                                    <AlfaTag Tone="@(_selectedActivo ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(_selectedActivo ? "Activo" : "Inactivo")</AlfaTag>
+                                    @if (_form.Bloqueado)
+                                    {
+                                        <AlfaTag Tone="AlfaTagTone.Danger">Bloqueado</AlfaTag>
+                                    }
+                                    <span>Cliente @_form.Codigo</span>
+                                }
+                            </div>
+                            <div class="clientes-edit-header__summary">
+                                @if (!string.IsNullOrWhiteSpace(_form.Mail))
+                                {
+                                    <span><i class="bi bi-envelope" aria-hidden="true"></i>@_form.Mail</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_form.Telefono))
+                                {
+                                    <span><i class="bi bi-telephone" aria-hidden="true"></i>@_form.Telefono</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_form.NumeroDocumento))
+                                {
+                                    <span><i class="bi bi-card-text" aria-hidden="true"></i>@_form.NumeroDocumento</span>
+                                }
+                                @foreach (var line in BuildAddressLines())
+                                {
+                                    <span><i class="bi bi-geo-alt" aria-hidden="true"></i>@line</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="clientes-edit-header__stats">
+                        <button type="button"
+                                class="clientes-edit-stat @(_activeTab == CuentaComercialTab.Contactos ? "is-active" : string.Empty)"
+                                @onclick="() => SetActiveTabAsync(CuentaComercialTab.Contactos)">
+                            <i class="bi bi-person-lines-fill" aria-hidden="true"></i>
+                            <strong>@_contactosCuenta.Count</strong>
+                            <span>Contactos</span>
+                        </button>
+                        <button type="button"
+                                class="clientes-edit-stat @(_activeTab == CuentaComercialTab.Notas ? "is-active" : string.Empty)"
+                                @onclick="() => SetActiveTabAsync(CuentaComercialTab.Notas)">
+                            <i class="bi bi-journal-text" aria-hidden="true"></i>
+                            <strong>@(HasNotes() ? 1 : 0)</strong>
+                            <span>Notas</span>
+                        </button>
+                    </div>
+                </header>
+
+                <article class="clientes-edit-card">
+                    <AlfaTabs Items="@ClienteEditorTabs" ActiveKey="@ClienteEditorActiveTabKey" ActiveKeyChanged="@SetClienteEditorTabAsync" AriaLabel="Secciones del cliente" />
+
+                    <div class="clientes-edit-card__scroll">
+                        @if (_activeTab == CuentaComercialTab.Datos)
+                        {
+                            <div class="clientes-edit-content">
+                                <section class="clientes-edit-section">
+                                    <h3>Identificación</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaInput Label="Código" MaxLength="15" Value="@_form.Codigo" ErrorText="@ClienteFieldError("codigo")" Disabled="true" />
+                                        <AlfaInput Label="Razón social" MaxLength="50" Required Value="@_form.RazonSocial" ValueChanged="@(v => _form.RazonSocial = v ?? string.Empty)" ErrorText="@ClienteFieldError("razon-social")" Disabled="@_saving" />
+                                        <AlfaInput Label="Contacto" MaxLength="70" Value="@_form.Contacto" ValueChanged="@(v => _form.Contacto = v ?? string.Empty)" ErrorText="@ClienteFieldError("contacto")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Domicilio</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaInput Label="Calle" MaxLength="50" Value="@_form.Calle" ValueChanged="@(v => _form.Calle = v ?? string.Empty)" ErrorText="@ClienteFieldError("calle")" Disabled="@_saving" />
+                                        <div class="clientes-edit-inline">
+                                            <AlfaInput Label="Altura" MaxLength="6" Value="@_form.Numero" ValueChanged="@(v => _form.Numero = v ?? string.Empty)" ErrorText="@ClienteFieldError("numero")" Disabled="@_saving" />
+                                            <AlfaInput Label="Piso" MaxLength="2" Value="@_form.Piso" ValueChanged="@(v => _form.Piso = v ?? string.Empty)" ErrorText="@ClienteFieldError("piso")" Disabled="@_saving" />
+                                            <AlfaInput Label="Depto." MaxLength="2" Value="@_form.Departamento" ValueChanged="@(v => _form.Departamento = v ?? string.Empty)" ErrorText="@ClienteFieldError("departamento")" Disabled="@_saving" />
+                                        </div>
+                                        <AlfaInput Label="Código postal" MaxLength="10" Value="@_form.CodigoPostal" ValueChanged="@(v => _form.CodigoPostal = v ?? string.Empty)" ErrorText="@ClienteFieldError("codigo-postal")" Disabled="@_saving" />
+                                        <AlfaInput Label="Localidad" MaxLength="50" Value="@_form.Localidad" ValueChanged="@(v => _form.Localidad = v ?? string.Empty)" ErrorText="@ClienteFieldError("localidad")" Disabled="@_saving" />
+                                        <AlfaSelect Label="Provincia" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.Provincias)" Value="@_form.ProvinciaCodigo" ValueChanged="@(v => _form.ProvinciaCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("provincia")" Disabled="@_saving" />
+                                        <AlfaSelect Label="País" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.Paises)" Value="@_form.PaisCodigo" ValueChanged="@(v => _form.PaisCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("pais")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Medios de contacto</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaInput Label="Teléfono" MaxLength="50" Value="@_form.Telefono" ValueChanged="@(v => _form.Telefono = v ?? string.Empty)" ErrorText="@ClienteFieldError("telefono")" Disabled="@_saving" />
+                                        <AlfaInput Label="Fax" MaxLength="50" Value="@_form.Fax" ValueChanged="@(v => _form.Fax = v ?? string.Empty)" ErrorText="@ClienteFieldError("fax")" Disabled="@_saving" />
+                                        <AlfaInput Label="Email" Type="email" MaxLength="250" Value="@_form.Mail" ValueChanged="@(v => _form.Mail = v ?? string.Empty)" ErrorText="@ClienteFieldError("mail")" Disabled="@_saving" />
+                                        <AlfaInput Label="Web" MaxLength="250" Value="@_form.Web" ValueChanged="@(v => _form.Web = v ?? string.Empty)" ErrorText="@ClienteFieldError("web")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Datos fiscales</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaSelect Label="Tipo documento" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.TiposDocumento)" Value="@_form.DocumentoTipoCodigo" ValueChanged="@(v => _form.DocumentoTipoCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("tipo-documento")" Disabled="@_saving" />
+                                        <div class="clientes-edit-cuit">
+                                            <div class="clientes-grow"><AlfaInput Label="CUIT / Nro. documento" MaxLength="13" Value="@_form.NumeroDocumento" ValueChanged="@(v => _form.NumeroDocumento = v ?? string.Empty)" HelpText="@_arcaConsultaMensaje" ErrorText="@ClienteFieldError("numero-documento")" Disabled="@_saving" /></div>
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                                        Size="AlfaSize.Sm"
+                                                        Icon="bi bi-cloud-search"
+                                                        Loading="@_arcaBuscando"
+                                                        Disabled="@(_arcaBuscando || _saving || new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray()).Length != 11)"
+                                                        OnClick="_ => ConsultarArcaAsync()">@(_arcaBuscando ? "Consultando..." : "Consultar ARCA")</AlfaButton>
+                                        </div>
+                                        <AlfaSelect Label="Condición IVA" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.CondicionesIva)" Value="@_form.IvaCodigo" ValueChanged="@(v => _form.IvaCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("iva")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3><i class="bi bi-shop-window" aria-hidden="true"></i> Portal Cliente</h3>
+                                    <p class="clientes-edit-section__hint">Acceso del cliente al Portal Cliente (cuenta corriente, comprobantes, lista de precios, catálogos y pedidos).</p>
+                                    <div class="clientes-edit-grid">
+                                        <div class="clientes-edit-readonly">
+                                            <span class="clientes-edit-readonly__label">Email de acceso</span>
+                                            @if (string.IsNullOrWhiteSpace(_form.Mail))
+                                            {
+                                                <span class="clientes-edit-readonly__value clientes-edit-readonly__value--warning">
+                                                    <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                                                    Sin email registrado. Completá "Email" en Medios de contacto para poder enviar la invitación.
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="clientes-edit-readonly__value"><i class="bi bi-envelope-check" aria-hidden="true"></i>@_form.Mail</span>
+                                            }
+                                        </div>
+                                        <div class="clientes-edit-password">
+                                            <div class="clientes-grow"><AlfaInput Label="Clave Portal"
+                                                       Type="@(_mostrarClavePortal ? "text" : "password")"
+                                                       MaxLength="15"
+                                                       Placeholder="Dejar vacío para no modificar"
+                                                       HelpText="Se guarda junto con el resto de la ficha. Si queda vacía, el portal usa el CUIT/documento como clave."
+                                                       Value="@_clavePortalNueva"
+                                                       ValueChanged="@(v => _clavePortalNueva = v ?? string.Empty)"
+                                                       Disabled="@_saving" /></div>
+                                            <AlfaIconButton Icon="@(_mostrarClavePortal ? "bi bi-eye-slash" : "bi bi-eye")"
+                                                            Label="@(_mostrarClavePortal ? "Ocultar clave" : "Mostrar clave")"
+                                                            Size="AlfaSize.Sm"
+                                                            OnClick="_ => _mostrarClavePortal = !_mostrarClavePortal" />
+                                        </div>
+                                    </div>
+                                    <div class="clientes-edit-actions">
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                                    Size="AlfaSize.Sm"
+                                                    Icon="bi bi-send"
+                                                    Loading="@_enviandoInvitacionCliente"
+                                                    Disabled="@(_saving || _enviandoInvitacionCliente || _isNewMode || string.IsNullOrWhiteSpace(_form.Mail))"
+                                                    OnClick="_ => EnviarInvitacionClienteAsync()">@(_enviandoInvitacionCliente ? "Enviando..." : "Enviar invitación al Portal")</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                    Size="AlfaSize.Sm"
+                                                    Icon="bi bi-box-arrow-up-right"
+                                                    Loading="@_abriendoPortalCliente"
+                                                    Disabled="@(_saving || _abriendoPortalCliente || _isNewMode)"
+                                                    OnClick="_ => AbrirPortalComoClienteAsync()">@(_abriendoPortalCliente ? "Abriendo..." : "Ver portal como cliente")</AlfaButton>
+                                        @if (_isNewMode)
+                                        {
+                                            <span class="clientes-edit-section__hint">Guardá el cliente para poder enviar la invitación.</span>
+                                        }
+                                    </div>
+                                </section>
+                            </div>
+                        }
+                        else if (_activeTab == CuentaComercialTab.Condiciones)
+                        {
+                            <div class="clientes-edit-content">
+                                <section class="clientes-edit-section">
+                                    <h3>Condiciones comerciales</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaSelect Label="Condición comercial" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.CondicionesComerciales)" Value="@_form.CondicionComercialCodigo" ValueChanged="@(v => _form.CondicionComercialCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("condicion-comercial")" Disabled="@_saving" />
+                                        @if (_lookups.UsaListasDePrecio)
+                                        {
+                                            <AlfaSelect Label="Lista de precios" Placeholder="Sin lista" Options="@ToClienteOptions(_lookups.ListasPrecio, withCode: true)" Value="@_form.ListaPrecioCodigo" ValueChanged="@(v => _form.ListaPrecioCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("lista-precio")" Disabled="@_saving" />
+                                        }
+                                        <AlfaSelect Label="Vendedor" Placeholder="Sin vendedor" Options="@ToClienteOptions(_lookups.Vendedores, withCode: true)" Value="@_form.VendedorCodigo" ValueChanged="@(v => _form.VendedorCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("vendedor")" Disabled="@_saving" />
+                                        <AlfaSelect Label="Clasificación" Placeholder="Sin clasificación" Options="@ToClienteOptions(_lookups.Clasificaciones, withCode: true)" Value="@_form.ClasificacionCodigo" ValueChanged="@(v => _form.ClasificacionCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("clasificacion")" Disabled="@_saving" />
+                                        <AlfaSelect Label="Moneda" Placeholder="Sin moneda" Options="@ToClienteOptions(_lookups.Monedas)" Value="@_form.MonedaCodigo" ValueChanged="@(v => _form.MonedaCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("moneda")" Disabled="@_saving" />
+                                        <AlfaInput Label="Límite de crédito" Type="number" Value="@FormatClienteDecimal(_form.LimiteCredito)" ValueChanged="@SetClienteLimiteCredito" ErrorText="@ClienteFieldError("limite-credito")" Disabled="@_saving" />
+                                        <AlfaInput Label="Clase" Type="number" HelpText="De 0 a 8." Value="@_form.Clase?.ToString(System.Globalization.CultureInfo.InvariantCulture)" ValueChanged="@SetClienteClase" ErrorText="@ClienteFieldError("clase")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Imputación contable</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaInput Label="Cuenta principal" MaxLength="15" Value="@_form.CuentaPrincipal" ValueChanged="@(v => _form.CuentaPrincipal = v ?? string.Empty)" ErrorText="@ClienteFieldError("cuenta-principal")" Disabled="@_saving" />
+                                        <AlfaInput Label="Código imputación" MaxLength="15" Value="@_form.CodigoImputacion" ValueChanged="@(v => _form.CodigoImputacion = v ?? string.Empty)" ErrorText="@ClienteFieldError("codigo-imputacion")" Disabled="@_saving" />
+                                        <AlfaInput Label="Código opcional" MaxLength="15" Value="@_form.CodigoOpcional" ValueChanged="@(v => _form.CodigoOpcional = v ?? string.Empty)" ErrorText="@ClienteFieldError("codigo-opcional")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Entrega y pago</h3>
+                                    <div class="clientes-edit-grid clientes-edit-grid--wide">
+                                        <AlfaInput Label="Lugar de entrega" MaxLength="200" Value="@_form.LugarEntrega" ValueChanged="@(v => _form.LugarEntrega = v ?? string.Empty)" ErrorText="@ClienteFieldError("lugar-entrega")" Disabled="@_saving" />
+                                        <AlfaInput Label="Datos de pago" MaxLength="150" Value="@_form.DatosPago" ValueChanged="@(v => _form.DatosPago = v ?? string.Empty)" ErrorText="@ClienteFieldError("datos-pago")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Estado e impuestos</h3>
+                                    <div class="clientes-edit-flags">
+                                        <AlfaCheckbox Value="@_form.Bloqueado" ValueChanged="@(v => _form.Bloqueado = v == true)" Disabled="@_saving">Bloqueado</AlfaCheckbox>
+                                        <AlfaCheckbox Value="@_form.ExentoIvaServicios" ValueChanged="@(v => _form.ExentoIvaServicios = v == true)" Disabled="@_saving">Exento IVA servicios</AlfaCheckbox>
+                                        <AlfaCheckbox Value="@_form.ExentoIvaArticulos" ValueChanged="@(v => _form.ExentoIvaArticulos = v == true)" Disabled="@_saving">Exento IVA artículos</AlfaCheckbox>
+                                        <AlfaCheckbox Value="@_form.ExentoIvaOtros" ValueChanged="@(v => _form.ExentoIvaOtros = v == true)" Disabled="@_saving">Exento IVA otros</AlfaCheckbox>
+                                    </div>
+                                </section>
+                            </div>
+                        }
+                        else if (_activeTab == CuentaComercialTab.Contactos)
+                        {
+                            <div class="clientes-edit-content clientes-edit-content--single">
+                                <div class="clientes-edit-contacts-head">
+                                    <div>
+                                        <h3>Contactos vinculados</h3>
+                                        <p>@(_isNewMode ? "Guardá el cliente para cargar contactos." : $"{_contactosCuenta.Count} contacto(s) vigente(s) para {_form.RazonSocial}")</p>
+                                    </div>
+                                    @if (!_isNewMode)
+                                    {
+                                        <div class="clientes-edit-actions">
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-link-45deg" Disabled="@(_saving || _savingContacto || _linkingContacto)" OnClick="_ => MostrarVincularContacto()">Vincular existente</AlfaButton>
+                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-person-plus" Disabled="@(_saving || _savingContacto)" OnClick="_ => MostrarNuevoContacto()">Nuevo contacto</AlfaButton>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (_loadingContactos)
+                                {
+                                    <AlfaEmptyState Title="Cargando contactos" Message="Buscando los contactos vinculados a este cliente." />
+                                }
+                                else if (_isNewMode)
+                                {
+                                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Cliente sin guardar" Message="Guardá el cliente para poder vincular o crear contactos." />
+                                }
+                                else if (_contactosCuenta.Count == 0)
+                                {
+                                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                                    Title="Sin contactos vinculados"
+                                                    Message="Este cliente todavía no tiene contactos vigentes."
+                                                    ActionLabel="Nuevo contacto"
+                                                    ActionIcon="bi bi-person-plus"
+                                                    OnAction="_ => MostrarNuevoContacto()" />
+                                }
+                                else
+                                {
+                                    <div class="clientes-edit-contacts">
+                                        @foreach (var contacto in _contactosCuenta)
+                                        {
+                                            <div class="clientes-edit-contact">
+                                                <button type="button" class="clientes-edit-contact__main" title="Ver contacto" @onclick="() => MostrarVistaContacto(contacto)">
+                                                    <span class="clientes-edit-contact__avatar cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)" aria-hidden="true">@GetContactInitial(contacto)</span>
+                                                    <span class="clientes-edit-contact__body">
+                                                        <strong>@contacto.NombreApellido</strong>
+                                                        @if (!string.IsNullOrWhiteSpace(contacto.Cargo))
+                                                        {
+                                                            <small>@contacto.Cargo</small>
+                                                        }
+                                                        <span class="clientes-edit-contact__meta">
+                                                            @if (!string.IsNullOrWhiteSpace(contacto.Email))
+                                                            {
+                                                                <span><i class="bi bi-envelope" aria-hidden="true"></i>@contacto.Email</span>
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(contacto.Celular))
+                                                            {
+                                                                <span><i class="bi bi-phone" aria-hidden="true"></i>@contacto.Celular</span>
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(contacto.Telefono))
+                                                            {
+                                                                <span><i class="bi bi-telephone" aria-hidden="true"></i>@contacto.Telefono</span>
+                                                            }
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                                <div class="clientes-edit-contact__actions">
+                                                    @if (contacto.VinculadoPorTabla)
+                                                    {
+                                                        <AlfaTag Tone="AlfaTagTone.Accent">Relación múltiple</AlfaTag>
+                                                    }
+                                                    @if (contacto.VinculadoPorCuentaRel)
+                                                    {
+                                                        <AlfaTag Tone="AlfaTagTone.Neutral">CuentaRel</AlfaTag>
+                                                    }
+                                                    <AlfaIconButton Icon="bi bi-box-arrow-up-right" Label="Abrir ficha del contacto" Size="AlfaSize.Sm" OnClick="_ => AbrirContactoCompleto(contacto)" />
+                                                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                                Size="AlfaSize.Sm"
+                                                                Icon="bi bi-send"
+                                                                Loading="@(_enviandoInvitacionContactoId == contacto.IdContacto)"
+                                                                Disabled="@string.IsNullOrWhiteSpace(contacto.Email)"
+                                                                OnClick="_ => EnviarInvitacionContactoAsync(contacto)">Invitar al portal</AlfaButton>
+                                                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                                Size="AlfaSize.Sm"
+                                                                Icon="bi bi-person-dash"
+                                                                OnClick="_ => MostrarConfirmarDesvincularContacto(contacto)">Desvincular</AlfaButton>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (_activeTab == CuentaComercialTab.Notas)
+                        {
+                            <div class="clientes-edit-content clientes-edit-content--single">
+                                <section class="clientes-edit-section">
+                                    <h3>Manual / notas internas</h3>
+                                    <div class="tickets-rich-editor cuentas-rich-editor-note clientes-edit-rich">
+                                        <div class="tickets-rich-editor__surface"
+                                             @ref="_manualEditor"
+                                             contenteditable="@(!_saving)"
+                                             data-placeholder="Escribí notas internas, claves, instrucciones o referencias..."
+                                             @oninput="OnManualChangedAsync"
+                                             @onkeyup="OnManualChangedAsync"></div>
+                                        <div class="tickets-rich-editor__bar">
+                                            @foreach (var option in NotesToolbarCommands)
+                                            {
+                                                <button type="button"
+                                                        class="tickets-rich-editor__tool"
+                                                        title="@option.Title"
+                                                        aria-label="@option.Title"
+                                                        disabled="@_saving"
+                                                        @onclick="() => RunNoteCommandAsync(_manualEditor, option)">
+                                                    <i class="bi @option.Icon" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (HasFieldError("manual"))
+                                    {
+                                        <small class="clientes-edit-error">@GetFieldError("manual")</small>
+                                    }
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <div class="clientes-edit-textarea">
+                                        <label for="clientes-edit-observaciones">Observaciones</label>
+                                        <textarea id="clientes-edit-observaciones"
+                                                  rows="4"
+                                                  maxlength="200"
+                                                  class="@(HasFieldError("observaciones") ? "has-error" : string.Empty)"
+                                                  value="@_form.Observaciones"
+                                                  @oninput="OnObservacionesChanged"
+                                                  @onchange="OnObservacionesChanged"
+                                                  disabled="@_saving"></textarea>
+                                        @if (HasFieldError("observaciones"))
+                                        {
+                                            <small class="clientes-edit-error">@GetFieldError("observaciones")</small>
+                                        }
+                                    </div>
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Nota ampliada</h3>
+                                    <div class="tickets-rich-editor cuentas-rich-editor-note clientes-edit-rich">
+                                        <div class="tickets-rich-editor__surface"
+                                             @ref="_notaCuentaEditor"
+                                             contenteditable="@(!_saving)"
+                                             data-placeholder="Detalle ampliado, antecedentes o información heredada..."
+                                             @oninput="OnNotaCuentaChangedAsync"
+                                             @onkeyup="OnNotaCuentaChangedAsync"></div>
+                                        <div class="tickets-rich-editor__bar">
+                                            @foreach (var option in NotesToolbarCommands)
+                                            {
+                                                <button type="button"
+                                                        class="tickets-rich-editor__tool"
+                                                        title="@option.Title"
+                                                        aria-label="@option.Title"
+                                                        disabled="@_saving"
+                                                        @onclick="() => RunNoteCommandAsync(_notaCuentaEditor, option)">
+                                                    <i class="bi @option.Icon" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (HasFieldError("nota-cuenta"))
+                                    {
+                                        <small class="clientes-edit-error">@GetFieldError("nota-cuenta")</small>
+                                    }
+                                </section>
+
+                                <section class="clientes-edit-section">
+                                    <h3>Ingresos brutos</h3>
+                                    <div class="clientes-edit-grid">
+                                        <AlfaInput Label="Situación IB" MaxLength="2" Value="@_form.SituacionIb" ValueChanged="@(v => _form.SituacionIb = v ?? string.Empty)" ErrorText="@ClienteFieldError("situacion-ib")" Disabled="@_saving" />
+                                        <AlfaInput Label="Convenio IB" MaxLength="2" Value="@_form.ConvenioIb" ValueChanged="@(v => _form.ConvenioIb = v ?? string.Empty)" ErrorText="@ClienteFieldError("convenio-ib")" Disabled="@_saving" />
+                                        <AlfaInput Label="Concepto IB" MaxLength="2" Value="@_form.ConceptoIb" ValueChanged="@(v => _form.ConceptoIb = v ?? string.Empty)" ErrorText="@ClienteFieldError("concepto-ib")" Disabled="@_saving" />
+                                        <AlfaInput Label="Nro. constancia" MaxLength="13" Value="@_form.NroConstanciaIb" ValueChanged="@(v => _form.NroConstanciaIb = v ?? string.Empty)" ErrorText="@ClienteFieldError("nro-constancia-ib")" Disabled="@_saving" />
+                                    </div>
+                                </section>
+                            </div>
+                        }
+
+                        @if (!_isNewMode)
+                        {
+                            <footer class="clientes-edit-footer">
+                                <span>Alta: @FormatDate(_selectedAlta)</span>
+                                <span>Modificación: @FormatDate(_selectedModificacion)</span>
+                            </footer>
+                        }
+                    </div>
+                </article>
+            </section>
+        }
+        else
+        {
         <section class="panel-card">
             @* Header inline (con "Volver al listado") -- ya no aplica a ningún Tipo: Cliente y
                Proveedor usan el mismo Guardar/Cancelar vía IPageHeaderService (topbar). Se deja el
@@ -1286,6 +1706,7 @@ else
                 }
             </div>
         </section>
+        }
     }
     else
     {
@@ -1410,7 +1831,119 @@ else
     }
 </div>
 
-@if (_showContactoForm && !_isNewMode)
+@if (Tipo == CuentaComercialTipo.Cliente && !_isNewMode)
+{
+    @* Diálogos de contactos de la ficha de Cliente (AlfaDesign v1). Proveedores usa los legacy de abajo. *@
+    <AlfaDialog Open="@_showContactoForm"
+                Title="Nuevo contacto"
+                Eyebrow="@_form.RazonSocial"
+                Description="Se crea el contacto y queda vinculado a este cliente."
+                ErrorMessage="@_contactoError"
+                Loading="@_savingContacto"
+                OnClose="CancelarNuevoContacto">
+        <ChildContent>
+            <div class="clientes-dialog-grid">
+                <AlfaInput Label="Nombre y apellido" MaxLength="100" Required Value="@_contactoDraft.NombreApellido" ValueChanged="@(v => _contactoDraft.NombreApellido = v ?? string.Empty)" Disabled="@_savingContacto" />
+                <AlfaInput Label="Cargo / rol" MaxLength="100" Value="@_contactoDraft.Cargo" ValueChanged="@(v => _contactoDraft.Cargo = v ?? string.Empty)" Disabled="@_savingContacto" />
+                <AlfaInput Label="Email" Type="email" MaxLength="100" Value="@_contactoDraft.Email" ValueChanged="@(v => _contactoDraft.Email = v ?? string.Empty)" Disabled="@_savingContacto" />
+                <AlfaInput Label="Celular" MaxLength="100" Value="@_contactoDraft.Celular" ValueChanged="@(v => _contactoDraft.Celular = v ?? string.Empty)" Disabled="@_savingContacto" />
+                <AlfaInput Label="Teléfono" MaxLength="100" Value="@_contactoDraft.Telefono" ValueChanged="@(v => _contactoDraft.Telefono = v ?? string.Empty)" Disabled="@_savingContacto" />
+            </div>
+            <div class="clientes-edit-textarea">
+                <label for="clientes-contacto-observaciones">Observaciones</label>
+                <textarea id="clientes-contacto-observaciones" rows="3" value="@_contactoDraft.Observaciones" @oninput="@(e => _contactoDraft.Observaciones = e.Value?.ToString() ?? string.Empty)" disabled="@_savingContacto"></textarea>
+            </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_savingContacto" OnClick="_ => CancelarNuevoContacto()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingContacto" OnClick="_ => GuardarContactoCuentaAsync()">Guardar contacto</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
+    <AlfaDialog Open="@(_showContactoPreview && _contactoPreview is not null)"
+                Title="@(_contactoPreview?.NombreApellido ?? "Contacto")"
+                Eyebrow="@_form.RazonSocial"
+                Description="@(string.IsNullOrWhiteSpace(_contactoPreview?.Cargo) ? null : _contactoPreview!.Cargo)"
+                ErrorMessage="@_contactoError"
+                Loading="@_savingContactoQuick"
+                OnClose="CerrarVistaContacto">
+        <ChildContent>
+            @if (_contactoPreview is not null)
+            {
+                <div class="clientes-dialog-grid">
+                    <AlfaInput Label="Email" Type="email" MaxLength="100" Value="@_contactoQuickDraft.Email" ValueChanged="@(v => _contactoQuickDraft.Email = v ?? string.Empty)" Disabled="@_savingContactoQuick" />
+                    <AlfaInput Label="Celular" MaxLength="100" Value="@_contactoQuickDraft.Celular" ValueChanged="@(v => _contactoQuickDraft.Celular = v ?? string.Empty)" Disabled="@_savingContactoQuick" />
+                    <AlfaInput Label="Teléfono" MaxLength="100" Value="@_contactoQuickDraft.Telefono" ValueChanged="@(v => _contactoQuickDraft.Telefono = v ?? string.Empty)" Disabled="@_savingContactoQuick" />
+                    <div class="clientes-edit-readonly">
+                        <span class="clientes-edit-readonly__label">Relación</span>
+                        <span class="clientes-edit-readonly__value">@GetContactoRelacionLabel(_contactoPreview)</span>
+                    </div>
+                </div>
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-intersect" OnClick="_ => AbrirUnificarContacto()">Unificar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-person-dash" OnClick="_ => MostrarConfirmarDesvincularContacto()">Desvincular</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-pencil-square" OnClick="_ => AbrirContactoCompleto()">Editar ficha completa</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingContactoQuick" OnClick="_ => GuardarDatosRapidosContactoAsync()">Guardar cambios</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
+    <AlfaDialog Open="@_showLinkContactoModal"
+                Title="Vincular contacto existente"
+                Eyebrow="@_form.RazonSocial"
+                Description="Buscá un contacto ya creado y vinculalo con este cliente."
+                ErrorMessage="@_contactoError"
+                Loading="@_linkingContacto"
+                Size="AlfaDialogSize.Lg"
+                OnClose="CerrarVincularContacto">
+        <ChildContent>
+            <div class="clientes-link-search" @onkeydown="OnLinkSearchKeyDownAsync">
+                <div class="clientes-grow"><AlfaInput Label="Buscar contacto"
+                           Type="search"
+                           Placeholder="Nombre, email, celular o teléfono..."
+                           Value="@_linkSearchText"
+                           ValueChanged="@(v => _linkSearchText = v ?? string.Empty)"
+                           Disabled="@(_loadingLinkCandidates || _linkingContacto)" /></div>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_loadingLinkCandidates" Disabled="@_linkingContacto" OnClick="_ => BuscarContactosParaVincularAsync()">Buscar</AlfaButton>
+            </div>
+
+            @if (_loadingLinkCandidates)
+            {
+                <AlfaEmptyState Title="Buscando contactos" Message="Un momento..." />
+            }
+            else if (_linkSearchExecuted && _linkCandidates.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin resultados" Message="No encontramos contactos disponibles para vincular con ese texto." />
+            }
+            else if (_linkCandidates.Count > 0)
+            {
+                <div class="clientes-link-results">
+                    @foreach (var candidate in _linkCandidates)
+                    {
+                        <button type="button" class="clientes-link-result" @onclick="() => VincularContactoExistenteAsync(candidate)" disabled="@_linkingContacto">
+                            <span class="clientes-edit-contact__avatar cuentas-contacto-item__avatar @GetContactAvatarClass(candidate)" aria-hidden="true">@GetContactInitial(candidate)</span>
+                            <span class="clientes-edit-contact__body">
+                                <strong>@candidate.NombreApellido</strong>
+                                @if (!string.IsNullOrWhiteSpace(candidate.Cargo))
+                                {
+                                    <small>@candidate.Cargo</small>
+                                }
+                                <span class="clientes-edit-contact__meta">@FormatContactCandidateSummary(candidate)</span>
+                            </span>
+                            <i class="bi bi-link-45deg" aria-hidden="true"></i>
+                        </button>
+                    }
+                </div>
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_linkingContacto" OnClick="_ => CerrarVincularContacto()">Cerrar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+}
+
+@if (_showContactoForm && !_isNewMode && Tipo != CuentaComercialTipo.Cliente)
 {
     <div class="cuentas-modal-backdrop" @onclick="CancelarNuevoContacto">
         <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-modal-title" @onclick:stopPropagation="true">
@@ -1471,7 +2004,7 @@ else
     </div>
 }
 
-@if (_showContactoPreview && _contactoPreview is not null)
+@if (_showContactoPreview && _contactoPreview is not null && Tipo != CuentaComercialTipo.Cliente)
 {
     <div class="cuentas-modal-backdrop" @onclick="CerrarVistaContacto">
         <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-preview-title" @onclick:stopPropagation="true">
@@ -1594,7 +2127,7 @@ else
                    OnConfirm="ConfirmarDesvincularContactoAsync"
                    OnCancel="CancelarDesvincularContacto" />
 
-@if (_showLinkContactoModal && !_isNewMode)
+@if (_showLinkContactoModal && !_isNewMode && Tipo != CuentaComercialTipo.Cliente)
 {
     <div class="cuentas-modal-backdrop" @onclick="CerrarVincularContacto">
         <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-link-title" @onclick:stopPropagation="true">
@@ -4445,5 +4978,55 @@ else
         Condiciones = 1,
         Contactos = 2,
         Notas = 3
+    }
+}
+
+@code {
+    // ---- Ficha de Cliente en AlfaDesign v1 (Proveedores sigue en la ficha legacy) ----
+
+    private static readonly IReadOnlyList<AlfaTabItem> ClienteEditorTabsBase =
+    [
+        new(nameof(CuentaComercialTab.Datos), "Carga de datos"),
+        new(nameof(CuentaComercialTab.Condiciones), "Condiciones"),
+        new(nameof(CuentaComercialTab.Contactos), "Contactos"),
+        new(nameof(CuentaComercialTab.Notas), "Notas")
+    ];
+
+    private IReadOnlyList<AlfaTabItem> ClienteEditorTabs
+        => ClienteEditorTabsBase
+            .Select(tab => tab.Key == nameof(CuentaComercialTab.Contactos) && !_isNewMode
+                ? tab with { Badge = _contactosCuenta.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                : tab)
+            .ToList();
+
+    private string ClienteEditorActiveTabKey => _activeTab.ToString();
+
+    private Task SetClienteEditorTabAsync(string? key)
+        => Enum.TryParse<CuentaComercialTab>(key, out var tab) ? SetActiveTabAsync(tab) : Task.CompletedTask;
+
+    private string? ClienteFieldError(string key)
+        => HasFieldError(key) ? GetFieldError(key) : null;
+
+    private static IReadOnlyList<AlfaSelectOption> ToClienteOptions(IEnumerable<CuentaComercialLookupOptionDto> items, bool withCode = false)
+        => items
+            .Select(item => new AlfaSelectOption(item.Codigo, withCode ? $"{item.Codigo} · {item.Descripcion}" : item.Descripcion))
+            .ToList();
+
+    private static string? FormatClienteDecimal(decimal? value)
+        => value?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void SetClienteLimiteCredito(string? value)
+    {
+        var text = (value ?? string.Empty).Trim().Replace(',', '.');
+        _form.LimiteCredito = decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private void SetClienteClase(string? value)
+    {
+        _form.Clase = short.TryParse((value ?? string.Empty).Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
     }
 }

@@ -2244,6 +2244,20 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+
+            // Una conversación sin contacto no tiene dónde colgar el vínculo con el cliente (la ficha
+            // del cliente lista contactos, no conversaciones). Antes de la transacción se busca un
+            // contacto existente con el mismo teléfono; si no hay, se crea uno adentro de la transacción.
+            var conversacionDatos = await GetConversacionDatosContactoAsync(cn, request.IdConversacion, token)
+                ?? throw new InvalidOperationException("La conversación seleccionada ya no existe.");
+            var idContactoExistente = conversacionDatos.IdContacto;
+            if (!idContactoExistente.HasValue && !string.IsNullOrWhiteSpace(conversacionDatos.Telefono))
+            {
+                var porTelefono = await TryFindContactByPhoneAsync(cn, conversacionDatos.Telefono, token);
+                if (porTelefono.IdContact > 0)
+                    idContactoExistente = porTelefono.IdContact;
+            }
+
             await using var tx = await cn.BeginTransactionAsync(token);
             var sqlTx = (SqlTransaction)tx;
 
@@ -2287,14 +2301,39 @@ public sealed class ConversacionesService(
                     throw new InvalidOperationException("La conversación seleccionada ya no existe.");
             }
 
+            var contactoCreado = false;
+            if (!idContacto.HasValue)
+            {
+                if (idContactoExistente.HasValue)
+                {
+                    idContacto = idContactoExistente;
+                }
+                else
+                {
+                    const string insertContactoSql = """
+                        INSERT INTO dbo.MA_CONTACTOS (Nombre_y_Apellido, Celular)
+                        VALUES (@Nombre, @Celular);
+                        SELECT CAST(SCOPE_IDENTITY() AS int);
+                        """;
+                    var nombreContacto = FirstNonEmpty(conversacionDatos.NombreVisible, clienteNombre, "Contacto sin nombre");
+                    await using var insertCmd = new SqlCommand(insertContactoSql, cn, sqlTx);
+                    insertCmd.Parameters.AddWithValue("@Nombre", nombreContacto.Length > 100 ? nombreContacto[..100] : nombreContacto);
+                    insertCmd.Parameters.AddWithValue("@Celular", DbNullable(conversacionDatos.Telefono));
+                    idContacto = Convert.ToInt32(await insertCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+                    contactoCreado = true;
+                }
+            }
+
             const string updateConversationSql = """
                 UPDATE dbo.CONV_CONVERSACIONES
-                SET ClienteCodigo = @ClienteCodigo
+                SET ClienteCodigo = @ClienteCodigo,
+                    IdContacto = COALESCE(IdContacto, @IdContacto)
                 WHERE IdConversacion = @IdConversacion;
                 """;
             await using (var updateCmd = new SqlCommand(updateConversationSql, cn, sqlTx))
             {
                 updateCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                updateCmd.Parameters.AddWithValue("@IdContacto", idContacto.HasValue ? idContacto.Value : DBNull.Value);
                 updateCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
                 await updateCmd.ExecuteNonQueryAsync(token);
             }
@@ -2348,11 +2387,34 @@ public sealed class ConversacionesService(
                 "RelacionarCliente",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "Cliente relacionado manualmente desde contexto de conversación.",
-                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto },
+                contactoCreado
+                    ? "Cliente relacionado desde la conversación (se creó el contacto automáticamente)."
+                    : "Cliente relacionado manualmente desde contexto de conversación.",
+                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto, ContactoCreado = contactoCreado },
                 token);
             return true;
         }, "No se pudo relacionar el cliente con la conversación.", ct);
+    }
+
+    private sealed record ConversacionDatosContacto(int? IdContacto, string NombreVisible, string Telefono);
+
+    private static async Task<ConversacionDatosContacto?> GetConversacionDatosContactoAsync(SqlConnection cn, long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) IdContacto, ISNULL(NombreVisible, N''), ISNULL(TelefonoWhatsApp, N'')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return new ConversacionDatosContacto(
+            rd.IsDBNull(0) ? null : Convert.ToInt32(rd.GetValue(0), CultureInfo.InvariantCulture),
+            GetString(rd, 1).Trim(),
+            GetString(rd, 2).Trim());
     }
 
     public async Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default)

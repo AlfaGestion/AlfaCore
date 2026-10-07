@@ -76,4 +76,4 @@ Usar solo si hay tabla ancha con scroll horizontal y acciones por fila. Debe ten
 
 ## Guardas De Dominio
 
-Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `EsGrupo` no es rol; en Técnicos, Usuario asociado es opcional y no transaccional; en Clientes/Proveedores, `CuentasComercialesPage` es compartido y toda migración debe proteger `Tipo == Cliente && !editor` para no afectar Proveedores.
+Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `EsGrupo` no es rol; en Técnicos, Usuario asociado es opcional y no transaccional; en Clientes/Proveedores, `CuentasComercialesPage` es compartido y toda migración debe proteger `Tipo == Cliente` para no afectar Proveedores (el Browse AlfaDesign aplica a ambos; la ficha AlfaDesign solo a Cliente, Proveedores sigue con la ficha legacy).

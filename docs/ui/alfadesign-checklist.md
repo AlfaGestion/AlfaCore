@@ -129,5 +129,5 @@ Legacy restante:
 
 | Módulo | Estado | Nota |
 |---|---|---|
-| Clientes | migración en curso | Browse AlfaDesign con Smart Search standard, Data View Footer, column resize y sticky Actions; Editor pendiente. |
+| Clientes | migración en curso | Browse AlfaDesign con Smart Search standard, Data View Footer, column resize y sticky Actions. Editor AlfaDesign (2026-10-07): header de identidad, `AlfaTabs`, `AlfaInput`/`AlfaSelect`/`AlfaCheckbox`, contactos con `AlfaButton`/`AlfaEmptyState` y diálogos `AlfaDialog`, gateado a `Tipo == Cliente`. Excepciones: editores de texto enriquecido de Notas (no hay componente AlfaDesign equivalente) y textarea de Observaciones. Falta validación responsive formal y dirty state con confirmación de descarte. |
 | Proveedores | legacy | Comparte componente con Clientes; no declarar AlfaDesign. |

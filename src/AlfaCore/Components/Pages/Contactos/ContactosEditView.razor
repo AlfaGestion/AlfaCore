@@ -87,24 +87,17 @@
             {
             <section class="contactos-edit-content contactos-edit-content--single">
                 <div class="contactos-edit-accounts-head">
-                    <div><h3>Cuentas vinculadas</h3><p>Clientes y proveedores relacionados. Los vínculos se administran desde cada cuenta.</p></div>
+                    <div><h3>Cuentas vinculadas</h3><p>Clientes y proveedores relacionados. Vincular, cambiar o desvincular se aplica al instante, sin esperar a Guardar.</p></div>
                 </div>
-                @if (LinkedAccounts.Count == 0)
-                {
-                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin cuentas vinculadas" Message="Este contacto no tiene clientes o proveedores vinculados." />
-                }
-                else
-                {
-                    <div class="contactos-edit-accounts">
-                        @foreach (var account in LinkedAccounts)
-                        {
-                            <a href="@BuildAccountLink(account)" class="contactos-edit-account">
-                                <span><strong>@Display(account.RazonSocial, account.Codigo)</strong><small>@account.Tipo · @account.Codigo</small></span>
-                                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                            </a>
-                        }
-                    </div>
-                }
+                <ContactoCuentasPanel Accounts="LinkedAccounts"
+                                      BuildAccountLink="BuildAccountLink"
+                                      CanManage="@(!CreateMode && LinkAccount is not null)"
+                                      Busy="@AccountsBusy"
+                                      SearchAccounts="SearchAccounts"
+                                      LinkAccount="LinkAccount"
+                                      AccountLinked="AccountLinked"
+                                      UnlinkClientAccount="UnlinkClientAccount"
+                                      ReplaceClientAccount="ReplaceClientAccount" />
             </section>
             }
         </div>
@@ -128,6 +121,12 @@
     [Parameter] public EventCallback<int> ActiveTabChanged { get; set; }
     [Parameter] public EventCallback<string> OnFieldChanged { get; set; }
     [Parameter, EditorRequired] public Func<ContactoCuentaDto, string> BuildAccountLink { get; set; } = _ => "#";
+    [Parameter] public bool AccountsBusy { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<ContactoCuentaLookupOptionDto>>>? SearchAccounts { get; set; }
+    [Parameter] public Func<ContactoCuentaLookupOptionDto, Task<bool>>? LinkAccount { get; set; }
+    [Parameter] public EventCallback<ContactoCuentaLookupOptionDto> AccountLinked { get; set; }
+    [Parameter] public Func<ContactoCuentaDto, Task>? UnlinkClientAccount { get; set; }
+    [Parameter] public Func<ContactoCuentaDto, ContactoCuentaLookupOptionDto, Task<bool>>? ReplaceClientAccount { get; set; }
 
     private IReadOnlyList<AlfaTabItem> Tabs => CreateMode
         ?

@@ -206,6 +206,15 @@ Se deja preparado:
 
 - referencia física: `MA_CONTACTOS(id)`
 - campo nuevo: `IdContacto`
+- "Relacionar cliente" desde la bandeja (`ConversacionesService.RelacionarClienteAsync`, 2026-10-07):
+  si la conversación no tiene contacto, primero busca uno existente por teléfono
+  (`TryFindContactByPhoneAsync`) y, si no hay, crea `MA_CONTACTOS` con el nombre y el teléfono de la
+  conversación. Después lo vincula al cliente (`MA_CONTACTOS_CUENTAS` + `CuentaRel`) y graba
+  `CONV_CONVERSACIONES.IdContacto`. Así el contacto aparece en la ficha del cliente. Los contactos no
+  se crean al llegar cada conversación (evita llenar Contactos con spam o visitantes anónimos).
+- Vincular / desvincular un contacto de un cliente (`CuentasComercialesService.LinkContactoAsync` /
+  `UnlinkContactoAsync`) actualiza también `CONV_CONVERSACIONES.ClienteCodigo` de las conversaciones
+  de ese contacto (desvincular limpia el cliente quitado; vincular completa las que no tenían cliente).
 
 ### Estado
 

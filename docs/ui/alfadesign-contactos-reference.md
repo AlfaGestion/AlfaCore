@@ -49,7 +49,7 @@ El page-size no está documentado como requisito cerrado de Contactos si el cód
 
 - Column resize no implementado.
 - Alta de Cliente desde Contactos sigue pendiente de contrato seguro de Clientes.
-- No existe operación pública de desvinculación en `ICuentasComercialesService`.
+- Resuelto (2026-10-07): vincular, cambiar y desvincular clientes desde la ficha y desde la edición del contacto con `ContactoCuentasPanel` (usa `ICuentasComercialesService.LinkContactoAsync`/`UnlinkContactoAsync`; en edición refresca solo las cuentas para no pisar el formulario).
 - `ConversacionesService.cs` conserva mojibake histórico fuera del alcance visual cerrado.
 
 ## Figma

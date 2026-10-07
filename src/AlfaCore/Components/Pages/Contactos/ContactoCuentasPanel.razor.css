@@ -1,0 +1,81 @@
+.contactos-record-accounts {
+    display: grid;
+    gap: var(--alfa-space-8);
+}
+
+.contactos-record-account-row {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+}
+
+.contactos-record-account-row .contactos-record-account {
+    flex: 1 1 auto;
+}
+
+.contactos-record-account {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-primary);
+    text-decoration: none;
+}
+
+.contactos-record-account:hover,
+.contactos-record-account:focus-visible {
+    border-color: color-mix(in srgb, var(--alfa-accent) 42%, var(--alfa-border-default));
+    background: var(--alfa-bg-row-hover);
+    outline: 0;
+}
+
+.contactos-record-account span {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.contactos-record-account strong,
+.contactos-record-account small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-record-account small {
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+}
+
+.contactos-record-accounts__actions {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.contactos-account-option {
+    display: grid;
+    gap: 3px;
+}
+
+.contactos-account-option strong {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-account-option small {
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 11.5px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

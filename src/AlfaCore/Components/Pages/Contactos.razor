@@ -110,6 +110,12 @@
                                    LoadingProvinces="_loadingProvincias"
                                    Provinces="_provincias"
                                    LinkedAccounts="_linkedAccounts"
+                                   AccountsBusy="@(_linkingAccount || _unlinkingClient)"
+                                   SearchAccounts="SearchAccountsForRecordAsync"
+                                   LinkAccount="LinkAccountToRecordAsync"
+                                   AccountLinked="ShowAccountLinkedFeedback"
+                                   UnlinkClientAccount="RequestUnlinkClientAsync"
+                                   ReplaceClientAccount="ReplaceClientAccountAsync"
                                    FieldErrors="_fieldErrors"
                                    ActiveTab="(int)_activeTab"
                                    ActiveTabChanged="SetEditTabAsync"
@@ -147,7 +153,8 @@
                              AccountLinked="ShowAccountLinkedFeedback"
                              LinkingAccount="@_linkingAccount"
                              UnlinkClientAccount="RequestUnlinkClientAsync"
-                             UnlinkingClient="@_unlinkingClient" />
+                             UnlinkingClient="@_unlinkingClient"
+                             ReplaceClientAccount="ReplaceClientAccountAsync" />
     }
     else
     {
@@ -1905,7 +1912,7 @@
         var suppliersTask = CuentasSvc.SearchAsync(CuentaComercialTipo.Proveedor, BuildFilters(text), ct);
         await Task.WhenAll(clientsTask, suppliersTask);
 
-        var linked = (_recordDetail?.CuentasVinculadas ?? [])
+        var linked = _linkedAccounts
             .Select(account => account.Codigo.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -1949,7 +1956,7 @@
                 return false;
             }
 
-            await CargarFichaAsync(_selectedId);
+            await RefreshLinkedAccountsAsync(_selectedId);
             return IsAccountLinked(account);
         }
         finally
@@ -1958,13 +1965,92 @@
         }
     }
 
+    /// <summary>
+    /// "Cambiar cliente" desde la ficha o la edición del contacto: desvincula el actual y vincula el
+    /// elegido. Desvincular primero importa: limpia CONV_CONVERSACIONES.ClienteCodigo del cliente
+    /// viejo y así LinkContactoAsync deja las conversaciones del contacto con el cliente nuevo.
+    /// </summary>
+    private async Task<bool> ReplaceClientAccountAsync(ContactoCuentaDto current, ContactoCuentaLookupOptionDto replacement)
+    {
+        if (_selectedId <= 0 || _linkingAccount || _unlinkingClient || replacement.Tipo != CuentaComercialTipo.Cliente)
+            return false;
+
+        var contactId = _selectedId;
+        _linkingAccount = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                async () =>
+                {
+                    await CuentasSvc.UnlinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoUnlinkRequest
+                    {
+                        CuentaCodigo = current.Codigo,
+                        ContactoId = contactId
+                    });
+                    await CuentasSvc.LinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoLinkRequest
+                    {
+                        CuentaCodigo = replacement.Codigo,
+                        ContactoId = contactId
+                    });
+                    return true;
+                },
+                "No se pudo cambiar el cliente del contacto.");
+
+            await RefreshLinkedAccountsAsync(contactId);
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return false;
+            }
+
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = "Cliente cambiado",
+                Message = $"El contacto ahora está vinculado a {(string.IsNullOrWhiteSpace(replacement.RazonSocial) ? replacement.Codigo : replacement.RazonSocial)}."
+            });
+            return true;
+        }
+        finally
+        {
+            _linkingAccount = false;
+        }
+    }
+
+    /// <summary>
+    /// En la ficha recarga todo; en edición solo las cuentas, para no pisar lo que se está escribiendo
+    /// en el formulario (CargarFichaAsync -> ApplyDetailState reescribe _form).
+    /// </summary>
+    private async Task RefreshLinkedAccountsAsync(int contactId)
+    {
+        if (_pageMode != ContactosPageMode.Edit)
+        {
+            await CargarFichaAsync(contactId);
+            return;
+        }
+
+        var result = await UiOps.RunAsync(
+            () => ContactosSvc.GetCuentasVinculadasAsync(contactId),
+            "No se pudieron actualizar las cuentas vinculadas.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        _linkedAccounts.Clear();
+        _linkedAccounts.AddRange(result.Value);
+        if (_recordDetail is not null && _recordDetail.Id == contactId)
+            _recordDetail.CuentasVinculadas = result.Value.ToList();
+    }
+
     private bool IsAccountLinked(ContactoCuentaLookupOptionDto account)
-        => (_recordDetail?.CuentasVinculadas ?? []).Any(linked =>
+        => _linkedAccounts.Any(linked =>
             string.Equals(linked.Codigo.Trim(), account.Codigo.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private Task RequestUnlinkClientAsync(ContactoCuentaDto account)
     {
-        if (_recordDetail is null
+        if (_selectedId <= 0
             || !string.Equals(account.Tipo, "Cliente", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(account.Codigo)
             || _unlinkingClient)
@@ -1988,7 +2074,7 @@
 
     private async Task ConfirmUnlinkClientAsync()
     {
-        if (_recordDetail is null || _pendingUnlinkClient is null)
+        if (_selectedId <= 0 || _pendingUnlinkClient is null)
             return;
 
         _unlinkingClient = true;
@@ -2000,7 +2086,7 @@
                 () => CuentasSvc.UnlinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoUnlinkRequest
                 {
                     CuentaCodigo = account.Codigo,
-                    ContactoId = _recordDetail.Id
+                    ContactoId = _selectedId
                 }),
                 "No se pudo desvincular el contacto del cliente.");
 
@@ -2019,7 +2105,7 @@
                 Title = "Contacto desvinculado",
                 Message = $"El contacto ya no está vinculado a {account.RazonSocial}."
             });
-            await CargarFichaAsync(_recordDetail.Id);
+            await RefreshLinkedAccountsAsync(_selectedId);
         }
         finally
         {
