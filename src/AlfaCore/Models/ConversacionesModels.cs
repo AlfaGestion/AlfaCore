@@ -8,6 +8,7 @@ public static class ConversacionCanales
     public const string Instagram = "INSTAGRAM";
     public const string Facebook = "FACEBOOK";
     public const string MercadoLibre = "MERCADOLIBRE";
+    public const string WebChat = "WEBCHAT";
     public const string Interno = "INTERNO";
 }
 
@@ -19,8 +20,8 @@ public sealed class ConversacionesInboxFilters
     public string ClienteCodigo { get; set; } = string.Empty;
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
-    /// <summary>Canal exacto (WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE/INTERNO), o "SOCIAL" como valor
-    /// especial que trae WhatsApp+Instagram+Facebook combinados (ver GetInboxAsync).</summary>
+    /// <summary>Canal exacto (WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE/WEBCHAT/INTERNO), o "SOCIAL" como valor
+    /// especial que trae WhatsApp+Instagram+Facebook+WebChat combinados (ver GetInboxAsync).</summary>
     public string? Canal { get; set; }
     public int? IdNumeroWhatsApp { get; set; }
     public string? UsuarioActual { get; set; }
@@ -232,6 +233,10 @@ public sealed class ConversacionDetalleDto
     public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
     public string MercadoLibreItemStatus { get; set; } = string.Empty;
     public string MercadoLibreItemPermalink { get; set; } = string.Empty;
+    /// <summary>Solo WEBCHAT: última página del sitio desde la que escribió el visitante.</summary>
+    public string OrigenPaginaUrl { get; set; } = string.Empty;
+    /// <summary>Solo WEBCHAT: valor de data-contexto del snippet (ej. "actualizacion-v3-2").</summary>
+    public string OrigenContexto { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public List<ConversacionClienteAsociadoDto> ClientesAsociados { get; set; } = [];

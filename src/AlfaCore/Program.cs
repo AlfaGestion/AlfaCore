@@ -11,7 +11,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
 using AlfaCore.Services.MercadoPagoPoint.Models;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -277,6 +280,24 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IWebChatSiteKeyService, WebChatSiteKeyService>();
+        // Hoy solo lo usan los endpoints públicos del chat web (/api/webchat/...): son los únicos de
+        // escritura totalmente anónimos (cualquier visitante del sitio del cliente les pega directo).
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = (context, _) =>
+            {
+                ApplyWebChatCors(context.HttpContext.Request, context.HttpContext.Response);
+                return ValueTask.CompletedTask;
+            };
+            options.AddPolicy(WebChatReadRateLimitPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                BuildWebChatRateLimitKey(context),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            options.AddPolicy(WebChatWriteRateLimitPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                BuildWebChatRateLimitKey(context),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        });
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IWhatsAppPortfolioResolutionService, WhatsAppPortfolioResolutionService>();
@@ -459,14 +480,20 @@ public class Program
         builder.Services.AddScoped<IIaConsumoService, IaConsumoService>();
         builder.Services.AddHostedService<IaUsoFlushService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-        builder.Services.AddHostedService<BillingHostedService>();
-        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
-        builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+        // Para correr una instancia local contra bases que ya atiende el servidor real: sin esto, los
+        // procesos de abajo (programados, auto-cierre, bot diferido, WhatsApp Web...) se ejecutarían
+        // en las dos instancias a la vez y podrían duplicar envíos. Por defecto quedan activos.
+        if (!builder.Configuration.GetValue("ProcesosSegundoPlano:Deshabilitados", false))
+        {
+            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+            builder.Services.AddHostedService<BillingHostedService>();
+            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
+            builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+        }
 
         var app = builder.Build();
 
@@ -499,6 +526,7 @@ public class Program
             FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(app.Environment.WebRootPath),
             ContentTypeProvider = StaticFileContentTypes.CreateProvider()
         });
+        app.UseRateLimiter();
         app.UseAntiforgery();
 
         app.MapGet("/manifest.webmanifest", () =>
@@ -2824,6 +2852,24 @@ public class Program
             return await HandleMercadoLibreMessageAsync(request, svc, ct);
         });
 
+        // Chat web embebible (canal WEBCHAT, widget en wwwroot/webchat/widget.js). Lo llama el
+        // navegador de visitantes anónimos desde el dominio del cliente: CORS manual + rate limiting.
+        app.MapMethods("/api/webchat/{siteKey}/{recurso}", ["OPTIONS"], (HttpRequest request, HttpResponse response) =>
+        {
+            ApplyWebChatCors(request, response);
+            response.Headers.AccessControlAllowMethods = "GET, POST, OPTIONS";
+            response.Headers.AccessControlAllowHeaders = "Content-Type";
+            response.Headers.AccessControlMaxAge = "600";
+            return Results.NoContent();
+        }).RequireRateLimiting(WebChatReadRateLimitPolicy);
+
+        app.MapGet("/api/webchat/{siteKey}/config", HandleWebChatConfigAsync)
+            .RequireRateLimiting(WebChatReadRateLimitPolicy);
+        app.MapGet("/api/webchat/{siteKey}/mensajes", HandleWebChatGetMessagesAsync)
+            .RequireRateLimiting(WebChatReadRateLimitPolicy);
+        app.MapPost("/api/webchat/{siteKey}/mensajes", HandleWebChatPostMessageAsync)
+            .RequireRateLimiting(WebChatWriteRateLimitPolicy);
+
         // Mercado Pago (pagos con terminal Point) -- no confundir con Mercado Libre arriba.
         app.MapPost("/api/mercadopago/point/webhook/{token}", async (
             string token,
@@ -3617,6 +3663,149 @@ public class Program
         });
 
         return baseInfo.IdBase;
+    }
+
+    private const string WebChatReadRateLimitPolicy = "webchat-lectura";
+    private const string WebChatWriteRateLimitPolicy = "webchat-escritura";
+    private const long WebChatMaxBodyBytes = 16 * 1024;
+    private static readonly JsonSerializerOptions WebChatJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Partición del rate limiting del chat web: clave de sitio + IP del visitante. No se usa el
+    /// visitorId porque lo elige el propio cliente y rotarlo saltearía el límite.
+    /// </summary>
+    private static string BuildWebChatRateLimitKey(HttpContext context)
+        => $"{context.Request.RouteValues["siteKey"]}|{context.Connection.RemoteIpAddress}";
+
+    /// <summary>
+    /// El widget corre en el dominio del cliente: se refleja el Origin para que el navegador deje
+    /// leer la respuesta. Quién puede usar el chat lo decide <see cref="TryOpenWebChatAsync"/>
+    /// (dominios permitidos), no este header.
+    /// </summary>
+    private static void ApplyWebChatCors(HttpRequest request, HttpResponse response)
+    {
+        if (!request.Path.StartsWithSegments("/api/webchat", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var origin = request.Headers.Origin.ToString();
+        if (string.IsNullOrWhiteSpace(origin))
+            return;
+
+        response.Headers.AccessControlAllowOrigin = origin;
+        response.Headers.Vary = "Origin";
+    }
+
+    /// <summary>
+    /// Resuelve la base por la clave del sitio y valida canal activo + dominio permitido. Ante
+    /// cualquier rechazo el caller responde 404, sin revelar si la clave existía.
+    /// </summary>
+    private static async Task<ConversacionWebChatConfigDto?> TryOpenWebChatAsync(
+        string siteKey,
+        HttpRequest request,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        var idBase = await siteKeys.TryResolveTenantAsync(siteKey, ct);
+        if (idBase is null)
+            return null;
+
+        var config = await configService.GetWebChatConfigAsync(idBase > 0 ? idBase : null, ct);
+        if (!config.Activo || !config.IsOriginAllowed(request.Headers.Origin.ToString()))
+            return null;
+
+        return config;
+    }
+
+    private static async Task<IResult> HandleWebChatConfigAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var config = await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct);
+        if (config is null)
+            return Results.NotFound();
+
+        return Results.Json(new WebChatWidgetConfigDto
+        {
+            Titulo = config.Titulo,
+            Color = config.ColorSeguro,
+            MensajeBienvenida = config.MensajeBienvenida
+        });
+    }
+
+    private static async Task<IResult> HandleWebChatGetMessagesAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var visitorId = request.Query["visitorId"].ToString();
+        if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId))
+            return Results.BadRequest();
+
+        _ = long.TryParse(request.Query["since"].ToString(), out var since);
+
+        if (await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct) is null)
+            return Results.NotFound();
+
+        return Results.Json(await svc.ObtenerMensajesWebChatAsync(visitorId, since, ct));
+    }
+
+    private static async Task<IResult> HandleWebChatPostMessageAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (bodySize is { IsReadOnly: false })
+            bodySize.MaxRequestBodySize = WebChatMaxBodyBytes;
+        if (request.ContentLength is > WebChatMaxBodyBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+        WebChatMensajeEntranteRequest? body;
+        try
+        {
+            body = await JsonSerializer.DeserializeAsync<WebChatMensajeEntranteRequest>(request.Body, WebChatJsonOptions, ct);
+        }
+        catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
+        {
+            return Results.BadRequest();
+        }
+
+        if (body is null || !body.TryNormalize(out _))
+            return Results.BadRequest(new { error = "No se pudo leer el mensaje." });
+
+        if (await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct) is null)
+            return Results.NotFound();
+
+        try
+        {
+            return Results.Json(await svc.RegistrarMensajeEntranteWebChatAsync(body, ct));
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.BadRequest(new { error = "No se pudo registrar el mensaje." });
+        }
     }
 
     private static void DisableWebhookCaching(HttpResponse response)

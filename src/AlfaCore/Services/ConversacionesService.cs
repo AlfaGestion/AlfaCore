@@ -1126,7 +1126,7 @@ public sealed class ConversacionesService(
                 WHERE
                     (
                         @Canal IS NULL
-                        OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK'))
+                        OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK', N'WEBCHAT'))
                         OR (@Canal <> N'SOCIAL' AND c.Canal = @Canal)
                     )
                     AND (
@@ -1819,9 +1819,34 @@ public sealed class ConversacionesService(
             await rd.DisposeAsync();
             item.ClientesAsociados = (await GetContactoClientesAsync(cn, item.IdContacto, token)).ToList();
             await TryRefreshFacebookConversationProfileAsync(item, token);
+            if (string.Equals(item.Canal, ConversacionCanales.WebChat, StringComparison.OrdinalIgnoreCase))
+                await LoadWebChatOrigenAsync(cn, item, token);
             ApplyWhatsAppWindow(item);
             return item;
         }, "No se pudo cargar la conversación.", ct);
+
+    /// <summary>
+    /// Página/contexto de origen del chat web. Va en una consulta aparte (y no en el SELECT general
+    /// de la conversación) para que una base sin la migración del canal WEBCHAT siga cargando
+    /// normalmente el resto de las conversaciones.
+    /// </summary>
+    private static async Task LoadWebChatOrigenAsync(SqlConnection cn, ConversacionDetalleDto item, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT ISNULL(OrigenPaginaUrl, N''), ISNULL(OrigenContexto, N'')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", item.IdConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+        {
+            item.OrigenPaginaUrl = GetString(rd, 0);
+            item.OrigenContexto = GetString(rd, 1);
+        }
+    }
 
     private static async Task<IReadOnlyList<ConversacionClienteAsociadoDto>> GetContactoClientesAsync(
         SqlConnection cn,
@@ -2451,7 +2476,10 @@ public sealed class ConversacionesService(
             var isInstagram = string.Equals(conversation.Canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase);
             var isFacebook = string.Equals(conversation.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase);
             var isMercadoLibre = string.Equals(conversation.Canal, "MERCADOLIBRE", StringComparison.OrdinalIgnoreCase);
-            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre)
+            // WEBCHAT no tiene API externa: el mensaje queda grabado y el widget lo levanta por polling
+            // (ObtenerMensajesWebChatAsync), igual que un mensaje INTERNO.
+            var isWebChat = string.Equals(conversation.Canal, ConversacionCanales.WebChat, StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre && !isWebChat)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
@@ -2462,7 +2490,7 @@ public sealed class ConversacionesService(
             ConversacionMercadoLibreConfigDto? mercadoLibreConfig = null;
             ConversacionWhatsAppNumeroDto? numeroWeb = null;
             string whatsAppDeliveryProvider = ConversacionWhatsAppProviders.MetaCloud;
-            if (isInternal)
+            if (isInternal || isWebChat)
             {
                 initialState = "ENVIADO";
             }
@@ -4730,6 +4758,119 @@ public sealed class ConversacionesService(
                 throw;
             }
         }, "No se pudo procesar el webhook de Instagram.", ct);
+
+    public Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegistrarMensajeEntranteWebChat", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (!request.TryNormalize(out var error))
+                throw new InvalidOperationException(error);
+
+            var now = BusinessNow();
+            // Mismo shape que un mensaje entrante de Instagram/Facebook: se reutiliza el insert
+            // idempotente por MessageIdExterno (acá, el id que genera el widget para cada mensaje).
+            var incoming = new IncomingInstagramMessage
+            {
+                SenderId = request.VisitorId,
+                MessageId = request.ClientMessageId!,
+                MessageType = "TEXT",
+                Timestamp = now,
+                Text = request.Texto,
+                RawJson = JsonSerializer.Serialize(new { request.PaginaUrl, request.Contexto, request.Nombre })
+            };
+
+            var conversationId = await EnsureWebChatConversationAsync(request, now, token);
+            var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+            await RefreshConversationAsync(conversationId, now, request.Texto, token, reopenIfClosed: true);
+            if (storedMessage.Created)
+            {
+                await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                // Token propio, como en los webhooks de Meta: si el visitante cierra la pestaña a
+                // mitad de la respuesta del bot, el request se cancela pero la respuesta tiene que
+                // quedar grabada igual para cuando vuelva (el widget la trae por polling).
+                if (!await TryAutoReplyReglasAsync(conversationId, request.Texto, CancellationToken.None))
+                {
+                    // El widget ya saluda con su propio mensaje de bienvenida (CONV_WEBCHAT_MENSAJE_BIENVENIDA):
+                    // la bienvenida de Automatización solo se manda si el widget no tiene saludo, para que
+                    // el visitante no reciba dos.
+                    if (!await WebChatTieneBienvenidaPropiaAsync(token))
+                        await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                    await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                    await TryAutoReplyBotAsync(conversationId, request.Texto, CancellationToken.None);
+                }
+            }
+
+            return new WebChatMensajeEntranteResultDto
+            {
+                IdMensaje = storedMessage.MessageId,
+                Creado = storedMessage.Created
+            };
+        }, "No se pudo registrar el mensaje del chat del sitio web.", ct);
+
+    public Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ObtenerMensajesWebChat", async token =>
+        {
+            if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId))
+                throw new InvalidOperationException("Identificador de visitante inválido.");
+
+            var desde = Math.Max(0, desdeIdMensaje);
+
+            // Solo lo que el visitante puede ver: nunca notas internas, mensajes de sistema ni envíos
+            // con error. Sin cursor (primera carga) trae los últimos 50; con cursor, lo nuevo en orden.
+            const string sql = """
+                DECLARE @IdConversacion bigint =
+                (
+                    SELECT TOP (1) IdConversacion
+                    FROM dbo.CONV_CONVERSACIONES
+                    WHERE Canal = N'WEBCHAT'
+                      AND IdentificadorExternoContacto = @VisitorId
+                    ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC
+                );
+
+                SELECT TOP (@Top)
+                    m.IdMensaje,
+                    m.Texto,
+                    m.FechaHora,
+                    m.Direction
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = @IdConversacion
+                  AND m.IdMensaje > @Desde
+                  AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+                  AND m.MessageType <> N'SYSTEM'
+                  AND ISNULL(m.EstadoEnvio, N'') <> N'ERROR_ENVIO'
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, N''))), N'') IS NOT NULL
+                ORDER BY CASE WHEN @Desde = 0 THEN -m.IdMensaje ELSE m.IdMensaje END;
+                """;
+
+            var mensajes = new List<WebChatMensajeDto>();
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(token);
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@VisitorId", visitorId.Trim());
+                cmd.Parameters.AddWithValue("@Desde", desde);
+                cmd.Parameters.AddWithValue("@Top", desde == 0 ? 50 : 100);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
+                {
+                    mensajes.Add(new WebChatMensajeDto
+                    {
+                        Id = rd.GetInt64(0),
+                        Texto = GetString(rd, 1),
+                        FechaHora = rd.GetDateTime(2),
+                        EsVisitante = string.Equals(GetString(rd, 3), "ENTRANTE", StringComparison.OrdinalIgnoreCase)
+                    });
+                }
+            }
+
+            mensajes.Sort((a, b) => a.Id.CompareTo(b.Id));
+            return new WebChatMensajesResponseDto
+            {
+                Mensajes = mensajes,
+                Cursor = mensajes.Count == 0 ? desde : mensajes[^1].Id
+            };
+        }, "No se pudieron leer los mensajes del chat del sitio web.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingFacebookWebhook", async token =>
@@ -7004,6 +7145,123 @@ public sealed class ConversacionesService(
             ? "Numero WhatsApp detectado"
             : $"Numero WhatsApp ...{suffix}";
     }
+
+    private async Task<long> EnsureWebChatConversationAsync(
+        WebChatMensajeEntranteRequest request,
+        DateTime now,
+        CancellationToken ct)
+    {
+        // Mismo esquema que EnsureInstagramConversationAsync: el visitorId del widget cumple el rol
+        // del SenderId de Instagram o del teléfono de WhatsApp.
+        const string selectSql = """
+            SELECT TOP (1) IdConversacion
+            FROM dbo.CONV_CONVERSACIONES WITH (UPDLOCK, HOLDLOCK)
+            WHERE Canal = N'WEBCHAT'
+              AND IdentificadorExternoContacto = @VisitorId
+            ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await using (var selectCmd = new SqlCommand(selectSql, cn, tx))
+        {
+            selectCmd.Parameters.AddWithValue("@VisitorId", request.VisitorId);
+            var existing = await selectCmd.ExecuteScalarAsync(ct);
+            if (existing is not null && existing is not DBNull)
+            {
+                var existingId = Convert.ToInt64(existing, CultureInfo.InvariantCulture);
+                const string updateSql = """
+                    UPDATE dbo.CONV_CONVERSACIONES
+                    SET NombreVisible = CASE
+                            WHEN @Nombre IS NOT NULL
+                             AND (NULLIF(LTRIM(RTRIM(ISNULL(NombreVisible, N''))), N'') IS NULL
+                                  OR NombreVisible LIKE N'Visitante web %')
+                                THEN @Nombre
+                            ELSE NombreVisible
+                        END,
+                        OrigenPaginaUrl = COALESCE(@PaginaUrl, OrigenPaginaUrl),
+                        OrigenContexto = COALESCE(@Contexto, OrigenContexto),
+                        FechaHora_Modificacion = GETDATE()
+                    WHERE IdConversacion = @IdConversacion;
+                    """;
+                await using var updateCmd = new SqlCommand(updateSql, cn, tx);
+                updateCmd.Parameters.AddWithValue("@Nombre", DbNullable(request.Nombre));
+                updateCmd.Parameters.AddWithValue("@PaginaUrl", DbNullable(request.PaginaUrl));
+                updateCmd.Parameters.AddWithValue("@Contexto", DbNullable(request.Contexto));
+                updateCmd.Parameters.AddWithValue("@IdConversacion", existingId);
+                await updateCmd.ExecuteNonQueryAsync(ct);
+
+                await tx.CommitAsync(ct);
+                return existingId;
+            }
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES
+            (
+                Canal,
+                NombreVisible,
+                IdentificadorExternoContacto,
+                IdentificadorExternoConversacion,
+                OrigenPaginaUrl,
+                OrigenContexto,
+                CodigoEstado,
+                ResumenUltimoMensaje,
+                FechaHoraPrimerMensaje,
+                FechaHoraUltimoMensaje,
+                FechaHora_Grabacion
+            )
+            VALUES
+            (
+                N'WEBCHAT',
+                @NombreVisible,
+                @VisitorId,
+                @VisitorId,
+                @PaginaUrl,
+                @Contexto,
+                N'ABIERTA',
+                @ResumenUltimoMensaje,
+                @FechaHora,
+                @FechaHora,
+                GETDATE()
+            );
+
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            """;
+
+        var displayName = FirstNonEmpty(request.Nombre, BuildWebChatFallbackName(request.VisitorId));
+        await using var insertCmd = new SqlCommand(insertSql, cn, tx);
+        insertCmd.Parameters.AddWithValue("@NombreVisible", displayName);
+        insertCmd.Parameters.AddWithValue("@VisitorId", request.VisitorId);
+        insertCmd.Parameters.AddWithValue("@PaginaUrl", DbNullable(request.PaginaUrl));
+        insertCmd.Parameters.AddWithValue("@Contexto", DbNullable(request.Contexto));
+        insertCmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(request.Texto)));
+        insertCmd.Parameters.AddWithValue("@FechaHora", now);
+        var result = await insertCmd.ExecuteScalarAsync(ct);
+        var conversationId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        await tx.CommitAsync(ct);
+        return conversationId;
+    }
+
+    private async Task<bool> WebChatTieneBienvenidaPropiaAsync(CancellationToken ct)
+    {
+        try
+        {
+            var config = await conversacionesConfigService.GetWebChatConfigAsync(ct);
+            return !string.IsNullOrWhiteSpace(config.MensajeBienvenida);
+        }
+        catch (Exception ex)
+        {
+            // Ante la duda, priorizar no saludar dos veces: el widget muestra su saludo por defecto.
+            await _appEvents.LogErrorAsync("Conversaciones", "WebChatBienvenida", ex,
+                "No se pudo leer la configuración del chat del sitio web.", null, AppEventSeverity.Warning, ct);
+            return true;
+        }
+    }
+
+    private static string BuildWebChatFallbackName(string visitorId)
+        => $"Visitante web {visitorId[..Math.Min(6, visitorId.Length)].ToUpperInvariant()}";
 
     private async Task<long> EnsureInstagramConversationAsync(
         IncomingInstagramMessage incoming,

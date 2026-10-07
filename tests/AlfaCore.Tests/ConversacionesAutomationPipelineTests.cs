@@ -2821,6 +2821,10 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

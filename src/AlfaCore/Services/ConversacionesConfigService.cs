@@ -671,6 +671,136 @@ public sealed class ConversacionesConfigService(
         }, "No se pudieron actualizar las credenciales de Mercado Libre.", ct);
     }
 
+    public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default)
+        => GetWebChatConfigAsync(null, ct);
+
+    public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWebChatConfig", async token =>
+        {
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetWebChatConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildWebChatSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            return new ConversacionWebChatConfigDto
+            {
+                Activo = ReadValue(values, "CONV_WEBCHAT_ACTIVO", string.Empty) == "1",
+                DominiosPermitidos = ReadValue(values, "CONV_WEBCHAT_DOMINIOS_PERMITIDOS", string.Empty),
+                MensajeBienvenida = ReadValue(values, "CONV_WEBCHAT_MENSAJE_BIENVENIDA", string.Empty, ConversacionWebChatConfigDto.DefaultMensajeBienvenida),
+                Titulo = ReadValue(values, "CONV_WEBCHAT_TITULO", string.Empty, ConversacionWebChatConfigDto.DefaultTitulo),
+                Color = ReadValue(values, "CONV_WEBCHAT_COLOR", string.Empty, ConversacionWebChatConfigDto.DefaultColor),
+                SiteKey = ReadValue(values, "CONV_WEBCHAT_SITE_KEY", string.Empty),
+                ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
+            };
+        }, "No se pudo cargar la configuración del chat del sitio web.", ct);
+
+    public async Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
+
+        await ExecuteLoggedAsync("Conversaciones", "SaveWebChatConfig", async token =>
+        {
+            // CONV_WEBCHAT_SITE_KEY no se graba acá: solo la genera EnsureLocalWebChatSiteKeyAsync,
+            // para que guardar la pantalla nunca pise ni invente una clave ya publicada en un sitio.
+            var items = new[]
+            {
+                ("CONV_WEBCHAT_ACTIVO", config.Activo ? "1" : "0"),
+                ("CONV_WEBCHAT_DOMINIOS_PERMITIDOS", string.Join(", ", config.GetDominiosPermitidos())),
+                ("CONV_WEBCHAT_MENSAJE_BIENVENIDA", (config.MensajeBienvenida ?? string.Empty).Trim()),
+                ("CONV_WEBCHAT_TITULO", (config.Titulo ?? string.Empty).Trim()),
+                ("CONV_WEBCHAT_COLOR", config.ColorSeguro)
+            };
+
+            await UpsertConfigItemsAsync(items, token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveWebChatConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración del chat del sitio web actualizada.",
+                new { config.Activo, Dominios = config.GetDominiosPermitidos() },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración del chat del sitio web.", ct);
+    }
+
+    public async Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default)
+    {
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
+
+        return await ExecuteLoggedAsync("Conversaciones", "EnsureLocalWebChatSiteKey", async token =>
+        {
+            var current = await GetWebChatConfigAsync(token);
+            if (WebChatSiteKeys.IsValidFormat(current.SiteKey))
+                return current.SiteKey;
+
+            var siteKey = WebChatSiteKeys.Generate();
+            await UpsertConfigItemsAsync([("CONV_WEBCHAT_SITE_KEY", siteKey)], token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "EnsureLocalWebChatSiteKey",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Clave del chat del sitio web generada.",
+                null,
+                token);
+
+            return siteKey;
+        }, "No se pudo generar la clave del chat del sitio web.", ct);
+    }
+
+    private async Task UpsertConfigItemsAsync(IEnumerable<(string Key, string Value)> items, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var detailColumn = await ResolveDetailColumnAsync(cn, ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+
+        foreach (var item in items)
+        {
+            var stored = SplitStoredValue(item.Value);
+            var sql = $"""
+                UPDATE dbo.TA_CONFIGURACION
+                SET
+                    VALOR = @Valor,
+                    {detailColumn} = @ValorAux,
+                    GRUPO = @Grupo
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                    VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                END;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+            cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+            cmd.Parameters.AddWithValue("@Clave", item.Key);
+            cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+            cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+            cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+    }
+
     public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default)
         => GetAlfaKnowledgeConfigAsync(null, ct);
 
@@ -2409,6 +2539,24 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    private static string BuildWebChatSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_WEBCHAT_ACTIVO',
+                'CONV_WEBCHAT_DOMINIOS_PERMITIDOS',
+                'CONV_WEBCHAT_MENSAJE_BIENVENIDA',
+                'CONV_WEBCHAT_TITULO',
+                'CONV_WEBCHAT_COLOR',
+                'CONV_WEBCHAT_SITE_KEY'
+            )
+            """;
+
     private static string BuildMercadoLibreSelectSql(string detailColumn)
         => $"""
             SELECT
@@ -2639,6 +2787,7 @@ public sealed class ConversacionesConfigService(
             "INSTAGRAM" => "INSTAGRAM",
             "FACEBOOK" => "FACEBOOK",
             "MERCADOLIBRE" => "MERCADOLIBRE",
+            "WEBCHAT" => "WEBCHAT",
             "INTERNO" => "INTERNO",
             _ => "SOCIAL"
         };

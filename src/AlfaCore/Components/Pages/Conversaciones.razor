@@ -230,6 +230,12 @@
                     <span>Facebook</span>
                 </button>
                 <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "WEBCHAT" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("WEBCHAT")'>
+                    <i class="bi bi-globe2"></i>
+                    <span>Sitio web</span>
+                </button>
+                <button type="button"
                         class="conversations-mobile-action conversations-mobile-action--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
                     <i class="bi bi-bag-fill"></i>
@@ -755,6 +761,11 @@
                             Facebook
                         </button>
                         <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "WEBCHAT" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("WEBCHAT")'>
+                            Sitio web
+                        </button>
+                        <button type="button"
                                 class="conversations-mobile-chip conversations-mobile-chip--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
                                 @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
                             Mercado Libre
@@ -1169,7 +1180,7 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
-                            @if (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
+                            @if (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE" || _selectedConversation.Canal == "WEBCHAT")
                             {
                                 <div class="conversation-profile-avatar @GetConversationAvatarClass(_selectedConversation)" style="--avatar-color:@GetAvatarColorHex(_selectedConversation);" title="@GetConversationHeader(_selectedConversation)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
@@ -1280,6 +1291,28 @@
                                             <i class="bi bi-box-arrow-up-right"></i>
                                         </a>
                                         <span>@GetMercadoLibreBuyerLabel(_selectedConversation)</span>
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal == "WEBCHAT")
+                                {
+                                    <div class="conversation-social-profile">
+                                        <i class="bi bi-globe2"></i>
+                                        @if (Uri.TryCreate(_selectedConversation.OrigenPaginaUrl, UriKind.Absolute, out var origenUri)
+                                             && (origenUri.Scheme == Uri.UriSchemeHttp || origenUri.Scheme == Uri.UriSchemeHttps))
+                                        {
+                                            <a href="@origenUri.AbsoluteUri" target="_blank" rel="noopener noreferrer nofollow" title="@origenUri.AbsoluteUri">
+                                                @(origenUri.Host + origenUri.AbsolutePath)
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <span>Chat del sitio web</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(_selectedConversation.OrigenContexto))
+                                        {
+                                            <span title="Contexto indicado en el código del sitio">@_selectedConversation.OrigenContexto</span>
+                                        }
                                     </div>
                                 }
                                 else if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
@@ -3742,7 +3775,8 @@
         ("SOCIAL", "Todos", "bi-inboxes"),
         ("WHATSAPP", "WhatsApp", "bi-whatsapp"),
         ("INSTAGRAM", "Instagram", "bi-instagram"),
-        ("FACEBOOK", "Facebook", "bi-facebook")
+        ("FACEBOOK", "Facebook", "bi-facebook"),
+        ("WEBCHAT", "Chat del sitio web", "bi-globe2")
     ];
     private static readonly TimeSpan LateIncomingNotificationWindow = TimeSpan.FromMinutes(10);
 
@@ -4095,6 +4129,7 @@
                || _selectedConversation.Canal == "INSTAGRAM"
                || _selectedConversation.Canal == "FACEBOOK"
                || _selectedConversation.Canal == "MERCADOLIBRE"
+               || _selectedConversation.Canal == "WEBCHAT"
                || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
@@ -5270,6 +5305,7 @@
         "INSTAGRAM" => "bi-instagram",
         "FACEBOOK" => "bi-facebook",
         "MERCADOLIBRE" => "bi-bag-fill",
+        "WEBCHAT" => "bi-globe2",
         "INTERNO" => "bi-people-fill",
         _ => "bi-chat-dots-fill"
     };
@@ -5280,6 +5316,7 @@
         "INSTAGRAM" => "Instagram",
         "FACEBOOK" => "Facebook",
         "MERCADOLIBRE" => "Mercado Libre",
+        "WEBCHAT" => "Chat del sitio web",
         "INTERNO" => "Chat interno",
         _ => canal ?? string.Empty
     };
@@ -11548,6 +11585,7 @@
             "INSTAGRAM" => "Escribí una respuesta para Instagram...",
             "FACEBOOK" => "Escribí una respuesta para Facebook Messenger...",
             "MERCADOLIBRE" => "Respondé la pregunta de Mercado Libre...",
+            "WEBCHAT" => "Escribí una respuesta para el visitante del sitio web...",
             _ => "Escribí una respuesta para WhatsApp..."
         };
 

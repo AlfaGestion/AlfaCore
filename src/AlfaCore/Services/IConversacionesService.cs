@@ -99,6 +99,16 @@ public interface IConversacionesService
     Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingMercadoLibreWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mensaje de un visitante del chat web embebido (canal WEBCHAT). Crea o reutiliza la
+    /// conversación por visitorId y corre la misma cadena de respuestas automáticas que los demás
+    /// canales (reglas, bienvenida, fuera de horario, asistente IA).
+    /// </summary>
+    Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default);
+
+    /// <summary>Mensajes visibles para el visitante posteriores a <paramref name="desdeIdMensaje"/> (polling del widget).</summary>
+    Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> SyncMercadoLibreQuestionsAsync(CancellationToken ct = default);
     /// <summary>
     /// Contexto del cliente asociado a la conversación (N° de cliente, razón social, rubro del

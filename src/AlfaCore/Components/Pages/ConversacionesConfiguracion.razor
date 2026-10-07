@@ -24,6 +24,8 @@
 @inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness
 @inject Microsoft.Extensions.Options.IOptions<AlfaCore.Configuration.WhatsAppEmbeddedSignupOptions> EmbeddedSignupOptions
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject IConfiguration Configuration
+@inject AlfaCore.Services.IWebChatSiteKeyService WebChatSiteKeys
 @inject ILogger<ConversacionesConfiguracion> Logger
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -528,6 +530,17 @@
                                                  OnGuardar="SaveMercadoLibreAsync" />
     }
 
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "webchat")
+    {
+        <ConversacionesConfiguracionWebChat Config="_webChatConfig"
+                                            SiteKey="@_webChatSiteKey"
+                                            Snippet="@(HasWebChatSiteKey ? GetWebChatSnippet() : string.Empty)"
+                                            Busy="@(Loading || Saving)"
+                                            OnGuardar="SaveWebChatAsync"
+                                            OnGenerarClave="GenerateWebChatSiteKeyAsync"
+                                            OnCopiarCodigo="CopyWebChatSnippetAsync" />
+    }
+
     @if (_activePrimaryTab == "asistente-ia")
     {
         <ConversacionesConfiguracionAsistente Config="_automatizacionesConfig"
@@ -931,6 +944,9 @@
     private ConversacionInstagramConfigDto _instagramConfig = new();
     private ConversacionFacebookConfigDto _facebookConfig = new();
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
+    private ConversacionWebChatConfigDto _webChatConfig = new();
+    private string? _webChatSiteKey;
+    private bool HasWebChatSiteKey => !string.IsNullOrWhiteSpace(_webChatSiteKey);
     private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesOriginal = new();
@@ -1110,7 +1126,8 @@
             new("whatsapp-api", "WhatsApp conectados"),
             new("instagram", "Instagram"),
             new("facebook", "Facebook"),
-            new("mercadolibre", "Mercado Libre")
+            new("mercadolibre", "Mercado Libre"),
+            new("webchat", "Chat del sitio web")
         ]),
         new("asistente-ia", "Asistente IA",
         [
@@ -2848,6 +2865,22 @@
             EnsureMercadoLibreDefaults();
             _feedback ??= mercadoLibreResult.Feedback;
         }
+
+        var webChatResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetWebChatConfigAsync(CurrentExpectedBaseIdOrNull()),
+            "No se pudo cargar la configuración del chat del sitio web.");
+
+        if (webChatResult.Success && webChatResult.Value is not null)
+            _webChatConfig = webChatResult.Value;
+        else
+            _feedback ??= webChatResult.Feedback;
+
+        // La clave vive en la base central (SaaS): si falta preparar AlfaCentral o no responde, no se
+        // bloquea el resto de la pantalla (queda registrado y se informa al intentar generarla).
+        var webChatSiteKeyResult = await UiOps.RunAsync(
+            () => WebChatSiteKeys.GetSiteKeyAsync(),
+            "No se pudo consultar la clave del chat del sitio web.");
+        _webChatSiteKey = webChatSiteKeyResult.Success ? webChatSiteKeyResult.Value : null;
 
         var alfaKnowledgeResult = await UiOps.RunAsync(
             () => ConfigSvc.GetAlfaKnowledgeConfigAsync(CurrentExpectedBaseIdOrNull()),
@@ -5272,6 +5305,75 @@
         }
 
         Saving = false;
+    }
+
+    private async Task SaveWebChatAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWebChatConfigAsync(_webChatConfig),
+            "No se pudo guardar la configuración del chat del sitio web.");
+
+        if (result.Success)
+        {
+            _webChatConfig.ConfigSource = "TA_CONFIGURACION";
+            _webChatConfig.DominiosPermitidos = string.Join(", ", _webChatConfig.GetDominiosPermitidos());
+            _webChatConfig.Color = _webChatConfig.ColorSeguro;
+            _feedback = AppUiMessage.Success(
+                "Configuración guardada",
+                _webChatConfig.Activo && !HasWebChatSiteKey
+                    ? "Se grabó la configuración. Falta generar la clave del sitio para obtener el código."
+                    : "La configuración del chat del sitio web se grabó correctamente.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private async Task GenerateWebChatSiteKeyAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WebChatSiteKeys.EnsureSiteKeyAsync(),
+            "No se pudo generar la clave del chat del sitio web.");
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        {
+            _webChatSiteKey = result.Value;
+            _feedback = AppUiMessage.Success("Clave generada", "Ya podés copiar el código para pegar en el sitio.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private string GetWebChatPublicBaseUrl()
+    {
+        var configured = Configuration["ServidorWeb:UrlBasePublica"]?.Trim().TrimEnd('/');
+        return string.IsNullOrWhiteSpace(configured) ? _suggestedBaseUrl.TrimEnd('/') : configured;
+    }
+
+    private string GetWebChatSnippet()
+        => $"<script src=\"{GetWebChatPublicBaseUrl()}/webchat/widget.js\" data-site=\"{_webChatSiteKey}\" data-contexto=\"\" defer></script>";
+
+    private async Task CopyWebChatSnippetAsync()
+    {
+        if (!HasWebChatSiteKey)
+            return;
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", GetWebChatSnippet());
+        _feedback = AppUiMessage.Success("Código copiado", "El código del widget se copió al portapapeles.");
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SaveAlfaKnowledgeAsync()

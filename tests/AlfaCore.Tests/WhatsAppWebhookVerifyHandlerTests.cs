@@ -454,6 +454,10 @@ public class WhatsAppWebhookVerifyHandlerTests
         public Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto c, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto c, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto c, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto c, CancellationToken ct = default) => throw new NotSupportedException();

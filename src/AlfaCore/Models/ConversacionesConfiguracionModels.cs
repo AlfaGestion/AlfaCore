@@ -221,6 +221,75 @@ public sealed class ConversacionMercadoLibreConfigDto
     }
 }
 
+/// <summary>
+/// Chat embebible en sitios externos (canal WEBCHAT). Se persiste en TA_CONFIGURACION (claves
+/// CONV_WEBCHAT_*). La clave pública del sitio vive en AlfaCentral.dbo.bases.WebChatSiteKey en modo
+/// SaaS; en instalaciones de una sola base se guarda acá, en <see cref="SiteKey"/>.
+/// </summary>
+public sealed class ConversacionWebChatConfigDto
+{
+    public const string DefaultColor = "#0ea5e9";
+    public const string DefaultTitulo = "¿Te ayudamos?";
+    public const string DefaultMensajeBienvenida = "¡Hola! Escribinos tu consulta y te respondemos enseguida.";
+
+    public bool Activo { get; set; }
+
+    /// <summary>Dominios desde los que se acepta el widget, separados por coma. Vacío = cualquiera.</summary>
+    public string DominiosPermitidos { get; set; } = string.Empty;
+
+    public string MensajeBienvenida { get; set; } = DefaultMensajeBienvenida;
+    public string Titulo { get; set; } = DefaultTitulo;
+    public string Color { get; set; } = DefaultColor;
+
+    /// <summary>Solo instalaciones no SaaS (CONV_WEBCHAT_SITE_KEY). En SaaS la clave está en la base central.</summary>
+    public string SiteKey { get; set; } = string.Empty;
+
+    public string ConfigSource { get; set; } = string.Empty;
+
+    /// <summary>Color validado (#RRGGBB): se inyecta en el CSS del widget dentro del sitio del cliente.</summary>
+    public string ColorSeguro
+        => System.Text.RegularExpressions.Regex.IsMatch(Color ?? string.Empty, "^#[0-9a-fA-F]{6}$")
+            ? Color!
+            : DefaultColor;
+
+    public IReadOnlyList<string> GetDominiosPermitidos()
+        => (DominiosPermitidos ?? string.Empty)
+            .Split([',', ';', '\n', '\r', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeHost)
+            .Where(host => host.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    /// <summary>
+    /// Sin dominios configurados acepta cualquier origen. Con dominios, exige un header Origin cuyo
+    /// host coincida con alguno o sea un subdominio suyo (cliente.com habilita www.cliente.com).
+    /// </summary>
+    public bool IsOriginAllowed(string? origin)
+    {
+        var dominios = GetDominiosPermitidos();
+        if (dominios.Count == 0)
+            return true;
+
+        if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin.Trim(), UriKind.Absolute, out var uri))
+            return false;
+
+        var host = uri.Host.ToLowerInvariant();
+        return dominios.Any(d => host == d || host.EndsWith("." + d, StringComparison.Ordinal));
+    }
+
+    private static string NormalizeHost(string value)
+    {
+        var raw = value.Trim().ToLowerInvariant();
+        if (raw.Length == 0)
+            return string.Empty;
+
+        if (!raw.Contains("://", StringComparison.Ordinal))
+            raw = "https://" + raw;
+
+        return Uri.TryCreate(raw, UriKind.Absolute, out var uri) ? uri.Host : string.Empty;
+    }
+}
+
 public sealed class ConversacionAlfaKnowledgeConfigDto
 {
     public string BaseUrl { get; set; } = string.Empty;
