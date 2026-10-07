@@ -41,4 +41,7 @@ En la bandeja, la conversación muestra la página desde la que escribió el vis
 - El visitante no se identifica: aparece como "Visitante web" salvo que deje su nombre. Por eso el
   asistente no informa saldos ni pedidos en este canal.
 - No se pueden enviar archivos adjuntos por este canal.
-- Si el visitante cierra el navegador y vuelve desde el mismo navegador, ve la conversación anterior.
+- La conversación se mantiene mientras el visitante navega por el sitio. Si cierra la pestaña o el
+  navegador, la próxima vez empieza una charla nueva (la anterior queda en la bandeja).
+- El visitante puede empezar de cero cuando quiera con el botón "Nueva conversación" (la flecha
+  circular arriba de la burbuja). En la bandeja aparece como otra conversación.

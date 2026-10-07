@@ -24,9 +24,17 @@
     var STORAGE_VISITOR = "alfacore-webchat-visitor";
     var STORAGE_NAME = "alfacore-webchat-nombre";
 
-    // localStorage puede no estar disponible (modo privado, bloqueo de cookies): se sigue con un id en memoria.
-    function storageGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
-    function storageSet(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* sin persistencia */ } }
+    // sessionStorage: la charla se mantiene al navegar por el sitio o recargar, y se descarta al
+    // cerrar la pestaña/navegador (la próxima visita empieza de cero). Si no está disponible (modo
+    // privado, bloqueo de cookies) se sigue con un id en memoria.
+    function storageGet(key) { try { return window.sessionStorage.getItem(key); } catch (e) { return null; } }
+    function storageSet(key, value) { try { window.sessionStorage.setItem(key, value); } catch (e) { /* sin persistencia */ } }
+
+    // Versiones anteriores guardaban la charla en localStorage (sin vencimiento): se limpia.
+    try {
+        window.localStorage.removeItem(STORAGE_VISITOR);
+        window.localStorage.removeItem(STORAGE_NAME);
+    } catch (e) { /* sin acceso a storage */ }
 
     function randomId(length) {
         var chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -44,6 +52,7 @@
     }
 
     var state = {
+        generation: 0, // cambia con "Nueva conversación": descarta respuestas de pedidos de la charla anterior
         open: false,
         cursor: 0,
         historyLoaded: false,
@@ -91,8 +100,17 @@
         close.setAttribute("aria-label", "Cerrar chat");
         close.textContent = "×";
         close.addEventListener("click", toggle);
+        var restart = el("button", "ac-restart");
+        restart.type = "button";
+        restart.title = "Nueva conversación";
+        restart.setAttribute("aria-label", "Nueva conversación");
+        restart.appendChild(svgIcon("M17.65 6.35A8 8 0 1 0 19.73 14h-2.08A6 6 0 1 1 12 6a5.9 5.9 0 0 1 4.22 1.78L13 11h7V4z"));
+        restart.addEventListener("click", nuevaConversacion);
+        var actions = el("div", "ac-actions");
+        actions.appendChild(restart);
+        actions.appendChild(close);
         header.appendChild(title);
-        header.appendChild(close);
+        header.appendChild(actions);
 
         var list = el("div", "ac-list");
         list.setAttribute("aria-live", "polite");
@@ -137,10 +155,30 @@
         root.appendChild(bubble);
         document.body.appendChild(host);
 
-        ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status };
+        ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status, bienvenida: config.mensajeBienvenida || "" };
 
         panel.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(); });
         document.addEventListener("visibilitychange", schedulePoll);
+    }
+
+    // Empieza una charla de cero: visitorId nuevo (en la bandeja queda como otra conversación; la
+    // anterior se conserva para el equipo) y panel limpio con el saludo.
+    function nuevaConversacion() {
+        stopPoll();
+        state.generation++;
+        state.cursor = 0;
+        state.historyLoaded = false;
+        state.polling = false;
+        state.renderedIds = {};
+        state.pending = [];
+        visitorId = randomId(24);
+        storageSet(STORAGE_VISITOR, visitorId);
+        while (ui.list.firstChild) ui.list.removeChild(ui.list.firstChild);
+        if (ui.bienvenida) appendMessage(ui.list, { texto: ui.bienvenida, esVisitante: false });
+        showStatus("");
+        ui.input.value = "";
+        ui.input.focus();
+        schedulePoll();
     }
 
     function toggle() {
@@ -160,7 +198,7 @@
         var texto = ui.input.value.trim();
         if (!texto) return;
         ui.input.value = "";
-        var item = { clientMessageId: randomId(20), texto: texto, node: null };
+        var item = { clientMessageId: randomId(20), texto: texto, node: null, visitorId: visitorId, generation: state.generation };
         item.node = appendMessage(ui.list, { texto: texto, esVisitante: true, pendiente: true });
         state.pending.push(item);
         postMessage(item);
@@ -180,7 +218,7 @@
             credentials: "omit",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                visitorId: visitorId,
+                visitorId: item.visitorId,
                 clientMessageId: item.clientMessageId,
                 texto: item.texto,
                 nombre: nombre || null,
@@ -191,10 +229,12 @@
             if (!r.ok) throw r.status;
             return r.json();
         }).then(function (result) {
+            if (item.generation !== state.generation) return; // la charla ya se reinició
             item.node.classList.remove("ac-msg--pending");
             resolvePending(item, result.idMensaje);
             poll();
         }).catch(function (statusCode) {
+            if (item.generation !== state.generation) return;
             item.node.classList.remove("ac-msg--pending");
             item.node.classList.add("ac-msg--error");
             item.node.title = "Tocá para reintentar";
@@ -222,6 +262,7 @@
         state.polling = true;
         stopPoll();
 
+        var generation = state.generation;
         var url = apiBase + "/mensajes?visitorId=" + encodeURIComponent(visitorId) + "&since=" + state.cursor;
         fetch(url, { method: "GET", mode: "cors", credentials: "omit", cache: "no-store" })
             .then(function (r) {
@@ -232,7 +273,7 @@
                 return r.ok ? r.json() : null;
             })
             .then(function (data) {
-                if (!data) return;
+                if (!data || generation !== state.generation) return;
                 (data.mensajes || []).forEach(function (m) {
                     if (state.renderedIds[m.id]) return;
                     if (m.esVisitante) {
@@ -249,6 +290,7 @@
             })
             .catch(function () { /* red intermitente: se reintenta en el próximo ciclo */ })
             .then(function () {
+                if (generation !== state.generation) return; // nuevaConversacion ya reprogramó el polling
                 state.polling = false;
                 schedulePoll();
             });
@@ -312,6 +354,11 @@
             ".ac-header{background:" + color + ";color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}",
             ".ac-title{font-size:15px;font-weight:600}",
             ".ac-close{background:transparent;border:0;color:#fff;font-size:24px;line-height:1;cursor:pointer;padding:0 4px}",
+            ".ac-actions{display:flex;align-items:center;gap:6px}",
+            ".ac-restart{background:transparent;border:0;color:#fff;cursor:pointer;padding:4px;display:flex;opacity:.85;border-radius:6px}",
+            ".ac-restart:hover{opacity:1;background:rgba(255,255,255,.15)}",
+            ".ac-restart svg{width:18px;height:18px}",
+            ".ac-restart:focus-visible{outline:3px solid #fff;outline-offset:2px}",
             ".ac-list{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:#f8fafc}",
             ".ac-msg{max-width:82%;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}",
             ".ac-msg--them{align-self:flex-start;background:#fff;border:1px solid #e5e7eb}",

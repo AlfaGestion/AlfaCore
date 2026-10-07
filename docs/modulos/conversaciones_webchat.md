@@ -110,8 +110,12 @@ ventana de 24 h. Adjuntos: no soportados (mismo mensaje que Instagram/Facebook).
 ## Widget (`wwwroot/webchat/widget.js`)
 
 Vanilla JS sin dependencias, en Shadow DOM (no le afecta el CSS del tema ni lo afecta). Todo el texto
-se pinta con `textContent`. Hace polling solo con el panel abierto y la pestaña visible. Si
-`localStorage` no está disponible, usa un `visitorId` en memoria (la charla no sobrevive a recargar).
+se pinta con `textContent`. Hace polling solo con el panel abierto y la pestaña visible.
+
+El `visitorId` vive en `sessionStorage`: la charla se mantiene al navegar por el sitio o recargar y se
+descarta al cerrar la pestaña (la próxima visita empieza de cero). El botón "Nueva conversación" del
+encabezado genera otro `visitorId`: en la bandeja queda como conversación nueva y la anterior se
+conserva. Si `sessionStorage` no está disponible, usa un id en memoria (no sobrevive a recargar).
 
 ## Limitaciones conocidas
 
