@@ -676,6 +676,7 @@ public sealed class ConversacionPlantillaDto
     public string NombreMeta { get; set; } = string.Empty;
     public string Categoria { get; set; } = ConversacionPlantillaCategorias.Marketing;
     public string Idioma { get; set; } = "es_AR";
+    public string EncabezadoFormato { get; set; } = ConversacionPlantillaEncabezados.Texto;
     public string EncabezadoTexto { get; set; } = string.Empty;
     public string CuerpoTexto { get; set; } = string.Empty;
     public string PieTexto { get; set; } = string.Empty;
@@ -708,6 +709,7 @@ public sealed class ConversacionPlantillaSaveRequest
     public string NombreMeta { get; set; } = string.Empty;
     public string Categoria { get; set; } = ConversacionPlantillaCategorias.Marketing;
     public string Idioma { get; set; } = "es_AR";
+    public string EncabezadoFormato { get; set; } = ConversacionPlantillaEncabezados.Texto;
     public string EncabezadoTexto { get; set; } = string.Empty;
     public string CuerpoTexto { get; set; } = string.Empty;
     public string PieTexto { get; set; } = string.Empty;
@@ -741,6 +743,23 @@ public sealed class ConversacionPlantillaSendRequest
     public bool EsMetaRemota { get; set; }
     public List<string> ValoresVariables { get; set; } = [];
     public string? IdTecnicoAutor { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
+/// <summary>
+/// Plantilla aprobada con encabezado DOCUMENT: el archivo viaja dentro de la plantilla, así que se
+/// puede enviar con la ventana de 24 h vencida (un adjunto suelto no). Lo usa Cierre de caja.
+/// </summary>
+public sealed class ConversacionPlantillaDocumentoSendRequest
+{
+    public long IdConversacion { get; set; }
+    public long IdPlantilla { get; set; }
+    public bool EsMetaRemota { get; set; }
+    public List<string> ValoresVariables { get; set; } = [];
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
 }
@@ -796,6 +815,19 @@ public sealed class ConversacionPlantillaAutoValuesDto
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Formato del encabezado (HEADER) de una plantilla creada en AlfaCore. DOCUMENT: el archivo se elige
+/// al enviar (ej. el Excel de Cierre de caja); para la aprobación se manda a Meta un PDF de ejemplo.
+/// </summary>
+public static class ConversacionPlantillaEncabezados
+{
+    public const string Texto = "TEXT";
+    public const string Documento = "DOCUMENT";
+
+    public static string Normalizar(string? value)
+        => string.Equals(value?.Trim(), Documento, StringComparison.OrdinalIgnoreCase) ? Documento : Texto;
 }
 
 public static class ConversacionPlantillaCategorias

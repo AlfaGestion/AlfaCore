@@ -61,12 +61,24 @@
                                 ValueChanged="@(value => _form.Categoria = value ?? ConversacionPlantillaCategorias.Marketing)"
                                 Options="@FormCategoryOptions"
                                 Disabled="@_busy" />
-                    <AlfaInput Label="Encabezado de texto"
-                               MaxLength="60"
-                               Value="@_form.EncabezadoTexto"
-                               ValueChanged="@(value => _form.EncabezadoTexto = value ?? string.Empty)"
-                               Placeholder="Opcional"
-                               Disabled="@_busy" />
+                    <AlfaSelect Label="Encabezado"
+                                Value="@_form.EncabezadoFormato"
+                                ValueChanged="@(value => _form.EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(value))"
+                                Options="@HeaderFormatOptions"
+                                Disabled="@_busy" />
+                    @if (EsEncabezadoDocumento(_form))
+                    {
+                        <p class="templates-header-hint">El documento se elige al enviar (por ejemplo, el Excel de Cierre de caja → WhatsApp). Para la aprobación, AlfaCore le manda a Meta un PDF de ejemplo. Una plantilla con documento se puede enviar aunque la ventana de 24 h esté vencida.</p>
+                    }
+                    else
+                    {
+                        <AlfaInput Label="Encabezado de texto"
+                                   MaxLength="60"
+                                   Value="@_form.EncabezadoTexto"
+                                   ValueChanged="@(value => _form.EncabezadoTexto = value ?? string.Empty)"
+                                   Placeholder="Opcional"
+                                   Disabled="@_busy" />
+                    }
                     <div class="alfa-field @(IsBodyTooLong ? "has-error" : string.Empty)">
                         <div class="templates-body-label-row">
                             <label class="alfa-field__label" for="tpl-body">Cuerpo<span aria-hidden="true">*</span></label>
@@ -128,7 +140,11 @@
                         <p class="panel-card__subtitle">Así se verá el cuerpo principal con ejemplos.</p>
                     </div>
                     <article class="message-card message-card--outgoing">
-                        @if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
+                        @if (EsEncabezadoDocumento(_form))
+                        {
+                            <div class="templates-doc-preview"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Documento adjunto</div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
                         {
                             <strong>@_form.EncabezadoTexto</strong>
                         }
@@ -263,7 +279,7 @@
                                 }
                                 @ReadField("Idioma", selected.Idioma)
                                 @ReadField("Categoría", GetCategoryLabel(selected.Categoria))
-                                @ReadField("Encabezado (HEADER)", DisplayOrFallback(selected.EncabezadoTexto))
+                                @ReadField("Encabezado (HEADER)", EsEncabezadoDocumento(selected) ? "Documento adjunto (se elige al enviar)" : DisplayOrFallback(selected.EncabezadoTexto))
                                 @ReadLongField("Cuerpo (BODY)", DisplayOrFallback(selected.CuerpoTexto))
                                 @ReadField("Pie (FOOTER)", DisplayOrFallback(selected.PieTexto))
                                 @ReadField("Botones (BUTTONS)", FormatButtons(selected.ComponentesMetaJson))
@@ -279,7 +295,11 @@
                                     <p class="panel-card__subtitle">Cuerpo con los primeros ejemplos disponibles.</p>
                                 </div>
                                 <article class="message-card message-card--outgoing">
-                                    @if (!string.IsNullOrWhiteSpace(selected.EncabezadoTexto))
+                                    @if (EsEncabezadoDocumento(selected))
+                                    {
+                                        <div class="templates-doc-preview"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Documento adjunto</div>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(selected.EncabezadoTexto))
                                     {
                                         <strong>@selected.EncabezadoTexto</strong>
                                     }
@@ -557,6 +577,14 @@
                 _filters.IdNumeroWhatsApp = TemplateWhatsAppNumeros.FirstOrDefault()?.IdNumero;
 
             await LoadTemplatesAsync(generation);
+
+            // ?nueva=cierre-caja (botón "Crear plantilla" de Cierre de caja → WhatsApp): abre el alta
+            // precargada con encabezado documento y las variables del cierre. No graba nada: el
+            // usuario revisa, guarda y la envía a aprobación.
+            if (query.TryGetValue("nueva", out var nuevaRaw)
+                && string.Equals(nuevaRaw.ToString(), "cierre-caja", StringComparison.OrdinalIgnoreCase)
+                && IsCurrentRequest(generation, expectedBaseId, null))
+                PrecargarPlantillaCierreCaja();
         }
         catch (Exception)
         {
@@ -1188,6 +1216,25 @@
         }
     }
 
+    private void PrecargarPlantillaCierreCaja()
+    {
+        NuevaPlantilla();
+        _form.NombreVisible = "Cierre de caja";
+        _form.NombreMeta = "cierre_de_caja";
+        _form.Categoria = ConversacionPlantillaCategorias.Utility;
+        _form.EncabezadoFormato = ConversacionPlantillaEncabezados.Documento;
+        _form.CuerpoTexto = "Hola {{1}}, te enviamos el cierre de caja del día {{2}} ({{3}}). Encontrás el detalle completo en el archivo adjunto. Ante cualquier consulta, respondé este mensaje.";
+        _form.PieTexto = "Enviado desde AlfaCore";
+        _form.VariableMappings = new Dictionary<int, string>
+        {
+            [1] = WhatsAppTemplateVariableCatalog.ContactName,
+            [2] = WhatsAppTemplateVariableCatalog.CierreFecha,
+            [3] = WhatsAppTemplateVariableCatalog.CierreCaja
+        };
+        _examplesText = string.Join("\n", "Evelyn", "08/10/2026", "Todas las cajas");
+        UpdatePageHeader();
+    }
+
     private void NuevaPlantilla()
     {
         _selectedId = 0;
@@ -1444,6 +1491,7 @@
             NombreMeta = _form.NombreMeta,
             Categoria = _form.Categoria,
             Idioma = _form.Idioma,
+            EncabezadoFormato = _form.EncabezadoFormato,
             EncabezadoTexto = _form.EncabezadoTexto,
             CuerpoTexto = _form.CuerpoTexto,
             PieTexto = _form.PieTexto,
@@ -1776,6 +1824,15 @@
     /// pasada el BODY traía un cuerpo de ejemplo hardcodeado -- residual de cuando existían presets --
     /// que quedó obsoleto al eliminarse esos presets.
     /// </summary>
+    private static readonly IReadOnlyList<AlfaSelectOption> HeaderFormatOptions =
+    [
+        new(ConversacionPlantillaEncabezados.Texto, "Texto (opcional)"),
+        new(ConversacionPlantillaEncabezados.Documento, "Documento adjunto")
+    ];
+
+    private static bool EsEncabezadoDocumento(ConversacionPlantillaDto plantilla)
+        => AlfaCore.Services.WhatsAppTemplateValidation.RequiereDocumento(plantilla);
+
     private static ConversacionPlantillaDto NewForm()
         => new()
         {
@@ -1794,6 +1851,7 @@
             NombreMeta = source.NombreMeta,
             Categoria = source.Categoria,
             Idioma = source.Idioma,
+            EncabezadoFormato = source.EncabezadoFormato,
             EncabezadoTexto = source.EncabezadoTexto,
             CuerpoTexto = source.CuerpoTexto,
             PieTexto = source.PieTexto,

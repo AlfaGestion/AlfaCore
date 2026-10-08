@@ -49,32 +49,109 @@
     }
 </div>
 
-<AlfaDialog Open="@(_dialogo.Length > 0)" Title="@(_dialogo == "email" ? "Enviar cierre por email" : "Enviar cierre por WhatsApp")" OnClose="CerrarDialogo" Disabled="@_ocupado">
+<AlfaDialog Open="@(_dialogo.Length > 0)"
+            Title="@(_dialogo == "email" ? "Enviar cierre por email" : "Enviar cierre por WhatsApp")"
+            Eyebrow="Cierre de caja"
+            OnClose="CerrarDialogo"
+            Disabled="@_ocupado">
     <ChildContent>
-        <p>Se adjuntará <strong>@_archivo?.Nombre</strong>, con todas las filas y los filtros del informe cargado.</p>
-        @if (_dialogo == "email")
-        {
-            <div class="field"><label for="cierre-email">Email del destinatario</label><input id="cierre-email" type="email" @bind="_destinatario" disabled="@_ocupado" /></div>
-        }
-        else
-        {
-            <div class="field"><label for="cierre-buscar">Buscar conversación por nombre o teléfono</label><input id="cierre-buscar" @bind="_busqueda" disabled="@_ocupado" /></div>
-            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_ocupado" OnClick="_ => BuscarConversaciones()">Buscar</AlfaButton>
-            <div class="field"><label for="cierre-conversacion">Destinatario de WhatsApp</label>
-                <select id="cierre-conversacion" @bind="_conversacion" disabled="@_ocupado">
-                    <option value="0">Seleccioná una conversación</option>
-                    @foreach (var item in _conversaciones)
-                    { <option value="@item.IdConversacion">@item.NombreVisible · @item.TelefonoWhatsApp</option> }
-                </select>
+        <div class="cierre-envio">
+            <div class="cierre-envio__archivo">
+                <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                <div>
+                    <strong>@_archivo?.Nombre</strong>
+                    <span>Excel con todas las filas y los filtros del informe cargado.</span>
+                </div>
             </div>
-            <p>Se muestran hasta 50 coincidencias. Refiná la búsqueda si no encontrás el destinatario.</p>
-        }
-        @if (_ocupado) { <p class="cierre-carga" role="status">@_estado</p> }
-        @if (_feedback.Length > 0) { <p role="alert">@_feedback</p> }
+
+            @if (_dialogo == "email")
+            {
+                <AlfaInput Label="Email del destinatario" Type="email" Value="@_destinatario" ValueChanged="v => _destinatario = v ?? string.Empty" Placeholder="nombre@empresa.com" Disabled="@_ocupado" />
+            }
+            else
+            {
+                <div class="cierre-envio__buscar" @onkeydown="BuscarConEnterAsync">
+                    <AlfaInput Label="Buscar conversación" Value="@_busqueda" ValueChanged="v => _busqueda = v ?? string.Empty" Placeholder="Nombre o teléfono" Disabled="@_ocupado" />
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-search" Disabled="@_ocupado" OnClick="_ => BuscarConversaciones()">Buscar</AlfaButton>
+                </div>
+
+                @if (_conversaciones.Count > 0)
+                {
+                    <AlfaSelect Label="Destinatario"
+                                Value="@(_conversacion > 0 ? _conversacion.ToString(System.Globalization.CultureInfo.InvariantCulture) : null)"
+                                ValueChanged="OnDestinatarioElegidoAsync"
+                                Options="@OpcionesConversaciones"
+                                Placeholder="Elegí una conversación"
+                                Disabled="@_ocupado" />
+                    <p class="cierre-envio__ayuda">@(_conversaciones.Count >= 50 ? "Se muestran las primeras 50 coincidencias: refiná la búsqueda si no encontrás el destinatario." : $"{_conversaciones.Count} coincidencia(s).")</p>
+                }
+
+                @if (VentanaVencida)
+                {
+                    <div class="cierre-plantilla">
+                        <p class="cierre-plantilla__aviso">
+                            <i class="bi bi-clock-history" aria-hidden="true"></i>
+                            <span>Pasaron más de 24 h desde el último mensaje de este contacto. WhatsApp solo permite reabrir la conversación con una <strong>plantilla aprobada</strong>; el Excel viaja adjunto dentro de la plantilla.</span>
+                        </p>
+
+                        @if (_cargandoPlantillas)
+                        {
+                            <p class="cierre-envio__ayuda" role="status">Buscando plantillas con documento…</p>
+                        }
+                        else if (_plantillasDocumento.Count == 0)
+                        {
+                            <div class="cierre-plantilla__vacia">
+                                <div>
+                                    <strong>Todavía no hay una plantilla con documento aprobada</strong>
+                                    <span>Creala desde AlfaCore: se abre precargada con el texto y las variables del cierre. Después la enviás a aprobación de Meta y, cuando esté aprobada, aparece acá.</span>
+                                </div>
+                                <div class="cierre-plantilla__accion">
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-plus-circle" Disabled="@_ocupado" OnClick="_ => IrACrearPlantilla()">Crear plantilla</AlfaButton>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <AlfaSelect Label="Plantilla"
+                                        Value="@(_idPlantilla > 0 ? _idPlantilla.ToString(System.Globalization.CultureInfo.InvariantCulture) : null)"
+                                        ValueChanged="OnPlantillaElegidaAsync"
+                                        Options="@OpcionesPlantillas"
+                                        Disabled="@_ocupado" />
+                            @if (_valoresPlantilla.Count > 0)
+                            {
+                                <div class="cierre-plantilla__variables">
+                                    @for (var i = 0; i < _valoresPlantilla.Count; i++)
+                                    {
+                                        var indice = i;
+                                        <AlfaInput Label="@("Variable {{" + (indice + 1) + "}}")" Value="@_valoresPlantilla[indice]" ValueChanged="v => _valoresPlantilla[indice] = v ?? string.Empty" Disabled="@_ocupado" />
+                                    }
+                                </div>
+                            }
+                            @if (PlantillaSeleccionada is not null)
+                            {
+                                <div class="cierre-plantilla__preview">
+                                    <span class="cierre-plantilla__preview-doc"><i class="bi bi-file-earmark-excel" aria-hidden="true"></i> @_archivo?.Nombre</span>
+                                    <p>@VistaPreviaPlantilla</p>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            }
+
+            @if (_ocupado && !string.IsNullOrWhiteSpace(_estado))
+            {
+                <p class="cierre-envio__ayuda" role="status">@_estado</p>
+            }
+            @if (_feedback.Length > 0)
+            {
+                <p class="cierre-envio__error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i> @_feedback</p>
+            }
+        </div>
     </ChildContent>
     <Footer>
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_ocupado" OnClick="_ => CerrarDialogo()">Cancelar</AlfaButton>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_ocupado" Disabled="@(_ocupado || (_dialogo == "email" ? string.IsNullOrWhiteSpace(_destinatario) : _conversacion == 0))" OnClick="_ => Enviar()">Enviar Excel</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_ocupado" Disabled="@(_ocupado || (_dialogo == "email" ? string.IsNullOrWhiteSpace(_destinatario) : !PuedeEnviarWhatsApp))" OnClick="_ => Enviar()">@(VentanaVencida ? "Enviar plantilla con el Excel" : "Enviar Excel")</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -162,6 +239,132 @@
         }
     </div>;
 
+    // ── WhatsApp con ventana de 24 h vencida: plantilla aprobada con encabezado documento ──────
+    private IReadOnlyList<ConversacionPlantillaDto> _plantillasDocumento = [];
+    private long _idPlantilla;
+    private List<string> _valoresPlantilla = [];
+    private bool _cargandoPlantillas;
+
+    private ConversacionInboxItemDto? ConversacionSeleccionada => _conversaciones.FirstOrDefault(c => c.IdConversacion == _conversacion);
+    private bool VentanaVencida => _dialogo == "whatsapp" && ConversacionSeleccionada is { VentanaWhatsAppActiva: false };
+    private ConversacionPlantillaDto? PlantillaSeleccionada => _plantillasDocumento.FirstOrDefault(p => p.IdPlantilla == _idPlantilla);
+    private bool PuedeEnviarWhatsApp => ConversacionSeleccionada is not null
+        && (!VentanaVencida || (PlantillaSeleccionada is not null && _valoresPlantilla.All(v => !string.IsNullOrWhiteSpace(v))));
+
+    private string VistaPreviaPlantilla
+    {
+        get
+        {
+            var texto = PlantillaSeleccionada?.CuerpoTexto ?? string.Empty;
+            for (var i = 0; i < _valoresPlantilla.Count; i++)
+            {
+                var valor = string.IsNullOrWhiteSpace(_valoresPlantilla[i]) ? $"{{{{{i + 1}}}}}" : _valoresPlantilla[i];
+                texto = System.Text.RegularExpressions.Regex.Replace(texto, @"\{\{\s*" + (i + 1) + @"\s*\}\}", valor.Replace("$", "$$"));
+            }
+            return texto;
+        }
+    }
+
+    private IReadOnlyList<AlfaSelectOption> OpcionesConversaciones => _conversaciones
+        .Select(c => new AlfaSelectOption(c.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            string.IsNullOrWhiteSpace(c.NombreVisible) ? c.TelefonoWhatsApp : $"{c.NombreVisible} · {c.TelefonoWhatsApp}"))
+        .ToList();
+
+    private IReadOnlyList<AlfaSelectOption> OpcionesPlantillas => _plantillasDocumento
+        .Select(p => new AlfaSelectOption(p.IdPlantilla.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            string.IsNullOrWhiteSpace(p.NombreVisible) ? p.NombreMeta : p.NombreVisible))
+        .ToList();
+
+    private async Task OnDestinatarioElegidoAsync(string? valor)
+    {
+        _conversacion = long.TryParse(valor, out var id) ? id : 0;
+        await OnConversacionCambiadaAsync();
+    }
+
+    private async Task OnPlantillaElegidaAsync(string? valor)
+    {
+        _idPlantilla = long.TryParse(valor, out var id) ? id : 0;
+        await CompletarVariablesAsync();
+    }
+
+    private async Task BuscarConEnterAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_ocupado)
+            await BuscarConversaciones();
+    }
+
+    // Abre Plantillas con el alta precargada (encabezado documento + variables del cierre).
+    private void IrACrearPlantilla()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones/plantillas?nueva=cierre-caja"));
+
+    private async Task OnConversacionCambiadaAsync()
+    {
+        _plantillasDocumento = [];
+        _idPlantilla = 0;
+        _valoresPlantilla = [];
+        if (!VentanaVencida) return;
+
+        _cargandoPlantillas = true;
+        var idConversacion = _conversacion;
+        try
+        {
+            var result = await UiOps.RunAsync(() => Conversaciones.GetTemplatesForConversationAsync(idConversacion, _cts.Token), "No se pudieron leer las plantillas de WhatsApp.");
+            if (idConversacion != _conversacion) return;
+            if (!result.Success) { _feedback = result.Feedback?.Message ?? "No se pudieron leer las plantillas de WhatsApp."; return; }
+            _plantillasDocumento = (result.Value ?? [])
+                .Where(p => p.Activa
+                    && (p.EsMetaRemota || string.Equals(p.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
+                    && WhatsAppTemplateValidation.RequiereDocumento(p)
+                    && WhatsAppTemplateValidation.UnsupportedReason(p, documentoDisponible: true).Length == 0)
+                .ToList();
+            _idPlantilla = _plantillasDocumento.FirstOrDefault()?.IdPlantilla ?? 0;
+            await CompletarVariablesAsync();
+        }
+        finally { _cargandoPlantillas = false; }
+    }
+
+    // Prellena las variables BODY. Si la plantilla tiene variables asignadas (Plantillas → Insertar
+    // variable), las resuelve el servicio, con "Fecha del cierre" y "Caja del cierre" aportadas desde
+    // acá. Sin asignaciones: {{1}} = nombre del contacto y {{2}} = fecha del cierre, el uso más común.
+    // Siempre se pueden editar antes de enviar.
+    private async Task CompletarVariablesAsync()
+    {
+        var plantilla = PlantillaSeleccionada;
+        var cantidad = plantilla is null ? 0 : System.Text.RegularExpressions.Regex
+            .Matches(plantilla.CuerpoTexto, @"\{\{\s*(\d+)\s*\}\}")
+            .Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .DefaultIfEmpty(0).Max();
+        var fechaCierre = _consulta?.Fecha.ToString("dd/MM/yyyy") ?? string.Empty;
+        _valoresPlantilla = Enumerable.Range(1, cantidad).Select(i => i switch
+        {
+            1 => ConversacionSeleccionada?.NombreVisible ?? string.Empty,
+            2 => fechaCierre,
+            _ => string.Empty
+        }).ToList();
+        if (plantilla is null || plantilla.EsMetaRemota || cantidad == 0) return;
+
+        var idPlantilla = plantilla.IdPlantilla;
+        var detalle = await UiOps.RunAsync(() => Conversaciones.GetTemplateAsync(idPlantilla, _cts.Token), "No se pudo leer la plantilla.");
+        if (idPlantilla != _idPlantilla || !detalle.Success || detalle.Value is null || detalle.Value.VariableMappings.Count == 0) return;
+
+        var contexto = new Dictionary<string, string>
+        {
+            [WhatsAppTemplateVariableCatalog.CierreFecha] = fechaCierre,
+            [WhatsAppTemplateVariableCatalog.CierreCaja] = _consulta is null || _consulta.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_consulta.Caja}"
+        };
+        var auto = await UiOps.RunAsync(() => Conversaciones.GetTemplateAutoValuesAsync(_conversacion, idPlantilla, cantidad, contexto, _cts.Token), "No se pudieron completar las variables.");
+        if (idPlantilla != _idPlantilla || !auto.Success || auto.Value is null) return;
+
+        // Solo se toman las posiciones con variable asignada; las "manuales" conservan el valor por
+        // defecto de arriba (el servicio les aplicaría el heurístico histórico de cobranza).
+        var asignadas = detalle.Value.VariableMappings;
+        for (var i = 0; i < cantidad; i++)
+        {
+            if (asignadas.ContainsKey(i + 1))
+                _valoresPlantilla[i] = i < auto.Value.Valores.Count ? auto.Value.Valores[i] : string.Empty;
+        }
+    }
+
     private void ToggleFiltros() { _mostrarFiltros = !_mostrarFiltros; UpdateHeader(); }
     private void CerrarDialogo() { if (_ocupado) return; _dialogo = ""; _archivo = null; }
 
@@ -177,7 +380,7 @@
             _archivo = result.Value;
             if (destino == "excel")
                 await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(_archivo.Contenido), CierreCajaArchivo.Mime, _archivo.Nombre);
-            else { _dialogo = destino; _conversacion = 0; _conversaciones = []; }
+            else { _dialogo = destino; _conversacion = 0; _conversaciones = []; _plantillasDocumento = []; _idPlantilla = 0; _valoresPlantilla = []; }
         }
         catch (JSException ex)
         {
@@ -189,7 +392,7 @@
 
     private async Task BuscarConversaciones()
     {
-        _ocupado = true; _estado = "Buscando conversaciones…"; _feedback = ""; _conversacion = 0; UpdateHeader(); StateHasChanged();
+        _ocupado = true; _estado = "Buscando conversaciones…"; _feedback = ""; _conversacion = 0; _plantillasDocumento = []; _idPlantilla = 0; _valoresPlantilla = []; UpdateHeader(); StateHasChanged();
         try
         {
             var result = await UiOps.RunAsync(() => Conversaciones.GetInboxAsync(new ConversacionesInboxFilters
@@ -217,6 +420,22 @@
             else
             {
                 if (!_conversaciones.Any(c => c.IdConversacion == _conversacion)) return;
+                if (VentanaVencida)
+                {
+                    var plantilla = PlantillaSeleccionada;
+                    if (plantilla is null) return;
+                    var envio = await UiOps.RunAsync(() => Conversaciones.SendTemplateWithDocumentAsync(new ConversacionPlantillaDocumentoSendRequest
+                    {
+                        IdConversacion = _conversacion, IdPlantilla = plantilla.IdPlantilla, EsMetaRemota = plantilla.EsMetaRemota,
+                        ValoresVariables = _valoresPlantilla.Select(v => v.Trim()).ToList(),
+                        NombreArchivo = _archivo.Nombre, MimeType = CierreCajaArchivo.Mime, Contenido = _archivo.Contenido,
+                        UsuarioAccion = AppUser.CurrentUser?.UserName, SistemaAccion = AppUser.CurrentUser?.SystemCode
+                    }, _cts.Token), "No se pudo enviar la plantilla con el Excel.");
+                    if (!envio.Success) { _feedback = envio.Feedback?.Message ?? "No se pudo enviar la plantilla con el Excel."; return; }
+                    _feedback = "Plantilla enviada con el Excel adjunto. La conversación queda reabierta cuando el contacto responda.";
+                    _dialogo = ""; _archivo = null;
+                    return;
+                }
                 using var contenido = new MemoryStream(_archivo.Contenido);
                 var result = await UiOps.RunAsync(() => Conversaciones.UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest
                 { IdConversacion = _conversacion, NombreArchivo = _archivo.Nombre, MimeType = CierreCajaArchivo.Mime,

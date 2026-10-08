@@ -3039,7 +3039,8 @@ public sealed class ConversacionesService(
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
                     FechaHoraSincronizacion,
-                    ISNULL(MetaPayloadJson, '')
+                    ISNULL(MetaPayloadJson, ''),
+                    ISNULL(EncabezadoFormato, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE
                     (@IncluirInactivas = 1 OR ISNULL(Activa, 1) = 1)
@@ -3060,6 +3061,7 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionPlantillaDto>();
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IncluirInactivas", filters.IncluirInactivas);
             cmd.Parameters.AddWithValue("@EstadoMeta", DbNullable(filters.EstadoMeta));
@@ -3132,13 +3134,15 @@ public sealed class ConversacionesService(
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
                     FechaHoraSincronizacion,
-                    ISNULL(MetaPayloadJson, '')
+                    ISNULL(MetaPayloadJson, ''),
+                    ISNULL(EncabezadoFormato, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE IdPlantilla = @IdPlantilla
                 """;
 
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             ConversacionPlantillaDto? template;
             await using (var cmd = new SqlCommand(sql, cn))
             {
@@ -3240,6 +3244,7 @@ public sealed class ConversacionesService(
             }
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             await EnsureTemplateNameIsUniqueAsync(cn, normalized, templateContext.WabaId, token);
 
             if (normalized.IdPlantilla <= 0)
@@ -3251,6 +3256,7 @@ public sealed class ConversacionesService(
                         NombreMeta,
                         Categoria,
                         Idioma,
+                        EncabezadoFormato,
                         EncabezadoTexto,
                         CuerpoTexto,
                         PieTexto,
@@ -3269,6 +3275,7 @@ public sealed class ConversacionesService(
                         @NombreMeta,
                         @Categoria,
                         @Idioma,
+                        @EncabezadoFormato,
                         @EncabezadoTexto,
                         @CuerpoTexto,
                         @PieTexto,
@@ -3307,6 +3314,7 @@ public sealed class ConversacionesService(
                     NombreMeta = @NombreMeta,
                     Categoria = @Categoria,
                     Idioma = @Idioma,
+                    EncabezadoFormato = @EncabezadoFormato,
                     EncabezadoTexto = @EncabezadoTexto,
                     CuerpoTexto = @CuerpoTexto,
                     PieTexto = @PieTexto,
@@ -3434,7 +3442,20 @@ public sealed class ConversacionesService(
         }, "No se pudo sincronizar la plantilla con Meta.", ct);
 
     public Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage", async token =>
+        => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage",
+            token => SendTemplateCoreAsync(request, documento: null, token),
+            "No se pudo enviar la plantilla por WhatsApp.", ct);
+
+    private sealed record TemplateDocumentPayload(string NombreArchivo, string MimeType, byte[] Contenido);
+
+    // Núcleo común de SendTemplateMessageAsync y SendTemplateWithDocumentAsync. Con documento, la
+    // plantilla debe tener HEADER DOCUMENT: el archivo se guarda como adjunto del mensaje, se sube a
+    // Meta (/media) y viaja como parámetro del encabezado. Una plantilla se puede mandar con la
+    // ventana de 24 h vencida, por eso este camino no consulta IsWhatsAppWindowActiveAsync.
+    private async Task<ConversacionPlantillaMessageResultDto> SendTemplateCoreAsync(
+        ConversacionPlantillaSendRequest request,
+        TemplateDocumentPayload? documento,
+        CancellationToken token)
         {
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversación es obligatoria.");
@@ -3506,16 +3527,27 @@ public sealed class ConversacionesService(
             // consecutivo desde {{1}}, y rechaza explícitamente componentes que AlfaCore no puede
             // completar (HEADER media/variable, botones, variables con nombre) antes de gastar la
             // llamada a Graph.
-            WhatsAppTemplateValidation.ValidateSend(template, values);
+            WhatsAppTemplateValidation.ValidateSend(template, values, documento is not null);
 
             var now = BusinessNow();
             var previewText = RenderTemplatePreview(template.CuerpoTexto, values);
+
+            string? rutaDocumento = null;
+            string mimeDocumento = string.Empty;
+            if (documento is not null)
+            {
+                mimeDocumento = NormalizeOutgoingMime(documento.MimeType, documento.NombreArchivo, "DOCUMENT");
+                var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
+                Directory.CreateDirectory(folder);
+                rutaDocumento = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(documento.NombreArchivo).ToLowerInvariant()}");
+                await File.WriteAllBytesAsync(rutaDocumento, documento.Contenido, token);
+            }
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
             {
                 ConversationId = request.IdConversacion,
                 Phone = conversation.TelefonoWhatsApp,
-                MessageType = "TEXT",
+                MessageType = documento is null ? "TEXT" : "DOCUMENT",
                 Direction = "SALIENTE",
                 EstadoEnvio = "PENDIENTE",
                 Text = previewText,
@@ -3526,10 +3558,28 @@ public sealed class ConversacionesService(
                 IdTecnicoAutor = request.IdTecnicoAutor
             }, token);
 
+            if (documento is not null && rutaDocumento is not null)
+            {
+                // El adjunto queda registrado aunque falle el envío: el mensaje en ERROR_ENVIO sigue
+                // mostrando qué archivo se intentó mandar.
+                await InsertAttachmentRecordAsync(
+                    messageId, "DOCUMENT", documento.NombreArchivo, mimeDocumento, rutaDocumento,
+                    documento.Contenido.LongLength, string.Empty, documento.Contenido, token);
+            }
+
             WhatsAppSendResult sendResult;
             try
             {
-                sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+                if (documento is null || rutaDocumento is null)
+                {
+                    sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+                }
+                else
+                {
+                    var headerMediaId = await UploadWhatsAppMediaAsync(config, rutaDocumento, documento.NombreArchivo, mimeDocumento, token);
+                    sendResult = await SendTemplateWithHeaderDocumentToWhatsAppAsync(
+                        config, conversation.TelefonoWhatsApp, template, values, headerMediaId, documento.NombreArchivo, token);
+                }
             }
             catch (Exception ex)
             {
@@ -3548,7 +3598,26 @@ public sealed class ConversacionesService(
                 EstadoEnvio = sendResult.EstadoEnvio,
                 WhatsAppMessageId = sendResult.WhatsAppMessageId
             };
-        }, "No se pudo enviar la plantilla por WhatsApp.", ct);
+        }
+
+    public Task<ConversacionPlantillaMessageResultDto> SendTemplateWithDocumentAsync(ConversacionPlantillaDocumentoSendRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SendTemplateWithDocument", token =>
+        {
+            if (string.IsNullOrWhiteSpace(request.NombreArchivo))
+                throw new InvalidOperationException("El nombre del archivo es obligatorio.");
+            if (request.Contenido.Length == 0)
+                throw new InvalidOperationException("El archivo está vacío.");
+
+            return SendTemplateCoreAsync(new ConversacionPlantillaSendRequest
+            {
+                IdConversacion = request.IdConversacion,
+                IdPlantilla = request.IdPlantilla,
+                EsMetaRemota = request.EsMetaRemota,
+                ValoresVariables = request.ValoresVariables,
+                UsuarioAccion = request.UsuarioAccion,
+                SistemaAccion = request.SistemaAccion
+            }, new TemplateDocumentPayload(request.NombreArchivo.Trim(), request.MimeType, request.Contenido), token);
+        }, "No se pudo enviar la plantilla con el documento por WhatsApp.", ct);
 
     /// <summary>
     /// Valor de contact.name: reusa exactamente la misma fuente que el heurístico histórico (posición 1
@@ -3561,6 +3630,38 @@ public sealed class ConversacionesService(
             conversation.ContactoNombre,
             conversation.NombreVisible,
             conversation.TelefonoWhatsApp);
+
+    /// <summary>
+    /// Variables que salen de la conversación o de la fecha/hora del negocio, sin consultas extra:
+    /// contacto (teléfono, email), cliente vinculado (nombre, código) y fecha/hora del envío.
+    /// </summary>
+    internal static (bool Resolved, string Value, string? Observation) ResolveSimpleTemplateAutoValue(
+        string variableKey, ConversacionDetalleDto conversation, DateTime now)
+    {
+        var esAr = CultureInfo.GetCultureInfo("es-AR");
+        static (bool, string, string?) Ok(string value) => (true, value, null);
+        static (bool, string, string?) Falta(string observation) => (false, string.Empty, observation);
+
+        return variableKey switch
+        {
+            WhatsAppTemplateVariableCatalog.ContactPhone => string.IsNullOrWhiteSpace(conversation.TelefonoWhatsApp)
+                ? Falta("La conversación no tiene teléfono de WhatsApp.") : Ok(conversation.TelefonoWhatsApp.Trim()),
+            WhatsAppTemplateVariableCatalog.ContactEmail => string.IsNullOrWhiteSpace(conversation.ContactoEmail)
+                ? Falta("El contacto no tiene email cargado.") : Ok(conversation.ContactoEmail.Trim()),
+            WhatsAppTemplateVariableCatalog.ClienteNombre => string.IsNullOrWhiteSpace(conversation.ClienteNombre)
+                ? Falta("La conversación no tiene cliente vinculado.") : Ok(conversation.ClienteNombre.Trim()),
+            WhatsAppTemplateVariableCatalog.ClienteCodigo => string.IsNullOrWhiteSpace(conversation.ClienteCodigo)
+                ? Falta("La conversación no tiene cliente vinculado.") : Ok(conversation.ClienteCodigo.Trim()),
+            WhatsAppTemplateVariableCatalog.FechaHoy => Ok(now.ToString("dd/MM/yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.FechaAyer => Ok(now.AddDays(-1).ToString("dd/MM/yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.HoraActual => Ok(now.ToString("HH:mm", esAr)),
+            WhatsAppTemplateVariableCatalog.MesActual => Ok(now.ToString("MMMM 'de' yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.AnioActual => Ok(now.ToString("yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.CierreFecha or WhatsAppTemplateVariableCatalog.CierreCaja
+                => Falta("Los datos del cierre se completan solos al enviar desde Cierre de caja; desde acá completalos a mano."),
+            _ => Falta($"No hay resolución automática implementada para '{variableKey}'.")
+        };
+    }
 
     /// <summary>Resolver real de cobranza.detalleDeuda -- reusa TryBuildDebtDetailAsync, no lo reimplementa.</summary>
     private async Task<(bool Resolved, string Value, string? Observation)> ResolveCobranzaDetalleDeudaAutoValueAsync(SqlConnection cn, ConversacionDetalleDto conversation, CancellationToken ct)
@@ -3586,6 +3687,12 @@ public sealed class ConversacionesService(
     }
 
     public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default)
+        => GetTemplateAutoValuesAsync(idConversacion, idPlantilla, variableCount, new Dictionary<string, string>(), ct);
+
+    // valoresContexto: variables que no se pueden resolver desde la conversación pero sí las conoce la
+    // pantalla que envía (Cierre de caja aporta cierre.fecha y cierre.caja). Tienen prioridad sobre el
+    // catálogo para esa key.
+    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, IReadOnlyDictionary<string, string> valoresContexto, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplateAutoValues", async token =>
         {
             if (idConversacion <= 0)
@@ -3607,6 +3714,12 @@ public sealed class ConversacionesService(
             {
                 if (mappings.TryGetValue(pos, out var variableKey))
                 {
+                    if (valoresContexto.TryGetValue(variableKey, out var valorContexto) && !string.IsNullOrWhiteSpace(valorContexto))
+                    {
+                        values.Add(valorContexto);
+                        continue;
+                    }
+
                     var definition = WhatsAppTemplateVariableCatalog.Find(variableKey);
                     if (definition is { CanResolveAutomaticallyInManualSend: true })
                     {
@@ -3615,7 +3728,7 @@ public sealed class ConversacionesService(
                             WhatsAppTemplateVariableCatalog.ContactName => (true, ResolveContactNameAutoValue(conversation), (string?)null),
                             WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda => await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token),
                             WhatsAppTemplateVariableCatalog.PagoFormaPago => await ResolvePagoFormaPagoAutoValueAsync(cn, token),
-                            _ => (false, string.Empty, $"No hay resolución automática implementada para '{variableKey}'.")
+                            _ => ResolveSimpleTemplateAutoValue(variableKey, conversation, BusinessNow())
                         };
 
                         if (observation is not null)
@@ -11597,7 +11710,13 @@ public sealed class ConversacionesService(
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
-        request.Content = new StringContent(JsonSerializer.Serialize(BuildMetaTemplateCreatePayload(template)), Encoding.UTF8, "application/json");
+        // Encabezado documento: Meta exige un archivo de ejemplo subido por la Resumable Upload API
+        // (header_handle). AlfaCore manda un PDF de ejemplo propio; el documento real se elige al enviar.
+        string? headerHandle = null;
+        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
+            headerHandle = await UploadTemplateSampleDocumentAsync(config, ct);
+
+        request.Content = new StringContent(JsonSerializer.Serialize(BuildMetaTemplateCreatePayload(template, headerHandle)), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -11612,6 +11731,112 @@ public sealed class ConversacionesService(
             EstadoMeta = root.TryGetProperty("status", out var status) ? status.GetString() ?? "PENDING" : "PENDING",
             PayloadJson = body
         };
+    }
+
+    // Resumable Upload API de Meta: 1) abrir sesión en /{app-id}/uploads, 2) subir los bytes con
+    // file_offset 0; devuelve el "h" (handle) que pide example.header_handle al crear la plantilla.
+    // El app id se obtiene del propio token (GET /app), así no hace falta configurarlo aparte.
+    private async Task<string> UploadTemplateSampleDocumentAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct)
+    {
+        const string fileName = "ejemplo_documento.pdf";
+        var bytes = BuildTemplateSamplePdf();
+        var token = config.AccessToken.Trim();
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
+
+        string appId;
+        using (var appRequest = new HttpRequestMessage(HttpMethod.Get, $"https://graph.facebook.com/{config.ApiVersion}/app"))
+        {
+            appRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var appResponse = await client.SendAsync(appRequest, ct);
+            var appBody = await appResponse.Content.ReadAsStringAsync(ct);
+            if (!appResponse.IsSuccessStatusCode)
+                throw new HttpRequestException($"Meta devolvi\u00f3 {(int)appResponse.StatusCode} al identificar la app para subir el documento de ejemplo: {appBody}");
+            using var appDoc = JsonDocument.Parse(appBody);
+            appId = appDoc.RootElement.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(appId))
+                throw new InvalidOperationException("Meta no devolvi\u00f3 la app asociada a la credencial de WhatsApp.");
+        }
+
+        string sessionId;
+        var sessionUrl = $"https://graph.facebook.com/{config.ApiVersion}/{appId}/uploads"
+            + $"?file_name={Uri.EscapeDataString(fileName)}&file_length={bytes.Length}&file_type=application%2Fpdf";
+        using (var sessionRequest = new HttpRequestMessage(HttpMethod.Post, sessionUrl))
+        {
+            sessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var sessionResponse = await client.SendAsync(sessionRequest, ct);
+            var sessionBody = await sessionResponse.Content.ReadAsStringAsync(ct);
+            if (!sessionResponse.IsSuccessStatusCode)
+                throw new HttpRequestException($"Meta devolvi\u00f3 {(int)sessionResponse.StatusCode} al abrir la subida del documento de ejemplo: {sessionBody}");
+            using var sessionDoc = JsonDocument.Parse(sessionBody);
+            sessionId = sessionDoc.RootElement.TryGetProperty("id", out var sid) ? sid.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(sessionId))
+                throw new InvalidOperationException("Meta no devolvi\u00f3 la sesi\u00f3n de subida del documento de ejemplo.");
+        }
+
+        using var uploadRequest = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{config.ApiVersion}/{sessionId}");
+        uploadRequest.Headers.TryAddWithoutValidation("Authorization", $"OAuth {token}");
+        uploadRequest.Headers.TryAddWithoutValidation("file_offset", "0");
+        uploadRequest.Content = new ByteArrayContent(bytes);
+        using var uploadResponse = await client.SendAsync(uploadRequest, ct);
+        var uploadBody = await uploadResponse.Content.ReadAsStringAsync(ct);
+        if (!uploadResponse.IsSuccessStatusCode)
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)uploadResponse.StatusCode} al subir el documento de ejemplo: {uploadBody}");
+        using var uploadDoc = JsonDocument.Parse(uploadBody);
+        var handle = uploadDoc.RootElement.TryGetProperty("h", out var h) ? h.GetString() ?? string.Empty : string.Empty;
+        if (string.IsNullOrWhiteSpace(handle))
+            throw new InvalidOperationException("Meta no devolvi\u00f3 el identificador del documento de ejemplo.");
+        return handle;
+    }
+
+    /// <summary>PDF mínimo válido (una página con un texto) para el ejemplo del encabezado documento.</summary>
+    internal static byte[] BuildTemplateSamplePdf()
+    {
+        const string texto = "Documento de ejemplo - AlfaCore";
+        var contenido = $"BT /F1 18 Tf 72 720 Td ({texto}) Tj ET";
+        var objetos = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            $"<< /Length {contenido.Length} >>\nstream\n{contenido}\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+        };
+
+        var sb = new StringBuilder("%PDF-1.4\n");
+        var offsets = new List<int>();
+        for (var i = 0; i < objetos.Length; i++)
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(sb.ToString()));
+            sb.Append(i + 1).Append(" 0 obj\n").Append(objetos[i]).Append("\nendobj\n");
+        }
+
+        var xref = Encoding.ASCII.GetByteCount(sb.ToString());
+        sb.Append("xref\n0 ").Append(objetos.Length + 1).Append("\n0000000000 65535 f \n");
+        foreach (var offset in offsets)
+            sb.Append(offset.ToString("D10", CultureInfo.InvariantCulture)).Append(" 00000 n \n");
+        sb.Append("trailer\n<< /Size ").Append(objetos.Length + 1).Append(" /Root 1 0 R >>\nstartxref\n").Append(xref).Append("\n%%EOF\n");
+        return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> TemplateHeaderFormatColumnEnsured = new(StringComparer.OrdinalIgnoreCase);
+
+    // Columna nueva de dbo.CONV_PLANTILLAS (script 2026-10-08-001). Se asegura en caliente para que
+    // una base que todavía no corrió la actualización no rompa la lectura de plantillas.
+    private static async Task EnsureTemplateHeaderFormatColumnOnceAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var key = $"{cn.DataSource}|{cn.Database}".Trim().ToUpperInvariant();
+        if (TemplateHeaderFormatColumnEnsured.ContainsKey(key))
+            return;
+
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_PLANTILLAS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_PLANTILLAS', N'EncabezadoFormato') IS NULL
+                ALTER TABLE dbo.CONV_PLANTILLAS ADD EncabezadoFormato varchar(20) NULL;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+        TemplateHeaderFormatColumnEnsured[key] = 1;
     }
 
     private async Task<MetaTemplateStatusResult> GetMetaTemplateStatusAsync(ConversacionWhatsAppConfigDto config, ConversacionPlantillaDto template, CancellationToken ct)
@@ -11648,18 +11873,31 @@ public sealed class ConversacionesService(
         throw new InvalidOperationException("No se encontro la plantilla en Meta para el idioma configurado.");
     }
 
-    private async Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync(
+    private Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync(
         ConversacionWhatsAppConfigDto config,
         string phone,
         ConversacionPlantillaDto template,
         IReadOnlyList<string> values,
+        CancellationToken ct)
+        => SendTemplateWithHeaderDocumentToWhatsAppAsync(config, phone, template, values, headerDocumentMediaId: null, headerDocumentFileName: null, ct);
+
+    // Mismo POST que SendTemplateToWhatsAppAsync; con headerDocumentMediaId agrega el parámetro del
+    // HEADER DOCUMENT (archivo ya subido a /media). Sin media id, es exactamente el envío de siempre.
+    private async Task<WhatsAppSendResult> SendTemplateWithHeaderDocumentToWhatsAppAsync(
+        ConversacionWhatsAppConfigDto config,
+        string phone,
+        ConversacionPlantillaDto template,
+        IReadOnlyList<string> values,
+        string? headerDocumentMediaId,
+        string? headerDocumentFileName,
         CancellationToken ct)
     {
         // Defensa en profundidad: SendTemplateMessageAsync ya valida antes de llegar acá, pero este
         // método privado es el único punto real que arma el POST a Graph -- si en el futuro se agrega
         // otro llamador (p. ej. un envío automático) que se salte SendTemplateMessageAsync, no debe
         // poder mandar parámetros BODY inválidos o una plantilla con componentes no soportados.
-        WhatsAppTemplateValidation.ValidateSend(template, values);
+        var conDocumento = !string.IsNullOrWhiteSpace(headerDocumentMediaId);
+        WhatsAppTemplateValidation.ValidateSend(template, values, conDocumento);
         if (!config.IsConfiguredForSend)
             throw new InvalidOperationException("Falta configurar WhatsApp para enviar mensajes.");
 
@@ -11668,6 +11906,26 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var components = new List<Dictionary<string, object?>>();
+        if (conDocumento)
+        {
+            components.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "header",
+                ["parameters"] = new List<Dictionary<string, object?>>
+                {
+                    new()
+                    {
+                        ["type"] = "document",
+                        ["document"] = new Dictionary<string, object?>
+                        {
+                            ["id"] = headerDocumentMediaId,
+                            ["filename"] = string.IsNullOrWhiteSpace(headerDocumentFileName) ? "documento" : headerDocumentFileName
+                        }
+                    }
+                }
+            });
+        }
+
         if (values.Count > 0)
         {
             components.Add(new Dictionary<string, object?>
@@ -15909,7 +16167,8 @@ public sealed class ConversacionesService(
             // "components"). Antes se descartaba al leer de dbo.CONV_PLANTILLAS -- WhatsAppTemplateValidation
             // necesita el array crudo de components para rechazar plantillas con HEADER media/variable o
             // botones también en el camino de plantillas ya sincronizadas en catálogo (no solo remotas).
-            ComponentesMetaJson = ExtractComponentsFromPayload(GetString(rd, 18))
+            ComponentesMetaJson = ExtractComponentsFromPayload(GetString(rd, 18)),
+            EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(rd.FieldCount > 19 ? GetString(rd, 19) : null)
         };
 
     private static string ExtractComponentsFromPayload(string payloadJson)
@@ -15954,7 +16213,11 @@ public sealed class ConversacionesService(
             NombreMeta = metaName,
             Categoria = NormalizeTemplateCategory(request.Categoria),
             Idioma = NormalizeTemplateLanguage(request.Idioma),
-            EncabezadoTexto = (request.EncabezadoTexto ?? string.Empty).Trim(),
+            EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato),
+            // Con encabezado documento no hay texto de encabezado: Meta admite uno u otro.
+            EncabezadoTexto = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento
+                ? string.Empty
+                : (request.EncabezadoTexto ?? string.Empty).Trim(),
             CuerpoTexto = body,
             PieTexto = (request.PieTexto ?? string.Empty).Trim(),
             EjemplosVariablesJson = NormalizeTemplateExamples(request.EjemplosVariablesJson, CountTemplateVariables(body)),
@@ -15992,6 +16255,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@NombreMeta", request.NombreMeta);
         cmd.Parameters.AddWithValue("@Categoria", request.Categoria);
         cmd.Parameters.AddWithValue("@Idioma", request.Idioma);
+        cmd.Parameters.AddWithValue("@EncabezadoFormato", ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato));
         cmd.Parameters.AddWithValue("@EncabezadoTexto", DbNullable(request.EncabezadoTexto));
         cmd.Parameters.AddWithValue("@CuerpoTexto", request.CuerpoTexto);
         cmd.Parameters.AddWithValue("@PieTexto", DbNullable(request.PieTexto));
@@ -16123,10 +16387,22 @@ public sealed class ConversacionesService(
                || Regex.IsMatch(trimmed, @"\{\{\s*\d+\s*\}\}$", RegexOptions.CultureInvariant);
     }
 
-    private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template)
+    private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template, string? headerHandle = null)
     {
         var components = new List<Dictionary<string, object?>>();
-        if (!string.IsNullOrWhiteSpace(template.EncabezadoTexto))
+        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
+        {
+            if (string.IsNullOrWhiteSpace(headerHandle))
+                throw new InvalidOperationException("Falta el documento de ejemplo para el encabezado de la plantilla.");
+
+            components.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "HEADER",
+                ["format"] = "DOCUMENT",
+                ["example"] = new Dictionary<string, object?> { ["header_handle"] = new[] { headerHandle } }
+            });
+        }
+        else if (!string.IsNullOrWhiteSpace(template.EncabezadoTexto))
         {
             components.Add(new Dictionary<string, object?>
             {

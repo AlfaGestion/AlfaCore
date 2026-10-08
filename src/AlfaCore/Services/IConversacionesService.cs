@@ -71,7 +71,11 @@ public interface IConversacionesService
     /// remota de Meta sin fila local: en ese caso simplemente no hay mappings y todo cae al heurístico.
     /// </summary>
     Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default);
+    /// <summary>Igual que la anterior, con valores de contexto que aporta la pantalla que envía (ej. cierre.fecha y cierre.caja desde Cierre de caja).</summary>
+    Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, IReadOnlyDictionary<string, string> valoresContexto, CancellationToken ct = default);
     Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default);
+    /// <summary>Envía una plantilla aprobada con encabezado DOCUMENT llevando el archivo indicado (sirve con la ventana de 24 h vencida).</summary>
+    Task<ConversacionPlantillaMessageResultDto> SendTemplateWithDocumentAsync(ConversacionPlantillaDocumentoSendRequest request, CancellationToken ct = default);
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);
     Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default);
     Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default);

@@ -65,7 +65,9 @@ public sealed class ConversacionesUrgencyAlertTests
         // plantillas como SendSystemTemplateToPhoneAsync (alertas de urgencia) -- antes era el único
         // sender de Graph sin client.Timeout explícito, quedando en el default de HttpClient (100s)
         // por cada técnico, bloqueando la respuesta al cliente si Meta se cuelga.
-        var method = ExtractMethodBody(ServiceSource, "private async Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync");
+        // SendTemplateToWhatsAppAsync delega en SendTemplateWithHeaderDocumentToWhatsAppAsync (mismo POST,
+        // con encabezado documento opcional para Cierre de caja): el timeout vive en ese cuerpo.
+        var method = ExtractMethodBody(ServiceSource, "private async Task<WhatsAppSendResult> SendTemplateWithHeaderDocumentToWhatsAppAsync");
         Assert.Contains("client.Timeout = MetaSendTimeout;", method, StringComparison.Ordinal);
     }
 

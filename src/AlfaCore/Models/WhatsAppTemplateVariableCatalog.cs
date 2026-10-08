@@ -46,6 +46,17 @@ public sealed record WhatsAppTemplateVariableDefinition(
 public static class WhatsAppTemplateVariableCatalog
 {
     public const string ContactName = "contact.name";
+    public const string ContactPhone = "contact.phone";
+    public const string ContactEmail = "contact.email";
+    public const string ClienteNombre = "cliente.nombre";
+    public const string ClienteCodigo = "cliente.codigo";
+    public const string FechaHoy = "fecha.hoy";
+    public const string FechaAyer = "fecha.ayer";
+    public const string HoraActual = "hora.actual";
+    public const string MesActual = "fecha.mes";
+    public const string AnioActual = "fecha.anio";
+    public const string CierreFecha = "cierre.fecha";
+    public const string CierreCaja = "cierre.caja";
     public const string CobranzaDetalleDeuda = "cobranza.detalleDeuda";
     public const string PagoFormaPago = "pago.formaPago";
     public const string TareaTitulo = "tarea.titulo";
@@ -57,6 +68,9 @@ public static class WhatsAppTemplateVariableCatalog
     public const string GuardiaFin = "guardia.fin";
 
     public const string GroupContacto = "Contacto";
+    public const string GroupCliente = "Cliente";
+    public const string GroupFecha = "Fecha y hora";
+    public const string GroupCierreCaja = "Cierre de caja";
     public const string GroupCobranza = "Cobranza";
     public const string GroupTareas = "Tareas";
     public const string GroupGuardia = "Guardia";
@@ -73,6 +87,69 @@ public static class WhatsAppTemplateVariableCatalog
             RequiredContext: null,
             CanResolveAutomaticallyInManualSend: true,
             Detail: "Si no hay nombre cargado, se usa el teléfono."),
+
+        new(ContactPhone,
+            "Teléfono del contacto",
+            "Número de WhatsApp de la conversación.",
+            GroupContacto,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ContactEmail,
+            "Email del contacto",
+            "Email del contacto vinculado a la conversación.",
+            GroupContacto,
+            RequiredContext: "Requiere un contacto vinculado con email cargado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ClienteNombre,
+            "Nombre del cliente",
+            "Razón social del cliente vinculado a la conversación.",
+            GroupCliente,
+            RequiredContext: "Requiere que la conversación tenga un cliente vinculado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ClienteCodigo,
+            "Código de cliente",
+            "Código de la cuenta del cliente vinculado.",
+            GroupCliente,
+            RequiredContext: "Requiere que la conversación tenga un cliente vinculado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(FechaHoy,
+            "Fecha de hoy",
+            "Fecha del día del envío (dd/mm/aaaa).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(FechaAyer,
+            "Fecha de ayer",
+            "Fecha del día anterior al envío (dd/mm/aaaa).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(HoraActual,
+            "Hora actual",
+            "Hora del envío (hh:mm).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(MesActual,
+            "Mes actual",
+            "Mes y año del envío (ej: octubre de 2026).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(AnioActual,
+            "Año actual",
+            "Año del envío (ej: 2026).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
 
         new(CobranzaDetalleDeuda,
             "Detalle de deuda",
@@ -137,6 +214,22 @@ public static class WhatsAppTemplateVariableCatalog
             GroupGuardia,
             RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
             CanResolveAutomaticallyInManualSend: false),
+
+        // Insertables en el editor (por eso true): se completan solas al enviar desde Cierre de caja
+        // (valores de contexto); desde Conversaciones no hay de dónde sacarlas y se piden a mano.
+        new(CierreFecha,
+            "Fecha del cierre",
+            "Fecha operativa del cierre de caja enviado.",
+            GroupCierreCaja,
+            RequiredContext: "Se completa sola al enviar desde Cierre de caja → WhatsApp.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CierreCaja,
+            "Caja del cierre",
+            "Caja (o \"Todas las cajas\") del cierre enviado.",
+            GroupCierreCaja,
+            RequiredContext: "Se completa sola al enviar desde Cierre de caja → WhatsApp.",
+            CanResolveAutomaticallyInManualSend: true),
     ];
 
     private static readonly Dictionary<string, WhatsAppTemplateVariableDefinition> ByKey =

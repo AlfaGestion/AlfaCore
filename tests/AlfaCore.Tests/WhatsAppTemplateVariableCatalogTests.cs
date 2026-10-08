@@ -344,9 +344,18 @@ public sealed class WhatsAppTemplateVariableCatalogTests
             .Select(x => x.Key)
             .ToList();
 
+        // 2026-10-08: se sumaron las variables básicas (fecha/hora, contacto, cliente) y las de Cierre
+        // de caja; Tareas y Guardia siguen fuera del selector.
         Assert.Equal(
-            new[] { WhatsAppTemplateVariableCatalog.ContactName, WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda, WhatsAppTemplateVariableCatalog.PagoFormaPago }
-                .OrderBy(x => x, StringComparer.Ordinal),
+            new[]
+            {
+                WhatsAppTemplateVariableCatalog.ContactName, WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda, WhatsAppTemplateVariableCatalog.PagoFormaPago,
+                WhatsAppTemplateVariableCatalog.ContactPhone, WhatsAppTemplateVariableCatalog.ContactEmail,
+                WhatsAppTemplateVariableCatalog.ClienteNombre, WhatsAppTemplateVariableCatalog.ClienteCodigo,
+                WhatsAppTemplateVariableCatalog.FechaHoy, WhatsAppTemplateVariableCatalog.FechaAyer, WhatsAppTemplateVariableCatalog.HoraActual,
+                WhatsAppTemplateVariableCatalog.MesActual, WhatsAppTemplateVariableCatalog.AnioActual,
+                WhatsAppTemplateVariableCatalog.CierreFecha, WhatsAppTemplateVariableCatalog.CierreCaja
+            }.OrderBy(x => x, StringComparer.Ordinal),
             selectableKeys.OrderBy(x => x, StringComparer.Ordinal));
     }
 

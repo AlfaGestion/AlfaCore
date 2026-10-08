@@ -95,8 +95,10 @@ public sealed class WhatsAppMediaRuntimeCredentialTests
     {
         var callCount = CountOccurrences("UploadWhatsAppMediaAsync(");
 
-        // Una definicion y una llamada desde SendAttachmentToWhatsAppAsync.
-        Assert.Equal(2, callCount);
+        // Una definicion, una llamada desde SendAttachmentToWhatsAppAsync y otra desde
+        // SendTemplateCoreAsync (plantilla con encabezado documento: el archivo se sube por el mismo
+        // camino antes de mandarlo como parametro del HEADER).
+        Assert.Equal(3, callCount);
     }
 
     private static string InvokeNormalizeOutgoingMediaType(string tipoArchivo, string mimeType)
