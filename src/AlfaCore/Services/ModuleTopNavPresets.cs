@@ -14,6 +14,7 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("inicio", "Inicio", "/compras"),
+            ("reportes", "Reportes", "/compras/reportes"),
             ("proveedores", "Proveedores", "/compras/proveedores"),
             ("comprobantes", "Comprobantes", "/compras/comprobantes"),
             ("rubros", "Rubros", "/compras/rubros"),

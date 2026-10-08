@@ -10,15 +10,13 @@
 
 <PageTitle>Comprobantes | Dashboard de Compras</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Comprobantes</h2>
-            <p class="page-intro__text">Grilla filtrable con detalle del comprobante y sus artículos asociados. <a class="help-link" href="@RouteContext.BuildRoute("/ayuda#6-comprobantes")">Ver ayuda</a></p>
+            <h2>Comprobantes</h2>
+            <p>Grilla filtrable con detalle del comprobante y sus artículos asociados. <a class="help-link" href="@RouteContext.BuildRoute("/ayuda#6-comprobantes")">Ver ayuda</a></p>
         </div>
-    </div>
-
-    <GlobalFiltersBar Model="_filtro" Options="_options" OnApply="BuscarAsync" />
+    </header>
 
     @if (_overview is not null)
     {
@@ -95,16 +93,6 @@
     </section>
 
     <DataTable Titulo="Listado de comprobantes" Subtitulo="@GetGridSubtitle()">
-        <Toolbar>
-            @if (_resultado is not null && _resultado.TotalPaginas > 0)
-            {
-                <div class="pagination">
-                    <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync" disabled="@(_resultado.PaginaActual <= 1)">Anterior</button>
-                    <span>Página @_resultado.PaginaActual de @_resultado.TotalPaginas</span>
-                    <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync" disabled="@(_resultado.PaginaActual >= _resultado.TotalPaginas)">Siguiente</button>
-                </div>
-            }
-        </Toolbar>
         <Header>
             <tr>
                 <th>Fecha</th>
@@ -130,19 +118,7 @@
             {
                 <tr>
                     <td colspan="15">
-                        <div class="empty-state">
-                            <span class="empty-state__eyebrow">Consulta</span>
-                            <h3>No fue posible cargar los comprobantes</h3>
-                            <p>@_error.Message</p>
-                            @if (_error.HasCode)
-                            {
-                                <p>Código: @_error.Code</p>
-                            }
-                            @if (_error.HasSuggestion)
-                            {
-                                <p>@_error.Suggestion</p>
-                            }
-                        </div>
+                        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No fue posible cargar los comprobantes" Message="@ErrorTexto(_error)" />
                     </td>
                 </tr>
             }
@@ -150,7 +126,7 @@
             {
                 <tr>
                     <td colspan="15">
-                        <div class="loading">Cargando comprobantes...</div>
+                        <AlfaEmptyState Title="Cargando comprobantes" Message="Buscando datos del período." />
                     </td>
                 </tr>
             }
@@ -158,11 +134,7 @@
             {
                 <tr>
                     <td colspan="15">
-                        <div class="empty-state">
-                            <span class="empty-state__eyebrow">Resultados</span>
-                            <h3>No se encontraron comprobantes</h3>
-                            <p>Probá ampliar el rango de fechas o ajustar los filtros seleccionados.</p>
-                        </div>
+                        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No se encontraron comprobantes" Message="Probá ampliar el rango de fechas o ajustar los filtros seleccionados." />
                     </td>
                 </tr>
             }
@@ -186,7 +158,7 @@
                         <td>@((MarkupString)RenderAlerta(item))</td>
                         <td>@item.Deposito</td>
                         <td>@item.Usuario</td>
-                        <td><button class="btn btn--ghost" @onclick="() => VerDetalleAsync(item)">Detalle</button></td>
+                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => VerDetalleAsync(item)">Detalle</AlfaButton></td>
                     </tr>
                 }
             }
@@ -227,7 +199,7 @@
             </DataTable>
         </div>
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -267,10 +239,28 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filtro/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<ComprasSmartSearch Model="_filtro" Options="_options" OnApply="BuscarAsync" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "comprobantes")
+        ModuleKey = "compras",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "comprobantes"),
+        Pagination = _resultado is null || _resultado.TotalPaginas <= 0 ? null : new PageHeaderPaginationConfig
+        {
+            Label = $"{_resultado.TotalRegistros:N0} registros",
+            PageLabel = $"{_resultado.PaginaActual} / {_resultado.TotalPaginas}",
+            HasPrevious = _resultado.PaginaActual > 1,
+            HasNext = _resultado.PaginaActual < _resultado.TotalPaginas,
+            Disabled = _isLoading,
+            // Corre desde el Context Toolbar (otro componente): InvokeAsync + StateHasChanged.
+            OnPrevious = () => InvokeAsync(async () => { await PaginaAnteriorAsync(); StateHasChanged(); }),
+            OnNext = () => InvokeAsync(async () => { await PaginaSiguienteAsync(); StateHasChanged(); })
+        }
     });
 
     protected override async Task OnInitializedAsync()
@@ -282,6 +272,7 @@
             _options = optionsResult.Value;
         else
             _error = optionsResult.Feedback;
+        UpdatePageHeader();
 
         _filtro.FechaDesde = FilterState.Current.FechaDesde ?? _filtro.FechaDesde;
         _filtro.FechaHasta = FilterState.Current.FechaHasta ?? _filtro.FechaHasta;
@@ -339,6 +330,7 @@
         finally
         {
             _isLoading = false;
+            UpdatePageHeader();
         }
     }
 
@@ -352,6 +344,15 @@
         else
             _error = result.Feedback;
     }
+
+    // Texto del AppUiMessage para AlfaEmptyState: mensaje + código + sugerencia.
+    private static string ErrorTexto(AlfaCore.Models.AppUiMessage? error)
+        => error is null ? string.Empty : string.Join(" ", new[]
+        {
+            error.Message,
+            error.HasCode ? $"Código: {error.Code}." : null,
+            error.HasSuggestion ? error.Suggestion : null
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
     private async Task PaginaAnteriorAsync()
     {
@@ -423,7 +424,7 @@
     private static string TipoCargaLabel(bool esContable) => esContable ? "Contable" : "Con detalle";
     private static string TipoCargaCss(bool esContable) => esContable ? "badge-state badge-state--warn" : "badge-state badge-state--ok";
     private string QuickFilterButtonCss(QuickFilterMode mode)
-        => mode == _quickFilter ? "btn btn--primary quick-filter-btn" : "btn btn--ghost quick-filter-btn";
+        => mode == _quickFilter ? "gd-chip is-active" : "gd-chip";
 
     private bool MatchesQuickFilter(ComprobanteDto item) => _quickFilter switch
     {

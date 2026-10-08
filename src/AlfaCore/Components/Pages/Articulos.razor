@@ -12,9 +12,13 @@
 
 <PageTitle>Artículos | Dashboard de Compras</PageTitle>
 
-<section class="page-grid articulos-page">
-    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de costo desde historial, proveedor principal y últimas compras por artículo. <a class="help-link" href="@RouteCtx.BuildRoute("/ayuda#9-artículos")">Ver ayuda</a></p></div></div>
-    <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
+<div class="gd-page gd articulos-page">
+    <header class="gd-header">
+        <div>
+            <h2>Artículos</h2>
+            <p>Impacto económico, variación de costo desde historial, proveedor principal y últimas compras por artículo. <a class="help-link" href="@RouteCtx.BuildRoute("/ayuda#9-artículos")">Ver ayuda</a></p>
+        </div>
+    </header>
 
     @if (_page?.Kpis is not null)
     {
@@ -43,7 +47,7 @@
 
     @if (_page is null)
     {
-        <div class="loading">Cargando artículos...</div>
+        <AlfaEmptyState Title="Cargando artículos" Message="Buscando datos del período." />
     }
     else
     {
@@ -73,15 +77,10 @@
 
         <section class="articulos-table-section">
             <div class="articulos-toolbar">
-                <div class="field articulos-search">
-                    <label>Buscar en el listado</label>
-                    <input @bind="_textoListado" @bind:event="oninput" placeholder="Código, descripción, proveedor o fecha" />
-                </div>
+                <AlfaInput Class="articulos-search" Label="Buscar en el listado" Value="@_textoListado" ValueChanged="v => _textoListado = v ?? string.Empty" Placeholder="Código, descripción, proveedor o fecha" />
                 <div class="articulos-toolbar__meta">
                     <span>@ArticulosFiltrados.Count().ToString("N0") de @_page.Articulos.Count.ToString("N0") artículo(s)</span>
-                    <button type="button" class="btn btn--ghost" @onclick="ExportarExcelAsync">
-                        <i class="bi bi-file-earmark-excel"></i> Exportar Excel
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-excel" OnClick="_ => ExportarExcelAsync()">Exportar Excel</AlfaButton>
                 </div>
             </div>
 
@@ -135,7 +134,7 @@
                                 }
                             </td>
                             <td style="text-align:right;">@item.CantidadCompras.ToString("N0")</td>
-                            <td><button class="btn btn--ghost" @onclick="() => SelectAsync(item.IdArticulo)">Detalle</button></td>
+                            <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => SelectAsync(item.IdArticulo)">Detalle</AlfaButton></td>
                         </tr>
                     }
                 </Rows>
@@ -170,9 +169,7 @@
                             <h3 id="articulo-detalle-title">@_detalle.Resumen.DescripcionArticulo</h3>
                             <p>@_detalle.Resumen.IdArticulo · resumen del artículo</p>
                         </div>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarDetalle">
-                            <i class="bi bi-x-lg"></i> Cerrar
-                        </button>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" OnClick="_ => CerrarDetalle()">Cerrar</AlfaButton>
                     </div>
 
                     <div class="articulos-modal__body">
@@ -212,7 +209,7 @@
             </div>
         }
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -229,7 +226,11 @@
     private string _filtroVar = "";
     private string _textoListado = "";
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        _filters = FilterState.Current;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -243,9 +244,16 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filters/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<ComprasSmartSearch Model="_filters" Options="_options" OnApply="LoadAsync" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "compras",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteCtx, Nav, "articulos")
     });
 
@@ -253,6 +261,7 @@
     {
         _filters = FilterState.Current;
         _options = await DashboardService.GetFilterOptionsAsync();
+        UpdatePageHeader();
         if (!string.IsNullOrWhiteSpace(ArticuloQuery))
             _filters.Articulo = ArticuloQuery;
         if (!string.IsNullOrWhiteSpace(FamiliaQuery))
@@ -329,7 +338,7 @@
         }
     }
 
-    private string QfClass(string key) => key == _filtroVar ? "btn btn--primary" : "btn btn--ghost";
+    private string QfClass(string key) => key == _filtroVar ? "gd-chip is-active" : "gd-chip";
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string MonedaNullable(decimal? valor) => valor.HasValue ? Moneda(valor.Value) : "Sin dato";

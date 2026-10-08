@@ -9,10 +9,10 @@
 
 <PageTitle>Resultado InformesIA | Dashboard de Compras</PageTitle>
 
-<section class="page-grid ia-page">
+<div class="gd-page gd ia-page">
     @if (_result is null)
     {
-        <div class="loading">Cargando informe...</div>
+        <AlfaEmptyState Title="Cargando informe" Message="Preparando el resultado de la consulta." />
     }
     else
     {
@@ -23,10 +23,7 @@
                     <p class="panel-card__subtitle">@_result.Subtitulo</p>
                 </div>
                 <div class="ia-report__toolbar no-print">
-                    <button class="btn btn--ghost" @onclick="ExportResultPdfAsync">
-                        <i class="bi bi-file-earmark-pdf"></i>
-                        <span>Exportar PDF</span>
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-pdf" OnClick="_ => ExportResultPdfAsync()">Exportar PDF</AlfaButton>
                 </div>
             </div>
 
@@ -118,7 +115,7 @@
             }
         </section>
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -146,6 +143,7 @@
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "compras",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "informesia")
     });
 
