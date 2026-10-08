@@ -1,6 +1,7 @@
 @page "/admin/modulos"
 @page "/{idweb}/{idbase:int}/admin/modulos"
 @layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
 @implements IDisposable
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
@@ -10,232 +11,215 @@
 
 <PageTitle>Módulos | AlfaNet</PageTitle>
 
-<div class="page-grid admin-home-page">
-<div class="panel-card">
-    <p class="panel-card__subtitle">Un módulo es un nodo raíz del menú (con todo lo que cuelga de él) más los módulos de los que depende. La base de datos sigue siendo completa para todos los clientes — esto solo controla qué ve cada uno.</p>
+@* Administrar → Módulos (AlfaDesign v1, 2026-10-07). Editor en AlfaDialog; dar de baja un módulo y
+   suspender una landing piden confirmación (ALFA_CENTRAL: impactan en todos los clientes). *@
 
-    @if (_loading)
-    {
-        <p>Cargando módulos...</p>
-    }
-    else if (!IsSuperAdmin)
-    {
-        <div class="editor-msg editor-msg--warning">
-            <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden ver esta sección.</p>
-        </div>
-    }
-    else
-    {
-        @if (!string.IsNullOrWhiteSpace(_message))
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+<div class="adm-page">
+    <div class="adm">
+        <header class="adm-header">
+            <div>
+                <h2>Módulos</h2>
+                <p>Un módulo es un nodo raíz del menú (con todo lo que cuelga de él) más los módulos de los que depende. La base de datos sigue siendo completa para todos los clientes: esto solo controla qué ve cada uno.</p>
+            </div>
+        </header>
+
+        @if (_loading)
         {
-            <div class="editor-msg editor-msg--success">
-                <strong>Listo</strong>
-                <p>@_message</p>
-            </div>
+            <AlfaEmptyState Title="Cargando módulos" Message="Leyendo los módulos de la central." />
         }
-
-        @if (!string.IsNullOrWhiteSpace(_error))
+        else if (!IsSuperAdmin)
         {
-            <div class="editor-msg editor-msg--warning">
-                <strong>No se pudo guardar</strong>
-                <p>@_error</p>
-            </div>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
         }
-
-        <div class="row g-3">
-            <div class="col-12 col-xl-5">
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h2 class="panel-card__title">@(_editing ? $"Editar módulo #{_form.Id}" : "Nuevo módulo")</h2>
-                            <p class="panel-card__subtitle">El código no se puede repetir.</p>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Código</label>
-                        <input class="form-control" @bind="_form.Codigo" placeholder="Ej: CONVERSACIONES" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Nombre</label>
-                        <input class="form-control" @bind="_form.Nombre" placeholder="Ej: Conversaciones" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Descripción</label>
-                        <textarea class="form-control" rows="2" @bind="_form.Descripcion"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Nodo de menú raíz (opcional)</label>
-                        <select class="form-select" @bind="_form.MenuKeyRaiz">
-                            <option value="">Sin nodo propio (módulo solo funcionalidad)</option>
-                            @foreach (var opcion in _menuOptions)
-                            {
-                                <option value="@opcion.Clave">@opcion.Nombre (@opcion.Clave)</option>
-                            }
-                        </select>
-                        <div class="form-text">Arrastra automáticamente todo lo que cuelga de ese nodo en el menú. Dejalo vacío si el módulo no agrega una sección propia (ej.: una función dentro de otro módulo, como AlfaKnowledge dentro de Conversaciones).</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Precio</label>
-                        <input class="form-control" type="number" step="0.01" min="0" @bind="_form.Precio" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Depende de</label>
-                        @if (_dependenciaOptions.Count == 0)
-                        {
-                            <div class="form-text">No hay otros módulos definidos todavía.</div>
-                        }
-                        else
-                        {
-                            @foreach (var opcion in _dependenciaOptions)
-                            {
-                                var seleccion = GetSeleccion(opcion.Id);
-                                <div class="form-check d-flex align-items-center gap-2 flex-wrap">
-                                    <input class="form-check-input"
-                                           type="checkbox"
-                                           id="@($"dep-{opcion.Id}")"
-                                           checked="@(seleccion is not null)"
-                                           @onchange="args => ToggleDependencia(opcion.Id, args)" />
-                                    <label class="form-check-label" for="@($"dep-{opcion.Id}")">@opcion.Nombre (@opcion.Codigo)</label>
-                                    @if (seleccion is not null)
-                                    {
-                                        <select class="form-select form-select-sm w-auto" value="@(seleccion.EsObligatoria ? "obligatoria" : "opcional")" @onchange="args => SetTipoDependencia(opcion.Id, args)">
-                                            <option value="obligatoria">Obligatoria (gratis, se activa sola)</option>
-                                            <option value="opcional">Opcional (vinculada, no se activa sola)</option>
-                                        </select>
-                                    }
-                                </div>
-                            }
-                        }
-                        <div class="form-text">Obligatoria: se activa gratis junto con este módulo. Opcional: solo queda vinculada — el cliente la tiene que comprar aparte para que las funciones de este módulo que la usan se muestren.</div>
-                    </div>
-
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-primary" @onclick="SaveAsync">@(_editing ? "Guardar cambios" : "Crear módulo")</button>
-                        <button type="button" class="btn btn-outline-light" @onclick="StartNew">Limpiar</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-12 col-xl-7">
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h2 class="panel-card__title">Listado</h2>
-                            <p class="panel-card__subtitle">Módulos definidos en la central.</p>
-                        </div>
-                    </div>
-
-                    @if (_items.Count == 0)
-                    {
-                        <p>No hay módulos activos para mostrar.</p>
-                    }
-                    else
-                    {
-                        <div class="table-responsive admin-table-wrap">
-                            <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                                <thead>
+        else if (_loadError is not null)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los módulos" Message="@_loadError" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => LoadAsync()" />
+        }
+        else
+        {
+            <section class="adm-card" aria-label="Módulos">
+                @if (_items.Count == 0)
+                {
+                    <AlfaEmptyState Title="Sin módulos" Message="No hay módulos activos para mostrar." ActionLabel="Nuevo módulo" ActionIcon="bi bi-plus-circle" OnAction="_ => StartNew()" />
+                }
+                else
+                {
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Nombre</th>
+                                    <th>Nodo de menú</th>
+                                    <th class="is-number">Precio</th>
+                                    <th>Depende de</th>
+                                    <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _items)
+                                {
                                     <tr>
-                                        <th>Código</th>
-                                        <th>Nombre</th>
-                                        <th>Nodo de menú</th>
-                                        <th>Precio</th>
-                                        <th>Depende de</th>
-                                        <th></th>
+                                        <td><code>@item.Codigo</code></td>
+                                        <td><strong>@item.Nombre</strong></td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.MenuKeyRaiz) ? "—" : item.MenuKeyRaiz)</td>
+                                        <td class="is-number">@item.Precio.ToString("C2")</td>
+                                        <td>
+                                            @if (item.Dependencias.Count == 0)
+                                            {
+                                                <span>—</span>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var d in item.Dependencias)
+                                                {
+                                                    <AlfaTag Tone="@(d.EsObligatoria ? AlfaTagTone.Accent : AlfaTagTone.Neutral)">@(d.EsObligatoria ? d.Codigo : $"{d.Codigo} (opcional)")</AlfaTag>
+                                                }
+                                            }
+                                        </td>
+                                        <td class="adm-actions-col">
+                                            <div class="adm-row-actions">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-tags" OnClick="_ => GoPlanes(item.Id)">Planes</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil-square" Disabled="@_busy" OnClick="_ => EditAsync(item.Id)">Editar</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-slash-circle" Disabled="@_busy" OnClick="_ => RequestDeactivate(item)">Dar de baja</AlfaButton>
+                                            </div>
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var item in _items)
-                                    {
-                                        <tr>
-                                            <td>@item.Codigo</td>
-                                            <td>@item.Nombre</td>
-                                            <td>@(string.IsNullOrWhiteSpace(item.MenuKeyRaiz) ? "—" : item.MenuKeyRaiz)</td>
-                                            <td>@item.Precio.ToString("C2")</td>
-                                            <td>@(item.Dependencias.Count == 0 ? "—" : string.Join(", ", item.Dependencias.Select(d => d.EsObligatoria ? d.Codigo : $"{d.Codigo} (opcional)")))</td>
-                                            <td class="text-end">
-                                                <div class="d-inline-flex gap-2">
-                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => GoPlanes(item.Id)">Planes</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditAsync(item.Id)">Editar</button>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeactivateAsync(item)">Dar de baja</button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="alfa-data-view-footer">
+                        <span class="alfa-data-view-footer__summary">@(_items.Count == 1 ? "1 módulo activo" : $"{_items.Count} módulos activos")</span>
+                    </footer>
+                }
+            </section>
+
+            <section class="adm-card" aria-label="Landing pages públicas">
+                <header class="adm-card__header">
+                    <div>
+                        <h3>Landing pages públicas</h3>
+                        <p>Una landing por módulo vendible, compartible en redes (/landing/{slug}). El contenido está fijo en el sistema por ahora; acá solo se controla si está publicada o suspendida.</p>
+                    </div>
+                </header>
+                <div class="adm-table-wrap">
+                    <table class="adm-table">
+                        <thead>
+                            <tr>
+                                <th>Módulo</th>
+                                <th>URL</th>
+                                <th>Estado</th>
+                                <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var landing in LandingContenidoCatalogo.Todos)
+                            {
+                                var activa = !_landingSuspendidas.Contains(landing.Slug);
+                                <tr class="@(activa ? null : "is-inactive")">
+                                    <td>@landing.Nombre</td>
+                                    <td><code>/landing/@landing.Slug</code></td>
+                                    <td><AlfaTag Tone="@(activa ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(activa ? "Publicada" : "Suspendida")</AlfaTag></td>
+                                    <td class="adm-actions-col">
+                                        <div class="adm-row-actions">
+                                            <a class="adm-link-button" href="@("/landing/" + landing.Slug)" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> Ver</a>
+                                            @if (activa)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pause-circle" Disabled="@_landingBusy" OnClick="_ => _pendingLandingSuspend = landing.Slug">Suspender</AlfaButton>
+                                            }
+                                            else
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-play-circle" Disabled="@_landingBusy" OnClick="_ => SetLandingActivoAsync(landing.Slug, true)">Reactivar</AlfaButton>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
+            </section>
+        }
+    </div>
+</div>
+
+<AlfaDialog Open="@_showEditor"
+            Title="@(_editing ? $"Editar módulo #{_form.Id}" : "Nuevo módulo")"
+            Eyebrow="Módulos"
+            Description="El código no se puede repetir."
+            ErrorMessage="@_editorError"
+            Loading="@_busy"
+            Size="AlfaDialogSize.Lg"
+            OnClose="CloseEditor">
+    <ChildContent>
+        <div class="adm-section">
+            <div class="adm-grid">
+                <AlfaInput Label="Código" Required Placeholder="Ej: CONVERSACIONES" Value="@_form.Codigo" ValueChanged="@(v => _form.Codigo = v ?? string.Empty)" Disabled="@_busy" />
+                <AlfaInput Label="Nombre" Required Placeholder="Ej: Conversaciones" Value="@_form.Nombre" ValueChanged="@(v => _form.Nombre = v ?? string.Empty)" Disabled="@_busy" />
             </div>
+            <div class="adm-textarea">
+                <label for="modulo-descripcion">Descripción</label>
+                <textarea id="modulo-descripcion" rows="2" value="@_form.Descripcion" @oninput="@(e => _form.Descripcion = e.Value?.ToString() ?? string.Empty)" disabled="@_busy"></textarea>
+            </div>
+            <div class="adm-grid">
+                <AlfaSelect Label="Nodo de menú raíz (opcional)" Placeholder="Sin nodo propio (módulo solo funcionalidad)" Options="MenuOptions" Value="@_form.MenuKeyRaiz" ValueChanged="@(v => _form.MenuKeyRaiz = v ?? string.Empty)" Disabled="@_busy" />
+                <AlfaInput Label="Precio" Type="number" Value="@_form.Precio.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" ValueChanged="@(v => _form.Precio = ParseDecimal(v) ?? 0)" Disabled="@_busy" />
+            </div>
+            <p class="adm-hint">El nodo de menú arrastra automáticamente todo lo que cuelga de él. Dejalo vacío si el módulo no agrega una sección propia (ej.: una función dentro de otro módulo, como AlfaKnowledge dentro de Conversaciones).</p>
         </div>
 
-        <div class="panel-card mt-3">
-            <div class="panel-card__header">
-                <div>
-                    <h2 class="panel-card__title">Landing pages públicas</h2>
-                    <p class="panel-card__subtitle">Una landing por módulo vendible, compartible en redes (/landing/{slug}). El contenido está hardcodeado por ahora; acá solo se controla si está publicada o suspendida.</p>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_landingError))
+        <div class="adm-section">
+            <h4>Depende de</h4>
+            @if (_dependenciaOptions.Count == 0)
             {
-                <div class="editor-msg editor-msg--warning">
-                    <strong>No se pudo actualizar</strong>
-                    <p>@_landingError</p>
+                <p class="adm-hint">No hay otros módulos definidos todavía.</p>
+            }
+            else
+            {
+                <div class="adm-dependencias">
+                    @foreach (var opcion in _dependenciaOptions)
+                    {
+                        var seleccion = GetSeleccion(opcion.Id);
+                        <div class="adm-dependencia">
+                            <AlfaCheckbox Value="@(seleccion is not null)" ValueChanged="@(v => ToggleDependencia(opcion.Id, v == true))" Disabled="@_busy">@opcion.Nombre (@opcion.Codigo)</AlfaCheckbox>
+                            @if (seleccion is not null)
+                            {
+                                <AlfaSelect Options="TipoDependenciaOptions" Value="@(seleccion.EsObligatoria ? "obligatoria" : "opcional")" ValueChanged="@(v => SetTipoDependencia(opcion.Id, v))" Disabled="@_busy" />
+                            }
+                        </div>
+                    }
                 </div>
             }
-
-            <div class="table-responsive admin-table-wrap">
-                <table class="table table-sm align-middle admin-table">
-                    <thead>
-                        <tr>
-                            <th>Módulo</th>
-                            <th>URL</th>
-                            <th>Estado</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var landing in AlfaCore.Models.LandingContenidoCatalogo.Todos)
-                        {
-                            var activa = !_landingSuspendidas.Contains(landing.Slug);
-                            <tr>
-                                <td>@landing.Nombre</td>
-                                <td><code>/landing/@landing.Slug</code></td>
-                                <td>
-                                    @if (activa)
-                                    {
-                                        <span class="badge text-bg-success">Publicada</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge text-bg-secondary">Suspendida</span>
-                                    }
-                                </td>
-                                <td class="text-end">
-                                    <div class="d-inline-flex gap-2">
-                                        <a class="btn btn-sm btn-outline-light" href="@("/landing/" + landing.Slug)" target="_blank" rel="noopener">Ver</a>
-                                        @if (activa)
-                                        {
-                                            <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_landingBusy" @onclick="() => SetLandingActivoAsync(landing.Slug, false)">Suspender</button>
-                                        }
-                                        else
-                                        {
-                                            <button type="button" class="btn btn-sm btn-outline-success" disabled="@_landingBusy" @onclick="() => SetLandingActivoAsync(landing.Slug, true)">Reactivar</button>
-                                        }
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            <p class="adm-hint">Obligatoria: se activa gratis junto con este módulo. Opcional: solo queda vinculada; el cliente la tiene que comprar aparte para que las funciones de este módulo que la usan se muestren.</p>
         </div>
-    }
-</div>
-</div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="_ => CloseEditor()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_busy" OnClick="_ => SaveAsync()">@(_editing ? "Guardar cambios" : "Crear módulo")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaConfirmDialog Open="@(_pendingDeactivate is not null)"
+                   Title="Dar de baja módulo"
+                   Message="@($"¿Querés dar de baja el módulo {_pendingDeactivate?.Nombre}?")"
+                   SecondaryMessage="Deja de ofrecerse y de verse en todos los clientes (se guarda en la base central). Los contratos existentes no se borran."
+                   ConfirmLabel="Dar de baja"
+                   LoadingLabel="Dando de baja..."
+                   Loading="@_busy"
+                   OnConfirm="ConfirmDeactivateAsync"
+                   OnCancel="CancelDeactivate" />
+
+<AlfaConfirmDialog Open="@(_pendingLandingSuspend is not null)"
+                   Title="Suspender landing"
+                   Message="@($"¿Querés suspender la landing /landing/{_pendingLandingSuspend}?")"
+                   SecondaryMessage="Deja de verse públicamente hasta que la reactives. Si se compartió en redes, el link deja de funcionar."
+                   ConfirmLabel="Suspender"
+                   LoadingLabel="Suspendiendo..."
+                   Loading="@_landingBusy"
+                   OnConfirm="ConfirmLandingSuspendAsync"
+                   OnCancel="() => { if (!_landingBusy) _pendingLandingSuspend = null; }" />
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -244,20 +228,33 @@
     private PageHeaderConfig? _pageHeaderPublicado;
 
     private readonly CrearModuloRequest _form = new();
-    private readonly List<AlfaCore.Models.ModuloDto> _items = [];
-    private readonly List<AlfaCore.Models.MenuRaizOptionDto> _menuOptions = [];
+    private readonly List<ModuloDto> _items = [];
+    private readonly List<MenuRaizOptionDto> _menuOptions = [];
 
     private bool _loading = true;
+    private bool _busy;
     private bool _editing;
+    private bool _showEditor;
+    private string? _loadError;
+    private string _editorError = string.Empty;
+    private AppUiMessage? _feedback;
+    private ModuloDto? _pendingDeactivate;
     private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
-    private string _message = string.Empty;
-    private string _error = string.Empty;
 
     private HashSet<string> _landingSuspendidas = [];
     private bool _landingBusy;
-    private string _landingError = string.Empty;
+    private string? _pendingLandingSuspend;
 
-    private IReadOnlyList<AlfaCore.Models.ModuloDto> _dependenciaOptions
+    private static readonly IReadOnlyList<AlfaSelectOption> TipoDependenciaOptions =
+    [
+        new("obligatoria", "Obligatoria (gratis, se activa sola)"),
+        new("opcional", "Opcional (vinculada, no se activa sola)")
+    ];
+
+    private IReadOnlyList<AlfaSelectOption> MenuOptions
+        => _menuOptions.Select(o => new AlfaSelectOption(o.Clave, $"{o.Nombre} ({o.Clave})")).ToList();
+
+    private IReadOnlyList<ModuloDto> _dependenciaOptions
         => _editing ? _items.Where(m => m.Id != _form.Id).ToArray() : _items;
 
     protected override void OnInitialized() => UpdatePageHeader();
@@ -274,15 +271,17 @@
             PageHeader.Clear();
     }
 
-    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new AlfaCore.Models.PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         Title = "Módulos",
         Breadcrumb = ["Administrar", "Módulos"],
-        ShellMode = AlfaCore.Models.PageHeaderShellMode.AlfaDesignPilot,
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "modulos"),
         Actions =
         [
-            new AlfaCore.Models.PageHeaderAction { Key = "nuevo-modulo", Label = "Nuevo módulo", Icon = "bi-plus-circle", Style = AlfaCore.Models.PageHeaderActionStyle.Primary, Priority = AlfaCore.Models.PageHeaderActionPriority.Essential, OnClick = () => { StartNew(); return Task.CompletedTask; } }
+            // El clic llega desde la Context Toolbar (otro componente): hay que pedir el re-render de esta página.
+            new PageHeaderAction { Key = "nuevo-modulo", Label = "Nuevo módulo", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = !IsSuperAdmin, OnClick = () => InvokeAsync(() => { StartNew(); StateHasChanged(); }) }
         ]
     });
 
@@ -303,6 +302,7 @@
     private async Task LoadAsync()
     {
         _loading = true;
+        _loadError = null;
         try
         {
             _items.Clear();
@@ -315,9 +315,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _loadError = UserMessage(ex);
         }
         finally
         {
@@ -335,19 +333,31 @@
         _form.MenuKeyRaiz = string.Empty;
         _form.Precio = 0;
         _form.Dependencias = [];
-        _message = string.Empty;
-        _error = string.Empty;
+        _editorError = string.Empty;
+        _showEditor = true;
     }
 
     private async Task EditAsync(int idModulo)
     {
-        var item = await AdminSvc.GetModuloAsync(idModulo);
-        if (item is null)
+        ModuloDto? item;
+        try
+        {
+            item = await AdminSvc.GetModuloAsync(idModulo);
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Error("No se pudo abrir el módulo", UserMessage(ex));
             return;
+        }
+
+        if (item is null)
+        {
+            _feedback = AppUiMessage.Warning("Módulo no encontrado", "El módulo ya no existe. Actualizá el listado.");
+            return;
+        }
 
         _editing = true;
-        _message = string.Empty;
-        _error = string.Empty;
+        _editorError = string.Empty;
         _form.Id = item.Id;
         _form.Codigo = item.Codigo;
         _form.Nombre = item.Nombre;
@@ -355,58 +365,71 @@
         _form.MenuKeyRaiz = item.MenuKeyRaiz;
         _form.Precio = item.Precio;
         _form.Dependencias = item.Dependencias
-            .Select(d => new AlfaCore.Models.DependenciaSeleccionDto { IdModulo = d.IdModuloDependeDe, EsObligatoria = d.EsObligatoria })
+            .Select(d => new DependenciaSeleccionDto { IdModulo = d.IdModuloDependeDe, EsObligatoria = d.EsObligatoria })
             .ToList();
+        _showEditor = true;
     }
 
-    private AlfaCore.Models.DependenciaSeleccionDto? GetSeleccion(int idModulo)
+    private void CloseEditor()
+    {
+        if (_busy)
+            return;
+
+        _showEditor = false;
+        _editorError = string.Empty;
+    }
+
+    private DependenciaSeleccionDto? GetSeleccion(int idModulo)
         => _form.Dependencias.FirstOrDefault(d => d.IdModulo == idModulo);
 
-    private void ToggleDependencia(int idModulo, ChangeEventArgs args)
+    private void ToggleDependencia(int idModulo, bool seleccionado)
     {
-        var checkedValue = args.Value is bool value && value;
-        if (checkedValue && GetSeleccion(idModulo) is null)
-            _form.Dependencias.Add(new AlfaCore.Models.DependenciaSeleccionDto { IdModulo = idModulo, EsObligatoria = true });
-        else if (!checkedValue)
+        if (seleccionado && GetSeleccion(idModulo) is null)
+            _form.Dependencias.Add(new DependenciaSeleccionDto { IdModulo = idModulo, EsObligatoria = true });
+        else if (!seleccionado)
             _form.Dependencias.RemoveAll(d => d.IdModulo == idModulo);
     }
 
-    private void SetTipoDependencia(int idModulo, ChangeEventArgs args)
+    private void SetTipoDependencia(int idModulo, string? tipo)
     {
         var seleccion = GetSeleccion(idModulo);
         if (seleccion is null)
             return;
 
-        seleccion.EsObligatoria = string.Equals(args.Value?.ToString(), "obligatoria", StringComparison.OrdinalIgnoreCase);
+        seleccion.EsObligatoria = string.Equals(tipo, "obligatoria", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task SaveAsync()
     {
-        _message = string.Empty;
-        _error = string.Empty;
+        if (_busy)
+            return;
 
+        _busy = true;
+        _editorError = string.Empty;
         try
         {
-            if (_editing)
+            var wasEditing = _editing;
+            if (wasEditing)
                 await AdminSvc.UpdateModuloAsync(_form);
             else
                 await AdminSvc.CreateModuloAsync(_form);
 
             await LoadAsync();
-            _message = _editing ? "Módulo actualizado." : "Módulo creado.";
-            StartNew();
+            _showEditor = false;
+            _feedback = AppUiMessage.Success(wasEditing ? "Módulo actualizado" : "Módulo creado", $"El módulo {_form.Nombre} se grabó correctamente.");
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _editorError = UserMessage(ex);
+        }
+        finally
+        {
+            _busy = false;
         }
     }
 
     private async Task SetLandingActivoAsync(string slug, bool activo)
     {
-        _landingError = string.Empty;
         _landingBusy = true;
         try
         {
@@ -415,12 +438,12 @@
                 _landingSuspendidas.Remove(slug);
             else
                 _landingSuspendidas.Add(slug);
+
+            _feedback = AppUiMessage.Success(activo ? "Landing publicada" : "Landing suspendida", $"/landing/{slug} quedó {(activo ? "publicada" : "suspendida")}.");
         }
         catch (Exception ex)
         {
-            _landingError = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudo actualizar la landing", UserMessage(ex));
         }
         finally
         {
@@ -428,22 +451,52 @@
         }
     }
 
-    private async Task DeactivateAsync(AlfaCore.Models.ModuloDto item)
+    private async Task ConfirmLandingSuspendAsync()
     {
-        _message = string.Empty;
-        _error = string.Empty;
+        if (_pendingLandingSuspend is null)
+            return;
 
+        var slug = _pendingLandingSuspend;
+        await SetLandingActivoAsync(slug, false);
+        _pendingLandingSuspend = null;
+    }
+
+    // La baja afecta a todos los clientes (ALFA_CENTRAL): siempre se confirma antes.
+    private void RequestDeactivate(ModuloDto item) => _pendingDeactivate = item;
+
+    private void CancelDeactivate()
+    {
+        if (!_busy)
+            _pendingDeactivate = null;
+    }
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        if (_pendingDeactivate is null || _busy)
+            return;
+
+        var item = _pendingDeactivate;
+        _busy = true;
         try
         {
             await AdminSvc.DeleteModuloAsync(item.Id);
             await LoadAsync();
-            _message = $"Módulo {item.Nombre} dado de baja.";
+            _feedback = AppUiMessage.Success("Módulo dado de baja", $"El módulo {item.Nombre} ya no se ofrece a los clientes.");
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudo dar de baja el módulo", UserMessage(ex));
+        }
+        finally
+        {
+            _busy = false;
+            _pendingDeactivate = null;
         }
     }
+
+    private static decimal? ParseDecimal(string? value)
+        => decimal.TryParse((value ?? string.Empty).Trim().Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private static string UserMessage(Exception ex)
+        => ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
 }
