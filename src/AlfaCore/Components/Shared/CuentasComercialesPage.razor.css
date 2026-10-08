@@ -1344,3 +1344,67 @@
     color: var(--alfa-text-primary);
     background: var(--alfa-bg-row-hover);
 }
+/* Ficha de Proveedor: descuentos por condición de compra (AlfaDesign v1) */
+.proveedores-descuentos {
+    overflow-x: auto;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-8, 8px);
+}
+
+.proveedores-descuentos table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.proveedores-descuentos th {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.proveedores-descuentos th.is-number {
+    text-align: right;
+}
+
+.proveedores-descuentos td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--alfa-border-subtle);
+}
+
+.proveedores-descuentos tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.proveedores-descuentos select,
+.proveedores-descuentos input {
+    width: 100%;
+    min-width: 72px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 6px);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.proveedores-descuentos select {
+    min-width: 200px;
+}
+
+.proveedores-descuentos input {
+    text-align: right;
+}
+
+.proveedores-descuentos select:focus,
+.proveedores-descuentos input:focus {
+    border-color: var(--alfa-accent);
+    outline: 0;
+}
