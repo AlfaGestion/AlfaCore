@@ -17,30 +17,37 @@
 
 <PageTitle>Cierre de caja | AlfaCore</PageTitle>
 
-<section class="page-grid">
-    @if (_ocupado)
-    {
-        <p class="cierre-carga" role="status"><span class="spinner-border spinner-border-sm"></span> @_estado</p>
-    }
+<div class="gd-page gd">
+    <header class="gd-header">
+        <div>
+            <h2>Cierre de caja</h2>
+            <p>Resumen del día operativo por caja y unidad de negocio. Elegí fecha, caja y opciones arriba y presioná Cargar.</p>
+        </div>
+    </header>
+
     @if (!string.IsNullOrEmpty(_feedback))
     {
-        <p class="editor-msg editor-msg--warning" role="status">@_feedback</p>
+        <AlfaNotification Message="@AppUiMessage.Warning("Cierre de caja", _feedback)" OnDismiss="() => _feedback = string.Empty" />
+    }
+    @if (_ocupado)
+    {
+        <AlfaEmptyState Title="@(string.IsNullOrWhiteSpace(_estado) ? "Procesando" : _estado)" Message="Esperá un momento." />
     }
     @if (_consulta is not null)
     {
         <div @key="_version" class="cierre-resultados">
-            <p>Fecha operativa: <strong>@_consulta.Fecha.ToString("dd/MM/yyyy")</strong> · <strong>@_unidadConsultada</strong> · @(_consulta.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_consulta.Caja}")</p>
+            <p class="gd-hint">Fecha operativa: <strong>@_consulta.Fecha.ToString("dd/MM/yyyy")</strong> · <strong>@_unidadConsultada</strong> · @(_consulta.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_consulta.Caja}")</p>
             @foreach (var seccion in CierreCajaSecciones.Activas(_consulta))
             {
                 <AlfaCore.Components.Shared.CierreCajaTabla @key="seccion.Clave" Seccion="seccion" Filtros="_consulta" />
             }
         </div>
     }
-    else
+    else if (!_ocupado)
     {
-        <p class="text-muted">Seleccioná la fecha, la caja y las opciones, y presioná Cargar.</p>
+        <AlfaEmptyState Title="Todavía no cargaste un cierre" Message="Seleccioná la fecha, la caja y las opciones en el buscador de arriba." ActionLabel="Cargar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => Cargar()" />
     }
-</section>
+</div>
 
 <AlfaDialog Open="@(_dialogo.Length > 0)" Title="@(_dialogo == "email" ? "Enviar cierre por email" : "Enviar cierre por WhatsApp")" OnClose="CerrarDialogo" Disabled="@_ocupado">
     <ChildContent>
@@ -52,7 +59,7 @@
         else
         {
             <div class="field"><label for="cierre-buscar">Buscar conversación por nombre o teléfono</label><input id="cierre-buscar" @bind="_busqueda" disabled="@_ocupado" /></div>
-            <button class="btn btn--secondary" @onclick="BuscarConversaciones" disabled="@_ocupado">Buscar</button>
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_ocupado" OnClick="_ => BuscarConversaciones()">Buscar</AlfaButton>
             <div class="field"><label for="cierre-conversacion">Destinatario de WhatsApp</label>
                 <select id="cierre-conversacion" @bind="_conversacion" disabled="@_ocupado">
                     <option value="0">Seleccioná una conversación</option>
@@ -66,8 +73,8 @@
         @if (_feedback.Length > 0) { <p role="alert">@_feedback</p> }
     </ChildContent>
     <Footer>
-        <button class="btn btn--secondary" disabled="@_ocupado" @onclick="CerrarDialogo">Cancelar</button>
-        <button class="btn btn--primary" disabled="@(_ocupado || (_dialogo == "email" ? string.IsNullOrWhiteSpace(_destinatario) : _conversacion == 0))" @onclick="Enviar">Enviar Excel</button>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_ocupado" OnClick="_ => CerrarDialogo()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_ocupado" Disabled="@(_ocupado || (_dialogo == "email" ? string.IsNullOrWhiteSpace(_destinatario) : _conversacion == 0))" OnClick="_ => Enviar()">Enviar Excel</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -85,12 +92,14 @@
     private IReadOnlyList<ConversacionInboxItemDto> _conversaciones = [];
 
     private RenderFragment RenderFiltros() => @<div class="smart-search cierre-search" @onclick:stopPropagation>
-        <div class="smart-search__bar">
-            <button class="smart-search__filter-button is-active" title="Filtros del cierre" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
-            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@_filtros.Fecha.ToString("dd/MM/yyyy")</button>
-            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@(_filtros.UnidadNegocio.Length == 0 ? "Todas las unidades" : $"Unidad {_filtros.UnidadNegocio}")</button>
-            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@(_filtros.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_filtros.Caja}")</button>
-            <button class="smart-search__toggle" title="Filtros y opciones" @onclick="ToggleFiltros"><i class="bi bi-caret-down-fill"></i></button>
+        <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+            <button type="button" class="smart-search__filter-button is-active" title="Filtros del cierre" aria-label="Filtros del cierre" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
+            <div class="smart-search__active-filters" aria-label="Filtros del cierre">
+                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@_filtros.Fecha.ToString("dd/MM/yyyy")</span></button>
+                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@(_filtros.UnidadNegocio.Length == 0 ? "Todas las unidades" : $"Unidad {_filtros.UnidadNegocio}")</span></button>
+                <button type="button" class="smart-search__active-filter" @onclick="ToggleFiltros"><span>@(_filtros.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_filtros.Caja}")</span></button>
+            </div>
+            <button type="button" class="smart-search__toggle" title="Filtros y opciones" aria-label="Filtros y opciones" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
         </div>
         @if (_mostrarFiltros)
         {
@@ -146,7 +155,9 @@
             <p class="text-muted">No hay cajas con movimientos en la fecha seleccionada.</p>
         }
 
-                <button class="btn btn--primary" disabled="@(_cargandoCajas || _cargandoUnidades || _ocupado)" @onclick="Cargar">Aplicar filtros</button>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-arrow-clockwise" Disabled="@(_cargandoCajas || _cargandoUnidades || _ocupado)" OnClick="_ => Cargar()">Cargar</AlfaButton>
+                </div>
             </div>
         }
     </div>;
@@ -258,8 +269,8 @@
             new() { Key = "whatsapp", Label = "WhatsApp", Icon = "bi-whatsapp", Disabled = _consulta is null || _ocupado, OnClick = () => Preparar("whatsapp") }
         ],
         Title = "Cierre de caja", ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = [new() { Key = "cierre", Label = "Cierre de caja", Active = true,
-            Url = RouteContext.BuildRoute("/caja-bancos/cierre") }]
+        ModuleKey = "caja-bancos",
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCajaBancos(RouteContext, Nav, "cierre")
     });
 
     private async Task CargarCajasAsync()

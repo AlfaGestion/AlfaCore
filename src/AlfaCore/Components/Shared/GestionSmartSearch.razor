@@ -1,0 +1,175 @@
+@using AlfaCore.Models
+
+@* Smart Search genérico de los tableros de gestión (Contabilidad, Caja y Bancos, Stock).
+   Resuelve el período (rangos rápidos + desde/hasta) y el chip del período; cada pantalla aporta
+   el texto de búsqueda, sus columnas de filtros (Columnas) y sus chips. Va en el Context Toolbar
+   (PageHeaderConfig.SearchContent). Ventas y Compras tienen su versión propia porque comparten
+   modelo de filtros entre varias pantallas. *@
+
+<div class="smart-search" @onclick:stopPropagation>
+    @{ var chips = BuildChips(); }
+    <div class="smart-search__bar @(_open ? "is-open" : string.Empty)">
+        <span class="smart-search__search-icon" aria-hidden="true">
+            <i class="bi bi-search"></i>
+        </span>
+        <button type="button"
+                class="smart-search__filter-button @(_open || chips.Count > 1 ? "is-active" : string.Empty)"
+                title="Abrir filtros"
+                aria-label="Abrir filtros"
+                aria-expanded="@_open"
+                @onclick="Toggle">
+            <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+        </button>
+        <div class="smart-search__active-filters" aria-label="Filtros activos">
+            @foreach (var chip in chips.Take(2))
+            {
+                var removible = chip.Key != "periodo" || !EsPeriodoPorDefecto;
+                <button type="button"
+                        class="smart-search__active-filter"
+                        title="@(removible ? $"Quitar filtro {chip.Label}" : chip.Label)"
+                        aria-label="@(removible ? $"Quitar filtro {chip.Label}" : chip.Label)"
+                        @onclick="() => RemoveChipAsync(chip.Key)">
+                    <span>@chip.Label</span>
+                    @if (removible)
+                    {
+                        <span class="smart-search__active-filter-remove" aria-hidden="true">
+                            <i class="bi bi-x"></i>
+                        </span>
+                    }
+                </button>
+            }
+            @if (chips.Count > 2)
+            {
+                <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(c => c.Label))">+@(chips.Count - 2)</span>
+            }
+        </div>
+        @if (TextoChanged.HasDelegate)
+        {
+            <input type="search"
+                   placeholder="@Placeholder"
+                   value="@Texto"
+                   @oninput="e => TextoChanged.InvokeAsync(NullIfEmpty(e.Value?.ToString()))"
+                   @onkeydown="HandleKeyDownAsync" />
+        }
+        else
+        {
+            <input type="search" placeholder="@Placeholder" readonly @onfocus="Open" />
+        }
+        <button type="button" class="smart-search__toggle" @onclick="Toggle" aria-label="Mostrar filtros" aria-expanded="@_open">
+            <i class="bi @(_open ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+        </button>
+    </div>
+
+    @if (_open)
+    {
+        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="Close"></button>
+        <div class="smart-search__panel @(Columnas is null ? "smart-search__panel--compact" : string.Empty)" @onclick:stopPropagation @onkeydown="HandleKeyDownAsync">
+            <div class="smart-search__column">
+                <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                @{ var rangoActivo = GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta); }
+                @foreach (var rango in GestionRangosFecha.Todos.Where(r => PermitirTodo || r.Key != "todo"))
+                {
+                    <button type="button" class="@OptionClass(rangoActivo == rango.Key)" @onclick="() => ApplyRangoAsync(rango.Key)">@rango.Label</button>
+                }
+                <div class="smart-search__inline">
+                    <label>Desde</label>
+                    <InputDate @bind-Value="Model.FechaDesde" />
+                </div>
+                <div class="smart-search__inline">
+                    <label>Hasta</label>
+                    <InputDate @bind-Value="Model.FechaHasta" />
+                </div>
+            </div>
+
+            @Columnas
+
+            <div class="smart-search__actions">
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => ClearAsync()">Limpiar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" OnClick="_ => ApplyAsync()">Aplicar</AlfaButton>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GestionDateFilterBase Model { get; set; } = default!;
+    [Parameter] public string Placeholder { get; set; } = "Período...";
+    [Parameter] public string? Texto { get; set; }
+    // Sin delegado, la barra no tiene texto libre (solo período y columnas).
+    [Parameter] public EventCallback<string?> TextoChanged { get; set; }
+    [Parameter] public IReadOnlyList<GestionSmartChip> Chips { get; set; } = [];
+    [Parameter] public EventCallback<string> OnRemoveChip { get; set; }
+    [Parameter] public RenderFragment? Columnas { get; set; }
+    [Parameter] public bool PermitirTodo { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+    // Limpia los filtros propios de la pantalla; el período lo vuelve a "Mes actual" este componente.
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    private bool _open;
+
+    private bool EsPeriodoPorDefecto => GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta) == "mes";
+
+    private List<GestionSmartChip> BuildChips()
+    {
+        var chips = new List<GestionSmartChip> { new("periodo", GestionRangosFecha.Etiqueta(Model.FechaDesde, Model.FechaHasta)) };
+        chips.AddRange(Chips);
+        return chips;
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        if (key == "periodo")
+        {
+            if (EsPeriodoPorDefecto)
+            {
+                Open();
+                return;
+            }
+
+            (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular("mes");
+        }
+        else
+        {
+            await OnRemoveChip.InvokeAsync(key);
+        }
+
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task ApplyRangoAsync(string key)
+    {
+        (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular(key);
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task ApplyAsync()
+    {
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular("mes");
+        await OnClear.InvokeAsync();
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await ApplyAsync();
+        else if (args.Key == "Escape")
+            Close();
+    }
+
+    private void Toggle() => _open = !_open;
+    private void Open() => _open = true;
+    private void Close() => _open = false;
+
+    private static string OptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

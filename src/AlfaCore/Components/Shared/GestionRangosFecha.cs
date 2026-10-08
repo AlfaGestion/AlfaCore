@@ -69,3 +69,6 @@ public static class GestionRangosFecha
         };
     }
 }
+
+/// <summary>Chip de filtro activo de GestionSmartSearch (Key la usa la pantalla para quitarlo).</summary>
+public sealed record GestionSmartChip(string Key, string Label);

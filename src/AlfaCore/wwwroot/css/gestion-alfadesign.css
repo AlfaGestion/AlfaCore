@@ -1015,6 +1015,48 @@ body:has(.gd-page) .alfacore-sticky-list-header table > thead .table-sort__icon 
     font-size: var(--alfa-font-small, 12px);
 }
 
+/* ---- Caja y Bancos / Cierre de caja ---- */
+.gd .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.gd .detail-grid > div {
+    display: grid;
+    gap: 2px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--alfa-border-subtle, #262930);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.gd .detail-grid > div br {
+    display: none;
+}
+
+.gd .detail-grid > div strong {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 500;
+}
+
+/* El cierre no tiene texto libre: las tres etiquetas (fecha, unidad, caja) ocupan la barra.
+   Mismo selector que alfacore-design.css (.shell.shell--alfa-design) para ganarle al tope de
+   ancho del Smart Search estándar. */
+.shell.shell--alfa-design .cierre-search .smart-search__active-filters {
+    flex: 1 1 auto;
+    max-width: none;
+}
+
+.shell.shell--alfa-design .cierre-search .smart-search__active-filter {
+    max-width: none;
+}
+
 @media (max-width: 1100px) {
     .gd .ia-grid,
     .gd .chart-grid,

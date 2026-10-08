@@ -55,7 +55,8 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
-            ("resumen", "Resumen", "/caja-bancos")
+            ("resumen", "Resumen", "/caja-bancos"),
+            ("cierre", "Cierre de caja", "/caja-bancos/cierre")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildStock(IRouteContextService routeContext, NavigationManager nav, string activeKey)

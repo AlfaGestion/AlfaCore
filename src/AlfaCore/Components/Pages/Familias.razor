@@ -124,7 +124,7 @@
         @if (_detalle is not null)
         {
             <div class="three-grid">
-                <section class="panel-card"><LineChart Data="_detalle.EvolucionMensual" Titulo="Evolución de la familia" Subtitulo="Últimos 12 meses de la rama seleccionada" /></section>
+                <section class="panel-card"><div class="panel-card__header"><div><h3 class="panel-card__title">Evolución de la familia</h3><p class="panel-card__subtitle">Últimos 12 meses de la rama seleccionada</p></div></div><LineChart Data="_detalle.EvolucionMensual" Titulo="Evolución de la familia" Subtitulo="Últimos 12 meses de la rama seleccionada" /></section>
                 <section class="panel-card"><HorizontalBarChart Data="_detalle.ComposicionInterna" Titulo="Composición interna" Subtitulo="@(_detalle.Resumen.TieneHijos ? "Subfamilias directas de la rama" : "Sin subfamilias con movimiento")" /></section>
                 <section class="panel-card"><HorizontalBarChart Data="_detalle.Articulos" Titulo="Artículos principales" Subtitulo="Top artículos de la rama" /></section>
             </div>

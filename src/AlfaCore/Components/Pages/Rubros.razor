@@ -106,7 +106,7 @@
         @if (_detalle is not null)
         {
             <div class="split-grid">
-                <section class="panel-card"><LineChart Data="_detalle.EvolucionMensual" Titulo="Evolución del rubro" Subtitulo="Últimos 12 meses consolidados" /></section>
+                <section class="panel-card"><div class="panel-card__header"><div><h3 class="panel-card__title">Evolución del rubro</h3><p class="panel-card__subtitle">Últimos 12 meses consolidados</p></div></div><LineChart Data="_detalle.EvolucionMensual" Titulo="Evolución del rubro" Subtitulo="Últimos 12 meses consolidados" /></section>
                 <section class="panel-card"><HorizontalBarChart Data="_detalle.TopArticulos" Titulo="Artículos principales" Subtitulo="Top artículos del rubro por total" /></section>
             </div>
 
