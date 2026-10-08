@@ -77,3 +77,10 @@ Usar solo si hay tabla ancha con scroll horizontal y acciones por fila. Debe ten
 ## Guardas De Dominio
 
 Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `EsGrupo` no es rol; en Técnicos, Usuario asociado es opcional y no transaccional; en Clientes/Proveedores, `CuentasComercialesPage` es compartido y el Browse y la ficha AlfaDesign aplican a ambos Tipo (desde 2026-10-08); lo propio de cada uno va gateado por `Tipo`: Cliente tiene ARCA, Portal Cliente e invitaciones; Proveedor tiene local/compartido y descuentos por condición de compra.
+
+## Inicio Y Páginas De Módulo
+
+- `Launcher.razor` (Inicio) y `ShellWorkspacePage.razor` (`/shell/{clave}`) usan la barra superior global sin sidebar legacy. No llaman a `PageHeader.Set(...)`: `MainLayout` los detecta con `IsAlfaHomeActive` (ruta de Inicio o `shell/`, sesión autorizada y sin `?directo=1`).
+- Boceto aprobado: Figma `06 — Bocetos`, v2 simple. Estilos en `wwwroot/css/home-alfadesign.css` (`alfa-home__*`); `Ctrl+K` lleva el foco al buscador (`wwwroot/js/alfa-home.js`).
+- La búsqueda de opciones del menú es una sola: `ShellMenuSearch.Filter(...)`, compartida con el buscador del sidebar legacy.
+- Lo que estaba en el pie del sidebar del Inicio viejo (Instalar, Tareas, Ayuda) y la tarjeta de Portal Cliente pasaron al menú de usuario de la barra superior (`TopbarUsuarioMenu.razor`), disponible en todo el shell AlfaDesign.

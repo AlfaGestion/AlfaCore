@@ -29,51 +29,51 @@ else if (!string.IsNullOrWhiteSpace(_error))
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">@(_workspace.Module?.Nombre ?? "Módulo")</h2>
-            </div>
-        </section>
+    <div class="alfa-home alfa-home--workspace">
+        <header class="alfa-home__ws-head">
+            <a class="alfa-home__ws-back" href="@RouteContext.BuildRoute("/")"><i class="bi bi-arrow-left" aria-hidden="true"></i> Inicio</a>
+            <h1 class="alfa-home__ws-title">
+                @if (!string.IsNullOrWhiteSpace(_workspace.Module?.Icono))
+                {
+                    <span class="alfa-home__module-icon"><i class="bi @_workspace.Module!.Icono" aria-hidden="true"></i></span>
+                }
+                @(_workspace.Module?.Nombre ?? "Módulo")
+            </h1>
+        </header>
 
         @if (_workspace.Sections.Count == 0)
         {
-            <section class="panel-card">
-                <p class="page-intro__text">Todavía no hay aplicaciones web mapeadas para este módulo en `ALFACORE_MENU_WEB`.</p>
-            </section>
+            <AlfaEmptyState Title="Sin aplicaciones web" Message="Todavía no hay aplicaciones web habilitadas para este módulo." />
         }
         else
         {
-            @foreach (var workspaceSection in _workspace.Sections)
+            <div class="alfa-home__ws-sections">
+            @foreach (var workspaceSection in _workspace.Sections.Where(x => x.Items.Count > 0))
             {
-                <section class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">@workspaceSection.Nombre</h3>
-                        </div>
-                    </div>
-                    <div class="launcher__grid">
+                <section class="alfa-home__section">
+                    <h2 class="alfa-home__section-title">@workspaceSection.Nombre</h2>
+                    <div class="alfa-home__modules">
                         @foreach (var item in workspaceSection.Items)
                         {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
-                            <button type="button"
-                                    class="@GetFavoriteButtonClass(item.Clave)"
-                                    style="@GetFavoriteButtonStyle(item.Clave)"
-                                    title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
-                                    aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
-                                    @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
-                                    @onclick:stopPropagation>
-                                <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
+                            var favorito = IsFavorite(item.Clave);
+                            <div class="alfa-home__module-wrap">
+                                <button type="button" class="alfa-home__module" title="@ShellNavigationUiHelper.GetNodeDescription(item)" @onclick="() => OpenNodeAsync(item)">
+                                    <span class="alfa-home__module-icon"><i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)" aria-hidden="true"></i></span>
+                                    <span class="alfa-home__module-name">@item.Nombre</span>
                                 </button>
-                                <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
-                                    <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)"></i>
-                                </div>
-                                <span class="app-card__name">@item.Nombre</span>
-                            </article>
+                                <button type="button"
+                                        class="alfa-home__star alfa-home__tile-star @(favorito ? "is-active" : null)"
+                                        title="@(favorito ? "Quitar de favoritos" : "Agregar a favoritos")"
+                                        aria-label="@(favorito ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
+                                        @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)">
+                                    <i class="bi @(favorito ? "bi-star-fill" : "bi-star")" aria-hidden="true"></i>
+                                </button>
+                            </div>
                         }
                     </div>
                 </section>
             }
+            </div>
         }
     </div>
 }
@@ -126,40 +126,16 @@ else
         Nav.NavigateTo(RouteContext.BuildRoute(item.RutaWeb));
     }
 
-    private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)
-    {
-        if (IsActivationKey(args.Key))
-            await OpenNodeAsync(item);
-    }
-
     private bool IsFavorite(string clave)
     {
         return _workspace.Favorites.Any(item => string.Equals(item.Clave, clave, StringComparison.OrdinalIgnoreCase));
     }
-
-    private string GetFavoriteButtonClass(string clave)
-    {
-        return IsFavorite(clave) ? "app-card__favorite is-active" : "app-card__favorite";
-    }
-
-    private string GetFavoriteButtonStyle(string clave)
-        => IsFavorite(clave)
-            ? "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.48);color:#fbbf24;box-shadow:none;"
-            : "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.18);color:rgba(226,232,240,.72);box-shadow:none;";
 
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
         WorkspaceSvc.InvalidateWorkspaceCache();
         _workspace = await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey);
-    }
-
-    private static bool IsActivationKey(string? key)
-    {
-        return string.Equals(key, "Enter", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(key, " ", StringComparison.Ordinal)
-            || string.Equals(key, "Space", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(key, "Spacebar", StringComparison.OrdinalIgnoreCase);
     }
 
     private async void OnContextChanged()

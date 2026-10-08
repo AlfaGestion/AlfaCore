@@ -778,7 +778,7 @@ else
             }
         </header>
 
-        @if (IsAlfaDesignShellActive)
+        @if (ShowAlfaTopbar)
         {
             <header class="alfa-app-topbar no-print" aria-label="Barra global">
                 <div class="alfa-app-topbar__brand">
@@ -861,10 +861,17 @@ else
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
                     {
-                        <button type="button" class="alfa-app-topbar__chip" @onclick="OpenLoginOverlayAsync" title="Usuario activo">
-                            <span class="alfa-app-topbar__avatar">@GetUserInitials()</span>
-                            <span>@AppUserSession.CurrentUser.UserName</span>
-                        </button>
+                        <TopbarUsuarioMenu UserName="@AppUserSession.CurrentUser.UserName"
+                                           Initials="@GetUserInitials()"
+                                           ShowTareas="@CanShowTasksPanel"
+                                           ShowInstalar="@(!IsDirectMode && (_pwaCanInstall || (AppMode.IsSaaSMode && !_pwaInstalled) || (_pwaIsIos && !_pwaInstalled)))"
+                                           InstalarLabel="@(_pwaCanInstall || (AppMode.IsSaaSMode && !_pwaInstalled) ? "Instalar AlfaCore" : "Instalar app")"
+                                           PortalClienteUrl="@(IsDirectMode ? null : GetPortalClienteUrl())"
+                                           AyudaUrl="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")"
+                                           BuildStamp="@BuildStamp"
+                                           OnCambiarUsuario="OpenLoginOverlayAsync"
+                                           OnTareas="ToggleTasksPanelAsync"
+                                           OnInstalar="InstallFromUserMenuAsync" />
                     }
                 </div>
             </header>
@@ -1385,9 +1392,9 @@ else
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => null;
     private string ShellClass
-        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)} {(IsAlfaDesignShellActive ? "shell--alfa-design" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)} {(ShowAlfaTopbar ? "shell--alfa-design" : string.Empty)} {(IsAlfaHomeActive && IsLauncherRoute ? "shell--alfa-home" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
-    private bool ShowLauncherContext => ShowShellContext && !IsDirectMode && !IsAlfaDesignShellActive;
+    private bool ShowLauncherContext => ShowShellContext && !IsDirectMode && !IsAlfaDesignShellActive && !IsAlfaHomeActive;
     private bool CanShowLauncherAccess => !IsDirectMode;
     private bool UseTopOnlyNavigation
         => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase)
@@ -1399,6 +1406,13 @@ else
     // si esa carrera se pierde en algún caso no cubierto, Inicio nunca puede quedar con el topbar
     // pegado de otra pantalla.
     private bool IsAlfaDesignShellActive => !IsLauncherRoute && IsCurrentRouteAlfaDesignManaged() && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    // Inicio en AlfaDesign: barra superior global (sin menú de módulo) y sin sidebar legacy. Los
+    // módulos, la búsqueda, favoritos y recientes los muestra Launcher.razor; lo que vivía en el pie
+    // del sidebar (Instalar, Tareas, Ayuda) pasó al menú de usuario de la barra superior.
+    // Incluye las páginas de módulo (/shell/{clave}, ShellWorkspacePage): son el "Ver el módulo
+    // completo" del panel de cada mosaico y comparten el mismo shell que Inicio.
+    private bool IsAlfaHomeActive => (IsLauncherRoute || IsWorkspaceRoute) && !IsDirectMode && AppUserSession.IsAuthenticated && IsActiveSessionAuthorized;
+    private bool ShowAlfaTopbar => IsAlfaDesignShellActive || IsAlfaHomeActive;
     // OJO: esto NO es "!IsAlfaDesignShellActive". Esa versión suprimía el header en TODA página en
     // modo Legacy (el default), incluidas las que sí llaman PageHeader.Set() propio -- ej. Catálogos
     // y Carga de viajes, que usan MainPageHeader/ViewButtons pero nunca se migraron al shell AlfaDesign
@@ -1408,7 +1422,7 @@ else
     private bool ShouldSuppressPageHeader
         => IsLauncherRoute
            || (PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot && !IsCurrentRouteAlfaDesignManaged());
-    private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
+    private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsAlfaHomeActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
@@ -2403,51 +2417,7 @@ else
     }
 
     private IReadOnlyList<ShellMenuSearchItemDto> GetFilteredMenuSearchResults()
-    {
-        var query = _menuSearchText?.Trim();
-        if (string.IsNullOrWhiteSpace(query))
-            return [];
-
-        var tokens = query
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => x.ToLowerInvariant())
-            .ToArray();
-        if (tokens.Length == 0)
-            return [];
-
-        static int ScoreItem(ShellMenuSearchItemDto item, string rawQuery, string[] tokens)
-        {
-            var name = item.Nombre.ToLowerInvariant();
-            var description = item.Descripcion.ToLowerInvariant();
-            var clave = item.Clave.ToLowerInvariant();
-            var observacion = item.Observacion.ToLowerInvariant();
-            var full = $"{name} {description} {clave} {observacion}";
-
-            if (!tokens.All(full.Contains))
-                return int.MaxValue;
-
-            if (name.StartsWith(rawQuery, StringComparison.OrdinalIgnoreCase))
-                return item.EsModulo ? 0 : 1;
-
-            if (name.Contains(rawQuery, StringComparison.OrdinalIgnoreCase))
-                return item.EsModulo ? 2 : 3;
-
-            if (description.Contains(rawQuery, StringComparison.OrdinalIgnoreCase))
-                return 4;
-
-            return 5;
-        }
-
-        return _menuSearchCatalog
-            .Select(x => new { Item = x, Score = ScoreItem(x, query.ToLowerInvariant(), tokens) })
-            .Where(x => x.Score < int.MaxValue)
-            .OrderBy(x => x.Score)
-            .ThenBy(x => x.Item.ModuloNombre)
-            .ThenBy(x => x.Item.Nombre)
-            .Take(8)
-            .Select(x => x.Item)
-            .ToArray();
-    }
+        => ShellMenuSearch.Filter(_menuSearchCatalog, _menuSearchText);
 
     private void ClearMenuSearch()
         => _menuSearchText = string.Empty;
@@ -2547,6 +2517,24 @@ else
 
         Nav.NavigateTo(BuildModuleUrl(item.RutaWeb));
     }
+
+    private async Task InstallFromUserMenuAsync()
+    {
+        if (_pwaCanInstall || (AppMode.IsSaaSMode && !_pwaInstalled))
+            await InstallPwaAsync();
+        else
+            ToggleInstallHelp();
+    }
+
+    private string GetPortalClienteUrl()
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativePortalClienteUrl(
+                GetRouteIdWeb(),
+                null,
+                Nav.Uri,
+                AppUserSession.CurrentUser?.IdWeb,
+                SessionSvc.GetActiveSession()?.BaseId));
 
     private string GetLauncherUrl()
     {
