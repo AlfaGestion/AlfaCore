@@ -1,0 +1,472 @@
+/* Tableros de gestión (Ventas, Compras, Contabilidad, Caja, Stock) en AlfaDesign v1.
+   Tokens de css/alfacore-design.css. Las pantallas migradas envuelven su contenido en
+   .gd-page > .gd; los componentes compartidos (KpiCard, DataTable, HorizontalBarChart, LineChart)
+   conservan su markup y toman el aspecto AlfaDesign solo dentro de .gd, así las pantallas que
+   todavía no se migraron (Punto de Venta, Home) no cambian. */
+
+.gd-page {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--alfa-space-16, 16px) var(--alfa-space-24, 24px) var(--alfa-space-48, 48px);
+    background: var(--alfa-bg-canvas, #0f1115);
+}
+
+.gd {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16, 16px);
+    min-width: 0;
+}
+
+/* .gd-page y .gd suelen ir en el mismo elemento (alto fijo + scroll): sin esto las tarjetas se
+   achican para entrar en el alto de la pantalla en vez de scrollear. */
+.gd > * {
+    flex-shrink: 0;
+}
+
+.gd-header h2 {
+    margin: 0;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.gd-header p {
+    max-width: 920px;
+    margin: var(--alfa-space-4, 4px) 0 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.45;
+}
+
+/* KPIs: KpiCard y las tarjetas inline .kpi-card */
+.gd .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--alfa-space-12, 12px);
+    margin: 0;
+}
+
+.gd .kpi-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-height: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd .kpi-card::before,
+.gd .kpi-card::after {
+    display: none;
+}
+
+.gd .kpi-card__icon {
+    display: none;
+}
+
+.gd .kpi-card__body {
+    display: grid;
+    gap: 4px;
+}
+
+.gd .kpi-card__label {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.gd .kpi-card__value {
+    margin: 0;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+}
+
+.gd .kpi-card__description {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .kpi-card__compare {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .kpi-card__compare-item--up {
+    color: var(--alfa-success, #3fb950);
+}
+
+.gd .kpi-card__compare-item--down {
+    color: var(--alfa-danger, #eb5759);
+}
+
+.gd .kpi-card__compare-item--neutral {
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd .kpi-card--balance-pos .kpi-card__value {
+    color: var(--alfa-success, #3fb950);
+}
+
+.gd .kpi-card--balance-neg .kpi-card__value {
+    color: var(--alfa-danger, #eb5759);
+}
+
+/* Tarjetas */
+.gd .panel-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd .panel-card__header,
+.gd .table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12, 12px);
+    margin: 0;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--alfa-border-default, #333640);
+}
+
+.gd .panel-card__title {
+    margin: 0;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd .panel-card__subtitle {
+    margin: 2px 0 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .chart-empty,
+.gd .panel-card.empty-state p {
+    margin: 0;
+    padding: 16px;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .two-grid,
+.gd .three-grid,
+.gd .split-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--alfa-space-16, 16px);
+    align-items: start;
+    margin: 0;
+}
+
+/* Tablas: DataTable y tablas sueltas .data-table / .comparativo-table */
+.gd .table-wrap,
+.gd .table-scroll,
+.gd .usuarios-table-wrap {
+    max-height: none;
+    margin: 0;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+}
+
+.gd .data-table,
+.gd .comparativo-table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd .data-table th,
+.gd .comparativo-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.gd .data-table td,
+.gd .comparativo-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--alfa-border-subtle, #262930);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+}
+
+.gd .data-table tbody tr:nth-child(even) td,
+.gd .comparativo-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--alfa-bg-surface-raised, #1d2026) 45%, transparent);
+}
+
+.gd .data-table tbody tr:hover td,
+.gd .comparativo-table tbody tr:hover td {
+    background: var(--alfa-bg-row-hover, #22262e);
+}
+
+.gd .data-table tfoot td,
+.gd .data-table .data-table__totals td,
+.gd .data-table .row-totals td {
+    border-top: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    font-weight: 600;
+}
+
+.gd .data-table .col-num,
+.gd .comparativo-table td:not(:first-child),
+.gd .comparativo-table th:not(:first-child) {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.gd .text-muted {
+    color: var(--alfa-text-secondary, #a6abb5) !important;
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .balance-pos {
+    color: var(--alfa-success, #3fb950);
+}
+
+.gd .balance-neg {
+    color: var(--alfa-danger, #eb5759);
+}
+
+.gd .badge-tc {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--alfa-accent, #4c8dff) 16%, transparent);
+    color: var(--alfa-accent-hover, #6ea2ff);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Gráficos */
+.gd .bar-chart {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+}
+
+.gd .bar-chart__label {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd .bar-chart__header strong {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+}
+
+.gd .bar-chart__track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd .bar-chart__fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--alfa-accent, #4c8dff);
+    box-shadow: none;
+}
+
+.gd .line-chart {
+    padding: 8px 16px 12px;
+}
+
+.gd .line-chart__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gd .line-chart__svg text {
+    fill: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px;
+}
+
+.gd .line-chart__grid {
+    stroke: var(--alfa-border-subtle, #262930);
+}
+
+.gd .line-chart__path {
+    stroke: var(--alfa-accent, #4c8dff);
+    stroke-width: 2;
+}
+
+.gd .line-chart__point {
+    fill: var(--alfa-bg-surface, #16181d);
+    stroke: var(--alfa-accent, #4c8dff);
+    stroke-width: 2;
+}
+
+.gd .line-chart__bar {
+    fill: var(--alfa-accent, #4c8dff);
+}
+
+.gd .line-chart stop:first-child {
+    stop-color: color-mix(in srgb, var(--alfa-accent, #4c8dff) 32%, transparent);
+}
+
+.gd .line-chart stop:last-child {
+    stop-color: color-mix(in srgb, var(--alfa-accent, #4c8dff) 2%, transparent);
+}
+
+.gd .chart-type-switch {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 6px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd .chart-type-switch__btn {
+    width: 28px;
+    height: 24px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd .chart-type-switch__btn--active {
+    background: color-mix(in srgb, var(--alfa-accent, #4c8dff) 18%, transparent);
+    color: var(--alfa-accent-hover, #6ea2ff);
+}
+
+/* Smart Search de gestión (VentasSmartSearch): fila de acciones y textos de ayuda */
+.smart-search__panel > .smart-search__actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--alfa-border-default, #333640);
+}
+
+.smart-search__hint {
+    display: block;
+    margin-top: 4px;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-caption, 11px);
+    line-height: 1.4;
+}
+
+/* Encabezados con orden (sticky-list-headers.js agrega el botón de orden y un encabezado
+   flotante al scrollear). Esa hoja usa !important, así que acá también; el flotante vive fuera
+   de .gd y se alcanza con :has mientras la pantalla migrada está abierta. */
+.gd table[data-sticky-list-header] > thead,
+body:has(.gd-page) .alfacore-sticky-list-header table > thead {
+    background: var(--alfa-bg-surface-raised, #1d2026) !important;
+}
+
+.gd table[data-sticky-list-header] > thead > tr > th,
+body:has(.gd-page) .alfacore-sticky-list-header table > thead > tr > th {
+    height: 36px !important;
+    padding: 0 12px !important;
+    border-top: 0 !important;
+    border-right: 0 !important;
+    border-left: 0 !important;
+    border-bottom: 1px solid var(--alfa-border-default, #333640) !important;
+    background: var(--alfa-bg-surface-raised, #1d2026) !important;
+    color: var(--alfa-text-secondary, #a6abb5) !important;
+    font-size: var(--alfa-font-small, 12px) !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.gd table[data-sticky-list-header] > thead .table-sort__icon,
+body:has(.gd-page) .alfacore-sticky-list-header table > thead .table-sort__icon {
+    color: var(--alfa-text-disabled, #666b75);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+.gd table[data-sticky-list-header] > thead button.table-sort:hover .table-sort__icon,
+.gd table[data-sticky-list-header] > thead button.table-sort:focus-visible .table-sort__icon,
+.gd table[data-sticky-list-header] > thead button.table-sort.is-active .table-sort__icon {
+    opacity: 1;
+}
+
+.gd table[data-sticky-list-header] > thead button.table-sort:hover,
+.gd table[data-sticky-list-header] > thead button.table-sort.is-active {
+    color: var(--alfa-text-primary, #f5f5f7) !important;
+}
+
+/* Columnas numéricas: el botón de orden alinea a la derecha como el dato. */
+.gd table[data-sticky-list-header] > thead th[style*="text-align:right"] button.table-sort,
+.gd table[data-sticky-list-header] > thead th.col-num button.table-sort,
+.gd .comparativo-table > thead th:not(:first-child) button.table-sort {
+    flex-direction: row-reverse;
+    text-align: right !important;
+}
+
+.gd .data-table th,
+.gd .data-table td {
+    height: auto !important;
+}
+
+.gd .data-table td {
+    padding: 8px 12px !important;
+    font-size: var(--alfa-font-body, 13px) !important;
+}
+
+.gd .resumen-tc-table .col-total,
+.gd .resumen-tc-table tfoot .row-totals td {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd .data-table td strong {
+    font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+    .gd .two-grid,
+    .gd .three-grid,
+    .gd .split-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

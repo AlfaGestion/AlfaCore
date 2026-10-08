@@ -5,15 +5,15 @@
 else
 {
     <div class="line-chart" @key="_renderKey">
-        <svg viewBox="0 0 800 320" class="line-chart__svg dual-bar__svg" role="img">
+        <svg viewBox="0 0 @Ancho 320" class="line-chart__svg dual-bar__svg" role="img">
 
             @* Grid horizontal *@
             @foreach (var g in _gridLines)
             {
-                <line x1="80" y1="@F(g.Y)" x2="780" y2="@F(g.Y)"
+                <line x1="80" y1="@F(g.Y)" x2="@(Ancho - 20)" y2="@F(g.Y)"
                       class="line-chart__grid" style="transition:none;animation:none;" />
             }
-            <line x1="80" y1="260" x2="780" y2="260"
+            <line x1="80" y1="260" x2="@(Ancho - 20)" y2="260"
                   stroke="rgba(148,163,184,0.25)" stroke-width="1"
                   style="transition:none;animation:none;" />
 
@@ -38,12 +38,12 @@ else
             @((MarkupString)_yLabels)
 
             @* Leyenda *@
-            <rect x="570" y="6" width="12" height="12" rx="2" fill="#38bdf8"
+            <rect x="@(Ancho - 230)" y="6" width="12" height="12" rx="2" fill="#38bdf8"
                   style="transition:none;animation:none;" />
-            <text x="586" y="17" class="line-chart__label-svg">@Label1</text>
-            <rect x="@F(570 + _legend2Offset)" y="6" width="12" height="12" rx="2" fill="#fb923c"
+            <text x="@(Ancho - 214)" y="17" class="line-chart__label-svg">@Label1</text>
+            <rect x="@F(Ancho - 230 + _legend2Offset)" y="6" width="12" height="12" rx="2" fill="#fb923c"
                   style="transition:none;animation:none;" />
-            <text x="@F(586 + _legend2Offset)" y="17" class="line-chart__label-svg">@Label2</text>
+            <text x="@F(Ancho - 214 + _legend2Offset)" y="17" class="line-chart__label-svg">@Label2</text>
         </svg>
     </div>
 }
@@ -66,6 +66,8 @@ else
     [Parameter] public string Subtitulo { get; set; } = string.Empty;
     [Parameter] public string Label1    { get; set; } = "Ventas";
     [Parameter] public string Label2    { get; set; } = "Compras";
+    // Ancho del viewBox (ver LineChart.Ancho): mayor para gráficos a todo el ancho.
+    [Parameter] public int    Ancho     { get; set; } = 800;
 
     private double _legend2Offset;
 
@@ -82,7 +84,7 @@ else
             return;
         }
 
-        const double chartW = 700;
+        double chartW = Ancho - 100;
         const double chartH = 230;
         const double startX = 80;
 

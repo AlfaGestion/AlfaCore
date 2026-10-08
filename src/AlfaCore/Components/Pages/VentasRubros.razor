@@ -11,23 +11,21 @@
 
 <PageTitle>Rubros | Ventas</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Rubros más vendidos</h2>
-            <p class="page-intro__text">Lectura comercial por rubro para identificar concentración y categorías líderes.</p>
+            <h2>Rubros más vendidos</h2>
+            <p>Lectura comercial por rubro para identificar concentración y categorías líderes.</p>
         </div>
-    </div>
-
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de rubros" Subtitulo="Acotá el análisis de categorías vendidas." MostrarComparativoUnidadNegocio="true" />
+    </header>
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="panel-card empty-state"><p>@_error</p></div>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los datos" Message="@_error" />
     }
     else if (_page is null)
     {
-        <div class="loading">Cargando rubros...</div>
+        <AlfaEmptyState Title="Cargando rubros" Message="Buscando datos del período." />
     }
     else
     {
@@ -101,10 +99,7 @@
             <div class="rubros-list">
                 <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
                 <Toolbar>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarExcelAsync">
-                        <i class="bi bi-file-earmark-excel"></i>
-                        <span>Excel</span>
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-excel" OnClick="_ => ExportarExcelAsync()">Excel</AlfaButton>
                 </Toolbar>
                 <Header>
                     @if (MostrarComparativoUnidadNegocio)
@@ -176,7 +171,7 @@
             </div>
         </div>
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -191,7 +186,11 @@
 
     private bool MostrarComparativoUnidadNegocio => _filters.UnidadesNegocio.Count > 1;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        _filters = FilterState.Ventas;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -205,9 +204,16 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filters/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<VentasSmartSearch Model="_filters" Options="_options" OnApply="LoadAsync" MostrarComparativoUnidadNegocio="true" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildVentas(RouteCtx, Nav, "rubros")
     });
 
@@ -215,6 +221,7 @@
     {
         _filters = FilterState.Ventas;
         _options = await GestionSvc.GetVentasFilterOptionsAsync();
+        UpdatePageHeader();
         await LoadAsync();
     }
 
