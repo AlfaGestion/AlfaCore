@@ -222,7 +222,8 @@ public sealed class ReunionesPublicasService(
 
         try
         {
-            var template = await FindApprovedTemplateByMetaNameAsync(nombreMeta, ct);
+            var idNumeroWhatsApp = await ResolveActiveWhatsAppNumberIdAsync(ct);
+            var template = await FindApprovedTemplateByMetaNameAsync(nombreMeta, idNumeroWhatsApp, ct);
             if (template is null)
             {
                 await appEvents.LogErrorAsync(ModuleName, "ReservaWhatsAppSinPlantilla",
@@ -235,6 +236,7 @@ public sealed class ReunionesPublicasService(
             var conv = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
             {
                 TelefonoWhatsApp = telefono.Trim(),
+                IdNumeroWhatsApp = idNumeroWhatsApp,
                 IdTecnico = idTecnico,
                 UsuarioAccion = "ReunionesPublicas",
                 SistemaAccion = "AlfaCore"
@@ -259,10 +261,25 @@ public sealed class ReunionesPublicasService(
         }
     }
 
-    private async Task<ConversacionPlantillaDto?> FindApprovedTemplateByMetaNameAsync(string nombreMeta, CancellationToken ct)
+    private async Task<int?> ResolveActiveWhatsAppNumberIdAsync(CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        return await cn.ExecuteScalarAsync<int?>(
+            """
+            SELECT TOP (1) IdNumero
+            FROM dbo.CONV_WHATSAPP_NUMEROS
+            WHERE ISNULL(Activo, 0) = 1
+              AND NULLIF(LTRIM(RTRIM(ISNULL(PhoneNumberId, N''))), N'') IS NOT NULL
+              AND NULLIF(LTRIM(RTRIM(ISNULL(WabaId, N''))), N'') IS NOT NULL
+            ORDER BY IdNumero;
+            """);
+    }
+
+    private async Task<ConversacionPlantillaDto?> FindApprovedTemplateByMetaNameAsync(string nombreMeta, int? idNumeroWhatsApp, CancellationToken ct)
     {
         var templates = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
         {
+            IdNumeroWhatsApp = idNumeroWhatsApp,
             EstadoMeta = "APPROVED",
             IncluirInactivas = false,
             Search = nombreMeta

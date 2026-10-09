@@ -40,16 +40,56 @@
     {
         <section class="reuniones-confirmacion">
             <div class="reuniones-card">
-                <span class="reuniones-eyebrow">Reserva confirmada</span>
+                <div class="reuniones-confirmacion__status @(_reservationCanceled ? "is-canceled" : string.Empty)">
+                    <span class="reuniones-eyebrow">@(_reservationCanceled ? "Reserva cancelada" : "Reserva confirmada")</span>
+                    <strong>#@_confirmed.IdReserva.ToString("000000", Culture)</strong>
+                </div>
                 <h1>@_confirmed.Titulo</h1>
-                <p>Te esperamos el <strong>@_confirmed.FechaInicio.ToString("dddd dd 'de' MMMM", Culture)</strong> a las <strong>@_confirmed.FechaInicio.ToString("HH:mm", Culture)</strong>.</p>
-                <p>También vamos a enviarte un WhatsApp de confirmación si el número ingresado es válido y la plantilla está aprobada en Meta.</p>
-                <dl>
+                @if (_reservationCanceled)
+                {
+                    <p>Cancelamos tu reserva del <strong>@_confirmed.FechaInicio.ToString("dddd dd 'de' MMMM", Culture)</strong> a las <strong>@_confirmed.FechaInicio.ToString("HH:mm", Culture)</strong>.</p>
+                }
+                else
+                {
+                    <p>Te esperamos el <strong>@_confirmed.FechaInicio.ToString("dddd dd 'de' MMMM", Culture)</strong> a las <strong>@_confirmed.FechaInicio.ToString("HH:mm", Culture)</strong>.</p>
+                    <p>Te enviaremos la confirmación por WhatsApp y nos pondremos en contacto para coordinar la reunión online.</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_reservationError))
+                {
+                    <div class="reuniones-alert">
+                        <strong>No se pudo actualizar la reserva</strong>
+                        <span>@_reservationError</span>
+                    </div>
+                }
+                <dl class="reuniones-reserva-datos">
+                    <div><dt>Día y hora</dt><dd>@FormatSlot(_confirmed.FechaInicio)</dd></div>
                     <div><dt>Duración</dt><dd>@((_confirmed.FechaFin - _confirmed.FechaInicio).TotalMinutes.ToString("0", Culture)) min</dd></div>
                     <div><dt>Modalidad</dt><dd>@_confirmed.Modalidad</dd></div>
                     <div><dt>Responsable</dt><dd>@_confirmed.TecnicoNombre</dd></div>
+                    <div><dt>Cliente</dt><dd>@FirstNonEmpty(_request.RazonSocial, _request.ClienteNombre)</dd></div>
+                    <div><dt>Capacitación</dt><dd>@FirstNonEmpty(_request.TipoCapacitacion, _confirmed.Titulo)</dd></div>
                 </dl>
-                <button type="button" class="reuniones-btn reuniones-btn--primary" @onclick="ResetReservation">Hacer otra reserva</button>
+                @if (!_reservationCanceled)
+                {
+                    <div class="reuniones-reserva-actions">
+                        <button type="button" class="reuniones-btn reuniones-btn--ghost" disabled="@(_reservationBusy || !CanManageConfirmedReservation)" @onclick="ModifyReservationAsync">
+                            <i class="bi bi-pencil-square"></i>
+                            <span>Modificar horario</span>
+                        </button>
+                        <button type="button" class="reuniones-btn reuniones-btn--danger" disabled="@(_reservationBusy || !CanManageConfirmedReservation)" @onclick="CancelConfirmedReservationAsync">
+                            <i class="bi bi-x-circle"></i>
+                            <span>Cancelar reserva</span>
+                        </button>
+                    </div>
+                    @if (!CanManageConfirmedReservation)
+                    {
+                        <p class="reuniones-reserva-note">La reserva ya está dentro del plazo de coordinación. Para modificarla, contactanos por WhatsApp.</p>
+                    }
+                }
+                else
+                {
+                    <button type="button" class="reuniones-btn reuniones-btn--primary" @onclick="ResetReservation">Elegir otro horario</button>
+                }
             </div>
         </section>
     }
@@ -228,12 +268,18 @@
     private ReunionPublicaReservaResult? _confirmed;
     private bool _loading = true;
     private bool _saving;
+    private bool _reservationBusy;
+    private bool _reservationCanceled;
     private int _step = 1;
     private string _error = string.Empty;
     private string _errorTitle = "Revisá la reserva";
+    private string _reservationError = string.Empty;
 
     private ReunionPublicaDiaDto? SelectedDay
         => _model.Dias.FirstOrDefault(x => x.Fecha.Date == (_selectedDay ?? _model.Dias.FirstOrDefault(d => d.Disponible)?.Fecha ?? DateTime.Today).Date);
+
+    private bool CanManageConfirmedReservation
+        => _confirmed is not null && _confirmed.FechaInicio > DateTime.Now.AddHours(2);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -320,6 +366,8 @@
         try
         {
             _confirmed = await ReunionesSvc.CreateReservationAsync(_request);
+            _reservationCanceled = false;
+            _reservationError = string.Empty;
             _step = 3;
         }
         catch (Exception ex)
@@ -341,7 +389,60 @@
         _confirmed = null;
         _request = new ReunionPublicaReservaRequest();
         _selectedSlot = null;
+        _reservationCanceled = false;
+        _reservationError = string.Empty;
         _step = 1;
+    }
+
+    private async Task CancelConfirmedReservationAsync()
+    {
+        if (_confirmed is null || _reservationBusy || !CanManageConfirmedReservation)
+            return;
+
+        _reservationBusy = true;
+        _reservationError = string.Empty;
+        try
+        {
+            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas");
+            _reservationCanceled = true;
+        }
+        catch (Exception ex)
+        {
+            _reservationError = ex.Message;
+        }
+        finally
+        {
+            _reservationBusy = false;
+        }
+    }
+
+    private async Task ModifyReservationAsync()
+    {
+        if (_confirmed is null || _reservationBusy || !CanManageConfirmedReservation)
+            return;
+
+        _reservationBusy = true;
+        _reservationError = string.Empty;
+        try
+        {
+            var previous = _confirmed.FechaInicio;
+            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas");
+            _confirmed = null;
+            _selectedSlot = null;
+            _selectedDay = previous.Date;
+            _step = 1;
+            await LoadAsync(previous.Year, previous.Month);
+            _errorTitle = "Elegí un nuevo horario";
+            _error = "Cancelamos la reserva anterior. Seleccioná el nuevo horario para confirmarla nuevamente.";
+        }
+        catch (Exception ex)
+        {
+            _reservationError = ex.Message;
+        }
+        finally
+        {
+            _reservationBusy = false;
+        }
     }
 
     private string DayClass(ReunionPublicaDiaDto day)
@@ -359,4 +460,7 @@
 
     private static string FormatSlot(DateTime value)
         => value.ToString("dddd dd/MM 'a las' HH:mm", Culture);
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 }
