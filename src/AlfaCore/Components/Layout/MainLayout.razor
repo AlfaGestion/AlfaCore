@@ -1490,9 +1490,7 @@ else
     private bool CanSendTestPush
         => CanEnablePush && _pushPreferences.Habilitadas && _pushTieneAccesoConversaciones;
     private bool ShouldShowConversationNotice
-        => !IsDirectMode
-           && _globalConversationUnreadCount > 0
-           && !string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
+        => false;
     private string GlobalConversationNoticeTitle
         => _globalConversationUnreadCount == 1 ? "Nuevo mensaje" : $"{_globalConversationUnreadCount} mensajes nuevos";
     private string GlobalConversationNoticeText
