@@ -119,9 +119,21 @@ public sealed class ConsultasService(IConfiguration configuration, ILogger<Consu
         return raices;
     }
 
+    // V_TA_SCRIPT es compartida con Desktop y las bases viejas no tienen CamposOrdenar (se sumó
+    // después): sin este chequeo, abrir o guardar una consulta rompía la pantalla con
+    // "El nombre de columna 'CamposOrdenar' no es válido". Si falta, se lee vacío y no se graba.
+    private static async Task<bool> TieneCamposOrdenarAsync(SqlConnection cn, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand("SELECT CASE WHEN COL_LENGTH('V_TA_SCRIPT', 'CamposOrdenar') IS NULL THEN 0 ELSE 1 END", cn)
+        {
+            CommandTimeout = TimeoutCargaSegundos
+        };
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) == 1;
+    }
+
     public async Task<ConsultaGuardadaDto?> GetConsultaAsync(int id, CancellationToken ct = default)
     {
-        const string sqlConsulta = """
+        const string sqlConsultaBase = """
             SELECT s.ID,
                    LTRIM(RTRIM(ISNULL(s.CLAVE, ''))),
                    LTRIM(RTRIM(ISNULL(s.GRUPO, ''))),
@@ -130,13 +142,16 @@ public sealed class ConsultasService(IConfiguration configuration, ILogger<Consu
                    LTRIM(RTRIM(ISNULL(s.TABLA, ''))),
                    LTRIM(RTRIM(ISNULL(s.CamposGrupo, ''))),
                    LTRIM(RTRIM(ISNULL(s.CamposTotaliza, ''))),
-                   LTRIM(RTRIM(ISNULL(s.CamposOrdenar, '')))
+                   {0}
             FROM V_TA_SCRIPT s
             WHERE s.ID = @Id AND s.Marca = 'CL'
             """;
 
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
+        var sqlConsulta = string.Format(sqlConsultaBase, await TieneCamposOrdenarAsync(cn, ct)
+            ? "LTRIM(RTRIM(ISNULL(s.CamposOrdenar, '')))"
+            : "CAST('' AS nvarchar(255))");
 
         int idVal; string clave, grupo, descripcion, sqlTexto, tabla, camposGrupo, camposTotaliza, camposOrdenar;
 
@@ -385,13 +400,15 @@ public sealed class ConsultasService(IConfiguration configuration, ILogger<Consu
         await using var cn = new SqlConnection(_connectionString);
         await cn.OpenAsync(ct);
 
+        var tieneCamposOrdenar = await TieneCamposOrdenarAsync(cn, ct);
+
         int id;
         if (request.Id.HasValue)
         {
-            const string sqlUpdate = """
+            var sqlUpdate = $"""
                 UPDATE V_TA_SCRIPT
                 SET CLAVE = @Clave, GRUPO = @Grupo, DESCRIPCION = @Descripcion, SQL = @Sql,
-                    TABLA = @Tabla, CamposGrupo = @CamposGrupo, CamposTotaliza = @CamposTotaliza, CamposOrdenar = @CamposOrdenar
+                    TABLA = @Tabla, CamposGrupo = @CamposGrupo, CamposTotaliza = @CamposTotaliza{(tieneCamposOrdenar ? ", CamposOrdenar = @CamposOrdenar" : string.Empty)}
                 WHERE ID = @Id AND Marca = 'CL'
                 """;
             await using var cmdU = new SqlCommand(sqlUpdate, cn) { CommandTimeout = TimeoutCargaSegundos };
@@ -409,9 +426,9 @@ public sealed class ConsultasService(IConfiguration configuration, ILogger<Consu
         }
         else
         {
-            const string sqlInsert = """
-                INSERT INTO V_TA_SCRIPT (CLAVE, GRUPO, DESCRIPCION, SQL, Marca, TABLA, CamposGrupo, CamposTotaliza, CamposOrdenar)
-                VALUES (@Clave, @Grupo, @Descripcion, @Sql, 'CL', @Tabla, @CamposGrupo, @CamposTotaliza, @CamposOrdenar)
+            var sqlInsert = $"""
+                INSERT INTO V_TA_SCRIPT (CLAVE, GRUPO, DESCRIPCION, SQL, Marca, TABLA, CamposGrupo, CamposTotaliza{(tieneCamposOrdenar ? ", CamposOrdenar" : string.Empty)})
+                VALUES (@Clave, @Grupo, @Descripcion, @Sql, 'CL', @Tabla, @CamposGrupo, @CamposTotaliza{(tieneCamposOrdenar ? ", @CamposOrdenar" : string.Empty)})
                 SELECT CAST(SCOPE_IDENTITY() AS int)
                 """;
             await using var cmdI = new SqlCommand(sqlInsert, cn) { CommandTimeout = TimeoutCargaSegundos };

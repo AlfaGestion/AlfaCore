@@ -1,0 +1,861 @@
+/* Módulos operativos en AlfaDesign v1 (Tickets, CRM y los que se sumen). Complementa a
+   gestion-alfadesign.css: esas pantallas usan el wrapper .gd-page.gd (que ya restila botones,
+   paneles, tablas, campos y remapea las variables del tema legacy) y acá van solo las piezas
+   propias de cada módulo. Todo queda scopeado al wrapper, así nada fuera de la pantalla cambia. */
+
+/* ===== Tickets ===== */
+
+.gd.tickets-page .panel-card {
+    padding: var(--alfa-space-16, 16px);
+    border-radius: var(--alfa-radius-md, 8px);
+    animation: none;
+}
+
+.gd.tickets-page .tickets-list-panel {
+    padding: 0;
+}
+
+.gd.tickets-page .tickets-kanban {
+    gap: var(--alfa-space-12, 12px);
+}
+
+.gd.tickets-page .tickets-kanban-column {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+}
+
+.gd.tickets-page .tickets-kanban-column--drag-target {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 8%, var(--alfa-bg-surface, #16181d));
+    box-shadow: none;
+}
+
+.gd.tickets-page .tickets-kanban-column__head {
+    border-bottom-color: var(--alfa-border-default, #333640);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.tickets-page .tickets-card {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.tickets-page .tickets-card:hover {
+    transform: none;
+    border-color: var(--alfa-border-strong, #4d525e);
+    background: var(--alfa-bg-row-hover, #22262e);
+}
+
+.gd.tickets-page .tickets-card--closed {
+    background: var(--alfa-bg-surface, #16181d);
+}
+
+.gd.tickets-page .tickets-card__head strong {
+    font-size: var(--alfa-font-body, 13px);
+    font-weight: 600;
+}
+
+.gd.tickets-page .tickets-card__head span {
+    color: var(--alfa-warning, #f2c94c);
+    font-weight: 600;
+}
+
+.gd.tickets-page .tickets-card__meta,
+.gd.tickets-page .tickets-card__footer {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.tickets-page .tickets-tags span,
+.gd.tickets-page .tickets-tag-chip {
+    border-radius: var(--alfa-radius-full, 999px);
+    font-weight: 600;
+}
+
+.gd.tickets-page .tickets-tag-option .tickets-tag-chip {
+    min-height: 28px;
+    background: transparent;
+    border-color: var(--alfa-border-default, #333640) !important;
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.tickets-page .tickets-tag-option:has(input:checked) .tickets-tag-chip {
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    box-shadow: none;
+}
+
+.gd.tickets-page .tickets-rich-editor__bar,
+.gd.tickets-page .tickets-rich-editor__surface {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd.tickets-page .tickets-rich-editor__bar {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.tickets-page .tickets-lookup__results,
+.gd.tickets-page .tickets-slash-menu {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+}
+
+.gd.tickets-page .tickets-message,
+.gd.tickets-page .tickets-activity__item {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.tickets-page .tickets-view-settings-modal,
+.gd.tickets-page .tickets-tags-manager,
+.gd.tickets-page .tickets-bulk-modal {
+    border: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+
+.gd.tickets-page .usuarios-group-row td {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+}
+
+/* ===== CRM ===== */
+
+.gd.crm-page .crm-stage {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+}
+
+.gd.crm-page .crm-stage__header {
+    padding: var(--alfa-space-12, 12px);
+    border-bottom-color: var(--alfa-border-default, #333640);
+}
+
+.gd.crm-page .crm-stage h3 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-stage__title small,
+.gd.crm-page .crm-empty-column {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.crm-page .crm-stage.is-drop-target,
+.gd.crm-page .crm-stage.is-drop-active {
+    border-color: var(--alfa-accent, #4f9efa);
+}
+
+.gd.crm-page .crm-card {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-card:hover {
+    border-color: var(--alfa-border-strong, #4d525e);
+    background: var(--alfa-bg-row-hover, #22262e);
+    box-shadow: none;
+}
+
+.gd.crm-page .crm-card strong {
+    font-size: var(--alfa-font-body, 13px);
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-card__code,
+.gd.crm-page .crm-opportunity-title span {
+    color: var(--alfa-accent, #4f9efa);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-card__meta {
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-tag {
+    background: transparent;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-quick-card {
+    border-color: var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.crm-page .crm-quick-card input:focus,
+.gd.crm-page .crm-opportunity-title input:focus {
+    border-color: var(--alfa-accent, #4f9efa);
+}
+
+/* Ficha de la oportunidad: títulos a la escala de AlfaDesign (antes 28-40px). */
+.gd.crm-page .crm-opportunity-title input {
+    border-bottom-color: var(--alfa-border-default, #333640);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-section-head h3,
+.gd.crm-page .crm-side-panel h3,
+.gd.crm-page .crm-panel h3 {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-section-head p,
+.gd.crm-page .crm-side-panel p {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.crm-page .crm-summary {
+    gap: var(--alfa-space-8, 8px);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-summary div {
+    border-bottom-color: var(--alfa-border-default, #333640);
+}
+
+.gd.crm-page .crm-summary dd {
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-activity__dot {
+    background: var(--alfa-accent, #4f9efa);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--alfa-accent, #4f9efa) 18%, transparent);
+}
+
+.gd.crm-page .crm-panel,
+.gd.crm-page .crm-kpi,
+.gd.crm-page .crm-modal {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd.crm-page .crm-modal {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+
+.gd.crm-page .crm-kpi__value {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-kpi__label,
+.gd.crm-page .crm-kpi__hint {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.crm-page .crm-bar {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.crm-page .crm-bar__fill {
+    background: var(--alfa-accent, #4f9efa);
+}
+
+.gd.crm-page .crm-cliente-drop,
+.gd.crm-page .crm-cotiz-results,
+.gd.crm-page .crm-stage-menu {
+    border-color: var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+}
+
+.gd.crm-page .crm-cliente-opt:hover,
+.gd.crm-page .crm-cotiz-result:hover,
+.gd.crm-page .crm-cotiz-sug:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd.crm-page .crm-richtext__toolbar,
+.gd.crm-page .crm-richtext__area {
+    border-color: var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+/* Campos sueltos (sin .field) de Tickets y CRM: Próximas acciones, nota de actividad, buscadores
+   de cotización, etc. Con :where() la especificidad queda baja y los campos con diseño propio
+   (título de la oportunidad, tarjeta rápida) conservan el suyo. */
+.gd-legacy :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="range"]), select, textarea) {
+    min-height: var(--alfa-control-md, 36px);
+    padding: 0 var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font: inherit;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy :where(textarea) {
+    padding: var(--alfa-space-8, 8px) var(--alfa-space-12, 12px);
+    line-height: 1.5;
+}
+
+.gd-legacy :where(input, select, textarea):focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent, #4f9efa) 34%, transparent);
+    outline-offset: 0;
+}
+
+.gd-legacy :where(input, textarea)::placeholder {
+    color: var(--alfa-text-disabled, #666b75);
+}
+
+.gd.crm-page .crm-accion,
+.gd.crm-page .crm-note,
+.gd.crm-page .crm-origin-message,
+.gd.crm-page .crm-cotiz-item {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-activity strong,
+.gd.crm-page .crm-accion strong {
+    font-size: var(--alfa-font-body, 13px);
+    font-weight: 600;
+}
+
+.gd.crm-page .crm-list-table,
+.gd.crm-page .crm-rank-table {
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-panel p,
+.gd.crm-page .crm-pager,
+.gd.crm-page .crm-bar-row small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.crm-page .crm-kpi__label {
+    letter-spacing: .04em;
+}
+
+/* ===== Compatibilidad legacy común (.gd-legacy) =====
+   Solo en pantallas de módulos migradas con el wrapper .gd-page.gd.gd-legacy: los tableros de
+   gestión (Ventas, Compras, etc.) no llevan esta marca y no cambian. */
+
+/* Tarjetas con encabezado + contenido suelto (formularios, textos): el contenido se alinea con el
+   título en vez de quedar pegado al borde. Las tablas siguen de borde a borde. */
+.gd-legacy .panel-card:has(> .panel-card__header) > :not(.panel-card__header, .table-wrap, .table-scroll, .usuarios-table-wrap, table, .data-table, .pager-bar, .empty-state, .usuarios-empty, .loading, .page-intro__text, .tickets-list-sticky-head, .tickets-table-wrap) {
+    margin-inline: var(--alfa-space-16, 16px);
+}
+
+.gd-legacy .panel-card:has(> .panel-card__header) > :not(.panel-card__header):first-of-type,
+.gd-legacy .panel-card > .panel-card__header + :not(.table-wrap, .table-scroll, .usuarios-table-wrap, table, .data-table) {
+    margin-top: var(--alfa-space-12, 12px);
+}
+
+.gd-legacy .panel-card:has(> .panel-card__header) > :last-child:not(.table-wrap, .table-scroll, .usuarios-table-wrap, table, .data-table, .pager-bar) {
+    margin-bottom: var(--alfa-space-16, 16px);
+}
+
+.gd-legacy .field__hint,
+.gd-legacy .field small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy .filters-grid,
+.gd-legacy .contactos-form__grid {
+    gap: var(--alfa-space-12, 12px);
+}
+
+.gd-legacy .page-intro__text {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+/* Listas de opciones y casillas "tarjeta" legacy (radio 14px, translúcidas). */
+.gd-legacy :is(.costos-nueva__profile-option, .costos-perfiles__lookup-item, .costos-perfiles__toggle, .costos-perfiles__provider-preview, .costos-nueva__selected-profile) {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    font-size: var(--alfa-font-body, 13px);
+    transform: none;
+}
+
+.gd-legacy :is(.costos-nueva__profile-option, .costos-perfiles__lookup-item):hover {
+    border-color: var(--alfa-border-strong, #4d525e);
+    background: var(--alfa-bg-row-hover, #22262e);
+    transform: none;
+}
+
+.gd-legacy .costos-nueva__profile-option.is-selected {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 12%, var(--alfa-bg-surface-raised, #1d2026));
+}
+
+.gd-legacy .costos-nueva__profile-option {
+    padding: 8px 12px;
+}
+
+.gd-legacy .costos-perfiles__toggle {
+    min-height: 34px;
+    padding: 6px 12px;
+}
+
+.gd-legacy .costos-perfiles__input-lg {
+    min-height: var(--alfa-control-md, 36px);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy .costos-nueva__empty {
+    border-radius: var(--alfa-radius-sm, 4px);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy input[type="file"] {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy input[type="file"]::file-selector-button {
+    height: 28px;
+    margin-right: 8px;
+    padding: 0 10px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-primary, #f5f5f7);
+    cursor: pointer;
+}
+
+/* ===== Consultas ===== */
+
+.gd-legacy.consultas-ad :is(.consultas-sidebar, .consultas-layout > *, .consulta-card, .consulta-detalle__meta, .consulta-params, .consulta-result, .editor-section) {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd-legacy.consultas-ad .editor {
+    max-width: none;
+}
+
+.gd-legacy.consultas-ad :is(.editor-field__input, .editor-sql, .editor-params__input, .consulta-params__input, .consultas-search__input) {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.consultas-ad :is(.editor-field__input, .editor-sql, .editor-params__input, .consulta-params__input):focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent, #4f9efa) 34%, transparent);
+    outline-offset: 0;
+}
+
+.gd-legacy.consultas-ad :is(.editor__title, .consulta-detalle__titulo) {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.gd-legacy.consultas-ad :is(.editor-section__title, .consulta-params__title, .editor-params__title) {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .05em;
+}
+
+.gd-legacy.consultas-ad :is(.consulta-detalle__clave, .consulta-card__clave) {
+    color: var(--alfa-accent, #4f9efa);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.gd-legacy.consultas-ad .consulta-detalle__back {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy.consultas-ad .consulta-detalle__back:hover {
+    color: var(--alfa-accent, #4f9efa);
+}
+
+.gd-legacy.consultas-ad .consulta-table th {
+    background: var(--alfa-bg-table-header, #1d2026);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.gd-legacy.consultas-ad .consulta-table td {
+    border-color: var(--alfa-border-subtle, #333640);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.consultas-ad .consulta-table tr:hover td {
+    background: var(--alfa-bg-row-hover, #22262e);
+}
+
+.gd-legacy.consultas-ad .ctree__group-header:hover,
+.gd-legacy.consultas-ad .ctree__leaf:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd-legacy.consultas-ad .editor-section__hint code {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-accent, #4f9efa);
+}
+
+/* ===== Interfaces y Carritos de compra ===== */
+
+.gd-legacy :is(.interfaces-docs-panel .panel-card__header, .interfaces-bulkbar, .interfaces-docs-panel .interfaces-bulkbar, .interfaces-upload-dropzone, .catalogos-toolbar) {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.gd-legacy .interfaces-docs-panel .panel-card__header {
+    border-radius: 0;
+    background: transparent;
+}
+
+.gd-legacy .interfaces-upload-dropzone {
+    border-style: dashed;
+}
+
+.gd-legacy .interfaces-upload-dropzone__head h4 {
+    margin: 0;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd-legacy .interfaces-upload-dropzone__head p {
+    margin: 2px 0 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy :is(.interfaces-empty-upload, .interfaces-upload-empty, .catalogos-empty) {
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+
+/* CRM: ventana de etapas (filas alineadas en grilla; antes el nombre quedaba centrado). */
+.gd-legacy .crm-stage-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    margin: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+}
+
+.gd-legacy .crm-stage-form input:not([type]),
+.gd-legacy .crm-stage-form input[maxlength] {
+    flex: 1 1 180px;
+}
+
+.gd-legacy .crm-stage-form input[type="color"] {
+    width: 40px;
+    height: var(--alfa-control-md, 36px);
+    padding: 2px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+}
+
+.gd-legacy .crm-stage-form input[type="number"] {
+    width: 72px;
+}
+
+.gd-legacy .crm-admin-row {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: var(--alfa-space-12, 12px);
+    margin: 0 var(--alfa-space-16, 16px);
+    padding: var(--alfa-space-8, 8px) 0;
+    border-top: 1px solid var(--alfa-border-default, #333640);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy .crm-admin-row:last-child {
+    margin-bottom: var(--alfa-space-8, 8px);
+}
+
+.gd-legacy .crm-admin-row strong {
+    font-weight: 600;
+    text-align: left;
+}
+
+.gd-legacy .crm-admin-row small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+/* CRM: etiquetas de la oportunidad como chips que se marcan (sin la casilla suelta). */
+.gd.crm-page .crm-tags-select .checkbox {
+    position: relative;
+    gap: 0;
+    cursor: pointer;
+}
+
+.gd.crm-page .crm-tags-select .checkbox input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.gd.crm-page .crm-tags-select .crm-tag {
+    padding: 3px 10px;
+    font-size: var(--alfa-font-small, 12px);
+    opacity: .75;
+}
+
+.gd.crm-page .crm-tags-select .checkbox:has(input:checked) .crm-tag {
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    opacity: 1;
+}
+
+.gd.crm-page .crm-tags-select .checkbox:has(input:checked) .crm-tag::before {
+    content: "✓ ";
+}
+
+.gd.crm-page .crm-tags-select .checkbox:has(input:focus-visible) .crm-tag {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: 2px;
+}
+
+/* CRM: encabezados de la columna derecha con acciones debajo del título. */
+.gd.crm-page .crm-side-panel .crm-section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--alfa-space-8, 8px);
+}
+
+/* Tickets: ficha del ticket. Columna lateral como tarjeta de datos y barra de formato pegada
+   arriba de la descripción (antes quedaba suelta debajo). */
+@media (min-width: 900px) {
+    .gd.tickets-page .tickets-editor-grid,
+    .gd.tickets-page .tickets-detail-layout {
+        grid-template-columns: minmax(0, 1fr) 340px !important;
+        gap: var(--alfa-space-24, 24px) !important;
+    }
+}
+
+.gd.tickets-page .tickets-editor-main {
+    display: grid;
+    gap: var(--alfa-space-16, 16px);
+}
+
+.gd.tickets-page .tickets-editor-side {
+    display: grid;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.tickets-page .tickets-rich-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.gd.tickets-page .tickets-rich-editor__bar {
+    order: -1;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-bottom: 0;
+    border-radius: var(--alfa-radius-sm, 4px) var(--alfa-radius-sm, 4px) 0 0;
+}
+
+.gd.tickets-page .tickets-rich-editor__surface {
+    min-height: 220px;
+    padding: var(--alfa-space-12, 12px);
+    border-radius: 0 0 var(--alfa-radius-sm, 4px) var(--alfa-radius-sm, 4px);
+    font-size: var(--alfa-font-body, 13px);
+    line-height: 1.55;
+}
+
+.gd.tickets-page .tickets-rich-editor__surface:focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: none;
+}
+
+.gd.tickets-page .tickets-rich-editor__tool {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd.tickets-page .tickets-rich-editor__tool:hover {
+    background: var(--alfa-state-hover, #21242b);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd.tickets-page .tickets-editor-side .btn {
+    justify-content: flex-start;
+}
+
+.gd.crm-page .crm-stage-menu {
+    padding: 4px 0;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+}
+
+.gd.crm-page .crm-stage-menu button {
+    width: 100%;
+    padding: 7px 12px;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-stage-menu button:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd.crm-page .crm-stage-menu .is-danger {
+    color: var(--alfa-danger, #eb5759);
+}
+
+
+/* CRM ficha: actividad como línea de tiempo compacta (antes cada evento era una caja a todo el
+   ancho) y columna derecha como tarjeta de datos, igual que la ficha del ticket. */
+.gd.crm-page .crm-timeline {
+    position: relative;
+    gap: 0;
+    margin-top: var(--alfa-space-8, 8px);
+}
+
+.gd.crm-page .crm-timeline::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 5px;
+    width: 1px;
+    background: var(--alfa-border-default, #333640);
+}
+
+.gd.crm-page .crm-activity {
+    position: relative;
+    grid-template-columns: 12px minmax(0, 1fr);
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-8, 8px) 0;
+    border: 0;
+    background: transparent;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd.crm-page .crm-activity__dot {
+    width: 11px;
+    height: 11px;
+    margin-top: 3px;
+    box-shadow: 0 0 0 3px var(--alfa-bg-canvas, #0e1014);
+}
+
+.gd.crm-page .crm-activity strong {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.gd.crm-page .crm-activity p {
+    margin: 2px 0;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd.crm-page .crm-activity small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd.crm-page .crm-opportunity-side {
+    align-self: start;
+    display: grid;
+    gap: var(--alfa-space-16, 16px);
+    padding: var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd.crm-page .crm-opportunity-side .crm-side-panel + .crm-side-panel {
+    padding-top: var(--alfa-space-16, 16px);
+    border-top: 1px solid var(--alfa-border-default, #333640);
+}
+
+.gd.crm-page .crm-opportunity-side :where(input, select, textarea) {
+    background: var(--alfa-bg-input, #252830);
+}
+
+/* Cotizaciones: los paneles legacy de Propuesta / Condiciones / Historial (fondo azul con
+   gradiente) toman la superficie AlfaDesign. */
+.gd-legacy.cotizaciones-page .panel-card {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd-legacy.cotizaciones-page .tickets-rich-editor__surface,
+.gd-legacy.cotizaciones-page .tickets-rich-editor__bar {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd-legacy.cotizaciones-page .tickets-rich-editor__bar {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd-legacy.cotizaciones-page .panel-card > .panel-card__title {
+    margin-bottom: var(--alfa-space-12, 12px);
+}
+
+.gd-legacy.cotizaciones-page .panel-card > .panel-card__title + .panel-card__subtitle {
+    margin: -8px 0 var(--alfa-space-12, 12px);
+}

@@ -13,46 +13,25 @@
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>@(_isNewMode ? "Nuevo documento | Interfaces" : $"Documento #{IdComprobanteRecibido} | Interfaces")</PageTitle>
 
-<div class="page-grid interfaces-page interfaces-editor-page">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">@(_isNewMode ? "Nuevo documento recibido" : $"Documento #{IdComprobanteRecibido}")</h2>
-            <p class="page-intro__text">@(_isNewMode ? "Completá los datos del comprobante y adjuntá los archivos necesarios antes de registrarlo." : "Editá la ficha completa del documento desde una pantalla separada del listado principal.")</p>
-        </div>
+<div class="gd-page gd gd-legacy interfaces-page interfaces-editor-page">
+    <header class="gd-header">
+        <h2>@(_isNewMode ? "Nuevo documento recibido" : $"Documento #{IdComprobanteRecibido}")</h2>
+        <p>@(_isNewMode ? "Completá los datos del comprobante y adjuntá los archivos necesarios antes de registrarlo." : "Editá la ficha completa del documento desde una pantalla separada del listado principal.")</p>
+    </header>
+
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    @if (_isNewMode && _lastSavedId.HasValue && _feedback?.Severity == AppUiFeedbackSeverity.Success)
+    {
         <div class="actions">
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
-                <i class="bi bi-arrow-left"></i> Volver al listado
+            <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/interfaces/{_lastSavedId.Value}")">
+                <i class="bi bi-eye"></i> Ver documento #@_lastSavedId.Value
             </a>
         </div>
-    </section>
-
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-                @if (_isNewMode && _lastSavedId.HasValue && _feedback?.Severity == AppUiFeedbackSeverity.Success)
-                {
-                    <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/interfaces/{_lastSavedId.Value}")">
-                        <i class="bi bi-eye"></i> Ver documento #@_lastSavedId.Value
-                    </a>
-                }
-            </div>
-        </section>
     }
 
     @if (_loading)
@@ -522,6 +501,51 @@
         && !_isNewMode
         && _detail.Adjuntos.Count > 0
         && string.Equals(_detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase);
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _isNewMode, IdComprobanteRecibido);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "interfaces",
+            Title = _isNewMode ? "Nuevo documento recibido" : $"Documento #{IdComprobanteRecibido}",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInterfaces(RouteContext, Navigation, "recepcion"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "volver",
+                    Label = "Volver al listado",
+                    Icon = "bi-arrow-left",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Navigation.NavigateTo(RouteContext.BuildRoute("/interfaces")); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnParametersSetAsync()
     {

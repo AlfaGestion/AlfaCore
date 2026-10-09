@@ -16,24 +16,16 @@
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject ILogger<InterfacesCarritoCompras> Logger
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Carrito de compras | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Carritos de compra</h2>
-            <p class="page-intro__text">Administrá un único carrito general por base y los carritos derivados de catálogos.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="@BuildSaasRoute("/interfaces")">
-                <i class="bi bi-arrow-left"></i> Volver a Interfaces
-            </a>
-            <a class="btn btn--primary" href="@CreateGeneralCartUrl()">
-                <i class="bi bi-plus-lg"></i> @(_general is null ? "Crear carrito general" : "Editar carrito general")
-            </a>
-        </div>
-    </div>
+<section class="gd-page gd gd-legacy">
+    <header class="gd-header">
+        <h2>Carritos de compra</h2>
+        <p>Administrá un único carrito general por base y los carritos derivados de catálogos.</p>
+    </header>
 
     <section class="panel-card">
         <div class="panel-card__header">
@@ -210,6 +202,51 @@
     private string _estadoFiltro = CarritoComprasEstadoKeys.Activo;
     private PagedResult<CarritoComprasResumenDto>? _page;
     private CarritoComprasGeneralDetalleDto? _general;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "carrito-compras",
+            Title = "Carritos de compra",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCarritoCompras(RouteContext, Nav, "carritos"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "general",
+                    Label = "Carrito general",
+                    Icon = "bi-plus-lg",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(CreateGeneralCartUrl()); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

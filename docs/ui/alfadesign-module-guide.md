@@ -84,3 +84,10 @@ Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `E
 - Boceto aprobado: Figma `06 — Bocetos`, v2 simple. Estilos en `wwwroot/css/home-alfadesign.css` (`alfa-home__*`); `Ctrl+K` lleva el foco al buscador (`wwwroot/js/alfa-home.js`).
 - La búsqueda de opciones del menú es una sola: `ShellMenuSearch.Filter(...)`, compartida con el buscador del sidebar legacy.
 - Lo que estaba en el pie del sidebar del Inicio viejo (Instalar, Tareas, Ayuda) y la tarjeta de Portal Cliente pasaron al menú de usuario de la barra superior (`TopbarUsuarioMenu.razor`), disponible en todo el shell AlfaDesign.
+
+## Módulos Operativos Migrados Con Markup Legacy
+
+- Tickets, CRM, Auditoría, Costos, Consultas, Interfaces y Carritos de compra usan el wrapper `gd-page gd gd-legacy`: conservan su markup (`.btn`, `.panel-card`, `.field`, tablas) y toman el aspecto AlfaDesign desde `wwwroot/css/gestion-alfadesign.css` (piezas comunes y remapeo de las variables del tema legacy dentro de `.gd`) y `wwwroot/css/modulos-alfadesign.css` (piezas propias de cada módulo y reglas `.gd-legacy`). Los tableros de gestión no llevan `gd-legacy` y no cambian.
+- Las ventanas emergentes que quedan fuera del wrapper se envuelven en `<div class="gd gd-legacy gd-modal-scope">` (`display: contents`).
+- Cada módulo tiene su preset en `ModuleTopNavPresets` con las mismas entradas que tenía su sidebar legacy, y su clave en `AlfaDesignManagedModules`.
+- Si el buscador o las acciones del header dependen del estado de la página, la página guarda un `HeaderSnapshot()` y en `OnAfterRender` republica el header solo cuando cambia (evita que el Context Toolbar quede desactualizado sin llamar `UpdatePageHeader()` en cada handler).

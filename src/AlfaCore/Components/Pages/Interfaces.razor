@@ -8,112 +8,25 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject IJSRuntime Js
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Interfaces | Alfa Gestión</PageTitle>
 
-<div class="page-grid interfaces-page interfaces-list-page" @onclick="HandlePageClick">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Recepción documental</h2>
-            <p class="page-intro__text">Listado principal del módulo con formato estándar del sistema: filtros, grilla configurable y acceso a la ficha completa del documento.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--primary" href="@RouteContext.BuildRoute("/interfaces/nuevo")">
-                <i class="bi bi-plus-circle"></i> Nuevo
-            </a>
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces/lote")">
-                <i class="bi bi-collection"></i> Cargar por lote
-            </a>
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces/configuracion")">
-                <i class="bi bi-sliders"></i> Configuración
-            </a>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
+<div class="gd-page gd gd-legacy interfaces-page interfaces-list-page" @onclick="HandlePageClick">
+    <header class="gd-header">
+        <h2>Recepción documental</h2>
+        <p>Listado principal del módulo con formato estándar del sistema: filtros, grilla configurable y acceso a la ficha completa del documento.</p>
+    </header>
 
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <div class="interfaces-mobile-toolbar" @onclick:stopPropagation>
-        <button type="button" class="btn btn--ghost" @onclick="ToggleMobileFilters">
-            <i class="bi bi-funnel"></i> Filtros
-        </button>
         <button type="button" class="btn btn--ghost" @onclick="ToggleMobileBulkActions">
             <i class="bi bi-lightning-charge"></i> Acciones
         </button>
     </div>
-
-    <section class="panel-card smart-search-card interfaces-sticky-filters @GetMobileFiltersSectionClass()" @onclick:stopPropagation>
-        <div class="smart-search">
-            <div class="smart-search__bar">
-                <i class="bi bi-search"></i>
-                <input type="search"
-                       placeholder="Buscar por observación, proveedor, usuario o número interno..."
-                       @bind="_filters.Texto"
-                       @bind:event="oninput"
-                       @bind:after="OnFiltersChangedAsync"
-                       @onkeydown="HandleApplyKeyDownAsync" />
-            </div>
-            <div class="smart-search__panel interfaces-filters-panel-grid" @onkeydown="HandleApplyKeyDownAsync">
-                <div class="smart-search__inline">
-                    <label>Desde</label>
-                    <input type="date" @bind="_filtersDesde" @bind:after="OnFiltersChangedAsync" />
-                </div>
-                <div class="smart-search__inline">
-                    <label>Hasta</label>
-                    <input type="date" @bind="_filtersHasta" @bind:after="OnFiltersChangedAsync" />
-                </div>
-                <div class="smart-search__inline">
-                    <label>Estado</label>
-                    <select @bind="_filters.IdEstado" @bind:after="OnFiltersChangedAsync">
-                        <option value="">Todos</option>
-                        @foreach (var item in _states)
-                        {
-                            <option value="@item.IdEstado">@item.Descripcion</option>
-                        }
-                    </select>
-                </div>
-                <div class="smart-search__inline">
-                    <label>Tipo</label>
-                    <select @bind="_filters.IdTipoDocumento" @bind:after="OnFiltersChangedAsync">
-                        <option value="">Todos</option>
-                        @foreach (var item in _documentTypes)
-                        {
-                            <option value="@item.IdTipoDocumento">@item.Descripcion</option>
-                        }
-                    </select>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                        <i class="bi bi-search"></i> Aplicar
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingList">
-                        <i class="bi bi-eraser"></i> Limpiar
-                    </button>
-                </div>
-            </div>
-        </div>
-    </section>
 
     @if (_showViewSettings)
     {
@@ -930,6 +843,185 @@
     private AlfaCore.Services.SaaSTenantRouteLease _tenantLease;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.IdComprobanteRecibido));
 
+    // Smart Search en el Context Toolbar (antes los filtros quedaban abiertos dentro de la página).
+    private bool _showSearchPanel;
+
+    private RenderFragment RenderSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <i class="bi bi-search"></i>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @{ var chipsActivos = BuildFilterChips(); }
+                @foreach (var chip in chipsActivos.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick="() => RemoveChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (chipsActivos.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por observación, proveedor, usuario o número interno..."
+                   @bind="_filters.Texto"
+                   @bind:event="oninput"
+                   @bind:after="OnFiltersChangedAsync"
+                   @onkeydown="HandleApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="() => _showSearchPanel = !_showSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="() => _showSearchPanel = false"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <input type="date" @bind="_filtersDesde" @bind:after="OnFiltersChangedAsync" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <input type="date" @bind="_filtersHasta" @bind:after="OnFiltersChangedAsync" />
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Documento</h4>
+                    <div class="smart-search__inline">
+                        <label>Estado</label>
+                        <select @bind="_filters.IdEstado" @bind:after="OnFiltersChangedAsync">
+                            <option value="">Todos</option>
+                            @foreach (var item in _states)
+                            {
+                                <option value="@item.IdEstado">@item.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Tipo</label>
+                        <select @bind="_filters.IdTipoDocumento" @bind:after="OnFiltersChangedAsync">
+                            <option value="">Todos</option>
+                            @foreach (var item in _documentTypes)
+                            {
+                                <option value="@item.IdTipoDocumento">@item.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Acciones</h4>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private sealed record FilterChip(string Key, string Label);
+
+    private IReadOnlyList<FilterChip> BuildFilterChips()
+    {
+        var chips = new List<FilterChip>
+        {
+            new("periodo", $"Período: {_filtersDesde:dd/MM} - {_filtersHasta:dd/MM}")
+        };
+        var estado = _states.FirstOrDefault(x => x.IdEstado == _filters.IdEstado);
+        if (estado is not null)
+            chips.Add(new("estado", $"Estado: {estado.Descripcion}"));
+        var tipo = _documentTypes.FirstOrDefault(x => x.IdTipoDocumento == _filters.IdTipoDocumento);
+        if (tipo is not null)
+            chips.Add(new("tipo", $"Tipo: {tipo.Descripcion}"));
+        return chips;
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "periodo":
+                _filtersDesde = DateTime.Today.AddDays(-30);
+                _filtersHasta = DateTime.Today;
+                break;
+            case "estado":
+                _filters.IdEstado = null;
+                break;
+            case "tipo":
+                _filters.IdTipoDocumento = null;
+                break;
+        }
+        await OnFiltersChangedAsync();
+    }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _filters.Texto, _showSearchPanel, _loadingList, _filtersDesde, _filtersHasta, _filters.IdEstado, _filters.IdTipoDocumento, _states.Count, _documentTypes.Count);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "interfaces",
+            Title = "Recepción documental",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInterfaces(RouteContext, Nav, "recepcion"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nuevo",
+                    Label = "Nuevo",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(RouteContext.BuildRoute("/interfaces/nuevo")); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "lote",
+                    Label = "Cargar por lote",
+                    Icon = "bi-collection",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(RouteContext.BuildRoute("/interfaces/lote")); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loadingList,
+                    OnClick = () => InvokeAsync(async () => { await RecargarAsync(); StateHasChanged(); })
+                },
+            ],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderSmartSearch(),
+        });
+    }
+
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
@@ -945,6 +1037,8 @@
 
     public void Dispose()
     {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         _filtersDebounceCts?.Cancel();
         _filtersDebounceCts?.Dispose();

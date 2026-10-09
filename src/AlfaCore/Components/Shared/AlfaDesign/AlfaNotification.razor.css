@@ -31,7 +31,8 @@
 }
 
 .alfa-notification--success .alfa-notification__signal { background: var(--alfa-success); }
-.alfa-notification--warning .alfa-notification__signal,
+/* Convención AlfaDesign: avisos amarillo, errores rojo, éxito verde. */
+.alfa-notification--warning .alfa-notification__signal { background: var(--alfa-warning); }
 .alfa-notification--error .alfa-notification__signal { background: var(--alfa-danger); }
 
 .alfa-notification__content {

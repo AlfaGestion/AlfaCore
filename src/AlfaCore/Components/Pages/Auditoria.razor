@@ -3,6 +3,9 @@
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Auditoría | Alfa Gestión</PageTitle>
 
@@ -14,24 +17,7 @@
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Auditoría</h2>
-                <p class="page-intro__text">Centralizá la revisión de errores técnicos y el análisis de actividad sospechosa de usuarios sobre comprobantes comerciales.</p>
-            </div>
-            <div class="actions">
-                <a class="btn btn--primary" href="@RouteContext.BuildRoute("/auditoria/errores")">
-                    <i class="bi bi-bug"></i>
-                    <span>Auditoría de errores</span>
-                </a>
-                <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/auditoria/usuarios")">
-                    <i class="bi bi-shield-exclamation"></i>
-                    <span>Auditoría de usuarios</span>
-                </a>
-            </div>
-        </section>
-
+    <div class="gd-page gd gd-legacy">
         <section class="two-grid">
             <article class="panel-card">
                 <div class="panel-card__header">
@@ -55,21 +41,7 @@ else
             </article>
         </section>
 
-        @if (_feedback is not null)
-        {
-            <div class="conversations-inline @GetFeedbackClass(_feedback)">
-                <strong>@_feedback.Title</strong>
-                <div>@_feedback.Message</div>
-                @if (_feedback.HasCode)
-                {
-                    <div>Código: @_feedback.Code</div>
-                }
-                @if (_feedback.HasSuggestion)
-                {
-                    <div>@_feedback.Suggestion</div>
-                }
-            </div>
-        }
+        <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
         <section class="kpi-grid">
             <article class="kpi-card">
@@ -225,6 +197,30 @@ else
     private AlfaCore.Models.AppUiMessage? _feedback;
     private AuditoriaResumenDto _resumen = new();
     private IReadOnlyList<AuditoriaErrorRowDto> _latest = [];
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "auditoria",
+        Title = "Auditoría",
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAuditoria(RouteContext, Nav, "resumen")
+    });
 
     protected override async Task OnInitializedAsync()
     {

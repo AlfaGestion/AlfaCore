@@ -3,151 +3,20 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Auditoría de comprobantes | Alfa Gestión</PageTitle>
 
-<div class="page-grid audit-comprobantes-page" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Auditoría de comprobantes</h2>
-            <p class="page-intro__text">Detectá inconsistencias en comprobantes de ventas: posibles duplicados y diferencias entre cabecera y detalle.</p>
-            @if (_loading)
-            {
-                <p class="page-intro__text"><i class="bi bi-hourglass-split"></i> Preparando auditoría y cargando resultados iniciales...</p>
-            }
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingRows">
-                <i class="bi bi-arrow-clockwise"></i>
-                <span>Recargar</span>
-            </button>
-        </div>
-    </section>
-
-    @if (_feedback is not null)
+<div class="gd-page gd gd-legacy audit-comprobantes-page" @onclick="HandlePageClickAsync">
+    @if (_loading)
     {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
+        <p class="gd-hint"><i class="bi bi-hourglass-split"></i> Preparando auditoría y cargando resultados iniciales...</p>
     }
 
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
-        <div class="smart-search">
-            <div class="smart-search__bar">
-                <i class="bi bi-search"></i>
-                <input type="search"
-                       placeholder="Buscar por TC, comprobante, cuenta, cliente o motivo..."
-                       value="@_texto"
-                       @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInput"
-                       @onkeydown="HandleApplyKeyDownAsync" />
-                <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
-                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                </button>
-            </div>
-
-            <div class="smart-search__chips" aria-live="polite">
-                @foreach (var chip in BuildFilterChips())
-                {
-                    <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
-                        @chip.Label <i class="bi bi-x"></i>
-                    </button>
-                }
-                @if (BuildFilterChips().Count == 0)
-                {
-                    <span class="smart-search__hint">Click en el buscador para filtros rápidos del análisis.</span>
-                }
-            </div>
-
-            @if (_showSearchPanel)
-            {
-                <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-funnel-fill"></i> Período</h4>
-                        <div class="smart-search__inline">
-                            <label>Desde</label>
-                            <InputDate @bind-Value="_desde" />
-                        </div>
-                        <div class="smart-search__inline">
-                            <label>Hasta</label>
-                            <InputDate @bind-Value="_hasta" />
-                        </div>
-                        <div class="smart-search__inline">
-                            <label>TC</label>
-                            <select @bind="_tipoComprobante" disabled="@_loadingLookups">
-                                <option value="">Todos</option>
-                                @foreach (var item in _lookups.TiposComprobante)
-                                {
-                                    <option value="@item">@item</option>
-                                }
-                            </select>
-                        </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-shield-fill-exclamation"></i> Controles</h4>
-                        <div class="smart-search__inline">
-                            <label>Tipo control</label>
-                            <select @bind="_tipoControl">
-                                <option value="">Todos</option>
-                                @foreach (var item in _lookups.TiposControl)
-                                {
-                                    <option value="@item.Value">@item.Label</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="smart-search__inline">
-                            <label>Riesgo</label>
-                            <select @bind="_riesgo">
-                                <option value="">Todos</option>
-                                @foreach (var item in _lookups.Riesgos)
-                                {
-                                    <option value="@item.Value">@item.Label</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="smart-search__inline">
-                            <label>Cliente / cuenta</label>
-                            <input type="text" @bind="_cuentaCliente" list="auditoria-comprobantes-clientes" placeholder="Cuenta o nombre..." disabled="@_loadingLookups" />
-                            <datalist id="auditoria-comprobantes-clientes">
-                                @foreach (var item in _lookups.CuentasClientes)
-                                {
-                                    <option value="@item"></option>
-                                }
-                            </datalist>
-                        </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-sliders"></i> Acciones</h4>
-                        <div class="actions">
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="ApplyFiltersAsync" disabled="@_loadingRows">
-                                <i class="bi bi-search"></i> Aplicar
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarAsync" disabled="@_loadingRows">
-                                <i class="bi bi-eraser"></i> Limpiar
-                            </button>
-                        </div>
-                        @if (_loadingLookups)
-                        {
-                            <p class="smart-search__hint">Cargando opciones reales del período seleccionado...</p>
-                        }
-                    </div>
-                </div>
-            }
-        </div>
-    </section>
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <section class="kpi-grid">
         <article class="kpi-card">
@@ -366,10 +235,161 @@
         TamanioPagina = _tamanioPagina
     };
 
+    // Smart Search en el Context Toolbar (antes era una tarjeta dentro de la página).
+    private RenderFragment RenderSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @{ var chipsActivos = BuildFilterChips(); }
+                @foreach (var chip in chipsActivos.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick="() => RemoveChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (chipsActivos.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por TC, comprobante, cuenta, cliente o motivo..."
+                   value="@_texto"
+                   @onfocus="OpenSearchPanel"
+                   @oninput="OnSearchInput"
+                   @onkeydown="HandleApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+            <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <InputDate @bind-Value="_desde" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <InputDate @bind-Value="_hasta" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>TC</label>
+                        <select @bind="_tipoComprobante" disabled="@_loadingLookups">
+                            <option value="">Todos</option>
+                            @foreach (var item in _lookups.TiposComprobante)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-shield-fill-exclamation"></i> Controles</h4>
+                    <div class="smart-search__inline">
+                        <label>Tipo control</label>
+                        <select @bind="_tipoControl">
+                            <option value="">Todos</option>
+                            @foreach (var item in _lookups.TiposControl)
+                            {
+                                <option value="@item.Value">@item.Label</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Riesgo</label>
+                        <select @bind="_riesgo">
+                            <option value="">Todos</option>
+                            @foreach (var item in _lookups.Riesgos)
+                            {
+                                <option value="@item.Value">@item.Label</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Cliente / cuenta</label>
+                        <input type="text" @bind="_cuentaCliente" list="auditoria-comprobantes-clientes" placeholder="Cuenta o nombre..." disabled="@_loadingLookups" />
+                        <datalist id="auditoria-comprobantes-clientes">
+                            @foreach (var item in _lookups.CuentasClientes)
+                            {
+                                <option value="@item"></option>
+                            }
+                        </datalist>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Acciones</h4>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="ApplyFiltersAsync" disabled="@_loadingRows">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarAsync" disabled="@_loadingRows">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                    @if (_loadingLookups)
+                    {
+                        <p class="smart-search__hint">Cargando opciones reales del período seleccionado...</p>
+                    }
+                </div>
+            </div>
+        }
+    </div>;
+
     private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1 : _result.TotalRegistros) / (double)_tamanioPagina));
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Lo que muestra la barra superior (buscador, chips, Recargar): si cambia, se republica.
+    private string HeaderSnapshot()
+        => string.Join('|', _texto, _showSearchPanel, _loadingRows, _loadingLookups,
+            string.Join(',', BuildFilterChips().Select(c => c.Key + "=" + c.Label)));
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "auditoria",
+            Title = "Auditoría de comprobantes",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAuditoria(RouteContext, Nav, "comprobantes"),
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderSmartSearch(),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loadingRows,
+                    OnClick = () => InvokeAsync(RecargarAsync)
+                }
+            ]
+        });
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+
         if (!firstRender || _initialLoadDone)
             return;
 

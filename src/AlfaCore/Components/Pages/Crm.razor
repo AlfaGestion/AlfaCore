@@ -17,20 +17,8 @@
 
 <PageTitle>CRM | Alfa Gestión</PageTitle>
 
-<section class="page-grid crm-page">
-    @if (_feedback is not null)
-    {
-        <section class="crm-feedback">
-            <div class="editor-msg @GetFeedbackClass()">
-                <strong>@_feedback.Title</strong>
-                <p>@_feedback.Message</p>
-                @if (!string.IsNullOrWhiteSpace(_feedback.Code))
-                {
-                    <small>Código: @_feedback.Code</small>
-                }
-            </div>
-        </section>
-    }
+<section class="gd-page gd gd-legacy crm-page">
+    <AlfaNotification Message="@_notificacion.For(_feedback?.Message, FeedbackSeverity, _feedback?.Title, _feedback?.Code)" OnDismiss="() => _feedback = null" />
 
     @if (_showEditor)
     {
@@ -353,6 +341,9 @@
     }
 </section>
 
+@* Ventanas emergentes fuera del wrapper de la página: display:contents, solo aporta el scope .gd
+   para que tomen el aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
 @if (_showStages)
 {
     <div class="crm-modal-layer" @onclick="CloseStages">
@@ -739,8 +730,11 @@
         </section>
     </div>
 }
+</div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
     // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
@@ -855,9 +849,26 @@
     private decimal CotizTotal => _cotizLineas.Sum(l => Math.Round(CotizUnit(l).conIva * l.Cantidad, 2));
     private decimal CotizTotalIva => CotizTotal - CotizTotalNeto;
 
-    private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
-        <div class="smart-search__bar">
+    private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation @onkeydown="HandleSearchPanelKeyDown">
+        <div class="smart-search__bar @(_searchPanelOpen ? "is-open" : string.Empty)">
             <i class="bi bi-search"></i>
+            <button type="button" class="smart-search__filter-button @(_searchPanelOpen ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleSearchPanelAsync">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @{ var chipsActivos = GetFilterChips().ToList(); }
+                @foreach (var chip in chipsActivos.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick="() => RemoveFilterChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (chipsActivos.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
+                }
+            </div>
             <input type="search"
                    value="@_filters.Texto"
                    placeholder="Buscar oportunidad, cliente, contacto..."
@@ -865,25 +876,13 @@
                    @onfocus="OpenSearchPanelAsync"
                    @oninput="OnHeaderSearchInputAsync"
                    @onkeydown="HandleSearchKeyDownAsync" />
-            <button type="button" class="smart-search__toggle @(_searchPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleSearchPanelAsync" aria-label="Mostrar filtros">
-                <i class="bi bi-funnel"></i>
+            <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanelAsync" aria-label="Mostrar filtros" aria-expanded="@_searchPanelOpen">
+                <i class="bi @(_searchPanelOpen ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
             </button>
-        </div>
-        <div class="smart-search__chips" aria-live="polite">
-            @foreach (var chip in GetFilterChips())
-            {
-                <button type="button" class="smart-chip" @onclick="() => RemoveFilterChipAsync(chip.Key)">
-                    <span>@chip.Label</span>
-                    <i class="bi bi-x"></i>
-                </button>
-            }
-            @if (!GetFilterChips().Any())
-            {
-                <span class="smart-search__hint">Filtrá por etapa, asignado, etiqueta o estado de cierre.</span>
-            }
         </div>
         @if (_searchPanelOpen)
         {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
             <div class="smart-search__panel crm-smart-panel" @onclick:stopPropagation>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel"></i> Filtros</h4>
@@ -891,6 +890,7 @@
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloSinAsignar)" @onclick="ApplyUnassignedAsync">Sin asignar</button>
                     <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Oportunidades abiertas</button>
                     <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerradas)" @onclick="ApplyAllStatusesAsync">Incluir ganadas/perdidas</button>
+                    <div class="smart-search__inline">
                     <label>Etapa</label>
                     <select value="@(_filters.IdEtapa?.ToString() ?? string.Empty)" @onchange="OnStageFilterChangedAsync">
                         <option value="">Todas</option>
@@ -899,6 +899,8 @@
                             <option value="@stage.IdEtapa">@stage.Nombre</option>
                         }
                     </select>
+                    </div>
+                    <div class="smart-search__inline">
                     <label>Etiqueta</label>
                     <select value="@(_filters.IdEtiqueta?.ToString() ?? string.Empty)" @onchange="OnTagFilterChangedAsync">
                         <option value="">Todas</option>
@@ -907,6 +909,17 @@
                             <option value="@tag.IdEtiqueta">@tag.Nombre</option>
                         }
                     </select>
+                    </div>
+                    <div class="smart-search__inline">
+                    <label>Asignado</label>
+                    <select value="@(_filters.IdTecnico ?? string.Empty)" @onchange="OnTechFilterChangedAsync">
+                        <option value="">Todos</option>
+                        @foreach (var tech in _lookups.Tecnicos)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre</option>
+                        }
+                    </select>
+                    </div>
                 </div>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-collection"></i> Agrupar por</h4>
@@ -924,16 +937,6 @@
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearFiltersAsync">
                         <i class="bi bi-eraser"></i> Limpiar filtros
                     </button>
-                </div>
-                <div class="smart-search__column">
-                    <h4><i class="bi bi-person-check"></i> Asignado</h4>
-                    <select value="@(_filters.IdTecnico ?? string.Empty)" @onchange="OnTechFilterChangedAsync">
-                        <option value="">Todos</option>
-                        @foreach (var tech in _lookups.Tecnicos)
-                        {
-                            <option value="@tech.IdTecnico">@tech.Nombre</option>
-                        }
-                    </select>
                 </div>
             </div>
         }
@@ -1473,6 +1476,21 @@
             await SearchAsync();
     }
 
+    // Igual que el Smart Search estándar: clic afuera (backdrop) o Esc cierran el panel.
+    private void CloseSearchPanel()
+    {
+        if (!_searchPanelOpen)
+            return;
+        _searchPanelOpen = false;
+        UpdatePageHeader();
+    }
+
+    private void HandleSearchPanelKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            CloseSearchPanel();
+    }
+
     private Task ToggleSearchPanelAsync()
     {
         _searchPanelOpen = !_searchPanelOpen;
@@ -1606,10 +1624,10 @@
     }
 
     private void ShowFutureFilterPlaceholder()
-        => ShowOk("Filtro reservado", "Esta opción queda preparada para cuando sumemos esos datos al CRM.");
+        => ShowInfo("Filtro reservado", "Esta opción queda preparada para cuando sumemos esos datos al CRM.");
 
     private void SaveFavoritePlaceholder()
-        => ShowOk("Favoritos", "Quedó reservado para guardar búsquedas favoritas por usuario.");
+        => ShowInfo("Favoritos", "Quedó reservado para guardar búsquedas favoritas por usuario.");
 
     private void BeginStageDrag(int idEtapa)
     {
@@ -1689,7 +1707,7 @@
         }
         if (_lostMotivoId is not > 0)
         {
-            _feedback = new Feedback("Falta el motivo", "Elegí el motivo de pérdida para continuar.", null);
+            _feedback = new Feedback("Falta el motivo", "Elegí el motivo de pérdida para continuar.", null, Aviso: true);
             return;
         }
 
@@ -1728,9 +1746,12 @@
             return;
         }
 
+        // Hacia la derecha queda después del destino, hacia la izquierda antes. Antes siempre se
+        // insertaba antes del destino, y soltar sobre la etapa vecina de la derecha no movía nada.
+        var movingRight = stages.IndexOf(source) < stages.IndexOf(target);
         stages.Remove(source);
         var targetIndex = Math.Max(0, stages.FindIndex(x => x.IdEtapa == target.IdEtapa));
-        stages.Insert(targetIndex, source);
+        stages.Insert(movingRight ? targetIndex + 1 : targetIndex, source);
 
         await RunAsync(async () =>
         {
@@ -1865,24 +1886,24 @@
     private void ShowAutomationPlaceholder()
     {
         _stageMenuId = null;
-        ShowOk("Automatizaciones", "Quedó reservado el acceso para reglas automáticas por etapa.");
+        ShowInfo("Automatizaciones", "Quedó reservado el acceso para reglas automáticas por etapa.");
     }
 
     private void ShowQuotePlaceholder()
-        => ShowOk("Cotizaciones", "Quedó reservado el acceso para vincular cotizaciones a la oportunidad.");
+        => ShowInfo("Cotizaciones", "Quedó reservado el acceso para vincular cotizaciones a la oportunidad.");
 
     private void ShowMeetingPlaceholder()
-        => ShowOk("Reuniones", "Quedó reservado el acceso para planificar reuniones y actividades.");
+        => ShowInfo("Reuniones", "Quedó reservado el acceso para planificar reuniones y actividades.");
 
     private void ShowActivityPlaceholder()
-        => ShowOk("Actividad", "La actividad comercial se registra debajo de la oportunidad.");
+        => ShowInfo("Actividad", "La actividad comercial se registra debajo de la oportunidad.");
 
     private void OpenConversationFromDetail()
     {
         if (_detail?.IdConversacion is long idConv)
             Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={idConv}"));
         else
-            ShowOk("Origen", "Esta oportunidad todavía no tiene una conversación vinculada.");
+            ShowInfo("Origen", "Esta oportunidad todavía no tiene una conversación vinculada.");
     }
 
     private void CreateSimilarLead()
@@ -2401,7 +2422,7 @@
             _cotizIaSugerencias = sugerencias.ToList();
             _cotizIaSeleccion = _cotizIaSugerencias.Select(x => x.IdArticulo).ToHashSet();
             if (_cotizIaSugerencias.Count == 0)
-                _feedback = new Feedback("Sin resultados", "El asistente no encontró artículos para ese pedido. Probá con otras palabras.", null);
+                _feedback = new Feedback("Sin resultados", "El asistente no encontró artículos para ese pedido. Probá con otras palabras.", null, Aviso: true);
         });
         _cotizIaCargando = false;
     }
@@ -2594,10 +2615,23 @@
         {
             _loading = false;
             _saving = false;
+            // El header se arma con _loading/_saving (botones de vista deshabilitados mientras carga):
+            // sin esto quedaba publicado el estado "cargando" y Lista/Resumen no respondían.
+            UpdatePageHeader();
         }
     }
 
     private void ShowOk(string title, string message) => _feedback = new Feedback(title, message, null, true);
+
+    // Avisos informativos ("todavía no…", "quedó reservado…"): amarillo, no verde de éxito.
+    private void ShowInfo(string title, string message) => _feedback = new Feedback(title, message, null, Aviso: true);
+    private AppUiFeedbackSeverity FeedbackSeverity => _feedback switch
+    {
+        { Success: true } => AppUiFeedbackSeverity.Success,
+        { Aviso: true } => AppUiFeedbackSeverity.Warning,
+        _ => AppUiFeedbackSeverity.Error
+    };
+
     private string GetFeedbackClass() => _feedback?.Success == true ? "editor-msg--success" : "editor-msg--error";
     private string GetModeClass(string mode) => _viewMode == mode ? "is-active" : string.Empty;
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
@@ -2704,7 +2738,7 @@
             PageHeader.Clear();
     }
 
-    private sealed record Feedback(string Title, string Message, string? Code, bool Success = false);
+    private sealed record Feedback(string Title, string Message, string? Code, bool Success = false, bool Aviso = false);
     private sealed record FilterChip(string Key, string Label);
     private sealed record StageTimingStats(decimal Ok, decimal Warning, decimal Late, decimal Empty);
 }

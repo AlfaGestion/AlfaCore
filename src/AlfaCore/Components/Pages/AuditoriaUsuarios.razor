@@ -7,12 +7,14 @@
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Auditoría de usuarios | Alfa Gestión</PageTitle>
 
-<div class="page-grid auditoria-usuarios-page" @onclick="HandlePageClickAsync">
+<div class="gd-page gd gd-legacy auditoria-usuarios-page" @onclick="HandlePageClickAsync">
     <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
 
         <section class="panel-card">
@@ -847,8 +849,11 @@
     {
         PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
-            Title = "Auditoría de usuarios",
-            Breadcrumb = ["Auditoría", "Usuarios"],
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "auditoria",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAuditoria(RouteContext, Nav, "usuarios"),
+            Title = "Actividad de usuarios",
+            Breadcrumb = ["Auditoría", "Actividad de usuarios"],
             State = _loading || _loadingRows ? PageHeaderState.Loading : PageHeaderState.List,
             Search = new PageHeaderSearchConfig(),
             SearchContent = RenderAuditoriaSmartSearch(),
@@ -892,16 +897,18 @@
                     @onclick="ToggleSearchPanel">
                 <i class="bi bi-funnel-fill"></i>
             </button>
-            <div class="smart-search__chips" aria-live="polite">
-                @foreach (var chip in BuildFilterChips())
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @{ var chipsActivos = BuildFilterChips(); }
+                @foreach (var chip in chipsActivos.Take(2))
                 {
-                    <button type="button" class="smart-chip" @onclick:stopPropagation="true" @onclick="() => RemoveChipAsync(chip.Key)">
-                        @chip.Label <i class="bi bi-x"></i>
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick:stopPropagation="true" @onclick="() => RemoveChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
                     </button>
                 }
-                @if (BuildFilterChips().Count == 0)
+                @if (chipsActivos.Count > 2)
                 {
-                    <span class="smart-search__hint">Click en el buscador para filtros rápidos y agrupación del análisis.</span>
+                    <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
                 }
             </div>
             <input type="search"

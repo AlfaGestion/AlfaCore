@@ -4,20 +4,13 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Consultas | Alfa Gestión</PageTitle>
 
-<div class="page-intro">
-    <div>
-        <h2 class="page-intro__title">Consultas</h2>
-        <p class="page-intro__text">Ejecutá y exportá las consultas guardadas del sistema.</p>
-    </div>
-    <a class="btn btn--primary" href="@RouteContext.BuildRoute("/consultas/nueva")">
-        <i class="bi bi-plus-lg"></i> Nueva consulta
-    </a>
-</div>
-
+<div class="gd-page gd gd-legacy consultas-ad">
 @if (_cargando)
 {
     <div class="consultas-loading">
@@ -26,18 +19,7 @@
 }
 else if (_error is not null)
 {
-    <div class="conversations-inline @GetFeedbackClass(_error)">
-        <strong>@_error.Title</strong>
-        <div>@_error.Message</div>
-        @if (_error.HasCode)
-        {
-            <div>Código: @_error.Code</div>
-        }
-        @if (_error.HasSuggestion)
-        {
-            <div>@_error.Suggestion</div>
-        }
-    </div>
+    <AlfaNotification Message="@_error" OnDismiss="() => _error = null" />
 }
 
 @if (_raiz.Count == 0)
@@ -113,6 +95,7 @@ else
 
     </div>
 }
+</div>
 
 @code {
     private List<AlfaCore.Models.NodoArbolDto> _raiz = [];
@@ -120,6 +103,46 @@ else
     private string _busqueda = string.Empty;
     private bool _cargando = true;
     private AlfaCore.Models.AppUiMessage? _error;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "consultas",
+            Title = "Consultas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConsultas(RouteContext, Nav, "consultas"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nueva",
+                    Label = "Nueva consulta",
+                    Icon = "bi-plus-lg",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(RouteContext.BuildRoute("/consultas/nueva")); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -149,7 +172,12 @@ else
         InvokeAsync(async () => { await CargarArbolAsync(); StateHasChanged(); });
     }
 
-    public void Dispose() => SessionSvc.SessionChanged -= OnSessionChanged;
+    public void Dispose()
+    {
+        SessionSvc.SessionChanged -= OnSessionChanged;
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     private void ToggleNodo(string clave)
     {

@@ -7,9 +7,12 @@
 @inject IConsultasService ConsultasSvc
 @inject IAppUiOperationService UiOps
 @inject NavigationManager Nav
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>@_titulo | Alfa Gestión</PageTitle>
 
+<div class="gd-page gd gd-legacy consultas-ad">
 @if (_cargando)
 {
     <div class="consultas-loading">
@@ -285,7 +288,7 @@ else
                       spellcheck="false"
                       value="@_sql"
                       @oninput="OnSqlInput"
-                      placeholder="SELECT columna1, columna2&#10;FROM MiTabla&#10;WHERE Fecha >= &lt;P&gt;"></textarea>
+                      placeholder="@SqlPlaceholder"></textarea>
 
             @if (_etiquetasParams.Count > 0)
             {
@@ -339,18 +342,7 @@ else
         </details>
 
         <!-- Mensajes -->
-        @if (_mensajeError is not null)
-        {
-            <div class="editor-msg editor-msg--error">
-                <i class="bi bi-exclamation-circle"></i> @_mensajeError
-            </div>
-        }
-        @if (_mensajeExito is not null)
-        {
-            <div class="editor-msg editor-msg--ok">
-                <i class="bi bi-check-circle"></i> @_mensajeExito
-            </div>
-        }
+        <AlfaNotification Message="@_notificacion.For(_mensajeError ?? _mensajeExito, _mensajeError is not null)" OnDismiss="() => { _mensajeError = null; _mensajeExito = null; }" />
 
         <!-- Acciones -->
         <div class="editor-actions">
@@ -391,8 +383,11 @@ else
 
     </div>
 }
+</div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     [Parameter] public int? Id { get; set; }
     [SupplyParameterFromQuery] public int? From { get; set; }
 
@@ -430,6 +425,41 @@ else
     private string? _mensajeError;
     private string? _mensajeExito;
     private bool _mostrarConfirmarEliminar;
+
+    private const string SqlPlaceholder = "SELECT columna1, columna2\nFROM MiTabla\nWHERE Fecha >= <P>";
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => _titulo ?? string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "consultas",
+            Title = _titulo,
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConsultas(RouteContext, Nav, "nueva"),
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

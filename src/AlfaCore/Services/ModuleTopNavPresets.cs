@@ -84,6 +84,52 @@ public static class ModuleTopNavPresets
             ("mesadeayuda", "Mesa de ayuda", "/tickets")
         ]);
 
+    // Mismas entradas que tenía el sidebar legacy de Auditoría (incluye Usuarios y Autorización).
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildAuditoria(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("resumen", "Resumen", "/auditoria"),
+            ("errores", "Errores", "/auditoria/errores"),
+            ("usuarios", "Actividad de usuarios", "/auditoria/usuarios"),
+            ("comprobantes", "Comprobantes", "/auditoria/comprobantes"),
+            ("usuarios-sistema", "Usuarios", "/usuarios"),
+            ("autorizacion", "Autorización", "/seguridad/autorizacion-tareas")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Actualización de Costos.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildCostos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("inicio", "Inicio", "/costos"),
+            ("nueva", "Nueva importación", "/costos/nueva"),
+            ("perfiles", "Perfiles", "/costos/perfiles"),
+            ("historial", "Historial", "/costos/historial")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Consultas.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildConsultas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("consultas", "Mis consultas", "/consultas"),
+            ("nueva", "Nueva consulta", "/consultas/nueva")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Interfaces.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildInterfaces(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("recepcion", "Recepción documental", "/interfaces"),
+            ("configuracion", "Configuración", "/interfaces/configuracion")
+        ]);
+
+    // Carritos de compra (se llega desde Interfaces; conserva el acceso de vuelta).
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildCarritoCompras(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("carritos", "Carritos de compra", "/interfaces/carrito-compras"),
+            ("interfaces", "Interfaces", "/interfaces")
+        ]);
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionGeneral(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

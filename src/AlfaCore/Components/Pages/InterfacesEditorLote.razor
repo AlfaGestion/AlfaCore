@@ -9,37 +9,19 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Alta por lote | Interfaces</PageTitle>
 
-<div class="page-grid interfaces-page interfaces-editor-page">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Alta por lote</h2>
-            <p class="page-intro__text">Subí varios comprobantes sueltos de una vez. Los archivos que compartan un patrón de nombre (páginas, "1de2", etc.) se agrupan automáticamente en un mismo comprobante; el resto queda uno por archivo y, si dos terminan siendo la misma factura, la cola de lectura IA los fusiona sola al terminar de leerlos.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
-                <i class="bi bi-arrow-left"></i> Volver al listado
-            </a>
-        </div>
-    </section>
+<div class="gd-page gd gd-legacy interfaces-page interfaces-editor-page">
+    <header class="gd-header">
+        <h2>Alta por lote</h2>
+        <p>Subí varios comprobantes sueltos de una vez. Los archivos que compartan un patrón de nombre (páginas, "1de2", etc.) se agrupan automáticamente en un mismo comprobante; el resto queda uno por archivo y, si dos terminan siendo la misma factura, la cola de lectura IA los fusiona sola al terminar de leerlos.</p>
+    </header>
 
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     @if (_resultado is not null)
     {
@@ -169,6 +151,51 @@
     private int _archivosEnviados;
     private bool _saving;
     private int _filePickerVersion;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "interfaces",
+            Title = "Alta por lote",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInterfaces(RouteContext, Nav, "recepcion"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "volver",
+                    Label = "Volver al listado",
+                    Icon = "bi-arrow-left",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(RouteContext.BuildRoute("/interfaces")); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

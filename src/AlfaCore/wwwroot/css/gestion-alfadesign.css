@@ -18,6 +18,39 @@
     flex-direction: column;
     gap: var(--alfa-space-16, 16px);
     min-width: 0;
+    /* Variables del tema legacy (app.css y CSS aislado de cada pantalla) remapeadas a los tokens
+       AlfaDesign: el markup viejo que queda dentro de una pantalla migrada toma los colores nuevos
+       sin reescribir cada regla. */
+    --color-bg: var(--alfa-bg-canvas, #0e1014);
+    --color-panel: var(--alfa-bg-surface, #16181d);
+    --color-panel-strong: var(--alfa-bg-surface-raised, #1d2026);
+    --color-border: var(--alfa-border-default, #333640);
+    --color-text: var(--alfa-text-primary, #f5f5f7);
+    --color-muted: var(--alfa-text-secondary, #a6abb5);
+    --color-primary: var(--alfa-accent, #4f9efa);
+    --color-secondary: var(--alfa-accent, #4f9efa);
+    --text-main: var(--alfa-text-primary, #f5f5f7);
+    --text-muted: var(--alfa-text-secondary, #a6abb5);
+    --text-soft: var(--alfa-text-secondary, #a6abb5);
+    --accent: var(--alfa-accent, #4f9efa);
+    --surface: var(--alfa-bg-surface, #16181d);
+    --surface-1: var(--alfa-bg-surface, #16181d);
+    --surface-2: var(--alfa-bg-surface-raised, #1d2026);
+    --surface-3: var(--alfa-bg-surface-raised, #1d2026);
+    --input-bg: var(--alfa-bg-input, #252830);
+    --input-border: var(--alfa-border-default, #333640);
+    --hover: var(--alfa-state-hover, #21242b);
+    --hover-bg: var(--alfa-state-hover, #21242b);
+    --border: var(--alfa-border-default, #333640);
+    --muted: var(--alfa-text-secondary, #a6abb5);
+    --ui-border: var(--alfa-border-default, #333640);
+    --shadow-soft: none;
+}
+
+/* Wrapper de ventanas emergentes que quedan fuera del .gd-page (ver Tickets/CRM/Costos): no genera
+   caja, solo aporta el scope .gd y las variables remapeadas. */
+.gd.gd-modal-scope {
+    display: contents;
 }
 
 /* .gd-page y .gd suelen ir en el mismo elemento (alto fijo + scroll): sin esto las tarjetas se
@@ -140,6 +173,12 @@
     border-radius: var(--alfa-radius-8, 8px);
     background: var(--alfa-bg-surface, #16181d);
     box-shadow: none;
+}
+
+/* Tarjetas sin encabezado ni tabla (formularios, ventanas emergentes, bloques de texto): con el
+   padding 0 de arriba el contenido quedaba pegado al borde. */
+.gd-legacy .panel-card:not(.empty-state):not(:has(> .panel-card__header, > .table-toolbar, > .table-wrap, > .table-scroll, > .usuarios-table-wrap, > .data-table)) {
+    padding: var(--alfa-space-16, 16px);
 }
 
 .gd .panel-card__header,
@@ -1055,6 +1094,186 @@ body:has(.gd-page) .alfacore-sticky-list-header table > thead .table-sort__icon 
 
 .shell.shell--alfa-design .cierre-search .smart-search__active-filter {
     max-width: none;
+}
+
+/* Formularios legacy (.field) dentro de pantallas migradas: mismo aspecto que AlfaInput /
+   AlfaSelect / AlfaTextarea, sin reescribir cada campo. */
+.gd .field {
+    display: grid;
+    gap: var(--alfa-space-4, 4px);
+}
+
+.gd .field > label,
+.gd .field__label {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    font-weight: 600;
+}
+
+.gd .field input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+.gd .field select,
+.gd .field textarea {
+    width: 100%;
+    min-height: var(--alfa-control-md, 36px);
+    padding: 0 var(--alfa-space-12, 12px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    box-shadow: none;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font: inherit;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd .field textarea {
+    padding: var(--alfa-space-8, 8px) var(--alfa-space-12, 12px);
+    line-height: 1.5;
+}
+
+.gd .field input[type="color"] {
+    width: 48px;
+    height: var(--alfa-control-md, 36px);
+    padding: 2px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+}
+
+.gd .field input:focus,
+.gd .field select:focus,
+.gd .field textarea:focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent, #4f9efa) 34%, transparent);
+    outline-offset: 0;
+}
+
+.gd .field input:disabled,
+.gd .field select:disabled,
+.gd .field textarea:disabled {
+    color: var(--alfa-text-disabled, #666b75);
+    cursor: not-allowed;
+}
+
+.gd .field input::placeholder,
+.gd .field textarea::placeholder {
+    color: var(--alfa-text-disabled, #666b75);
+}
+
+.gd .checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd .checkbox input {
+    accent-color: var(--alfa-accent, #4f9efa);
+}
+
+.gd .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+}
+
+.gd .btn--sm {
+    height: 26px;
+    padding: 0 8px;
+}
+
+.gd .btn--ghost {
+    border-color: var(--alfa-border-default, #333640);
+}
+
+.gd .btn--danger {
+    border-color: color-mix(in srgb, var(--alfa-danger, #eb5759) 60%, transparent);
+    color: var(--alfa-danger, #eb5759);
+}
+
+.gd .usuarios-empty {
+    padding: 24px 16px;
+    border: 0;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    text-align: center;
+}
+
+/* Mensajes legacy (.editor-msg) con el aspecto de AlfaNotification. */
+.gd .editor-msg {
+    display: flex;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-left: 3px solid var(--alfa-accent, #4f9efa);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd .editor-msg p {
+    margin: 2px 0 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd .editor-msg--success { border-left-color: var(--alfa-success, #27ae60); }
+.gd .editor-msg--warning { border-left-color: var(--alfa-warning, #f2c94c); }
+.gd .editor-msg--error,
+.gd .editor-msg--danger { border-left-color: var(--alfa-danger, #eb5759); }
+
+/* Textos descriptivos legacy sueltos dentro de tarjetas (.page-intro__text) y barras de
+   paginación propias (.pager-bar). */
+.gd .panel-card > .page-intro__text,
+.gd .panel-card > p:not([class]) {
+    margin: 0;
+    padding: 12px 16px 16px;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-body, 13px);
+    line-height: 1.5;
+}
+
+.gd .page-intro__text code,
+.gd .panel-card > p code {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 12px;
+}
+
+.gd .pager-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    padding: 8px 16px;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+/* Scroll horizontal flotante de tablas anchas (sticky-table-scroll.js, colgado de <body>). */
+body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track {
+    height: 12px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+    backdrop-filter: none;
+}
+
+body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track::-webkit-scrollbar {
+    height: 10px;
+}
+
+body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track::-webkit-scrollbar-thumb {
+    border: 2px solid var(--alfa-bg-surface, #16181d);
+    background: var(--alfa-border-strong, #4d525e);
+}
+
+body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track:hover::-webkit-scrollbar-thumb {
+    background: var(--alfa-text-secondary, #a6abb5);
 }
 
 @media (max-width: 1100px) {
