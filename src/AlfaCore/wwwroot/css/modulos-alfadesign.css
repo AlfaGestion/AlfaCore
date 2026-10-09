@@ -1801,3 +1801,114 @@
     font-size: 12px;
     font-weight: 500;
 }
+
+/* Calendario: evento parte de una serie (a qué eventos se aplican los cambios). */
+.gd-modal-scope .calendario-serie {
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+}
+
+.gd-modal-scope .calendario-serie__opciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+}
+
+.gd-modal-scope .calendario-serie__opciones input[type="radio"],
+.gd-modal-scope .cal-rep input[type="radio"],
+.gd-modal-scope .cal-rep input[type="checkbox"] {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 16px;
+}
+
+.gd-modal-scope .calendario-serie__opciones label {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.gd-modal-scope .calendario-serie small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+}
+
+/* Calendario: configuración del indicador de la barra superior. */
+.calendario-indicador-config {
+    display: grid;
+    gap: 14px;
+}
+
+.calendario-indicador-config .field {
+    display: grid;
+    gap: 4px;
+}
+
+.calendario-indicador-config .field label {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.calendario-indicador-config__preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    justify-self: start;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+}
+
+.calendario-indicador-config__preview span:last-child {
+    display: grid;
+    line-height: 1.15;
+}
+
+.calendario-indicador-config__preview strong {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.calendario-indicador-config__preview small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 10px;
+}
+
+.calendario-indicador-config__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--alfa-success, #27ae60);
+}
+
+.gd-modal-scope .calendario-desde-indicador {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent, #4f9efa) 45%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 10%, transparent);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+}
+
+.calendario-indicador-config__hint {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+}

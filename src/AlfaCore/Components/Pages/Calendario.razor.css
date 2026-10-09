@@ -1,13 +1,16 @@
+/* El calendario ocupa todo el alto disponible: filas más altas y más eventos por día. */
 .calendario-page {
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: .55rem;
-    height: calc(100dvh - 3.7rem);
+    height: 100%;
     min-height: 0;
     padding: .65rem 1rem .75rem;
     overflow: hidden;
 }
 
 .calendario-toolbar {
+    flex: 0 0 auto;
     position: sticky;
     top: 0;
     z-index: 45;
@@ -57,15 +60,17 @@
 }
 
 .calendario-shell {
+    display: flex;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
 }
 
 .calendario-grid {
+    flex: 1 1 auto;
     grid-template-rows: 28px repeat(6, minmax(0, 1fr));
     width: 100%;
     min-width: 0;
-    height: 100%;
     min-height: 0;
     border-radius: 0;
 }
@@ -97,36 +102,41 @@
     padding: .2rem .36rem;
 }
 
-.calendario-event-markers {
+/* Con 3 o más eventos, cada uno ocupa una sola línea: título y responsable. */
+.calendario-day-events.is-compact .calendario-event-chip {
     display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: .28rem;
-    min-height: 0;
-    max-height: 3.1rem;
-    overflow: hidden;
+    align-items: baseline;
+    gap: .35rem;
+    padding: .14rem .36rem;
 }
 
-.calendario-event-marker {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 1.28rem;
-    height: 1.08rem;
-    border: 1px solid color-mix(in srgb, var(--event-color, var(--alfa-accent)) 78%, white 12%);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--event-color, var(--alfa-accent)) 72%, transparent);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
-    color: var(--alfa-text-primary);
-    font-size: .58rem;
-    font-weight: 900;
-    line-height: 1;
-    text-transform: uppercase;
+.calendario-day-events.is-compact .calendario-event-chip span {
+    flex: 0 1 auto;
 }
 
-.calendario-event-marker:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.14);
+.calendario-day-events.is-compact .calendario-event-chip small {
+    flex: 1 1 0;
+}
+
+.calendario-more {
+    justify-self: start;
+    padding: .08rem .36rem;
+    border-radius: var(--alfa-radius-sm, 4px);
+    color: var(--alfa-accent-hover);
+    font-size: .72rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.calendario-more:hover {
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
+}
+
+.calendario-dia-lista {
+    display: grid;
+    gap: .4rem;
+    max-height: min(60dvh, 520px);
+    overflow-y: auto;
 }
 
 .calendario-side {

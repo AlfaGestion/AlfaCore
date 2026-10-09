@@ -1,0 +1,147 @@
+.cal-rep {
+    display: grid;
+    gap: 10px;
+    grid-column: 1 / -1;
+}
+
+.cal-rep__fila {
+    display: grid;
+    grid-template-columns: minmax(0, 360px);
+}
+
+.cal-rep__bloque {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+}
+
+.cal-rep__titulo {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.cal-rep__cada {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.cal-rep__cada input {
+    width: 64px;
+}
+
+.cal-rep__cada select {
+    width: 140px;
+}
+
+.cal-rep__dias {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cal-rep__dia {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cal-rep__dia.is-on {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: var(--alfa-accent, #4f9efa);
+    color: #fff;
+}
+
+.cal-rep__radios {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.cal-rep__radios label,
+.cal-rep__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.cal-rep__radios small,
+.cal-rep__check small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+}
+
+.cal-rep__con-campo input[type="date"] {
+    width: 150px;
+}
+
+.cal-rep__con-campo input[type="number"] {
+    width: 72px;
+}
+
+.cal-rep__rotacion {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.cal-rep__persona {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 4px 0 8px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.cal-rep__persona b {
+    color: var(--alfa-accent, #4f9efa);
+    font-weight: 600;
+}
+
+.cal-rep__persona button {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    cursor: pointer;
+}
+
+.cal-rep__rotacion select {
+    width: auto;
+    min-width: 170px;
+}
+
+.cal-rep__resumen {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+}
+
+.cal-rep__vacio {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+}

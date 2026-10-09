@@ -15,6 +15,9 @@ public sealed class CalendarioMonthRequest
 /// </summary>
 public sealed class CalendarioGuardiaResumenDto
 {
+    /// <summary>Nombre con que se muestra en la barra (ej. "Guardia", "Turno", "Encargado").</summary>
+    public string Etiqueta { get; set; } = "Guardia";
+
     public string ActualResponsable { get; set; } = string.Empty;
     public DateTime? ActualHasta { get; set; }
     public string SiguienteResponsable { get; set; } = string.Empty;
@@ -49,6 +52,18 @@ public sealed class CalendarioEventoDto
     public string Color { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     public CalendarioRecordatorioDto? Recordatorio { get; set; }
+
+    /// <summary>Id del primer evento de la serie si es un evento repetido (null = evento suelto).</summary>
+    public long? IdSerie { get; set; }
+
+    /// <summary>Regla de repetición de la serie (null = evento suelto).</summary>
+    public CalendarioRepeticionDto? Repeticion { get; set; }
+
+    /// <summary>El evento se muestra en el indicador de la barra superior (casilla del evento).</summary>
+    public bool MostrarEnIndicador { get; set; }
+
+    /// <summary>Responsables que rotan en la serie, en orden (vacío = sin rotación).</summary>
+    public List<string> RotacionTecnicos { get; set; } = [];
 }
 
 public sealed class CalendarioRecordatorioDto
@@ -83,6 +98,19 @@ public sealed class CalendarioEventoSaveRequest
     public long? IdPlantillaWhatsApp { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+
+    /// <summary>Regla de repetición. En un evento nuevo crea la serie; al editar, con alcance
+    /// "este y los siguientes" o "todos", vuelve a generar la serie si la regla cambió.</summary>
+    public CalendarioRepeticionDto? Repeticion { get; set; }
+
+    /// <summary>Técnicos que rotan (en orden): cada repetición le toca al siguiente de la lista.</summary>
+    public List<string> RotacionTecnicos { get; set; } = [];
+
+    /// <summary>Al editar un evento de una serie: SOLO_ESTE, SIGUIENTES o TODOS.</summary>
+    public string Alcance { get; set; } = CalendarioAlcancesSerie.SoloEste;
+
+    /// <summary>Mostrar el evento en el indicador de la barra superior.</summary>
+    public bool MostrarEnIndicador { get; set; }
 }
 
 public sealed class CalendarioRecordatorioSendResult

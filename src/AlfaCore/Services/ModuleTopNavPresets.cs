@@ -172,7 +172,7 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCalendario(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
-            ("guardias", "Guardias", "/calendario"),
+            ("guardias", "Calendario", "/calendario"),
             ("reuniones", "Reuniones", "/calendario/reuniones")
         ]);
 

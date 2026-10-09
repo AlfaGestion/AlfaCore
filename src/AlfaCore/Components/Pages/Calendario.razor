@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject AlfaCore.Services.CalendarioIndicadorNotifier IndicadorNotifier
 @implements IDisposable
 
 <PageTitle>Calendario | Alfa Gestión</PageTitle>
@@ -27,13 +28,16 @@
             <strong>@MonthLabel</strong>
         </div>
 
-        <button type="button"
-                class="@ActiveGuardClass"
-                style="--event-color:@ActiveGuardColor"
-                @onclick="OpenActiveGuardAsync">
-            <span>Guardia activa</span>
-            <strong>@ActiveGuardTitle</strong>
-        </button>
+        @if (_indicadorBase.Activo)
+        {
+            <button type="button"
+                    class="@ActiveGuardClass"
+                    style="--event-color:@ActiveGuardColor"
+                    @onclick="OpenActiveGuardAsync">
+                <span>@_indicadorBase.Etiqueta</span>
+                <strong>@ActiveGuardTitle</strong>
+            </button>
+        }
 
     </section>
 
@@ -51,44 +55,29 @@
                         class="@DayCellClass(day)"
                         @onclick="() => OpenNewEvent(day)">
                     <span class="calendario-day-number">@day.Day</span>
-                    <span class="calendario-day-events">
-                        @if (dayEvents.Count <= 1)
-                        {
-                            @foreach (var item in dayEvents)
-                            {
-                                <span class="calendario-event-chip"
-                                      style="@EventChipStyle(item)"
-                                      title="@item.Titulo"
-                                      @onclick:stopPropagation
-                                      @onclick="() => OpenCalendarItem(item)">
-                                    <span>@item.Titulo</span>
-                                    @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
-                                    {
-                                        <small>@item.TecnicoNombre</small>
-                                    }
-                                    else
-                                    {
-                                        <small>@TypeLabel(item.Tipo)</small>
-                                    }
-                                </span>
-                            }
+                    <span class="calendario-day-events @(dayEvents.Count > 2 ? "is-compact" : string.Empty)">
+                        @{
+                            // Hasta 4 eventos se ven todos; con más, se ven 3 y "+N más" abre el día.
+                            var visibles = dayEvents.Count > MaxEventosPorDia ? MaxEventosPorDia - 1 : dayEvents.Count;
                         }
-                        else
+                        @foreach (var item in dayEvents.Take(visibles))
                         {
-                            <span class="calendario-event-markers">
-                                @foreach (var item in dayEvents.Take(12))
-                                {
-                                    <span class="calendario-event-marker"
-                                          style="@EventMarkerStyle(item)"
-                                          title="@($"{item.Titulo} - {FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo))}")"
-                                          @onclick:stopPropagation
-                                          @onclick="() => OpenCalendarItem(item)">@EventMarkerText(item)</span>
-                                }
-                                @if (dayEvents.Count > 12)
-                                {
-                                    <span class="calendario-more">+@(dayEvents.Count - 12)</span>
-                                }
+                            <span class="calendario-event-chip"
+                                  style="@EventChipStyle(item)"
+                                  title="@($"{item.Titulo} · {FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo))}")"
+                                  @onclick:stopPropagation
+                                  @onclick="() => OpenCalendarItem(item)">
+                                <span>@item.Titulo</span>
+                                <small>@FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo))</small>
                             </span>
+                        }
+                        @if (dayEvents.Count > visibles)
+                        {
+                            <span class="calendario-more"
+                                  role="button"
+                                  title="Ver todos los eventos del día"
+                                  @onclick:stopPropagation
+                                  @onclick="() => AbrirDia(day)">+@(dayEvents.Count - visibles) más</span>
                         }
                     </span>
                 </button>
@@ -153,7 +142,7 @@
 
         <section class="calendario-side-section">
             <div class="calendario-side-head">
-                <span>Técnicos</span>
+                <span>Responsables</span>
                 <small>@_tecnicos.Count</small>
             </div>
             <div class="calendario-technicians">
@@ -209,21 +198,28 @@
         </header>
 
         <div class="calendario-form">
+            @if (_desdeIndicador)
+            {
+                <p class="calendario-desde-indicador field--wide">
+                    <i class="bi bi-pin-angle" aria-hidden="true"></i>
+                    Cargá quiénes están a cargo y cada cuánto rotan: esto es lo que va a mostrar el indicador de la barra superior.
+                </p>
+            }
             <div class="field field--wide">
                 <label>Título</label>
-                <input @bind="_form.Titulo" disabled="@_saving" />
+                <input @bind="_form.Titulo" disabled="@_saving" placeholder="Ej.: Reunión de equipo, Turno de caja, Visita a cliente" />
             </div>
 
             <div class="field">
                 <label>Tipo</label>
                 <select @bind="_form.Tipo" @bind:after="ApplyTypeDefaults" disabled="@_saving">
+                    <option value="@CalendarioEventoTipos.Otro">Evento general</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reunión</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitación</option>
                     <option value="@CalendarioEventoTipos.Guardia">Guardia</option>
                     <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
                     <option value="@CalendarioEventoTipos.Ausencia">Ausencia</option>
                     <option value="@CalendarioEventoTipos.Feriado">Feriado</option>
-                    <option value="@CalendarioEventoTipos.Reunion">Reunión</option>
-                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitación</option>
-                    <option value="@CalendarioEventoTipos.Otro">Otro</option>
                 </select>
             </div>
 
@@ -252,8 +248,54 @@
                 <span>Todo el día</span>
             </label>
 
+            @if (EsEventoDeSerie)
+            {
+                <div class="field field--wide calendario-serie">
+                    <label>Este evento es parte de una serie: @AlfaCore.Services.CalendarioRepeticion.Describir(_form.FechaInicio, _selectedEvent?.Repeticion)</label>
+                    <div class="calendario-serie__opciones" role="radiogroup" aria-label="Aplicar a">
+                        <label><input type="radio" name="cal-alcance" checked="@(_form.Alcance == CalendarioAlcancesSerie.SoloEste)" disabled="@_saving"
+                                      @onchange="() => _form.Alcance = CalendarioAlcancesSerie.SoloEste" /> Solo este evento</label>
+                        <label><input type="radio" name="cal-alcance" checked="@(_form.Alcance == CalendarioAlcancesSerie.EsteYSiguientes)" disabled="@_saving"
+                                      @onchange="() => _form.Alcance = CalendarioAlcancesSerie.EsteYSiguientes" /> Este y los siguientes</label>
+                        <label><input type="radio" name="cal-alcance" checked="@(_form.Alcance == CalendarioAlcancesSerie.Todos)" disabled="@_saving"
+                                      @onchange="() => _form.Alcance = CalendarioAlcancesSerie.Todos" /> Todos los eventos de la serie</label>
+                    </div>
+                    <small>Se aplica al guardar y al eliminar. Para cambiar la repetición elegí "Este y los siguientes" o "Todos".</small>
+                </div>
+            }
+
+            <CalendarioRepeticionEditor Regla="@(_form.Repeticion ?? new CalendarioRepeticionDto())"
+                                        ReglaChanged="@((CalendarioRepeticionDto r) => { _form.Repeticion = r; AjustarFinParaRepetir(); })"
+                                        FechaInicio="@_form.FechaInicio"
+                                        Tecnicos="@_tecnicos"
+                                        Rotacion="@_form.RotacionTecnicos"
+                                        RotacionChanged="@((List<string> l) => _form.RotacionTecnicos = l)"
+                                        RotarPorDefecto="@(_desdeIndicador || _form.RotacionTecnicos.Count > 0)"
+                                        Disabled="@(_saving || (EsEventoDeSerie && _form.Alcance == CalendarioAlcancesSerie.SoloEste))" />
+
+            @if (!string.IsNullOrEmpty(_avisoFinAjustado))
+            {
+                <p class="calendario-desde-indicador field--wide">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                    @_avisoFinAjustado
+                </p>
+            }
+
+            <label class="checkbox calendario-checkbox field--wide">
+                @if (IncluidoPorTipo)
+                {
+                    <input type="checkbox" checked disabled />
+                    <span>Mostrar en la barra superior quién está a cargo <small>(ya se muestra: el indicador muestra todos los eventos de tipo @TypeLabel(_form.Tipo))</small></span>
+                }
+                else
+                {
+                    <input type="checkbox" @bind="_form.MostrarEnIndicador" disabled="@_saving" />
+                    <span>Mostrar en la barra superior quién está a cargo (indicador)</span>
+                }
+            </label>
+
             <div class="field">
-                <label>Técnico responsable</label>
+                <label>Responsable</label>
                 <select value="@_form.IdTecnico" @onchange="OnTechnicianChangedAsync" disabled="@_saving">
                     <option value="">Sin asignar</option>
                     @foreach (var tecnico in _tecnicos)
@@ -264,7 +306,7 @@
             </div>
 
             <div class="field">
-                <label>WhatsApp del técnico</label>
+                <label>WhatsApp del responsable</label>
                 <input @bind="_form.TelefonoWhatsApp" disabled="@_saving" placeholder="549..." />
             </div>
 
@@ -374,6 +416,80 @@
         </footer>
     </section>
 }
+
+<AlfaDialog Open="@(_diaAbierto is not null)"
+            Title="@(_diaAbierto is DateTime dia ? Culture.TextInfo.ToTitleCase(dia.ToString("dddd d 'de' MMMM", Culture)) : string.Empty)"
+            Description="@($"{EventosDelDiaAbierto.Count} eventos")"
+            Size="AlfaDialogSize.Sm"
+            OnClose="CerrarDia">
+    <ChildContent>
+        <div class="calendario-dia-lista">
+            @foreach (var item in EventosDelDiaAbierto)
+            {
+                <button type="button" class="calendario-side-event" @onclick="() => AbrirEventoDelDia(item)">
+                    <span class="calendario-dot" style="background:@EventColor(item)"></span>
+                    <span>
+                        <strong>@item.Titulo</strong>
+                        <small>@HorarioDelDia(item) · @FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo))</small>
+                    </span>
+                </button>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="CerrarDia">Cerrar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-plus-circle" OnClick="NuevoEventoDelDia">Nuevo evento este día</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@_showIndicador"
+            Title="Indicador en la barra superior"
+            Description="Muestra quién está a cargo ahora y quién sigue: turnos, encargados, guardias..."
+            Size="AlfaDialogSize.Sm"
+            Loading="@_savingIndicador"
+            OnClose="CerrarIndicador">
+    <ChildContent>
+        <div class="calendario-indicador-config">
+            <AlfaCheckbox Value="@_indicador.Activo" ValueChanged="@((bool? v) => _indicador.Activo = v == true)">
+                Mostrar el indicador en la barra superior
+            </AlfaCheckbox>
+            <div class="field">
+                <label for="cal-ind-tipo">Qué eventos muestra</label>
+                <select id="cal-ind-tipo" value="@_indicador.Tipo" @onchange="OnIndicadorTipoChanged" disabled="@(!_indicador.Activo || _savingIndicador)">
+                    <option value="@CalendarioIndicadorConfigDto.SoloMarcados">Solo los eventos que marque</option>
+                    <option value="@CalendarioEventoTipos.Otro">Todos los eventos generales</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Todas las reuniones</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Todas las capacitaciones</option>
+                    <option value="@CalendarioEventoTipos.Guardia">Todas las guardias</option>
+                </select>
+                <small class="calendario-indicador-config__hint">
+                    En cada evento está la casilla "Mostrar en la barra superior". Los eventos marcados se muestran siempre.
+                </small>
+            </div>
+            <AlfaInput Id="cal-ind-etiqueta" Label="Cómo se llama en la barra" Value="@_indicador.Etiqueta"
+                       ValueChanged="@((string? v) => _indicador.Etiqueta = v ?? string.Empty)"
+                       Disabled="@(!_indicador.Activo || _savingIndicador)"
+                       HelpText="Ej.: A cargo, Turno, Encargado del día, Responsable de caja, Guardia." />
+            <div class="calendario-indicador-config__preview" aria-hidden="true">
+                <span class="calendario-indicador-config__dot"></span>
+                <span>
+                    <strong>@(string.IsNullOrWhiteSpace(_indicador.Etiqueta) ? "A cargo" : _indicador.Etiqueta.Trim()): Juan Pérez</strong>
+                    <small>Siguiente: Ana Gómez</small>
+                </span>
+            </div>
+            @if (_indicador.Activo)
+            {
+                <p class="calendario-indicador-config__hint">
+                    Si todavía no hay eventos para mostrar, al guardar te llevamos a cargarlos.
+                </p>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="CerrarIndicador" Disabled="@_savingIndicador">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" OnClick="GuardarIndicadorAsync" Loading="@_savingIndicador">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
 </div>
 
 @code {
@@ -440,7 +556,7 @@
             var monthStart = new DateTime(_request.Year, _request.Month, 1);
             var monthEnd = monthStart.AddMonths(1).AddDays(-1);
             var allUpcoming = CorporateEvents
-                .Select(UpcomingCalendarItem.FromEvent)
+                .Select(x => UpcomingCalendarItem.FromEvent(x, EventColor(x)))
                 .Concat(OfficialArgentinaHolidays)
                 .Where(x => x.FechaFin.Date >= DateTime.Today.Date)
                 .OrderBy(x => x.FechaInicio)
@@ -457,14 +573,14 @@
         }
     }
     private CalendarioEventoDto? CurrentGuard => _events
-        .Where(x => x.Tipo == CalendarioEventoTipos.Guardia
+        .Where(x => (x.MostrarEnIndicador || x.Tipo == _indicadorBase.Tipo)
                     && x.Estado != CalendarioEventoEstados.Cancelado
                     && x.FechaInicio.Date <= DateTime.Today
                     && x.FechaFin.Date >= DateTime.Today)
         .OrderBy(x => x.FechaInicio)
         .FirstOrDefault();
     private string ActiveGuardTitle => CurrentGuard is null
-        ? "Sin guardia activa"
+        ? "Nadie en este momento"
         : FirstNonEmpty(CurrentGuard.TecnicoNombre, CurrentGuard.Titulo);
     private string ActiveGuardColor => CurrentGuard is null ? "rgba(148, 163, 184, .7)" : EventColor(CurrentGuard);
     private string ActiveGuardClass => CurrentGuard is null
@@ -474,6 +590,7 @@
     protected override async Task OnInitializedAsync()
     {
         UpdatePageHeader();
+        await CargarIndicadorBaseAsync();
         await LoadAsync();
         UpdatePageHeader();
     }
@@ -564,7 +681,7 @@
                 }
             </div>
             <input type="search"
-                   placeholder="Evento, técnico o descripción..."
+                   placeholder="Evento, responsable o descripción..."
                    value="@_request.Search"
                    @oninput="OnSearchInput" />
             <button type="button" class="smart-search__toggle" title="Filtros" aria-label="Mostrar filtros" aria-expanded="@_showHeaderFilters" @onclick="ToggleHeaderFilters">
@@ -577,9 +694,9 @@
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseHeaderFilters"></button>
             <div class="smart-search__panel calendario-header-search__panel" @onclick:stopPropagation>
                 <div class="smart-search__column">
-                    <h4><i class="bi bi-person"></i> Técnico</h4>
+                    <h4><i class="bi bi-person"></i> Responsable</h4>
                     <select value="@_request.IdTecnico" @onchange="SetHeaderTechnicianAsync">
-                        <option value="">Todos los técnicos</option>
+                        <option value="">Todos los responsables</option>
                         @foreach (var tecnico in _tecnicos)
                         {
                             <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
@@ -609,7 +726,7 @@
     private string TechnicianFilterLabel
         => _tecnicos.FirstOrDefault(x => x.IdTecnico == _request.IdTecnico)?.Nombre
            ?? _request.IdTecnico
-           ?? "Técnico";
+           ?? "Responsable";
 
     private void UpdatePageHeader()
     {
@@ -642,6 +759,15 @@
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Essential,
                     OnClick = ToggleSidePanelFromHeaderAsync
+                },
+                new PageHeaderAction
+                {
+                    Key = "indicador",
+                    Label = "Indicador",
+                    Icon = "bi-pin-angle",
+                    Title = "Indicador de la barra superior (quién está a cargo: turno, encargado, guardia...)",
+                    Style = PageHeaderActionStyle.Ghost,
+                    OnClick = AbrirIndicadorAsync
                 }
             ]
         });
@@ -771,7 +897,9 @@
         _selectedHolidayInfo = null;
         _selectedEvent = null;
         _form = NewForm(day);
+        _desdeIndicador = false;
         ApplyGuardiaTemplateDefault();
+        _avisoFinAjustado = string.Empty;
         _showEditor = true;
     }
 
@@ -806,12 +934,18 @@
             TecnicoNombre = result.Value.TecnicoNombre,
             TelefonoWhatsApp = result.Value.TelefonoWhatsApp,
             Estado = result.Value.Estado,
-            Color = EventColor(result.Value),
+            Color = string.IsNullOrWhiteSpace(result.Value.Color) ? EventColor(result.Value) : result.Value.Color,
             Descripcion = result.Value.Descripcion,
             CrearRecordatorioWhatsApp = result.Value.Recordatorio is not null,
             MinutosAntesRecordatorio = result.Value.Recordatorio?.MinutosAntes ?? 1440,
-            IdPlantillaWhatsApp = result.Value.Recordatorio?.IdPlantillaWhatsApp
+            IdPlantillaWhatsApp = result.Value.Recordatorio?.IdPlantillaWhatsApp,
+            Repeticion = result.Value.Repeticion?.Clonar(),
+            Alcance = CalendarioAlcancesSerie.SoloEste,
+            MostrarEnIndicador = result.Value.MostrarEnIndicador,
+            RotacionTecnicos = [.. result.Value.RotacionTecnicos]
         };
+        _desdeIndicador = false;
+        _avisoFinAjustado = string.Empty;
         _showEditor = true;
     }
 
@@ -874,12 +1008,21 @@
         _saving = true;
         _form.UsuarioAccion = CurrentUserName;
         _form.SistemaAccion = "Calendario";
+        var cantidadSerie = _form.IdEvento <= 0 && _form.Repeticion is { SeRepite: true }
+            ? AlfaCore.Services.CalendarioRepeticion.GenerarInicios(_form.FechaInicio, _form.Repeticion).Count
+            : 0;
         var result = await UiOps.RunAsync(() => CalendarioSvc.SaveAsync(_form), "No se pudo guardar el evento.");
         if (result.Success)
         {
-            SetFeedback("Evento guardado", "Los cambios quedaron registrados.", "success");
+            SetFeedback("Evento guardado",
+                cantidadSerie > 1 ? $"Se cargaron {cantidadSerie} eventos de la serie." : "Los cambios quedaron registrados.",
+                "success");
             _showEditor = false;
+            if (_form.MostrarEnIndicador && !_indicadorBase.Activo)
+                await ActivarIndicadorDesdeEventoAsync();
+            _desdeIndicador = false;
             await LoadAsync();
+            IndicadorNotifier.Notificar();
         }
         else
         {
@@ -895,12 +1038,21 @@
             return;
 
         _saving = true;
-        var result = await UiOps.RunAsync(() => CalendarioSvc.DeleteAsync(_form.IdEvento, CurrentUserName), "No se pudo eliminar el evento.");
+        var alcance = EsEventoDeSerie ? _form.Alcance : CalendarioAlcancesSerie.SoloEste;
+        var result = await UiOps.RunAsync(() => CalendarioSvc.DeleteSerieAsync(_form.IdEvento, alcance, CurrentUserName), "No se pudo eliminar el evento.");
         if (result.Success)
         {
-            SetFeedback("Evento eliminado", "El evento fue dado de baja.", "success");
+            SetFeedback(alcance == CalendarioAlcancesSerie.SoloEste ? "Evento eliminado" : "Eventos eliminados",
+                alcance switch
+                {
+                    CalendarioAlcancesSerie.EsteYSiguientes => "Se dieron de baja este evento y los siguientes de la serie.",
+                    CalendarioAlcancesSerie.Todos => "Se dio de baja toda la serie.",
+                    _ => "El evento fue dado de baja."
+                },
+                "success");
             _showEditor = false;
             await LoadAsync();
+            IndicadorNotifier.Notificar();
         }
         else
         {
@@ -938,8 +1090,9 @@
         _form.IdTecnico = id;
         var tecnico = _tecnicos.FirstOrDefault(x => x.IdTecnico == id);
         _form.TecnicoNombre = tecnico?.Nombre;
-        if (string.IsNullOrWhiteSpace(id))
+        if (string.IsNullOrWhiteSpace(id) || CalendarioResponsables.EsUsuario(id, out _))
         {
+            // Un usuario del sistema no tiene teléfono cargado: se escribe a mano si hace falta.
             _form.TelefonoWhatsApp = string.Empty;
         }
         else
@@ -1023,17 +1176,185 @@
 
     private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
 
+    private bool EsEventoDeSerie => _form.IdEvento > 0 && _selectedEvent?.IdSerie is not null;
+
+    private bool _showIndicador;
+    private bool _savingIndicador;
+    private CalendarioIndicadorConfigDto _indicador = new();
+
+    // Configuración guardada del indicador (la usa la franja del mes y la oferta de activarlo).
+    private CalendarioIndicadorConfigDto _indicadorBase = new();
+    private bool _desdeIndicador;
+
+    // El indicador activo ya muestra todos los eventos de este tipo: la casilla no hace falta.
+    private bool IncluidoPorTipo
+        => _indicadorBase.Activo && string.Equals(_form.Tipo, _indicadorBase.Tipo, StringComparison.OrdinalIgnoreCase);
+
+    // Día abierto desde "+N más" (null = cerrado). Hasta 4 eventos entran en la celda.
+    private const int MaxEventosPorDia = 4;
+    private DateTime? _diaAbierto;
+
+    private List<CalendarioEventoDto> EventosDelDiaAbierto
+        => _diaAbierto is DateTime dia ? EventsFor(dia).ToList() : [];
+
+    private void AbrirDia(DateTime dia) => _diaAbierto = dia.Date;
+
+    private void CerrarDia() => _diaAbierto = null;
+
+    private async Task AbrirEventoDelDia(CalendarioEventoDto item)
+    {
+        _diaAbierto = null;
+        await OpenCalendarItem(item);
+    }
+
+    private void NuevoEventoDelDia()
+    {
+        var dia = _diaAbierto ?? DateTime.Today;
+        _diaAbierto = null;
+        OpenNewEvent(dia);
+    }
+
+    // Al elegir una repetición, si cada evento dura más que el tiempo hasta la siguiente (por
+    // ejemplo, una semana repitiéndose todos los días) se acorta el Fin para que no se pisen.
+    private string _avisoFinAjustado = string.Empty;
+
+    private void AjustarFinParaRepetir()
+    {
+        _avisoFinAjustado = string.Empty;
+        var fin = AlfaCore.Services.CalendarioRepeticion.FinSinSuperponer(_form.FechaInicio, _form.FechaFin, _form.TodoElDia, _form.Repeticion);
+        if (fin is not DateTime nuevoFin)
+            return;
+
+        _form.FechaFin = nuevoFin;
+        _avisoFinAjustado = $"Ajusté el Fin al {nuevoFin.ToString(_form.TodoElDia ? "dd/MM" : "dd/MM HH:mm", Culture)} para que las repeticiones no se pisen.";
+    }
+
+    private string HorarioDelDia(CalendarioEventoDto item)
+        => item.TodoElDia || item.FechaInicio.Date != item.FechaFin.Date
+            ? "Todo el día"
+            : $"{item.FechaInicio:HH:mm} a {item.FechaFin:HH:mm}";
+
+    private async Task CargarIndicadorBaseAsync()
+    {
+        var result = await UiOps.RunAsync(() => CalendarioSvc.GetIndicadorConfigAsync(), "No se pudo leer la configuración del indicador.");
+        if (result.Success && result.Value is not null)
+            _indicadorBase = result.Value;
+    }
+
+    private async Task ActivarIndicadorDesdeEventoAsync()
+    {
+        // Se activa mostrando solo los eventos marcados; el nombre en la barra es el título del evento.
+        var config = new CalendarioIndicadorConfigDto
+        {
+            Activo = true,
+            Tipo = CalendarioIndicadorConfigDto.SoloMarcados,
+            Etiqueta = string.IsNullOrWhiteSpace(_form.Titulo) ? "A cargo" : _form.Titulo.Trim()
+        };
+        var result = await UiOps.RunAsync(() => CalendarioSvc.SaveIndicadorConfigAsync(config), "No se pudo activar el indicador.");
+        if (result.Success)
+            _indicadorBase = config;
+    }
+
+    /// <summary>
+    /// Indicador recién activado sin eventos de ese tipo: se abre la carga del evento ya preparada
+    /// (tipo, nombre, todo el día, una semana, se repite cada semana y con rotación lista).
+    /// </summary>
+    private async Task AbrirCargaDesdeIndicadorAsync()
+    {
+        var resumen = await UiOps.RunAsync(() => CalendarioSvc.GetGuardiaResumenAsync(), "No se pudo leer el indicador.");
+        if (resumen.Success && resumen.Value is { } r && (r.HayActiva || r.HaySiguiente))
+            return;
+
+        _selectedHolidayInfo = null;
+        _selectedEvent = null;
+        var inicio = DateTime.Today;
+        _form = NewForm(inicio);
+        _form.Tipo = _indicadorBase.Tipo == CalendarioIndicadorConfigDto.SoloMarcados ? CalendarioEventoTipos.Otro : _indicadorBase.Tipo;
+        _form.Titulo = _indicadorBase.Etiqueta;
+        _form.MostrarEnIndicador = true;
+        _form.TodoElDia = true;
+        _form.FechaInicio = inicio.AddHours(8);
+        _form.FechaFin = inicio.AddDays(6).AddHours(22);
+        _form.Color = ColorForTypeOrTechnician(_form.Tipo, null);
+        _form.Repeticion = new CalendarioRepeticionDto { Frecuencia = CalendarioFrecuencias.Semanal, Intervalo = 1, Fin = CalendarioFinesRepeticion.Nunca };
+        _desdeIndicador = true;
+        ApplyGuardiaTemplateDefault();
+        _avisoFinAjustado = string.Empty;
+        _showEditor = true;
+        SetFeedback("Indicador guardado", "Ahora cargá quiénes están a cargo y cada cuánto rotan.", "success");
+    }
+
+    private async Task AbrirIndicadorAsync()
+    {
+        var result = await UiOps.RunAsync(() => CalendarioSvc.GetIndicadorConfigAsync(), "No se pudo leer la configuración del indicador.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback("No se pudo abrir", FeedbackText(result.Feedback), "error");
+            return;
+        }
+
+        _indicador = result.Value;
+        _showIndicador = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CerrarIndicador()
+    {
+        if (!_savingIndicador)
+            _showIndicador = false;
+    }
+
+    private void OnIndicadorTipoChanged(ChangeEventArgs e)
+    {
+        var anterior = _indicador.Tipo;
+        _indicador.Tipo = e.Value?.ToString() ?? CalendarioIndicadorConfigDto.SoloMarcados;
+        // Si el nombre era el sugerido para el tipo anterior, se sugiere el del nuevo tipo.
+        if (string.IsNullOrWhiteSpace(_indicador.Etiqueta) || _indicador.Etiqueta == EtiquetaSugerida(anterior))
+            _indicador.Etiqueta = EtiquetaSugerida(_indicador.Tipo);
+    }
+
+    private static string EtiquetaSugerida(string tipo) => tipo switch
+    {
+        CalendarioEventoTipos.Reunion => "Reunión",
+        CalendarioEventoTipos.Capacitacion => "Capacitación",
+        CalendarioEventoTipos.Guardia => "Guardia",
+        _ => "A cargo"
+    };
+
+    private async Task GuardarIndicadorAsync()
+    {
+        _savingIndicador = true;
+        var result = await UiOps.RunAsync(() => CalendarioSvc.SaveIndicadorConfigAsync(_indicador), "No se pudo guardar la configuración del indicador.");
+        _savingIndicador = false;
+        if (result.Success)
+        {
+            _showIndicador = false;
+            _indicadorBase = new CalendarioIndicadorConfigDto { Activo = _indicador.Activo, Tipo = _indicador.Tipo, Etiqueta = _indicador.Etiqueta };
+            SetFeedback("Indicador guardado",
+                _indicador.Activo ? "La barra superior ya muestra el indicador." : "El indicador quedó oculto.", "success");
+            IndicadorNotifier.Notificar();
+            if (_indicador.Activo)
+                await AbrirCargaDesdeIndicadorAsync();
+        }
+        else
+        {
+            SetFeedback("No se pudo guardar", FeedbackText(result.Feedback), "error");
+        }
+    }
+
+    // Un evento nuevo arranca como evento general de 1 hora: el Calendario sirve para cualquier
+    // empresa y cada una decide para qué lo usa (guardias, turnos, reuniones...).
     private static CalendarioEventoSaveRequest NewForm(DateTime day)
         => new()
         {
-            Titulo = "GUARDIA",
-            Tipo = CalendarioEventoTipos.Guardia,
-            FechaInicio = GuardiaStart(day),
-            FechaFin = GuardiaEnd(day),
-            TodoElDia = true,
+            Titulo = string.Empty,
+            Tipo = CalendarioEventoTipos.Otro,
+            FechaInicio = day.Date.AddHours(9),
+            FechaFin = day.Date.AddHours(10),
+            TodoElDia = false,
             Estado = CalendarioEventoEstados.Confirmado,
-            Color = "#14b8a6",
-            CrearRecordatorioWhatsApp = true,
+            Color = "#a78bfa",
+            CrearRecordatorioWhatsApp = false,
             MinutosAntesRecordatorio = 1440
         };
 
@@ -1056,37 +1377,21 @@
     private static string NormalizeTemplateName(string? value)
         => (value ?? string.Empty).Trim().ToUpperInvariant().Replace(" DE ", " ", StringComparison.Ordinal);
 
-    private static string EventColor(CalendarioEventoDto item)
+    // Un evento con responsable toma el color de esa persona (el mismo del panel "Responsables");
+    // sin responsable, el color del evento.
+    private string EventColor(CalendarioEventoDto item)
     {
-        if (item.Tipo == CalendarioEventoTipos.Guardia)
-        {
-            var fixedColor = FixedTechnicianColor(item.IdTecnico, item.TecnicoNombre);
-            if (!string.IsNullOrWhiteSpace(fixedColor))
-                return fixedColor;
-        }
+        if (item.Tipo != CalendarioEventoTipos.Feriado
+            && (!string.IsNullOrWhiteSpace(item.IdTecnico) || !string.IsNullOrWhiteSpace(item.TecnicoNombre)))
+            return TechnicianColor(item.IdTecnico, item.TecnicoNombre);
 
         return string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
     }
 
-    private static string EventChipStyle(CalendarioEventoDto item)
+    private string EventChipStyle(CalendarioEventoDto item)
     {
         var color = EventColor(item);
         return $"--event-color:{color};border-left-color:{color};";
-    }
-
-    private static string EventMarkerStyle(CalendarioEventoDto item)
-        => $"--event-color:{EventColor(item)};";
-
-    private static string EventMarkerText(CalendarioEventoDto item)
-    {
-        var source = FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo), item.Titulo);
-        var letters = source
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => x[0].ToString())
-            .Take(2)
-            .ToArray();
-
-        return letters.Length == 0 ? "?" : string.Concat(letters);
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -1108,16 +1413,30 @@
         return string.Join(" ", parts);
     }
 
-    private string TechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-        => TechnicianColorPalette.Resolve(idTecnico, tecnicoNombre);
+    // Colores bien distintos entre sí, uno por responsable según su lugar en la lista: así dos
+    // personas no comparten color (la paleta general tiene pocos y se repetían).
+    private static readonly string[] ColoresResponsables =
+    [
+        "#f97316", "#a855f7", "#22c55e", "#f472b6", "#38bdf8", "#facc15",
+        "#ef4444", "#14b8a6", "#818cf8", "#fb923c", "#a3e635", "#e879f9"
+    ];
 
-    private static string FixedTechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-        => TechnicianColorPalette.ResolveFixed(idTecnico, tecnicoNombre);
+    private string TechnicianColor(string? idTecnico, string? tecnicoNombre = null)
+    {
+        var fijo = TechnicianColorPalette.ResolveFixed(idTecnico, tecnicoNombre);
+        if (!string.IsNullOrWhiteSpace(fijo))
+            return fijo;
+
+        var indice = _tecnicos.FindIndex(t => string.Equals(t.IdTecnico.Trim(), (idTecnico ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase));
+        return indice >= 0
+            ? ColoresResponsables[indice % ColoresResponsables.Length]
+            : TechnicianColorPalette.Resolve(idTecnico, tecnicoNombre);
+    }
 
     private string ColorForTypeOrTechnician(string? tipo, string? idTecnico)
         => tipo switch
         {
-            CalendarioEventoTipos.Guardia when !string.IsNullOrWhiteSpace(idTecnico) => TechnicianColor(idTecnico, _tecnicos.FirstOrDefault(x => x.IdTecnico == idTecnico)?.Nombre),
+            not CalendarioEventoTipos.Feriado when !string.IsNullOrWhiteSpace(idTecnico) => TechnicianColor(idTecnico, _tecnicos.FirstOrDefault(x => x.IdTecnico == idTecnico)?.Nombre),
             CalendarioEventoTipos.Vacaciones => "#22c55e",
             CalendarioEventoTipos.Ausencia => "#f472b6",
             CalendarioEventoTipos.Feriado => "#f59e0b",
@@ -1188,7 +1507,7 @@
 
     private sealed record UpcomingCalendarItem(string Tipo, string Titulo, DateTime FechaInicio, DateTime FechaFin, string Color, long? IdEvento)
     {
-        public static UpcomingCalendarItem FromEvent(CalendarioEventoDto item)
-            => new(TypeLabel(item.Tipo), item.Titulo, item.FechaInicio, item.FechaFin, EventColor(item), item.IdEvento);
+        public static UpcomingCalendarItem FromEvent(CalendarioEventoDto item, string color)
+            => new(TypeLabel(item.Tipo), item.Titulo, item.FechaInicio, item.FechaFin, color, item.IdEvento);
     }
 }

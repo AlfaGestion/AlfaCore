@@ -3,9 +3,11 @@
 @inject ICalendarioService CalendarioSvc
 @inject IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject CalendarioIndicadorNotifier IndicadorNotifier
 
-@* Indicador fijo de la barra superior: guardia activa (con punto verde) y, debajo, quién sigue.
-   Siempre visible si la base tiene Calendario; si no lo tiene no se muestra. *@
+@* Indicador fijo de la barra superior: el evento vigente del tipo configurado (guardia, turno,
+   encargado...) con punto verde y, debajo, quién sigue. Se activa y configura desde Calendario →
+   Indicador; si está apagado (o la base no tiene Calendario) no se muestra. *@
 
 @if (_resumen is not null)
 {
@@ -17,10 +19,10 @@
         <span class="tb-guardia__dot" aria-hidden="true"></span>
         <span class="tb-guardia__text">
             <span class="tb-guardia__actual">
-                @(_resumen.HayActiva ? $"Guardia: {_resumen.ActualResponsable}" : "Sin guardia activa")
+                @(_resumen.HayActiva ? $"{_resumen.Etiqueta}: {_resumen.ActualResponsable}" : $"{_resumen.Etiqueta}: nadie ahora")
             </span>
             <span class="tb-guardia__siguiente">
-                @(_resumen.HaySiguiente ? $"Siguiente: {_resumen.SiguienteResponsable}" : "Sin próxima guardia")
+                @(_resumen.HaySiguiente ? $"Siguiente: {_resumen.SiguienteResponsable}" : "Sin próximos cargados")
             </span>
         </span>
     </button>
@@ -38,14 +40,14 @@
         get
         {
             if (_resumen is null)
-                return "Guardias";
+                return "Calendario";
 
             var actual = _resumen.HayActiva
-                ? $"Guardia activa: {_resumen.ActualResponsable}{(_resumen.ActualHasta is DateTime hasta ? $" (hasta el {hasta:dd/MM HH:mm})" : string.Empty)}"
-                : "Sin guardia activa";
+                ? $"{_resumen.Etiqueta}: {_resumen.ActualResponsable}{(_resumen.ActualHasta is DateTime hasta ? $" (hasta el {hasta:dd/MM HH:mm})" : string.Empty)}"
+                : $"{_resumen.Etiqueta}: nadie en este momento";
             var siguiente = _resumen.HaySiguiente
                 ? $"Siguiente: {_resumen.SiguienteResponsable}{(_resumen.SiguienteDesde is DateTime desde ? $" (desde el {desde:dd/MM HH:mm})" : string.Empty)}"
-                : "Sin próxima guardia cargada";
+                : "Sin próximos cargados";
             return $"{actual}. {siguiente}. Abrir Calendario.";
         }
     }
@@ -54,7 +56,11 @@
     {
         _cts = new CancellationTokenSource();
         _pollingTask = PollAsync(_cts.Token);
+        IndicadorNotifier.Cambio += OnCambioIndicador;
     }
+
+    private void OnCambioIndicador()
+        => _ = InvokeAsync(() => RefreshAsync(_cts?.Token ?? CancellationToken.None));
 
     private async Task PollAsync(CancellationToken ct)
     {
@@ -92,6 +98,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        IndicadorNotifier.Cambio -= OnCambioIndicador;
         if (_cts is null)
             return;
 

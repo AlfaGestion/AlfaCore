@@ -87,6 +87,25 @@ public sealed class ReunionesPublicasService(
             if (overlaps > 0)
                 throw new InvalidOperationException("Ese horario acaba de ser reservado. Elegi otro horario disponible.");
 
+            // Un mismo cliente: una reserva por semana (los técnicos agendan sin límite desde el Calendario).
+            var semana = ReunionesPublicasLimite.InicioSemana(request.FechaInicio);
+            var confirmadas = await cn.QueryAsync<ReunionesPublicasLimite.ReservaCliente>(
+                """
+                SELECT FechaInicio, ISNULL(Email, N'') AS Email, ISNULL(Telefono, N'') AS Telefono, ISNULL(RazonSocial, N'') AS RazonSocial
+                FROM dbo.CAL_RESERVAS_REUNION
+                WHERE ISNULL(Baja, 0) = 0
+                  AND Estado = N'CONFIRMADA'
+                  AND FechaInicio >= @Desde
+                  AND FechaInicio < @Hasta;
+                """,
+                new { Desde = semana, Hasta = semana.AddDays(7) },
+                dbTx);
+            var limite = ReunionesPublicasLimite.Verificar(
+                new ReunionesPublicasLimite.ReservaCliente(request.FechaInicio, request.Email, request.Telefono, request.RazonSocial),
+                confirmadas);
+            if (limite is not null)
+                throw new InvalidOperationException(limite);
+
             var tituloEvento = $"{tipo.Titulo} - {FirstNonEmpty(request.RazonSocial, request.ClienteNombre)}";
             var descripcion = BuildReservationDescription(request);
             var idEvento = await cn.ExecuteScalarAsync<long>(

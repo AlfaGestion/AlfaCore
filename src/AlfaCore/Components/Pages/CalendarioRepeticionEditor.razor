@@ -1,0 +1,337 @@
+@using AlfaCore.Services
+
+@* Repetición de un evento (estilo Google Calendar): opciones rápidas + "Personalizado…", cuándo
+   termina, rotación de responsables y vista previa de cuántos eventos se van a crear. *@
+
+<div class="cal-rep">
+    <div class="cal-rep__fila">
+        <div class="field">
+            <label for="cal-rep-preset">Repetir</label>
+            <select id="cal-rep-preset" value="@PresetActual" @onchange="OnPresetChanged" disabled="@Disabled">
+                <option value="@PresetNinguna">No se repite</option>
+                <option value="@PresetDiaria">Todos los días</option>
+                <option value="@PresetHabiles">Días hábiles (lunes a viernes)</option>
+                <option value="@PresetSemanal">Todas las semanas el @CalendarioRepeticion.NombreDia(FechaInicio.DayOfWeek)</option>
+                <option value="@PresetQuincenal">Cada 2 semanas el @CalendarioRepeticion.NombreDia(FechaInicio.DayOfWeek)</option>
+                <option value="@PresetMensualDia">Todos los meses el día @FechaInicio.Day</option>
+                <option value="@PresetMensualOrdinal">Todos los meses el @CalendarioRepeticion.NombreOrdinal(CalendarioRepeticion.OrdinalEnMes(FechaInicio)) @CalendarioRepeticion.NombreDia(FechaInicio.DayOfWeek)</option>
+                <option value="@PresetAnual">Todos los años el @FechaInicio.ToString("d 'de' MMMM", EsAr)</option>
+                <option value="@PresetPersonalizado">Personalizado…</option>
+            </select>
+        </div>
+    </div>
+
+    @if (Regla.SeRepite)
+    {
+        @if (_personalizado)
+        {
+            <div class="cal-rep__bloque">
+                <div class="cal-rep__cada">
+                    <span>Cada</span>
+                    <input type="number" min="1" max="99" value="@Regla.Intervalo" @onchange="OnIntervaloChanged" disabled="@Disabled" aria-label="Intervalo" />
+                    <select value="@Regla.Frecuencia" @onchange="OnFrecuenciaChanged" disabled="@Disabled" aria-label="Unidad">
+                        <option value="@CalendarioFrecuencias.Diaria">@(Regla.Intervalo == 1 ? "día" : "días")</option>
+                        <option value="@CalendarioFrecuencias.Semanal">@(Regla.Intervalo == 1 ? "semana" : "semanas")</option>
+                        <option value="@CalendarioFrecuencias.Mensual">@(Regla.Intervalo == 1 ? "mes" : "meses")</option>
+                        <option value="@CalendarioFrecuencias.Anual">@(Regla.Intervalo == 1 ? "año" : "años")</option>
+                    </select>
+                </div>
+
+                @if (Regla.Frecuencia == CalendarioFrecuencias.Semanal)
+                {
+                    <div class="cal-rep__dias" role="group" aria-label="Días de la semana">
+                        @foreach (var (dia, letra) in DiasSemana)
+                        {
+                            var d = dia;
+                            <button type="button"
+                                    class="cal-rep__dia @(DiaMarcado(d) ? "is-on" : null)"
+                                    title="@CalendarioRepeticion.NombreDia(d)"
+                                    aria-pressed="@(DiaMarcado(d) ? "true" : "false")"
+                                    disabled="@Disabled"
+                                    @onclick="() => ToggleDia(d)">@letra</button>
+                        }
+                    </div>
+                }
+                else if (Regla.Frecuencia == CalendarioFrecuencias.Mensual)
+                {
+                    <div class="cal-rep__radios">
+                        <label><input type="radio" name="cal-rep-mensual" checked="@(Regla.ModoMensual != CalendarioModosMensuales.DiaSemana)" disabled="@Disabled"
+                                      @onchange="() => SetModoMensual(CalendarioModosMensuales.DiaMes)" /> El día @FechaInicio.Day</label>
+                        <label><input type="radio" name="cal-rep-mensual" checked="@(Regla.ModoMensual == CalendarioModosMensuales.DiaSemana)" disabled="@Disabled"
+                                      @onchange="() => SetModoMensual(CalendarioModosMensuales.DiaSemana)" />
+                            El @CalendarioRepeticion.NombreOrdinal(CalendarioRepeticion.OrdinalEnMes(FechaInicio)) @CalendarioRepeticion.NombreDia(FechaInicio.DayOfWeek)</label>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="cal-rep__bloque">
+            <span class="cal-rep__titulo">Finaliza</span>
+            <div class="cal-rep__radios">
+                <label><input type="radio" name="cal-rep-fin" checked="@(Regla.Fin == CalendarioFinesRepeticion.Nunca)" disabled="@Disabled"
+                              @onchange="() => SetFin(CalendarioFinesRepeticion.Nunca)" /> No finaliza <small>(se cargan las fechas de un año)</small></label>
+                <label class="cal-rep__con-campo">
+                    <input type="radio" name="cal-rep-fin" checked="@(Regla.Fin == CalendarioFinesRepeticion.Fecha)" disabled="@Disabled"
+                           @onchange="() => SetFin(CalendarioFinesRepeticion.Fecha)" /> En una fecha
+                    <input type="date" value="@(Regla.FinFecha?.ToString("yyyy-MM-dd") ?? string.Empty)" disabled="@(Disabled || Regla.Fin != CalendarioFinesRepeticion.Fecha)"
+                           @onchange="OnFinFechaChanged" aria-label="Fecha de fin" />
+                </label>
+                <label class="cal-rep__con-campo">
+                    <input type="radio" name="cal-rep-fin" checked="@(Regla.Fin == CalendarioFinesRepeticion.Veces)" disabled="@Disabled"
+                           @onchange="() => SetFin(CalendarioFinesRepeticion.Veces)" /> Después de
+                    <input type="number" min="1" max="@CalendarioRepeticion.MaximoOcurrencias" value="@Regla.FinVeces" disabled="@(Disabled || Regla.Fin != CalendarioFinesRepeticion.Veces)"
+                           @onchange="OnFinVecesChanged" aria-label="Cantidad de veces" /> veces
+                </label>
+            </div>
+        </div>
+
+        @if (PermitirRotacion)
+        {
+            <div class="cal-rep__bloque">
+                <label class="cal-rep__check">
+                    <input type="checkbox" checked="@_rotar" disabled="@Disabled" @onchange="OnRotarChanged" />
+                    <span>Rotar responsables <small>(cada repetición le toca al siguiente de la lista)</small></span>
+                </label>
+                @if (_rotar)
+                {
+                    <div class="cal-rep__rotacion">
+                        @for (var i = 0; i < Rotacion.Count; i++)
+                        {
+                            var indice = i;
+                            <span class="cal-rep__persona">
+                                <b>@(indice + 1)</b> @NombreTecnico(Rotacion[indice])
+                                <button type="button" title="Quitar" aria-label="Quitar @NombreTecnico(Rotacion[indice])" disabled="@Disabled"
+                                        @onclick="() => QuitarDeRotacion(indice)"><i class="bi bi-x"></i></button>
+                            </span>
+                        }
+                        <select value="" @onchange="OnAgregarRotacion" disabled="@Disabled" aria-label="Agregar persona a la rotación">
+                            <option value="">+ Agregar persona</option>
+                            @foreach (var tecnico in Tecnicos.Where(t => !Rotacion.Contains(t.IdTecnico)))
+                            {
+                                <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                            }
+                        </select>
+                        @if (Tecnicos.Count == 0)
+                        {
+                            <small class="cal-rep__vacio">No hay técnicos ni usuarios cargados para elegir.</small>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <p class="cal-rep__resumen">
+            <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+            @CalendarioRepeticion.Describir(FechaInicio, Regla) · @CantidadEventos @(CantidadEventos == 1 ? "evento" : "eventos")
+        </p>
+    }
+</div>
+
+@code {
+    private const string PresetNinguna = "NINGUNA";
+    private const string PresetDiaria = "DIARIA";
+    private const string PresetHabiles = "HABILES";
+    private const string PresetSemanal = "SEMANAL";
+    private const string PresetQuincenal = "QUINCENAL";
+    private const string PresetMensualDia = "MENSUAL_DIA";
+    private const string PresetMensualOrdinal = "MENSUAL_ORDINAL";
+    private const string PresetAnual = "ANUAL";
+    private const string PresetPersonalizado = "PERSONALIZADO";
+
+    private static readonly System.Globalization.CultureInfo EsAr = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    private static readonly (DayOfWeek Dia, string Letra)[] DiasSemana =
+    [
+        (DayOfWeek.Monday, "L"), (DayOfWeek.Tuesday, "M"), (DayOfWeek.Wednesday, "X"), (DayOfWeek.Thursday, "J"),
+        (DayOfWeek.Friday, "V"), (DayOfWeek.Saturday, "S"), (DayOfWeek.Sunday, "D")
+    ];
+
+    [Parameter, EditorRequired] public CalendarioRepeticionDto Regla { get; set; } = new();
+    [Parameter] public EventCallback<CalendarioRepeticionDto> ReglaChanged { get; set; }
+    [Parameter] public DateTime FechaInicio { get; set; } = DateTime.Today;
+    [Parameter] public IReadOnlyList<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
+    [Parameter] public List<string> Rotacion { get; set; } = [];
+    [Parameter] public EventCallback<List<string>> RotacionChanged { get; set; }
+    [Parameter] public bool PermitirRotacion { get; set; } = true;
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Arranca con "Rotar responsables" marcado (carga que viene desde el indicador).</summary>
+    [Parameter] public bool RotarPorDefecto { get; set; }
+
+    private bool _personalizado;
+    private bool _rotar;
+
+    protected override void OnInitialized() => _rotar = RotarPorDefecto;
+
+    protected override void OnParametersSet()
+    {
+        if (Rotacion.Count > 0)
+            _rotar = true;
+        if (Regla.SeRepite && PresetDe(Regla) == PresetPersonalizado)
+            _personalizado = true;
+    }
+
+    private int CantidadEventos => CalendarioRepeticion.GenerarInicios(FechaInicio, Regla).Count;
+
+    private string PresetActual => _personalizado && Regla.SeRepite ? PresetPersonalizado : PresetDe(Regla);
+
+    private string PresetDe(CalendarioRepeticionDto r)
+    {
+        if (!r.SeRepite)
+            return PresetNinguna;
+
+        var dias = r.DiasSemana.Count > 0 ? r.DiasSemana.ToHashSet() : [FechaInicio.DayOfWeek];
+        var soloDiaInicio = dias.Count == 1 && dias.Contains(FechaInicio.DayOfWeek);
+        return (r.Frecuencia, r.Intervalo) switch
+        {
+            (CalendarioFrecuencias.Diaria, 1) => PresetDiaria,
+            (CalendarioFrecuencias.Semanal, 1) when dias.SetEquals(DiasHabiles) => PresetHabiles,
+            (CalendarioFrecuencias.Semanal, 1) when soloDiaInicio => PresetSemanal,
+            (CalendarioFrecuencias.Semanal, 2) when soloDiaInicio => PresetQuincenal,
+            (CalendarioFrecuencias.Mensual, 1) when r.ModoMensual == CalendarioModosMensuales.DiaSemana => PresetMensualOrdinal,
+            (CalendarioFrecuencias.Mensual, 1) => PresetMensualDia,
+            (CalendarioFrecuencias.Anual, 1) => PresetAnual,
+            _ => PresetPersonalizado
+        };
+    }
+
+    private static readonly HashSet<DayOfWeek> DiasHabiles =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday];
+
+    private async Task OnPresetChanged(ChangeEventArgs e)
+    {
+        var preset = e.Value?.ToString() ?? PresetNinguna;
+        var regla = Regla.Clonar();
+        _personalizado = preset == PresetPersonalizado;
+        switch (preset)
+        {
+            case PresetNinguna:
+                regla.Frecuencia = CalendarioFrecuencias.Ninguna;
+                break;
+            case PresetDiaria:
+                Set(regla, CalendarioFrecuencias.Diaria, 1);
+                break;
+            case PresetHabiles:
+                Set(regla, CalendarioFrecuencias.Semanal, 1);
+                regla.DiasSemana = [.. DiasHabiles];
+                break;
+            case PresetSemanal:
+                Set(regla, CalendarioFrecuencias.Semanal, 1);
+                break;
+            case PresetQuincenal:
+                Set(regla, CalendarioFrecuencias.Semanal, 2);
+                break;
+            case PresetMensualDia:
+                Set(regla, CalendarioFrecuencias.Mensual, 1);
+                break;
+            case PresetMensualOrdinal:
+                Set(regla, CalendarioFrecuencias.Mensual, 1);
+                regla.ModoMensual = CalendarioModosMensuales.DiaSemana;
+                break;
+            case PresetAnual:
+                Set(regla, CalendarioFrecuencias.Anual, 1);
+                break;
+            case PresetPersonalizado:
+                if (!regla.SeRepite)
+                    Set(regla, CalendarioFrecuencias.Semanal, 1);
+                break;
+        }
+
+        await Emitir(regla);
+    }
+
+    private static void Set(CalendarioRepeticionDto regla, string frecuencia, int intervalo)
+    {
+        regla.Frecuencia = frecuencia;
+        regla.Intervalo = intervalo;
+        regla.DiasSemana = [];
+        regla.ModoMensual = CalendarioModosMensuales.DiaMes;
+    }
+
+    private async Task OnIntervaloChanged(ChangeEventArgs e)
+    {
+        var regla = Regla.Clonar();
+        regla.Intervalo = int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 1, 99) : 1;
+        await Emitir(regla);
+    }
+
+    private async Task OnFrecuenciaChanged(ChangeEventArgs e)
+    {
+        var regla = Regla.Clonar();
+        regla.Frecuencia = e.Value?.ToString() ?? CalendarioFrecuencias.Semanal;
+        regla.DiasSemana = [];
+        await Emitir(regla);
+    }
+
+    private bool DiaMarcado(DayOfWeek dia)
+        => Regla.DiasSemana.Count > 0 ? Regla.DiasSemana.Contains(dia) : dia == FechaInicio.DayOfWeek;
+
+    private async Task ToggleDia(DayOfWeek dia)
+    {
+        var regla = Regla.Clonar();
+        var dias = regla.DiasSemana.Count > 0 ? regla.DiasSemana.ToHashSet() : [FechaInicio.DayOfWeek];
+        if (!dias.Remove(dia))
+            dias.Add(dia);
+        if (dias.Count == 0)
+            dias.Add(FechaInicio.DayOfWeek);
+        regla.DiasSemana = [.. dias];
+        await Emitir(regla);
+    }
+
+    private async Task SetModoMensual(string modo)
+    {
+        var regla = Regla.Clonar();
+        regla.ModoMensual = modo;
+        await Emitir(regla);
+    }
+
+    private async Task SetFin(string fin)
+    {
+        var regla = Regla.Clonar();
+        regla.Fin = fin;
+        if (fin == CalendarioFinesRepeticion.Fecha && regla.FinFecha is null)
+            regla.FinFecha = FechaInicio.Date.AddMonths(3);
+        await Emitir(regla);
+    }
+
+    private async Task OnFinFechaChanged(ChangeEventArgs e)
+    {
+        var regla = Regla.Clonar();
+        regla.FinFecha = DateTime.TryParse(e.Value?.ToString(), out var fecha) ? fecha.Date : null;
+        await Emitir(regla);
+    }
+
+    private async Task OnFinVecesChanged(ChangeEventArgs e)
+    {
+        var regla = Regla.Clonar();
+        regla.FinVeces = int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 1, CalendarioRepeticion.MaximoOcurrencias) : 10;
+        await Emitir(regla);
+    }
+
+    private async Task OnRotarChanged(ChangeEventArgs e)
+    {
+        _rotar = e.Value is true;
+        if (!_rotar && Rotacion.Count > 0)
+            await RotacionChanged.InvokeAsync([]);
+    }
+
+    private async Task OnAgregarRotacion(ChangeEventArgs e)
+    {
+        var id = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(id) || Rotacion.Contains(id))
+            return;
+        await RotacionChanged.InvokeAsync([.. Rotacion, id]);
+    }
+
+    private async Task QuitarDeRotacion(int indice)
+    {
+        var lista = Rotacion.ToList();
+        lista.RemoveAt(indice);
+        await RotacionChanged.InvokeAsync(lista);
+    }
+
+    private string NombreTecnico(string id)
+        => Tecnicos.FirstOrDefault(t => t.IdTecnico == id)?.Nombre ?? id;
+
+    private Task Emitir(CalendarioRepeticionDto regla) => ReglaChanged.InvokeAsync(regla);
+}
