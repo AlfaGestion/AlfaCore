@@ -31,15 +31,21 @@ En la bandeja, la conversación muestra la página desde la que escribió el vis
 
 - Las conversaciones del sitio aparecen en la bandeja con el ícono de globo, en **Todos** o filtrando
   por **Chat del sitio web**.
-- Si el **Asistente IA** está activo (Automatización), responde primero. Cuando no puede resolver la
-  consulta, la deriva a un agente.
+- Si el **Asistente IA** está activo y tiene marcado el canal **Chat del sitio web** (Configuración →
+  Asistente IA → General → Canales), responde primero. Cuando no puede resolver la consulta, la deriva
+  a un agente y, si está activada la opción, genera un ticket y le pasa el número al visitante.
+- Con la opción **Pedir el número de WhatsApp y la razón social al visitante**, el asistente los pide
+  una sola vez, junto con su primera respuesta. Cuando el visitante los manda, quedan guardados en la
+  conversación (se ve una nota "Datos del visitante del chat web") y, si el número coincide con un
+  contacto cargado, la conversación queda vinculada a ese cliente.
 - Para responder vos, escribí normalmente en la conversación. El visitante ve tu respuesta en
   unos segundos, mientras tenga el chat abierto.
 
 ## Tené en cuenta
 
-- El visitante no se identifica: aparece como "Visitante web" salvo que deje su nombre. Por eso el
-  asistente no informa saldos ni pedidos en este canal.
+- El visitante no se identifica al entrar: aparece como "Visitante web" salvo que deje su nombre o
+  pase sus datos cuando el asistente se los pide. Mientras no quede vinculado a un cliente, el
+  asistente no informa saldos ni pedidos.
 - No se pueden enviar archivos adjuntos por este canal.
 - La conversación se mantiene mientras el visitante navega por el sitio. Si cierra la pestaña o el
   navegador, la próxima vez empieza una charla nueva (la anterior queda en la bandeja).

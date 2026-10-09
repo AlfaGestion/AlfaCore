@@ -961,6 +961,9 @@ public sealed class ConversacionesConfigService(
                 BotMaxRespuestas = ReadIntValue(values, "CONV_BOT_MAX_RESPUESTAS", 0, 5),
                 BotSoloFueraHorario = ReadValue(values, "CONV_BOT_SOLO_FUERA_HORARIO", string.Empty) == "1",
                 BotEsperaMinutos = ReadIntValue(values, "CONV_BOT_ESPERA_MINUTOS", 0, 0),
+                BotCanales = ParseBotCanales(ReadValue(values, "CONV_BOT_CANALES", string.Empty)),
+                BotGeneraTicket = ReadValue(values, "CONV_BOT_GENERA_TICKET", string.Empty, "1") != "0",
+                BotWebPideDatos = ReadValue(values, "CONV_BOT_WEB_PIDE_DATOS", string.Empty, "1") != "0",
                 AutoCierreActivo = ReadValue(values, "CONV_AUTOCIERRE_ACTIVO", string.Empty) == "1",
                 AutoCierreHorasAviso = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_AVISO", 0, 23),
                 AutoCierreHorasCierre = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_CIERRE", 0, 24),
@@ -1098,6 +1101,9 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(inv)));
             items.Add(("CONV_BOT_SOLO_FUERA_HORARIO", config.BotSoloFueraHorario ? "1" : "0"));
             items.Add(("CONV_BOT_ESPERA_MINUTOS", Math.Max(0, config.BotEsperaMinutos).ToString(inv)));
+            items.Add(("CONV_BOT_CANALES", FormatBotCanales(config.BotCanales)));
+            items.Add(("CONV_BOT_GENERA_TICKET", config.BotGeneraTicket ? "1" : "0"));
+            items.Add(("CONV_BOT_WEB_PIDE_DATOS", config.BotWebPideDatos ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()));
             items.Add(("CONV_ASISTENTE_URGENCIA_TEMPLATE", string.IsNullOrWhiteSpace(config.AsistenteUrgenciaTemplate) ? "cliente_consultando_urgencia" : config.AsistenteUrgenciaTemplate.Trim()));
@@ -3000,6 +3006,32 @@ public sealed class ConversacionesConfigService(
             return value.Trim();
 
         return string.IsNullOrWhiteSpace(auxValue) ? string.Empty : auxValue.Trim();
+    }
+
+    // CONV_BOT_CANALES: lista de canales separada por coma. Sin valor = todos (compatibilidad con
+    // bases que ya tenían el bot activo); "NINGUNO" = el bot no responde en ningún canal.
+    internal const string BotCanalesNinguno = "NINGUNO";
+
+    internal static List<string> ParseBotCanales(string? value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        if (raw.Length == 0)
+            return [.. ConversacionAutomatizacionesConfigDto.BotCanalesDisponibles.Select(x => x.Codigo)];
+        if (string.Equals(raw, BotCanalesNinguno, StringComparison.OrdinalIgnoreCase))
+            return [];
+
+        var validos = ConversacionAutomatizacionesConfigDto.BotCanalesDisponibles.Select(x => x.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x.ToUpperInvariant())
+            .Where(validos.Contains)
+            .Distinct()
+            .ToList();
+    }
+
+    internal static string FormatBotCanales(IEnumerable<string>? canales)
+    {
+        var lista = ParseBotCanales(string.Join(',', canales ?? []) is { Length: > 0 } joined ? joined : BotCanalesNinguno);
+        return lista.Count == 0 ? BotCanalesNinguno : string.Join(',', lista);
     }
 
     private static List<string> ParseDelimitedList(string? value)

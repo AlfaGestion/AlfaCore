@@ -4340,6 +4340,9 @@
             BotMaxRespuestas = source.BotMaxRespuestas,
             BotSoloFueraHorario = source.BotSoloFueraHorario,
             BotEsperaMinutos = source.BotEsperaMinutos,
+            BotCanales = [.. source.BotCanales],
+            BotGeneraTicket = source.BotGeneraTicket,
+            BotWebPideDatos = source.BotWebPideDatos,
             AutoCierreActivo = source.AutoCierreActivo,
             AutoCierreHorasAviso = source.AutoCierreHorasAviso,
             AutoCierreHorasCierre = source.AutoCierreHorasCierre,
@@ -4388,6 +4391,9 @@
            && left.BotMaxRespuestas == right.BotMaxRespuestas
            && left.BotSoloFueraHorario == right.BotSoloFueraHorario
            && left.BotEsperaMinutos == right.BotEsperaMinutos
+           && left.BotCanales.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).SequenceEqual(right.BotCanales.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase)
+           && left.BotGeneraTicket == right.BotGeneraTicket
+           && left.BotWebPideDatos == right.BotWebPideDatos
            && left.AutoCierreActivo == right.AutoCierreActivo
            && left.AutoCierreHorasAviso == right.AutoCierreHorasAviso
            && left.AutoCierreHorasCierre == right.AutoCierreHorasCierre

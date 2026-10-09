@@ -372,6 +372,31 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// margen a un agente humano a atender primero. 0 = responde de inmediato.</summary>
     public int BotEsperaMinutos { get; set; }
 
+    /// <summary>
+    /// Canales en los que responde el bot (CONV_BOT_CANALES). Sin configurar = todos, para que una base
+    /// que ya tenía el bot activo siga igual. Ej: activo en Chat web e Instagram, apagado en WhatsApp.
+    /// </summary>
+    public List<string> BotCanales { get; set; } = [.. BotCanalesDisponibles.Select(x => x.Codigo)];
+
+    /// <summary>Si el bot no encuentra respuesta (deriva), genera un ticket vinculado a la conversación.</summary>
+    public bool BotGeneraTicket { get; set; } = true;
+
+    /// <summary>Solo Chat web: el bot le pide al visitante su WhatsApp y la razón social para saber quién escribe.</summary>
+    public bool BotWebPideDatos { get; set; } = true;
+
+    public static IReadOnlyList<(string Codigo, string Nombre)> BotCanalesDisponibles { get; } =
+    [
+        ("WHATSAPP", "WhatsApp"),
+        ("INSTAGRAM", "Instagram"),
+        ("FACEBOOK", "Facebook Messenger"),
+        ("MERCADOLIBRE", "Mercado Libre"),
+        ("WEBCHAT", "Chat del sitio web")
+    ];
+
+    public bool BotRespondeEnCanal(string? canal)
+        => !string.IsNullOrWhiteSpace(canal)
+           && BotCanales.Any(x => string.Equals(x, canal.Trim(), StringComparison.OrdinalIgnoreCase));
+
     // Auto-cierre por inactividad. Cierra conversaciones donde estamos esperando al cliente
     // (último mensaje nuestro) y no responde. Manda un aviso previo antes de cerrar. Apagado por
     // defecto. Aplica a todos los canales; el aviso/cierre solo se envían si el canal lo permite.

@@ -36,7 +36,8 @@ public sealed class ConversacionesService(
     IWebHostEnvironment environment,
     ILogger<ConversacionesService> logger,
     IConversacionAsistenteConocimientoService? asistenteConocimiento = null,
-    IIaConsumoService? iaConsumo = null) : IConversacionesService
+    IIaConsumoService? iaConsumo = null,
+    IServiceProvider? serviceProvider = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -8592,7 +8593,8 @@ public sealed class ConversacionesService(
 
                     // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
                     // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
-                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
+                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured
+                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))
                         return;
 
                     if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, token).ConfigureAwait(false))
@@ -8824,6 +8826,12 @@ public sealed class ConversacionesService(
                 }
 
                 var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
+                if (!config.BotRespondeEnCanal(canalBot))
+                {
+                    await TraceDiagAsync($"EjecutarStop:CanalSinBot:{canalBot}", idConversacion, ct).ConfigureAwait(false);
+                    return;
+                }
+
                 if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
                 {
                     await TraceDiagAsync($"EjecutarStop:VentanaInactiva:{canalBot}", idConversacion, ct).ConfigureAwait(false);
@@ -8876,6 +8884,32 @@ public sealed class ConversacionesService(
                             await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
                     }
                     return;
+                }
+
+                // Chat web (visitante anónimo): el asistente pide una vez el WhatsApp y la razón social.
+                // Si ya los pidió y este mensaje los trae, se guardan en la conversación y se agradece.
+                var pedirDatosWeb = string.Equals(canalBot, "WEBCHAT", StringComparison.OrdinalIgnoreCase)
+                    && config.BotWebPideDatos
+                    && !await VisitanteWebIdentificadoAsync(idConversacion, token).ConfigureAwait(false);
+                if (pedirDatosWeb && await ExisteNotaInternaAsync(idConversacion, NotaBotPidioDatosWeb, token).ConfigureAwait(false))
+                {
+                    pedirDatosWeb = false;
+                    if (TryParseDatosVisitanteWeb(texto, out var telefonoVisitante, out var razonSocialVisitante))
+                    {
+                        await GuardarDatosVisitanteWebAsync(idConversacion, telefonoVisitante, razonSocialVisitante, token).ConfigureAwait(false);
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = idConversacion,
+                            Texto = string.IsNullOrWhiteSpace(razonSocialVisitante)
+                                ? "¡Gracias! Ya registré tu número. ¿En qué más te puedo ayudar?"
+                                : $"¡Gracias, {razonSocialVisitante}! Ya registré tus datos. ¿En qué más te puedo ayudar?",
+                            MessageType = "TEXT",
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "BOT"
+                        }, token).ConfigureAwait(false);
+                        await TraceDiagAsync("BotWebDatosRegistrados", idConversacion, ct).ConfigureAwait(false);
+                        return;
+                    }
                 }
 
                 await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
@@ -9081,6 +9115,19 @@ public sealed class ConversacionesService(
                     return;
                 }
 
+                // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
+                // ya uno abierto) y el cliente recibe el número.
+                int? numeroTicketBot = null;
+                if (tipo == "DERIVA" && config.BotGeneraTicket)
+                {
+                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
+                    if (numeroTicketBot is int numero)
+                        respuesta = $"{respuesta}\n\nRegistramos tu consulta con el número de ticket #{numero.ToString(CultureInfo.InvariantCulture)}.";
+                }
+
+                if (pedirDatosWeb)
+                    respuesta = $"{respuesta}\n\n{PedidoDatosVisitanteWeb}";
+
                 await TraceDiagAsync($"Paso:AntesSendMessage:tipo={tipo}", idConversacion, ct).ConfigureAwait(false);
                 await SendMessageAsync(new ConversacionSendMessageRequest
                 {
@@ -9091,6 +9138,20 @@ public sealed class ConversacionesService(
                     SistemaAccion = "BOT"
                 }, token).ConfigureAwait(false);
                 await TraceDiagAsync("Paso:DespuesSendMessageOk", idConversacion, ct).ConfigureAwait(false);
+
+                if (numeroTicketBot is int numeroNota)
+                {
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"🎫 El asistente no encontró respuesta y generó el ticket #{numeroNota.ToString(CultureInfo.InvariantCulture)} con la consulta.",
+                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                }
+
+                if (pedirDatosWeb)
+                {
+                    // Marca persistida: el pedido se hace una sola vez por conversación.
+                    await AddInternalEventCoreAsync(idConversacion, NotaBotPidioDatosWeb,
+                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                }
 
                 if (tipo == "ACLARA")
                 {
@@ -9736,6 +9797,205 @@ public sealed class ConversacionesService(
     internal const string NotaTopeCreditosIa = "🤖⛔ Se alcanzó el tope mensual de créditos de IA: el asistente no responde. Requiere que un operador lo tome.";
 
     /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
+    internal const string NotaBotPidioDatosWeb = "🤖🪪 El asistente le pidió al visitante del chat web su WhatsApp y la razón social.";
+
+    internal const string PedidoDatosVisitanteWeb = "Para darte una atención más completa, ¿me pasás tu número de WhatsApp y la razón social de tu empresa?";
+
+    private async Task<bool> ExisteNotaInternaAsync(long idConversacion, string nota, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id
+              AND Direction = N'NOTA_INTERNA'
+              AND CAST(Texto AS nvarchar(max)) = @Nota;
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Nota", nota);
+            return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Un visitante del chat web está identificado si ya tiene teléfono o cliente vinculado.</summary>
+    private async Task<bool> VisitanteWebIdentificadoAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                CASE WHEN LTRIM(RTRIM(ISNULL(TelefonoWhatsApp, N''))) <> N''
+                       OR LTRIM(RTRIM(ISNULL(ClienteCodigo, N''))) <> N'' THEN 1 ELSE 0 END
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @Id;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0, CultureInfo.InvariantCulture) == 1;
+    }
+
+    private static readonly Regex TelefonoVisitanteRegex = new(@"\+?\d[\d\s\-\.\(\)]{6,22}\d", RegexOptions.Compiled);
+
+    private static readonly Regex ConectoresExtremoRegex = new(@"(?i)^(y|e|mi|es|de|con)\b\s*|\s*\b(y|e|mi|es|de|con)$", RegexOptions.Compiled);
+
+    private static readonly Regex EtiquetasDatosVisitanteRegex = new(
+        @"(?i)\b(mi\s+)?(n[uú]mero|nro\.?|tel[eé]fono|tel\.?|celular|cel\.?)(\s+de)?(\s+(whats?app|wpp|wsp))?(\s+es)?\b|\b(mi\s+)?(whats?app|wpp|wsp)(\s+es)?\b|\b(la\s+|mi\s+)?raz[oó]n\s+social(\s+es)?\b|\b(la\s+|mi\s+)?empresa(\s+es)?\b|\bsoy\b",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extrae del mensaje del visitante un teléfono (8 a 15 dígitos) y la razón social (el resto del
+    /// texto sin el número ni las etiquetas tipo "mi WhatsApp es", "razón social"). Sin teléfono = false.
+    /// </summary>
+    internal static bool TryParseDatosVisitanteWeb(string? texto, out string telefono, out string razonSocial)
+    {
+        telefono = string.Empty;
+        razonSocial = string.Empty;
+        var valor = (texto ?? string.Empty).Trim();
+        var match = TelefonoVisitanteRegex.Match(valor);
+        if (!match.Success)
+            return false;
+
+        var digitos = new string(match.Value.Where(char.IsDigit).ToArray());
+        if (digitos.Length is < 8 or > 15)
+            return false;
+
+        telefono = digitos;
+        var resto = valor.Remove(match.Index, match.Length);
+        resto = EtiquetasDatosVisitanteRegex.Replace(resto, " ");
+        resto = Regex.Replace(resto, @"\s+", " ");
+        // Conectores que quedan sueltos en los extremos al sacar el número y las etiquetas ("... y mi").
+        string anterior;
+        do
+        {
+            anterior = resto;
+            resto = resto.Trim(' ', ',', ';', ':', '-', '.', '/', '|', '(', ')');
+            resto = ConectoresExtremoRegex.Replace(resto, string.Empty);
+        }
+        while (resto != anterior);
+        razonSocial = resto.Length > 120 ? resto[..120].Trim() : resto;
+        return true;
+    }
+
+    /// <summary>
+    /// Guarda en la conversación del chat web el teléfono y la razón social que dio el visitante. Si el
+    /// teléfono coincide con un contacto cargado, la conversación queda vinculada a ese contacto y cliente.
+    /// </summary>
+    private async Task GuardarDatosVisitanteWebAsync(long idConversacion, string telefono, string razonSocial, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var contacto = await TryFindContactByPhoneAsync(cn, telefono, ct).ConfigureAwait(false);
+
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET TelefonoWhatsApp = CASE WHEN LTRIM(RTRIM(ISNULL(TelefonoWhatsApp, N''))) = N'' THEN @Telefono ELSE TelefonoWhatsApp END,
+                NombreVisible = CASE WHEN @RazonSocial <> N'' THEN @RazonSocial ELSE NombreVisible END,
+                IdContacto = COALESCE(IdContacto, @IdContacto),
+                ClienteCodigo = CASE WHEN LTRIM(RTRIM(ISNULL(ClienteCodigo, N''))) = N'' THEN NULLIF(@ClienteCodigo, N'') ELSE ClienteCodigo END,
+                FechaHora_Modificacion = GETDATE()
+            WHERE IdConversacion = @Id;
+            """;
+        await using (var cmd = new SqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@Telefono", telefono.Length > 30 ? telefono[..30] : telefono);
+            cmd.Parameters.AddWithValue("@RazonSocial", razonSocial);
+            cmd.Parameters.AddWithValue("@IdContacto", contacto.IdContact is int idContacto && idContacto > 0 ? idContacto : DBNull.Value);
+            cmd.Parameters.AddWithValue("@ClienteCodigo", contacto.ClientCode ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        var partes = new List<string> { $"WhatsApp {telefono}" };
+        if (!string.IsNullOrWhiteSpace(razonSocial))
+            partes.Add($"razón social {razonSocial}");
+        if (!string.IsNullOrWhiteSpace(contacto.ClientCode))
+            partes.Add($"vinculado al cliente {contacto.ClientCode}");
+        await AddInternalEventCoreAsync(idConversacion,
+            $"🪪 Datos del visitante del chat web: {string.Join(" · ", partes)}.",
+            null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ticket automático cuando el asistente no encontró respuesta. Devuelve el número, o null si no se
+    /// creó (sin módulo de Tickets, la conversación ya tiene un ticket abierto o hubo un error, que queda
+    /// registrado sin cortar la respuesta al cliente). TicketsService se resuelve en el momento porque
+    /// depende de este servicio.
+    /// </summary>
+    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
+            return null;
+
+        try
+        {
+            long? idMensaje;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct).ConfigureAwait(false);
+                const string sql = """
+                    IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NULL
+                    BEGIN
+                        SELECT CAST(-1 AS bigint);
+                        RETURN;
+                    END;
+
+                    IF EXISTS (
+                        SELECT 1
+                        FROM dbo.TICK_TICKETS t
+                        LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
+                        WHERE t.IdConversacion = @Id
+                          AND ISNULL(t.Baja, 0) = 0
+                          AND ISNULL(e.EsCerrado, 0) = 0)
+                    BEGIN
+                        SELECT CAST(-1 AS bigint);
+                        RETURN;
+                    END;
+
+                    SELECT TOP (1) IdMensaje
+                    FROM dbo.CONV_MENSAJES
+                    WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+                    ORDER BY FechaHora DESC, IdMensaje DESC;
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@Id", idConversacion);
+                var raw = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                idMensaje = raw is null or DBNull ? null : Convert.ToInt64(raw, CultureInfo.InvariantCulture);
+            }
+
+            if (idMensaje == -1)
+                return null;
+
+            var idTicket = await ticketsService.CreateAsync(new TicketCreateRequest
+            {
+                Titulo = $"Consulta sin resolver: {Truncar(texto, 80)}",
+                Descripcion = $"El asistente no encontró respuesta a esta consulta.\n\nMensaje del cliente:\n{texto}",
+                Prioridad = 1,
+                IdConversacion = idConversacion,
+                IdMensajes = idMensaje is long id && id > 0 ? [id] : [],
+                UsuarioAccion = "AlfaCore"
+            }, ct).ConfigureAwait(false);
+
+            var ticket = await ticketsService.GetByIdAsync(idTicket, ct).ConfigureAwait(false);
+            return ticket?.Numero;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "BotGeneraTicket", ex,
+                "El asistente no pudo generar el ticket de la consulta sin respuesta.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
     private async Task<bool> ExisteNotaInternaHoyAsync(long idConversacion, string nota, CancellationToken ct)
     {
         const string sql = """

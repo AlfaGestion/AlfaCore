@@ -117,10 +117,23 @@ descarta al cerrar la pestaña (la próxima visita empieza de cero). El botón "
 encabezado genera otro `visitorId`: en la bandeja queda como conversación nueva y la anterior se
 conserva. Si `sessionStorage` no está disponible, usa un id en memoria (no sobrevive a recargar).
 
+## Asistente IA por canal y tickets
+
+| Clave (`TA_CONFIGURACION`) | Uso |
+|---|---|
+| `CONV_BOT_CANALES` | Canales en que responde el bot, separados por coma (`WHATSAPP,INSTAGRAM,FACEBOOK,MERCADOLIBRE,WEBCHAT`). Sin valor = todos (compatibilidad); `NINGUNO` = ninguno. En un canal sin bot, fuera de horario sale el mensaje fijo aunque `CONV_ASISTENTE_FUERA_HORARIO` esté activo |
+| `CONV_BOT_GENERA_TICKET` | `1` (default): cuando el bot deriva (`DERIVA` o contención), crea un ticket con la consulta vinculado a la conversación y le pasa el número al cliente. Si la conversación ya tiene un ticket abierto no crea otro. `TicketsService` se resuelve con `IServiceProvider` porque depende de `ConversacionesService` |
+| `CONV_BOT_WEB_PIDE_DATOS` | `1` (default): solo `WEBCHAT`, pedido de WhatsApp y razón social (ver arriba) |
+
 ## Limitaciones conocidas
 
 - Visitante anónimo: `ResolverCuentaVinculadaAsync` no encuentra cuenta, el asistente responde en
-  modo general (AlfaKnowledge/texto) y deriva a un humano; no informa saldos ni pedidos.
+  modo general (AlfaKnowledge/texto) y deriva a un humano; no informa saldos ni pedidos. Con
+  `CONV_BOT_WEB_PIDE_DATOS = 1` (default) el bot pide una vez el WhatsApp y la razón social
+  (`PedidoDatosVisitanteWeb`, marca `NotaBotPidioDatosWeb`); al recibirlos,
+  `GuardarDatosVisitanteWebAsync` graba `TelefonoWhatsApp`/`NombreVisible` y, si el teléfono coincide
+  con un contacto (`TryFindContactByPhoneAsync`), `IdContacto`/`ClienteCodigo`. Desde ahí el visitante
+  queda identificado y el asistente puede usar sus datos reales.
 - El POST espera a que termine la cadena de respuestas automáticas (puede tardar varios segundos con
   el bot); el widget no se bloquea porque la respuesta llega por polling.
 - Sin caché de la resolución `siteKey → base`: cada polling consulta la base central.
