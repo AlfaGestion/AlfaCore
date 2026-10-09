@@ -1,9 +1,44 @@
-﻿@page "/Error"
+@page "/Error"
 @page "/{idweb}/{idbase:int}/Error"
-<PageTitle>Error</PageTitle>
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
-<div class="panel-card empty-state">
-    <span class="empty-state__eyebrow">Aplicación</span>
-    <h1>Se produjo un error</h1>
-    <p>La aplicación encontró una excepción al procesar la solicitud actual.</p>
+<PageTitle>Error | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd gd-legacy error-page-ad">
+    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                    Title="Se produjo un error"
+                    Message="La aplicación encontró un problema al procesar la solicitud. Volvé al inicio e intentá de nuevo; si se repite, avisá a soporte."
+                    ActionLabel="Volver al inicio"
+                    ActionIcon="bi-house"
+                    OnAction="VolverAlInicio" />
 </div>
+
+@code {
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "error",
+        Title = "Error"
+    });
+
+    private void VolverAlInicio() => Nav.NavigateTo(RouteContext.BuildRoute("/"));
+}

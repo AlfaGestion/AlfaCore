@@ -1537,23 +1537,6 @@
     white-space: nowrap;
 }
 
-/* Selector de bases (SessionDrawer) dentro del shell AlfaDesign: botón Seleccionar con el
-   primario AlfaDesign (no el turquesa legacy). El drawer del login conserva su estilo. */
-body:has(.shell--alfa-design) .drawer:not(.drawer--login) .btn--primary {
-    border: 1px solid var(--alfa-accent, #4f9efa);
-    border-radius: var(--alfa-radius-sm, 4px);
-    background: var(--alfa-accent, #4f9efa);
-    background-image: none;
-    box-shadow: none;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-body:has(.shell--alfa-design) .drawer:not(.drawer--login) .btn--primary:hover {
-    background: var(--alfa-accent-hover, #6ea2ff);
-}
-
 /* Plantillas de Informes: títulos de grupo como etiqueta secundaria (sin mayúsculas en azul). */
 .gd.informes-ad .informes-template-picker__body nav > p {
     color: var(--alfa-text-secondary, #a6abb5);
@@ -1606,4 +1589,215 @@ body:has(.shell--alfa-design) .drawer:not(.drawer--login) .btn--primary:hover {
 .gd.informes-ad .informes-panel :is(h3, h4, section > strong, section > header strong) {
     font-size: 14px;
     font-weight: 600;
+}
+
+/* Selector de bases (SessionDrawer) dentro del sistema: panel lateral AlfaDesign. La variante
+   del login (.drawer--login) conserva su estilo propio. */
+.drawer-overlay.drawer-overlay--alfa {
+    background: rgba(0, 0, 0, .6);
+    backdrop-filter: none;
+}
+
+.drawer.drawer--alfa {
+    width: min(400px, 100vw);
+    border-left: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    box-shadow: -20px 0 48px rgba(0, 0, 0, .42);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+}
+
+.drawer.drawer--alfa .drawer__header {
+    min-height: 52px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--alfa-border-default, #333640);
+    background: transparent;
+}
+
+.drawer.drawer--alfa .drawer__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.drawer.drawer--alfa .drawer__title i {
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.drawer.drawer--alfa .drawer__close {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--alfa-radius-sm, 4px);
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.drawer.drawer--alfa .drawer__close:hover {
+    background: var(--alfa-bg-row-hover, #22262e);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.drawer.drawer--alfa .drawer__body {
+    padding: 16px;
+    background: transparent;
+}
+
+.drawer.drawer--alfa .drawer-search {
+    margin-bottom: 12px;
+}
+
+.drawer.drawer--alfa .drawer-search__input {
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    box-shadow: none;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+}
+
+.drawer.drawer--alfa .drawer-search__input:focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    box-shadow: none;
+}
+
+.drawer.drawer--alfa .drawer-sessions {
+    gap: 6px;
+}
+
+.drawer.drawer--alfa .drawer-session {
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: transparent;
+    box-shadow: none;
+}
+
+.drawer.drawer--alfa .drawer-session:hover {
+    background: var(--alfa-bg-row-hover, #22262e);
+}
+
+.drawer.drawer--alfa .drawer-session--active {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 10%, transparent);
+}
+
+.drawer.drawer--alfa .drawer-session--selected {
+    border-color: var(--alfa-accent, #4f9efa);
+    box-shadow: none;
+}
+
+.drawer.drawer--alfa .drawer-session__nombre {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.drawer.drawer--alfa :is(.drawer-session__detalle, .drawer-session__usuario) {
+    font-size: 12px;
+    color: var(--alfa-text-secondary, #a6abb5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drawer.drawer--alfa .drawer-session__info {
+    min-width: 0;
+}
+
+.drawer.drawer--alfa .drawer-session__info > div {
+    min-width: 0;
+}
+
+.drawer.drawer--alfa .drawer-session__dot {
+    background: var(--alfa-border-strong, #4a4e5a);
+}
+
+.drawer.drawer--alfa .drawer-session__dot--ok {
+    background: var(--alfa-success, #27ae60);
+}
+
+.drawer.drawer--alfa .drawer-session__badge {
+    padding: 2px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--alfa-success, #27ae60) 16%, transparent);
+    color: var(--alfa-success, #27ae60);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.drawer.drawer--alfa .drawer-session__actions .btn {
+    height: 28px;
+    min-height: 0;
+    padding: 0 10px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.drawer.drawer--alfa .drawer-session__actions .btn:hover {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: var(--alfa-accent, #4f9efa);
+    color: #fff;
+}
+
+.drawer.drawer--alfa .drawer-empty {
+    border: 1px dashed var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 13px;
+}
+
+.drawer.drawer--alfa .drawer__note {
+    font-size: 12px;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.drawer.drawer--alfa :is(.drawer__footer) {
+    border-top-color: var(--alfa-border-default, #333640);
+}
+
+.drawer.drawer--alfa .drawer__add {
+    height: 28px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 12px;
+}
+
+.drawer.drawer--alfa .drawer-add-session {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.drawer.drawer--alfa .drawer-add-session__eyebrow {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.drawer.drawer--alfa .drawer-add-session__field label {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 500;
 }
