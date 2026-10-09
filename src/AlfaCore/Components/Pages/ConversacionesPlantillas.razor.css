@@ -410,9 +410,8 @@
     cursor: not-allowed;
 }
 
-/* Selector de variables (AlfaDialog): catálogo agrupado por Group, con las
-   variables de Tareas/Guardia (CanResolveAutomaticallyInManualSend == false)
-   en una sección aparte, no clickeable -- ver FilteredContextualVariables. */
+/* Selector de variables (AlfaDialog): catálogo agrupado por Group. Las variables contextuales
+   insertables explican en su detalle cuándo se completan solas y cuándo se piden a mano. */
 .templates-v1 .variable-picker {
     display: flex;
     flex-direction: column;

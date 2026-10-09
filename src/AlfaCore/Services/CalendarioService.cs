@@ -97,6 +97,81 @@ public sealed class CalendarioService(
             return result;
         }, "No se pudo cargar el calendario.", ct);
 
+    /// <summary>
+    /// Mismo criterio que la pantalla de Calendario: guardia "activa" es la no cancelada que abarca el
+    /// día de hoy; la "siguiente" es la próxima que empieza después de ahora. No pasa por
+    /// ExecuteLoggedAsync: la barra la consulta seguido y una base sin Calendario no es un error.
+    /// </summary>
+    public async Task<CalendarioGuardiaResumenDto?> GetGuardiaResumenAsync(CancellationToken ct = default)
+    {
+        if (!TenantDataAccessGuard.IsActiveSessionAuthorized(sessionService, appUserSession))
+            return null;
+
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CAL_EVENTOS', N'U') IS NULL
+                RETURN;
+
+            DECLARE @Hoy date = CAST(GETDATE() AS date);
+            DECLARE @IdActual bigint;
+
+            SELECT TOP (1)
+                @IdActual = e.IdEvento
+            FROM dbo.CAL_EVENTOS e
+            WHERE ISNULL(e.Baja, 0) = 0
+              AND e.Tipo = @Tipo
+              AND ISNULL(e.Estado, '') <> @Cancelado
+              AND CAST(e.FechaInicio AS date) <= @Hoy
+              AND CAST(e.FechaFin AS date) >= @Hoy
+            ORDER BY e.FechaInicio;
+
+            SELECT
+                (SELECT COALESCE(NULLIF(LTRIM(RTRIM(TecnicoNombre)), ''), NULLIF(LTRIM(RTRIM(Titulo)), ''), '')
+                 FROM dbo.CAL_EVENTOS WHERE IdEvento = @IdActual) AS ActualResponsable,
+                (SELECT FechaFin FROM dbo.CAL_EVENTOS WHERE IdEvento = @IdActual) AS ActualHasta,
+                sig.Responsable AS SiguienteResponsable,
+                sig.FechaInicio AS SiguienteDesde
+            FROM (SELECT 1 AS Uno) x
+            OUTER APPLY (
+                SELECT TOP (1)
+                    COALESCE(NULLIF(LTRIM(RTRIM(e.TecnicoNombre)), ''), NULLIF(LTRIM(RTRIM(e.Titulo)), ''), '') AS Responsable,
+                    e.FechaInicio
+                FROM dbo.CAL_EVENTOS e
+                WHERE ISNULL(e.Baja, 0) = 0
+                  AND e.Tipo = @Tipo
+                  AND ISNULL(e.Estado, '') <> @Cancelado
+                  AND e.FechaInicio > GETDATE()
+                  AND (@IdActual IS NULL OR e.IdEvento <> @IdActual)
+                ORDER BY e.FechaInicio
+            ) sig;
+            """;
+
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Tipo", CalendarioEventoTipos.Guardia);
+            cmd.Parameters.AddWithValue("@Cancelado", CalendarioEventoEstados.Cancelado);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct))
+                return null;
+
+            return new CalendarioGuardiaResumenDto
+            {
+                ActualResponsable = rd.IsDBNull(0) ? string.Empty : rd.GetString(0),
+                ActualHasta = rd.IsDBNull(1) ? null : rd.GetDateTime(1),
+                SiguienteResponsable = rd.IsDBNull(2) ? string.Empty : rd.GetString(2),
+                SiguienteDesde = rd.IsDBNull(3) ? null : rd.GetDateTime(3)
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await appEvents.LogErrorAsync(ModuleName, "GetGuardiaResumen", ex,
+                "No se pudo consultar la guardia activa.", null, AppEventSeverity.Warning, ct);
+            return null;
+        }
+    }
+
     public Task<CalendarioEventoDto?> GetByIdAsync(long idEvento, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetById", async token =>
         {
@@ -278,7 +353,15 @@ public sealed class CalendarioService(
                     FirstNonEmpty(detail.TecnicoNombre, detail.Titulo),
                     FormatDate(detail.FechaInicio),
                     FormatDate(detail.FechaFin)
-                ]
+                ],
+                // Vale para cualquier evento (guardia, reunión, capacitación...): las keys guardia.* se
+                // muestran en el editor como "Responsable / Inicio / Fin del evento".
+                ValoresPorVariable = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [WhatsAppTemplateVariableCatalog.GuardiaTecnico] = FirstNonEmpty(detail.TecnicoNombre, detail.Titulo),
+                    [WhatsAppTemplateVariableCatalog.GuardiaInicio] = FormatDate(detail.FechaInicio),
+                    [WhatsAppTemplateVariableCatalog.GuardiaFin] = FormatDate(detail.FechaFin)
+                }
             }, token);
 
             await MarkReminderSentAsync(idRecordatorio, message.EstadoEnvio, token);

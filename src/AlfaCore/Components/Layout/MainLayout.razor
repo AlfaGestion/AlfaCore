@@ -847,6 +847,7 @@ else
                     }
                     @if (AppUserSession.IsAuthenticated && !IsDirectMode)
                     {
+                        <TopbarGuardiaIndicador />
                         <TopbarMensajesMenu />
                     }
                     @if (AppUserSession.IsAuthenticated && !IsDirectMode)

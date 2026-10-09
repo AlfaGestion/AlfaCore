@@ -1,0 +1,106 @@
+@using AlfaCore.Services
+@implements IAsyncDisposable
+@inject ICalendarioService CalendarioSvc
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+@* Indicador fijo de la barra superior: guardia activa (con punto verde) y, debajo, quién sigue.
+   Siempre visible si la base tiene Calendario; si no lo tiene no se muestra. *@
+
+@if (_resumen is not null)
+{
+    <button type="button"
+            class="tb-guardia @(_resumen.HayActiva ? "is-activa" : "is-vacia")"
+            title="@Tooltip"
+            aria-label="@Tooltip"
+            @onclick="AbrirCalendario">
+        <span class="tb-guardia__dot" aria-hidden="true"></span>
+        <span class="tb-guardia__text">
+            <span class="tb-guardia__actual">
+                @(_resumen.HayActiva ? $"Guardia: {_resumen.ActualResponsable}" : "Sin guardia activa")
+            </span>
+            <span class="tb-guardia__siguiente">
+                @(_resumen.HaySiguiente ? $"Siguiente: {_resumen.SiguienteResponsable}" : "Sin próxima guardia")
+            </span>
+        </span>
+    </button>
+}
+
+@code {
+    private static readonly TimeSpan Intervalo = TimeSpan.FromMinutes(5);
+
+    private CalendarioGuardiaResumenDto? _resumen;
+    private CancellationTokenSource? _cts;
+    private Task? _pollingTask;
+
+    private string Tooltip
+    {
+        get
+        {
+            if (_resumen is null)
+                return "Guardias";
+
+            var actual = _resumen.HayActiva
+                ? $"Guardia activa: {_resumen.ActualResponsable}{(_resumen.ActualHasta is DateTime hasta ? $" (hasta el {hasta:dd/MM HH:mm})" : string.Empty)}"
+                : "Sin guardia activa";
+            var siguiente = _resumen.HaySiguiente
+                ? $"Siguiente: {_resumen.SiguienteResponsable}{(_resumen.SiguienteDesde is DateTime desde ? $" (desde el {desde:dd/MM HH:mm})" : string.Empty)}"
+                : "Sin próxima guardia cargada";
+            return $"{actual}. {siguiente}. Abrir Calendario.";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+        _pollingTask = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        await RefreshAsync(ct);
+        using var timer = new PeriodicTimer(Intervalo);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await InvokeAsync(() => RefreshAsync(ct));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        try
+        {
+            _resumen = await CalendarioSvc.GetGuardiaResumenAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // El servicio ya registra el error en AUX_ERR; la barra superior no se rompe.
+            _resumen = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AbrirCalendario() => Nav.NavigateTo(RouteContext.BuildRoute("/calendario"));
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_cts is null)
+            return;
+
+        _cts.Cancel();
+        if (_pollingTask is not null)
+        {
+            try { await _pollingTask; } catch { }
+        }
+        _cts.Dispose();
+        _cts = null;
+    }
+}

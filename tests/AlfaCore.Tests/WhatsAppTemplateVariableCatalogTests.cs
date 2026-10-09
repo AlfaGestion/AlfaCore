@@ -45,14 +45,14 @@ public sealed class WhatsAppTemplateVariableCatalogTests
     [InlineData(WhatsAppTemplateVariableCatalog.ContactName, true)]
     [InlineData(WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda, true)]
     [InlineData(WhatsAppTemplateVariableCatalog.PagoFormaPago, true)]
-    [InlineData(WhatsAppTemplateVariableCatalog.TareaTitulo, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.TareaAutorAccion, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaTecnico, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaInicio, false)]
-    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaFin, false)]
-    public void Catalog_OnlyContactCobranzaAndPago_AreResolvableInManualSendFlow(string key, bool expected)
+    [InlineData(WhatsAppTemplateVariableCatalog.TareaTitulo, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.TareaAutorAccion, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaTecnico, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaInicio, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.GuardiaFin, true)]
+    public void Catalog_VariablesInsertablesEnElEditor(string key, bool expected)
     {
         var definition = WhatsAppTemplateVariableCatalog.Find(key);
         Assert.NotNull(definition);
@@ -60,11 +60,11 @@ public sealed class WhatsAppTemplateVariableCatalogTests
     }
 
     [Fact]
-    public void Catalog_TareasAndGuardiaVariables_CarryRequiredContextForTheSelectorUi()
+    public void Catalog_TareasAndEventoVariables_CarryRequiredContextForTheSelectorUi()
     {
         foreach (var definition in WhatsAppTemplateVariableCatalog.All)
         {
-            var isContextual = definition.Group is WhatsAppTemplateVariableCatalog.GroupTareas or WhatsAppTemplateVariableCatalog.GroupGuardia;
+            var isContextual = definition.Group is WhatsAppTemplateVariableCatalog.GroupTareas or WhatsAppTemplateVariableCatalog.GroupEvento;
             if (isContextual)
                 Assert.False(string.IsNullOrWhiteSpace(definition.RequiredContext));
 
@@ -72,6 +72,42 @@ public sealed class WhatsAppTemplateVariableCatalogTests
             Assert.False(string.IsNullOrWhiteSpace(definition.Description));
             Assert.False(string.IsNullOrWhiteSpace(definition.Label));
         }
+    }
+
+    [Fact]
+    public void ApplyNamedTemplateValues_UsaElMappingDeCadaPosicion()
+    {
+        // Plantilla armada con las variables en otro orden que el que manda Tareas por posición.
+        var posicional = new List<string> { "Revisar impresora", "Juan", "Ana", "09/10/2026 10:00" };
+        var mappings = new Dictionary<int, string>
+        {
+            [1] = WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado,
+            [2] = WhatsAppTemplateVariableCatalog.TareaTitulo
+        };
+        var porVariable = new Dictionary<string, string>
+        {
+            [WhatsAppTemplateVariableCatalog.TareaTitulo] = "Revisar impresora",
+            [WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado] = "Juan"
+        };
+
+        var valores = ConversacionesService.ApplyNamedTemplateValues(posicional, mappings, porVariable);
+
+        Assert.Equal("Juan", valores[0]);
+        Assert.Equal("Revisar impresora", valores[1]);
+        // Sin mapping: conservan el valor posicional de siempre.
+        Assert.Equal("Ana", valores[2]);
+        Assert.Equal("09/10/2026 10:00", valores[3]);
+    }
+
+    [Fact]
+    public void ApplyNamedTemplateValues_SinMappingDejaLosValoresPorPosicion()
+    {
+        var posicional = new List<string> { "a", "b" };
+        var porVariable = new Dictionary<string, string> { [WhatsAppTemplateVariableCatalog.TareaTitulo] = "x" };
+
+        var valores = ConversacionesService.ApplyNamedTemplateValues(posicional, new Dictionary<int, string>(), porVariable);
+
+        Assert.Equal(posicional, valores);
     }
 
     [Fact]
@@ -148,9 +184,8 @@ public sealed class WhatsAppTemplateVariableCatalogTests
     {
         var body = ReadMethodBody("public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(");
 
-        // Cuando una variable mapeada no tiene resolver en este flujo (Tareas/Guardia) o el resolver no
-        // pudo resolver, se marca "stopped" -- nunca se agrega un valor inventado a la lista de
-        // resultados para esa posición.
+        // Cuando una variable mapeada no puede resolverse en el envío manual, se marca "stopped": nunca
+        // se agrega un valor inventado a la lista de resultados para esa posición.
         Assert.Contains("stopped = true", body, StringComparison.Ordinal);
         Assert.Contains("No se puede completar automáticamente desde el envío manual", body, StringComparison.Ordinal);
     }
@@ -345,7 +380,8 @@ public sealed class WhatsAppTemplateVariableCatalogTests
             .ToList();
 
         // 2026-10-08: se sumaron las variables básicas (fecha/hora, contacto, cliente) y las de Cierre
-        // de caja; Tareas y Guardia siguen fuera del selector.
+        // de caja. 2026-10-09: también Tareas y Evento del Calendario (se completan solas desde su
+        // módulo y se piden a mano en el envío manual).
         Assert.Equal(
             new[]
             {
@@ -354,7 +390,11 @@ public sealed class WhatsAppTemplateVariableCatalogTests
                 WhatsAppTemplateVariableCatalog.ClienteNombre, WhatsAppTemplateVariableCatalog.ClienteCodigo,
                 WhatsAppTemplateVariableCatalog.FechaHoy, WhatsAppTemplateVariableCatalog.FechaAyer, WhatsAppTemplateVariableCatalog.HoraActual,
                 WhatsAppTemplateVariableCatalog.MesActual, WhatsAppTemplateVariableCatalog.AnioActual,
-                WhatsAppTemplateVariableCatalog.CierreFecha, WhatsAppTemplateVariableCatalog.CierreCaja
+                WhatsAppTemplateVariableCatalog.CierreFecha, WhatsAppTemplateVariableCatalog.CierreCaja,
+                WhatsAppTemplateVariableCatalog.TareaTitulo, WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado,
+                WhatsAppTemplateVariableCatalog.TareaAutorAccion, WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro,
+                WhatsAppTemplateVariableCatalog.GuardiaTecnico, WhatsAppTemplateVariableCatalog.GuardiaInicio,
+                WhatsAppTemplateVariableCatalog.GuardiaFin
             }.OrderBy(x => x, StringComparer.Ordinal),
             selectableKeys.OrderBy(x => x, StringComparer.Ordinal));
     }
@@ -374,8 +414,8 @@ public sealed class WhatsAppTemplateVariableCatalogTests
         Assert.True(selectableEnd > selectableStart);
         var selectableBody = source[selectableStart..selectableEnd];
 
-        // Las de Tareas/Guardia se resuelven vía FilteredContextualVariables (sección separada, no
-        // clickeable) para que nunca se puedan insertar desde el flujo manual de Plantillas.
+        // El selector principal usa solo variables marcadas como insertables. Si aparece una futura
+        // variable no insertable, queda fuera de esta lista.
         Assert.Contains("x.CanResolveAutomaticallyInManualSend && MatchesVariablePickerFilter(x)", selectableBody, StringComparison.Ordinal);
         Assert.DoesNotContain("!x.CanResolveAutomaticallyInManualSend", selectableBody, StringComparison.Ordinal);
 

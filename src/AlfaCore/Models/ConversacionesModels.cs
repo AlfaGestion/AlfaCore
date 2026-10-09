@@ -742,6 +742,13 @@ public sealed class ConversacionPlantillaSendRequest
     public string Idioma { get; set; } = string.Empty;
     public bool EsMetaRemota { get; set; }
     public List<string> ValoresVariables { get; set; } = [];
+
+    /// <summary>
+    /// Valores por VariableKey del catálogo (ej. "tarea.titulo"). Si la plantilla tiene guardado qué
+    /// variable va en cada {{N}} (CONV_PLANTILLAS_VARIABLES), cada posición toma el valor de su key; las
+    /// posiciones sin mapping (plantillas viejas) siguen usando <see cref="ValoresVariables"/> por posición.
+    /// </summary>
+    public Dictionary<string, string> ValoresPorVariable { get; set; } = new(StringComparer.Ordinal);
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }

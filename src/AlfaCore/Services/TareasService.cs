@@ -1644,6 +1644,15 @@ public sealed class TareasService(
                 usuarioAccion,
                 DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("es-AR"))
             };
+            // Mismos datos por VariableKey: si la plantilla guardó qué variable va en cada posición,
+            // se respeta ese orden (ver ConversacionPlantillaSendRequest.ValoresPorVariable).
+            var valoresPorVariable = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [WhatsAppTemplateVariableCatalog.TareaTitulo] = values[0],
+                [WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado] = values[1],
+                [WhatsAppTemplateVariableCatalog.TareaAutorAccion] = values[2],
+                [WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro] = values[3]
+            };
 
             foreach (var recipient in recipients)
             {
@@ -1657,6 +1666,7 @@ public sealed class TareasService(
                     IdConversacion = conversation.IdConversacion,
                     IdPlantilla = template.IdPlantilla,
                     ValoresVariables = values,
+                    ValoresPorVariable = valoresPorVariable,
                     UsuarioAccion = usuarioAccion,
                     SistemaAccion = SistemaFijo
                 }, ct);

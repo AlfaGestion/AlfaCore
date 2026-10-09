@@ -358,9 +358,9 @@
                                 @onclick="() => SelectVariableFromPicker(definition.Key)">
                             <span class="variable-picker__option-label">@definition.Label</span>
                             <span class="variable-picker__option-description">@definition.Description</span>
-                            @if (!string.IsNullOrWhiteSpace(definition.Detail))
+                            @if (!string.IsNullOrWhiteSpace(definition.Detail ?? definition.RequiredContext))
                             {
-                                <span class="variable-picker__option-detail">@definition.Detail</span>
+                                <span class="variable-picker__option-detail">@(definition.Detail ?? definition.RequiredContext)</span>
                             }
                         </button>
                     }
@@ -1334,10 +1334,10 @@
     }
 
     /// <summary>
-    /// Grupos del catálogo que aparecen en el selector como seleccionables (solo
-    /// CanResolveAutomaticallyInManualSend == true), filtrados por el texto de búsqueda contra Label y
-    /// Description. Nunca incluye variables de Tareas/Guardia: esas quedan en
-    /// <see cref="FilteredContextualVariables"/>, no seleccionables desde este flujo manual.
+    /// Grupos del catálogo que aparecen en el selector como seleccionables, filtrados por el texto de
+    /// búsqueda contra Label y Description. Las variables contextuales (Tareas, Evento del Calendario,
+    /// Cierre de caja) también son insertables: desde Conversaciones se piden a mano y desde su módulo se
+    /// completan por VariableKey.
     /// </summary>
     private List<IGrouping<string, WhatsAppTemplateVariableDefinition>> FilteredSelectableVariableGroups()
         => WhatsAppTemplateVariableCatalog.All
@@ -1346,9 +1346,8 @@
             .ToList();
 
     /// <summary>
-    /// Variables con CanResolveAutomaticallyInManualSend == false (Tareas/Guardia): se muestran en una
-    /// sección aparte, no clickeable, con su RequiredContext explicando cuándo se resuelven -- nunca
-    /// insertables desde Plantillas para que el usuario no crea que son automáticas acá.
+    /// Variables no insertables. Hoy debería quedar vacío, pero se mantiene para futuros contextos que se
+    /// quieran mostrar como referencia sin permitir agregarlos al cuerpo.
     /// </summary>
     private List<WhatsAppTemplateVariableDefinition> FilteredContextualVariables()
         => WhatsAppTemplateVariableCatalog.All

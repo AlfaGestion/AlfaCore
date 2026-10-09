@@ -9,6 +9,21 @@ public sealed class CalendarioMonthRequest
     public string Tipo { get; set; } = CalendarioEventoTipos.Todos;
 }
 
+/// <summary>
+/// Guardia vigente y la siguiente, para el indicador fijo de la barra superior. Null en el servicio
+/// cuando la base no tiene el Calendario (CAL_EVENTOS); con Calendario y sin guardias, ambas vacías.
+/// </summary>
+public sealed class CalendarioGuardiaResumenDto
+{
+    public string ActualResponsable { get; set; } = string.Empty;
+    public DateTime? ActualHasta { get; set; }
+    public string SiguienteResponsable { get; set; } = string.Empty;
+    public DateTime? SiguienteDesde { get; set; }
+
+    public bool HayActiva => ActualResponsable.Length > 0;
+    public bool HaySiguiente => SiguienteResponsable.Length > 0;
+}
+
 public sealed class CalendarioMonthDto
 {
     public DateTime MonthStart { get; set; }

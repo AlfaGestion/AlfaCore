@@ -3484,6 +3484,13 @@ public sealed class ConversacionesService(
             }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
+            if (request.ValoresPorVariable is { Count: > 0 } && !request.EsMetaRemota)
+            {
+                await using var cnMappings = new SqlConnection(ConnectionString);
+                await cnMappings.OpenAsync(token);
+                var mappings = await LoadTemplateVariableMappingsAsync(cnMappings, request.IdPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
+                values = ApplyNamedTemplateValues(values, mappings, request.ValoresPorVariable);
+            }
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
@@ -3659,6 +3666,12 @@ public sealed class ConversacionesService(
             WhatsAppTemplateVariableCatalog.AnioActual => Ok(now.ToString("yyyy", esAr)),
             WhatsAppTemplateVariableCatalog.CierreFecha or WhatsAppTemplateVariableCatalog.CierreCaja
                 => Falta("Los datos del cierre se completan solos al enviar desde Cierre de caja; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.TareaTitulo or WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado
+                or WhatsAppTemplateVariableCatalog.TareaAutorAccion or WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro
+                => Falta("Los datos de la tarea se completan solos en los avisos automáticos de Tareas; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.GuardiaTecnico or WhatsAppTemplateVariableCatalog.GuardiaInicio
+                or WhatsAppTemplateVariableCatalog.GuardiaFin
+                => Falta("Los datos del evento se completan solos en los recordatorios del Calendario; desde acá completalos a mano."),
             _ => Falta($"No hay resolución automática implementada para '{variableKey}'.")
         };
     }
@@ -15104,6 +15117,15 @@ public sealed class ConversacionesService(
         if (string.Equals(type, "unsupported", StringComparison.OrdinalIgnoreCase))
             return ExtractUnsupportedText(message);
 
+        if (WhatsAppMessageClassifier.EsSoloEnCelular(type))
+            return WhatsAppMessageClassifier.SoloEnCelularText;
+
+        if (WhatsAppMessageClassifier.EsEdicion(type))
+            return WhatsAppMessageClassifier.BuildEditedText(message);
+
+        if (WhatsAppMessageClassifier.EsEliminacion(type))
+            return WhatsAppMessageClassifier.MensajeEliminadoText;
+
         if (TryGetMediaPayload(message, type, out var media))
         {
             if (media.TryGetProperty("caption", out var caption))
@@ -15121,11 +15143,21 @@ public sealed class ConversacionesService(
             }
         }
 
+        // Tipo que AlfaCore no conoce (nuevo de Meta, mensaje enviado por una empresa...): si trae un
+        // texto legible adentro se guarda ese texto en vez de "[tipo]".
+        var legible = WhatsAppMessageClassifier.FindReadableText(message, type);
+        if (!string.IsNullOrWhiteSpace(legible))
+            return legible.Trim();
+
         return $"[{type}]";
     }
 
     private static string ExtractIncomingReplyToMessageId(JsonElement message, string type)
     {
+        // Una edición cita al mensaje original, así la burbuja muestra qué se editó.
+        if (WhatsAppMessageClassifier.EsEdicion(type))
+            return WhatsAppMessageClassifier.FindEditOriginalId(message);
+
         if (string.Equals(type, "reaction", StringComparison.OrdinalIgnoreCase) &&
             message.TryGetProperty("reaction", out var reaction) &&
             reaction.TryGetProperty("message_id", out var reactionMessageId))
@@ -15281,8 +15313,12 @@ public sealed class ConversacionesService(
             unsupportedType = unsupportedTypeProp.GetString() ?? string.Empty;
         }
 
-        var reason = ExtractFirstErrorDetail(message);
-        return JoinText("Mensaje no compatible recibido", FirstNonEmpty(unsupportedType, reason));
+        // Meta no dice qué era (unsupported.type "unknown" en todos los casos reales): fotos/videos de
+        // visualización única y otros formatos que solo se ven en el celular. Si algún día informa un
+        // tipo concreto, se conserva al final para diagnóstico.
+        return string.IsNullOrWhiteSpace(unsupportedType) || string.Equals(unsupportedType, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? WhatsAppMessageClassifier.SoloEnCelularText
+            : $"{WhatsAppMessageClassifier.SoloEnCelularText} Tipo: {unsupportedType}.";
     }
 
     private static string ExtractReplyTitle(JsonElement reply)
@@ -16562,6 +16598,31 @@ public sealed class ConversacionesService(
     // llegaba a Graph como ["Ana", "42"] (2 valores para 3 posiciones, corridos). WhatsAppTemplateValidation
     // .ValidateSend necesita ver la lista completa, con vacíos incluidos, para poder rechazarla
     // explícitamente en vez de que el corrimiento silencioso llegue a Meta como un error genérico.
+    /// <summary>
+    /// Combina valores por posición con valores por VariableKey: cada {{N}} con mapping guardado toma el
+    /// valor de su key (si se informó); el resto conserva el valor posicional. Así Tareas y Calendario
+    /// completan bien una plantilla aunque el usuario haya puesto las variables en otro orden.
+    /// </summary>
+    internal static List<string> ApplyNamedTemplateValues(
+        IReadOnlyList<string> positional,
+        IReadOnlyDictionary<int, string> mappings,
+        IReadOnlyDictionary<string, string> named)
+    {
+        if (mappings.Count == 0 || named.Count == 0)
+            return positional.ToList();
+
+        var count = Math.Max(positional.Count, mappings.Keys.Max());
+        var result = new List<string>(count);
+        for (var pos = 1; pos <= count; pos++)
+        {
+            if (mappings.TryGetValue(pos, out var key) && named.TryGetValue(key, out var value))
+                result.Add((value ?? string.Empty).Trim());
+            else
+                result.Add(pos <= positional.Count ? positional[pos - 1] : string.Empty);
+        }
+        return result;
+    }
+
     private static List<string> NormalizeTemplateValues(IEnumerable<string>? values)
         => values?
             .Select(x => (x ?? string.Empty).Trim())

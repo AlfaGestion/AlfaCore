@@ -11443,6 +11443,16 @@
     private static string FormatInboxSummary(string? summary)
     {
         var value = summary?.Trim() ?? string.Empty;
+
+        // Resúmenes de mensajes viejos guardados con el tipo crudo de Meta ("[edit]", "[errors]"...).
+        if (string.Equals(value, "[edit]", StringComparison.OrdinalIgnoreCase))
+            return "✏️ Mensaje editado";
+        if (string.Equals(value, "[revoke]", StringComparison.OrdinalIgnoreCase))
+            return WhatsAppMessageClassifier.MensajeEliminadoText;
+        if (value is "[errors]" or "[unsupported]" or "[unknown]" or "[media_placeholder]"
+            || value.StartsWith("Mensaje no compatible recibido", StringComparison.OrdinalIgnoreCase))
+            return "📵 Mensaje para ver en el celular";
+
         if (!value.StartsWith("Reacci", StringComparison.OrdinalIgnoreCase))
             return value;
 
@@ -12507,6 +12517,22 @@
 
             return message.Texto;
         }
+
+        // Tipos de Meta con texto propio: edición, eliminación y lo que solo se ve en el celular
+        // (visualización única, formatos no soportados). Cubre también mensajes viejos ya guardados.
+        if (WhatsAppMessageClassifier.EsEdicion(classification.TipoOriginal))
+            return WhatsAppMessageClassifier.BuildEditedText(message.PayloadJson);
+        if (WhatsAppMessageClassifier.EsEliminacion(classification.TipoOriginal))
+            return WhatsAppMessageClassifier.MensajeEliminadoText;
+        if (WhatsAppMessageClassifier.EsSoloEnCelular(classification.TipoOriginal)
+            || (message.Texto ?? string.Empty).TrimStart().StartsWith("Mensaje no compatible recibido", StringComparison.OrdinalIgnoreCase))
+            return WhatsAppMessageClassifier.SoloEnCelularText;
+
+        // Tipo desconocido pero con un texto legible ya guardado (ver FindReadableText en el ingreso):
+        // se muestra ese texto en vez del aviso genérico.
+        var textoGuardado = (message.Texto ?? string.Empty).Trim();
+        if (textoGuardado.Length > 0 && !(textoGuardado.StartsWith('[') && textoGuardado.EndsWith(']')))
+            return textoGuardado;
 
         // Antes decía "WhatsApp envió un formato no compatible: <tipo crudo>." -- para un tipo que
         // Meta agrega y AlfaCore todavía no reconoce (edits, tipos futuros, etc.) esto sonaba a error

@@ -27,7 +27,21 @@ public static class AvisoTipos
     public const string Asignado = "ASIGNADO";
     public const string Novedad = "NOVEDAD";
     public const string Ticket = "TICKET";
+    public const string Crm = "CRM";
     public const string TopeIa = "TOPE_IA";
+}
+
+/// <summary>Oportunidad abierta del CRM asignada a un técnico/vendedor del usuario.</summary>
+public sealed class AvisoCrmFuente
+{
+    public long IdOportunidad { get; set; }
+    public string Titulo { get; set; } = string.Empty;
+    public string Cliente { get; set; } = string.Empty;
+    public string IdTecnico { get; set; } = string.Empty;
+    public string EtapaNombre { get; set; } = string.Empty;
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public DateTime FechaAlta { get; set; }
+    public DateTime? FechaModificacion { get; set; }
 }
 
 /// <summary>Ticket abierto asignado a un técnico del usuario.</summary>

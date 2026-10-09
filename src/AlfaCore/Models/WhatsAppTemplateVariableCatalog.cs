@@ -12,16 +12,15 @@ namespace AlfaCore.Models;
 /// <param name="Description">
 /// Descripción corta (una línea) visible en el selector de variables, debajo del Label.
 /// </param>
-/// <param name="Group">Agrupador visual del selector (Contacto, Cobranza, Tareas, Guardia).</param>
+/// <param name="Group">Agrupador visual del selector (Contacto, Cobranza, Tareas, Evento del Calendario).</param>
 /// <param name="RequiredContext">
 /// Texto secundario que explica qué contexto hace falta para resolver la variable (ej: "Requiere una
 /// tarea asociada"). Null cuando no hace falta contexto adicional más allá de la conversación activa.
 /// </param>
 /// <param name="CanResolveAutomaticallyInManualSend">
-/// true solo si existe HOY un resolver real invocable desde el flujo de envío manual genérico
-/// (Conversaciones → enviar plantilla). Tareas y Guardia se catalogan con su contexto pero quedan en
-/// false acá: sus resolvers viven dentro de TareasService/CalendarioService, que no se tocan en esta
-/// función y no se les construye un puente hacia el envío manual.
+/// true si la variable se puede insertar en el editor. Las de Tareas, Evento del Calendario y Cierre de
+/// caja se completan solas desde su módulo (que manda los valores por VariableKey); en el envío manual
+/// desde Conversaciones no hay de dónde sacarlas y se piden a mano.
 /// </param>
 /// <param name="Detail">
 /// Nota técnica opcional (fallback, configuración, etc.) que no entra en la línea de Description para
@@ -73,7 +72,7 @@ public static class WhatsAppTemplateVariableCatalog
     public const string GroupCierreCaja = "Cierre de caja";
     public const string GroupCobranza = "Cobranza";
     public const string GroupTareas = "Tareas";
-    public const string GroupGuardia = "Guardia";
+    public const string GroupEvento = "Evento del Calendario";
 
     /// <summary>Único componente de plantilla soportado por la lógica de negocio actual.</summary>
     public const string ComponenteBody = "BODY";
@@ -170,50 +169,50 @@ public static class WhatsAppTemplateVariableCatalog
             "Título de la tarea",
             "Título de la tarea asociada al envío.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaTecnicoAsignado,
             "Técnico asignado",
             "Técnico asignado a la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaAutorAccion,
             "Autor de la acción",
             "Usuario que asignó o finalizó la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaFechaHoraRegistro,
             "Fecha y hora de registro",
             "Fecha y hora de la asignación o el cierre de la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaTecnico,
-            "Técnico de guardia",
-            "Técnico asignado a la guardia del calendario.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Responsable del evento",
+            "Técnico o persona a cargo del evento del calendario (guardia, reunión, capacitación...).",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaInicio,
-            "Inicio de guardia",
-            "Fecha y hora de inicio de la guardia.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Inicio del evento",
+            "Fecha y hora de inicio del evento del calendario.",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaFin,
-            "Fin de guardia",
-            "Fecha y hora de fin de la guardia.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Fin del evento",
+            "Fecha y hora de fin del evento del calendario.",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         // Insertables en el editor (por eso true): se completan solas al enviar desde Cierre de caja
         // (valores de contexto); desde Conversaciones no hay de dónde sacarlas y se piden a mano.

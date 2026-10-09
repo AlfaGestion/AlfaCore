@@ -745,6 +745,11 @@
     [SupplyParameterFromQuery(Name = "conv")]
     public long? Conv { get; set; }
 
+    // Llega desde la campana de avisos (oportunidad asignada): /crm?id={IdOportunidad}.
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "id")]
+    public long? IdOportunidadQuery { get; set; }
+
     private CrmLookupDto _lookups = new();
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
@@ -888,8 +893,12 @@
                     <h4><i class="bi bi-funnel"></i> Filtros</h4>
                     <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloSinAsignar)" @onclick="ApplyUnassignedAsync">Sin asignar</button>
-                    <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Oportunidades abiertas</button>
-                    <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerradas)" @onclick="ApplyAllStatusesAsync">Incluir ganadas/perdidas</button>
+                    @* En el tablero las ganadas/perdidas siempre quedan en su columna: el filtro es de la lista. *@
+                    @if (_viewMode != "kanban")
+                    {
+                        <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Oportunidades abiertas</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerradas)" @onclick="ApplyAllStatusesAsync">Incluir ganadas/perdidas</button>
+                    }
                     <div class="smart-search__inline">
                     <label>Etapa</label>
                     <select value="@(_filters.IdEtapa?.ToString() ?? string.Empty)" @onchange="OnStageFilterChangedAsync">
@@ -932,7 +941,10 @@
                 <div class="smart-search__column">
                     <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
                     <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
-                    <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Abiertas</button>
+                    @if (_viewMode != "kanban")
+                    {
+                        <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Abiertas</button>
+                    }
                     <button type="button" class="@GetSmartOptionClass(false)" @onclick="SaveFavoritePlaceholder">Guardar búsqueda actual</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearFiltersAsync">
                         <i class="bi bi-eraser"></i> Limpiar filtros
@@ -1236,6 +1248,8 @@
         await LoadAsync();
         if (Conv is long idConv && idConv > 0)
             await OpenNewFromConversationAsync(idConv);
+        else if (IdOportunidadQuery is long idOportunidad && idOportunidad > 0)
+            await OpenDetailAsync(idOportunidad);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
