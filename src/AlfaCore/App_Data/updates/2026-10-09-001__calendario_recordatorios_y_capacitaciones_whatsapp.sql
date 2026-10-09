@@ -7,6 +7,27 @@ IF OBJECT_ID(N'dbo.CONV_PLANTILLAS', N'U') IS NULL
     RETURN;
 
 DECLARE @Ahora datetime = GETDATE();
+DECLARE @UsuarioAccion nvarchar(50);
+DECLARE @SistemaAccion nvarchar(50);
+
+IF OBJECT_ID(N'dbo.TA_USUARIOS', N'U') IS NOT NULL
+BEGIN
+    SELECT TOP (1)
+        @UsuarioAccion = LTRIM(RTRIM(NOMBRE)),
+        @SistemaAccion = LTRIM(RTRIM(SISTEMA))
+    FROM dbo.TA_USUARIOS
+    WHERE NULLIF(LTRIM(RTRIM(NOMBRE)), N'') IS NOT NULL
+      AND NULLIF(LTRIM(RTRIM(SISTEMA)), N'') IS NOT NULL
+    ORDER BY
+        CASE
+            WHEN UPPER(LTRIM(RTRIM(NOMBRE))) IN (N'ALFACORE', N'ADMIN', N'ADMINISTRADOR') THEN 0
+            ELSE 1
+        END,
+        NOMBRE;
+END;
+
+IF NULLIF(@UsuarioAccion, N'') IS NULL OR NULLIF(@SistemaAccion, N'') IS NULL
+    RETURN;
 
 IF NOT EXISTS (SELECT 1 FROM dbo.CONV_PLANTILLAS WHERE NombreMeta = N'capacitacion_reserva_organizador' AND Idioma = N'es_AR')
 BEGIN
@@ -31,8 +52,8 @@ BEGIN
         N'BORRADOR',
         N'DRAFT',
         1,
-        N'AlfaCore',
-        N'AlfaCore',
+        @UsuarioAccion,
+        @SistemaAccion,
         @Ahora,
         @Ahora
     );
@@ -61,8 +82,8 @@ BEGIN
         N'BORRADOR',
         N'DRAFT',
         1,
-        N'AlfaCore',
-        N'AlfaCore',
+        @UsuarioAccion,
+        @SistemaAccion,
         @Ahora,
         @Ahora
     );

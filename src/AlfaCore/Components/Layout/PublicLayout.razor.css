@@ -1,7 +1,5 @@
 .public-layout {
     min-height: 100dvh;
-    background:
-        radial-gradient(circle at top left, rgba(34, 211, 238, .12), transparent 34rem),
-        linear-gradient(135deg, #071426 0%, #08111f 58%, #0f172a 100%);
-    color: #f8fafc;
+    background: var(--alfa-bg-canvas, #0f1115);
+    color: var(--alfa-text-primary, #f5f5f7);
 }
