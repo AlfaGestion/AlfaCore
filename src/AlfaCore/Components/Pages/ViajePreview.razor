@@ -7,9 +7,13 @@
 @inject IJSRuntime JS
 @inject IRouteContextService RouteContext
 @inject IViajePreviewStateService PreviewState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Viaje | Alfa Gestión</PageTitle>
 
+<div class="gd gd-modal-scope viaje-preview-ad">
 @if (_loading)
 {
     <div class="viaje-preview-page">
@@ -22,24 +26,9 @@
 else if (_preview is null)
 {
     <div class="viaje-preview-page">
-        <section class="viaje-preview-page__toolbar no-print">
-            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
-                <i class="bi bi-arrow-left"></i>
-                <span>Volver</span>
-            </a>
-        </section>
-
-        <section class="panel-card viaje-preview-page__error">
-            <h1>Viaje no disponible</h1>
-            <p>No se pudo cargar la vista previa solicitada.</p>
-            @if (_feedback is not null)
-            {
-                <div class="editor-msg @GetFeedbackClass(_feedback)">
-                    <strong>@_feedback.Title</strong>
-                    <span>@_feedback.Message</span>
-                </div>
-            }
-        </section>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                        Title="Viaje no disponible"
+                        Message="@(_feedback?.Message ?? "No se pudo cargar la vista previa solicitada.")" />
     </div>
 }
 else
@@ -47,25 +36,6 @@ else
     var adicionales = GetAdicionales();
 
     <div class="viaje-preview-page">
-        <section class="viaje-preview-page__toolbar no-print">
-            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
-                <i class="bi bi-arrow-left"></i>
-                <span>Volver</span>
-            </a>
-            <button type="button" class="btn btn--primary btn--sm" @onclick="ImprimirAsync">
-                <i class="bi bi-printer"></i>
-                <span>Imprimir</span>
-            </button>
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirAsync">
-                <i class="bi bi-file-earmark-arrow-down"></i>
-                <span>Exportar PDF</span>
-            </button>
-            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
-                <i class="bi bi-share"></i>
-                <span>Compartir</span>
-            </button>
-        </section>
-
         <article class="viaje-preview-card">
             <header class="viaje-preview-card__hero">
                 <div>
@@ -200,6 +170,7 @@ else
         </article>
     </div>
 }
+</div>
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -208,6 +179,83 @@ else
     private AppUiMessage? _feedback;
     private bool _loading = true;
     private int _loadedId;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => $"{_loading}|{_preview is null}";
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "carga-viajes",
+            Title = "Vista previa del viaje",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCargaViajes(RouteContext, Nav, "viajes"),
+            Actions = BuildHeaderActions(),
+        });
+    }
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions()
+    {
+        var acciones = new List<PageHeaderAction>
+        {
+            new PageHeaderAction
+            {
+                Key = "volver",
+                Label = "Volver",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                OnClick = VolverAsync
+            }
+        };
+
+        if (!_loading && _preview is not null)
+        {
+            acciones.Add(new PageHeaderAction
+            {
+                Key = "pdf",
+                Label = "Exportar PDF",
+                Icon = "bi-file-earmark-arrow-down",
+                Style = PageHeaderActionStyle.Ghost,
+                OnClick = () => InvokeAsync(async () => { await ImprimirAsync(); StateHasChanged(); })
+            });
+            acciones.Add(new PageHeaderAction
+            {
+                Key = "imprimir",
+                Label = "Imprimir",
+                Icon = "bi-printer",
+                Style = PageHeaderActionStyle.Primary,
+                OnClick = () => InvokeAsync(async () => { await ImprimirAsync(); StateHasChanged(); })
+            });
+        }
+
+        return acciones;
+    }
+
+    private Task VolverAsync()
+    {
+        Nav.NavigateTo(GetBackUrl());
+        return Task.CompletedTask;
+    }
 
     protected override async Task OnParametersSetAsync()
     {

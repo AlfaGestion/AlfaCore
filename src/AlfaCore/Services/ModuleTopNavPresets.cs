@@ -130,6 +130,80 @@ public static class ModuleTopNavPresets
             ("interfaces", "Interfaces", "/interfaces")
         ]);
 
+    // Mismas entradas que el sidebar legacy de Actualizaciones.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildActualizaciones(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("base", "Base de datos", "/actualizaciones")
+        ]);
+
+    // Tablas de referencia (antes sin menú propio: se llegaba desde Archivos).
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildArchivos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("tablas", "Tablas de referencia", "/archivos/tablas")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Seguridad.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildSeguridad(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("usuarios", "Usuarios", "/usuarios"),
+            ("autorizacion", "Autorización de tareas", "/seguridad/autorizacion-tareas"),
+            ("auditoria", "Reporte de auditoría", "/auditoria")
+        ]);
+
+    // Centro de ayuda.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildAyuda(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("ayuda", "Centro de ayuda", "/ayuda")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Informes.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildInformes(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("articulos", "Artículos", "/informes"),
+            ("novedades", "Novedades", "/informes/novedades")
+        ]);
+
+    // Mismas entradas que el sidebar legacy de Calendario.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildCalendario(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("guardias", "Guardias", "/calendario"),
+            ("reuniones", "Reuniones", "/calendario/reuniones")
+        ]);
+
+    // Tareas.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildTareas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("tareas", "Tareas", "/tareas")
+        ]);
+
+    // Partes de horas (tiene varias rutas: /partes-horas, /horas, /crm/partes-horas...).
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildPartesHoras(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("partes", "Partes de horas", "/partes-horas")
+        ]);
+
+    // Secciones de Carga de viajes por ruta (para sus vistas auxiliares: vista previa del viaje y liquidación).
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildCargaViajes(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("viajes", "Viajes", "/carga-viajes"),
+            ("tarifas", "Tarifas", "/carga-viajes/tarifas"),
+            ("choferes", "Choferes", "/carga-viajes/choferes"),
+            ("destinos", "Destinos", "/carga-viajes/destinos"),
+            ("tipo-vehiculo", "Tipo vehículo", "/carga-viajes/tipo-vehiculo"),
+            ("reportes", "Reportes", "/carga-viajes/reportes"),
+            ("liquidaciones", "Liquidaciones", "/carga-viajes/liquidaciones"),
+            ("configuracion", "Configuración", "/carga-viajes/configuracion")
+        ]);
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionGeneral(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

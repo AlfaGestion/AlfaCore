@@ -19,14 +19,6 @@ Criterio aplicado:
 - Datos que usa: no usa objetos SQL; navega a Compras, Ventas, Stock, Caja y Bancos, Contabilidad, Consultas, Costos y Auditoría.
 - Observaciones: funciona como portal de entrada general de Alfa Gestión Web.
 
-### Inicio
-
-- Tipo: Page
-- Ubicación: `src/AlfaCore/Components/Pages/Inicio.razor`
-- Propósito: atajo de navegación que redirige al inicio principal de compras.
-- Datos que usa: no usa objetos SQL.
-- Observaciones: redirige automáticamente a `/compras`.
-
 ### Ayuda
 
 - Tipo: Page

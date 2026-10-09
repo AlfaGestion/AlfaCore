@@ -12,7 +12,7 @@
     justify-content: space-between;
     gap: 1rem;
     padding-bottom: .7rem;
-    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-accent) 41%, transparent);
 }
 
 .cal-reuniones-topbar > div:last-child {
@@ -24,11 +24,9 @@
 
 .cal-reuniones-eyebrow {
     margin: 0 0 .1rem;
-    color: #22d3ee;
-    font-size: .72rem;
-    font-weight: 900;
-    letter-spacing: .08em;
-    text-transform: uppercase;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .cal-reuniones-topbar h2 {
@@ -37,7 +35,7 @@
 }
 
 .cal-reuniones-topbar span {
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     font-size: .9rem;
 }
 
@@ -51,9 +49,9 @@
 .cal-reuniones-list,
 .cal-reuniones-editor,
 .cal-reuniones-reservas {
-    border: 1px solid rgba(56, 189, 248, .18);
-    border-radius: 10px;
-    background: rgba(8, 17, 31, .82);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 43%, transparent);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
 }
 
 .cal-reuniones-list {
@@ -76,16 +74,15 @@
 .cal-reuniones-editor header,
 .cal-reuniones-reservas header {
     padding: .85rem;
-    border-bottom: 1px solid rgba(56, 189, 248, .14);
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-accent) 39%, transparent);
 }
 
 .cal-reuniones-list header span,
 .cal-reuniones-editor header span,
 .cal-reuniones-reservas header span {
-    color: #67e8f9;
-    font-size: .76rem;
-    font-weight: 900;
-    text-transform: uppercase;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .cal-reuniones-list button {
@@ -94,10 +91,10 @@
     gap: .16rem .55rem;
     width: 100%;
     padding: .7rem;
-    border: 1px solid rgba(148, 163, 184, .14);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .72);
-    color: #f8fafc;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
     text-align: left;
 }
 
@@ -110,12 +107,12 @@
 }
 
 .cal-reuniones-list button small {
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
 }
 
 .cal-reuniones-list button.is-active {
-    border-color: rgba(34, 211, 238, .58);
-    background: rgba(8, 145, 178, .18);
+    border-color: color-mix(in srgb, var(--alfa-accent) 83%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
 }
 
 .cal-reuniones-form {
@@ -129,18 +126,20 @@
 .cal-reuniones-days {
     display: grid;
     gap: .34rem;
-    color: #8fb9d6;
-    font-size: .78rem;
-    font-weight: 850;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .cal-reuniones-form input,
 .cal-reuniones-form textarea {
-    min-height: 38px;
-    border: 1px solid rgba(56, 189, 248, .22);
-    border-radius: 8px;
-    background: #081426;
-    color: #f8fafc;
+    min-height: 32px;
+    font-size: 13px;
+    font-weight: 400;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
     padding: .52rem .65rem;
 }
 
@@ -182,9 +181,9 @@
     gap: .35rem;
     min-height: 34px;
     padding: .35rem .55rem;
-    border: 1px solid rgba(56, 189, 248, .18);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 43%, transparent);
     border-radius: 999px;
-    background: rgba(15, 23, 42, .64);
+    background: var(--alfa-bg-surface);
 }
 
 .cal-reuniones-days input {
@@ -193,12 +192,12 @@
 
 .cal-reuniones-editor footer {
     padding: .85rem;
-    border-top: 1px solid rgba(56, 189, 248, .14);
+    border-top: 1px solid color-mix(in srgb, var(--alfa-accent) 39%, transparent);
 }
 
 .cal-reuniones-editor footer span {
     min-width: 0;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     overflow-wrap: anywhere;
 }
 
@@ -209,7 +208,7 @@
 .cal-reuniones-reservas > p {
     margin: 0;
     padding: 1rem;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
 }
 
 .cal-reuniones-table {
@@ -222,7 +221,7 @@
     gap: .8rem;
     align-items: center;
     padding: .78rem .85rem;
-    border-top: 1px solid rgba(56, 189, 248, .1);
+    border-top: 1px solid color-mix(in srgb, var(--alfa-accent) 35%, transparent);
 }
 
 .cal-reuniones-table article:first-child {
@@ -235,7 +234,7 @@
 
 .cal-reuniones-table strong {
     display: block;
-    color: #f8fafc;
+    color: var(--alfa-text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -243,7 +242,7 @@
 
 .cal-reuniones-table span {
     display: block;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     font-size: .82rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -253,9 +252,9 @@
 .cal-reuniones-state {
     width: fit-content;
     padding: .25rem .45rem;
-    border: 1px solid rgba(34, 211, 238, .22);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
     border-radius: 999px;
-    color: #67e8f9 !important;
+    color: var(--alfa-accent-hover) !important;
     font-weight: 900;
 }
 
@@ -263,13 +262,13 @@
     display: grid;
     gap: .15rem;
     padding: .78rem .9rem;
-    border-radius: 10px;
+    border-radius: var(--alfa-radius-md, 8px);
 }
 
 .cal-reuniones-feedback--success {
-    border: 1px solid rgba(20, 184, 166, .42);
-    background: rgba(20, 184, 166, .12);
-    color: #99f6e4;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
+    color: var(--alfa-accent-hover);
 }
 
 .cal-reuniones-feedback--error {
@@ -282,7 +281,7 @@
     display: inline-flex;
     align-items: center;
     gap: .55rem;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
 }
 
 @media (max-width: 1120px) {

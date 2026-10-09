@@ -6,18 +6,14 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Calendario | Alfa Gestión</PageTitle>
 
-<section class="calendario-page" @onclick="DismissFeedbackAsync">
-    @if (!string.IsNullOrWhiteSpace(_feedbackText))
-    {
-        <div class="calendario-feedback calendario-feedback--@_feedbackKind">
-            <strong>@_feedbackTitle</strong>
-            <span>@_feedbackText</span>
-        </div>
-    }
+<section class="gd-page gd gd-legacy calendario-page" @onclick="DismissFeedbackAsync">
+    <AlfaNotification Message="@_notificacion.For(_feedbackText, _feedbackKind switch { "error" or "danger" => AppUiFeedbackSeverity.Error, "warning" => AppUiFeedbackSeverity.Warning, _ => AppUiFeedbackSeverity.Success }, _feedbackTitle)" OnDismiss="DismissFeedbackAsync" />
 
     <section class="calendario-toolbar" @onclick:stopPropagation>
         <div class="calendario-nav">
@@ -110,6 +106,8 @@
     }
 </section>
 
+@* Panel lateral y ventanas: fuera del .gd-page, con el mismo aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
 @if (_showSidePanel)
 {
     <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
@@ -376,8 +374,11 @@
         </footer>
     </section>
 }
+</div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
     // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
@@ -540,41 +541,40 @@
         UpdatePageHeader();
     }
 
-    private RenderFragment RenderCalendarSmartSearch() => @<div class="smart-search calendario-header-search" @onclick:stopPropagation>
-        <div class="smart-search__bar">
+    private RenderFragment RenderCalendarSmartSearch() => @<div class="smart-search calendario-header-search" @onclick:stopPropagation @onkeydown="HandleHeaderSearchKeyDown">
+        <div class="smart-search__bar @(_showHeaderFilters ? "is-open" : string.Empty)">
             <i class="bi bi-search"></i>
+            <button type="button" class="smart-search__filter-button @(_showHeaderFilters ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleHeaderFilters">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @if (!string.IsNullOrWhiteSpace(_request.IdTecnico))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro" @onclick="async () => { _request.IdTecnico = null; await LoadAsync(); UpdatePageHeader(); }">
+                        <span>@TechnicianFilterLabel</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (!string.Equals(_request.Tipo, CalendarioEventoTipos.Todos, StringComparison.OrdinalIgnoreCase))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro" @onclick="async () => { _request.Tipo = CalendarioEventoTipos.Todos; await LoadAsync(); UpdatePageHeader(); }">
+                        <span>@TypeLabel(_request.Tipo)</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+            </div>
             <input type="search"
                    placeholder="Evento, técnico o descripción..."
                    value="@_request.Search"
                    @oninput="OnSearchInput" />
-            <button type="button" class="smart-search__toggle @(_showHeaderFilters ? "is-active" : string.Empty)" title="Filtros" aria-label="Filtros" @onclick="ToggleHeaderFilters">
+            <button type="button" class="smart-search__toggle" title="Filtros" aria-label="Mostrar filtros" aria-expanded="@_showHeaderFilters" @onclick="ToggleHeaderFilters">
                 <i class="bi @(_showHeaderFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
             </button>
         </div>
 
-        <div class="smart-search__chips" aria-live="polite">
-            @if (!string.IsNullOrWhiteSpace(_request.Search))
-            {
-                <button type="button" class="smart-chip" @onclick="ClearSearchAsync">
-                    Texto <i class="bi bi-x"></i>
-                </button>
-            }
-            @if (!string.IsNullOrWhiteSpace(_request.IdTecnico))
-            {
-                <button type="button" class="smart-chip" @onclick="async () => { _request.IdTecnico = null; await LoadAsync(); UpdatePageHeader(); }">
-                    @TechnicianFilterLabel <i class="bi bi-x"></i>
-                </button>
-            }
-            @if (!string.Equals(_request.Tipo, CalendarioEventoTipos.Todos, StringComparison.OrdinalIgnoreCase))
-            {
-                <button type="button" class="smart-chip" @onclick="async () => { _request.Tipo = CalendarioEventoTipos.Todos; await LoadAsync(); UpdatePageHeader(); }">
-                    @TypeLabel(_request.Tipo) <i class="bi bi-x"></i>
-                </button>
-            }
-        </div>
-
         @if (_showHeaderFilters)
         {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseHeaderFilters"></button>
             <div class="smart-search__panel calendario-header-search__panel" @onclick:stopPropagation>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-person"></i> Técnico</h4>
@@ -615,6 +615,9 @@
     {
         PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "calendario",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCalendario(RouteContext, Nav, "guardias"),
             Title = "Calendario",
             Breadcrumb = ["Calendario"],
             State = _loading ? PageHeaderState.Loading : PageHeaderState.List,
@@ -670,6 +673,20 @@
     {
         _showHeaderFilters = !_showHeaderFilters;
         UpdatePageHeader();
+    }
+
+    private void CloseHeaderFilters()
+    {
+        if (!_showHeaderFilters)
+            return;
+        _showHeaderFilters = false;
+        UpdatePageHeader();
+    }
+
+    private void HandleHeaderSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            CloseHeaderFilters();
     }
 
     private async Task OnSearchInput(ChangeEventArgs args)

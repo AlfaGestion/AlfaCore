@@ -41,14 +41,8 @@
         }
         else if (_general is null)
         {
-            <div class="usuarios-empty d-flex flex-column gap-3">
-                <p class="mb-0">No hay un carrito general configurado.</p>
-                <div class="actions">
-                    <a class="btn btn--primary" href="@CreateGeneralCartUrl()">
-                        <i class="bi bi-plus-lg"></i> Crear carrito general
-                    </a>
-                </div>
-            </div>
+            <AlfaEmptyState Title="Sin carrito general"
+                            Message="Todavía no hay un carrito general configurado. Crealo desde la barra superior." />
         }
         else
         {
@@ -81,41 +75,6 @@
             </div>
         }
     </section>
-
-    <ModuleListToolbar AriaLabel="Herramientas de carritos de catálogo"
-                       PagerAriaLabel="Paginación de carritos de catálogo"
-                       ShowPager="true"
-                       CurrentPage="@(_page?.PageNumber ?? 1)"
-                       TotalPages="@(_page?.TotalPages ?? 1)"
-                       IsLoading="@_loadingCatalogos"
-                       OnPageChanged="OnPageChangedAsync">
-        <SearchContent>
-            <div class="catalogos-toolbar">
-                <div class="field catalogos-toolbar__field catalogos-toolbar__field--wide">
-                    <label>Buscar</label>
-                    <input type="search"
-                           class="form-control"
-                           @bind="_texto"
-                           @bind:event="oninput"
-                           @onkeydown="HandleSearchKeyDownAsync"
-                           placeholder="Nombre o id del catálogo" />
-                </div>
-                <div class="field catalogos-toolbar__field">
-                    <label>Estado</label>
-                    <select class="form-select" @bind="_estadoFiltro">
-                        <option value="@CarritoComprasEstadoKeys.Todos">Todos</option>
-                        <option value="@CarritoComprasEstadoKeys.Activo">Activos</option>
-                        <option value="@CarritoComprasEstadoKeys.Inactivo">Inactivos</option>
-                    </select>
-                </div>
-                <div class="catalogos-toolbar__search-action">
-                    <button type="button" class="btn btn--primary" @onclick="() => BuscarCatalogosAsync(1)" disabled="@_loadingCatalogos">
-                        <i class="bi bi-search"></i> Buscar
-                    </button>
-                </div>
-            </div>
-        </SearchContent>
-    </ModuleListToolbar>
 
     <section class="panel-card">
         <div class="panel-card__header">
@@ -208,7 +167,8 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => string.Empty;
+    private string HeaderSnapshot()
+        => $"{_filtersOpen}|{_texto}|{_estadoFiltro}|{_page?.PageNumber}|{_page?.TotalPages}|{_loadingCatalogos}|{_loadingGeneral}|{_general is null}";
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -233,19 +193,104 @@
             ModuleKey = "carrito-compras",
             Title = "Carritos de compra",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCarritoCompras(RouteContext, Nav, "carritos"),
-            Actions =
-            [
-                new PageHeaderAction
-                {
-                    Key = "general",
-                    Label = "Carrito general",
-                    Icon = "bi-plus-lg",
-                    Style = PageHeaderActionStyle.Primary,
-                    Disabled = false,
-                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(CreateGeneralCartUrl()); StateHasChanged(); })
-                },
-            ],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderCarritosSearch(),
+            Pagination = new PageHeaderPaginationConfig
+            {
+                PageLabel = $"{Math.Max(1, _page?.PageNumber ?? 1)} / {Math.Max(1, _page?.TotalPages ?? 1)}",
+                HasPrevious = (_page?.PageNumber ?? 1) > 1,
+                HasNext = (_page?.PageNumber ?? 1) < (_page?.TotalPages ?? 1),
+                Disabled = _loadingCatalogos,
+                OnPrevious = () => InvokeAsync(async () => { await BuscarCatalogosAsync((_page?.PageNumber ?? 1) - 1); StateHasChanged(); }),
+                OnNext = () => InvokeAsync(async () => { await BuscarCatalogosAsync((_page?.PageNumber ?? 1) + 1); StateHasChanged(); })
+            },
+            Actions = !_loadingGeneral && _general is null
+                ?
+                [
+                    new PageHeaderAction
+                    {
+                        Key = "general",
+                        Label = "Crear carrito general",
+                        Icon = "bi-plus-lg",
+                        Style = PageHeaderActionStyle.Primary,
+                        OnClick = () => InvokeAsync(() => { Nav.NavigateTo(CreateGeneralCartUrl()); StateHasChanged(); })
+                    },
+                ]
+                : [],
         });
+    }
+
+    private bool _filtersOpen;
+
+    private RenderFragment RenderCarritosSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="HandleHeaderSearchKeyDown">
+        <div class="smart-search__bar @(_filtersOpen ? "is-open" : string.Empty)">
+            <i class="bi bi-search"></i>
+            <button type="button" class="smart-search__filter-button @(_filtersOpen ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @if (_estadoFiltro != CarritoComprasEstadoKeys.Todos)
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro de estado" @onclick="QuitarFiltroEstadoAsync">
+                        <span>@(_estadoFiltro == CarritoComprasEstadoKeys.Activo ? "Activos" : "Inactivos")</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   value="@_texto"
+                   @oninput="e => _texto = e.Value?.ToString() ?? string.Empty"
+                   @onkeydown="HandleSearchKeyDownAsync"
+                   placeholder="Nombre o id del catálogo" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtersOpen" @onclick="ToggleFiltros">
+                <i class="bi @(_filtersOpen ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_filtersOpen)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <div class="smart-search__inline">
+                        <label>Estado</label>
+                        <select @bind="_estadoFiltro">
+                            <option value="@CarritoComprasEstadoKeys.Todos">Todos</option>
+                            <option value="@CarritoComprasEstadoKeys.Activo">Activos</option>
+                            <option value="@CarritoComprasEstadoKeys.Inactivo">Inactivos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__actions">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingCatalogos">
+                        <i class="bi bi-search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void ToggleFiltros() => _filtersOpen = !_filtersOpen;
+
+    private void CerrarFiltros() => _filtersOpen = false;
+
+    private void HandleHeaderSearchKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            CerrarFiltros();
+    }
+
+    private async Task AplicarFiltrosAsync()
+    {
+        _filtersOpen = false;
+        await BuscarCatalogosAsync(1);
+    }
+
+    private async Task QuitarFiltroEstadoAsync()
+    {
+        _estadoFiltro = CarritoComprasEstadoKeys.Todos;
+        await BuscarCatalogosAsync(1);
     }
 
     protected override async Task OnInitializedAsync()

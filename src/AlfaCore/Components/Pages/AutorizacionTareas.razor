@@ -3,41 +3,20 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IAutorizacionTareasService AutorizacionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Autorización de tareas | Alfa Gestión</PageTitle>
 
-<div class="page-grid auth-page">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Autorización de tareas</h2>
-            <p class="page-intro__text">Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--ghost" @onclick="RecargarUsuariosAsync" disabled="@_loadingUsers">
-                <i class="bi bi-arrow-clockwise"></i> Recargar usuarios
-            </button>
-        </div>
-    </section>
+<div class="gd-page gd gd-legacy autorizacion-page">
+    <header class="gd-header">
+        <h2>Autorización de tareas</h2>
+        <p>Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
+    </header>
 
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <section class="panel-card auth-admin-shell">
         <div class="panel-card__header auth-shell__header">
@@ -121,7 +100,7 @@
                 }
                 else if (!_treeLoaded)
                 {
-                    <div class="auth-tree-state">Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</div>
+                    <div class="auth-tree-state"><span>Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</span></div>
                 }
                 else if (_visibleTree.Count == 0)
                 {
@@ -311,6 +290,51 @@
     private IReadOnlyList<AutorizacionCatalogoItemDto> DepositosDisponibles => _depositos
         .Where(item => item.Compartido || string.Equals(item.UnidadNegocio.Trim(), _selectedUNegocio.Trim(), StringComparison.OrdinalIgnoreCase))
         .ToList();
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => _loadingUsers.ToString();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "seguridad",
+            Title = "Autorización de tareas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildSeguridad(RouteContext, Nav, "autorizacion"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar usuarios",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loadingUsers,
+                    OnClick = () => InvokeAsync(async () => { await RecargarUsuariosAsync(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

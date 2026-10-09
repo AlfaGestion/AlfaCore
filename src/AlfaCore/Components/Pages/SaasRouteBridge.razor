@@ -95,9 +95,6 @@ else
             if (string.IsNullOrWhiteSpace(normalizedTemplate))
                 return null;
 
-            if (string.Equals(normalizedTemplate, "inicio", StringComparison.OrdinalIgnoreCase))
-                return null;
-
             if (normalizedTemplate.Contains("{idweb}", StringComparison.OrdinalIgnoreCase)
                 || normalizedTemplate.Contains("{idbase", StringComparison.OrdinalIgnoreCase))
             {

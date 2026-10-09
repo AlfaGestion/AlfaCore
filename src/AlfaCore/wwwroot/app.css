@@ -898,8 +898,8 @@ select {
 
 /* Calendario */
 .calendario-page {
-    --calendar-border: rgba(148, 163, 184, .16);
-    --calendar-panel: rgba(15, 23, 42, .44);
+    --calendar-border: var(--alfa-border-default);
+    --calendar-panel: var(--alfa-bg-surface-raised);
     position: relative;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
@@ -927,7 +927,7 @@ select {
 
 .calendario-eyebrow {
     margin: 0 0 .15rem;
-    color: #22d3ee;
+    color: var(--alfa-accent);
     font-size: .68rem;
     font-weight: 800;
     letter-spacing: .08em;
@@ -953,7 +953,7 @@ select {
 .calendario-page .btn {
     min-height: 32px;
     padding: .38rem .72rem;
-    border-radius: 7px;
+    border-radius: var(--alfa-radius-sm, 4px);
     font-size: .82rem;
 }
 
@@ -969,7 +969,7 @@ select {
     gap: .16rem;
     padding: .62rem .8rem;
     border: 1px solid rgba(34, 197, 94, .35);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: rgba(5, 150, 105, .16);
     color: #22c55e;
     font-size: .82rem;
@@ -988,7 +988,7 @@ select {
     justify-content: space-between;
     padding: .55rem .65rem;
     border: 1px solid var(--calendar-border);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: var(--calendar-panel);
 }
 
@@ -998,7 +998,7 @@ select {
     min-width: 0;
     padding: .42rem .62rem;
     border: 1px solid color-mix(in srgb, var(--event-color) 55%, transparent);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: color-mix(in srgb, var(--event-color) 18%, transparent);
     color: var(--color-text);
     text-align: left;
@@ -1083,8 +1083,8 @@ select {
     min-height: 34px;
     padding: .42rem .58rem;
     border: 1px solid var(--calendar-border);
-    border-radius: 7px;
-    background: rgba(2, 6, 23, .42);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
     color: var(--color-text);
     font-size: .84rem;
 }
@@ -1108,8 +1108,8 @@ select {
     min-height: 0;
     overflow: hidden;
     border: 1px solid var(--calendar-border);
-    border-radius: 8px;
-    background: rgba(2, 6, 23, .28);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .calendario-weekday {
@@ -1138,19 +1138,19 @@ select {
     border: 0;
     border-right: 1px solid var(--calendar-border);
     border-bottom: 1px solid var(--calendar-border);
-    background: rgba(15, 23, 42, .18);
+    background: var(--alfa-bg-surface-raised);
     color: var(--color-text);
     text-align: left;
     transition: background .16s ease, transform .16s ease;
 }
 
 .calendario-day:hover {
-    background: rgba(14, 165, 233, .08);
+    background: color-mix(in srgb, var(--alfa-accent) 8%, transparent);
 }
 
 .calendario-day.is-muted {
-    background: rgba(15, 23, 42, .08);
-    color: #64748b;
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-secondary);
 }
 
 .calendario-day.is-today .calendario-day-number {
@@ -1159,7 +1159,7 @@ select {
     width: 1.6rem;
     height: 1.6rem;
     border-radius: 50%;
-    background: #22d3ee;
+    background: var(--alfa-accent);
     color: #082f49;
     font-weight: 900;
 }
@@ -1178,9 +1178,9 @@ select {
     min-width: 0;
     padding: .22rem .35rem;
     border-left: 3px solid var(--event-color);
-    border-radius: 5px;
-    background: rgba(14, 165, 233, .12);
-    color: #e0f2fe;
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
+    color: var(--alfa-text-primary);
     font-size: .74rem;
     line-height: 1.15;
     cursor: pointer;
@@ -1189,7 +1189,7 @@ select {
 
 .calendario-event-chip:hover {
     transform: translateX(2px);
-    background: rgba(14, 165, 233, .2);
+    background: color-mix(in srgb, var(--alfa-accent) 20%, transparent);
 }
 
 .calendario-event-chip span,
@@ -1201,12 +1201,12 @@ select {
 }
 
 .calendario-event-chip small {
-    color: #bae6fd;
+    color: var(--alfa-accent-hover);
     font-size: .66rem;
 }
 
 .calendario-more {
-    color: #7dd3fc;
+    color: var(--alfa-accent-hover);
     font-size: .72rem;
 }
 
@@ -1223,10 +1223,10 @@ select {
     min-height: 0;
     padding: .8rem;
     overflow: auto;
-    border-left: 1px solid rgba(56, 189, 248, .2);
+    border-left: 1px solid color-mix(in srgb, var(--alfa-accent) 45%, transparent);
     border-radius: 0;
-    background: #0b1628;
-    box-shadow: -24px 0 48px rgba(0, 0, 0, .34);
+    background: var(--alfa-bg-surface);
+    box-shadow: -24px 0 48px rgba(0, 0, 0, 0.34);
     transform: translateX(104%);
     opacity: 0;
     transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s ease;
@@ -1242,7 +1242,7 @@ select {
     inset: 0;
     z-index: 1190;
     border: 0;
-    background: rgba(2, 6, 23, .28);
+    background: rgba(0, 0, 0, .6);
     animation: support-modal-backdrop-in .16s ease-out both;
 }
 
@@ -1261,7 +1261,7 @@ select {
 }
 
 .calendario-side-title span {
-    color: #22d3ee;
+    color: var(--alfa-accent);
     font-size: .68rem;
     font-weight: 800;
     letter-spacing: .08em;
@@ -1275,7 +1275,7 @@ select {
 .calendario-mini,
 .calendario-side-section {
     border: 1px solid var(--calendar-border);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: var(--calendar-panel);
 }
 
@@ -1312,13 +1312,13 @@ select {
 
 .calendario-side-head {
     justify-content: space-between;
-    color: #e2e8f0;
+    color: var(--alfa-text-primary);
     font-size: .84rem;
     font-weight: 800;
 }
 
 .calendario-side-head small {
-    color: #7dd3fc;
+    color: var(--alfa-accent-hover);
 }
 
 .calendario-side-event,
@@ -1326,7 +1326,7 @@ select {
     width: 100%;
     padding: .42rem .48rem;
     border: 1px solid transparent;
-    border-radius: 7px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: transparent;
     color: var(--color-text);
     text-align: left;
@@ -1336,8 +1336,8 @@ select {
 .calendario-side-event:hover,
 .calendario-technicians button:hover,
 .calendario-technicians button.is-active {
-    border-color: rgba(34, 211, 238, .24);
-    background: rgba(14, 165, 233, .1);
+    border-color: color-mix(in srgb, var(--alfa-accent) 49%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 10%, transparent);
     transform: translateX(2px);
 }
 
@@ -1368,18 +1368,18 @@ select {
     min-width: 1.7rem;
     height: 1.7rem;
     padding: 0 .35rem;
-    border: 1px solid rgba(56, 189, 248, .28);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
     border-radius: 999px;
-    background: rgba(8, 145, 178, .14);
-    color: #67e8f9;
+    background: color-mix(in srgb, var(--alfa-accent) 14%, transparent);
+    color: var(--alfa-accent-hover);
     font-size: .78rem;
     font-weight: 900;
     cursor: pointer;
 }
 
 .calendario-count-button:hover {
-    border-color: rgba(56, 189, 248, .55);
-    background: rgba(8, 145, 178, .24);
+    border-color: color-mix(in srgb, var(--alfa-accent) 80%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 24%, transparent);
 }
 
 .calendario-dot {
@@ -1403,10 +1403,10 @@ select {
     align-items: center;
     gap: .5rem;
     padding: .55rem .75rem;
-    border: 1px solid rgba(34, 211, 238, .2);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 45%, transparent);
     border-radius: 999px;
-    background: rgba(15, 23, 42, .9);
-    color: #bae6fd;
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-accent-hover);
     transform: translateX(-50%);
 }
 
@@ -1414,8 +1414,8 @@ select {
     position: fixed;
     inset: 0;
     z-index: 70;
-    background: rgba(2, 6, 23, .58);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, .6);
+    backdrop-filter: none;
     animation: support-modal-backdrop-in .18s ease-out both;
 }
 
@@ -1429,10 +1429,10 @@ select {
     width: min(760px, calc(100vw - 2rem));
     max-height: min(760px, calc(100vh - 2rem));
     overflow: hidden;
-    border: 1px solid rgba(56, 189, 248, .22);
-    border-radius: 12px;
-    background: #0f172a;
-    box-shadow: 0 28px 70px rgba(0, 0, 0, .42);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
     transform: translate(-50%, -50%);
     animation: calendario-modal-in .18s cubic-bezier(.2, .8, .2, 1) both;
 }
@@ -1469,7 +1469,7 @@ select {
 }
 
 .calendario-modal > header span {
-    color: #67e8f9;
+    color: var(--alfa-accent-hover);
     font-size: .72rem;
     font-weight: 800;
 }
@@ -1513,7 +1513,7 @@ select {
     width: 16px;
     min-height: 16px;
     height: 16px;
-    accent-color: #14b8a6;
+    accent-color: var(--alfa-accent);
 }
 
 .calendario-reminder {
@@ -1522,9 +1522,9 @@ select {
     align-items: end;
     gap: .75rem;
     padding: .65rem;
-    border: 1px solid rgba(34, 211, 238, .16);
-    border-radius: 8px;
-    background: rgba(14, 165, 233, .06);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 41%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: color-mix(in srgb, var(--alfa-accent) 6%, transparent);
 }
 
 .calendario-reminder-state {
@@ -1634,10 +1634,10 @@ select {
     width: fit-content;
     max-width: 100%;
     padding: .65rem;
-    border: 1px solid rgba(56, 189, 248, .22);
-    border-radius: 8px;
-    background: rgba(7, 20, 38, .92);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, .28);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
 }
 
 .shell__main--calendario .calendario-filters .field,
@@ -1705,7 +1705,7 @@ select {
     width: min(360px, 100vw);
     max-height: 100dvh;
     padding: .95rem;
-    border: 1px solid rgba(56, 189, 248, .22);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
     border-radius: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1715,7 +1715,7 @@ select {
     position: fixed;
     inset: 0;
     z-index: 1190;
-    background: rgba(2, 6, 23, .22);
+    background: rgba(0, 0, 0, .6);
 }
 
 .shell__main--calendario .calendario-side-section {
@@ -1728,16 +1728,16 @@ select {
     min-width: 1.7rem;
     height: 1.7rem;
     padding: 0 .35rem;
-    border: 1px solid rgba(56, 189, 248, .28);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
     border-radius: 999px;
-    background: rgba(8, 145, 178, .14);
-    color: #67e8f9;
+    background: color-mix(in srgb, var(--alfa-accent) 14%, transparent);
+    color: var(--alfa-accent-hover);
     font-weight: 900;
 }
 
 .shell__main--calendario .calendario-count-button:hover {
-    border-color: rgba(56, 189, 248, .55);
-    background: rgba(8, 145, 178, .24);
+    border-color: color-mix(in srgb, var(--alfa-accent) 80%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 24%, transparent);
 }
 
 .shell__main--calendario .calendario-upcoming-popover {
@@ -1751,10 +1751,10 @@ select {
     max-height: min(520px, calc(100dvh - 10rem));
     overflow-y: auto;
     padding: .65rem;
-    border: 1px solid rgba(56, 189, 248, .32);
-    border-radius: 8px;
-    background: #071426;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, .42);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 57%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
 }
 
 .shell__main--calendario .calendario-upcoming-backdrop {
@@ -2043,10 +2043,10 @@ select {
 .calendario-header-search select {
     min-height: 2.05rem;
     padding: .42rem .5rem;
-    border: 1px solid rgba(92, 201, 255, .2);
-    border-radius: .65rem;
-    background: rgba(15, 23, 42, .78);
-    color: #e2e8f0;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 45%, transparent);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
 }
 
 .calendario-header-search .smart-option {
@@ -11536,7 +11536,7 @@ html[data-theme="light"] .editor-builder__col-grid {
     width: min(920px, calc(100vw - 2rem));
     max-width: 920px;
     border-left: 1px solid var(--color-border);
-    border-radius: 22px 0 0 22px;
+    border-radius: var(--alfa-radius-md, 8px) 0 0 var(--alfa-radius-md, 8px);
     overflow: hidden;
 }
 
@@ -11558,7 +11558,7 @@ html[data-theme="light"] .editor-builder__col-grid {
     width: auto;
     max-width: none;
     border-left: 0;
-    border-radius: 18px;
+    border-radius: var(--alfa-radius-md, 8px);
 }
 
 .carga-viajes-drawer--config .carga-viajes-config-grid,
@@ -11594,8 +11594,8 @@ html[data-theme="light"] .editor-builder__col-grid {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: linear-gradient(180deg, rgba(7, 17, 31, .98), rgba(7, 17, 31, .94));
-    backdrop-filter: blur(12px);
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface));
+    backdrop-filter: none;
 }
 
 .carga-viajes-drawer .actions {
@@ -12031,7 +12031,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     margin: 0 1rem;
     padding: 0.85rem 1rem;
     align-items: center;
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     line-height: 1.35;
     animation: editor-msg-fade-in .18s ease-out both;
     transition: opacity .18s ease, transform .18s ease;
@@ -12105,9 +12105,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-main,
 .tareas-quick {
     min-width: 0;
-    border: 1px solid rgba(148, 163, 184, .16);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .38);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-lists,
@@ -12129,7 +12129,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     justify-content: space-between;
     gap: .65rem;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     padding: .55rem .65rem;
     background: transparent;
     color: var(--color-text);
@@ -12137,15 +12137,15 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-list-button .bi-share {
-    color: #67e8f9;
+    color: var(--alfa-accent-hover);
     font-size: .95rem;
     opacity: 1;
 }
 
 .tareas-list-button:hover,
 .tareas-list-button.is-active {
-    border-color: rgba(45, 212, 191, .3);
-    background: rgba(14, 165, 233, .16);
+    border-color: color-mix(in srgb, var(--alfa-accent) 55%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
 }
 
 .tareas-list-button.is-drop-target {
@@ -12165,7 +12165,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-list-button strong {
-    color: #7dd3fc;
+    color: var(--alfa-accent-hover);
     font-size: .82rem;
 }
 
@@ -12190,9 +12190,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-note button {
     width: 30px;
     height: 30px;
-    border: 1px solid rgba(148, 163, 184, .18);
+    border: 1px solid var(--alfa-border-default);
     border-radius: 999px;
-    background: rgba(15, 23, 42, .45);
+    background: var(--alfa-bg-surface-raised);
     color: var(--color-muted);
 }
 
@@ -12225,13 +12225,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     gap: .65rem;
     min-height: 52px;
     padding: .45rem .7rem;
-    border: 1px solid rgba(56, 189, 248, .26);
-    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 51%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
     background: rgba(8, 47, 73, .28);
 }
 
 .tareas-compose i {
-    color: #38bdf8;
+    color: var(--alfa-accent);
     font-size: 1.15rem;
 }
 
@@ -12263,8 +12263,8 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     justify-content: space-between;
     gap: .75rem;
     padding: .45rem .65rem .45rem .75rem;
-    border: 1px solid rgba(56, 189, 248, .28);
-    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
     background: rgba(8, 47, 73, .24);
     color: var(--color-text);
     font: inherit;
@@ -12283,14 +12283,14 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-assignee-filter__button .bi-chevron-down {
-    color: #7dd3fc;
+    color: var(--alfa-accent-hover);
     font-size: .82rem;
 }
 
 .tareas-assignee-filter__button:hover,
 .tareas-assignee-filter__button:focus-visible {
-    border-color: rgba(56, 189, 248, .48);
-    background: rgba(14, 165, 233, .16);
+    border-color: color-mix(in srgb, var(--alfa-accent) 73%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
     outline: none;
 }
 
@@ -12304,9 +12304,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     overflow: auto;
     padding: .35rem;
     border: 1px solid rgba(80, 118, 180, .28);
-    border-radius: 8px;
-    background: #0d1a2d;
-    box-shadow: 0 18px 46px rgba(2, 8, 23, .44);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.44);
 }
 
 .tareas-assignee-filter__option {
@@ -12318,7 +12318,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     gap: .65rem;
     padding: .45rem .55rem;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: transparent;
     color: #dbeafe;
     text-align: left;
@@ -12334,18 +12334,18 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-assignee-filter__option:hover,
 .tareas-assignee-filter__option:focus-visible {
-    background: rgba(14, 165, 233, .16);
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
     color: #ffffff;
     outline: none;
 }
 
 .tareas-assignee-filter__option.is-active {
-    background: rgba(34, 211, 238, .15);
+    background: color-mix(in srgb, var(--alfa-accent) 15%, transparent);
     color: #e0faff;
 }
 
 .tareas-assignee-filter__option > .bi:last-child {
-    color: #22d3ee;
+    color: var(--alfa-accent);
 }
 
 .tareas-toolbar strong,
@@ -12361,9 +12361,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     align-items: center;
     min-height: 58px;
     padding: .55rem .65rem;
-    border: 1px solid rgba(148, 163, 184, .14);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .34);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-row[draggable="true"] {
@@ -12373,15 +12373,15 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-row.is-dragging {
     opacity: 1;
     border-color: rgba(251, 191, 36, .42);
-    background: rgba(15, 23, 42, .54);
+    background: var(--alfa-bg-surface);
     cursor: grabbing;
 }
 
 .tareas-row--drag-preview {
     opacity: 1 !important;
-    border-color: rgba(56, 189, 248, .42) !important;
-    background: #0d1a2d !important;
-    box-shadow: 0 18px 48px rgba(2, 8, 23, .52), 0 0 0 1px rgba(56, 189, 248, .18) !important;
+    border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent) !important;
+    background: var(--alfa-bg-surface) !important;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.52), 0 0 0 1px color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
     transform: rotate(-1deg);
 }
 
@@ -12404,8 +12404,8 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-check:hover,
 .tareas-check.is-done {
-    color: #2dd4bf;
-    background: rgba(45, 212, 191, .12);
+    color: var(--alfa-accent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
 }
 
 .tareas-row__body {
@@ -12442,7 +12442,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     align-items: center;
     justify-content: center;
     list-style: none;
-    border: 1px solid rgba(148, 163, 184, .16);
+    border: 1px solid var(--alfa-border-default);
     border-radius: 999px;
     color: var(--color-muted);
     cursor: pointer;
@@ -12454,7 +12454,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-menu[open] summary {
     color: var(--color-text);
-    background: rgba(14, 165, 233, .14);
+    background: color-mix(in srgb, var(--alfa-accent) 14%, transparent);
 }
 
 .tareas-menu > div {
@@ -12465,7 +12465,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     min-width: 150px;
     padding: .35rem;
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: var(--color-panel);
     box-shadow: var(--shadow-soft);
 }
@@ -12484,7 +12484,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     width: 100%;
     min-height: 32px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: transparent;
     color: var(--color-text);
     text-align: left;
@@ -12511,7 +12511,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-menu button:hover {
-    background: rgba(14, 165, 233, .12);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
 }
 
 .tareas-empty {
@@ -12523,7 +12523,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-empty i {
-    color: #2dd4bf;
+    color: var(--alfa-accent);
     font-size: 2rem;
 }
 
@@ -12532,7 +12532,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-completed {
-    border-top: 1px solid rgba(148, 163, 184, .14);
+    border-top: 1px solid var(--alfa-border-default);
     padding-top: .45rem;
 }
 
@@ -12544,7 +12544,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-quick__head span {
     display: block;
-    color: #38bdf8;
+    color: var(--alfa-accent);
     font-size: .72rem;
     font-weight: 900;
     letter-spacing: .08em;
@@ -12555,9 +12555,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     min-height: 42px;
     margin: .7rem 0;
     padding: 0 .75rem;
-    border: 1px solid rgba(148, 163, 184, .2);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .45);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-note {
@@ -12566,9 +12566,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     align-items: center;
     gap: .45rem;
     padding: .7rem .75rem;
-    border: 1px solid rgba(148, 163, 184, .13);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .26);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-note > span {
@@ -12591,14 +12591,14 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-note .bi-share {
     margin-left: .25rem;
-    color: #67e8f9;
+    color: var(--alfa-accent-hover);
     font-size: .78rem;
     opacity: .82;
 }
 
 .tareas-row__body .bi-share {
     margin-left: .3rem;
-    color: #67e8f9;
+    color: var(--alfa-accent-hover);
     font-size: .78rem;
     opacity: .82;
 }
@@ -12616,7 +12616,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     max-height: 90vh;
     overflow-y: auto;
     transform: translateX(-50%);
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     padding: 1.55rem;
 }
 
@@ -12674,9 +12674,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     min-height: 38px;
     width: 100%;
     padding: 0 .75rem;
-    border: 1px solid rgba(148, 163, 184, .2);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .3);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
     color: var(--color-text);
     font-weight: 800;
     text-align: left;
@@ -12700,10 +12700,10 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     max-height: 280px;
     overflow: auto;
     padding: .35rem;
-    border: 1px solid rgba(56, 189, 248, .24);
-    border-radius: 8px;
-    background: #071426;
-    box-shadow: 0 18px 46px rgba(0, 0, 0, .36);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 49%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.36);
 }
 
 .tareas-assignment-dropdown__menu label,
@@ -12715,7 +12715,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     min-height: 34px;
     padding: .45rem .55rem;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: transparent;
     color: var(--color-text);
     font-weight: 700;
@@ -12726,13 +12726,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-assignment-dropdown__config {
     width: 100%;
     margin-bottom: .15rem;
-    color: #7dd3fc;
+    color: var(--alfa-accent-hover);
 }
 
 .tareas-assignment-dropdown__menu label:hover,
 .tareas-assignment-dropdown__menu label.is-selected,
 .tareas-assignment-dropdown__config:hover {
-    background: rgba(8, 145, 178, .22);
+    background: color-mix(in srgb, var(--alfa-accent) 22%, transparent);
 }
 
 .tareas-assignment-dropdown__menu input {
@@ -12756,9 +12756,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     display: grid;
     gap: .75rem;
     padding: .8rem;
-    border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .24);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-group-box > strong {
@@ -12774,17 +12774,17 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-attachments {
     display: grid;
     gap: .75rem;
-    border: 1px dashed rgba(56, 189, 248, .28);
-    border-radius: 8px;
+    border: 1px dashed color-mix(in srgb, var(--alfa-accent) 53%, transparent);
+    border-radius: var(--alfa-radius-sm, 4px);
     padding: .85rem;
-    background: rgba(15, 23, 42, .26);
+    background: var(--alfa-bg-surface-raised);
     outline: none;
 }
 
 .tareas-attachments:focus-visible,
 .tareas-attachments.is-file-dragging {
-    border-color: rgba(45, 212, 191, .72);
-    background: rgba(8, 145, 178, .16);
+    border-color: color-mix(in srgb, var(--alfa-accent) 97%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
 }
 
 .tareas-attachments__head {
@@ -12822,13 +12822,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     grid-template-rows: 86px auto;
     min-width: 0;
     overflow: hidden;
-    border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: 8px;
-    background: rgba(2, 6, 23, .28);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-attachment-card.is-pending {
-    border-color: rgba(45, 212, 191, .34);
+    border-color: color-mix(in srgb, var(--alfa-accent) 59%, transparent);
 }
 
 .tareas-attachment-card img,
@@ -12836,7 +12836,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     width: 100%;
     height: 86px;
     object-fit: cover;
-    background: rgba(2, 6, 23, .5);
+    background: var(--alfa-bg-surface);
 }
 
 .tareas-attachment-card__image {
@@ -12894,9 +12894,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     place-items: center;
     width: 30px;
     height: 30px;
-    border: 1px solid rgba(148, 163, 184, .25);
+    border: 1px solid var(--alfa-border-default);
     border-radius: 999px;
-    background: rgba(15, 23, 42, .82);
+    background: var(--alfa-bg-surface);
     color: var(--color-text);
 }
 
@@ -12913,10 +12913,10 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     grid-template-rows: auto minmax(0, 1fr);
     gap: .75rem;
     padding: .85rem;
-    border: 1px solid rgba(148, 163, 184, .24);
-    border-radius: 8px;
-    background: rgba(2, 6, 23, .96);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
 }
 
 .tareas-image-preview__head {
@@ -12938,8 +12938,8 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     width: 100%;
     height: 100%;
     object-fit: contain;
-    border-radius: 6px;
-    background: rgba(15, 23, 42, .72);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
 }
 
 .tareas-modal__actions {
@@ -12972,9 +12972,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-share-all {
     margin: 1rem 0;
     padding: .75rem;
-    border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .28);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-task-share {
@@ -12995,9 +12995,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     gap: .65rem;
     margin: -0.2rem 0 1.1rem;
     padding: .75rem;
-    border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .24);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised);
 }
 
 .tareas-share-users {
@@ -21037,7 +21037,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     position: fixed;
     inset: 0;
     z-index: 4000;
-    background: rgba(2, 8, 18, 0.34);
+    background: rgba(0, 0, 0, .6);
     border: 0;
     padding: 0;
 }
@@ -21051,7 +21051,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     height: 100dvh;
     display: grid;
     grid-template-rows: auto auto 1fr;
-    background: #07111f;
+    background: var(--alfa-bg-surface);
     border-left: 1px solid rgba(84, 129, 190, 0.35);
     box-shadow: -24px 0 70px rgba(0, 0, 0, 0.38);
     transform: translateX(104%);
@@ -21111,7 +21111,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     display: inline-grid;
     place-items: center;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--alfa-radius-md, 8px);
     background: transparent;
     color: rgba(221, 235, 250, 0.86);
     text-decoration: none;
@@ -21148,8 +21148,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     width: 100%;
     min-width: 0;
     border: 1px solid rgba(80, 118, 180, .32);
-    border-radius: 8px;
-    background: rgba(12, 24, 43, .92);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
     color: var(--color-text);
     outline: 0;
 }
@@ -21177,7 +21177,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     min-width: 74px;
     height: 30px;
     padding: 0 .65rem;
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
 }
 
 .tareas-side-panel__add i {
@@ -21211,8 +21211,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     width: 100%;
     min-width: 0;
     border: 1px solid rgba(84, 129, 190, 0.2);
-    border-radius: 8px;
-    background: rgba(8, 18, 34, 0.65);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
     color: #f5fbff;
     outline: 0;
 }
@@ -21251,8 +21251,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     min-height: 30px;
     padding: 0 0.65rem;
     border: 1px solid rgba(84, 129, 190, 0.24);
-    border-radius: 8px;
-    background: rgba(17, 31, 54, 0.92);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
     color: #dff7ff;
     font-size: 0.76rem;
     font-weight: 850;
@@ -21261,7 +21261,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .tareas-side-compose__actions button:first-child,
 .tareas-side-row__editor-actions button:first-child {
     border-color: rgba(36, 194, 220, 0.42);
-    background: linear-gradient(135deg, #15b8cf, #14b8a6);
+    background: linear-gradient(135deg, #15b8cf, var(--alfa-accent));
     color: #04111d;
 }
 
@@ -21290,7 +21290,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     position: relative;
     min-height: 42px;
     padding: 0.38rem 0.3rem;
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
 }
 
 .tareas-side-row:hover {
@@ -21432,8 +21432,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     overflow: hidden;
     padding: 0.35rem;
     border: 1px solid rgba(84, 129, 190, 0.22);
-    border-radius: 8px;
-    background: #071426;
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
 }
 
@@ -21445,7 +21445,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     min-height: 34px;
     padding: 0 0.55rem;
     border: 0;
-    border-radius: 7px;
+    border-radius: var(--alfa-radius-sm, 4px);
     background: transparent;
     color: #eaf6ff;
     font-size: 0.8rem;
@@ -21527,8 +21527,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     gap: 1rem;
     padding: 0.85rem 1rem;
     border: 1px solid rgba(80, 118, 180, 0.18);
-    border-radius: 8px;
-    background: rgba(6, 16, 30, 0.62);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
 }
 
 .shell__content .tareas-header .shell__eyebrow,
@@ -21555,8 +21555,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     min-width: 0;
     min-height: 0;
     border: 1px solid rgba(80, 118, 180, 0.18);
-    border-radius: 8px;
-    background: rgba(7, 17, 31, 0.82);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
     box-shadow: none;
 }
 
@@ -21577,7 +21577,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .shell__content .tareas-note,
 .shell__content .tareas-compose,
 .shell__content .tareas-toolbar {
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
     box-shadow: none;
 }
 
@@ -21596,7 +21596,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .shell__content .tareas-compose,
 .shell__content .tareas-toolbar {
     border: 1px solid rgba(80, 118, 180, 0.16);
-    background: rgba(10, 24, 42, 0.72);
+    background: var(--alfa-bg-surface);
 }
 
 .shell__content .tareas-toolbar {
@@ -21616,9 +21616,9 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .shell__content .tareas-page select,
 .shell__content .tareas-page textarea {
     border: 1px solid rgba(80, 118, 180, 0.22);
-    background: rgba(12, 24, 43, 0.9);
+    background: var(--alfa-bg-surface);
     color: #edf6ff;
-    border-radius: 8px;
+    border-radius: var(--alfa-radius-sm, 4px);
 }
 
 .shell__content .tareas-compose input,
@@ -21637,8 +21637,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .shell__content .tareas-modal {
-    border-radius: 16px;
-    background: #0b1728;
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
     padding: 1.65rem;
 }
 
@@ -21736,8 +21736,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     display: inline-grid;
     place-items: center;
     border: 1px solid rgba(119, 152, 202, 0.25);
-    border-radius: 10px;
-    background: rgba(15, 29, 50, 0.95);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
     color: rgba(222, 235, 250, 0.9);
     cursor: pointer;
 }
@@ -21762,9 +21762,9 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     appearance: none;
     -webkit-appearance: none;
     border: 1px solid rgba(95, 132, 186, 0.32) !important;
-    background: rgba(10, 23, 41, 0.96) !important;
+    background: var(--alfa-bg-surface) !important;
     color: #edf6ff !important;
-    border-radius: 8px !important;
+    border-radius: var(--alfa-radius-sm, 4px) !important;
 }
 
 .shell__content .tareas-form-grid select,
@@ -21817,7 +21817,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 
 .shell__content .tareas-form-grid option,
 .shell__content .tareas-modal option {
-    background: #0b1728;
+    background: var(--alfa-bg-surface);
     color: #edf6ff;
 }
 
@@ -23717,9 +23717,9 @@ html[data-theme="light"] .pos-settings-modal {
     justify-content: space-between;
     gap: 1rem;
     padding: .95rem;
-    border: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 12px;
-    background: rgba(8, 17, 31, .76);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 41%, transparent);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
 }
 
 .cal-reuniones-topbar > div:last-child {
@@ -23752,7 +23752,7 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .cal-reuniones-topbar span {
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     font-size: .9rem;
 }
 
@@ -23795,13 +23795,13 @@ html[data-theme="light"] .pos-settings-modal {
 .cal-reuniones-editor header,
 .cal-reuniones-reservas header {
     padding: .85rem;
-    border-bottom: 1px solid rgba(56, 189, 248, .14);
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-accent) 39%, transparent);
 }
 
 .cal-reuniones-list header span,
 .cal-reuniones-editor header span,
 .cal-reuniones-reservas header span {
-    color: #67e8f9;
+    color: var(--alfa-accent-hover);
     font-size: .76rem;
     font-weight: 900;
     text-transform: uppercase;
@@ -23809,7 +23809,7 @@ html[data-theme="light"] .pos-settings-modal {
 
 .cal-reuniones-list header small,
 .cal-reuniones-reservas header strong {
-    color: #22d3ee;
+    color: var(--alfa-accent);
     font-weight: 900;
 }
 
@@ -23820,10 +23820,10 @@ html[data-theme="light"] .pos-settings-modal {
     gap: .16rem .55rem;
     width: 100%;
     padding: .72rem;
-    border: 1px solid rgba(148, 163, 184, .14);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, .72);
-    color: #f8fafc;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
     text-align: left;
     cursor: pointer;
 }
@@ -23837,13 +23837,13 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .cal-reuniones-list button small {
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
 }
 
 .cal-reuniones-list button.is-active,
 .cal-reuniones-list button:hover {
-    border-color: rgba(34, 211, 238, .58);
-    background: rgba(8, 145, 178, .18);
+    border-color: color-mix(in srgb, var(--alfa-accent) 83%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 18%, transparent);
 }
 
 .cal-reuniones-form {
@@ -23931,19 +23931,19 @@ html[data-theme="light"] .pos-settings-modal {
     gap: .35rem;
     min-height: 34px;
     padding: .35rem .55rem;
-    border: 1px solid rgba(56, 189, 248, .18);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 43%, transparent);
     border-radius: 999px;
-    background: rgba(15, 23, 42, .64);
+    background: var(--alfa-bg-surface);
 }
 
 .cal-reuniones-editor footer {
     padding: .85rem;
-    border-top: 1px solid rgba(56, 189, 248, .14);
+    border-top: 1px solid color-mix(in srgb, var(--alfa-accent) 39%, transparent);
 }
 
 .cal-reuniones-editor footer span {
     min-width: 0;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     overflow-wrap: anywhere;
 }
 
@@ -23954,7 +23954,7 @@ html[data-theme="light"] .pos-settings-modal {
 .cal-reuniones-reservas > p {
     margin: 0;
     padding: 1rem;
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
 }
 
 .cal-reuniones-table {
@@ -23967,7 +23967,7 @@ html[data-theme="light"] .pos-settings-modal {
     gap: .8rem;
     align-items: center;
     padding: .8rem .85rem;
-    border-top: 1px solid rgba(56, 189, 248, .1);
+    border-top: 1px solid color-mix(in srgb, var(--alfa-accent) 35%, transparent);
 }
 
 .cal-reuniones-table article:first-child {
@@ -23983,20 +23983,20 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .cal-reuniones-table strong {
-    color: #f8fafc;
+    color: var(--alfa-text-primary);
 }
 
 .cal-reuniones-table span {
-    color: #8ea5bd;
+    color: var(--alfa-text-secondary);
     font-size: .82rem;
 }
 
 .cal-reuniones-state {
     width: fit-content;
     padding: .25rem .45rem;
-    border: 1px solid rgba(34, 211, 238, .22);
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
     border-radius: 999px;
-    color: #67e8f9 !important;
+    color: var(--alfa-accent-hover) !important;
     font-weight: 900;
 }
 
@@ -24009,9 +24009,9 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .cal-reuniones-feedback--success {
-    border: 1px solid rgba(20, 184, 166, .42);
-    background: rgba(20, 184, 166, .12);
-    color: #99f6e4;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
+    color: var(--alfa-accent-hover);
 }
 
 .cal-reuniones-feedback--error,
@@ -24442,20 +24442,19 @@ html[data-theme="light"] .pos-settings-modal {
     position: fixed !important;
     inset: 0 !important;
     border: 0 !important;
-    background: rgba(2, 6, 23, .72) !important;
-    backdrop-filter: blur(8px) !important;
+    background: rgba(0, 0, 0, .6) !important;
 }
 
 .app-msgbox-panel {
     position: relative !important;
     z-index: 2147483647 !important;
-    width: min(520px, calc(100vw - 32px)) !important;
-    background: #0f172a !important;
-    border: 1px solid rgba(148, 163, 184, .35) !important;
-    border-radius: 18px !important;
-    box-shadow: 0 28px 90px rgba(0, 0, 0, .70) !important;
-    padding: 22px !important;
-    color: #e5e7eb !important;
+    width: min(460px, calc(100vw - 32px)) !important;
+    background: var(--alfa-bg-surface-raised, #1d2026) !important;
+    border: 1px solid var(--alfa-border-default, #333640) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .42) !important;
+    padding: 20px !important;
+    color: var(--alfa-text-primary, #f5f5f7) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-check__input,
@@ -24482,10 +24481,10 @@ html[data-theme="light"] .pos-settings-modal {
     padding: .45rem .6rem !important;
     grid-template-columns: auto minmax(0, 1fr) !important;
     gap: .6rem !important;
-    background: linear-gradient(180deg, rgba(15, 23, 42, .60), rgba(15, 23, 42, .30)) !important;
-    border: 1px solid rgba(148, 163, 184, .24) !important;
-    border-radius: .95rem !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02), 0 8px 20px rgba(2, 6, 23, .18) !important;
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface-raised)) !important;
+    border: 1px solid var(--alfa-border-default) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02), 0 8px 20px rgba(0, 0, 0, 0.18) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-check__box,
@@ -24496,9 +24495,9 @@ html[data-theme="light"] .pos-settings-modal {
     display: grid !important;
     place-items: center !important;
     overflow: hidden !important;
-    background: linear-gradient(180deg, rgba(30, 41, 59, .98), rgba(15, 23, 42, .95)) !important;
-    border: 1px solid rgba(148, 163, 184, .30) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 4px 12px rgba(0, 0, 0, .22) !important;
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface)) !important;
+    border: 1px solid var(--alfa-border-default) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 4px 12px rgba(0, 0, 0, 0.22) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-adicionales__content {
@@ -24522,9 +24521,9 @@ html[data-theme="light"] .pos-settings-modal {
     min-width: 3.5rem !important;
     justify-self: end !important;
     padding: .2rem .45rem !important;
-    border-radius: .65rem !important;
-    border: 1px solid rgba(148, 163, 184, .2) !important;
-    background: rgba(15, 23, 42, .54) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    border: 1px solid var(--alfa-border-default) !important;
+    background: var(--alfa-bg-surface) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-adicionales__percent-input {
@@ -24558,31 +24557,31 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .shell__content .carga-viajes-page .carga-viajes-adicionales__input:checked + .carga-viajes-adicionales__box::after {
-    border-right-color: #e0f2fe !important;
-    border-bottom-color: #e0f2fe !important;
+    border-right-color: var(--alfa-text-primary) !important;
+    border-bottom-color: var(--alfa-text-primary) !important;
     transform: rotate(45deg) scale(1) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-check--active,
 .shell__content .carga-viajes-page .carga-viajes-adicionales__item--active {
-    border-color: rgba(34, 211, 238, .58) !important;
-    background: linear-gradient(180deg, rgba(8, 145, 178, .20), rgba(15, 23, 42, .24)) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 10px 24px rgba(8, 145, 178, .16) !important;
+    border-color: color-mix(in srgb, var(--alfa-accent) 83%, transparent) !important;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--alfa-accent) 20%, transparent), var(--alfa-bg-surface-raised)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 10px 24px color-mix(in srgb, var(--alfa-accent) 16%, transparent) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-check--active .carga-viajes-check__box,
 .shell__content .carga-viajes-page .carga-viajes-check--active .carga-viajes-checkbox__box,
 .shell__content .carga-viajes-page .carga-viajes-adicionales__item--active .carga-viajes-adicionales__box {
-    border-color: rgba(34, 211, 238, .85) !important;
-    background: linear-gradient(180deg, rgba(8, 145, 178, .78), rgba(15, 23, 42, .88)) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 18px rgba(8, 145, 178, .25) !important;
+    border-color: color-mix(in srgb, var(--alfa-accent) 100%, transparent) !important;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--alfa-accent) 78%, transparent), var(--alfa-bg-surface)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 8px 18px color-mix(in srgb, var(--alfa-accent) 25%, transparent) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-check__input:checked + .carga-viajes-check__box::after,
 .shell__content .carga-viajes-page .carga-viajes-checkbox__input:checked + .carga-viajes-checkbox__box::after,
 .shell__content .carga-viajes-page .carga-viajes-adicionales__input:checked + .carga-viajes-adicionales__box::after {
-    border-right-color: #e0f2fe !important;
-    border-bottom-color: #e0f2fe !important;
+    border-right-color: var(--alfa-text-primary) !important;
+    border-bottom-color: var(--alfa-text-primary) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-tarifas__importe-editor {
@@ -24594,15 +24593,12 @@ html[data-theme="light"] .pos-settings-modal {
     min-height: 2.2rem !important;
     padding: .42rem .72rem !important;
     text-align: right !important;
-    border-radius: .85rem !important;
-    border: 1px solid rgba(34, 211, 238, .72) !important;
-    background: linear-gradient(180deg, rgba(17, 24, 39, .98), rgba(15, 23, 42, .96)) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 97%, transparent) !important;
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface)) !important;
     color: #e5e7eb !important;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, .03),
-        0 10px 28px rgba(2, 6, 23, .35),
-        0 0 0 3px rgba(34, 211, 238, .12) !important;
-    caret-color: #67e8f9 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 3px color-mix(in srgb, var(--alfa-accent) 12%, transparent) !important;
+    caret-color: var(--alfa-accent-hover) !important;
     font: inherit !important;
     font-variant-numeric: tabular-nums !important;
     line-height: 1.15 !important;
@@ -24610,8 +24606,8 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .shell__content .carga-viajes-page .carga-viajes-tarifas__importe-editor:focus {
-    border-color: rgba(103, 232, 249, .95) !important;
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, .22) !important;
+    border-color: var(--alfa-accent-hover) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--alfa-accent) 22%, transparent) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-tarifas__importe-editor::-webkit-outer-spin-button,
@@ -24624,10 +24620,10 @@ html[data-theme="light"] .pos-settings-modal {
     min-width: 6.8rem !important;
     min-height: 2.35rem !important;
     padding: .45rem .75rem !important;
-    border-radius: .9rem !important;
-    border: 1px solid rgba(148, 163, 184, .22) !important;
-    background: linear-gradient(180deg, rgba(15, 23, 42, .92), rgba(15, 23, 42, .74)) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 8px 20px rgba(2, 6, 23, .18) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    border: 1px solid var(--alfa-border-default) !important;
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03), 0 8px 20px rgba(0, 0, 0, 0.18) !important;
     color: #e5e7eb !important;
     text-align: right !important;
     font-variant-numeric: tabular-nums !important;
@@ -24635,18 +24631,18 @@ html[data-theme="light"] .pos-settings-modal {
 
 .shell__content .carga-viajes-page .carga-viajes-tarifas__importe-cell:hover,
 .shell__content .carga-viajes-page .carga-viajes-tarifas__importe-cell--editing {
-    border-color: rgba(34, 211, 238, .38) !important;
-    background: linear-gradient(180deg, rgba(8, 145, 178, .18), rgba(15, 23, 42, .80)) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 10px 22px rgba(8, 145, 178, .14) !important;
+    border-color: color-mix(in srgb, var(--alfa-accent) 63%, transparent) !important;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--alfa-accent) 18%, transparent), var(--alfa-bg-surface)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 10px 22px color-mix(in srgb, var(--alfa-accent) 14%, transparent) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-percent-field__control {
     min-height: 2.35rem !important;
     padding: .28rem .35rem .28rem .58rem !important;
-    border: 1px solid rgba(148, 163, 184, .22) !important;
-    border-radius: .9rem !important;
-    background: linear-gradient(180deg, rgba(15, 23, 42, .96), rgba(15, 23, 42, .82)) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02), 0 8px 20px rgba(2, 6, 23, .16) !important;
+    border: 1px solid var(--alfa-border-default) !important;
+    border-radius: var(--alfa-radius-md, 8px) !important;
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .02), 0 8px 20px rgba(0, 0, 0, 0.16) !important;
 }
 
 .shell__content .carga-viajes-page .carga-viajes-percent-field__input {
@@ -24673,8 +24669,8 @@ html[data-theme="light"] .pos-settings-modal {
     min-width: 2rem !important;
     padding: .18rem .36rem !important;
     border-radius: 999px !important;
-    background: rgba(8, 145, 178, .16) !important;
-    border: 1px solid rgba(34, 211, 238, .18) !important;
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--alfa-accent) 43%, transparent) !important;
     color: #bfeffc !important;
     font-size: .8rem !important;
     font-weight: 700 !important;
@@ -24712,7 +24708,7 @@ html[data-theme="light"] .pos-settings-modal {
     padding: .8rem var(--ui-panel-padding);
     border: 1px solid var(--ui-border);
     border-radius: var(--ui-radius);
-    background: linear-gradient(180deg, rgba(13, 27, 48, .78), rgba(9, 19, 33, .68));
+    background: linear-gradient(180deg, var(--alfa-bg-surface), var(--alfa-bg-surface));
     box-shadow: none;
 }
 

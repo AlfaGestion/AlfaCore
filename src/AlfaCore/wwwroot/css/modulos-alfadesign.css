@@ -859,3 +859,751 @@
 .gd-legacy.cotizaciones-page .panel-card > .panel-card__title + .panel-card__subtitle {
     margin: -8px 0 var(--alfa-space-12, 12px);
 }
+
+/* ===== Tarjeta/ítem legacy común (listas de scripts, historial, resultados de ayuda, paneles de
+   permisos): superficie AlfaDesign en lugar de gradientes azules con radio 16-20px. ===== */
+.gd-legacy :is(.updates-script-item, .updates-history-item, .help-result-card, .help-sidebar,
+               .autorizacion-page .auth-panel, .autorizacion-page .auth-main__header,
+               .autorizacion-page .auth-tree-toolbar, .autorizacion-page .auth-tree-panel,
+               .autorizacion-page .auth-stat, .autorizacion-page .auth-tree-state) {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd-legacy :is(.updates-script-item, .updates-history-item) {
+    padding: 12px 16px;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy :is(.updates-script-item, .updates-history-item) strong {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd-legacy :is(.updates-script-item, .updates-history-item) span {
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy .updates-history-item pre {
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+}
+
+/* Etiquetas tipo pastilla (badge-state, auth-badge): ancho según contenido. */
+.gd-legacy .badge-state,
+.gd-legacy .panel-card__tag {
+    display: inline-flex;
+    align-self: flex-start;
+    width: auto;
+    padding: 2px 8px;
+    border-radius: var(--alfa-radius-full, 999px);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ===== Tablas de referencia ===== */
+.gd-legacy.tablas-ref .tablas-ref__layout {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: var(--alfa-space-16, 16px);
+    align-items: start;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__main {
+    display: grid;
+    gap: var(--alfa-space-16, 16px);
+}
+
+.gd-legacy.tablas-ref .tablas-ref__items {
+    display: grid;
+    padding: var(--alfa-space-4, 4px) 0;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__item {
+    padding: 8px 16px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: var(--alfa-text-primary, #f5f5f7);
+    font: inherit;
+    font-size: var(--alfa-font-body, 13px);
+    text-align: left;
+    cursor: pointer;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__item:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd-legacy.tablas-ref .tablas-ref__item.is-active {
+    border-left-color: var(--alfa-accent, #4f9efa);
+    background: var(--alfa-state-selected, #29476b);
+}
+
+.gd-legacy.tablas-ref .tablas-ref__form {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr) auto;
+    gap: var(--alfa-space-12, 12px);
+    align-items: end;
+    margin: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px) var(--alfa-space-16, 16px);
+}
+
+.gd-legacy.tablas-ref .tablas-ref__acciones {
+    grid-column: 1 / -1;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__color {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--alfa-border-strong, #4d525e);
+    border-radius: var(--alfa-radius-sm, 4px);
+    vertical-align: middle;
+}
+
+/* Anchos fijos: con "width: 1%" en la columna de acciones la tabla se estiraba a ~19000px y el
+   texto quedaba fuera de la vista. */
+.gd-legacy.tablas-ref .data-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.gd-legacy.tablas-ref .data-table th:first-child {
+    width: 120px;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__col-acciones {
+    width: 200px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.gd-legacy.tablas-ref .tablas-ref__botones {
+    display: inline-flex;
+    gap: var(--alfa-space-8, 8px);
+}
+
+@media (max-width: 900px) {
+    .gd-legacy.tablas-ref .tablas-ref__layout,
+    .gd-legacy.tablas-ref .tablas-ref__form {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===== Ayuda ===== */
+.gd-legacy.help-ad .help-hero {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: none;
+}
+
+.gd-legacy.help-ad .help-hero__title {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.gd-legacy.help-ad .help-hero__text {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.help-ad .help-hero__eyebrow,
+.gd-legacy.help-ad .help-toc__title {
+    color: var(--alfa-accent, #4f9efa);
+    font-size: 11px;
+    letter-spacing: .05em;
+}
+
+/* El buscador pasó a la barra superior: en el hero solo quedan los contadores. */
+.gd-legacy.help-ad .help-search {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.gd-legacy.help-ad .help-search__meta {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy.help-ad .help-toc__link {
+    border-radius: var(--alfa-radius-sm, 4px);
+}
+
+.gd-legacy.help-ad .help-toc__link:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd-legacy.help-ad .help-toc__bullet {
+    background: var(--alfa-accent, #4f9efa);
+}
+
+.gd-legacy.help-ad .help-sidebar__count {
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 16%, transparent);
+    color: var(--alfa-accent, #4f9efa);
+}
+
+/* ===== Autorización de tareas ===== */
+.gd-legacy.autorizacion-page .auth-admin-shell {
+    padding: 0;
+}
+
+.gd-legacy.autorizacion-page :is(.auth-panel__title, .auth-main__header h3) {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.gd-legacy.autorizacion-page :is(.auth-panel__subtitle, .auth-main__header p) {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.gd-legacy.autorizacion-page .auth-toggle {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.autorizacion-page .auth-toggle:hover {
+    background: var(--alfa-state-hover, #21242b);
+}
+
+.gd-legacy.autorizacion-page .auth-tree-toolbar__search {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+}
+
+.gd-legacy.autorizacion-page .auth-tree-toolbar__search input {
+    min-height: 34px;
+    border: 0;
+    background: transparent;
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.autorizacion-page .auth-stat strong {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* Actualizaciones: scripts e historial en dos columnas iguales (heredaba la grilla de 3 columnas
+   de los tableros y el historial quedaba angosto y cortado). */
+.gd-legacy .updates-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gd-legacy :is(.updates-script-item, .updates-history-item) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+    .gd-legacy .updates-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Informes (Artículos) y Novedades: apps de pantalla completa envueltas en un scope con
+   display: contents; su contenedor es hijo directo del .shell__content (flex) y debe ocuparlo. */
+.gd-modal-scope:is(.informes-ad, .novedades-ad) > :is(section, div) {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* Sus hojas legacy fijan min-height: 100dvh, pensado para cuando ocupaban toda la ventana.
+   Debajo de la barra superior eso empujaba el final de la página fuera de la pantalla (no se
+   podía bajar hasta el final): el alto lo da el .shell__content y el scroll es del panel. */
+.shell__content:has(.gd-modal-scope:is(.informes-ad, .novedades-ad)) {
+    min-height: 0;
+}
+
+.gd-modal-scope.novedades-ad .novedades-shell,
+.gd-modal-scope.informes-ad .informes-shell {
+    min-height: 0;
+    height: 100%;
+}
+
+/* Pantallas migradas cuyo root legacy es una grilla (ej. Partes de horas): con el alto fijo del
+   .gd-page las filas se repartían el alto y las tarjetas quedaban cortadas en vez de scrollear. */
+.gd-page.gd-legacy {
+    grid-auto-rows: max-content;
+    align-content: start;
+}
+
+/* Tipografía a la escala AlfaDesign en apps con estilos propios. */
+.gd.novedades-ad .novedades-sidebar__top h2 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.gd.novedades-ad .novedades-empty h2 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.gd.novedades-ad .novedades-title-block h1 {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.gd-legacy.tareas-page .tareas-lists button,
+.gd-legacy.tareas-page .tareas-lists a {
+    font-size: var(--alfa-font-body, 13px);
+}
+
+.gd-legacy.tareas-page .tareas-shell :is(h2, h3) {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Carga de viajes: editores (clase compartida .cuentas-modal, fondo azul legacy). */
+.gd-legacy.carga-viajes-page .carga-viajes-modal,
+.gd-legacy.carga-viajes-page .cuentas-modal {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+
+.gd-legacy.carga-viajes-page .cuentas-modal-backdrop {
+    background: rgba(0, 0, 0, .6);
+}
+
+.gd-legacy.carga-viajes-page .cuentas-modal :is(.cuentas-modal__header, .cuentas-modal__footer) {
+    border-color: var(--alfa-border-default, #333640);
+    background: transparent;
+}
+
+/* Carga de viajes: vista previa del viaje y liquidación. Estados vacíos/error con el
+   mismo ancho que el contenido y alto natural (sin estirarse a toda la pantalla). */
+.viaje-preview-ad .viaje-preview-page,
+.liquidacion-ad .liquidacion-page {
+    align-content: start;
+}
+
+.liquidacion-ad .liquidacion-page {
+    flex: 1;
+    min-width: 0;
+}
+
+.viaje-preview-ad .alfa-empty-state,
+.liquidacion-ad .alfa-empty-state {
+    width: 100%;
+    min-height: 260px;
+    align-self: stretch;
+}
+
+/* Autorización de tareas: panel de usuario con separación entre campo y botones,
+   y estado vacío del árbol con tipografía de cuerpo. */
+.gd-legacy.autorizacion-page .auth-panel--compact {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.gd-legacy.autorizacion-page .auth-panel--compact .auth-panel__title-wrap {
+    margin-bottom: 0;
+}
+
+.gd-legacy.autorizacion-page .auth-panel--compact .auth-panel__title {
+    margin: 0;
+}
+
+.gd-legacy.autorizacion-page .auth-tree-state {
+    min-height: 220px;
+    font-size: 13px;
+    color: var(--alfa-text-secondary, #a1a4ad);
+}
+
+/* Calendario: ventana de evento y panel lateral con superficie AlfaDesign (sin borde de acento). */
+.gd-modal-scope .calendario-modal,
+.gd-modal-scope .calendario-side {
+    border: 1px solid var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .42);
+}
+
+/* Informes y Novedades: controles a la escala AlfaDesign (13px, sin negrita ni mayúsculas en
+   etiquetas). El título del documento y el contenido del editor conservan su tamaño. */
+.gd.informes-ad :is(.informes-actions, .informes-meta, .informes-sidebar__top, .informes-search, .informes-sidebar__bottom) :is(button, select, input, label, span),
+.gd.novedades-ad :is(.novedades-sidebar, .novedades-settings, .novedades-header, .novedades-tabs, .novedades-editor-toolbar) :is(button, select, input, textarea, label) {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.gd.informes-ad .informes-meta :is(select, label) {
+    min-height: 32px;
+}
+
+.gd.novedades-ad :is(.novedades-form-grid span, .novedades-footer-field span, .novedades-side-panel h3, .novedades-metrics span, .novedades-tracking span, .novedades-tracking small) {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd-modal-scope .calendario-reminder {
+    border-color: var(--alfa-border-default, #333640);
+    background: transparent;
+}
+
+/* Carga de viajes, ventana de viaje: adicionales compactos (la grilla repartía un alto sobrante
+   entre sus filas), sin degradés ni elevación; detalle del fletero con la misma superficie. */
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales {
+    flex: 0 0 auto;
+    align-content: start;
+    grid-auto-rows: max-content;
+    grid-template-rows: none;
+    height: auto;
+    min-height: 0;
+    gap: 8px;
+}
+
+/* Columnas fijas: con auto-fit el alto intrínseco del bloque se calculaba con las tarjetas
+   apiladas en una columna y quedaba un hueco grande debajo de la lista. */
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales__simple-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+    .gd-legacy.carga-viajes-page .carga-viajes-adicionales__simple-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales__section-label {
+    margin: 8px 0 0;
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales__simple-item {
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales__simple-item:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: var(--alfa-border-strong, #4a4e5a);
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-adicionales__simple-item--active {
+    border-color: var(--alfa-accent, #4f9efa);
+    background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 12%, transparent);
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-viaje-detail--fletero {
+    border-color: var(--alfa-border-default, #333640);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+}
+
+.gd-legacy.carga-viajes-page .carga-viajes-viaje-detail--fletero .carga-viajes-viaje-detail__total {
+    border-top-color: var(--alfa-border-default, #333640);
+}
+
+/* Componentes AlfaDesign que heredan la tipografía del contenedor (font: inherit): dentro de
+   pantallas con markup legacy el texto base era 16px. */
+.gd :is(.alfa-tabs, .alfa-checkbox__label) {
+    font-size: 13px;
+}
+
+/* Configuración general (Empresa, Logo, Email, Ventas, Artículos): separación entre el
+   encabezado de la tarjeta y los campos, ayudas y casillas. */
+.gd-legacy:is(.cfggral-page, .cfglogo-page, .cfgemail-page, .cfgventas-page, .cfgarticulos-page) .panel-card > .panel-card__subtitle {
+    margin: 4px 0 16px;
+}
+
+.gd-legacy:is(.cfggral-page, .cfglogo-page, .cfgemail-page, .cfgventas-page, .cfgarticulos-page) .field > small {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd-legacy.cfgarticulos-page .cfgarticulos-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gd-legacy.cfgarticulos-page .cfgarticulos-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    margin-top: 20px;
+}
+
+.gd-legacy.cfggral-page .cfggral-grid__checks {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+@media (max-width: 900px) {
+    .gd-legacy.cfgarticulos-page .cfgarticulos-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Reuniones públicas: campos y días con tipografía normal y bordes neutros (app.css los dejaba
+   en negrita, con fondo azul marino y bordes de acento). */
+.gd-legacy.cal-reuniones-page :is(input, textarea, select) {
+    min-height: 32px;
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.gd-legacy.cal-reuniones-page :is(input, textarea, select):focus {
+    border-color: var(--alfa-accent, #4f9efa);
+}
+
+.gd-legacy.cal-reuniones-page :is(.cal-reuniones-check, .cal-reuniones-days label) {
+    color: var(--alfa-text-primary, #f5f5f7);
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.gd-legacy.cal-reuniones-page .cal-reuniones-days label {
+    min-height: 30px;
+    border-color: var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+}
+
+.gd-legacy.cal-reuniones-page :is(.cal-reuniones-editor footer, .cal-reuniones-list header, .cal-reuniones-editor header, .cal-reuniones-reservas header) {
+    border-color: var(--alfa-border-default, #333640);
+}
+
+.gd-legacy.cal-reuniones-page .cal-reuniones-list button strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.shell.shell--alfa-design .smart-search__active-filter.smart-search__active-filter--periodo {
+    max-width: 120px;
+}
+
+.gd.novedades-ad .novedades-search input {
+    padding-left: 34px;
+}
+
+.gd.novedades-ad :is(.novedades-primary, .novedades-shell .btn--primary) {
+    border-color: var(--alfa-accent, #4f9efa) !important;
+    background: var(--alfa-accent, #4f9efa) !important;
+}
+
+.gd-legacy.articulos-page .alfa-tabs {
+    margin-bottom: 16px;
+}
+
+/* Carga de viajes: su buscador con chips nació dentro de la página (margen superior, alineado
+   arriba, botón turquesa). En la barra superior se alinea al Smart Search estándar. */
+.shell .main-page-header .carga-viajes-smart-search {
+    margin-top: 0;
+    gap: 0;
+}
+
+.shell .main-page-header .carga-viajes-smart-search .smart-search__bar.carga-viajes-smart-search__bar--with-chips {
+    align-items: center !important;
+    min-height: 36px !important;
+    padding: 0 4px 0 10px !important;
+}
+
+.shell .main-page-header .carga-viajes-smart-search .carga-viajes-smart-search__search-icon {
+    align-self: center;
+    margin-top: 0;
+}
+
+.shell .main-page-header .carga-viajes-smart-search .carga-viajes-smart-search__entry {
+    min-height: 0;
+}
+
+.shell .main-page-header .carga-viajes-smart-search .carga-viajes-smart-search__bar--with-chips .smart-search__toggle {
+    align-self: center;
+    width: 28px !important;
+    min-width: 28px;
+    height: 28px;
+    min-height: 28px;
+    border: 0 !important;
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd-legacy.cal-reuniones-page :is(header span, header .btn, header a, .cal-reuniones-eyebrow) {
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* Selectores de archivo ocultos detrás de un botón (logo de la empresa, imagen del artículo).
+   El <input> lo renderiza InputFile, que no recibe el CSS aislado de la página: sin esta regla
+   global se veía el control nativo del navegador ("Elegir archivo…"). */
+:is(.cfglogo-picker, .articulos-image-picker) :is(input.cfglogo-input, input.articulos-image-input) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+:is(.cfglogo-picker, .articulos-image-picker) .alfa-button,
+.cfglogo-uploader__actions .alfa-button {
+    white-space: nowrap;
+}
+
+/* Carga de viajes: las ventanas compactas (chofer, destino, tipo de vehículo...) se alineaban a
+   la izquierda (pensado para el sidebar legacy); en el shell AlfaDesign van centradas. */
+.gd-legacy.carga-viajes-page .carga-viajes-modal-backdrop .carga-viajes-modal {
+    margin: auto;
+}
+
+/* Configuración > Ventas: campos con fondo de input AlfaDesign (su CSS los pintaba azul marino
+   con colores fijos) y subsolapas de Mercado Pago con el estilo subrayado de AlfaTabs. */
+.gd-legacy:is(.cfgventas-page, .cotizcfg-page) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), select, textarea) {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    box-shadow: none;
+    min-height: 32px;
+    font-size: 13px;
+}
+
+.gd-legacy:is(.cfgventas-page, .cotizcfg-page) :is(.cfgarca-field, .field) > :is(label, span:first-child) {
+    font-size: 12px;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
+
+.gd-legacy:is(.cfgventas-page, .cotizcfg-page) :is(input, select, textarea):focus {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: none;
+}
+
+.gd-legacy.cfgventas-page select option {
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd-legacy.cfgventas-page :is(.cfgarca-readonly, .mp-instruction-card, .mp-config-token-options, .mp-payment-method, .mp-auto-payment-option, .mp-terminal-pane) {
+    border-color: var(--alfa-border-default, #333640);
+    background: transparent;
+}
+
+.gd-legacy.cfgventas-page .mp-point-tabs {
+    padding: 0;
+    gap: 4px;
+    border-bottom-color: var(--alfa-border-default, #333640);
+}
+
+.gd-legacy.cfgventas-page .mp-point-tab {
+    border: 0;
+    border-radius: 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.gd-legacy.cfgventas-page :is(.mp-point-tab:hover, .mp-point-tab.is-active) {
+    border: 0;
+    background: transparent !important;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.gd-legacy.cfgventas-page .mp-point-tab.is-active {
+    box-shadow: inset 0 -2px 0 var(--alfa-accent, #4f9efa);
+}
+
+/* Informes: el panel de comentarios y versiones arranca debajo de la barra superior. */
+.gd.informes-ad :is(.informes-panel, .informes-panel-backdrop) {
+    top: var(--alfa-topbar-height, 44px);
+}
+
+.gd.informes-ad .informes-cover__menu button {
+    white-space: nowrap;
+}
+
+/* Selector de bases (SessionDrawer) dentro del shell AlfaDesign: botón Seleccionar con el
+   primario AlfaDesign (no el turquesa legacy). El drawer del login conserva su estilo. */
+body:has(.shell--alfa-design) .drawer:not(.drawer--login) .btn--primary {
+    border: 1px solid var(--alfa-accent, #4f9efa);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: var(--alfa-accent, #4f9efa);
+    background-image: none;
+    box-shadow: none;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+body:has(.shell--alfa-design) .drawer:not(.drawer--login) .btn--primary:hover {
+    background: var(--alfa-accent-hover, #6ea2ff);
+}
+
+/* Plantillas de Informes: títulos de grupo como etiqueta secundaria (sin mayúsculas en azul). */
+.gd.informes-ad .informes-template-picker__body nav > p {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+/* Tareas: ventana de tarea con superficie AlfaDesign. */
+.gd-modal-scope .tareas-modal {
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .42);
+}
+
+.gd-modal-scope .tareas-modal :is(input, textarea, select) {
+    font-weight: 400;
+}
+
+/* Cotizaciones > Configuración: separación entre encabezado de tarjeta y campos. */
+.gd-legacy.cotizcfg-page .panel-card > .panel-card__subtitle {
+    margin: 4px 0 16px;
+}
+
+/* La ventana de tarea va por encima de la barra superior y del Context Toolbar (z 1900/1910). */
+.gd-modal-scope .app-modal-backdrop:has(+ .tareas-modal) {
+    z-index: 1940;
+}
+
+.gd-modal-scope .tareas-modal {
+    z-index: 1950;
+    top: calc(var(--alfa-topbar-height, 44px) + 24px);
+    max-height: calc(100vh - var(--alfa-topbar-height, 44px) - 48px);
+}
+
+.gd-modal-scope .tareas-modal :is(.tareas-field-button, .tareas-assignment-dropdown__button) {
+    font-weight: 400;
+}
+
+.gd.informes-ad .informes-template-picker__body nav button {
+    font-size: 13px;
+}
+
+.gd.informes-ad .informes-panel :is(input, textarea, button, p, span, small) {
+    font-size: 13px;
+}
+
+.gd.informes-ad .informes-panel :is(h3, h4, section > strong, section > header strong) {
+    font-size: 14px;
+    font-weight: 600;
+}

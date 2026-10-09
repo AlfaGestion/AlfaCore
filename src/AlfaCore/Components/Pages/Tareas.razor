@@ -4,6 +4,9 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject IJSRuntime Js
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
@@ -16,9 +19,9 @@
         width: fit-content;
         padding: .16rem .45rem;
         border-radius: 999px;
-        border: 1px solid rgba(148, 163, 184, .2);
+        border: 1px solid var(--alfa-border-default);
         font-size: .72rem;
-        font-weight: 800;
+        font-weight: 500;
     }
 
     .tareas-priority-badge--alta {
@@ -34,9 +37,9 @@
     }
 
     .tareas-priority-badge--baja {
-        border-color: rgba(45, 212, 191, .35);
+        border-color: color-mix(in srgb, var(--alfa-accent) 60%, transparent);
         background: rgba(20, 83, 45, .22);
-        color: #99f6e4;
+        color: var(--alfa-accent-hover);
     }
 
     .tareas-row--priority-alta {
@@ -48,7 +51,7 @@
     }
 
     .tareas-row--priority-baja {
-        border-left: 3px solid #2dd4bf !important;
+        border-left: 3px solid var(--alfa-accent) !important;
     }
 
     .tareas-confirm {
@@ -58,17 +61,17 @@
         display: grid;
         place-items: center;
         padding: 1rem;
-        background: rgba(2, 6, 23, .62);
-        backdrop-filter: blur(3px);
+        background: var(--alfa-bg-surface);
+        backdrop-filter: none;
     }
 
     .tareas-confirm__dialog {
         width: min(460px, 100%);
         padding: 1rem;
-        border: 1px solid rgba(56, 189, 248, .22);
-        border-radius: 8px;
-        background: #071426;
-        box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
     }
 
     .tareas-confirm__dialog h3 {
@@ -98,9 +101,9 @@
     }
 
     .shell__content .tareas-assignment-picker > span {
-        color: #93c5fd;
+        color: var(--alfa-text-secondary);
         font-size: .78rem;
-        font-weight: 900;
+        font-weight: 500;
     }
 
     .shell__content .tareas-assignment-dropdown {
@@ -116,19 +119,19 @@
         width: 100%;
         min-height: 40px;
         padding: 0 .75rem;
-        border: 1px solid rgba(80, 118, 180, .32) !important;
-        border-radius: 8px;
-        background: rgba(12, 24, 43, .92) !important;
-        color: #edf6ff !important;
+        border: 1px solid var(--alfa-border-default) !important;
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface) !important;
+        color: var(--alfa-text-primary) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
     }
 
     .shell__content .tareas-assignment-dropdown__button:hover,
     .shell__content .tareas-assignment-dropdown__button[aria-expanded="true"] {
-        border-color: rgba(56, 189, 248, .5) !important;
-        background: rgba(10, 31, 54, .98) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 75%, transparent) !important;
+        background: var(--alfa-bg-surface) !important;
     }
 
     .shell__content .tareas-assignment-dropdown__button > span {
@@ -145,13 +148,13 @@
         min-width: 0;
         color: var(--color-muted);
         font-size: .8rem;
-        font-weight: 800;
+        font-weight: 500;
     }
 
     .shell__content .tareas-field-picker > span {
-        color: #93c5fd;
+        color: var(--alfa-text-secondary);
         font-size: .78rem;
-        font-weight: 900;
+        font-weight: 500;
     }
 
     .shell__content .tareas-field-button,
@@ -163,12 +166,12 @@
         width: 100%;
         min-height: 40px;
         padding: 0 .75rem;
-        border: 1px solid rgba(80, 118, 180, .32) !important;
-        border-radius: 8px;
-        background: rgba(12, 24, 43, .92) !important;
-        color: #edf6ff !important;
+        border: 1px solid var(--alfa-border-default) !important;
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface) !important;
+        color: var(--alfa-text-primary) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
         cursor: pointer;
     }
@@ -177,8 +180,8 @@
     .shell__content .tareas-field-button[aria-expanded="true"],
     .shell__content .tareas-field-date:hover,
     .shell__content .tareas-field-date:focus {
-        border-color: rgba(56, 189, 248, .5) !important;
-        background: rgba(10, 31, 54, .98) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 75%, transparent) !important;
+        background: var(--alfa-bg-surface) !important;
         outline: none;
     }
 
@@ -201,10 +204,10 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: .45rem;
-        border: 1px solid rgba(56, 189, 248, .28);
-        border-radius: 8px;
-        background: #071426;
-        box-shadow: 0 22px 60px rgba(0, 0, 0, .48);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
     }
 
     .shell__content .tareas-field-option {
@@ -216,22 +219,22 @@
         min-height: 36px;
         padding: .45rem .55rem;
         border: 1px solid transparent;
-        border-radius: 7px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: transparent !important;
-        color: #edf6ff !important;
+        color: var(--alfa-text-primary) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
         cursor: pointer;
     }
 
     .shell__content .tareas-field-option:hover {
-        background: rgba(8, 145, 178, .18) !important;
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
     }
 
     .shell__content .tareas-field-option.is-selected {
-        border-color: rgba(45, 212, 191, .42);
-        background: rgba(20, 184, 166, .18) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
         color: #ccfbf1 !important;
     }
 
@@ -265,17 +268,17 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        color: #e0f2fe;
+        color: var(--alfa-text-primary);
         font-size: .9rem;
     }
 
     .tareas-calendar__nav {
         width: 30px;
         height: 30px;
-        border: 1px solid rgba(56, 189, 248, .22);
-        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent);
+        border-radius: var(--alfa-radius-sm, 4px);
         background: rgba(8, 47, 73, .35);
-        color: #bae6fd;
+        color: var(--alfa-accent-hover);
     }
 
     .tareas-calendar__week,
@@ -286,9 +289,9 @@
     }
 
     .tareas-calendar__week span {
-        color: #93c5fd;
+        color: var(--alfa-text-secondary);
         font-size: .7rem;
-        font-weight: 900;
+        font-weight: 500;
         text-align: center;
     }
 
@@ -297,29 +300,29 @@
         place-items: center;
         aspect-ratio: 1;
         border: 1px solid transparent;
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: transparent;
-        color: #edf6ff;
+        color: var(--alfa-text-primary);
         font-size: .8rem;
-        font-weight: 800;
+        font-weight: 500;
     }
 
     .tareas-calendar__day:hover {
-        background: rgba(8, 145, 178, .2);
+        background: color-mix(in srgb, var(--alfa-accent) 20%, transparent);
     }
 
     .tareas-calendar__day.is-muted {
-        color: rgba(226, 232, 240, .45);
+        color: var(--alfa-text-secondary);
     }
 
     .tareas-calendar__day.is-today {
-        border-color: rgba(56, 189, 248, .42);
-        color: #bae6fd;
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+        color: var(--alfa-accent-hover);
     }
 
     .tareas-calendar__day.is-selected {
-        border-color: rgba(45, 212, 191, .55);
-        background: rgba(20, 184, 166, .22);
+        border-color: color-mix(in srgb, var(--alfa-accent) 80%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 22%, transparent);
         color: #ccfbf1;
     }
 
@@ -333,9 +336,9 @@
     .tareas-calendar__link {
         border: 0;
         background: transparent;
-        color: #7dd3fc;
+        color: var(--alfa-accent-hover);
         font-size: .78rem;
-        font-weight: 900;
+        font-weight: 500;
     }
 
     .shell__content .tareas-assignment-line {
@@ -375,10 +378,10 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: .45rem;
-        border: 1px solid rgba(56, 189, 248, .28);
-        border-radius: 8px;
-        background: #071426;
-        box-shadow: 0 22px 60px rgba(0, 0, 0, .48);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
     }
 
     .shell__content .tareas-share-option {
@@ -390,22 +393,22 @@
         min-height: 36px;
         padding: .45rem .55rem;
         border: 1px solid transparent;
-        border-radius: 7px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: transparent !important;
-        color: #edf6ff !important;
+        color: var(--alfa-text-primary) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
         cursor: pointer;
     }
 
     .shell__content .tareas-share-option:hover {
-        background: rgba(8, 145, 178, .18) !important;
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
     }
 
     .shell__content .tareas-share-option.is-selected {
-        border-color: rgba(45, 212, 191, .42);
-        background: rgba(20, 184, 166, .18) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
         color: #ccfbf1 !important;
     }
 
@@ -414,15 +417,15 @@
         place-items: center;
         width: 16px;
         height: 16px;
-        border: 1px solid rgba(125, 211, 252, .45);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 45%, transparent);
         border-radius: 999px;
         color: transparent;
         font-size: .7rem;
     }
 
     .tareas-share-option.is-selected .tareas-share-option__box {
-        border-color: rgba(45, 212, 191, .9);
-        background: #14b8a6;
+        border-color: color-mix(in srgb, var(--alfa-accent) 100%, transparent);
+        background: var(--alfa-accent);
         color: #052e2b;
     }
 
@@ -488,10 +491,10 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         padding: .45rem;
-        border: 1px solid rgba(56, 189, 248, .28);
-        border-radius: 8px;
-        background: #071426;
-        box-shadow: 0 22px 60px rgba(0, 0, 0, .48);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 53%, transparent);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
     }
 
     .shell__content .tareas-assignment-dropdown__config {
@@ -503,12 +506,12 @@
         min-height: 36px;
         margin: 0 0 .25rem;
         padding: .45rem .55rem;
-        border: 1px solid rgba(56, 189, 248, .22) !important;
-        border-radius: 7px;
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 47%, transparent) !important;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: rgba(8, 47, 73, .35) !important;
-        color: #bae6fd !important;
+        color: var(--alfa-accent-hover) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
         cursor: pointer;
     }
@@ -518,8 +521,8 @@
     }
 
     .shell__content .tareas-assignment-dropdown__config:hover {
-        border-color: rgba(56, 189, 248, .42) !important;
-        background: rgba(8, 145, 178, .22) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent) !important;
+        background: color-mix(in srgb, var(--alfa-accent) 22%, transparent) !important;
     }
 
     .shell__content .tareas-assignment-option {
@@ -531,38 +534,38 @@
         min-height: 36px;
         padding: .45rem .55rem;
         border: 1px solid transparent;
-        border-radius: 7px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: transparent !important;
-        color: #edf6ff !important;
+        color: var(--alfa-text-primary) !important;
         box-shadow: none;
-        font-weight: 800;
+        font-weight: 500;
         text-align: left;
         cursor: pointer;
     }
 
     .shell__content .tareas-assignment-option:hover {
-        background: rgba(8, 145, 178, .18) !important;
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
     }
 
     .shell__content .tareas-assignment-option.is-selected {
-        border-color: rgba(45, 212, 191, .42);
-        background: rgba(20, 184, 166, .18) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent) !important;
         color: #ccfbf1 !important;
     }
 
     .shell__content .tareas-assignment-option.is-group {
-        border-color: rgba(56, 189, 248, .24);
-        background: rgba(14, 165, 233, .12) !important;
-        color: #bae6fd !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 49%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 12%, transparent) !important;
+        color: var(--alfa-accent-hover) !important;
     }
 
     .shell__content .tareas-assignment-option.is-group:hover {
-        background: rgba(14, 165, 233, .2) !important;
+        background: color-mix(in srgb, var(--alfa-accent) 20%, transparent) !important;
     }
 
     .shell__content .tareas-assignment-option.is-group.is-selected {
-        border-color: rgba(45, 212, 191, .46);
-        background: linear-gradient(90deg, rgba(20, 184, 166, .22), rgba(14, 165, 233, .16)) !important;
+        border-color: color-mix(in srgb, var(--alfa-accent) 71%, transparent);
+        background: linear-gradient(90deg, color-mix(in srgb, var(--alfa-accent) 22%, transparent), color-mix(in srgb, var(--alfa-accent) 16%, transparent)) !important;
         color: #ccfbf1 !important;
     }
 
@@ -572,7 +575,7 @@
         place-items: center;
         width: 16px;
         height: 16px;
-        border: 1px solid rgba(125, 211, 252, .45);
+        border: 1px solid color-mix(in srgb, var(--alfa-accent) 45%, transparent);
         border-radius: 999px;
         color: transparent;
         font-size: .7rem;
@@ -580,8 +583,8 @@
 
     .shell__content .tareas-assignment-option.is-selected .tareas-assignment-option__box,
     .tareas-group-user.is-selected .tareas-group-users__box {
-        border-color: rgba(45, 212, 191, .9);
-        background: #14b8a6;
+        border-color: color-mix(in srgb, var(--alfa-accent) 100%, transparent);
+        background: var(--alfa-accent);
         color: #052e2b;
     }
 
@@ -593,7 +596,7 @@
     }
 
     .tareas-assignment-option__type {
-        color: #67e8f9;
+        color: var(--alfa-accent-hover);
         justify-self: center;
     }
 
@@ -613,9 +616,9 @@
     .tareas-groups-create input {
         min-height: 38px;
         padding: 0 .75rem;
-        border: 1px solid rgba(148, 163, 184, .22);
-        border-radius: 8px;
-        background: rgba(15, 23, 42, .3);
+        border: 1px solid var(--alfa-border-default);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface-raised);
         color: var(--color-text);
     }
 
@@ -625,9 +628,9 @@
     }
 
     .tareas-group-card {
-        border: 1px solid rgba(148, 163, 184, .18);
-        border-radius: 8px;
-        background: rgba(15, 23, 42, .24);
+        border: 1px solid var(--alfa-border-default);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface-raised);
         overflow: hidden;
     }
 
@@ -678,7 +681,7 @@
         min-height: 34px;
         padding: .4rem .5rem;
         border: 1px solid transparent;
-        border-radius: 7px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: transparent;
         color: var(--color-text);
         font-weight: 700;
@@ -687,12 +690,12 @@
     }
 
     .tareas-group-user:hover {
-        background: rgba(8, 145, 178, .18);
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent);
     }
 
     .tareas-group-user.is-selected {
-        border-color: rgba(45, 212, 191, .42);
-        background: rgba(20, 184, 166, .18);
+        border-color: color-mix(in srgb, var(--alfa-accent) 67%, transparent);
+        background: color-mix(in srgb, var(--alfa-accent) 18%, transparent);
         color: #ccfbf1;
     }
 
@@ -787,7 +790,7 @@
         width: 34px;
         height: 34px;
         border: 0;
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: rgba(248, 113, 113, .12);
         color: #fecaca;
     }
@@ -804,40 +807,13 @@
     }
 </style>
 
-<section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
-    <header class="tareas-header">
-        <div>
-            <p class="shell__eyebrow">Alfa Gestión</p>
-            <h2>Tareas</h2>
-            <span>Listas simples, asignaciones y notas rápidas para que soporte no pierda nada.</span>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@_loading">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-            <button type="button" class="btn btn--primary" @onclick="OpenNewTask">
-                <i class="bi bi-plus-circle"></i> Nueva tarea
-            </button>
-        </div>
+<section class="gd-page gd gd-legacy tareas-page" @onclick="HandlePageClickAsync">
+    <header class="gd-header">
+        <h2>Tareas</h2>
+        <p>Listas simples, asignaciones y notas rápidas para que soporte no pierda nada.</p>
     </header>
 
-    @if (_feedback is not null)
-    {
-        <div class="editor-msg tareas-feedback @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)" @onclick:stopPropagation>
-            <i class="bi @GetFeedbackIcon(_feedback)" aria-hidden="true"></i>
-            <div class="tareas-feedback__content">
-                <strong>@_feedback.Title</strong>
-                <p>@_feedback.Message</p>
-                @if (_feedback.HasCode)
-                {
-                    <small>Código: @_feedback.Code</small>
-                }
-            </div>
-            <button type="button" class="tareas-feedback__close" title="Cerrar aviso" aria-label="Cerrar aviso" @onclick="DismissFeedbackAsync">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <div class="tareas-shell">
         <aside class="tareas-lists" aria-label="Listas de tareas">
@@ -1207,6 +1183,8 @@
     </div>
 </section>
 
+@* Ventanas de la pantalla: fuera del .gd-page, con el mismo aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
 @if (_showTaskModal)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar tarea" @onclick="RequestCloseTaskModalAsync"></button>
@@ -1697,6 +1675,8 @@
         <img src="@_previewImageUrl" alt="@_previewImageName" />
     </section>
 }
+</div>
+
 @code {
     private TareasPageDto _page = new();
     private AppUiMessage? _feedback;
@@ -1877,6 +1857,54 @@
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(x => x)
         .ToArray();
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => _loading.ToString();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "tareas",
+            Title = "Tareas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildTareas(RouteContext, Nav, "tareas"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loading,
+                    OnClick = () => InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "nueva",
+                    Label = "Nueva tarea",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { OpenNewTask(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
         => await LoadAsync();
@@ -3204,6 +3232,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         await DisposeTaskAttachmentBindingAsync();
         if (_menusBinding is not null)
             await _menusBinding.InvokeVoidAsync("dispose");

@@ -3,10 +3,10 @@
    navegador, checkbox nativo). Se copian acá los mismos estilos para mantener la misma estética. */
 
 .section-block {
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    border-radius: 18px;
-    padding: 1rem;
-    background: rgba(8, 15, 31, 0.55);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md, 8px);
+    padding: 16px;
+    background: var(--alfa-bg-surface);
 }
 
 .section-block__head {
@@ -41,8 +41,8 @@
     width: 44px;
     height: 26px;
     border-radius: 999px;
-    background: rgba(148, 163, 184, 0.28);
-    border: 1px solid rgba(148, 163, 184, 0.32);
+    background: var(--alfa-border-default);
+    border: 1px solid var(--alfa-border-default);
     transition: background-color 150ms ease, border-color 150ms ease;
 }
 
@@ -54,14 +54,14 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #e2e8f0;
+    background: var(--alfa-text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
     transition: transform 150ms ease, background-color 150ms ease;
 }
 
 .catalogos-toggle__input:checked + .catalogos-toggle__track {
-    background: linear-gradient(135deg, #38bdf8, #06b6d4);
-    border-color: rgba(56, 189, 248, 0.9);
+    background: linear-gradient(135deg, var(--alfa-accent), var(--alfa-accent));
+    border-color: color-mix(in srgb, var(--alfa-accent) 100%, transparent);
 }
 
 .catalogos-toggle__input:checked + .catalogos-toggle__track::before {
@@ -70,7 +70,7 @@
 }
 
 .catalogos-toggle__input:focus-visible + .catalogos-toggle__track {
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--alfa-accent) 35%, transparent);
 }
 
 .catalogos-toggle__label {
@@ -85,7 +85,7 @@
 }
 
 .catalogos-toggle__label small {
-    color: rgba(226, 232, 240, 0.72);
+    color: var(--alfa-text-primary);
     font-size: 0.82rem;
 }
 
@@ -97,12 +97,13 @@
 
 .catalog-source-card {
     width: 100%;
-    min-height: 56px;
-    padding: 0.75rem 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 18px;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(10, 18, 36, 0.9));
-    color: inherit;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 4px);
+    background: transparent;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
     text-align: center;
     display: inline-flex;
     align-items: center;
@@ -113,36 +114,36 @@
 
 .catalog-source-card:hover,
 .catalog-source-card:focus-visible {
-    border-color: rgba(56, 189, 248, 0.45);
-    transform: translateY(-1px);
+    border-color: var(--alfa-border-strong, var(--alfa-border-default));
+    color: var(--alfa-text-primary);
 }
 
 .catalog-source-card.is-active {
-    border-color: rgba(56, 189, 248, 0.7);
-    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.15) inset;
-    background: linear-gradient(135deg, rgba(8, 145, 178, 0.24), rgba(10, 18, 36, 0.9));
+    border-color: color-mix(in srgb, var(--alfa-accent) 95%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
+    color: var(--alfa-text-primary);
 }
 
 .catalogos-article-thumb {
     width: 54px;
     height: 54px;
     display: block;
-    border-radius: 12px;
+    border-radius: var(--alfa-radius-md, var(--alfa-radius-sm, 4px));
     object-fit: cover;
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: var(--alfa-bg-surface);
+    border: 1px solid var(--alfa-border-default);
 }
 
 .catalogos-article-thumb--lookup {
     width: 42px;
     height: 42px;
-    border-radius: 10px;
+    border-radius: var(--alfa-radius-md, var(--alfa-radius-sm, 4px));
 }
 
 .catalogos-article-thumb--fallback {
     display: grid;
     place-items: center;
-    color: rgba(226, 232, 240, 0.72);
+    color: var(--alfa-text-primary);
     font-weight: 800;
     font-size: 0.7rem;
     letter-spacing: 0.03em;
@@ -151,7 +152,7 @@
 .catalogos-modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(2, 6, 23, 0.72);
+    background: rgba(0, 0, 0, .6);
     z-index: 1040;
 }
 
@@ -172,9 +173,9 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
-    border-radius: 20px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: rgba(7, 13, 26, 0.98);
+    border-radius: var(--alfa-radius-md, var(--alfa-radius-sm, 4px));
+    border: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-surface);
     box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
 }
 
@@ -189,7 +190,7 @@
 .catalogos-modal__header p,
 .catalogos-modal__meta {
     margin: 0;
-    color: rgba(226, 232, 240, 0.72);
+    color: var(--alfa-text-primary);
     font-size: 0.92rem;
 }
 
@@ -211,7 +212,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    color: rgba(226, 232, 240, 0.8);
+    color: var(--alfa-text-primary);
     font-size: 0.92rem;
 }
 
@@ -224,7 +225,7 @@
 }
 
 .catalogos-modal__table tr.catalogos-modal__row:hover {
-    background: rgba(56, 189, 248, 0.08);
+    background: color-mix(in srgb, var(--alfa-accent) 8%, transparent);
 }
 
 .catalogos-modal__footer {
@@ -240,4 +241,8 @@
     .catalog-source-card {
         width: 100%;
     }
+}
+
+.catalog-source-card strong {
+    font-weight: 600;
 }

@@ -1,18 +1,47 @@
 @page "/comprobantes/viewer/{Tc}/{IdComprobante}"
 @page "/{idweb}/{idbase:int}/comprobantes/viewer/{Tc}/{IdComprobante}"
 @using Microsoft.AspNetCore.Components
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Visualizador de comprobantes | Alfa Gestión</PageTitle>
 
-<ComprobanteViewer Tc="@Tc"
-                   IdComprobante="@IdComprobante"
-                   IdComplemento="@IdComplemento"
-                   ReturnUrl="@ReturnUrl"
-                   ModoDetalleCompleto="true" />
+@* Shell AlfaDesign: barra superior sin pestañas (se llega desde otros módulos) y las acciones del
+   comprobante quedan en el propio visor, que también se usa embebido. *@
+<div class="gd-page gd gd-legacy comprobante-viewer-ad">
+    <ComprobanteViewer Tc="@Tc"
+                       IdComprobante="@IdComprobante"
+                       IdComplemento="@IdComplemento"
+                       ReturnUrl="@ReturnUrl"
+                       ModoDetalleCompleto="true" />
+</div>
 
 @code {
     [Parameter] public string Tc { get; set; } = string.Empty;
     [Parameter] public string IdComprobante { get; set; } = string.Empty;
     [SupplyParameterFromQuery] public int IdComplemento { get; set; }
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "comprobantes",
+        Title = "Visualizador de comprobantes"
+    });
 }

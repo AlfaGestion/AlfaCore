@@ -919,6 +919,7 @@
             Breadcrumb = ["Cotizaciones"],
             State = _showEditor ? PageHeaderState.Editing : _loadingList ? PageHeaderState.Loading : _selectedIds.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "cotizaciones",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "cotizaciones"),
             Search = _showEditor ? null : new PageHeaderSearchConfig(),
             SearchContent = _showEditor ? null : RenderCotizSmartSearch(),
