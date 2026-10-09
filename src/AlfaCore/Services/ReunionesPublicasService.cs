@@ -10,9 +10,12 @@ public sealed class ReunionesPublicasService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
+    IConversacionesService conversacionesService,
     IAvisosPushNotifier? avisosPush = null) : IReunionesPublicasService
 {
     private const string ModuleName = "CalendarioReuniones";
+    private const string PlantillaOrganizador = "capacitacion_reserva_organizador";
+    private const string PlantillaCliente = "capacitacion_reserva_cliente";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -156,6 +159,8 @@ public sealed class ReunionesPublicasService(
                     $"{cliente} · {request.FechaInicio.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)}", "/calendario", token);
             }
 
+            await TrySendReservationWhatsAppAsync(tipo, request, idReserva, token);
+
             return new ReunionPublicaReservaResult
             {
                 IdReserva = idReserva,
@@ -167,6 +172,116 @@ public sealed class ReunionesPublicasService(
                 Modalidad = tipo.Modalidad
             };
         }, "No se pudo confirmar la reserva.", ct);
+
+    private async Task TrySendReservationWhatsAppAsync(
+        ReunionPublicaTipoDto tipo,
+        ReunionPublicaReservaRequest request,
+        long idReserva,
+        CancellationToken ct)
+    {
+        var cliente = FirstNonEmpty(request.RazonSocial, request.ClienteNombre);
+        var fechaHora = FormatReservationDate(request.FechaInicio);
+        var tipoCapacitacion = FirstNonEmpty(request.TipoCapacitacion, tipo.Titulo);
+        var tecnico = FirstNonEmpty(tipo.TecnicoNombre, tipo.Titulo);
+
+        var valores = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [WhatsAppTemplateVariableCatalog.CapacitacionTecnico] = tecnico,
+            [WhatsAppTemplateVariableCatalog.CapacitacionCliente] = cliente,
+            [WhatsAppTemplateVariableCatalog.CapacitacionTipo] = tipoCapacitacion,
+            [WhatsAppTemplateVariableCatalog.CapacitacionFechaHora] = fechaHora
+        };
+
+        await TrySendReservationTemplateAsync(
+            PlantillaOrganizador,
+            tipo.TelefonoWhatsApp,
+            tipo.IdTecnico,
+            valores,
+            $"Reserva {idReserva.ToString(CultureInfo.InvariantCulture)}: aviso al organizador",
+            ct);
+
+        await TrySendReservationTemplateAsync(
+            PlantillaCliente,
+            request.Telefono,
+            tipo.IdTecnico,
+            valores,
+            $"Reserva {idReserva.ToString(CultureInfo.InvariantCulture)}: confirmación al cliente",
+            ct);
+    }
+
+    private async Task TrySendReservationTemplateAsync(
+        string nombreMeta,
+        string? telefono,
+        string? idTecnico,
+        IReadOnlyDictionary<string, string> valores,
+        string contexto,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(telefono))
+            return;
+
+        try
+        {
+            var template = await FindApprovedTemplateByMetaNameAsync(nombreMeta, ct);
+            if (template is null)
+            {
+                await appEvents.LogErrorAsync(ModuleName, "ReservaWhatsAppSinPlantilla",
+                    new InvalidOperationException($"No existe plantilla aprobada {nombreMeta}."),
+                    "No se envió un WhatsApp automático de reserva porque falta aprobar la plantilla en Meta.",
+                    new { NombreMeta = nombreMeta, Contexto = contexto }, AppEventSeverity.Warning, ct);
+                return;
+            }
+
+            var conv = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
+            {
+                TelefonoWhatsApp = telefono.Trim(),
+                IdTecnico = idTecnico,
+                UsuarioAccion = "ReunionesPublicas",
+                SistemaAccion = "AlfaCore"
+            }, ct);
+
+            await conversacionesService.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+            {
+                IdConversacion = conv.IdConversacion,
+                IdPlantilla = template.IdPlantilla,
+                IdTecnicoAutor = idTecnico,
+                UsuarioAccion = "ReunionesPublicas",
+                SistemaAccion = "AlfaCore",
+                ValoresVariables = BuildReservationTemplateValues(nombreMeta, valores),
+                ValoresPorVariable = new Dictionary<string, string>(valores, StringComparer.Ordinal)
+            }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await appEvents.LogErrorAsync(ModuleName, "ReservaWhatsApp", ex,
+                "La reserva se confirmó, pero no se pudo enviar un WhatsApp automático.",
+                new { NombreMeta = nombreMeta, Telefono = telefono, Contexto = contexto }, AppEventSeverity.Warning, ct);
+        }
+    }
+
+    private async Task<ConversacionPlantillaDto?> FindApprovedTemplateByMetaNameAsync(string nombreMeta, CancellationToken ct)
+    {
+        var templates = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+        {
+            EstadoMeta = "APPROVED",
+            IncluirInactivas = false,
+            Search = nombreMeta
+        }, ct);
+
+        return templates.FirstOrDefault(x => string.Equals(x.NombreMeta.Trim(), nombreMeta, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> BuildReservationTemplateValues(string nombreMeta, IReadOnlyDictionary<string, string> valores)
+    {
+        var tecnico = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionTecnico, string.Empty);
+        var cliente = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionCliente, string.Empty);
+        var fechaHora = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionFechaHora, string.Empty);
+        var tipo = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionTipo, string.Empty);
+
+        return string.Equals(nombreMeta, PlantillaCliente, StringComparison.OrdinalIgnoreCase)
+            ? [cliente, fechaHora, tecnico, tipo]
+            : [tecnico, cliente, fechaHora, tipo];
+    }
 
     public Task<ReunionPublicaAdminDto> GetAdminAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAdmin", async token =>
@@ -450,6 +565,9 @@ public sealed class ReunionesPublicasService(
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string FormatReservationDate(DateTime value)
+        => value.ToString("dddd dd/MM/yyyy 'a las' HH:mm", CultureInfo.GetCultureInfo("es-AR"));
 
     private static string? EmptyToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

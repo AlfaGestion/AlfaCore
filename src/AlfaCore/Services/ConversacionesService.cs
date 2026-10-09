@@ -3672,6 +3672,9 @@ public sealed class ConversacionesService(
             WhatsAppTemplateVariableCatalog.GuardiaTecnico or WhatsAppTemplateVariableCatalog.GuardiaInicio
                 or WhatsAppTemplateVariableCatalog.GuardiaFin
                 => Falta("Los datos del evento se completan solos en los recordatorios del Calendario; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.CapacitacionTecnico or WhatsAppTemplateVariableCatalog.CapacitacionCliente
+                or WhatsAppTemplateVariableCatalog.CapacitacionTipo or WhatsAppTemplateVariableCatalog.CapacitacionFechaHora
+                => Falta("Los datos de la capacitación se completan solos cuando reservan desde el enlace público; desde acá completalos a mano."),
             _ => Falta($"No hay resolución automática implementada para '{variableKey}'.")
         };
     }

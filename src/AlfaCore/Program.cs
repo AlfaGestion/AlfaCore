@@ -488,6 +488,7 @@ public class Program
             builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
             builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
             builder.Services.AddHostedService<BillingHostedService>();
+            builder.Services.AddHostedService<CalendarioRecordatoriosHostedService>();
             builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
             builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();

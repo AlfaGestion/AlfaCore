@@ -81,6 +81,13 @@
     text-decoration: none;
 }
 
+.reuniones-lead {
+    max-width: 720px;
+    margin: .55rem 0 0;
+    color: #b6c5d8;
+    line-height: 1.5;
+}
+
 .reuniones-picker {
     display: grid;
     grid-template-columns: minmax(300px, 560px) minmax(220px, 1fr);
@@ -177,7 +184,7 @@
 
 .reuniones-day.is-selected {
     border-color: rgba(34, 211, 238, .9);
-    background: linear-gradient(135deg, #0891b2, #14b8a6);
+    background: #0891b2;
     color: #fff;
 }
 
@@ -244,6 +251,24 @@
     padding: 1rem;
 }
 
+.reuniones-actions-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(56, 189, 248, .2);
+    border-radius: 12px;
+    background: rgba(8, 17, 31, .88);
+}
+
+.reuniones-actions-card strong {
+    display: block;
+    margin-top: .25rem;
+    color: #f8fafc;
+    text-transform: capitalize;
+}
+
 .reuniones-eyebrow {
     color: #67e8f9;
     font-size: .76rem;
@@ -280,6 +305,12 @@
     resize: vertical;
 }
 
+.reuniones-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
+}
+
 .reuniones-btn {
     display: inline-flex;
     align-items: center;
@@ -292,8 +323,16 @@
 .reuniones-btn--primary {
     width: fit-content;
     border: 0;
-    background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+    background: #2563eb;
     color: #fff;
+}
+
+.reuniones-btn--primary:not(:disabled):hover {
+    background: #1d4ed8;
+}
+
+.reuniones-btn--ghost {
+    background: transparent;
 }
 
 .reuniones-btn:disabled {
@@ -327,6 +366,27 @@
     margin: 0;
     color: #b6c5d8;
     line-height: 1.5;
+}
+
+.reuniones-resumen {
+    display: grid;
+    gap: .2rem;
+    padding: .8rem;
+    border: 1px solid rgba(34, 197, 94, .26);
+    border-radius: 8px;
+    background: rgba(22, 101, 52, .16);
+}
+
+.reuniones-resumen span {
+    color: #86efac;
+    font-size: .76rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.reuniones-resumen strong {
+    color: #f8fafc;
+    text-transform: capitalize;
 }
 
 .reuniones-detail dl,
@@ -393,6 +453,10 @@
     .reuniones-form-grid,
     .reuniones-slots div {
         grid-template-columns: 1fr;
+    }
+
+    .reuniones-actions-card {
+        display: grid;
     }
 
     .reuniones-days {

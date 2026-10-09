@@ -65,6 +65,10 @@ public static class WhatsAppTemplateVariableCatalog
     public const string GuardiaTecnico = "guardia.tecnico";
     public const string GuardiaInicio = "guardia.inicio";
     public const string GuardiaFin = "guardia.fin";
+    public const string CapacitacionTecnico = "capacitacion.tecnico";
+    public const string CapacitacionCliente = "capacitacion.cliente";
+    public const string CapacitacionTipo = "capacitacion.tipo";
+    public const string CapacitacionFechaHora = "capacitacion.fechaHora";
 
     public const string GroupContacto = "Contacto";
     public const string GroupCliente = "Cliente";
@@ -73,6 +77,7 @@ public static class WhatsAppTemplateVariableCatalog
     public const string GroupCobranza = "Cobranza";
     public const string GroupTareas = "Tareas";
     public const string GroupEvento = "Evento del Calendario";
+    public const string GroupCapacitacion = "Capacitación online";
 
     /// <summary>Único componente de plantilla soportado por la lógica de negocio actual.</summary>
     public const string ComponenteBody = "BODY";
@@ -212,6 +217,34 @@ public static class WhatsAppTemplateVariableCatalog
             "Fecha y hora de fin del evento del calendario.",
             GroupEvento,
             RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionTecnico,
+            "Técnico de la capacitación",
+            "Técnico u operador responsable de la capacitación online.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionCliente,
+            "Cliente agendado",
+            "Nombre o razón social del cliente que reservó la capacitación.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionTipo,
+            "Tipo de capacitación",
+            "Tipo elegido por el cliente al confirmar la reserva.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionFechaHora,
+            "Fecha y hora de capacitación",
+            "Fecha y hora confirmada para la capacitación.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
             CanResolveAutomaticallyInManualSend: true),
 
         // Insertables en el editor (por eso true): se completan solas al enviar desde Cierre de caja

@@ -36,6 +36,10 @@ public sealed class WhatsAppTemplateVariableCatalogTests
         Assert.Contains(WhatsAppTemplateVariableCatalog.GuardiaTecnico, keys);
         Assert.Contains(WhatsAppTemplateVariableCatalog.GuardiaInicio, keys);
         Assert.Contains(WhatsAppTemplateVariableCatalog.GuardiaFin, keys);
+        Assert.Contains(WhatsAppTemplateVariableCatalog.CapacitacionTecnico, keys);
+        Assert.Contains(WhatsAppTemplateVariableCatalog.CapacitacionCliente, keys);
+        Assert.Contains(WhatsAppTemplateVariableCatalog.CapacitacionTipo, keys);
+        Assert.Contains(WhatsAppTemplateVariableCatalog.CapacitacionFechaHora, keys);
 
         // Nunca variables de Facturación: sin resolver real confirmado (100% texto hardcodeado hoy).
         Assert.DoesNotContain(keys, k => k.StartsWith("factura.", StringComparison.OrdinalIgnoreCase));
@@ -52,6 +56,10 @@ public sealed class WhatsAppTemplateVariableCatalogTests
     [InlineData(WhatsAppTemplateVariableCatalog.GuardiaTecnico, true)]
     [InlineData(WhatsAppTemplateVariableCatalog.GuardiaInicio, true)]
     [InlineData(WhatsAppTemplateVariableCatalog.GuardiaFin, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.CapacitacionTecnico, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.CapacitacionCliente, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.CapacitacionTipo, true)]
+    [InlineData(WhatsAppTemplateVariableCatalog.CapacitacionFechaHora, true)]
     public void Catalog_VariablesInsertablesEnElEditor(string key, bool expected)
     {
         var definition = WhatsAppTemplateVariableCatalog.Find(key);
@@ -64,7 +72,9 @@ public sealed class WhatsAppTemplateVariableCatalogTests
     {
         foreach (var definition in WhatsAppTemplateVariableCatalog.All)
         {
-            var isContextual = definition.Group is WhatsAppTemplateVariableCatalog.GroupTareas or WhatsAppTemplateVariableCatalog.GroupEvento;
+            var isContextual = definition.Group is WhatsAppTemplateVariableCatalog.GroupTareas
+                or WhatsAppTemplateVariableCatalog.GroupEvento
+                or WhatsAppTemplateVariableCatalog.GroupCapacitacion;
             if (isContextual)
                 Assert.False(string.IsNullOrWhiteSpace(definition.RequiredContext));
 
@@ -394,7 +404,9 @@ public sealed class WhatsAppTemplateVariableCatalogTests
                 WhatsAppTemplateVariableCatalog.TareaTitulo, WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado,
                 WhatsAppTemplateVariableCatalog.TareaAutorAccion, WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro,
                 WhatsAppTemplateVariableCatalog.GuardiaTecnico, WhatsAppTemplateVariableCatalog.GuardiaInicio,
-                WhatsAppTemplateVariableCatalog.GuardiaFin
+                WhatsAppTemplateVariableCatalog.GuardiaFin,
+                WhatsAppTemplateVariableCatalog.CapacitacionTecnico, WhatsAppTemplateVariableCatalog.CapacitacionCliente,
+                WhatsAppTemplateVariableCatalog.CapacitacionTipo, WhatsAppTemplateVariableCatalog.CapacitacionFechaHora
             }.OrderBy(x => x, StringComparer.Ordinal),
             selectableKeys.OrderBy(x => x, StringComparer.Ordinal));
     }

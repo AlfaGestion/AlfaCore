@@ -374,6 +374,33 @@ public sealed class CalendarioService(
             };
         }, "No se pudo enviar el recordatorio por WhatsApp.", ct);
 
+    public Task<int> ProcesarRecordatoriosPendientesAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "ProcesarRecordatoriosPendientes", async token =>
+        {
+            await OmitStaleRemindersAsync(token);
+            var pendientes = await GetDueReminderIdsAsync(token);
+            var enviados = 0;
+
+            foreach (var idRecordatorio in pendientes)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    await SendWhatsAppReminderAsync(idRecordatorio, "CalendarioWorker", token);
+                    enviados++;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await MarkReminderErrorAsync(idRecordatorio, ex.Message, token);
+                    await appEvents.LogErrorAsync(ModuleName, "ProcesarRecordatorioPendiente", ex,
+                        "No se pudo enviar un recordatorio automático de Calendario.",
+                        new { IdRecordatorio = idRecordatorio }, AppEventSeverity.Warning, token);
+                }
+            }
+
+            return enviados;
+        }, "No se pudieron procesar los recordatorios pendientes de Calendario.", ct);
+
     private static CalendarioEventoDto ReadEvento(SqlDataReader rd)
     {
         var item = new CalendarioEventoDto
@@ -493,6 +520,65 @@ public sealed class CalendarioService(
         };
     }
 
+    private async Task<List<long>> GetDueReminderIdsAsync(CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CAL_RECORDATORIOS', N'U') IS NULL
+               OR OBJECT_ID(N'dbo.CAL_EVENTOS', N'U') IS NULL
+                RETURN;
+
+            SELECT TOP (25) r.IdRecordatorio
+            FROM dbo.CAL_RECORDATORIOS r
+            INNER JOIN dbo.CAL_EVENTOS e ON e.IdEvento = r.IdEvento
+            WHERE ISNULL(r.Baja, 0) = 0
+              AND ISNULL(e.Baja, 0) = 0
+              AND ISNULL(e.Estado, N'') <> N'CANCELADO'
+              AND r.Tipo = N'WHATSAPP'
+              AND r.EstadoEnvio = N'PENDIENTE'
+              AND r.FechaHoraProgramada IS NOT NULL
+              AND r.FechaHoraProgramada <= GETDATE()
+              AND r.FechaHoraProgramada >= DATEADD(day, -1, GETDATE())
+              AND e.FechaFin > GETDATE()
+            ORDER BY r.FechaHoraProgramada, r.IdRecordatorio;
+            """;
+
+        var ids = new List<long>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            ids.Add(GetLong(rd, 0));
+        return ids;
+    }
+
+    private async Task OmitStaleRemindersAsync(CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CAL_RECORDATORIOS', N'U') IS NULL
+               OR OBJECT_ID(N'dbo.CAL_EVENTOS', N'U') IS NULL
+                RETURN;
+
+            UPDATE r
+               SET EstadoEnvio = N'OMITIDO',
+                   UltimoError = N'Recordatorio vencido: no se envió automáticamente porque el evento ya terminó o la fecha programada quedó demasiado atrasada.',
+                   FechaHora_Modificacion = GETDATE()
+            FROM dbo.CAL_RECORDATORIOS r
+            INNER JOIN dbo.CAL_EVENTOS e ON e.IdEvento = r.IdEvento
+            WHERE ISNULL(r.Baja, 0) = 0
+              AND ISNULL(e.Baja, 0) = 0
+              AND r.EstadoEnvio = N'PENDIENTE'
+              AND r.FechaHoraProgramada IS NOT NULL
+              AND r.FechaHoraProgramada <= GETDATE()
+              AND (e.FechaFin <= GETDATE() OR r.FechaHoraProgramada < DATEADD(day, -1, GETDATE()));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task MarkReminderSentAsync(long idRecordatorio, string estadoEnvio, CancellationToken ct)
     {
         var estadoRecordatorio = NormalizeReminderDeliveryStatus(estadoEnvio);
@@ -511,6 +597,25 @@ public sealed class CalendarioService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdRecordatorio", idRecordatorio);
         cmd.Parameters.AddWithValue("@EstadoEnvio", estadoRecordatorio);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task MarkReminderErrorAsync(long idRecordatorio, string error, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CAL_RECORDATORIOS
+               SET EstadoEnvio = N'ERROR',
+                   UltimoError = @UltimoError,
+                   FechaHora_Modificacion = GETDATE()
+             WHERE IdRecordatorio = @IdRecordatorio
+               AND EstadoEnvio = N'PENDIENTE';
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdRecordatorio", idRecordatorio);
+        cmd.Parameters.AddWithValue("@UltimoError", string.IsNullOrWhiteSpace(error) ? "Error de envío automático." : error.Trim());
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

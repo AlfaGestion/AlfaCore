@@ -11,4 +11,5 @@ public interface ICalendarioService
     /// <summary>Guardia vigente y siguiente para la barra superior (null si la base no tiene Calendario).</summary>
     Task<CalendarioGuardiaResumenDto?> GetGuardiaResumenAsync(CancellationToken ct = default);
     Task<CalendarioRecordatorioSendResult> SendWhatsAppReminderAsync(long idRecordatorio, string? usuarioAccion = null, CancellationToken ct = default);
+    Task<int> ProcesarRecordatoriosPendientesAsync(CancellationToken ct = default);
 }
