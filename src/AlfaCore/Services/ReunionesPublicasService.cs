@@ -16,6 +16,8 @@ public sealed class ReunionesPublicasService(
     private const string ModuleName = "CalendarioReuniones";
     private const string PlantillaOrganizador = "capacitacion_reserva_organizador";
     private const string PlantillaCliente = "capacitacion_reserva_cliente";
+    private const string PlantillaCancelacionOrganizador = "capacitacion_reserva_cancelada_organizador";
+    private const string PlantillaCancelacionCliente = "capacitacion_reserva_cancelada_cliente";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -209,6 +211,42 @@ public sealed class ReunionesPublicasService(
             ct);
     }
 
+    private async Task TrySendReservationCancellationWhatsAppAsync(
+        ReservationNotificationSnapshot reserva,
+        string? motivoNotificacion,
+        CancellationToken ct)
+    {
+        var cliente = FirstNonEmpty(reserva.RazonSocial, reserva.ClienteNombre);
+        var fechaHora = FormatReservationDate(reserva.FechaInicio);
+        var tipoCapacitacion = FirstNonEmpty(reserva.TipoCapacitacion, reserva.Titulo);
+        var tecnico = FirstNonEmpty(reserva.TecnicoNombre, reserva.Titulo);
+
+        var valores = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [WhatsAppTemplateVariableCatalog.CapacitacionTecnico] = tecnico,
+            [WhatsAppTemplateVariableCatalog.CapacitacionCliente] = cliente,
+            [WhatsAppTemplateVariableCatalog.CapacitacionTipo] = tipoCapacitacion,
+            [WhatsAppTemplateVariableCatalog.CapacitacionFechaHora] = fechaHora
+        };
+
+        var contextoMotivo = string.IsNullOrWhiteSpace(motivoNotificacion) ? "cancelacion" : motivoNotificacion.Trim();
+        await TrySendReservationTemplateAsync(
+            PlantillaCancelacionOrganizador,
+            reserva.TelefonoWhatsApp,
+            reserva.IdTecnico,
+            valores,
+            $"Reserva {reserva.IdReserva.ToString(CultureInfo.InvariantCulture)}: {contextoMotivo} al organizador",
+            ct);
+
+        await TrySendReservationTemplateAsync(
+            PlantillaCancelacionCliente,
+            reserva.Telefono,
+            reserva.IdTecnico,
+            valores,
+            $"Reserva {reserva.IdReserva.ToString(CultureInfo.InvariantCulture)}: {contextoMotivo} al cliente",
+            ct);
+    }
+
     private async Task TrySendReservationTemplateAsync(
         string nombreMeta,
         string? telefono,
@@ -295,9 +333,13 @@ public sealed class ReunionesPublicasService(
         var fechaHora = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionFechaHora, string.Empty);
         var tipo = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionTipo, string.Empty);
 
-        return string.Equals(nombreMeta, PlantillaCliente, StringComparison.OrdinalIgnoreCase)
-            ? [cliente, fechaHora, tecnico, tipo]
-            : [tecnico, cliente, fechaHora, tipo];
+        if (string.Equals(nombreMeta, PlantillaCliente, StringComparison.OrdinalIgnoreCase))
+            return [cliente, fechaHora, tecnico, tipo];
+
+        if (string.Equals(nombreMeta, PlantillaCancelacionCliente, StringComparison.OrdinalIgnoreCase))
+            return [cliente, fechaHora, tipo];
+
+        return [tecnico, cliente, fechaHora, tipo];
     }
 
     public Task<ReunionPublicaAdminDto> GetAdminAsync(CancellationToken ct = default)
@@ -406,10 +448,11 @@ public sealed class ReunionesPublicasService(
             return id;
         }, "No se pudo guardar el tipo de reunion.", ct);
 
-    public Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, CancellationToken ct = default)
+    public Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, string? motivoNotificacion = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("CancelReservation", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            var reserva = await GetReservationNotificationSnapshotAsync(cn, idReserva, token);
             await cn.ExecuteAsync(
                 """
                 DECLARE @IdEvento bigint;
@@ -427,7 +470,36 @@ public sealed class ReunionesPublicasService(
                 """,
                 new { IdReserva = idReserva });
             await appEvents.LogAuditAsync(ModuleName, "ReservaCancelada", "CAL_RESERVAS_REUNION", idReserva.ToString(CultureInfo.InvariantCulture), "Reserva cancelada", null, token);
+
+            if (reserva is not null)
+                await TrySendReservationCancellationWhatsAppAsync(reserva, motivoNotificacion, token);
         }, "No se pudo cancelar la reserva.", ct);
+
+    private static async Task<ReservationNotificationSnapshot?> GetReservationNotificationSnapshotAsync(SqlConnection cn, long idReserva, CancellationToken ct)
+    {
+        return await cn.QueryFirstOrDefaultAsync<ReservationNotificationSnapshot>(
+            """
+            SELECT TOP 1
+                   r.IdReserva,
+                   r.IdEvento,
+                   r.FechaInicio,
+                   r.FechaFin,
+                   ISNULL(r.ClienteNombre, N'') AS ClienteNombre,
+                   ISNULL(r.RazonSocial, N'') AS RazonSocial,
+                   ISNULL(r.Telefono, N'') AS Telefono,
+                   ISNULL(r.TipoCapacitacion, N'') AS TipoCapacitacion,
+                   ISNULL(t.Titulo, N'') AS Titulo,
+                   ISNULL(t.IdTecnico, N'') AS IdTecnico,
+                   ISNULL(t.TecnicoNombre, N'') AS TecnicoNombre,
+                   ISNULL(t.TelefonoWhatsApp, N'') AS TelefonoWhatsApp,
+                   ISNULL(t.Modalidad, N'') AS Modalidad
+            FROM dbo.CAL_RESERVAS_REUNION r
+            INNER JOIN dbo.CAL_TIPOS_REUNION t ON t.IdTipoReunion = r.IdTipoReunion
+            WHERE r.IdReserva = @IdReserva
+              AND ISNULL(r.Baja, 0) = 0;
+            """,
+            new { IdReserva = idReserva });
+    }
 
     private static async Task<ReunionPublicaTipoDto?> GetTipoBySlugAsync(SqlConnection cn, string? slug, CancellationToken ct)
     {
@@ -619,5 +691,22 @@ public sealed class ReunionesPublicasService(
     {
         public DateTime Inicio { get; init; }
         public DateTime Fin { get; init; }
+    }
+
+    private sealed class ReservationNotificationSnapshot
+    {
+        public long IdReserva { get; init; }
+        public long IdEvento { get; init; }
+        public DateTime FechaInicio { get; init; }
+        public DateTime FechaFin { get; init; }
+        public string ClienteNombre { get; init; } = string.Empty;
+        public string RazonSocial { get; init; } = string.Empty;
+        public string Telefono { get; init; } = string.Empty;
+        public string TipoCapacitacion { get; init; } = string.Empty;
+        public string Titulo { get; init; } = string.Empty;
+        public string IdTecnico { get; init; } = string.Empty;
+        public string TecnicoNombre { get; init; } = string.Empty;
+        public string TelefonoWhatsApp { get; init; } = string.Empty;
+        public string Modalidad { get; init; } = string.Empty;
     }
 }

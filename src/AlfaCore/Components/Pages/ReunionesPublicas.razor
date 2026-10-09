@@ -403,7 +403,7 @@
         _reservationError = string.Empty;
         try
         {
-            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas");
+            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas", "CANCELACION_PUBLICA");
             _reservationCanceled = true;
         }
         catch (Exception ex)
@@ -426,7 +426,7 @@
         try
         {
             var previous = _confirmed.FechaInicio;
-            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas");
+            await ReunionesSvc.CancelReservationAsync(_confirmed.IdReserva, "ReunionesPublicas", "REPROGRAMACION_PUBLICA");
             _confirmed = null;
             _selectedSlot = null;
             _selectedDay = previous.Date;

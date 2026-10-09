@@ -8,5 +8,5 @@ public interface IReunionesPublicasService
     Task<ReunionPublicaReservaResult> CreateReservationAsync(ReunionPublicaReservaRequest request, CancellationToken ct = default);
     Task<ReunionPublicaAdminDto> GetAdminAsync(CancellationToken ct = default);
     Task<long> SaveTipoAsync(ReunionPublicaTipoDto tipo, string? usuarioAccion = null, CancellationToken ct = default);
-    Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, CancellationToken ct = default);
+    Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, string? motivoNotificacion = null, CancellationToken ct = default);
 }
