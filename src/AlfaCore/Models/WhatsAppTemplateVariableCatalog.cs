@@ -12,16 +12,15 @@ namespace AlfaCore.Models;
 /// <param name="Description">
 /// Descripción corta (una línea) visible en el selector de variables, debajo del Label.
 /// </param>
-/// <param name="Group">Agrupador visual del selector (Contacto, Cobranza, Tareas, Guardia).</param>
+/// <param name="Group">Agrupador visual del selector (Contacto, Cobranza, Tareas, Evento del Calendario).</param>
 /// <param name="RequiredContext">
 /// Texto secundario que explica qué contexto hace falta para resolver la variable (ej: "Requiere una
 /// tarea asociada"). Null cuando no hace falta contexto adicional más allá de la conversación activa.
 /// </param>
 /// <param name="CanResolveAutomaticallyInManualSend">
-/// true solo si existe HOY un resolver real invocable desde el flujo de envío manual genérico
-/// (Conversaciones → enviar plantilla). Tareas y Guardia se catalogan con su contexto pero quedan en
-/// false acá: sus resolvers viven dentro de TareasService/CalendarioService, que no se tocan en esta
-/// función y no se les construye un puente hacia el envío manual.
+/// true si la variable se puede insertar en el editor. Las de Tareas, Evento del Calendario y Cierre de
+/// caja se completan solas desde su módulo (que manda los valores por VariableKey); en el envío manual
+/// desde Conversaciones no hay de dónde sacarlas y se piden a mano.
 /// </param>
 /// <param name="Detail">
 /// Nota técnica opcional (fallback, configuración, etc.) que no entra en la línea de Description para
@@ -46,6 +45,17 @@ public sealed record WhatsAppTemplateVariableDefinition(
 public static class WhatsAppTemplateVariableCatalog
 {
     public const string ContactName = "contact.name";
+    public const string ContactPhone = "contact.phone";
+    public const string ContactEmail = "contact.email";
+    public const string ClienteNombre = "cliente.nombre";
+    public const string ClienteCodigo = "cliente.codigo";
+    public const string FechaHoy = "fecha.hoy";
+    public const string FechaAyer = "fecha.ayer";
+    public const string HoraActual = "hora.actual";
+    public const string MesActual = "fecha.mes";
+    public const string AnioActual = "fecha.anio";
+    public const string CierreFecha = "cierre.fecha";
+    public const string CierreCaja = "cierre.caja";
     public const string CobranzaDetalleDeuda = "cobranza.detalleDeuda";
     public const string PagoFormaPago = "pago.formaPago";
     public const string TareaTitulo = "tarea.titulo";
@@ -55,11 +65,19 @@ public static class WhatsAppTemplateVariableCatalog
     public const string GuardiaTecnico = "guardia.tecnico";
     public const string GuardiaInicio = "guardia.inicio";
     public const string GuardiaFin = "guardia.fin";
+    public const string CapacitacionTecnico = "capacitacion.tecnico";
+    public const string CapacitacionCliente = "capacitacion.cliente";
+    public const string CapacitacionTipo = "capacitacion.tipo";
+    public const string CapacitacionFechaHora = "capacitacion.fechaHora";
 
     public const string GroupContacto = "Contacto";
+    public const string GroupCliente = "Cliente";
+    public const string GroupFecha = "Fecha y hora";
+    public const string GroupCierreCaja = "Cierre de caja";
     public const string GroupCobranza = "Cobranza";
     public const string GroupTareas = "Tareas";
-    public const string GroupGuardia = "Guardia";
+    public const string GroupEvento = "Evento del Calendario";
+    public const string GroupCapacitacion = "Capacitación online";
 
     /// <summary>Único componente de plantilla soportado por la lógica de negocio actual.</summary>
     public const string ComponenteBody = "BODY";
@@ -73,6 +91,69 @@ public static class WhatsAppTemplateVariableCatalog
             RequiredContext: null,
             CanResolveAutomaticallyInManualSend: true,
             Detail: "Si no hay nombre cargado, se usa el teléfono."),
+
+        new(ContactPhone,
+            "Teléfono del contacto",
+            "Número de WhatsApp de la conversación.",
+            GroupContacto,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ContactEmail,
+            "Email del contacto",
+            "Email del contacto vinculado a la conversación.",
+            GroupContacto,
+            RequiredContext: "Requiere un contacto vinculado con email cargado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ClienteNombre,
+            "Nombre del cliente",
+            "Razón social del cliente vinculado a la conversación.",
+            GroupCliente,
+            RequiredContext: "Requiere que la conversación tenga un cliente vinculado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(ClienteCodigo,
+            "Código de cliente",
+            "Código de la cuenta del cliente vinculado.",
+            GroupCliente,
+            RequiredContext: "Requiere que la conversación tenga un cliente vinculado.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(FechaHoy,
+            "Fecha de hoy",
+            "Fecha del día del envío (dd/mm/aaaa).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(FechaAyer,
+            "Fecha de ayer",
+            "Fecha del día anterior al envío (dd/mm/aaaa).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(HoraActual,
+            "Hora actual",
+            "Hora del envío (hh:mm).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(MesActual,
+            "Mes actual",
+            "Mes y año del envío (ej: octubre de 2026).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(AnioActual,
+            "Año actual",
+            "Año del envío (ej: 2026).",
+            GroupFecha,
+            RequiredContext: null,
+            CanResolveAutomaticallyInManualSend: true),
 
         new(CobranzaDetalleDeuda,
             "Detalle de deuda",
@@ -93,50 +174,94 @@ public static class WhatsAppTemplateVariableCatalog
             "Título de la tarea",
             "Título de la tarea asociada al envío.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaTecnicoAsignado,
             "Técnico asignado",
             "Técnico asignado a la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaAutorAccion,
             "Autor de la acción",
             "Usuario que asignó o finalizó la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(TareaFechaHoraRegistro,
             "Fecha y hora de registro",
             "Fecha y hora de la asignación o el cierre de la tarea.",
             GroupTareas,
-            RequiredContext: "Requiere una tarea asociada. Solo se resuelve automáticamente en las notificaciones propias de Tareas.",
-            CanResolveAutomaticallyInManualSend: false),
+            RequiredContext: "Se completa sola en los avisos automáticos de Tareas (asignación y cierre). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaTecnico,
-            "Técnico de guardia",
-            "Técnico asignado a la guardia del calendario.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Responsable del evento",
+            "Técnico o persona a cargo del evento del calendario (guardia, reunión, capacitación...).",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaInicio,
-            "Inicio de guardia",
-            "Fecha y hora de inicio de la guardia.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Inicio del evento",
+            "Fecha y hora de inicio del evento del calendario.",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
 
         new(GuardiaFin,
-            "Fin de guardia",
-            "Fecha y hora de fin de la guardia.",
-            GroupGuardia,
-            RequiredContext: "Disponible cuando el envío tiene contexto de guardia/calendario. Solo se resuelve automáticamente en los recordatorios propios de Calendario.",
-            CanResolveAutomaticallyInManualSend: false),
+            "Fin del evento",
+            "Fecha y hora de fin del evento del calendario.",
+            GroupEvento,
+            RequiredContext: "Se completa sola en los recordatorios del Calendario (guardias, reuniones, capacitaciones y otros eventos). Si mandás la plantilla a mano desde Conversaciones, se pide el valor.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionTecnico,
+            "Técnico de la capacitación",
+            "Técnico u operador responsable de la capacitación online.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionCliente,
+            "Cliente agendado",
+            "Nombre o razón social del cliente que reservó la capacitación.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionTipo,
+            "Tipo de capacitación",
+            "Tipo elegido por el cliente al confirmar la reserva.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CapacitacionFechaHora,
+            "Fecha y hora de capacitación",
+            "Fecha y hora confirmada para la capacitación.",
+            GroupCapacitacion,
+            RequiredContext: "Se completa sola cuando un cliente reserva desde el enlace público de Reuniones.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        // Insertables en el editor (por eso true): se completan solas al enviar desde Cierre de caja
+        // (valores de contexto); desde Conversaciones no hay de dónde sacarlas y se piden a mano.
+        new(CierreFecha,
+            "Fecha del cierre",
+            "Fecha operativa del cierre de caja enviado.",
+            GroupCierreCaja,
+            RequiredContext: "Se completa sola al enviar desde Cierre de caja → WhatsApp.",
+            CanResolveAutomaticallyInManualSend: true),
+
+        new(CierreCaja,
+            "Caja del cierre",
+            "Caja (o \"Todas las cajas\") del cierre enviado.",
+            GroupCierreCaja,
+            RequiredContext: "Se completa sola al enviar desde Cierre de caja → WhatsApp.",
+            CanResolveAutomaticallyInManualSend: true),
     ];
 
     private static readonly Dictionary<string, WhatsAppTemplateVariableDefinition> ByKey =

@@ -6,40 +6,19 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Configuración de Interfaces | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Configuración de recepción documental</h2>
-            <p class="page-intro__text">Definí dónde se guardan los documentos recibidos por la bandeja de Interfaces y qué reglas de carga aplica la base activa.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
-                <i class="bi bi-arrow-left"></i> Volver
-            </a>
-            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@(Loading || Saving)">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </div>
+<section class="gd-page gd gd-legacy">
+    <header class="gd-header">
+        <h2>Configuración de recepción documental</h2>
+        <p>Definí dónde se guardan los documentos recibidos por la bandeja de Interfaces y qué reglas de carga aplica la base activa.</p>
+    </header>
 
-    @if (_feedback is not null)
-    {
-        <div class="conversations-inline @GetFeedbackClass(_feedback)">
-            <strong>@_feedback.Title</strong>
-            <div>@_feedback.Message</div>
-            @if (_feedback.HasCode)
-            {
-                <div>Código: @_feedback.Code</div>
-            }
-            @if (_feedback.HasSuggestion)
-            {
-                <div>@_feedback.Suggestion</div>
-            }
-        </div>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <div class="conv-config-layout">
         <section class="panel-card conv-config-form">
@@ -262,6 +241,51 @@
     private string _ftpPassiveText = "SI";
     private string _compraIaEnabledText = "NO";
     private string _compraIaWorkerEnabledText = "SI";
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', Loading, Saving);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "interfaces",
+            Title = "Configuración de recepción documental",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInterfaces(RouteContext, Nav, "configuracion"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = Loading || Saving,
+                    OnClick = () => InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

@@ -165,6 +165,44 @@ public sealed class CentroAvisosTests
         Assert.Single(ConTickets(Ticket(6, usuarioAlta: "evelyn", modificacion: Ahora)));
     }
 
+    private static AvisoCrmFuente Oportunidad(long id, string tecnico = "T1", string usuarioAlta = "otro",
+        DateTime? alta = null, DateTime? modificacion = null)
+        => new()
+        {
+            IdOportunidad = id,
+            Titulo = $"Oportunidad {id}",
+            Cliente = "Cliente SA",
+            IdTecnico = tecnico,
+            EtapaNombre = "Contactado",
+            UsuarioAlta = usuarioAlta,
+            FechaAlta = alta ?? Ahora.AddHours(-1),
+            FechaModificacion = modificacion
+        };
+
+    private static IReadOnlyList<AvisoDto> ConOportunidades(params AvisoCrmFuente[] oportunidades)
+        => CentroAvisosService.ConstruirAvisos([], [], ["T1"], "evelyn", SinLeidos, Ahora, oportunidades: oportunidades);
+
+    [Fact]
+    public void OportunidadAsignada_AvisaAlVendedorDelUsuario()
+    {
+        var aviso = Assert.Single(ConOportunidades(Oportunidad(9)));
+
+        Assert.Equal("crm:9:T1", aviso.Clave);
+        Assert.Equal(AvisoTipos.Crm, aviso.Tipo);
+        Assert.Equal("Oportunidad asignada: Oportunidad 9", aviso.Titulo);
+        Assert.Equal("Cliente SA · Contactado", aviso.Detalle);
+        Assert.Equal("/crm?id=9", aviso.Ruta);
+    }
+
+    [Fact]
+    public void OportunidadAsignada_IgnoraOtrosVendedoresViejasYPropiasSinTocar()
+    {
+        Assert.Empty(ConOportunidades(Oportunidad(1, tecnico: "T2")));
+        Assert.Empty(ConOportunidades(Oportunidad(2, alta: Ahora.AddDays(-10))));
+        Assert.Empty(ConOportunidades(Oportunidad(3, usuarioAlta: "EVELYN")));
+        Assert.Single(ConOportunidades(Oportunidad(4, alta: Ahora.AddDays(-10), modificacion: Ahora.AddHours(-2))));
+    }
+
     [Fact]
     public void TopeIa_AvisaAlPasarElPorcentajeYAlAlcanzarlo()
     {

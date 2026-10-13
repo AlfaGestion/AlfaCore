@@ -37,7 +37,10 @@ public sealed class AvisosPushNotifier(
 
         try
         {
-            var usuario = await UsuarioDelTecnicoAsync(tecnico, ct);
+            // En el Calendario un responsable puede ser un usuario del sistema ("U:nombre").
+            var usuario = CalendarioResponsables.EsUsuario(tecnico, out var usuarioDirecto)
+                ? usuarioDirecto
+                : await UsuarioDelTecnicoAsync(tecnico, ct);
             if (string.IsNullOrWhiteSpace(usuario)
                 || string.Equals(usuario.Trim(), appUserSession.GetCurrentUserName(string.Empty).Trim(), StringComparison.OrdinalIgnoreCase))
                 return;

@@ -102,13 +102,16 @@ public sealed class CentroAvisosService(
         var tickets = tablas.Contains("TICK_TICKETS") && tablas.Contains("TICK_ESTADOS") && tecnicos.Count > 0
             ? await GetTicketsAsync(cn, tecnicos, ahora, ct)
             : [];
+        var oportunidades = tablas.Contains("CRM_OPORTUNIDADES") && tablas.Contains("CRM_ETAPAS") && tecnicos.Count > 0
+            ? await GetOportunidadesAsync(cn, tecnicos, ahora, ct)
+            : [];
         var leidos = tablas.Contains("ALFACORE_AVISOS_LEIDOS")
             ? await GetLeidosAsync(cn, usuario, ct)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Nunca lanza y está cacheado: si la central no responde, simplemente no hay aviso de tope.
         var tope = iaConsumo is { Disponible: true } ? await iaConsumo.GetTopeEstadoBaseActivaAsync(ct) : null;
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope);
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades);
     }
 
     /// <summary>
@@ -119,7 +122,8 @@ public sealed class CentroAvisosService(
     /// termina. Las reservas de tipos sin técnico asignado se avisan a todos. Tickets abiertos del
     /// técnico con movimiento en los últimos 7 días (salvo los que el usuario se cargó a sí mismo y nadie
     /// tocó); la clave incluye el técnico para que una reasignación vuelva a avisar. Tope de créditos de
-    /// IA del mes: un aviso al pasar el porcentaje y otro al alcanzarlo.
+    /// IA del mes: un aviso al pasar el porcentaje y otro al alcanzarlo. Oportunidades abiertas del CRM
+    /// asignadas al técnico/vendedor del usuario, con la misma regla que los tickets.
     /// </summary>
     internal static IReadOnlyList<AvisoDto> ConstruirAvisos(
         IEnumerable<AvisoEventoFuente> eventos,
@@ -129,7 +133,8 @@ public sealed class CentroAvisosService(
         IReadOnlySet<string> leidos,
         DateTime ahora,
         IEnumerable<AvisoTicketFuente>? tickets = null,
-        IaTopeEstadoDto? topeIa = null)
+        IaTopeEstadoDto? topeIa = null,
+        IEnumerable<AvisoCrmFuente>? oportunidades = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -251,6 +256,28 @@ public sealed class CentroAvisosService(
             });
         }
 
+        foreach (var o in oportunidades ?? [])
+        {
+            var idTecnico = o.IdTecnico.Trim();
+            var movimiento = o.FechaModificacion is DateTime mod && mod > o.FechaAlta ? mod : o.FechaAlta;
+            if (idTecnico.Length == 0 || !esMio.Contains(idTecnico) || movimiento < ahora.AddDays(-DiasAvisoAlta))
+                continue;
+            if (o.FechaModificacion is null && string.Equals(o.UsuarioAlta.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var cliente = string.IsNullOrWhiteSpace(o.Cliente) ? string.Empty : o.Cliente.Trim();
+            var etapa = string.IsNullOrWhiteSpace(o.EtapaNombre) ? string.Empty : o.EtapaNombre.Trim();
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"crm:{o.IdOportunidad}:{idTecnico}",
+                Tipo = AvisoTipos.Crm,
+                Titulo = $"Oportunidad asignada: {o.Titulo.Trim()}",
+                Detalle = string.Join(" · ", new[] { cliente, etapa }.Where(x => x.Length > 0)),
+                FechaHora = movimiento,
+                Ruta = $"/crm?id={o.IdOportunidad.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
         if (topeIa is { TopeCreditos: > 0 } && (topeIa.Alcanzado || topeIa.EnAviso))
         {
             var mes = ahora.ToString("yyyyMM", CultureInfo.InvariantCulture);
@@ -322,7 +349,7 @@ public sealed class CentroAvisosService(
             SELECT name FROM sys.tables
             WHERE name IN (N'CAL_EVENTOS', N'CAL_RECORDATORIOS', N'CAL_RESERVAS_REUNION',
                            N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS',
-                           N'TICK_TICKETS', N'TICK_ESTADOS');
+                           N'TICK_TICKETS', N'TICK_ESTADOS', N'CRM_OPORTUNIDADES', N'CRM_ETAPAS');
             """;
         var tablas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var cmd = new SqlCommand(sql, cn);
@@ -427,6 +454,48 @@ public sealed class CentroAvisosService(
         }
 
         return eventos;
+    }
+
+    private static async Task<List<AvisoCrmFuente>> GetOportunidadesAsync(
+        SqlConnection cn, IReadOnlyList<string> tecnicos, DateTime ahora, CancellationToken ct)
+    {
+        var tecnicoParams = tecnicos.Select((_, i) => $"@T{i}").ToList();
+        var sql = $"""
+            SELECT TOP (50)
+                o.IdOportunidad, ISNULL(o.Titulo, N''), ISNULL(cli.RAZON_SOCIAL, N''),
+                LTRIM(RTRIM(ISNULL(o.IdTecnico, N''))), ISNULL(e.Nombre, N''),
+                LTRIM(RTRIM(ISNULL(o.UsuarioAlta, N''))), o.FechaHoraAlta, o.FechaHoraModificacion
+            FROM dbo.CRM_OPORTUNIDADES o
+            INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+            LEFT JOIN dbo.VT_CLIENTES cli ON LTRIM(RTRIM(cli.Codigo)) = LTRIM(RTRIM(o.ClienteCodigo))
+            WHERE ISNULL(o.Baja, 0) = 0
+              AND ISNULL(e.EsGanada, 0) = 0
+              AND ISNULL(e.EsPerdida, 0) = 0
+              AND LTRIM(RTRIM(ISNULL(o.IdTecnico, N''))) IN ({string.Join(", ", tecnicoParams)})
+              AND COALESCE(o.FechaHoraModificacion, o.FechaHoraAlta) >= @Desde
+            ORDER BY COALESCE(o.FechaHoraModificacion, o.FechaHoraAlta) DESC;
+            """;
+        var oportunidades = new List<AvisoCrmFuente>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Desde", ahora.AddDays(-DiasAvisoAlta));
+        for (var i = 0; i < tecnicos.Count; i++)
+            cmd.Parameters.AddWithValue(tecnicoParams[i], tecnicos[i]);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            oportunidades.Add(new AvisoCrmFuente
+            {
+                IdOportunidad = rd.GetInt64(0),
+                Titulo = rd.GetString(1),
+                Cliente = rd.GetString(2),
+                IdTecnico = rd.GetString(3),
+                EtapaNombre = rd.GetString(4),
+                UsuarioAlta = rd.GetString(5),
+                FechaAlta = rd.GetDateTime(6),
+                FechaModificacion = rd.IsDBNull(7) ? null : rd.GetDateTime(7)
+            });
+        }
+        return oportunidades;
     }
 
     private static async Task<List<AvisoTicketFuente>> GetTicketsAsync(

@@ -16,6 +16,10 @@
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
 
@@ -69,7 +73,7 @@
         min-width: 0;
         overflow: hidden;
         border: 1px solid var(--color-border);
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: var(--color-panel);
     }
 
@@ -129,7 +133,7 @@
         min-width: 260px;
         align-items: center;
         border: 1px solid var(--color-border);
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: var(--input-bg);
         transition: border-color .16s ease, box-shadow .16s ease;
     }
@@ -171,7 +175,7 @@
     .partes-horas-page .partes-filter-summary span {
         padding: 5px 8px;
         border: 1px solid var(--color-border);
-        border-radius: 6px;
+        border-radius: var(--alfa-radius-sm, 4px);
         color: var(--color-muted);
         font-size: 11px;
         line-height: 1;
@@ -233,8 +237,8 @@
         min-width: 0;
         width: 100%;
         border: 1px solid rgba(125, 161, 207, .28);
-        border-radius: 8px;
-        background: rgba(15, 23, 42, .62);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
         color: var(--color-text);
         outline: none;
     }
@@ -246,7 +250,7 @@
     }
 
     .partes-lines__row select option {
-        background: #111827;
+        background: var(--alfa-bg-surface);
         color: var(--color-text);
     }
 
@@ -302,7 +306,7 @@
             grid-template-columns: 1fr 1fr;
             padding: 10px;
             border: 1px solid var(--color-border);
-            border-radius: 8px;
+            border-radius: var(--alfa-radius-sm, 4px);
         }
 
         .partes-lines__row input[type="text"] {
@@ -346,10 +350,9 @@
     }
 </style>
 
-<div class="page-grid partes-horas-page">
+<div class="gd-page gd gd-legacy partes-horas-page">
     <section class="partes-hero">
         <div class="partes-hero__main">
-            <span class="partes-hero__eyebrow">Control operativo</span>
             <h2 class="partes-hero__title">Partes de horas</h2>
             <p class="partes-hero__text">Registro de tiempo por cliente, ticket y técnico, con lectura rápida de excedentes mensuales.</p>
         </div>
@@ -371,130 +374,9 @@
                 <strong>@_dashboard.PartesPendientes</strong>
             </article>
         </div>
-        <div class="partes-hero__actions">
-            <button type="button" class="btn btn--primary" @onclick="NuevoParte">Nuevo parte</button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">Recargar</button>
-        </div>
     </section>
 
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
-
-    <section class="panel-card partes-search-card">
-        <div class="partes-search">
-            <div class="partes-search__input">
-                <i class="bi bi-search partes-search__icon" aria-hidden="true"></i>
-                <input type="search"
-                       value="@_quickSearch"
-                       @oninput="OnQuickSearchChanged"
-                       @onfocus="OpenFiltros"
-                       @onkeydown="HandleQuickSearchKeyDownAsync"
-                       placeholder="Buscar por cliente o número de ticket" />
-            </div>
-            <button type="button" class="btn btn--primary" @onclick="AplicarBusquedaAsync" disabled="@_loading">Buscar</button>
-            <button type="button" class="btn btn--ghost" @onclick="ToggleFiltros">@(_filtersExpanded ? "Ocultar filtros" : "Filtros")</button>
-            <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
-        </div>
-
-        <div class="partes-filter-summary">
-            <span>@FormatDateRange()</span>
-            @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
-            {
-                <span>Cliente @_filters.ClienteCodigo</span>
-            }
-            @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
-            {
-                <span>Técnico @_filters.IdTecnico</span>
-            }
-            @if (_filters.SoloFacturables)
-            {
-                <span>Facturables</span>
-            }
-            @if (_filters.SoloExcedentes)
-            {
-                <span>Excedentes</span>
-            }
-        </div>
-
-        @if (_filtersExpanded)
-        {
-            <div class="partes-filters-panel">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_filters.FechaDesde" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_filters.FechaHasta" />
-                </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_filters.IdTecnico">
-                        <option value="">Todos</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select @bind="_filters.Estado">
-                        <option value="">Todos</option>
-                        @foreach (var estado in _lookups.Estados)
-                        {
-                            <option value="@estado">@LabelEstado(estado)</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_filters.TipoTrabajo">
-                        <option value="">Todos</option>
-                        @foreach (var tipo in _lookups.TiposTrabajo)
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
-                </div>
-                <div class="partes-filter-checks">
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloFacturables" />
-                        <span>Solo facturables</span>
-                    </label>
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
-                        <span>Solo excedentes</span>
-                    </label>
-                </div>
-                <div class="actions partes-filters-panel__actions">
-                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">Aplicar filtros</button>
-                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
-                </div>
-            </div>
-        }
-    </section>
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     @if (_showEditor)
     {
@@ -812,6 +694,203 @@
     private string _quickSearch = string.Empty;
     private int? _ticketNumeroBusqueda;
     private int? _pendingLineaDescripcionFocusIndex;
+
+    // Smart Search en el Context Toolbar (antes era una tarjeta con Buscar / Filtros / Limpiar).
+    private RenderFragment RenderPartesSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="HandlePartesSearchKeyDown">
+        <div class="smart-search__bar @(_filtersExpanded ? "is-open" : string.Empty)">
+            <i class="bi bi-search"></i>
+            <button type="button" class="smart-search__filter-button @(_filtersExpanded ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                <span class="smart-search__active-filter smart-search__active-filter--periodo" title="Período: @FormatDateRange()">
+                    <span>@FormatDateRangeCorto()</span>
+                </span>
+                @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro cliente" @onclick='() => QuitarFiltroAsync("cliente")'>
+                        <span>Cliente @_filters.ClienteCodigo</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro técnico" @onclick='() => QuitarFiltroAsync("tecnico")'>
+                        <span>Técnico @_filters.IdTecnico</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (_filters.SoloFacturables)
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro facturables" @onclick='() => QuitarFiltroAsync("facturables")'>
+                        <span>Facturables</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (_filters.SoloExcedentes)
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro excedentes" @onclick='() => QuitarFiltroAsync("excedentes")'>
+                        <span>Excedentes</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   value="@_quickSearch"
+                   @oninput="OnQuickSearchChanged"
+                   @onkeydown="HandleQuickSearchKeyDownAsync"
+                   placeholder="Buscar por cliente o número de ticket" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtersExpanded" @onclick="ToggleFiltros">
+                <i class="bi @(_filtersExpanded ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_filtersExpanded)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <InputDate @bind-Value="_filters.FechaDesde" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <InputDate @bind-Value="_filters.FechaHasta" />
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <div class="smart-search__inline">
+                        <label>Cliente</label>
+                        <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Técnico</label>
+                        <select @bind="_filters.IdTecnico">
+                            <option value="">Todos</option>
+                            @foreach (var tecnico in _lookups.Tecnicos)
+                            {
+                                <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Estado</label>
+                        <select @bind="_filters.Estado">
+                            <option value="">Todos</option>
+                            @foreach (var estado in _lookups.Estados)
+                            {
+                                <option value="@estado">@LabelEstado(estado)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Tipo</label>
+                        <select @bind="_filters.TipoTrabajo">
+                            <option value="">Todos</option>
+                            @foreach (var tipo in _lookups.TiposTrabajo)
+                            {
+                                <option value="@tipo">@LabelTipo(tipo)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Opciones</h4>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloFacturables" />
+                        <span>Solo facturables</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
+                        <span>Solo excedentes</span>
+                    </label>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading"><i class="bi bi-search"></i> Aplicar</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loading"><i class="bi bi-eraser"></i> Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void CerrarFiltros() => _filtersExpanded = false;
+
+    private void HandlePartesSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            CerrarFiltros();
+    }
+
+    private async Task QuitarFiltroAsync(string clave)
+    {
+        switch (clave)
+        {
+            case "cliente": _filters.ClienteCodigo = string.Empty; break;
+            case "tecnico": _filters.IdTecnico = string.Empty; break;
+            case "facturables": _filters.SoloFacturables = false; break;
+            case "excedentes": _filters.SoloExcedentes = false; break;
+        }
+        await AplicarFiltrosAsync();
+    }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _loading, _filtersExpanded, _quickSearch, _filters.ClienteCodigo, _filters.IdTecnico, _filters.SoloFacturables, _filters.SoloExcedentes, _filters.FechaDesde, _filters.FechaHasta, _lookups.Tecnicos.Count);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "partes-horas",
+            Title = "Partes de horas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildPartesHoras(RouteContext, Nav, "partes"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nuevo",
+                    Label = "Nuevo parte",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { NuevoParte(); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loading,
+                    OnClick = () => InvokeAsync(async () => { await RecargarAsync(); StateHasChanged(); })
+                },
+            ],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderPartesSearch(),
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -1160,6 +1239,15 @@
 
     private static string FormatMinutes(int minutes)
         => $"{minutes / 60}h {minutes % 60:00}m";
+
+    // Versión corta para el chip del buscador (el chip estándar es angosto); el período completo
+    // queda en el title.
+    private string FormatDateRangeCorto()
+    {
+        var desde = _filters.FechaDesde?.ToString("dd/MM") ?? "…";
+        var hasta = _filters.FechaHasta?.ToString("dd/MM") ?? "…";
+        return $"{desde} – {hasta}";
+    }
 
     private string FormatDateRange()
     {

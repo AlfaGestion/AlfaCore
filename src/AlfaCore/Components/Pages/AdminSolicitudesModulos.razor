@@ -8,99 +8,108 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
 <PageTitle>Solicitudes de módulos | AlfaNet</PageTitle>
 
-<div class="panel-card">
-    <p class="panel-card__subtitle">Módulos que un cliente pidió y todavía no se aprobaron ni rechazaron — se cargan desde el panel Cliente → Módulos con "Solicitar".</p>
+@* Administrar → Solicitudes (AlfaDesign v1, 2026-10-07). Aprobar y rechazar piden confirmación:
+   impactan en ALFA_CENTRAL (aprobar activa el módulo o contrata el plan pedido). *@
 
-    @if (_loading)
-    {
-        <p>Cargando solicitudes...</p>
-    }
-    else if (!IsSuperAdmin)
-    {
-        <div class="editor-msg editor-msg--warning">
-            <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden ver esta sección.</p>
-        </div>
-    }
-    else
-    {
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="editor-msg editor-msg--success">
-                <strong>Listo</strong>
-                <p>@_message</p>
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+<div class="adm-page">
+    <div class="adm">
+        <header class="adm-header">
+            <div>
+                <h2>Solicitudes de módulos</h2>
+                <p>Módulos que un cliente pidió y todavía no se aprobaron ni rechazaron. Se cargan desde el panel Cliente → Módulos con "Solicitar".</p>
             </div>
+        </header>
+
+        @if (_loading)
+        {
+            <AlfaEmptyState Title="Cargando solicitudes" Message="Buscando pedidos pendientes." />
         }
-
-        @if (!string.IsNullOrWhiteSpace(_error))
+        else if (!IsSuperAdmin)
         {
-            <div class="editor-msg editor-msg--warning">
-                <strong>No se pudo completar la operación</strong>
-                <p>@_error</p>
-            </div>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
         }
-
-        @if (_items.Count == 0)
+        else if (_loadError is not null)
         {
-            <div class="shell-empty-state">
-                <strong>No hay solicitudes pendientes.</strong>
-                <span>Todo lo que se pide desde Cliente → Módulos aparece acá hasta que se aprueba o se rechaza.</span>
-            </div>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar las solicitudes" Message="@_loadError" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => LoadAsync()" />
+        }
+        else if (_items.Count == 0)
+        {
+            <AlfaEmptyState Title="No hay solicitudes pendientes" Message="Todo lo que se pide desde Cliente → Módulos aparece acá hasta que se aprueba o se rechaza." />
         }
         else
         {
-            <div class="table-responsive admin-table-wrap">
-                <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                    <thead>
-                        <tr>
-                            <th>Cliente</th>
-                            <th>Módulo</th>
-                            <th>Plan</th>
-                            <th>Precio</th>
-                            <th>Pedido</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _items)
-                        {
+            <section class="adm-card" aria-label="Solicitudes pendientes">
+                <div class="adm-table-wrap">
+                    <table class="adm-table">
+                        <thead>
                             <tr>
-                                <td>@item.ClienteNombre <span class="shell-empty-state__eyebrow">(@item.IdCliente)</span></td>
-                                <td>@item.Nombre</td>
-                                <td>@(string.IsNullOrWhiteSpace(item.PlanNombre) ? "—" : item.PlanNombre)</td>
-                                <td>@item.Precio.ToString("C2")</td>
-                                <td>
-                                    @if (item.SolicitadoUtc is not null)
-                                    {
-                                        @item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
-                                        @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
-                                        {
-                                            <span> — @item.SolicitadoPor</span>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </td>
-                                <td class="text-end">
-                                    <div class="d-inline-flex gap-2">
-                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RechazarAsync(item)">Rechazar</button>
-                                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => AprobarAsync(item)">Aprobar</button>
-                                    </div>
-                                </td>
+                                <th>Cliente</th>
+                                <th>Módulo</th>
+                                <th>Plan</th>
+                                <th class="is-number">Precio</th>
+                                <th>Pedido</th>
+                                <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _items)
+                            {
+                                <tr>
+                                    <td><strong>@item.ClienteNombre</strong><small>@item.IdCliente</small></td>
+                                    <td>@item.Nombre</td>
+                                    <td>@(string.IsNullOrWhiteSpace(item.PlanNombre) ? "—" : item.PlanNombre)</td>
+                                    <td class="is-number">@item.Precio.ToString("C2")</td>
+                                    <td class="is-nowrap">
+                                        @if (item.SolicitadoUtc is not null)
+                                        {
+                                            <span>@item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
+                                            {
+                                                <small>@item.SolicitadoPor</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </td>
+                                    <td class="adm-actions-col">
+                                        <div class="adm-row-actions">
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-circle" Disabled="@_busy" OnClick="_ => Request(item, aprobar: false)">Rechazar</AlfaButton>
+                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-check2" Disabled="@_busy" OnClick="_ => Request(item, aprobar: true)">Aprobar</AlfaButton>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="alfa-data-view-footer">
+                    <span class="alfa-data-view-footer__summary">@(_items.Count == 1 ? "1 solicitud pendiente" : $"{_items.Count} solicitudes pendientes")</span>
+                </footer>
+            </section>
         }
-    }
+    </div>
 </div>
+
+<AlfaConfirmDialog Open="@(_pending is not null)"
+                   Title="@(_pendingAprobar ? "Aprobar solicitud" : "Rechazar solicitud")"
+                   Message="@(_pending is null ? string.Empty : _pendingAprobar
+                       ? $"¿Aprobar {_pending.Nombre} para {_pending.ClienteNombre}?"
+                       : $"¿Rechazar la solicitud de {_pending.Nombre} para {_pending.ClienteNombre}?")"
+                   SecondaryMessage="@(_pendingAprobar
+                       ? (_pending?.IdPlan is not null ? "Se contrata el plan pedido y queda activo para el cliente." : "El módulo queda activo para el cliente.")
+                       : "La solicitud se descarta; el cliente puede volver a pedirlo.")"
+                   ConfirmLabel="@(_pendingAprobar ? "Aprobar" : "Rechazar")"
+                   LoadingLabel="@(_pendingAprobar ? "Aprobando..." : "Rechazando...")"
+                   Loading="@_busy"
+                   OnConfirm="ConfirmAsync"
+                   OnCancel="CancelPending" />
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -110,9 +119,14 @@
 
     private readonly List<SolicitudModuloDto> _items = [];
     private bool _loading = true;
+    private bool _busy;
+    private string? _loadError;
+    private AppUiMessage? _feedback;
+    private SolicitudModuloDto? _pending;
+    private bool _pendingAprobar;
+
     private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
-    private string _message = string.Empty;
-    private string _error = string.Empty;
+    private string UsuarioActual => AppUserSession.CurrentUser?.UserName ?? string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -144,12 +158,14 @@
         Title = "Solicitudes",
         Breadcrumb = ["Administrar", "Solicitudes"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "solicitudes")
     });
 
     private async Task LoadAsync()
     {
         _loading = true;
+        _loadError = null;
         try
         {
             _items.Clear();
@@ -157,9 +173,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _loadError = UserMessage(ex);
         }
         finally
         {
@@ -167,79 +181,75 @@
         }
     }
 
-    private async Task AprobarAsync(SolicitudModuloDto item)
+    private void Request(SolicitudModuloDto item, bool aprobar)
     {
-        _message = string.Empty;
-        _error = string.Empty;
+        _pending = item;
+        _pendingAprobar = aprobar;
+    }
 
+    private void CancelPending()
+    {
+        if (!_busy)
+            _pending = null;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_pending is null || _busy)
+            return;
+
+        var item = _pending;
+        var aprobar = _pendingAprobar;
+        _busy = true;
         try
         {
-            // Si la solicitud tiene un plan guardado (registro público con Planes reales que no
-            // pudo autoservirse en Prueba — ver ElegirPlanesAsync), aprobar contrata ese plan en
-            // vez de activar el módulo "a secas": es acá donde alguien de Alfa confirma el pago,
-            // mismo criterio que "Confirmar pago" en el panel Cliente → Módulos.
-            if (item.IdPlan is int idPlan)
+            if (aprobar)
             {
-                await AdminSvc.ContratarPlanAsync(item.IdCliente, idPlan, AppUserSession.CurrentUser?.UserName ?? string.Empty);
+                // Si la solicitud tiene un plan guardado (registro público con Planes reales que no
+                // pudo autoservirse en Prueba — ver ElegirPlanesAsync), aprobar contrata ese plan en
+                // vez de activar el módulo "a secas": es acá donde alguien de Alfa confirma el pago,
+                // mismo criterio que "Confirmar pago" en el panel Cliente → Módulos.
+                if (item.IdPlan is int idPlan)
+                {
+                    await AdminSvc.ContratarPlanAsync(item.IdCliente, idPlan, UsuarioActual);
+                }
+                else
+                {
+                    await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+                    {
+                        IdCliente = item.IdCliente,
+                        IdModulo = item.IdModulo,
+                        ActivadoPor = UsuarioActual
+                    });
+                }
+
+                _feedback = AppUiMessage.Success("Solicitud aprobada", $"Módulo {item.Nombre} aprobado y activado para {item.ClienteNombre}.");
             }
             else
             {
-                await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+                await AdminSvc.RechazarModuloAsync(new RechazarModuloRequest
                 {
                     IdCliente = item.IdCliente,
                     IdModulo = item.IdModulo,
-                    ActivadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+                    DecididoPor = UsuarioActual
                 });
+
+                _feedback = AppUiMessage.Success("Solicitud rechazada", $"Solicitud de {item.Nombre} rechazada.");
             }
 
             await LoadAsync();
-            _message = $"Módulo {item.Nombre} aprobado y activado para {item.ClienteNombre}.";
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _feedback = AppUiMessage.Error(aprobar ? "No se pudo aprobar la solicitud" : "No se pudo rechazar la solicitud", UserMessage(ex));
+        }
+        finally
+        {
+            _busy = false;
+            _pending = null;
         }
     }
 
-    private async Task RechazarAsync(SolicitudModuloDto item)
-    {
-        if (!await ConfirmAsync($"¿Rechazar la solicitud de {item.Nombre} para {item.ClienteNombre}?"))
-            return;
-
-        _message = string.Empty;
-        _error = string.Empty;
-
-        try
-        {
-            await AdminSvc.RechazarModuloAsync(new RechazarModuloRequest
-            {
-                IdCliente = item.IdCliente,
-                IdModulo = item.IdModulo,
-                DecididoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
-            });
-
-            await LoadAsync();
-            _message = $"Solicitud de {item.Nombre} rechazada.";
-        }
-        catch (Exception ex)
-        {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
-        }
-    }
-
-    private async Task<bool> ConfirmAsync(string message)
-    {
-        try
-        {
-            return await JS.InvokeAsync<bool>("confirm", message);
-        }
-        catch
-        {
-            return true;
-        }
-    }
+    private static string UserMessage(Exception ex)
+        => ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
 }

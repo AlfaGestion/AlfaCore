@@ -10,150 +10,37 @@
 
 <PageTitle>Reportes de Compras | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Reportes de Compras</h2>
-            <p class="page-intro__text">Generador de informes y estadísticas del módulo de compras.</p>
+            <h2>Reportes de Compras</h2>
+            <p>Generador de informes y estadísticas del módulo de compras.</p>
         </div>
-    </div>
+    </header>
 
-    @* ── Panel de parámetros ──────────────────────────────────────────── *@
-    <section class="panel-card filters-card smart-search-card">
+    <AlfaTabs Items="TiposReporte" ActiveKey="@_tipoReporte.ToString()" ActiveKeyChanged="OnTipoReporteChanged" AriaLabel="Tipo de reporte" />
 
-        <div class="panel-card__header" style="margin-bottom:0.5rem;">
-            <div>
-                <h3 class="panel-card__title">Parámetros</h3>
-                <p class="panel-card__subtitle">Período, filtros y tipo de reporte</p>
-            </div>
-        </div>
+    @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
+    {
+        <p class="gd-hint">Para Cuenta Corriente conviene filtrar por proveedor (buscador de arriba). Sin filtro se devuelven todos los asientos contables del período.</p>
+    }
 
-        @* Tipo de reporte *@
-        <div class="quick-filter-bar" style="margin-bottom:0.75rem;">
-            <span style="font-size:0.78rem;color:var(--color-text-muted);align-self:center;margin-right:0.5rem;">Tipo:</span>
-            <button type="button" class="@TipoCss(TipoReporteCompras.ResumenDeCompras)"
-                    @onclick="() => _tipoReporte = TipoReporteCompras.ResumenDeCompras">
-                Resumen de Compras
-            </button>
-            <button type="button" class="@TipoCss(TipoReporteCompras.DetalleDeCompras)"
-                    @onclick="() => _tipoReporte = TipoReporteCompras.DetalleDeCompras">
-                Detalle de Compras
-            </button>
-            <button type="button" class="@TipoCss(TipoReporteCompras.CuentaCorriente)"
-                    @onclick="() => _tipoReporte = TipoReporteCompras.CuentaCorriente">
-                Cuenta Corriente
-            </button>
-        </div>
-
-        @* Smart search *@
-        <div class="smart-search">
-
-            @* Barra principal: proveedor + toggle *@
-            <div class="smart-search__bar">
-                <i class="bi bi-search"></i>
-                <InputText @bind-Value="_filtros.Proveedor"
-                           placeholder="Buscar por proveedor o cuenta…" />
-                <button type="button"
-                        class="smart-search__toggle"
-                        @onclick="TogglePanel"
-                        aria-label="Mostrar filtros">
-                    <i class="bi @(_panelAbierto ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                </button>
-            </div>
-
-            @* Chips de filtros activos *@
-            @if (BuildFilterChips() is var chips && chips.Count > 0)
-            {
-                <div class="smart-search__chips">
-                    @foreach (var chip in chips)
-                    {
-                        <button type="button" class="smart-chip" @onclick="() => RemoveChip(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
-                        </button>
-                    }
-                    <button type="button" class="smart-chip smart-chip--clear" @onclick="LimpiarAsync">
-                        Limpiar todo <i class="bi bi-x-circle"></i>
-                    </button>
-                </div>
-            }
-
-            @* Panel expandible *@
-            @if (_panelAbierto)
-            {
-                <div class="smart-search__panel">
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-calendar3"></i> Período</h4>
-                        <div class="field field--sm">
-                            <label>Desde</label>
-                            <InputDate @bind-Value="_filtros.FechaDesde" />
-                        </div>
-                        <div class="field field--sm">
-                            <label>Hasta</label>
-                            <InputDate @bind-Value="_filtros.FechaHasta" />
-                        </div>
-                        <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.25rem;">
-                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("hoy")'>Hoy</button>
-                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes")'>Este mes</button>
-                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes-anterior")'>Mes ant.</button>
-                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("anio")'>Año actual</button>
-                        </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-receipt"></i> Comprobante</h4>
-                        <div class="field field--sm">
-                            <label>Tipo (TC)</label>
-                            <InputSelect @bind-Value="_filtros.TipoComprobante" class="field__select">
-                                <option value="">Todos</option>
-                                @foreach (var tc in _options.TiposComprobante)
-                                {
-                                    <option value="@tc">@tc</option>
-                                }
-                            </InputSelect>
-                        </div>
-                    </div>
-                </div>
-            }
-
-        </div>
-
-        @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
-        {
-            <div class="filters-summary" style="margin-top:0.5rem;">
-                <span class="filters-summary__label">Nota</span>
-                <span class="filters-summary__text">Para Cuenta Corriente es recomendable filtrar por proveedor. Sin filtro se devuelven todos los asientos contables del período.</span>
-            </div>
-        }
-
-        <div class="actions" style="margin-top:0.75rem;">
-            <button class="btn btn--primary" @onclick="GenerarAsync" disabled="@_isLoading">
-                @(_isLoading ? "Generando…" : "Generar reporte")
-            </button>
-            <button class="btn btn--ghost" @onclick="LimpiarAsync" disabled="@_isLoading">Limpiar</button>
-        </div>
-    </section>
-
-    @* ── Estado de carga / error ─────────────────────────────────────── *@
+    @* ── Estado inicial / carga / error ─────────────────────────────── *@
     @if (_isLoading)
     {
-        <div class="loading">Generando reporte…</div>
+        <AlfaEmptyState Title="Generando reporte" Message="Buscando datos del período." />
     }
     else if (_error is not null)
     {
-        <section class="panel-card">
-            <div class="empty-state">
-                <span class="empty-state__eyebrow">Error</span>
-                <h3>@_error.Message</h3>
-                @if (_error.HasSuggestion)
-                {
-                    <p>@_error.Suggestion</p>
-                }
-                @if (_error.HasCode)
-                {
-                    <p style="font-size:0.78rem;color:var(--color-text-muted);">Código: @_error.Code</p>
-                }
-            </div>
-        </section>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="@_error.Message" Message="@ErrorDetalle(_error)" />
+    }
+    else if (!_mostrarResultados)
+    {
+        <AlfaEmptyState Title="@($"{TipoReporteLabel(_tipoReporte)} — {GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta)}")"
+                        Message="Ajustá período, proveedor o tipo de comprobante en el buscador de arriba y generá el reporte."
+                        ActionLabel="Generar reporte"
+                        ActionIcon="bi bi-play-fill"
+                        OnAction="_ => GenerarAsync()" />
     }
 
     @* ── Resultados: Resumen de Compras ─────────────────────────────── *@
@@ -169,16 +56,6 @@
 
         <DataTable Titulo="Resumen por proveedor"
                    Subtitulo="@($"{_resumen.Filas.Count} proveedores en el período")">
-            <Toolbar>
-                <a class="btn btn--ghost" href="@GetExcelUrl("resumen")" title="Exportar a Excel">
-                    <i class="bi bi-file-earmark-excel"></i>
-                    <span>Excel</span>
-                </a>
-                <button type="button" class="btn btn--ghost" @onclick="ImprimirPdfAsync" title="Imprimir / Guardar PDF">
-                    <i class="bi bi-printer"></i>
-                    <span>PDF</span>
-                </button>
-            </Toolbar>
             <Header>
                 <tr>
                     <th>Cuenta</th>
@@ -195,11 +72,7 @@
                 {
                     <tr>
                         <td colspan="7">
-                            <div class="empty-state">
-                                <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin comprobantes en el período</h3>
-                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
-                            </div>
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes en el período" Message="Ampliá el rango de fechas o revisá los filtros aplicados." />
                         </td>
                     </tr>
                 }
@@ -218,10 +91,10 @@
                         </tr>
                     }
                     <tr class="data-table__totals">
-                        <td colspan="3" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">Total página</td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.NetoTotal)</td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.IvaTotal)</td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.TotalComprado)</td>
+                        <td colspan="3" class="gd-totals-label">Total página</td>
+                        <td style="text-align:right;">@Moneda(_resumen.NetoTotal)</td>
+                        <td style="text-align:right;">@Moneda(_resumen.IvaTotal)</td>
+                        <td style="text-align:right;">@Moneda(_resumen.TotalComprado)</td>
                         <td></td>
                     </tr>
                 }
@@ -234,26 +107,6 @@
     {
         <DataTable Titulo="Detalle de comprobantes"
                    Subtitulo="@GetSubtituloDetalle()">
-            <Toolbar>
-                @if (_detalleCompras.TotalPaginas > 1)
-                {
-                    <div class="pagination">
-                        <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
-                                disabled="@(_filtros.Pagina <= 1)">Anterior</button>
-                        <span>Página @_filtros.Pagina de @_detalleCompras.TotalPaginas</span>
-                        <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
-                                disabled="@(_filtros.Pagina >= _detalleCompras.TotalPaginas)">Siguiente</button>
-                    </div>
-                }
-                <a class="btn btn--ghost" href="@GetExcelUrl("detalle")" title="Exportar a Excel">
-                    <i class="bi bi-file-earmark-excel"></i>
-                    <span>Excel</span>
-                </a>
-                <button type="button" class="btn btn--ghost" @onclick="ImprimirPdfAsync" title="Imprimir / Guardar PDF">
-                    <i class="bi bi-printer"></i>
-                    <span>PDF</span>
-                </button>
-            </Toolbar>
             <Header>
                 <tr>
                     <th>Fecha</th>
@@ -274,11 +127,7 @@
                 {
                     <tr>
                         <td colspan="11">
-                            <div class="empty-state">
-                                <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin comprobantes en el período</h3>
-                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
-                            </div>
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes en el período" Message="Ampliá el rango de fechas o revisá los filtros aplicados." />
                         </td>
                     </tr>
                 }
@@ -298,21 +147,19 @@
                             <td style="text-align:right;"><strong>@Moneda(item.Total)</strong></td>
                             <td>@item.Usuario</td>
                             <td>
-                                <a class="btn btn--ghost btn--sm"
-                                   href="@BuildViewerUrl(item.Tc, item.IdComprobante)"
-                                   title="Ver detalle del comprobante">
+                                <a class="adm-link-button" href="@BuildViewerUrl(item.Tc, item.IdComprobante)" title="Ver detalle del comprobante" aria-label="Ver detalle del comprobante">
                                     <i class="bi bi-eye"></i>
                                 </a>
                             </td>
                         </tr>
                     }
                     <tr class="data-table__totals">
-                        <td colspan="6" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">
+                        <td colspan="6" class="gd-totals-label">
                             Total página (@_detalleCompras.Items.Count comprobantes)
                         </td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(TotalNetoDetalle)</td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(TotalIvaDetalle)</td>
-                        <td style="text-align:right; font-weight:700;">@Moneda(TotalTotalDetalle)</td>
+                        <td style="text-align:right;">@Moneda(TotalNetoDetalle)</td>
+                        <td style="text-align:right;">@Moneda(TotalIvaDetalle)</td>
+                        <td style="text-align:right;">@Moneda(TotalTotalDetalle)</td>
                         <td colspan="2"></td>
                     </tr>
                 }
@@ -335,18 +182,6 @@
 
         <DataTable Titulo="Cuenta corriente de proveedores"
                    Subtitulo="@GetSubtituloCC()">
-            <Toolbar>
-                @if (_cuentaCorriente.TotalPaginas > 1)
-                {
-                    <div class="pagination">
-                        <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
-                                disabled="@(_filtros.Pagina <= 1)">Anterior</button>
-                        <span>Página @_filtros.Pagina de @_cuentaCorriente.TotalPaginas</span>
-                        <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
-                                disabled="@(_filtros.Pagina >= _cuentaCorriente.TotalPaginas)">Siguiente</button>
-                    </div>
-                }
-            </Toolbar>
             <Header>
                 <tr>
                     <th>Cuenta</th>
@@ -364,11 +199,7 @@
                 {
                     <tr>
                         <td colspan="8">
-                            <div class="empty-state">
-                                <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin movimientos en el período</h3>
-                                <p>Para Cuenta Corriente filtrá por proveedor para ver sus movimientos en MV_ASIENTOS.</p>
-                            </div>
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos en el período" Message="Para Cuenta Corriente filtrá por proveedor para ver sus movimientos en MV_ASIENTOS." />
                         </td>
                     </tr>
                 }
@@ -388,7 +219,7 @@
                                 </span>
                             </td>
                             <td style="text-align:right;">@Moneda(item.Importe)</td>
-                            <td style="text-align:right; color:@(item.ImporteSignado < 0 ? "var(--color-success,#2e7d32)" : "inherit")">
+                            <td style="text-align:right;" class="@(item.ImporteSignado < 0 ? "balance-pos" : string.Empty)">
                                 <strong>@Moneda(item.ImporteSignado)</strong>
                             </td>
                         </tr>
@@ -398,7 +229,7 @@
         </DataTable>
     }
 
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -441,11 +272,191 @@
             PageHeader.Clear();
     }
 
+    private static readonly IReadOnlyList<AlfaTabItem> TiposReporte =
+    [
+        new(nameof(TipoReporteCompras.ResumenDeCompras), "Resumen de compras"),
+        new(nameof(TipoReporteCompras.DetalleDeCompras), "Detalle de compras"),
+        new(nameof(TipoReporteCompras.CuentaCorriente), "Cuenta corriente")
+    ];
+
+    private static string TipoReporteLabel(TipoReporteCompras tipo) => tipo switch
+    {
+        TipoReporteCompras.DetalleDeCompras => "Detalle de compras",
+        TipoReporteCompras.CuentaCorriente => "Cuenta corriente",
+        _ => "Resumen de compras"
+    };
+
+    private void OnTipoReporteChanged(string? key)
+    {
+        if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || tipo == _tipoReporte)
+            return;
+
+        // Cada tipo tiene su propio resultado: al cambiar de pestaña se vuelve al estado inicial.
+        _tipoReporte = tipo;
+        _mostrarResultados = false;
+        _error = null;
+        UpdatePageHeader();
+    }
+
+    private int TotalPaginasActual => _tipoReporte switch
+    {
+        TipoReporteCompras.DetalleDeCompras => _detalleCompras?.TotalPaginas ?? 0,
+        TipoReporteCompras.CuentaCorriente => _cuentaCorriente?.TotalPaginas ?? 0,
+        _ => 0
+    };
+
+    // Excel existe para Resumen y Detalle (Cuenta corriente no tiene exportación).
+    private bool PuedeExportarExcel => _mostrarResultados && _tipoReporte != TipoReporteCompras.CuentaCorriente;
+
+    // Las acciones y la paginación corren desde el Context Toolbar (otro componente):
+    // InvokeAsync + StateHasChanged para que esta página se vuelva a dibujar.
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "reportes")
+        ModuleKey = "compras",
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "reportes"),
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
+        Actions =
+        [
+            new PageHeaderAction { Key = "generar", Label = _isLoading ? "Generando..." : "Generar reporte", Icon = "bi-play-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _isLoading, OnClick = () => InvokeAsync(async () => { await GenerarAsync(); StateHasChanged(); }) },
+            new PageHeaderAction { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !PuedeExportarExcel, OnClick = () => InvokeAsync(() => Nav.NavigateTo(GetExcelUrl(_tipoReporte == TipoReporteCompras.DetalleDeCompras ? "detalle" : "resumen"), forceLoad: true)) },
+            new PageHeaderAction { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !_mostrarResultados, OnClick = () => InvokeAsync(ImprimirPdfAsync) }
+        ],
+        Pagination = !_mostrarResultados || TotalPaginasActual <= 1 ? null : new PageHeaderPaginationConfig
+        {
+            PageLabel = $"{_filtros.Pagina} / {TotalPaginasActual}",
+            HasPrevious = _filtros.Pagina > 1,
+            HasNext = _filtros.Pagina < TotalPaginasActual,
+            Disabled = _isLoading,
+            OnPrevious = () => InvokeAsync(async () => { await PaginaAnteriorAsync(); StateHasChanged(); }),
+            OnNext = () => InvokeAsync(async () => { await PaginaSiguienteAsync(); StateHasChanged(); })
+        }
     });
+
+    // ── Smart Search (Context Toolbar) ────────────────────────────────────────────
+    // El fragmento se dibuja en el toolbar pero su estado vive acá: cada cambio vuelve a
+    // publicar el header (mismo patrón que Contactos y Administrar → Clientes).
+    private RenderFragment RenderSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var chips = BuildFilterChips(); }
+        <div class="smart-search__bar @(_panelAbierto ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button @(_panelAbierto || chips.Count > 1 ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" aria-expanded="@_panelAbierto" @onclick="TogglePanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in chips.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" title="@chip.Label" aria-label="@chip.Label" @onclick="() => RemoveChip(chip.Key)">
+                        <span>@chip.Label</span>
+                        @if (chip.Key != "periodo")
+                        {
+                            <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                        }
+                    </button>
+                }
+                @if (chips.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(c => c.Label))">+@(chips.Count - 2)</span>
+                }
+            </div>
+            <input type="search" placeholder="Buscar por proveedor o cuenta..." value="@_filtros.Proveedor" @oninput="OnProveedorInput" @onkeydown="HandleSearchKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="TogglePanel" aria-label="Mostrar filtros" aria-expanded="@_panelAbierto">
+                <i class="bi @(_panelAbierto ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_panelAbierto)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="ClosePanel"></button>
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleSearchKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    @{ var rangoActivo = GestionRangosFecha.Detectar(_filtros.FechaDesde, _filtros.FechaHasta); }
+                    @foreach (var rango in GestionRangosFecha.Todos.Where(r => r.Key != "todo"))
+                    {
+                        <button type="button" class="@(rangoActivo == rango.Key ? "smart-option is-active" : "smart-option")" @onclick="() => SetRango(rango.Key)">@rango.Label</button>
+                    }
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <input type="date" value="@(_filtros.FechaDesde?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: true)" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <input type="date" value="@(_filtros.FechaHasta?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: false)" />
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-receipt"></i> Comprobante</h4>
+                    <div class="smart-search__inline">
+                        <label>Tipo (TC)</label>
+                        <select value="@(_filtros.TipoComprobante ?? string.Empty)" @onchange="OnTcChanged">
+                            <option value="">Todos</option>
+                            @foreach (var tc in _options.TiposComprobante)
+                            {
+                                <option value="@tc">@tc</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => LimpiarAsync()">Limpiar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-play-fill" OnClick="_ => GenerarDesdePanelAsync()">Generar reporte</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void OnProveedorInput(ChangeEventArgs e)
+    {
+        var texto = e.Value?.ToString();
+        _filtros.Proveedor = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+        UpdatePageHeader();
+    }
+
+    private void OnTcChanged(ChangeEventArgs e)
+    {
+        var tc = e.Value?.ToString();
+        _filtros.TipoComprobante = string.IsNullOrWhiteSpace(tc) ? null : tc;
+        UpdatePageHeader();
+    }
+
+    private void SetFecha(ChangeEventArgs e, bool desde)
+    {
+        DateTime? valor = DateTime.TryParse(e.Value?.ToString(), out var fecha) ? fecha : null;
+        if (desde) _filtros.FechaDesde = valor; else _filtros.FechaHasta = valor;
+        UpdatePageHeader();
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GenerarDesdePanelAsync();
+        else if (e.Key == "Escape")
+            ClosePanel();
+    }
+
+    private async Task GenerarDesdePanelAsync()
+    {
+        _panelAbierto = false;
+        await GenerarAsync();
+    }
+
+    private void TogglePanel()
+    {
+        _panelAbierto = !_panelAbierto;
+        UpdatePageHeader();
+    }
+
+    private void ClosePanel()
+    {
+        _panelAbierto = false;
+        UpdatePageHeader();
+    }
+
+    private static string ErrorDetalle(AppUiMessage error)
+        => string.Join(" ", new[] { error.HasSuggestion ? error.Suggestion : null, error.HasCode ? $"Código: {error.Code}." : null }
+            .Where(x => !string.IsNullOrWhiteSpace(x)));
 
     protected override async Task OnInitializedAsync()
     {
@@ -454,14 +465,22 @@
             "No se pudieron cargar las opciones del reporte.");
         if (result.Success && result.Value is not null)
             _options = result.Value;
+        UpdatePageHeader();
     }
 
     private async Task GenerarAsync()
     {
+        // Generar desde cero siempre arranca en la página 1; la paginación llama a CargarAsync.
+        _filtros.Pagina = 1;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
         _isLoading = true;
         _error = null;
         _mostrarResultados = false;
-        _filtros.Pagina = 1;
+        UpdatePageHeader();
 
         try
         {
@@ -486,6 +505,7 @@
         finally
         {
             _isLoading = false;
+            UpdatePageHeader();
         }
     }
 
@@ -493,27 +513,19 @@
     {
         if (_filtros.Pagina <= 1) return;
         _filtros.Pagina--;
-        await GenerarAsync();
+        await CargarAsync();
     }
 
     private async Task PaginaSiguienteAsync()
     {
-        var totalPaginas = _tipoReporte switch
-        {
-            TipoReporteCompras.DetalleDeCompras => _detalleCompras?.TotalPaginas  ?? 0,
-            TipoReporteCompras.CuentaCorriente  => _cuentaCorriente?.TotalPaginas ?? 0,
-            _                                   => 0
-        };
-        if (_filtros.Pagina >= totalPaginas) return;
+        if (_filtros.Pagina >= TotalPaginasActual) return;
         _filtros.Pagina++;
-        await GenerarAsync();
+        await CargarAsync();
     }
 
     private Task LimpiarAsync()
     {
-        var today = DateTime.Today;
-        _filtros.FechaDesde      = new DateTime(today.Year, today.Month, 1);
-        _filtros.FechaHasta      = today;
+        (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular("mes");
         _filtros.Proveedor       = null;
         _filtros.TipoComprobante = null;
         _filtros.Pagina          = 1;
@@ -522,50 +534,26 @@
         _cuentaCorriente = null;
         _mostrarResultados = false;
         _error = null;
+        _panelAbierto = false;
+        UpdatePageHeader();
         return Task.CompletedTask;
     }
 
     private void SetRango(string key)
     {
-        var today = DateTime.Today;
-        switch (key)
-        {
-            case "hoy":
-                _filtros.FechaDesde = _filtros.FechaHasta = today;
-                break;
-            case "mes":
-                _filtros.FechaDesde = new DateTime(today.Year, today.Month, 1);
-                _filtros.FechaHasta = today;
-                break;
-            case "mes-anterior":
-                var first = new DateTime(today.Year, today.Month, 1);
-                _filtros.FechaDesde = first.AddMonths(-1);
-                _filtros.FechaHasta = first.AddDays(-1);
-                break;
-            case "anio":
-                _filtros.FechaDesde = new DateTime(today.Year, 1, 1);
-                _filtros.FechaHasta = today;
-                break;
-        }
+        (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular(key);
+        UpdatePageHeader();
     }
 
-    private void TogglePanel() => _panelAbierto = !_panelAbierto;
+    private sealed record FilterChip(string Key, string Label);
 
-    private bool TieneFiltrosAvanzados =>
-        _filtros.FechaDesde.HasValue || _filtros.FechaHasta.HasValue ||
-        !string.IsNullOrWhiteSpace(_filtros.TipoComprobante);
-
-    private List<(string Key, string Label)> BuildFilterChips()
+    private List<FilterChip> BuildFilterChips()
     {
-        var chips = new List<(string, string)>();
-        if (_filtros.FechaDesde.HasValue)
-            chips.Add(("fechaDesde", $"Desde: {_filtros.FechaDesde.Value:dd/MM/yyyy}"));
-        if (_filtros.FechaHasta.HasValue)
-            chips.Add(("fechaHasta", $"Hasta: {_filtros.FechaHasta.Value:dd/MM/yyyy}"));
+        var chips = new List<FilterChip> { new("periodo", GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta)) };
         if (!string.IsNullOrWhiteSpace(_filtros.TipoComprobante))
-            chips.Add(("tc", $"TC: {_filtros.TipoComprobante}"));
+            chips.Add(new("tc", $"TC: {_filtros.TipoComprobante}"));
         if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
-            chips.Add(("proveedor", $"Proveedor: {_filtros.Proveedor}"));
+            chips.Add(new("proveedor", $"Proveedor: {_filtros.Proveedor}"));
         return chips;
     }
 
@@ -573,11 +561,11 @@
     {
         switch (key)
         {
-            case "fechaDesde":      _filtros.FechaDesde      = null; break;
-            case "fechaHasta":      _filtros.FechaHasta      = null; break;
-            case "tc":              _filtros.TipoComprobante = null; break;
-            case "proveedor":       _filtros.Proveedor       = null; break;
+            case "periodo": _panelAbierto = true; break;
+            case "tc": _filtros.TipoComprobante = null; break;
+            case "proveedor": _filtros.Proveedor = null; break;
         }
+        UpdatePageHeader();
     }
 
     private async Task ImprimirPdfAsync()
@@ -601,9 +589,6 @@
 
     private static string BuildViewerUrl(string tc, string idComprobante) =>
         $"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?returnUrl={Uri.EscapeDataString("/compras/reportes")}";
-
-    private string TipoCss(TipoReporteCompras tipo) =>
-        _tipoReporte == tipo ? "btn btn--primary quick-filter-btn" : "btn btn--ghost quick-filter-btn";
 
     private string GetSubtituloDetalle() =>
         _detalleCompras is null ? string.Empty

@@ -9,7 +9,7 @@
                 aria-label="Cerrar mensaje"
                 @onclick="CloseFromBackdropAsync"></button>
 
-        <section class="app-msgbox-panel" role="dialog" aria-modal="true" aria-label="@_state.Title" tabindex="0" @ref="_panelRef" @onkeydown="HandleKeyDownAsync">
+        <section class="app-msgbox-panel gd" role="dialog" aria-modal="true" aria-label="@_state.Title" tabindex="0" @ref="_panelRef" @onkeydown="HandleKeyDownAsync">
             <header class="app-msgbox-header">
                 <div class="app-msgbox-icon app-msgbox-icon--@_state.Kind.ToString().ToLowerInvariant() @(string.IsNullOrWhiteSpace(_state.IconClass) ? string.Empty : _state.IconClass)">
                     @if (_state.ShowSpinner)

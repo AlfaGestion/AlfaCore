@@ -12,265 +12,168 @@
 
 <PageTitle>Pagos | AlfaNet</PageTitle>
 
-<div class="page-grid admin-home-page">
-<div class="panel-card">
-    <p class="panel-card__subtitle">Pagos registrados contra cargos de suscripción. En esta versión los pagos se cargan a mano (transferencia u otro medio confirmado por fuera del sistema) — Mercado Pago todavía no está integrado.</p>
+@* Administrar → Pagos (AlfaDesign v1, 2026-10-07). Listado con paginación en la Context Toolbar y
+   alta manual de pagos en AlfaDialog (el formulario completo es el paso de confirmación). *@
 
-    @if (!IsSuperAdmin)
-    {
-        <div class="editor-msg editor-msg--warning">
-            <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden ver esta sección.</p>
-        </div>
-    }
-    else
-    {
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="editor-msg editor-msg--success">
-                <strong>Listo</strong>
-                <p>@_message</p>
-            </div>
-        }
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-        @if (!string.IsNullOrWhiteSpace(_error))
-        {
-            <div class="editor-msg editor-msg--warning">
-                <strong>No se pudo completar la operación</strong>
-                <p>@_error</p>
+<div class="adm-page">
+    <div class="adm">
+        <header class="adm-header">
+            <div>
+                <h2>Pagos</h2>
+                <p>Pagos registrados contra cargos de suscripción. En esta versión los pagos se cargan a mano (transferencia u otro medio confirmado por fuera del sistema): Mercado Pago todavía no está integrado.</p>
             </div>
-        }
+        </header>
 
-        <div class="row g-2 align-items-end mb-3">
-            <div class="col-12 col-lg-3">
-                <label class="form-label">Cliente</label>
-                <select class="form-select" @bind="_filters.IdCliente">
-                    <option value="">Todos</option>
-                    @foreach (var cliente in _clientes)
-                    {
-                        <option value="@cliente.IdCliente">@cliente.RazonSocial (@cliente.IdCliente)</option>
-                    }
-                </select>
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Estado</label>
-                <select class="form-select" @bind="_filters.Estado">
-                    <option value="">Todos</option>
-                    <option value="@PagoEstados.Creado">Creado</option>
-                    <option value="@PagoEstados.Pendiente">Pendiente</option>
-                    <option value="@PagoEstados.Aprobado">Aprobado</option>
-                    <option value="@PagoEstados.Rechazado">Rechazado</option>
-                    <option value="@PagoEstados.Cancelado">Cancelado</option>
-                    <option value="@PagoEstados.Reembolsado">Reembolsado</option>
-                </select>
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Medio de pago</label>
-                <select class="form-select" @bind="_filters.MedioPago">
-                    <option value="">Todos</option>
-                    @foreach (var medio in MedioPagoValores.Todos)
-                    {
-                        <option value="@medio">@GetMedioPagoLabel(medio)</option>
-                    }
-                </select>
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Desde</label>
-                <input class="form-control" type="date" @bind="_fechaDesde" />
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Hasta</label>
-                <input class="form-control" type="date" @bind="_fechaHasta" />
-            </div>
-            <div class="col-12 col-lg-1">
-                <button type="button" class="btn btn-primary w-100" @onclick="() => BuscarAsync()">Buscar</button>
-            </div>
-        </div>
-
-        @if (_loading)
+        @if (!IsSuperAdmin)
         {
-            <p>Cargando pagos...</p>
-        }
-        else if (_items.Count == 0)
-        {
-            <div class="shell-empty-state">
-                <strong>No hay pagos para los filtros seleccionados.</strong>
-                <span>Usá "Registrar pago" para cargar uno manual contra un cargo pendiente.</span>
-            </div>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
         }
         else
         {
-            var visibleColumns = GetVisibleColumns();
-
-            <div class="table-responsive admin-table-wrap">
-                <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                    <thead>
-                        <tr>
-                            @foreach (var column in visibleColumns)
-                            {
-                                <th>@column.Label</th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _items)
-                        {
-                            <tr>
-                                @foreach (var column in visibleColumns)
-                                {
-                                    <td>@RenderCell(item, column.Key)</td>
-                                }
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
-                <span class="shell-empty-state__eyebrow">@_total registro(s) — página @_pageNumber de @Math.Max(_totalPages, 1)</span>
-                <div class="d-inline-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@(!_hasPrev)" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)">Anterior</button>
-                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@(!_hasNext)" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)">Siguiente</button>
+            <section class="adm-card" aria-label="Filtros">
+                <div class="adm-card__body">
+                    <div class="adm-toolbar">
+                        <AlfaSelect Label="Cliente" Placeholder="Todos" Options="ClienteOptions" Value="@_filters.IdCliente" ValueChanged="@(v => _filters.IdCliente = v ?? string.Empty)" />
+                        <AlfaSelect Label="Estado" Placeholder="Todos" Options="EstadoOptions" Value="@_filters.Estado" ValueChanged="@(v => _filters.Estado = v ?? string.Empty)" />
+                        <AlfaSelect Label="Medio de pago" Placeholder="Todos" Options="MedioPagoOptions" Value="@_filters.MedioPago" ValueChanged="@(v => _filters.MedioPago = v ?? string.Empty)" />
+                        <AlfaInput Label="Desde" Type="date" Value="@FormatDate(_fechaDesde)" ValueChanged="@(v => _fechaDesde = ParseDate(v))" />
+                        <AlfaInput Label="Hasta" Type="date" Value="@FormatDate(_fechaHasta)" ValueChanged="@(v => _fechaHasta = ParseDate(v))" />
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_loading" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
+                    </div>
                 </div>
-            </div>
-        }
-    }
-</div>
-</div>
+            </section>
 
-@if (_showRegistrarPago)
-{
-    <div class="modal-overlay" @onclick="CancelarRegistrarPago">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="registrar-pago-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="registrar-pago-title" class="panel-card__title">Registrar pago manual</h2>
-                    <p class="panel-card__subtitle">El pago queda aprobado directo (ya fue confirmado por fuera del sistema) y marca el cargo como pagado.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelarRegistrarPago">Cerrar</button>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_registrarError))
+            @if (_loading && _items.Count == 0)
             {
-                <div class="editor-msg editor-msg--warning">
-                    <strong>No se pudo registrar</strong>
-                    <p>@_registrarError</p>
+                <AlfaEmptyState Title="Cargando pagos" Message="Buscando pagos para los filtros seleccionados." />
+            }
+            else if (_loadError is not null)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los pagos" Message="@_loadError" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => BuscarAsync(resetPage: false)" />
+            }
+            else if (_items.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin pagos" Message="No hay pagos para los filtros seleccionados. Usá “Registrar pago” para cargar uno manual contra un cargo pendiente." ActionLabel="Registrar pago" ActionIcon="bi bi-plus-circle" OnAction="_ => AbrirRegistrarPago()" />
+            }
+            else
+            {
+                var visibleColumns = GetVisibleColumns();
+
+                <section class="adm-card" aria-label="Pagos">
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    @foreach (var column in visibleColumns)
+                                    {
+                                        <th class="@(column.Key == PagosViewColumnKeys.Importe ? "is-number" : null)">@column.Label</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _items)
+                                {
+                                    <tr>
+                                        @foreach (var column in visibleColumns)
+                                        {
+                                            @if (column.Key == PagosViewColumnKeys.Estado)
+                                            {
+                                                <td><AlfaTag Tone="@GetEstadoTone(item.Estado)">@GetEstadoLabel(item.Estado)</AlfaTag></td>
+                                            }
+                                            else
+                                            {
+                                                <td class="@(column.Key == PagosViewColumnKeys.Importe ? "is-number" : null)">@RenderCell(item, column.Key)</td>
+                                            }
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="alfa-data-view-footer">
+                        <span class="alfa-data-view-footer__summary">@(_total == 1 ? "1 registro" : $"{_total} registros") · Página @_pageNumber de @Math.Max(_totalPages, 1)</span>
+                    </footer>
+                </section>
+            }
+        }
+    </div>
+</div>
+
+<AlfaDialog Open="@_showRegistrarPago"
+            Title="Registrar pago manual"
+            Eyebrow="Pagos"
+            Description="El pago queda aprobado directo (ya fue confirmado por fuera del sistema) y marca el cargo como pagado."
+            ErrorMessage="@_registrarError"
+            Loading="@_registrando"
+            Size="AlfaDialogSize.Lg"
+            OnClose="CancelarRegistrarPago">
+    <ChildContent>
+        <div class="adm-grid">
+            <AlfaSelect Label="Cliente" Placeholder="Elegí un cliente..." Options="ClienteOptions" Value="@_registrarForm.IdCliente" ValueChanged="OnClienteSeleccionadoAsync" Disabled="@_registrando" />
+            <div>
+                <AlfaSelect Label="Cargo" Placeholder="Elegí un cargo pendiente..." Options="CargoOptions" Value="@(_registrarForm.IdCargo > 0 ? _registrarForm.IdCargo.ToString(Inv) : null)" ValueChanged="@(v => _registrarForm.IdCargo = int.TryParse(v, out var id) ? id : 0)" Disabled="@(_registrando || _cargosDelCliente.Count == 0)" />
+                @if (!string.IsNullOrWhiteSpace(_registrarForm.IdCliente) && _cargosDelCliente.Count == 0)
+                {
+                    <p class="adm-hint">Este cliente no tiene cargos pendientes ni vencidos.</p>
+                }
+            </div>
+        </div>
+        <div class="adm-grid adm-grid--4">
+            <AlfaInput Label="Fecha" Type="date" Value="@FormatDate(_registrarFecha)" ValueChanged="@(v => _registrarFecha = ParseDate(v) ?? DateTime.Today)" Disabled="@_registrando" />
+            <AlfaInput Label="Importe" Type="number" Value="@_registrarForm.Importe.ToString("0.##", Inv)" ValueChanged="@(v => _registrarForm.Importe = ParseDecimal(v) ?? 0)" Disabled="@_registrando" />
+            <AlfaSelect Label="Moneda" Options="MonedaOptions" Value="@_registrarForm.Moneda" ValueChanged="@(v => _registrarForm.Moneda = v ?? MonedaValores.Ars)" Disabled="@_registrando" />
+            <AlfaSelect Label="Medio de pago" Options="MedioPagoOptions" Value="@_registrarForm.MedioPago" ValueChanged="@(v => _registrarForm.MedioPago = v ?? MedioPagoValores.Transferencia)" Disabled="@_registrando" />
+        </div>
+        <AlfaInput Label="Referencia" Placeholder="Nº de transferencia, comprobante, etc." Value="@_registrarForm.Referencia" ValueChanged="@(v => _registrarForm.Referencia = v)" Disabled="@_registrando" />
+        <div class="adm-textarea">
+            <label for="pago-observaciones">Observaciones</label>
+            <textarea id="pago-observaciones" rows="2" value="@_registrarForm.Observaciones" @oninput="@(e => _registrarForm.Observaciones = e.Value?.ToString())" disabled="@_registrando"></textarea>
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_registrando" OnClick="_ => CancelarRegistrarPago()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2-circle" Loading="@_registrando" OnClick="_ => ConfirmarRegistrarPagoAsync()">Registrar pago</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@_showViewSettings"
+            Title="Configurar vista"
+            Eyebrow="Pagos"
+            Description="Elegí las columnas visibles y su orden."
+            Loading="@_savingViewSettings"
+            OnClose="CancelarConfiguracionVista">
+    <ChildContent>
+        <div class="adm-view-columns">
+            @{
+                var ordered = _viewDraft.OrderBy(c => c.Order).ToList();
+            }
+            @for (var i = 0; i < ordered.Count; i++)
+            {
+                var column = ordered[i];
+                var index = i;
+                <div class="adm-view-column">
+                    <AlfaCheckbox Value="@column.Visible" ValueChanged="@(v => SetColumnVisibility(column.Key, v == true))">@column.Label</AlfaCheckbox>
+                    <AlfaIconButton Icon="bi bi-arrow-up" Label="@($"Subir {column.Label}")" Size="AlfaSize.Sm" Disabled="@(index == 0)" OnClick="_ => MoveColumn(column.Key, -1)" />
+                    <AlfaIconButton Icon="bi bi-arrow-down" Label="@($"Bajar {column.Label}")" Size="AlfaSize.Sm" Disabled="@(index == ordered.Count - 1)" OnClick="_ => MoveColumn(column.Key, 1)" />
                 </div>
             }
-
-            <div class="row g-3">
-                <div class="col-12 col-lg-6">
-                    <label class="form-label">Cliente</label>
-                    <select class="form-select" value="@_registrarForm.IdCliente" @onchange="OnClienteSeleccionadoAsync">
-                        <option value="">Elegí un cliente...</option>
-                        @foreach (var cliente in _clientes)
-                        {
-                            <option value="@cliente.IdCliente">@cliente.RazonSocial (@cliente.IdCliente)</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-lg-6">
-                    <label class="form-label">Cargo</label>
-                    <select class="form-select" @bind="_registrarForm.IdCargo" disabled="@(_cargosDelCliente.Count == 0)">
-                        <option value="0">Elegí un cargo pendiente...</option>
-                        @foreach (var cargo in _cargosDelCliente)
-                        {
-                            <option value="@cargo.Id">#@cargo.Id — @cargo.Concepto — @cargo.Importe.ToString("N2") @cargo.Moneda (vence @cargo.FechaVencimiento.ToString("dd/MM/yyyy"))</option>
-                        }
-                    </select>
-                    @if (!string.IsNullOrWhiteSpace(_registrarForm.IdCliente) && _cargosDelCliente.Count == 0)
-                    {
-                        <div class="form-text">Este cliente no tiene cargos pendientes ni vencidos.</div>
-                    }
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Fecha</label>
-                    <input class="form-control" type="date" @bind="_registrarFecha" />
-                </div>
-                <div class="col-6 col-lg-3">
-                    <label class="form-label">Importe</label>
-                    <input class="form-control" type="number" step="0.01" min="0" @bind="_registrarForm.Importe" />
-                </div>
-                <div class="col-6 col-lg-2">
-                    <label class="form-label">Moneda</label>
-                    <select class="form-select" @bind="_registrarForm.Moneda">
-                        @foreach (var moneda in MonedaValores.Todas)
-                        {
-                            <option value="@moneda">@moneda</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-lg-3">
-                    <label class="form-label">Medio de pago</label>
-                    <select class="form-select" @bind="_registrarForm.MedioPago">
-                        @foreach (var medio in MedioPagoValores.Todos)
-                        {
-                            <option value="@medio">@GetMedioPagoLabel(medio)</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-lg-6">
-                    <label class="form-label">Referencia</label>
-                    <input class="form-control" @bind="_registrarForm.Referencia" placeholder="Nº de transferencia, comprobante, etc." />
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Observaciones</label>
-                    <textarea class="form-control" rows="2" @bind="_registrarForm.Observaciones"></textarea>
-                </div>
-            </div>
-
-            <div class="d-flex gap-2 mt-3">
-                <button type="button" class="btn btn-primary" disabled="@_registrando" @onclick="ConfirmarRegistrarPagoAsync">Registrar pago</button>
-                <button type="button" class="btn btn-outline-light" disabled="@_registrando" @onclick="CancelarRegistrarPago">Cancelar</button>
-            </div>
-        </section>
-    </div>
-}
-
-@if (_showViewSettings)
-{
-    <div class="modal-overlay" @onclick="CancelarConfiguracionVista">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="pagos-view-settings-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="pagos-view-settings-title" class="panel-card__title">Configurar vista</h2>
-                    <p class="panel-card__subtitle">Elegí las columnas visibles y su orden.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelarConfiguracionVista">Cerrar</button>
-            </div>
-
-            <div class="d-flex flex-column gap-2">
-                @{
-                    var ordered = _viewDraft.OrderBy(c => c.Order).ToList();
-                }
-                @for (var i = 0; i < ordered.Count; i++)
-                {
-                    var column = ordered[i];
-                    var index = i;
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="form-check flex-grow-1">
-                            <input class="form-check-input" type="checkbox" id="@("pagos-col-" + column.Key)" checked="@column.Visible" @onchange="args => SetColumnVisibility(column.Key, args.Value is bool v && v)" />
-                            <label class="form-check-label" for="@("pagos-col-" + column.Key)">@column.Label</label>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-outline-light" disabled="@(index == 0)" @onclick="() => MoveColumn(column.Key, -1)"><i class="bi bi-arrow-up"></i></button>
-                        <button type="button" class="btn btn-sm btn-outline-light" disabled="@(index == ordered.Count - 1)" @onclick="() => MoveColumn(column.Key, 1)"><i class="bi bi-arrow-down"></i></button>
-                    </div>
-                }
-            </div>
-
-            <div class="d-flex gap-2 mt-3">
-                <button type="button" class="btn btn-primary" disabled="@_savingViewSettings" @onclick="GuardarConfiguracionVistaAsync">Guardar vista</button>
-                <button type="button" class="btn btn-outline-light" disabled="@_savingViewSettings" @onclick="CancelarConfiguracionVista">Cancelar</button>
-            </div>
-        </section>
-    </div>
-}
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_savingViewSettings" OnClick="_ => CancelarConfiguracionVista()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingViewSettings" OnClick="_ => GuardarConfiguracionVistaAsync()">Guardar vista</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
     // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
     private PageHeaderConfig? _pageHeaderPublicado;
+
+    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
 
     private readonly PagosFilters _filters = new();
     private readonly List<PagoDto> _items = [];
@@ -281,8 +184,8 @@
 
     private bool _loading = true;
     private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
-    private string _message = string.Empty;
-    private string _error = string.Empty;
+    private string? _loadError;
+    private AppUiMessage? _feedback;
     private DateTime? _fechaDesde;
     private DateTime? _fechaHasta;
 
@@ -301,6 +204,32 @@
     private RegistrarPagoManualRequest _registrarForm = new();
     private DateTime _registrarFecha = DateTime.Today;
 
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadoOptions =
+    [
+        new(PagoEstados.Creado, "Creado"),
+        new(PagoEstados.Pendiente, "Pendiente"),
+        new(PagoEstados.Aprobado, "Aprobado"),
+        new(PagoEstados.Rechazado, "Rechazado"),
+        new(PagoEstados.Cancelado, "Cancelado"),
+        new(PagoEstados.Reembolsado, "Reembolsado")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> MedioPagoOptions
+        = MedioPagoValores.Todos.Select(medio => new AlfaSelectOption(medio, GetMedioPagoLabel(medio))).ToList();
+
+    private static readonly IReadOnlyList<AlfaSelectOption> MonedaOptions
+        = MonedaValores.Todas.Select(moneda => new AlfaSelectOption(moneda, moneda)).ToList();
+
+    private IReadOnlyList<AlfaSelectOption> ClienteOptions
+        => _clientes.Select(c => new AlfaSelectOption(c.IdCliente, $"{c.RazonSocial} ({c.IdCliente})")).ToList();
+
+    private IReadOnlyList<AlfaSelectOption> CargoOptions
+        => _cargosDelCliente
+            .Select(cargo => new AlfaSelectOption(
+                cargo.Id.ToString(Inv),
+                $"#{cargo.Id} — {cargo.Concepto} — {cargo.Importe:N2} {cargo.Moneda} (vence {cargo.FechaVencimiento:dd/MM/yyyy})"))
+            .ToList();
+
     protected override async Task OnInitializedAsync()
     {
         if (!IsSuperAdmin)
@@ -316,7 +245,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudieron cargar los datos", UserMessage(ex));
         }
 
         await BuscarAsync(resetPage: true);
@@ -341,11 +270,25 @@
         Title = "Pagos",
         Breadcrumb = ["Administrar", "Pagos"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "pagos"),
+        Pagination = IsSuperAdmin && _total > 0
+            ? new PageHeaderPaginationConfig
+            {
+                Label = _total == 1 ? "1 registro" : $"{_total} registros",
+                PageLabel = $"{_pageNumber} / {Math.Max(_totalPages, 1)}",
+                HasPrevious = _hasPrev,
+                HasNext = _hasNext,
+                Disabled = _loading,
+                OnPrevious = () => InvokeAsync(() => CambiarPaginaAsync(_pageNumber - 1)),
+                OnNext = () => InvokeAsync(() => CambiarPaginaAsync(_pageNumber + 1))
+            }
+            : null,
         Actions =
         [
-            new PageHeaderAction { Key = "registrar-pago", Label = "Registrar pago", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => { AbrirRegistrarPago(); return Task.CompletedTask; } },
-            new PageHeaderAction { Key = "configurar-vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; } }
+            // Los clics llegan desde la Context Toolbar (otro componente): hay que pedir el re-render de esta página.
+            new PageHeaderAction { Key = "registrar-pago", Label = "Registrar pago", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = !IsSuperAdmin, OnClick = () => InvokeAsync(() => { AbrirRegistrarPago(); StateHasChanged(); }) },
+            new PageHeaderAction { Key = "configurar-vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !IsSuperAdmin, OnClick = () => InvokeAsync(() => { AbrirConfiguracionVista(); StateHasChanged(); }) }
         ]
     });
 
@@ -355,7 +298,7 @@
     private async Task BuscarAsync(bool resetPage = true)
     {
         _loading = true;
-        _error = string.Empty;
+        _loadError = null;
         if (resetPage)
             _filters.PageNumber = 1;
 
@@ -375,11 +318,13 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _loadError = UserMessage(ex);
         }
         finally
         {
             _loading = false;
+            UpdatePageHeader();
+            StateHasChanged();
         }
     }
 
@@ -429,6 +374,25 @@
         _ => estado
     };
 
+    private static AlfaTagTone GetEstadoTone(string estado) => estado switch
+    {
+        PagoEstados.Aprobado => AlfaTagTone.Success,
+        PagoEstados.Pendiente or PagoEstados.Creado => AlfaTagTone.Warning,
+        PagoEstados.Rechazado => AlfaTagTone.Danger,
+        _ => AlfaTagTone.Neutral
+    };
+
+    private static string? FormatDate(DateTime? value) => value?.ToString("yyyy-MM-dd");
+
+    private static DateTime? ParseDate(string? value)
+        => DateTime.TryParseExact(value, "yyyy-MM-dd", Inv, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : null;
+
+    private static decimal? ParseDecimal(string? value)
+        => decimal.TryParse((value ?? string.Empty).Trim().Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var parsed) ? parsed : null;
+
+    private static string UserMessage(Exception ex)
+        => ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+
     private void AbrirConfiguracionVista()
     {
         _viewDraft = _viewSettings.Select(c => new PagosViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList();
@@ -436,7 +400,10 @@
     }
 
     private void CancelarConfiguracionVista()
-        => _showViewSettings = false;
+    {
+        if (!_savingViewSettings)
+            _showViewSettings = false;
+    }
 
     private void SetColumnVisibility(string key, bool visible)
     {
@@ -474,10 +441,11 @@
             await BillingSvc.SavePagosViewSettingsAsync(CurrentUserName(), settings);
             _viewSettings = (await BillingSvc.GetPagosViewSettingsAsync(CurrentUserName())).Columnas;
             _showViewSettings = false;
+            _feedback = AppUiMessage.Success("Vista guardada", "Las columnas se guardaron para tu usuario.");
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudo guardar la vista", UserMessage(ex));
         }
         finally
         {
@@ -495,11 +463,14 @@
     }
 
     private void CancelarRegistrarPago()
-        => _showRegistrarPago = false;
-
-    private async Task OnClienteSeleccionadoAsync(ChangeEventArgs args)
     {
-        _registrarForm.IdCliente = args.Value?.ToString() ?? string.Empty;
+        if (!_registrando)
+            _showRegistrarPago = false;
+    }
+
+    private async Task OnClienteSeleccionadoAsync(string? idCliente)
+    {
+        _registrarForm.IdCliente = idCliente ?? string.Empty;
         _registrarForm.IdCargo = 0;
         _cargosDelCliente.Clear();
 
@@ -515,7 +486,7 @@
         }
         catch (Exception ex)
         {
-            _registrarError = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _registrarError = UserMessage(ex);
         }
     }
 
@@ -542,12 +513,12 @@
             await BillingSvc.RegistrarPagoManualAsync(_registrarForm, CurrentUserName());
 
             _showRegistrarPago = false;
-            _message = "Pago registrado.";
+            _feedback = AppUiMessage.Success("Pago registrado", "El pago quedó aprobado y el cargo se marcó como pagado.");
             await BuscarAsync(resetPage: true);
         }
         catch (Exception ex)
         {
-            _registrarError = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _registrarError = UserMessage(ex);
         }
         finally
         {

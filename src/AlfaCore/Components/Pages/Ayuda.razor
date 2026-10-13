@@ -4,21 +4,13 @@
 @using System.Reflection
 @using System.Text
 @inject NavigationManager Nav
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@implements IDisposable
 
 <PageTitle>@_pageTitle | Dashboard de Compras</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">@_pageTitle</h2>
-            <p class="page-intro__text">@_pageSubtitle</p>
-        </div>
-        <div class="help-toc-toggle">
-            <button class="btn btn--ghost" @onclick="() => _tocVisible = !_tocVisible">
-                <i class="bi bi-list-ul"></i> @(_tocVisible ? "Ocultar índice" : "Mostrar índice")
-            </button>
-        </div>
-    </div>
+<section class="gd-page gd gd-legacy help-ad">
 
     <section class="help-hero panel-card">
         <div>
@@ -28,18 +20,6 @@
         </div>
 
         <div class="help-search">
-            <label class="help-search__label" for="help-search-box">Buscar en el manual</label>
-            <div class="help-search__row">
-                <input id="help-search-box"
-                       class="help-search__input"
-                       type="search"
-                       placeholder="Ej: artículos, ticket promedio, filtros..."
-                       @bind="_search"
-                       @bind:event="oninput"
-                       @onkeydown="HandleSearchKeyDownAsync" />
-                <button class="btn btn--primary" @onclick="ApplySearchAsync">Aplicar</button>
-                <button class="btn btn--ghost" @onclick="ClearSearch">Limpiar</button>
-            </div>
             <div class="help-search__meta">
                 <span>@SectionCountText</span>
                 <span>@SearchCountText</span>
@@ -130,7 +110,9 @@
     private string _search = string.Empty;
     private List<TocItem> _toc = [];
     private List<HelpSection> _sections = [];
-    private string _loadedTopic = string.Empty;
+    // null = todavía no se cargó nada. Con string.Empty, /ayuda (tema vacío) coincidía con el valor
+    // inicial y el manual nunca se cargaba: quedaba fijo en "Cargando manual...".
+    private string? _loadedTopic;
 
     private string _pageTitle = "Ayuda";
     private string _pageSubtitle = "Manual operativo, atajos de navegación y respuestas rápidas para cada pantalla del Dashboard de Compras.";
@@ -161,6 +143,66 @@
     private string SearchCountText => string.IsNullOrWhiteSpace(_search)
         ? "Buscador listo para usar"
         : $"{SearchResults.Count()} resultado(s) para \"{_search.Trim()}\"";
+
+    // Buscador del manual en el Context Toolbar (filtra mientras se escribe).
+    private RenderFragment RenderAyudaSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input id="help-search-box"
+                   type="search"
+                   placeholder="Buscar en el manual: artículos, ticket promedio, filtros..."
+                   value="@_search"
+                   @oninput="e => _search = e.Value?.ToString() ?? string.Empty"
+                   @onkeydown="HandleSearchKeyDownAsync" />
+        </div>
+    </div>;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _search, _tocVisible, _pageTitle);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "ayuda",
+            Title = _pageTitle,
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAyuda(RouteContext, Nav, "ayuda"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "indice",
+                    Label = _tocVisible ? "Ocultar índice" : "Mostrar índice",
+                    Icon = "bi-list-ul",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { _tocVisible = !_tocVisible; StateHasChanged(); })
+                },
+            ],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderAyudaSearch(),
+        });
+    }
 
     protected override Task OnParametersSetAsync()
     {

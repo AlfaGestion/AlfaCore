@@ -1,0 +1,248 @@
+@namespace AlfaCore.Components.Pages
+@using AlfaCore.Models
+
+@* Cuentas vinculadas de un contacto (clientes/proveedores). Compartido por la ficha (Record) y la
+   edición del contacto: vincular, desvincular y cambiar un cliente se aplican al instante (no forman
+   parte del Guardar del formulario). *@
+
+@if (Accounts.Count == 0)
+{
+    @if (CanManage)
+    {
+        <AlfaEmptyState Title="Sin cuentas vinculadas"
+                        Message="Este contacto todavía no tiene clientes o proveedores vinculados."
+                        ActionLabel="Vincular cuenta existente"
+                        ActionIcon="bi bi-link-45deg"
+                        OnAction="OpenLinkDialogAsync" />
+    }
+    else
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                        Title="Sin cuentas vinculadas"
+                        Message="@(string.IsNullOrWhiteSpace(EmptyMessage) ? "Este contacto no tiene clientes o proveedores vinculados." : EmptyMessage)" />
+    }
+}
+else
+{
+    <div class="contactos-record-accounts">
+        @foreach (var account in Accounts)
+        {
+            <div class="contactos-record-account-row">
+                <a class="contactos-record-account" href="@BuildAccountLink(account)">
+                    <span>
+                        <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
+                        <small>@account.Tipo · @DisplayValue(account.Codigo)</small>
+                    </span>
+                    <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                </a>
+                @if (CanManage && IsCliente(account))
+                {
+                    @if (ReplaceClientAccount is not null)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-arrow-left-right"
+                                    Disabled="@Busy"
+                                    OnClick="_ => OpenReplaceDialog(account)">Cambiar</AlfaButton>
+                    }
+                    @if (UnlinkClientAccount is not null)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-person-dash"
+                                    Disabled="@Busy"
+                                    OnClick="_ => UnlinkClientAccount(account)">Desvincular</AlfaButton>
+                    }
+                }
+            </div>
+        }
+    </div>
+    @if (CanManage)
+    {
+        <div class="contactos-record-accounts__actions">
+            <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                        Size="AlfaSize.Sm"
+                        Icon="bi bi-link-45deg"
+                        Disabled="@Busy"
+                        OnClick="OpenLinkDialogAsync">Vincular otra cuenta</AlfaButton>
+        </div>
+    }
+}
+
+<AlfaDialog Open="@_showDialog"
+            Title="@(_replacing is null ? "Vincular cuenta existente" : "Cambiar cliente")"
+            Eyebrow="Cuentas vinculadas"
+            Description="@(_replacing is null
+                ? "Buscá un cliente o proveedor activo y vinculalo con este contacto."
+                : $"Elegí el cliente correcto. Se desvincula {DisplayValue(_replacing.RazonSocial, _replacing.Codigo)} y se vincula el que elijas; las conversaciones del contacto pasan al cliente nuevo.")"
+            ErrorMessage="@_dialogError"
+            Loading="@(Busy || _working)"
+            OnClose="CloseDialog">
+    <ChildContent>
+        <AlfaLookup TItem="ContactoCuentaLookupOptionDto"
+                    Label="@(_replacing is null ? "Cliente o proveedor" : "Cliente")"
+                    Placeholder="Buscar por código, razón social o documento..."
+                    EmptyText="@(_replacing is null ? "No encontramos clientes o proveedores disponibles con ese texto." : "No encontramos clientes disponibles con ese texto.")"
+                    SearchText="@_searchText"
+                    SearchTextChanged="SetSearchText"
+                    SearchFunc="SearchAsync"
+                    ItemKey="account => account.Key"
+                    SelectedItem="@_selected"
+                    SelectedItemChanged="SetSelected"
+                    Disabled="@(Busy || _working)">
+            <ItemTemplate Context="account">
+                <span class="contactos-account-option">
+                    <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
+                    <small>@FormatAccountOption(account)</small>
+                </span>
+            </ItemTemplate>
+        </AlfaLookup>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                    Disabled="@(Busy || _working)"
+                    OnClick="_ => CloseDialog()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                    Icon="@(_replacing is null ? "bi bi-link-45deg" : "bi bi-arrow-left-right")"
+                    Loading="@(Busy || _working)"
+                    Disabled="@(_selected is null)"
+                    OnClick="ConfirmDialogAsync">@(_replacing is null ? "Vincular" : "Cambiar cliente")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public IReadOnlyList<ContactoCuentaDto> Accounts { get; set; } = [];
+    [Parameter, EditorRequired] public Func<ContactoCuentaDto, string> BuildAccountLink { get; set; } = _ => "#";
+    /// <summary>False en un contacto nuevo (todavía no existe a qué vincular): solo lectura.</summary>
+    [Parameter] public bool CanManage { get; set; } = true;
+    [Parameter] public string EmptyMessage { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<ContactoCuentaLookupOptionDto>>>? SearchAccounts { get; set; }
+    [Parameter] public Func<ContactoCuentaLookupOptionDto, Task<bool>>? LinkAccount { get; set; }
+    [Parameter] public EventCallback<ContactoCuentaLookupOptionDto> AccountLinked { get; set; }
+    /// <summary>Pide confirmación y desvincula (lo resuelve la página).</summary>
+    [Parameter] public Func<ContactoCuentaDto, Task>? UnlinkClientAccount { get; set; }
+    /// <summary>Desvincula el cliente actual y vincula el elegido. Devuelve true si quedó aplicado.</summary>
+    [Parameter] public Func<ContactoCuentaDto, ContactoCuentaLookupOptionDto, Task<bool>>? ReplaceClientAccount { get; set; }
+
+    private bool _showDialog;
+    private bool _working;
+    private string _searchText = string.Empty;
+    private string _dialogError = string.Empty;
+    private ContactoCuentaLookupOptionDto? _selected;
+    private ContactoCuentaDto? _replacing;
+
+    private Task OpenLinkDialogAsync(MouseEventArgs _)
+    {
+        _replacing = null;
+        OpenDialog();
+        return Task.CompletedTask;
+    }
+
+    private void OpenReplaceDialog(ContactoCuentaDto account)
+    {
+        _replacing = account;
+        OpenDialog();
+    }
+
+    private void OpenDialog()
+    {
+        _showDialog = true;
+        _searchText = string.Empty;
+        _dialogError = string.Empty;
+        _selected = null;
+    }
+
+    private void CloseDialog()
+    {
+        if (Busy || _working)
+            return;
+
+        _showDialog = false;
+        _dialogError = string.Empty;
+        _selected = null;
+        _replacing = null;
+    }
+
+    private Task SetSearchText(string value)
+    {
+        _searchText = value;
+        _dialogError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetSelected(ContactoCuentaLookupOptionDto? account)
+    {
+        _selected = account;
+        _dialogError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task<IReadOnlyList<ContactoCuentaLookupOptionDto>> SearchAsync(string text, CancellationToken ct)
+    {
+        if (SearchAccounts is null)
+            return [];
+
+        var results = await SearchAccounts.Invoke(text, ct);
+        // Al cambiar un cliente solo tiene sentido elegir otro cliente (no un proveedor ni el mismo).
+        return _replacing is null
+            ? results
+            : results.Where(account => account.Tipo == CuentaComercialTipo.Cliente
+                                       && !string.Equals(account.Codigo?.Trim(), _replacing.Codigo?.Trim(), StringComparison.OrdinalIgnoreCase))
+                     .ToList();
+    }
+
+    private async Task ConfirmDialogAsync(MouseEventArgs _)
+    {
+        if (_selected is null || Busy || _working)
+            return;
+
+        _working = true;
+        _dialogError = string.Empty;
+        try
+        {
+            var selected = _selected;
+            bool ok;
+            if (_replacing is not null)
+            {
+                ok = ReplaceClientAccount is not null && await ReplaceClientAccount.Invoke(_replacing, selected);
+                if (!ok)
+                    _dialogError = "No se pudo cambiar el cliente.";
+            }
+            else
+            {
+                ok = LinkAccount is not null && await LinkAccount.Invoke(selected);
+                if (!ok)
+                    _dialogError = "No se pudo vincular la cuenta seleccionada.";
+            }
+
+            if (ok)
+            {
+                var wasLink = _replacing is null;
+                _showDialog = false;
+                _searchText = string.Empty;
+                _selected = null;
+                _replacing = null;
+                if (wasLink)
+                    await AccountLinked.InvokeAsync(selected);
+            }
+        }
+        finally
+        {
+            _working = false;
+        }
+    }
+
+    private static bool IsCliente(ContactoCuentaDto account)
+        => string.Equals(account.Tipo, "Cliente", StringComparison.OrdinalIgnoreCase);
+
+    private static string DisplayValue(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "—";
+
+    private static string FormatAccountOption(ContactoCuentaLookupOptionDto account)
+    {
+        var details = new[] { account.TipoLabel, account.Codigo, account.Localidad, account.NumeroDocumento }
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        return string.Join(" · ", details);
+    }
+}

@@ -17,8 +17,8 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
-    @if (_feedback is not null)
+<section class="gd-page gd gd-legacy tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
+    @if (_feedback is not null && IsTicketsInitializationPending(_feedback.Message))
     {
         <section class="panel-card">
             <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
@@ -41,6 +41,7 @@
             </div>
         </section>
     }
+    <AlfaNotification Message="@(_feedback is not null && !IsTicketsInitializationPending(_feedback.Message) ? _feedback : null)" OnDismiss="() => _feedback = null" />
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
@@ -223,9 +224,6 @@
                             <i class="bi bi-person-lines-fill"></i> Ver contacto
                         </a>
                     }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor">
-                        <i class="bi bi-arrow-left"></i> Volver
-                    </button>
                 </div>
             </div>
 
@@ -706,6 +704,9 @@
     }
 </section>
 
+@* Ventanas emergentes fuera del wrapper de la página: display:contents, solo aporta el scope .gd
+   para que tomen el aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
 @if (_showParteHorasDialog)
 {
     <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CancelCloseTicketParteHorasDialog"></div>
@@ -786,6 +787,7 @@
         </div>
     </section>
 }
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -886,30 +888,34 @@
         };
 
     private RenderFragment RenderTicketSmartSearch() => @<div class="smart-search tickets-smart-search" @onclick:stopPropagation>
-                <div class="smart-search__bar">
+                <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
                     <i class="bi bi-search"></i>
+                    <button type="button" class="smart-search__filter-button @(_showSearchPanel ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleTicketSearchPanel">
+                        <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+                    </button>
+                    <div class="smart-search__active-filters" aria-label="Filtros activos">
+                        @{ var chipsActivos = BuildTicketFilterChips().ToList(); }
+                        @foreach (var chip in chipsActivos.Take(2))
+                        {
+                            <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick="() => RemoveTicketChipAsync(chip.Key)">
+                                <span>@chip.Label</span>
+                                <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                            </button>
+                        }
+                        @if (chipsActivos.Count > 2)
+                        {
+                            <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
+                        }
+                    </div>
                     <input type="search"
                            placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
                            @oninput="OnTicketSearchInput"
                            @onkeydown="HandleTicketApplyKeyDownAsync" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
+                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildTicketFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @onclick="() => RemoveTicketChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
-                        </button>
-                    }
-                    @if (BuildTicketFilterChips().Count == 0)
-                    {
-                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
-                    }
                 </div>
 
                 @if (_showSearchPanel)
@@ -1045,6 +1051,14 @@
                 }
     </div>;
 
+    // Las acciones de la barra las dispara MainLayout: sin StateHasChanged la página no se
+    // redibujaba (ej. Guardar sin nombre dejaba el aviso de validación sin mostrar).
+    private Func<Task> AlPresionar(Func<Task> accion) => () => InvokeAsync(async () =>
+    {
+        await accion();
+        StateHasChanged();
+    });
+
     private void UpdatePageHeader()
     {
         var actions = new List<PageHeaderAction>();
@@ -1059,7 +1073,7 @@
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
                 Busy = _saving,
-                OnClick = GuardarAsync
+                OnClick = AlPresionar(GuardarAsync)
             });
             actions.Add(new PageHeaderAction
             {
@@ -1069,7 +1083,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
-                OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { CerrarEditor(); return Task.CompletedTask; })
             });
         }
         else if (HasTicketSelection)
@@ -1082,7 +1096,7 @@
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionEstado); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionEstado); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1092,7 +1106,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionTecnico); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionTecnico); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1102,7 +1116,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Normal,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionPrioridad); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionPrioridad); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1112,7 +1126,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
                 Disabled = _bulkUpdating,
-                OnClick = () => { ClearTicketSelection(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { ClearTicketSelection(); return Task.CompletedTask; })
             });
         }
         else
@@ -1124,7 +1138,7 @@
                 Icon = "bi-plus-circle",
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
-                OnClick = () => { NuevoTicket(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { NuevoTicket(); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1134,7 +1148,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _loading,
-                OnClick = RecargarAsync
+                OnClick = AlPresionar(RecargarAsync)
             });
             if (_viewMode == "lista")
             {
@@ -1145,7 +1159,7 @@
                     Icon = "bi-sliders",
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Overflow,
-                    OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; }
+                    OnClick = AlPresionar(() => { AbrirConfiguracionVista(); return Task.CompletedTask; })
                 });
             }
             actions.Add(new PageHeaderAction
@@ -1155,7 +1169,7 @@
                 Icon = "bi-tags",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
-                OnClick = () => { OpenTagManager(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenTagManager(); return Task.CompletedTask; })
             });
         }
 
@@ -1192,7 +1206,7 @@
                         Icon = "bi-kanban",
                         Active = _viewMode == "kanban",
                         Disabled = _loading,
-                        OnClick = () => CambiarVistaAsync("kanban")
+                        OnClick = AlPresionar(() => CambiarVistaAsync("kanban"))
                     },
                     new PageHeaderViewButton
                     {
@@ -1201,7 +1215,7 @@
                         Icon = "bi-list-ul",
                         Active = _viewMode == "lista",
                         Disabled = _loading,
-                        OnClick = () => CambiarVistaAsync("lista")
+                        OnClick = AlPresionar(() => CambiarVistaAsync("lista"))
                     }
                 ],
             Actions = actions

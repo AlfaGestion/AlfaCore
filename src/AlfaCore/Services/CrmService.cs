@@ -14,7 +14,9 @@ public sealed class CrmService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    IConversacionAnalisisService analisisService) : ICrmService
+    IConversacionAnalisisService analisisService,
+    IConversacionesService conversacionesService,
+    IAvisosPushNotifier avisosPush) : ICrmService
 {
     private const string ModuleName = "CRM";
     private const string ConfigGroup = "CRM";
@@ -133,6 +135,9 @@ public sealed class CrmService(
 
             var args = BuildFilterParameters(filters);
             args.Add("Limit", limit);
+            // En el tablero las ganadas y perdidas siempre quedan en su columna (antes desaparecían al
+            // moverlas a GANADA). El filtro "Oportunidades abiertas" sigue aplicando a la lista.
+            args.Add("IncluirCerradas", true);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -188,6 +193,7 @@ public sealed class CrmService(
 
                 var isNew = request.IdOportunidad <= 0;
                 var id = request.IdOportunidad;
+                var asignacionAnterior = isNew ? default : await ReadAssignmentAsync(cn, tx, id, token);
                 if (isNew)
                 {
                     var numero = await GetNextNumberAsync(cn, tx, token);
@@ -278,6 +284,14 @@ public sealed class CrmService(
                 await ReplaceSourceMessagesAsync(cn, tx, id, request.IdMensajes, token);
 
                 await tx.CommitAsync(token);
+                await SyncConversationAssignmentAsync(
+                    id,
+                    asignacionAnterior.IdTecnico,
+                    EmptyToNull(request.IdTecnico),
+                    request.IdConversacion,
+                    request.UsuarioAccion,
+                    token,
+                    request.Titulo);
                 return id;
             }
             catch
@@ -299,6 +313,8 @@ public sealed class CrmService(
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
             try
             {
+                var asignacionAnterior = await ReadAssignmentAsync(cn, tx, request.IdOportunidad, token);
+
                 // Si se mueve a una etapa "perdida", el motivo es obligatorio; al salir de ella se limpia.
                 bool actualizarMotivo = request.IdEtapa is > 0;
                 int? idMotivoPerdida = null;
@@ -344,6 +360,18 @@ public sealed class CrmService(
 
                 await AddActivityAsync(cn, tx, request.IdOportunidad, "MOVIMIENTO", "Oportunidad actualizada desde acción rápida.", request.UsuarioAccion, token);
                 await tx.CommitAsync(token);
+
+                if (request.IdTecnico is not null)
+                {
+                    await SyncConversationAssignmentAsync(
+                        request.IdOportunidad,
+                        asignacionAnterior.IdTecnico,
+                        EmptyToNull(request.IdTecnico),
+                        asignacionAnterior.IdConversacion,
+                        request.UsuarioAccion,
+                        token,
+                        asignacionAnterior.Titulo);
+                }
             }
             catch
             {
@@ -1113,6 +1141,66 @@ public sealed class CrmService(
 
     private static string? EmptyToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static async Task<(string? IdTecnico, long? IdConversacion, string? Titulo)> ReadAssignmentAsync(
+        SqlConnection cn, SqlTransaction tx, long idOportunidad, CancellationToken token)
+    {
+        var row = await cn.QueryFirstOrDefaultAsync<(string? IdTecnico, long? IdConversacion, string? Titulo)>(new CommandDefinition("""
+            SELECT NULLIF(LTRIM(RTRIM(ISNULL(IdTecnico, ''))), '') AS IdTecnico, IdConversacion, Titulo
+            FROM dbo.CRM_OPORTUNIDADES
+            WHERE IdOportunidad = @IdOportunidad;
+            """, new { IdOportunidad = idOportunidad }, tx, cancellationToken: token));
+        return row;
+    }
+
+    /// <summary>
+    /// Al asignar (o reasignar) una oportunidad a un vendedor, su conversación vinculada pasa a ese
+    /// mismo vendedor: así aparece la etiqueta con su nombre en la lista de Conversaciones y el evento
+    /// "X asignó la conversación a Y" (antes la asignación solo se veía entrando al CRM). Además se le
+    /// manda un push al vendedor (igual que con los tickets) y el Centro de avisos le muestra la
+    /// oportunidad en la campana. Si la asignación de la conversación falla (permisos, conversación
+    /// borrada) queda registrada y no frena el guardado. Quitar el responsable de la oportunidad no
+    /// desasigna la conversación.
+    /// </summary>
+    private async Task SyncConversationAssignmentAsync(
+        long idOportunidad, string? tecnicoAnterior, string? tecnicoNuevo, long? idConversacion, string? usuarioAccion, CancellationToken token,
+        string? titulo = null)
+    {
+        if (string.IsNullOrWhiteSpace(tecnicoNuevo))
+            return;
+        if (string.Equals((tecnicoAnterior ?? string.Empty).Trim(), tecnicoNuevo.Trim(), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await avisosPush.NotificarTecnicoAsync(
+            tecnicoNuevo,
+            "Oportunidad asignada",
+            string.IsNullOrWhiteSpace(titulo) ? "Te asignaron una oportunidad del CRM." : titulo.Trim(),
+            $"/crm?id={idOportunidad.ToString(CultureInfo.InvariantCulture)}",
+            token);
+
+        if (idConversacion is not > 0)
+            return;
+
+        try
+        {
+            await conversacionesService.AssignConversationAsync(new ConversacionAsignacionRequest
+            {
+                IdConversacion = idConversacion.Value,
+                IdTecnico = tecnicoNuevo.Trim(),
+                UsuarioAccion = NormalizeUser(usuarioAccion),
+                SistemaAccion = "AlfaCore",
+                Observaciones = $"Asignada desde CRM (oportunidad {idOportunidad.ToString(CultureInfo.InvariantCulture)})."
+            }, token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // AssignConversationAsync ya registra el error en AUX_ERR; acá solo se evita que la
+            // oportunidad (ya guardada) se informe como fallida.
+            await appEvents.LogErrorAsync(ModuleName, "SyncConversationAssignment", ex,
+                "La oportunidad se guardó, pero no se pudo asignar su conversación al mismo vendedor.",
+                null, AppEventSeverity.Warning, token);
+        }
+    }
 
     private static string NormalizeUser(string? value)
         => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();

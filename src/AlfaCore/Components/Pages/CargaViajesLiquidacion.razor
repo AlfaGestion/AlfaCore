@@ -8,9 +8,13 @@
 @inject IAppUiOperationService UiOps
 @inject IJSRuntime JS
 @inject IRouteContextService RouteContext
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Liquidación de Choferes / Fleteros | Alfa Gestión</PageTitle>
 
+<div class="gd gd-modal-scope liquidacion-ad">
 @if (_loading)
 {
     <div class="liquidacion-page">
@@ -23,61 +27,22 @@
 else if (_error is not null)
 {
     <div class="liquidacion-page">
-        <section class="liquidacion-page__toolbar no-print">
-            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
-                <i class="bi bi-arrow-left"></i>
-                <span>Volver</span>
-            </a>
-        </section>
-
-        <section class="panel-card liquidacion-page__error">
-            <h1>Liquidación no disponible</h1>
-            <p>No se pudo cargar la liquidación solicitada.</p>
-            <div class="editor-msg editor-msg--warning">
-                <strong>@_error.Title</strong>
-                <span>@_error.Message</span>
-            </div>
-        </section>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                        Title="Liquidación no disponible"
+                        Message="@_error.Message" />
     </div>
 }
 else if (_rows.Count == 0)
 {
     <div class="liquidacion-page">
-        <section class="liquidacion-page__toolbar no-print">
-            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
-                <i class="bi bi-arrow-left"></i>
-                <span>Volver</span>
-            </a>
-        </section>
-
-        <section class="panel-card liquidacion-page__empty">
-            <h1>@GetTitle()</h1>
-            <p>No se encontraron viajes para los filtros seleccionados.</p>
-        </section>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                        Title="@GetTitle()"
+                        Message="No se encontraron viajes para los filtros seleccionados." />
     </div>
 }
 else
 {
     <div class="liquidacion-page">
-        <section class="liquidacion-page__toolbar no-print">
-            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
-                <i class="bi bi-arrow-left"></i>
-                <span>Volver</span>
-            </a>
-            <button type="button" class="btn btn--primary btn--sm" @onclick="ImprimirAsync">
-                <i class="bi bi-printer"></i>
-                <span>Imprimir</span>
-            </button>
-            <a class="btn btn--ghost btn--sm" href="@GetExcelUrl()">
-                <i class="bi bi-file-earmark-excel"></i>
-                <span>Exportar Excel</span>
-            </a>
-            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
-                <i class="bi bi-file-earmark-pdf"></i>
-                <span>Exportar PDF</span>
-            </button>
-        </section>
-
         <article class="liquidacion-card">
             <header class="liquidacion-card__hero">
                 <div>
@@ -155,6 +120,7 @@ else
         </article>
     </div>
 }
+</div>
 
 @code {
     [Parameter, SupplyParameterFromQuery(Name = "desde")] public string? DesdeQuery { get; set; }
@@ -168,6 +134,87 @@ else
     private AppUiMessage? _error;
     private bool _loading = true;
     private bool? _esFletero;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => $"{_loading}|{_error is null}|{_rows.Count}";
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "carga-viajes",
+            Title = "Liquidación de choferes / fleteros",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCargaViajes(RouteContext, Nav, "reportes"),
+            Actions = BuildHeaderActions(),
+        });
+    }
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions()
+    {
+        var acciones = new List<PageHeaderAction>
+        {
+            new PageHeaderAction
+            {
+                Key = "volver",
+                Label = "Volver",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                OnClick = VolverAsync
+            }
+        };
+
+        if (!_loading && _error is null && _rows.Count > 0)
+        {
+            acciones.Add(new PageHeaderAction
+            {
+                Key = "excel",
+                Label = "Exportar Excel",
+                Icon = "bi-file-earmark-excel",
+                Style = PageHeaderActionStyle.Ghost,
+                OnClick = () =>
+                {
+                    Nav.NavigateTo(GetExcelUrl(), forceLoad: true);
+                    return Task.CompletedTask;
+                }
+            });
+            acciones.Add(new PageHeaderAction
+            {
+                Key = "imprimir",
+                Label = "Imprimir",
+                Icon = "bi-printer",
+                Style = PageHeaderActionStyle.Primary,
+                OnClick = () => InvokeAsync(async () => { await ImprimirAsync(); StateHasChanged(); })
+            });
+        }
+
+        return acciones;
+    }
+
+    private Task VolverAsync()
+    {
+        Nav.NavigateTo(GetBackUrl());
+        return Task.CompletedTask;
+    }
 
     protected override async Task OnParametersSetAsync()
     {

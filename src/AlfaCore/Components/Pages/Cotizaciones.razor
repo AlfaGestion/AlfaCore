@@ -13,7 +13,7 @@
 
 <PageTitle>Cotizaciones | Alfa Gestión</PageTitle>
 
-<div class="page-grid cotizaciones-page" @onclick="HandlePageClickAsync">
+<div class="page-grid gd gd-legacy cotizaciones-page" @onclick="HandlePageClickAsync">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     @if (!_showEditor)
@@ -919,6 +919,7 @@
             Breadcrumb = ["Cotizaciones"],
             State = _showEditor ? PageHeaderState.Editing : _loadingList ? PageHeaderState.Loading : _selectedIds.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "cotizaciones",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "cotizaciones"),
             Search = _showEditor ? null : new PageHeaderSearchConfig(),
             SearchContent = _showEditor ? null : RenderCotizSmartSearch(),

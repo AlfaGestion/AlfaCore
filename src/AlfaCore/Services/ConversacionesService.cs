@@ -36,7 +36,8 @@ public sealed class ConversacionesService(
     IWebHostEnvironment environment,
     ILogger<ConversacionesService> logger,
     IConversacionAsistenteConocimientoService? asistenteConocimiento = null,
-    IIaConsumoService? iaConsumo = null) : IConversacionesService
+    IIaConsumoService? iaConsumo = null,
+    IServiceProvider? serviceProvider = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -1126,7 +1127,7 @@ public sealed class ConversacionesService(
                 WHERE
                     (
                         @Canal IS NULL
-                        OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK'))
+                        OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK', N'WEBCHAT'))
                         OR (@Canal <> N'SOCIAL' AND c.Canal = @Canal)
                     )
                     AND (
@@ -1819,9 +1820,34 @@ public sealed class ConversacionesService(
             await rd.DisposeAsync();
             item.ClientesAsociados = (await GetContactoClientesAsync(cn, item.IdContacto, token)).ToList();
             await TryRefreshFacebookConversationProfileAsync(item, token);
+            if (string.Equals(item.Canal, ConversacionCanales.WebChat, StringComparison.OrdinalIgnoreCase))
+                await LoadWebChatOrigenAsync(cn, item, token);
             ApplyWhatsAppWindow(item);
             return item;
         }, "No se pudo cargar la conversación.", ct);
+
+    /// <summary>
+    /// Página/contexto de origen del chat web. Va en una consulta aparte (y no en el SELECT general
+    /// de la conversación) para que una base sin la migración del canal WEBCHAT siga cargando
+    /// normalmente el resto de las conversaciones.
+    /// </summary>
+    private static async Task LoadWebChatOrigenAsync(SqlConnection cn, ConversacionDetalleDto item, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT ISNULL(OrigenPaginaUrl, N''), ISNULL(OrigenContexto, N'')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", item.IdConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+        {
+            item.OrigenPaginaUrl = GetString(rd, 0);
+            item.OrigenContexto = GetString(rd, 1);
+        }
+    }
 
     private static async Task<IReadOnlyList<ConversacionClienteAsociadoDto>> GetContactoClientesAsync(
         SqlConnection cn,
@@ -2219,6 +2245,20 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+
+            // Una conversación sin contacto no tiene dónde colgar el vínculo con el cliente (la ficha
+            // del cliente lista contactos, no conversaciones). Antes de la transacción se busca un
+            // contacto existente con el mismo teléfono; si no hay, se crea uno adentro de la transacción.
+            var conversacionDatos = await GetConversacionDatosContactoAsync(cn, request.IdConversacion, token)
+                ?? throw new InvalidOperationException("La conversación seleccionada ya no existe.");
+            var idContactoExistente = conversacionDatos.IdContacto;
+            if (!idContactoExistente.HasValue && !string.IsNullOrWhiteSpace(conversacionDatos.Telefono))
+            {
+                var porTelefono = await TryFindContactByPhoneAsync(cn, conversacionDatos.Telefono, token);
+                if (porTelefono.IdContact > 0)
+                    idContactoExistente = porTelefono.IdContact;
+            }
+
             await using var tx = await cn.BeginTransactionAsync(token);
             var sqlTx = (SqlTransaction)tx;
 
@@ -2262,14 +2302,39 @@ public sealed class ConversacionesService(
                     throw new InvalidOperationException("La conversación seleccionada ya no existe.");
             }
 
+            var contactoCreado = false;
+            if (!idContacto.HasValue)
+            {
+                if (idContactoExistente.HasValue)
+                {
+                    idContacto = idContactoExistente;
+                }
+                else
+                {
+                    const string insertContactoSql = """
+                        INSERT INTO dbo.MA_CONTACTOS (Nombre_y_Apellido, Celular)
+                        VALUES (@Nombre, @Celular);
+                        SELECT CAST(SCOPE_IDENTITY() AS int);
+                        """;
+                    var nombreContacto = FirstNonEmpty(conversacionDatos.NombreVisible, clienteNombre, "Contacto sin nombre");
+                    await using var insertCmd = new SqlCommand(insertContactoSql, cn, sqlTx);
+                    insertCmd.Parameters.AddWithValue("@Nombre", nombreContacto.Length > 100 ? nombreContacto[..100] : nombreContacto);
+                    insertCmd.Parameters.AddWithValue("@Celular", DbNullable(conversacionDatos.Telefono));
+                    idContacto = Convert.ToInt32(await insertCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+                    contactoCreado = true;
+                }
+            }
+
             const string updateConversationSql = """
                 UPDATE dbo.CONV_CONVERSACIONES
-                SET ClienteCodigo = @ClienteCodigo
+                SET ClienteCodigo = @ClienteCodigo,
+                    IdContacto = COALESCE(IdContacto, @IdContacto)
                 WHERE IdConversacion = @IdConversacion;
                 """;
             await using (var updateCmd = new SqlCommand(updateConversationSql, cn, sqlTx))
             {
                 updateCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                updateCmd.Parameters.AddWithValue("@IdContacto", idContacto.HasValue ? idContacto.Value : DBNull.Value);
                 updateCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
                 await updateCmd.ExecuteNonQueryAsync(token);
             }
@@ -2323,11 +2388,34 @@ public sealed class ConversacionesService(
                 "RelacionarCliente",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "Cliente relacionado manualmente desde contexto de conversación.",
-                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto },
+                contactoCreado
+                    ? "Cliente relacionado desde la conversación (se creó el contacto automáticamente)."
+                    : "Cliente relacionado manualmente desde contexto de conversación.",
+                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto, ContactoCreado = contactoCreado },
                 token);
             return true;
         }, "No se pudo relacionar el cliente con la conversación.", ct);
+    }
+
+    private sealed record ConversacionDatosContacto(int? IdContacto, string NombreVisible, string Telefono);
+
+    private static async Task<ConversacionDatosContacto?> GetConversacionDatosContactoAsync(SqlConnection cn, long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) IdContacto, ISNULL(NombreVisible, N''), ISNULL(TelefonoWhatsApp, N'')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return new ConversacionDatosContacto(
+            rd.IsDBNull(0) ? null : Convert.ToInt32(rd.GetValue(0), CultureInfo.InvariantCulture),
+            GetString(rd, 1).Trim(),
+            GetString(rd, 2).Trim());
     }
 
     public async Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default)
@@ -2451,7 +2539,10 @@ public sealed class ConversacionesService(
             var isInstagram = string.Equals(conversation.Canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase);
             var isFacebook = string.Equals(conversation.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase);
             var isMercadoLibre = string.Equals(conversation.Canal, "MERCADOLIBRE", StringComparison.OrdinalIgnoreCase);
-            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre)
+            // WEBCHAT no tiene API externa: el mensaje queda grabado y el widget lo levanta por polling
+            // (ObtenerMensajesWebChatAsync), igual que un mensaje INTERNO.
+            var isWebChat = string.Equals(conversation.Canal, ConversacionCanales.WebChat, StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre && !isWebChat)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
@@ -2462,7 +2553,7 @@ public sealed class ConversacionesService(
             ConversacionMercadoLibreConfigDto? mercadoLibreConfig = null;
             ConversacionWhatsAppNumeroDto? numeroWeb = null;
             string whatsAppDeliveryProvider = ConversacionWhatsAppProviders.MetaCloud;
-            if (isInternal)
+            if (isInternal || isWebChat)
             {
                 initialState = "ENVIADO";
             }
@@ -2949,7 +3040,8 @@ public sealed class ConversacionesService(
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
                     FechaHoraSincronizacion,
-                    ISNULL(MetaPayloadJson, '')
+                    ISNULL(MetaPayloadJson, ''),
+                    ISNULL(EncabezadoFormato, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE
                     (@IncluirInactivas = 1 OR ISNULL(Activa, 1) = 1)
@@ -2970,6 +3062,7 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionPlantillaDto>();
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IncluirInactivas", filters.IncluirInactivas);
             cmd.Parameters.AddWithValue("@EstadoMeta", DbNullable(filters.EstadoMeta));
@@ -3042,13 +3135,15 @@ public sealed class ConversacionesService(
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
                     FechaHoraSincronizacion,
-                    ISNULL(MetaPayloadJson, '')
+                    ISNULL(MetaPayloadJson, ''),
+                    ISNULL(EncabezadoFormato, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE IdPlantilla = @IdPlantilla
                 """;
 
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             ConversacionPlantillaDto? template;
             await using (var cmd = new SqlCommand(sql, cn))
             {
@@ -3150,6 +3245,7 @@ public sealed class ConversacionesService(
             }
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTemplateHeaderFormatColumnOnceAsync(cn, token);
             await EnsureTemplateNameIsUniqueAsync(cn, normalized, templateContext.WabaId, token);
 
             if (normalized.IdPlantilla <= 0)
@@ -3161,6 +3257,7 @@ public sealed class ConversacionesService(
                         NombreMeta,
                         Categoria,
                         Idioma,
+                        EncabezadoFormato,
                         EncabezadoTexto,
                         CuerpoTexto,
                         PieTexto,
@@ -3179,6 +3276,7 @@ public sealed class ConversacionesService(
                         @NombreMeta,
                         @Categoria,
                         @Idioma,
+                        @EncabezadoFormato,
                         @EncabezadoTexto,
                         @CuerpoTexto,
                         @PieTexto,
@@ -3217,6 +3315,7 @@ public sealed class ConversacionesService(
                     NombreMeta = @NombreMeta,
                     Categoria = @Categoria,
                     Idioma = @Idioma,
+                    EncabezadoFormato = @EncabezadoFormato,
                     EncabezadoTexto = @EncabezadoTexto,
                     CuerpoTexto = @CuerpoTexto,
                     PieTexto = @PieTexto,
@@ -3344,7 +3443,20 @@ public sealed class ConversacionesService(
         }, "No se pudo sincronizar la plantilla con Meta.", ct);
 
     public Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage", async token =>
+        => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage",
+            token => SendTemplateCoreAsync(request, documento: null, token),
+            "No se pudo enviar la plantilla por WhatsApp.", ct);
+
+    private sealed record TemplateDocumentPayload(string NombreArchivo, string MimeType, byte[] Contenido);
+
+    // Núcleo común de SendTemplateMessageAsync y SendTemplateWithDocumentAsync. Con documento, la
+    // plantilla debe tener HEADER DOCUMENT: el archivo se guarda como adjunto del mensaje, se sube a
+    // Meta (/media) y viaja como parámetro del encabezado. Una plantilla se puede mandar con la
+    // ventana de 24 h vencida, por eso este camino no consulta IsWhatsAppWindowActiveAsync.
+    private async Task<ConversacionPlantillaMessageResultDto> SendTemplateCoreAsync(
+        ConversacionPlantillaSendRequest request,
+        TemplateDocumentPayload? documento,
+        CancellationToken token)
         {
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversación es obligatoria.");
@@ -3373,6 +3485,13 @@ public sealed class ConversacionesService(
             }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
+            if (request.ValoresPorVariable is { Count: > 0 } && !request.EsMetaRemota)
+            {
+                await using var cnMappings = new SqlConnection(ConnectionString);
+                await cnMappings.OpenAsync(token);
+                var mappings = await LoadTemplateVariableMappingsAsync(cnMappings, request.IdPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
+                values = ApplyNamedTemplateValues(values, mappings, request.ValoresPorVariable);
+            }
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
@@ -3416,16 +3535,27 @@ public sealed class ConversacionesService(
             // consecutivo desde {{1}}, y rechaza explícitamente componentes que AlfaCore no puede
             // completar (HEADER media/variable, botones, variables con nombre) antes de gastar la
             // llamada a Graph.
-            WhatsAppTemplateValidation.ValidateSend(template, values);
+            WhatsAppTemplateValidation.ValidateSend(template, values, documento is not null);
 
             var now = BusinessNow();
             var previewText = RenderTemplatePreview(template.CuerpoTexto, values);
+
+            string? rutaDocumento = null;
+            string mimeDocumento = string.Empty;
+            if (documento is not null)
+            {
+                mimeDocumento = NormalizeOutgoingMime(documento.MimeType, documento.NombreArchivo, "DOCUMENT");
+                var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
+                Directory.CreateDirectory(folder);
+                rutaDocumento = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(documento.NombreArchivo).ToLowerInvariant()}");
+                await File.WriteAllBytesAsync(rutaDocumento, documento.Contenido, token);
+            }
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
             {
                 ConversationId = request.IdConversacion,
                 Phone = conversation.TelefonoWhatsApp,
-                MessageType = "TEXT",
+                MessageType = documento is null ? "TEXT" : "DOCUMENT",
                 Direction = "SALIENTE",
                 EstadoEnvio = "PENDIENTE",
                 Text = previewText,
@@ -3436,10 +3566,28 @@ public sealed class ConversacionesService(
                 IdTecnicoAutor = request.IdTecnicoAutor
             }, token);
 
+            if (documento is not null && rutaDocumento is not null)
+            {
+                // El adjunto queda registrado aunque falle el envío: el mensaje en ERROR_ENVIO sigue
+                // mostrando qué archivo se intentó mandar.
+                await InsertAttachmentRecordAsync(
+                    messageId, "DOCUMENT", documento.NombreArchivo, mimeDocumento, rutaDocumento,
+                    documento.Contenido.LongLength, string.Empty, documento.Contenido, token);
+            }
+
             WhatsAppSendResult sendResult;
             try
             {
-                sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+                if (documento is null || rutaDocumento is null)
+                {
+                    sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+                }
+                else
+                {
+                    var headerMediaId = await UploadWhatsAppMediaAsync(config, rutaDocumento, documento.NombreArchivo, mimeDocumento, token);
+                    sendResult = await SendTemplateWithHeaderDocumentToWhatsAppAsync(
+                        config, conversation.TelefonoWhatsApp, template, values, headerMediaId, documento.NombreArchivo, token);
+                }
             }
             catch (Exception ex)
             {
@@ -3458,7 +3606,26 @@ public sealed class ConversacionesService(
                 EstadoEnvio = sendResult.EstadoEnvio,
                 WhatsAppMessageId = sendResult.WhatsAppMessageId
             };
-        }, "No se pudo enviar la plantilla por WhatsApp.", ct);
+        }
+
+    public Task<ConversacionPlantillaMessageResultDto> SendTemplateWithDocumentAsync(ConversacionPlantillaDocumentoSendRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SendTemplateWithDocument", token =>
+        {
+            if (string.IsNullOrWhiteSpace(request.NombreArchivo))
+                throw new InvalidOperationException("El nombre del archivo es obligatorio.");
+            if (request.Contenido.Length == 0)
+                throw new InvalidOperationException("El archivo está vacío.");
+
+            return SendTemplateCoreAsync(new ConversacionPlantillaSendRequest
+            {
+                IdConversacion = request.IdConversacion,
+                IdPlantilla = request.IdPlantilla,
+                EsMetaRemota = request.EsMetaRemota,
+                ValoresVariables = request.ValoresVariables,
+                UsuarioAccion = request.UsuarioAccion,
+                SistemaAccion = request.SistemaAccion
+            }, new TemplateDocumentPayload(request.NombreArchivo.Trim(), request.MimeType, request.Contenido), token);
+        }, "No se pudo enviar la plantilla con el documento por WhatsApp.", ct);
 
     /// <summary>
     /// Valor de contact.name: reusa exactamente la misma fuente que el heurístico histórico (posición 1
@@ -3471,6 +3638,47 @@ public sealed class ConversacionesService(
             conversation.ContactoNombre,
             conversation.NombreVisible,
             conversation.TelefonoWhatsApp);
+
+    /// <summary>
+    /// Variables que salen de la conversación o de la fecha/hora del negocio, sin consultas extra:
+    /// contacto (teléfono, email), cliente vinculado (nombre, código) y fecha/hora del envío.
+    /// </summary>
+    internal static (bool Resolved, string Value, string? Observation) ResolveSimpleTemplateAutoValue(
+        string variableKey, ConversacionDetalleDto conversation, DateTime now)
+    {
+        var esAr = CultureInfo.GetCultureInfo("es-AR");
+        static (bool, string, string?) Ok(string value) => (true, value, null);
+        static (bool, string, string?) Falta(string observation) => (false, string.Empty, observation);
+
+        return variableKey switch
+        {
+            WhatsAppTemplateVariableCatalog.ContactPhone => string.IsNullOrWhiteSpace(conversation.TelefonoWhatsApp)
+                ? Falta("La conversación no tiene teléfono de WhatsApp.") : Ok(conversation.TelefonoWhatsApp.Trim()),
+            WhatsAppTemplateVariableCatalog.ContactEmail => string.IsNullOrWhiteSpace(conversation.ContactoEmail)
+                ? Falta("El contacto no tiene email cargado.") : Ok(conversation.ContactoEmail.Trim()),
+            WhatsAppTemplateVariableCatalog.ClienteNombre => string.IsNullOrWhiteSpace(conversation.ClienteNombre)
+                ? Falta("La conversación no tiene cliente vinculado.") : Ok(conversation.ClienteNombre.Trim()),
+            WhatsAppTemplateVariableCatalog.ClienteCodigo => string.IsNullOrWhiteSpace(conversation.ClienteCodigo)
+                ? Falta("La conversación no tiene cliente vinculado.") : Ok(conversation.ClienteCodigo.Trim()),
+            WhatsAppTemplateVariableCatalog.FechaHoy => Ok(now.ToString("dd/MM/yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.FechaAyer => Ok(now.AddDays(-1).ToString("dd/MM/yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.HoraActual => Ok(now.ToString("HH:mm", esAr)),
+            WhatsAppTemplateVariableCatalog.MesActual => Ok(now.ToString("MMMM 'de' yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.AnioActual => Ok(now.ToString("yyyy", esAr)),
+            WhatsAppTemplateVariableCatalog.CierreFecha or WhatsAppTemplateVariableCatalog.CierreCaja
+                => Falta("Los datos del cierre se completan solos al enviar desde Cierre de caja; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.TareaTitulo or WhatsAppTemplateVariableCatalog.TareaTecnicoAsignado
+                or WhatsAppTemplateVariableCatalog.TareaAutorAccion or WhatsAppTemplateVariableCatalog.TareaFechaHoraRegistro
+                => Falta("Los datos de la tarea se completan solos en los avisos automáticos de Tareas; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.GuardiaTecnico or WhatsAppTemplateVariableCatalog.GuardiaInicio
+                or WhatsAppTemplateVariableCatalog.GuardiaFin
+                => Falta("Los datos del evento se completan solos en los recordatorios del Calendario; desde acá completalos a mano."),
+            WhatsAppTemplateVariableCatalog.CapacitacionTecnico or WhatsAppTemplateVariableCatalog.CapacitacionCliente
+                or WhatsAppTemplateVariableCatalog.CapacitacionTipo or WhatsAppTemplateVariableCatalog.CapacitacionFechaHora
+                => Falta("Los datos de la capacitación se completan solos cuando reservan desde el enlace público; desde acá completalos a mano."),
+            _ => Falta($"No hay resolución automática implementada para '{variableKey}'.")
+        };
+    }
 
     /// <summary>Resolver real de cobranza.detalleDeuda -- reusa TryBuildDebtDetailAsync, no lo reimplementa.</summary>
     private async Task<(bool Resolved, string Value, string? Observation)> ResolveCobranzaDetalleDeudaAutoValueAsync(SqlConnection cn, ConversacionDetalleDto conversation, CancellationToken ct)
@@ -3496,6 +3704,12 @@ public sealed class ConversacionesService(
     }
 
     public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default)
+        => GetTemplateAutoValuesAsync(idConversacion, idPlantilla, variableCount, new Dictionary<string, string>(), ct);
+
+    // valoresContexto: variables que no se pueden resolver desde la conversación pero sí las conoce la
+    // pantalla que envía (Cierre de caja aporta cierre.fecha y cierre.caja). Tienen prioridad sobre el
+    // catálogo para esa key.
+    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, IReadOnlyDictionary<string, string> valoresContexto, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplateAutoValues", async token =>
         {
             if (idConversacion <= 0)
@@ -3517,6 +3731,12 @@ public sealed class ConversacionesService(
             {
                 if (mappings.TryGetValue(pos, out var variableKey))
                 {
+                    if (valoresContexto.TryGetValue(variableKey, out var valorContexto) && !string.IsNullOrWhiteSpace(valorContexto))
+                    {
+                        values.Add(valorContexto);
+                        continue;
+                    }
+
                     var definition = WhatsAppTemplateVariableCatalog.Find(variableKey);
                     if (definition is { CanResolveAutomaticallyInManualSend: true })
                     {
@@ -3525,7 +3745,7 @@ public sealed class ConversacionesService(
                             WhatsAppTemplateVariableCatalog.ContactName => (true, ResolveContactNameAutoValue(conversation), (string?)null),
                             WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda => await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token),
                             WhatsAppTemplateVariableCatalog.PagoFormaPago => await ResolvePagoFormaPagoAutoValueAsync(cn, token),
-                            _ => (false, string.Empty, $"No hay resolución automática implementada para '{variableKey}'.")
+                            _ => ResolveSimpleTemplateAutoValue(variableKey, conversation, BusinessNow())
                         };
 
                         if (observation is not null)
@@ -4730,6 +4950,119 @@ public sealed class ConversacionesService(
                 throw;
             }
         }, "No se pudo procesar el webhook de Instagram.", ct);
+
+    public Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegistrarMensajeEntranteWebChat", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (!request.TryNormalize(out var error))
+                throw new InvalidOperationException(error);
+
+            var now = BusinessNow();
+            // Mismo shape que un mensaje entrante de Instagram/Facebook: se reutiliza el insert
+            // idempotente por MessageIdExterno (acá, el id que genera el widget para cada mensaje).
+            var incoming = new IncomingInstagramMessage
+            {
+                SenderId = request.VisitorId,
+                MessageId = request.ClientMessageId!,
+                MessageType = "TEXT",
+                Timestamp = now,
+                Text = request.Texto,
+                RawJson = JsonSerializer.Serialize(new { request.PaginaUrl, request.Contexto, request.Nombre })
+            };
+
+            var conversationId = await EnsureWebChatConversationAsync(request, now, token);
+            var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+            await RefreshConversationAsync(conversationId, now, request.Texto, token, reopenIfClosed: true);
+            if (storedMessage.Created)
+            {
+                await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                // Token propio, como en los webhooks de Meta: si el visitante cierra la pestaña a
+                // mitad de la respuesta del bot, el request se cancela pero la respuesta tiene que
+                // quedar grabada igual para cuando vuelva (el widget la trae por polling).
+                if (!await TryAutoReplyReglasAsync(conversationId, request.Texto, CancellationToken.None))
+                {
+                    // El widget ya saluda con su propio mensaje de bienvenida (CONV_WEBCHAT_MENSAJE_BIENVENIDA):
+                    // la bienvenida de Automatización solo se manda si el widget no tiene saludo, para que
+                    // el visitante no reciba dos.
+                    if (!await WebChatTieneBienvenidaPropiaAsync(token))
+                        await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                    await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                    await TryAutoReplyBotAsync(conversationId, request.Texto, CancellationToken.None);
+                }
+            }
+
+            return new WebChatMensajeEntranteResultDto
+            {
+                IdMensaje = storedMessage.MessageId,
+                Creado = storedMessage.Created
+            };
+        }, "No se pudo registrar el mensaje del chat del sitio web.", ct);
+
+    public Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ObtenerMensajesWebChat", async token =>
+        {
+            if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId))
+                throw new InvalidOperationException("Identificador de visitante inválido.");
+
+            var desde = Math.Max(0, desdeIdMensaje);
+
+            // Solo lo que el visitante puede ver: nunca notas internas, mensajes de sistema ni envíos
+            // con error. Sin cursor (primera carga) trae los últimos 50; con cursor, lo nuevo en orden.
+            const string sql = """
+                DECLARE @IdConversacion bigint =
+                (
+                    SELECT TOP (1) IdConversacion
+                    FROM dbo.CONV_CONVERSACIONES
+                    WHERE Canal = N'WEBCHAT'
+                      AND IdentificadorExternoContacto = @VisitorId
+                    ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC
+                );
+
+                SELECT TOP (@Top)
+                    m.IdMensaje,
+                    m.Texto,
+                    m.FechaHora,
+                    m.Direction
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = @IdConversacion
+                  AND m.IdMensaje > @Desde
+                  AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+                  AND m.MessageType <> N'SYSTEM'
+                  AND ISNULL(m.EstadoEnvio, N'') <> N'ERROR_ENVIO'
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, N''))), N'') IS NOT NULL
+                ORDER BY CASE WHEN @Desde = 0 THEN -m.IdMensaje ELSE m.IdMensaje END;
+                """;
+
+            var mensajes = new List<WebChatMensajeDto>();
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(token);
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@VisitorId", visitorId.Trim());
+                cmd.Parameters.AddWithValue("@Desde", desde);
+                cmd.Parameters.AddWithValue("@Top", desde == 0 ? 50 : 100);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
+                {
+                    mensajes.Add(new WebChatMensajeDto
+                    {
+                        Id = rd.GetInt64(0),
+                        Texto = GetString(rd, 1),
+                        FechaHora = rd.GetDateTime(2),
+                        EsVisitante = string.Equals(GetString(rd, 3), "ENTRANTE", StringComparison.OrdinalIgnoreCase)
+                    });
+                }
+            }
+
+            mensajes.Sort((a, b) => a.Id.CompareTo(b.Id));
+            return new WebChatMensajesResponseDto
+            {
+                Mensajes = mensajes,
+                Cursor = mensajes.Count == 0 ? desde : mensajes[^1].Id
+            };
+        }, "No se pudieron leer los mensajes del chat del sitio web.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingFacebookWebhook", async token =>
@@ -7005,6 +7338,123 @@ public sealed class ConversacionesService(
             : $"Numero WhatsApp ...{suffix}";
     }
 
+    private async Task<long> EnsureWebChatConversationAsync(
+        WebChatMensajeEntranteRequest request,
+        DateTime now,
+        CancellationToken ct)
+    {
+        // Mismo esquema que EnsureInstagramConversationAsync: el visitorId del widget cumple el rol
+        // del SenderId de Instagram o del teléfono de WhatsApp.
+        const string selectSql = """
+            SELECT TOP (1) IdConversacion
+            FROM dbo.CONV_CONVERSACIONES WITH (UPDLOCK, HOLDLOCK)
+            WHERE Canal = N'WEBCHAT'
+              AND IdentificadorExternoContacto = @VisitorId
+            ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await using (var selectCmd = new SqlCommand(selectSql, cn, tx))
+        {
+            selectCmd.Parameters.AddWithValue("@VisitorId", request.VisitorId);
+            var existing = await selectCmd.ExecuteScalarAsync(ct);
+            if (existing is not null && existing is not DBNull)
+            {
+                var existingId = Convert.ToInt64(existing, CultureInfo.InvariantCulture);
+                const string updateSql = """
+                    UPDATE dbo.CONV_CONVERSACIONES
+                    SET NombreVisible = CASE
+                            WHEN @Nombre IS NOT NULL
+                             AND (NULLIF(LTRIM(RTRIM(ISNULL(NombreVisible, N''))), N'') IS NULL
+                                  OR NombreVisible LIKE N'Visitante web %')
+                                THEN @Nombre
+                            ELSE NombreVisible
+                        END,
+                        OrigenPaginaUrl = COALESCE(@PaginaUrl, OrigenPaginaUrl),
+                        OrigenContexto = COALESCE(@Contexto, OrigenContexto),
+                        FechaHora_Modificacion = GETDATE()
+                    WHERE IdConversacion = @IdConversacion;
+                    """;
+                await using var updateCmd = new SqlCommand(updateSql, cn, tx);
+                updateCmd.Parameters.AddWithValue("@Nombre", DbNullable(request.Nombre));
+                updateCmd.Parameters.AddWithValue("@PaginaUrl", DbNullable(request.PaginaUrl));
+                updateCmd.Parameters.AddWithValue("@Contexto", DbNullable(request.Contexto));
+                updateCmd.Parameters.AddWithValue("@IdConversacion", existingId);
+                await updateCmd.ExecuteNonQueryAsync(ct);
+
+                await tx.CommitAsync(ct);
+                return existingId;
+            }
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES
+            (
+                Canal,
+                NombreVisible,
+                IdentificadorExternoContacto,
+                IdentificadorExternoConversacion,
+                OrigenPaginaUrl,
+                OrigenContexto,
+                CodigoEstado,
+                ResumenUltimoMensaje,
+                FechaHoraPrimerMensaje,
+                FechaHoraUltimoMensaje,
+                FechaHora_Grabacion
+            )
+            VALUES
+            (
+                N'WEBCHAT',
+                @NombreVisible,
+                @VisitorId,
+                @VisitorId,
+                @PaginaUrl,
+                @Contexto,
+                N'ABIERTA',
+                @ResumenUltimoMensaje,
+                @FechaHora,
+                @FechaHora,
+                GETDATE()
+            );
+
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            """;
+
+        var displayName = FirstNonEmpty(request.Nombre, BuildWebChatFallbackName(request.VisitorId));
+        await using var insertCmd = new SqlCommand(insertSql, cn, tx);
+        insertCmd.Parameters.AddWithValue("@NombreVisible", displayName);
+        insertCmd.Parameters.AddWithValue("@VisitorId", request.VisitorId);
+        insertCmd.Parameters.AddWithValue("@PaginaUrl", DbNullable(request.PaginaUrl));
+        insertCmd.Parameters.AddWithValue("@Contexto", DbNullable(request.Contexto));
+        insertCmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(request.Texto)));
+        insertCmd.Parameters.AddWithValue("@FechaHora", now);
+        var result = await insertCmd.ExecuteScalarAsync(ct);
+        var conversationId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        await tx.CommitAsync(ct);
+        return conversationId;
+    }
+
+    private async Task<bool> WebChatTieneBienvenidaPropiaAsync(CancellationToken ct)
+    {
+        try
+        {
+            var config = await conversacionesConfigService.GetWebChatConfigAsync(ct);
+            return !string.IsNullOrWhiteSpace(config.MensajeBienvenida);
+        }
+        catch (Exception ex)
+        {
+            // Ante la duda, priorizar no saludar dos veces: el widget muestra su saludo por defecto.
+            await _appEvents.LogErrorAsync("Conversaciones", "WebChatBienvenida", ex,
+                "No se pudo leer la configuración del chat del sitio web.", null, AppEventSeverity.Warning, ct);
+            return true;
+        }
+    }
+
+    private static string BuildWebChatFallbackName(string visitorId)
+        => $"Visitante web {visitorId[..Math.Min(6, visitorId.Length)].ToUpperInvariant()}";
+
     private async Task<long> EnsureInstagramConversationAsync(
         IncomingInstagramMessage incoming,
         InstagramProfile profile,
@@ -8143,7 +8593,8 @@ public sealed class ConversacionesService(
 
                     // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
                     // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
-                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
+                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured
+                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))
                         return;
 
                     if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, token).ConfigureAwait(false))
@@ -8375,6 +8826,12 @@ public sealed class ConversacionesService(
                 }
 
                 var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
+                if (!config.BotRespondeEnCanal(canalBot))
+                {
+                    await TraceDiagAsync($"EjecutarStop:CanalSinBot:{canalBot}", idConversacion, ct).ConfigureAwait(false);
+                    return;
+                }
+
                 if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
                 {
                     await TraceDiagAsync($"EjecutarStop:VentanaInactiva:{canalBot}", idConversacion, ct).ConfigureAwait(false);
@@ -8427,6 +8884,32 @@ public sealed class ConversacionesService(
                             await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
                     }
                     return;
+                }
+
+                // Chat web (visitante anónimo): el asistente pide una vez el WhatsApp y la razón social.
+                // Si ya los pidió y este mensaje los trae, se guardan en la conversación y se agradece.
+                var pedirDatosWeb = string.Equals(canalBot, "WEBCHAT", StringComparison.OrdinalIgnoreCase)
+                    && config.BotWebPideDatos
+                    && !await VisitanteWebIdentificadoAsync(idConversacion, token).ConfigureAwait(false);
+                if (pedirDatosWeb && await ExisteNotaInternaAsync(idConversacion, NotaBotPidioDatosWeb, token).ConfigureAwait(false))
+                {
+                    pedirDatosWeb = false;
+                    if (TryParseDatosVisitanteWeb(texto, out var telefonoVisitante, out var razonSocialVisitante))
+                    {
+                        await GuardarDatosVisitanteWebAsync(idConversacion, telefonoVisitante, razonSocialVisitante, token).ConfigureAwait(false);
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = idConversacion,
+                            Texto = string.IsNullOrWhiteSpace(razonSocialVisitante)
+                                ? "¡Gracias! Ya registré tu número. ¿En qué más te puedo ayudar?"
+                                : $"¡Gracias, {razonSocialVisitante}! Ya registré tus datos. ¿En qué más te puedo ayudar?",
+                            MessageType = "TEXT",
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "BOT"
+                        }, token).ConfigureAwait(false);
+                        await TraceDiagAsync("BotWebDatosRegistrados", idConversacion, ct).ConfigureAwait(false);
+                        return;
+                    }
                 }
 
                 await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
@@ -8632,6 +9115,19 @@ public sealed class ConversacionesService(
                     return;
                 }
 
+                // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
+                // ya uno abierto) y el cliente recibe el número.
+                int? numeroTicketBot = null;
+                if (tipo == "DERIVA" && config.BotGeneraTicket)
+                {
+                    numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
+                    if (numeroTicketBot is int numero)
+                        respuesta = $"{respuesta}\n\nRegistramos tu consulta con el número de ticket #{numero.ToString(CultureInfo.InvariantCulture)}.";
+                }
+
+                if (pedirDatosWeb)
+                    respuesta = $"{respuesta}\n\n{PedidoDatosVisitanteWeb}";
+
                 await TraceDiagAsync($"Paso:AntesSendMessage:tipo={tipo}", idConversacion, ct).ConfigureAwait(false);
                 await SendMessageAsync(new ConversacionSendMessageRequest
                 {
@@ -8642,6 +9138,20 @@ public sealed class ConversacionesService(
                     SistemaAccion = "BOT"
                 }, token).ConfigureAwait(false);
                 await TraceDiagAsync("Paso:DespuesSendMessageOk", idConversacion, ct).ConfigureAwait(false);
+
+                if (numeroTicketBot is int numeroNota)
+                {
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"🎫 El asistente no encontró respuesta y generó el ticket #{numeroNota.ToString(CultureInfo.InvariantCulture)} con la consulta.",
+                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                }
+
+                if (pedirDatosWeb)
+                {
+                    // Marca persistida: el pedido se hace una sola vez por conversación.
+                    await AddInternalEventCoreAsync(idConversacion, NotaBotPidioDatosWeb,
+                        null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                }
 
                 if (tipo == "ACLARA")
                 {
@@ -9287,6 +9797,205 @@ public sealed class ConversacionesService(
     internal const string NotaTopeCreditosIa = "🤖⛔ Se alcanzó el tope mensual de créditos de IA: el asistente no responde. Requiere que un operador lo tome.";
 
     /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
+    internal const string NotaBotPidioDatosWeb = "🤖🪪 El asistente le pidió al visitante del chat web su WhatsApp y la razón social.";
+
+    internal const string PedidoDatosVisitanteWeb = "Para darte una atención más completa, ¿me pasás tu número de WhatsApp y la razón social de tu empresa?";
+
+    private async Task<bool> ExisteNotaInternaAsync(long idConversacion, string nota, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id
+              AND Direction = N'NOTA_INTERNA'
+              AND CAST(Texto AS nvarchar(max)) = @Nota;
+            """;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            cmd.Parameters.AddWithValue("@Nota", nota);
+            return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Un visitante del chat web está identificado si ya tiene teléfono o cliente vinculado.</summary>
+    private async Task<bool> VisitanteWebIdentificadoAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                CASE WHEN LTRIM(RTRIM(ISNULL(TelefonoWhatsApp, N''))) <> N''
+                       OR LTRIM(RTRIM(ISNULL(ClienteCodigo, N''))) <> N'' THEN 1 ELSE 0 END
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @Id;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0, CultureInfo.InvariantCulture) == 1;
+    }
+
+    private static readonly Regex TelefonoVisitanteRegex = new(@"\+?\d[\d\s\-\.\(\)]{6,22}\d", RegexOptions.Compiled);
+
+    private static readonly Regex ConectoresExtremoRegex = new(@"(?i)^(y|e|mi|es|de|con)\b\s*|\s*\b(y|e|mi|es|de|con)$", RegexOptions.Compiled);
+
+    private static readonly Regex EtiquetasDatosVisitanteRegex = new(
+        @"(?i)\b(mi\s+)?(n[uú]mero|nro\.?|tel[eé]fono|tel\.?|celular|cel\.?)(\s+de)?(\s+(whats?app|wpp|wsp))?(\s+es)?\b|\b(mi\s+)?(whats?app|wpp|wsp)(\s+es)?\b|\b(la\s+|mi\s+)?raz[oó]n\s+social(\s+es)?\b|\b(la\s+|mi\s+)?empresa(\s+es)?\b|\bsoy\b",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extrae del mensaje del visitante un teléfono (8 a 15 dígitos) y la razón social (el resto del
+    /// texto sin el número ni las etiquetas tipo "mi WhatsApp es", "razón social"). Sin teléfono = false.
+    /// </summary>
+    internal static bool TryParseDatosVisitanteWeb(string? texto, out string telefono, out string razonSocial)
+    {
+        telefono = string.Empty;
+        razonSocial = string.Empty;
+        var valor = (texto ?? string.Empty).Trim();
+        var match = TelefonoVisitanteRegex.Match(valor);
+        if (!match.Success)
+            return false;
+
+        var digitos = new string(match.Value.Where(char.IsDigit).ToArray());
+        if (digitos.Length is < 8 or > 15)
+            return false;
+
+        telefono = digitos;
+        var resto = valor.Remove(match.Index, match.Length);
+        resto = EtiquetasDatosVisitanteRegex.Replace(resto, " ");
+        resto = Regex.Replace(resto, @"\s+", " ");
+        // Conectores que quedan sueltos en los extremos al sacar el número y las etiquetas ("... y mi").
+        string anterior;
+        do
+        {
+            anterior = resto;
+            resto = resto.Trim(' ', ',', ';', ':', '-', '.', '/', '|', '(', ')');
+            resto = ConectoresExtremoRegex.Replace(resto, string.Empty);
+        }
+        while (resto != anterior);
+        razonSocial = resto.Length > 120 ? resto[..120].Trim() : resto;
+        return true;
+    }
+
+    /// <summary>
+    /// Guarda en la conversación del chat web el teléfono y la razón social que dio el visitante. Si el
+    /// teléfono coincide con un contacto cargado, la conversación queda vinculada a ese contacto y cliente.
+    /// </summary>
+    private async Task GuardarDatosVisitanteWebAsync(long idConversacion, string telefono, string razonSocial, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var contacto = await TryFindContactByPhoneAsync(cn, telefono, ct).ConfigureAwait(false);
+
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET TelefonoWhatsApp = CASE WHEN LTRIM(RTRIM(ISNULL(TelefonoWhatsApp, N''))) = N'' THEN @Telefono ELSE TelefonoWhatsApp END,
+                NombreVisible = CASE WHEN @RazonSocial <> N'' THEN @RazonSocial ELSE NombreVisible END,
+                IdContacto = COALESCE(IdContacto, @IdContacto),
+                ClienteCodigo = CASE WHEN LTRIM(RTRIM(ISNULL(ClienteCodigo, N''))) = N'' THEN NULLIF(@ClienteCodigo, N'') ELSE ClienteCodigo END,
+                FechaHora_Modificacion = GETDATE()
+            WHERE IdConversacion = @Id;
+            """;
+        await using (var cmd = new SqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@Telefono", telefono.Length > 30 ? telefono[..30] : telefono);
+            cmd.Parameters.AddWithValue("@RazonSocial", razonSocial);
+            cmd.Parameters.AddWithValue("@IdContacto", contacto.IdContact is int idContacto && idContacto > 0 ? idContacto : DBNull.Value);
+            cmd.Parameters.AddWithValue("@ClienteCodigo", contacto.ClientCode ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        var partes = new List<string> { $"WhatsApp {telefono}" };
+        if (!string.IsNullOrWhiteSpace(razonSocial))
+            partes.Add($"razón social {razonSocial}");
+        if (!string.IsNullOrWhiteSpace(contacto.ClientCode))
+            partes.Add($"vinculado al cliente {contacto.ClientCode}");
+        await AddInternalEventCoreAsync(idConversacion,
+            $"🪪 Datos del visitante del chat web: {string.Join(" · ", partes)}.",
+            null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ticket automático cuando el asistente no encontró respuesta. Devuelve el número, o null si no se
+    /// creó (sin módulo de Tickets, la conversación ya tiene un ticket abierto o hubo un error, que queda
+    /// registrado sin cortar la respuesta al cliente). TicketsService se resuelve en el momento porque
+    /// depende de este servicio.
+    /// </summary>
+    private async Task<int?> TryCrearTicketBotAsync(long idConversacion, string texto, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
+            return null;
+
+        try
+        {
+            long? idMensaje;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct).ConfigureAwait(false);
+                const string sql = """
+                    IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NULL
+                    BEGIN
+                        SELECT CAST(-1 AS bigint);
+                        RETURN;
+                    END;
+
+                    IF EXISTS (
+                        SELECT 1
+                        FROM dbo.TICK_TICKETS t
+                        LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
+                        WHERE t.IdConversacion = @Id
+                          AND ISNULL(t.Baja, 0) = 0
+                          AND ISNULL(e.EsCerrado, 0) = 0)
+                    BEGIN
+                        SELECT CAST(-1 AS bigint);
+                        RETURN;
+                    END;
+
+                    SELECT TOP (1) IdMensaje
+                    FROM dbo.CONV_MENSAJES
+                    WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+                    ORDER BY FechaHora DESC, IdMensaje DESC;
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@Id", idConversacion);
+                var raw = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                idMensaje = raw is null or DBNull ? null : Convert.ToInt64(raw, CultureInfo.InvariantCulture);
+            }
+
+            if (idMensaje == -1)
+                return null;
+
+            var idTicket = await ticketsService.CreateAsync(new TicketCreateRequest
+            {
+                Titulo = $"Consulta sin resolver: {Truncar(texto, 80)}",
+                Descripcion = $"El asistente no encontró respuesta a esta consulta.\n\nMensaje del cliente:\n{texto}",
+                Prioridad = 1,
+                IdConversacion = idConversacion,
+                IdMensajes = idMensaje is long id && id > 0 ? [id] : [],
+                UsuarioAccion = "AlfaCore"
+            }, ct).ConfigureAwait(false);
+
+            var ticket = await ticketsService.GetByIdAsync(idTicket, ct).ConfigureAwait(false);
+            return ticket?.Numero;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "BotGeneraTicket", ex,
+                "El asistente no pudo generar el ticket de la consulta sin respuesta.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
     private async Task<bool> ExisteNotaInternaHoyAsync(long idConversacion, string nota, CancellationToken ct)
     {
         const string sql = """
@@ -11277,7 +11986,13 @@ public sealed class ConversacionesService(
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
-        request.Content = new StringContent(JsonSerializer.Serialize(BuildMetaTemplateCreatePayload(template)), Encoding.UTF8, "application/json");
+        // Encabezado documento: Meta exige un archivo de ejemplo subido por la Resumable Upload API
+        // (header_handle). AlfaCore manda un PDF de ejemplo propio; el documento real se elige al enviar.
+        string? headerHandle = null;
+        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
+            headerHandle = await UploadTemplateSampleDocumentAsync(config, ct);
+
+        request.Content = new StringContent(JsonSerializer.Serialize(BuildMetaTemplateCreatePayload(template, headerHandle)), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -11292,6 +12007,112 @@ public sealed class ConversacionesService(
             EstadoMeta = root.TryGetProperty("status", out var status) ? status.GetString() ?? "PENDING" : "PENDING",
             PayloadJson = body
         };
+    }
+
+    // Resumable Upload API de Meta: 1) abrir sesión en /{app-id}/uploads, 2) subir los bytes con
+    // file_offset 0; devuelve el "h" (handle) que pide example.header_handle al crear la plantilla.
+    // El app id se obtiene del propio token (GET /app), así no hace falta configurarlo aparte.
+    private async Task<string> UploadTemplateSampleDocumentAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct)
+    {
+        const string fileName = "ejemplo_documento.pdf";
+        var bytes = BuildTemplateSamplePdf();
+        var token = config.AccessToken.Trim();
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
+
+        string appId;
+        using (var appRequest = new HttpRequestMessage(HttpMethod.Get, $"https://graph.facebook.com/{config.ApiVersion}/app"))
+        {
+            appRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var appResponse = await client.SendAsync(appRequest, ct);
+            var appBody = await appResponse.Content.ReadAsStringAsync(ct);
+            if (!appResponse.IsSuccessStatusCode)
+                throw new HttpRequestException($"Meta devolvi\u00f3 {(int)appResponse.StatusCode} al identificar la app para subir el documento de ejemplo: {appBody}");
+            using var appDoc = JsonDocument.Parse(appBody);
+            appId = appDoc.RootElement.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(appId))
+                throw new InvalidOperationException("Meta no devolvi\u00f3 la app asociada a la credencial de WhatsApp.");
+        }
+
+        string sessionId;
+        var sessionUrl = $"https://graph.facebook.com/{config.ApiVersion}/{appId}/uploads"
+            + $"?file_name={Uri.EscapeDataString(fileName)}&file_length={bytes.Length}&file_type=application%2Fpdf";
+        using (var sessionRequest = new HttpRequestMessage(HttpMethod.Post, sessionUrl))
+        {
+            sessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var sessionResponse = await client.SendAsync(sessionRequest, ct);
+            var sessionBody = await sessionResponse.Content.ReadAsStringAsync(ct);
+            if (!sessionResponse.IsSuccessStatusCode)
+                throw new HttpRequestException($"Meta devolvi\u00f3 {(int)sessionResponse.StatusCode} al abrir la subida del documento de ejemplo: {sessionBody}");
+            using var sessionDoc = JsonDocument.Parse(sessionBody);
+            sessionId = sessionDoc.RootElement.TryGetProperty("id", out var sid) ? sid.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(sessionId))
+                throw new InvalidOperationException("Meta no devolvi\u00f3 la sesi\u00f3n de subida del documento de ejemplo.");
+        }
+
+        using var uploadRequest = new HttpRequestMessage(HttpMethod.Post, $"https://graph.facebook.com/{config.ApiVersion}/{sessionId}");
+        uploadRequest.Headers.TryAddWithoutValidation("Authorization", $"OAuth {token}");
+        uploadRequest.Headers.TryAddWithoutValidation("file_offset", "0");
+        uploadRequest.Content = new ByteArrayContent(bytes);
+        using var uploadResponse = await client.SendAsync(uploadRequest, ct);
+        var uploadBody = await uploadResponse.Content.ReadAsStringAsync(ct);
+        if (!uploadResponse.IsSuccessStatusCode)
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)uploadResponse.StatusCode} al subir el documento de ejemplo: {uploadBody}");
+        using var uploadDoc = JsonDocument.Parse(uploadBody);
+        var handle = uploadDoc.RootElement.TryGetProperty("h", out var h) ? h.GetString() ?? string.Empty : string.Empty;
+        if (string.IsNullOrWhiteSpace(handle))
+            throw new InvalidOperationException("Meta no devolvi\u00f3 el identificador del documento de ejemplo.");
+        return handle;
+    }
+
+    /// <summary>PDF mínimo válido (una página con un texto) para el ejemplo del encabezado documento.</summary>
+    internal static byte[] BuildTemplateSamplePdf()
+    {
+        const string texto = "Documento de ejemplo - AlfaCore";
+        var contenido = $"BT /F1 18 Tf 72 720 Td ({texto}) Tj ET";
+        var objetos = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            $"<< /Length {contenido.Length} >>\nstream\n{contenido}\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+        };
+
+        var sb = new StringBuilder("%PDF-1.4\n");
+        var offsets = new List<int>();
+        for (var i = 0; i < objetos.Length; i++)
+        {
+            offsets.Add(Encoding.ASCII.GetByteCount(sb.ToString()));
+            sb.Append(i + 1).Append(" 0 obj\n").Append(objetos[i]).Append("\nendobj\n");
+        }
+
+        var xref = Encoding.ASCII.GetByteCount(sb.ToString());
+        sb.Append("xref\n0 ").Append(objetos.Length + 1).Append("\n0000000000 65535 f \n");
+        foreach (var offset in offsets)
+            sb.Append(offset.ToString("D10", CultureInfo.InvariantCulture)).Append(" 00000 n \n");
+        sb.Append("trailer\n<< /Size ").Append(objetos.Length + 1).Append(" /Root 1 0 R >>\nstartxref\n").Append(xref).Append("\n%%EOF\n");
+        return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> TemplateHeaderFormatColumnEnsured = new(StringComparer.OrdinalIgnoreCase);
+
+    // Columna nueva de dbo.CONV_PLANTILLAS (script 2026-10-08-001). Se asegura en caliente para que
+    // una base que todavía no corrió la actualización no rompa la lectura de plantillas.
+    private static async Task EnsureTemplateHeaderFormatColumnOnceAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var key = $"{cn.DataSource}|{cn.Database}".Trim().ToUpperInvariant();
+        if (TemplateHeaderFormatColumnEnsured.ContainsKey(key))
+            return;
+
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_PLANTILLAS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_PLANTILLAS', N'EncabezadoFormato') IS NULL
+                ALTER TABLE dbo.CONV_PLANTILLAS ADD EncabezadoFormato varchar(20) NULL;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+        TemplateHeaderFormatColumnEnsured[key] = 1;
     }
 
     private async Task<MetaTemplateStatusResult> GetMetaTemplateStatusAsync(ConversacionWhatsAppConfigDto config, ConversacionPlantillaDto template, CancellationToken ct)
@@ -11328,18 +12149,31 @@ public sealed class ConversacionesService(
         throw new InvalidOperationException("No se encontro la plantilla en Meta para el idioma configurado.");
     }
 
-    private async Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync(
+    private Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync(
         ConversacionWhatsAppConfigDto config,
         string phone,
         ConversacionPlantillaDto template,
         IReadOnlyList<string> values,
+        CancellationToken ct)
+        => SendTemplateWithHeaderDocumentToWhatsAppAsync(config, phone, template, values, headerDocumentMediaId: null, headerDocumentFileName: null, ct);
+
+    // Mismo POST que SendTemplateToWhatsAppAsync; con headerDocumentMediaId agrega el parámetro del
+    // HEADER DOCUMENT (archivo ya subido a /media). Sin media id, es exactamente el envío de siempre.
+    private async Task<WhatsAppSendResult> SendTemplateWithHeaderDocumentToWhatsAppAsync(
+        ConversacionWhatsAppConfigDto config,
+        string phone,
+        ConversacionPlantillaDto template,
+        IReadOnlyList<string> values,
+        string? headerDocumentMediaId,
+        string? headerDocumentFileName,
         CancellationToken ct)
     {
         // Defensa en profundidad: SendTemplateMessageAsync ya valida antes de llegar acá, pero este
         // método privado es el único punto real que arma el POST a Graph -- si en el futuro se agrega
         // otro llamador (p. ej. un envío automático) que se salte SendTemplateMessageAsync, no debe
         // poder mandar parámetros BODY inválidos o una plantilla con componentes no soportados.
-        WhatsAppTemplateValidation.ValidateSend(template, values);
+        var conDocumento = !string.IsNullOrWhiteSpace(headerDocumentMediaId);
+        WhatsAppTemplateValidation.ValidateSend(template, values, conDocumento);
         if (!config.IsConfiguredForSend)
             throw new InvalidOperationException("Falta configurar WhatsApp para enviar mensajes.");
 
@@ -11348,6 +12182,26 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var components = new List<Dictionary<string, object?>>();
+        if (conDocumento)
+        {
+            components.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "header",
+                ["parameters"] = new List<Dictionary<string, object?>>
+                {
+                    new()
+                    {
+                        ["type"] = "document",
+                        ["document"] = new Dictionary<string, object?>
+                        {
+                            ["id"] = headerDocumentMediaId,
+                            ["filename"] = string.IsNullOrWhiteSpace(headerDocumentFileName) ? "documento" : headerDocumentFileName
+                        }
+                    }
+                }
+            });
+        }
+
         if (values.Count > 0)
         {
             components.Add(new Dictionary<string, object?>
@@ -14526,6 +15380,15 @@ public sealed class ConversacionesService(
         if (string.Equals(type, "unsupported", StringComparison.OrdinalIgnoreCase))
             return ExtractUnsupportedText(message);
 
+        if (WhatsAppMessageClassifier.EsSoloEnCelular(type))
+            return WhatsAppMessageClassifier.SoloEnCelularText;
+
+        if (WhatsAppMessageClassifier.EsEdicion(type))
+            return WhatsAppMessageClassifier.BuildEditedText(message);
+
+        if (WhatsAppMessageClassifier.EsEliminacion(type))
+            return WhatsAppMessageClassifier.MensajeEliminadoText;
+
         if (TryGetMediaPayload(message, type, out var media))
         {
             if (media.TryGetProperty("caption", out var caption))
@@ -14543,11 +15406,21 @@ public sealed class ConversacionesService(
             }
         }
 
+        // Tipo que AlfaCore no conoce (nuevo de Meta, mensaje enviado por una empresa...): si trae un
+        // texto legible adentro se guarda ese texto en vez de "[tipo]".
+        var legible = WhatsAppMessageClassifier.FindReadableText(message, type);
+        if (!string.IsNullOrWhiteSpace(legible))
+            return legible.Trim();
+
         return $"[{type}]";
     }
 
     private static string ExtractIncomingReplyToMessageId(JsonElement message, string type)
     {
+        // Una edición cita al mensaje original, así la burbuja muestra qué se editó.
+        if (WhatsAppMessageClassifier.EsEdicion(type))
+            return WhatsAppMessageClassifier.FindEditOriginalId(message);
+
         if (string.Equals(type, "reaction", StringComparison.OrdinalIgnoreCase) &&
             message.TryGetProperty("reaction", out var reaction) &&
             reaction.TryGetProperty("message_id", out var reactionMessageId))
@@ -14703,8 +15576,12 @@ public sealed class ConversacionesService(
             unsupportedType = unsupportedTypeProp.GetString() ?? string.Empty;
         }
 
-        var reason = ExtractFirstErrorDetail(message);
-        return JoinText("Mensaje no compatible recibido", FirstNonEmpty(unsupportedType, reason));
+        // Meta no dice qué era (unsupported.type "unknown" en todos los casos reales): fotos/videos de
+        // visualización única y otros formatos que solo se ven en el celular. Si algún día informa un
+        // tipo concreto, se conserva al final para diagnóstico.
+        return string.IsNullOrWhiteSpace(unsupportedType) || string.Equals(unsupportedType, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? WhatsAppMessageClassifier.SoloEnCelularText
+            : $"{WhatsAppMessageClassifier.SoloEnCelularText} Tipo: {unsupportedType}.";
     }
 
     private static string ExtractReplyTitle(JsonElement reply)
@@ -15589,7 +16466,8 @@ public sealed class ConversacionesService(
             // "components"). Antes se descartaba al leer de dbo.CONV_PLANTILLAS -- WhatsAppTemplateValidation
             // necesita el array crudo de components para rechazar plantillas con HEADER media/variable o
             // botones también en el camino de plantillas ya sincronizadas en catálogo (no solo remotas).
-            ComponentesMetaJson = ExtractComponentsFromPayload(GetString(rd, 18))
+            ComponentesMetaJson = ExtractComponentsFromPayload(GetString(rd, 18)),
+            EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(rd.FieldCount > 19 ? GetString(rd, 19) : null)
         };
 
     private static string ExtractComponentsFromPayload(string payloadJson)
@@ -15634,7 +16512,11 @@ public sealed class ConversacionesService(
             NombreMeta = metaName,
             Categoria = NormalizeTemplateCategory(request.Categoria),
             Idioma = NormalizeTemplateLanguage(request.Idioma),
-            EncabezadoTexto = (request.EncabezadoTexto ?? string.Empty).Trim(),
+            EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato),
+            // Con encabezado documento no hay texto de encabezado: Meta admite uno u otro.
+            EncabezadoTexto = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento
+                ? string.Empty
+                : (request.EncabezadoTexto ?? string.Empty).Trim(),
             CuerpoTexto = body,
             PieTexto = (request.PieTexto ?? string.Empty).Trim(),
             EjemplosVariablesJson = NormalizeTemplateExamples(request.EjemplosVariablesJson, CountTemplateVariables(body)),
@@ -15672,6 +16554,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@NombreMeta", request.NombreMeta);
         cmd.Parameters.AddWithValue("@Categoria", request.Categoria);
         cmd.Parameters.AddWithValue("@Idioma", request.Idioma);
+        cmd.Parameters.AddWithValue("@EncabezadoFormato", ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato));
         cmd.Parameters.AddWithValue("@EncabezadoTexto", DbNullable(request.EncabezadoTexto));
         cmd.Parameters.AddWithValue("@CuerpoTexto", request.CuerpoTexto);
         cmd.Parameters.AddWithValue("@PieTexto", DbNullable(request.PieTexto));
@@ -15803,10 +16686,22 @@ public sealed class ConversacionesService(
                || Regex.IsMatch(trimmed, @"\{\{\s*\d+\s*\}\}$", RegexOptions.CultureInvariant);
     }
 
-    private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template)
+    private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template, string? headerHandle = null)
     {
         var components = new List<Dictionary<string, object?>>();
-        if (!string.IsNullOrWhiteSpace(template.EncabezadoTexto))
+        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
+        {
+            if (string.IsNullOrWhiteSpace(headerHandle))
+                throw new InvalidOperationException("Falta el documento de ejemplo para el encabezado de la plantilla.");
+
+            components.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "HEADER",
+                ["format"] = "DOCUMENT",
+                ["example"] = new Dictionary<string, object?> { ["header_handle"] = new[] { headerHandle } }
+            });
+        }
+        else if (!string.IsNullOrWhiteSpace(template.EncabezadoTexto))
         {
             components.Add(new Dictionary<string, object?>
             {
@@ -15966,6 +16861,31 @@ public sealed class ConversacionesService(
     // llegaba a Graph como ["Ana", "42"] (2 valores para 3 posiciones, corridos). WhatsAppTemplateValidation
     // .ValidateSend necesita ver la lista completa, con vacíos incluidos, para poder rechazarla
     // explícitamente en vez de que el corrimiento silencioso llegue a Meta como un error genérico.
+    /// <summary>
+    /// Combina valores por posición con valores por VariableKey: cada {{N}} con mapping guardado toma el
+    /// valor de su key (si se informó); el resto conserva el valor posicional. Así Tareas y Calendario
+    /// completan bien una plantilla aunque el usuario haya puesto las variables en otro orden.
+    /// </summary>
+    internal static List<string> ApplyNamedTemplateValues(
+        IReadOnlyList<string> positional,
+        IReadOnlyDictionary<int, string> mappings,
+        IReadOnlyDictionary<string, string> named)
+    {
+        if (mappings.Count == 0 || named.Count == 0)
+            return positional.ToList();
+
+        var count = Math.Max(positional.Count, mappings.Keys.Max());
+        var result = new List<string>(count);
+        for (var pos = 1; pos <= count; pos++)
+        {
+            if (mappings.TryGetValue(pos, out var key) && named.TryGetValue(key, out var value))
+                result.Add((value ?? string.Empty).Trim());
+            else
+                result.Add(pos <= positional.Count ? positional[pos - 1] : string.Empty);
+        }
+        return result;
+    }
+
     private static List<string> NormalizeTemplateValues(IEnumerable<string>? values)
         => values?
             .Select(x => (x ?? string.Empty).Trim())

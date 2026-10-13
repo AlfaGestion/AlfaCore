@@ -8,7 +8,7 @@ Alcance: interfaz Blazor presente en `src/AlfaCore/Components`, sin inferir func
 - Se encontraron **81 archivos Razor enrutables**. Cada archivo se cuenta como una pantalla diferente, aunque tenga varios alias de URL (la mayoría dispone de ruta corta y ruta contextual `/{idweb}/{idbase:int}/...`).
 - No se cuentan como pantallas independientes los componentes compartidos sin `@page`, los modales internos ni las vistas internas de una pantalla multipropósito.
 - `CargaViajes.razor`, `Conversaciones.razor`, `Informes.razor` y `VentasPuntoVenta.razor` contienen varias vistas internas, pero se cuentan una vez porque son una única implementación enrutable con estado interno.
-- Las páginas residuales `Counter` y `Weather`, el puente `SaasRouteBridge` y el workspace dinámico se incluyen porque realmente son enrutables.
+- El puente `SaasRouteBridge` y el workspace dinámico se incluyen porque realmente son enrutables. (Las páginas demo `Counter` y `Weather` y el puente `/inicio` se eliminaron el 2026-10-09.)
 - Salvo declaración expresa, las pantallas usan el `DefaultLayout` de `Routes.razor`: **MainLayout**. Las excepciones públicas se señalan en la matriz.
 
 ## Infraestructura transversal observada
@@ -76,10 +76,9 @@ En las listas siguientes, “estados base” significa: cargando, error y sin re
 - **Registro** (`/registrarme`; `Register.razor`; PublicLayout): formulario especial de alta SaaS; confirmar/volver. No comparte el editor ABM.
 - **Verificación** (`/verify/{Code}`; `Verify.razor`; PublicLayout): detalle de resultado; cargando, éxito/error y acceso a nuevo registro.
 - **Seleccionar base** (`/seleccionar-base`, `/{idweb}`; `SeleccionarBase.razor`; PublicLayout): selección/búsqueda y navegación; cargando, vacío y error.
-- **Inicio redirect** (`/inicio`; `Inicio.razor`; MainLayout): pantalla puente que redirige al inicio principal.
 - **Workspace dinámico** (`/shell/{ModuleKey}`; `ShellWorkspacePage.razor`; MainLayout): pantalla especial generada desde metadatos, con secciones y navegación; cargando/error.
 - **SaaS route bridge** (`/{idweb}/{idbase:int}/{*path}`; `SaasRouteBridge.razor`; MainLayout): puente/fallback dinámico; componente dinámico o ruta no disponible.
-- **Error**, **Counter** y **Weather** (`/Error`, `/counter`, `/weather`; archivos homónimos; MainLayout): error global y páginas residuales/demo. Weather tiene tabla/carga; Counter solo contador.
+- **Error** (`/Error`; `Error.razor`; MainLayout): error global.
 
 ### Administración, seguridad y auditoría
 
@@ -195,12 +194,9 @@ Abreviaturas: `ML` = MainLayout; `PL` = PublicLayout. “Base” = cargando/erro
 | Registro | `/registrarme` | formulario público | registrar, volver | edición, validación, error | `Register`, PL | 9. Pantalla especial |
 | Verificación | `/verify/{Code}` | detalle público | nuevo registro | carga, éxito, error | PL | 9. Pantalla especial |
 | Seleccionar base | `/seleccionar-base` | selección/configuración | buscar, seleccionar, volver | carga, vacío, error | `LoginShell`, PL | 9. Pantalla especial |
-| Inicio redirect | `/inicio` | otro/puente | redirigir | carga | ML | 9. Pantalla especial |
 | Workspace dinámico | `/shell/{ModuleKey}` | otro | abrir sección | carga, error, vacío | ML | 9. Pantalla especial |
 | SaaS route bridge | `/{idweb}/{idbase:int}/{*path}` | otro/puente | resolver ruta | no disponible, error | `DynamicComponent`, ML | 9. Pantalla especial |
 | Error | `/Error` | otro | — | error | ML | 9. Pantalla especial |
-| Counter | `/counter` | otro/demo | incrementar | normal | ML | 9. Pantalla especial |
-| Weather | `/weather` | listado/demo | — | carga | tabla local, ML | 1. Listado estándar |
 | Administrar | `/admin` | configuración ABM | nuevo, editar, guardar, cancelar, eliminar, volver | lista, selección, edición, confirmación, error | tablas/formularios locales, ML | 5. Pantalla de configuración ABM |
 | Admin clientes | `/admin/clientes` | configuración ABM | buscar, nuevo, guardar, volver | carga, vacío, error, edición | tabla/form local, ML | 5. Pantalla de configuración ABM |
 | Admin usuarios | `/admin/users` | configuración ABM | nuevo, editar, guardar, volver | carga, vacío, error, edición | tabla/form local, ML | 5. Pantalla de configuración ABM |

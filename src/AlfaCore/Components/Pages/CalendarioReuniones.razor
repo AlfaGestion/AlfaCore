@@ -6,35 +6,18 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Reuniones | Calendario</PageTitle>
 
-<section class="cal-reuniones-page" @onclick="DismissFeedback">
-    <header class="cal-reuniones-topbar">
-        <div>
-            <p class="cal-reuniones-eyebrow">Calendario</p>
-            <h2>Reuniones públicas</h2>
-            <span>Agendas para que los clientes reserven capacitaciones online.</span>
-        </div>
-        <div>
-            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/calendario")">
-                <i class="bi bi-calendar3"></i>
-                <span>Calendario</span>
-            </a>
-            <button type="button" class="btn btn--primary" @onclick="NewTipo">
-                <i class="bi bi-plus-circle"></i>
-                <span>Nueva agenda</span>
-            </button>
-        </div>
+<section class="gd-page gd gd-legacy cal-reuniones-page" @onclick="DismissFeedback">
+    <header class="gd-header">
+        <h2>Reuniones públicas</h2>
+        <p>Agendas para que los clientes reserven capacitaciones online.</p>
     </header>
 
-    @if (!string.IsNullOrWhiteSpace(_feedbackText))
-    {
-        <div class="cal-reuniones-feedback cal-reuniones-feedback--@_feedbackKind">
-            <strong>@_feedbackTitle</strong>
-            <span>@_feedbackText</span>
-        </div>
-    }
+    <AlfaNotification Message="@_notificacion.For(_feedbackText, _feedbackKind switch { "error" or "danger" => AppUiFeedbackSeverity.Error, "warning" => AppUiFeedbackSeverity.Warning, _ => AppUiFeedbackSeverity.Success }, _feedbackTitle)" OnDismiss="DismissFeedback" />
 
     @if (_loading)
     {
@@ -212,6 +195,8 @@
 </section>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
     private static readonly (int Value, string Label)[] Days =
     [
@@ -234,6 +219,51 @@
     private string _feedbackTitle = string.Empty;
     private string _feedbackText = string.Empty;
     private string _feedbackKind = "success";
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "calendario",
+            Title = "Reuniones públicas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCalendario(RouteContext, Nav, "reuniones"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nueva",
+                    Label = "Nueva agenda",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { NewTipo(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

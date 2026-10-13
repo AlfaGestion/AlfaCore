@@ -308,10 +308,11 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void FueraDeHorario_SkipsWhenAsistenteIaHandlesOutOfHoursInstead()
     {
-        // Si el bot está activo y configurado para atender fuera de horario, el mensaje FIJO no se
-        // manda -- lo atiende el asistente IA en su lugar (ver EjecutarRespuestaBotAsync).
+        // Si el bot está activo, configurado para atender fuera de horario y atiende el canal de la
+        // conversación, el mensaje FIJO no se manda -- lo atiende el asistente IA en su lugar (ver
+        // EjecutarRespuestaBotAsync). En un canal sin bot sigue saliendo el mensaje fijo.
         Assert.Contains(
-            "if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)\r\n                        return;",
+            "if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured\r\n                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))\r\n                        return;",
             ServiceSource, StringComparison.Ordinal);
     }
 
@@ -2821,6 +2822,10 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

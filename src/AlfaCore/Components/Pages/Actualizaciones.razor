@@ -4,33 +4,20 @@
 @inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Actualizaciones | Alfa Gestión</PageTitle>
 
-<div class="page-grid updates-page">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Actualizaciones de base de datos</h2>
-            <p class="page-intro__text">Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="EjecutarPendientesAsync" disabled="@(_busy || !_loaded)">
-                <i class="bi bi-play-circle"></i> Ejecutar pendientes
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_busy">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
+<div class="gd-page gd gd-legacy updates-page">
+    <header class="gd-header">
+        <h2>Actualizaciones de base de datos</h2>
+        <p>Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</p>
+    </header>
 
-    @if (!string.IsNullOrWhiteSpace(_message))
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetMessageCssClass()">
-                <i class="bi @GetMessageIconClass()"></i> @_message
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_notificacion.For(_message, _isError ? AppUiFeedbackSeverity.Error : _isWorkingMessage ? AppUiFeedbackSeverity.Info : AppUiFeedbackSeverity.Success, _isError ? "No se pudo completar la actualización" : "Actualizaciones")" OnDismiss="() => _message = string.Empty" />
 
     @if (!_loaded)
     {
@@ -259,6 +246,8 @@
 </div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     private ActualizacionesDashboardDto? _dashboard;
     private ActualizacionesSettingsDto _settings = new();
     private bool _loaded;
@@ -266,6 +255,60 @@
     private string _message = string.Empty;
     private bool _isError;
     private bool _isWorkingMessage;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _busy, _loaded);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "actualizaciones",
+            Title = "Actualizaciones de base de datos",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildActualizaciones(RouteContext, Nav, "base"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "ejecutar",
+                    Label = "Ejecutar pendientes",
+                    Icon = "bi-play-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = _busy || !_loaded,
+                    OnClick = () => InvokeAsync(async () => { await EjecutarPendientesAsync(); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _busy,
+                    OnClick = () => InvokeAsync(async () => { await RecargarAsync(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

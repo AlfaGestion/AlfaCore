@@ -45,3 +45,19 @@ window.crmCotizacion = {
         input.click();
     }
 };
+
+// Tablero de CRM: el navegador solo dispara "drop" si algún dragover hace preventDefault. El
+// @ondragover:preventDefault de Blazor no alcanzaba (la tarjeta se arrastraba pero nunca se
+// soltaba en otra etapa); acá se acepta el arrastre dentro del tablero y el drop lo sigue
+// resolviendo Crm.razor (mover oportunidad o reordenar etapas).
+document.addEventListener('dragover', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.crm-kanban')) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    }
+});
+document.addEventListener('drop', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.crm-kanban')) {
+        e.preventDefault();
+    }
+});

@@ -10,35 +10,21 @@
 
 <PageTitle>Actividad | Dashboard de Compras</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Actividad</h2>
-            <p class="page-intro__text">Seguimiento operativo de carga por usuario, volumen de trabajo y ritmo de actividad. <a class="help-link" href="@RouteContext.BuildRoute("/ayuda#10-actividad")">Ver ayuda</a></p>
+            <h2>Actividad</h2>
+            <p>Seguimiento operativo de carga por usuario, volumen de trabajo y ritmo de actividad. <a class="help-link" href="@RouteContext.BuildRoute("/ayuda#10-actividad")">Ver ayuda</a></p>
         </div>
-    </div>
-
-    <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
+    </header>
 
     @if (_error is not null)
     {
-        <div class="panel-card empty-state">
-            <span class="empty-state__eyebrow">Consulta</span>
-            <h3>No fue posible cargar la actividad</h3>
-            <p>@_error.Message</p>
-            @if (_error.HasCode)
-            {
-                <p>Código: @_error.Code</p>
-            }
-            @if (_error.HasSuggestion)
-            {
-                <p>@_error.Suggestion</p>
-            }
-        </div>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No fue posible cargar la actividad" Message="@ErrorTexto(_error)" />
     }
     else if (_page is null)
     {
-        <div class="loading">Cargando actividad...</div>
+        <AlfaEmptyState Title="Cargando actividad" Message="Buscando datos del período." />
     }
     else
     {
@@ -155,7 +141,7 @@
                                 <td style="text-align:right;">@row.PorcentajeConDetalle.ToString("P1", Cultura)</td>
                                 <td>@(row.UltimaActividad?.ToString("dd/MM/yyyy") ?? "—")</td>
                                 <td style="text-align:right;">@row.DiasConActividad.ToString("N0")</td>
-                                <td><button class="btn btn--ghost btn--sm" @onclick="() => SelectUsuarioAsync(row.Usuario)">Ver detalle</button></td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => SelectUsuarioAsync(row.Usuario)">Ver detalle</AlfaButton></td>
                             </tr>
                         }
                     </tbody>
@@ -242,7 +228,7 @@
             </DataTable>
         }
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -258,7 +244,11 @@
     private ActividadUsuarioDetalleDto? _detalle;
     private AlfaCore.Models.AppUiMessage? _error;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        _filters = FilterState.Current;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -272,9 +262,16 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filters/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<ComprasSmartSearch Model="_filters" Options="_options" OnApply="LoadAsync" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "compras",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "actividad")
     });
 
@@ -288,6 +285,7 @@
             _options = optionsResult.Value;
         else
             _error = optionsResult.Feedback;
+        UpdatePageHeader();
 
         await LoadAsync();
     }
@@ -325,6 +323,15 @@
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", Cultura);
     private static string ActividadFlagLabel(bool value) => value ? "Sí" : "No";
+    // Texto del AppUiMessage para AlfaEmptyState: mensaje + código + sugerencia.
+    private static string ErrorTexto(AlfaCore.Models.AppUiMessage? error)
+        => error is null ? string.Empty : string.Join(" ", new[]
+        {
+            error.Message,
+            error.HasCode ? $"Código: {error.Code}." : null,
+            error.HasSuggestion ? error.Suggestion : null
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
     private static string ActividadFlagCss(bool value) => value ? "badge-state badge-state--ok" : "badge-state badge-state--danger";
     private static string ActividadTipoCargaLabel(bool esContable) => esContable ? "Contable" : "Con detalle";
     private static string ActividadTipoCargaCss(bool esContable) => esContable ? "badge-state badge-state--warn" : "badge-state badge-state--ok";

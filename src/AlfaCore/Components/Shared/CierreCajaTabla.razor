@@ -22,8 +22,7 @@
     }
     @if (_error is not null)
     {
-        <div role="alert" class="editor-msg editor-msg--warning">@_error</div>
-        <button class="btn btn--ghost" disabled="@_busy" @onclick="() => LoadAsync(_pagina)">Reintentar</button>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo leer esta sección" Message="@_error" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => LoadAsync(_pagina)" />
     }
     @if (_data is not null && !_busy)
     {
@@ -37,7 +36,7 @@
                     }
                     @if (_data.TotalCount == 0)
                     {
-                        <tr><td colspan="@Seccion.Columnas.Count">Sin movimientos para esta consulta.</td></tr>
+                        <tr><td colspan="@Seccion.Columnas.Count" class="cierre-vacio">Sin movimientos para esta consulta.</td></tr>
                     }
                 </tbody>
                 @if (Seccion.Columnas.Any(c => c.Totaliza))
@@ -46,11 +45,14 @@
                 }
             </table>
         </div>
-        <div class="cierre-paginacion">
-            <span>@_data.TotalCount registros · Página @_pagina de @Paginas</span>
-            <button class="btn btn--ghost btn--sm" disabled="@(_busy || _pagina <= 1)" @onclick="() => LoadAsync(_pagina - 1)">Anterior</button>
-            <button class="btn btn--ghost btn--sm" disabled="@(_busy || _pagina >= Paginas)" @onclick="() => LoadAsync(_pagina + 1)">Siguiente</button>
-        </div>
+        <footer class="cierre-paginacion">
+            <span>@(_data.TotalCount == 1 ? "1 registro" : $"{_data.TotalCount:N0} registros")@(Paginas > 1 ? $" · Página {_pagina} de {Paginas}" : string.Empty)</span>
+            @if (Paginas > 1)
+            {
+                <AlfaIconButton Icon="bi bi-chevron-left" Label="Página anterior" Disabled="@(_busy || _pagina <= 1)" OnClick="_ => LoadAsync(_pagina - 1)" />
+                <AlfaIconButton Icon="bi bi-chevron-right" Label="Página siguiente" Disabled="@(_busy || _pagina >= Paginas)" OnClick="_ => LoadAsync(_pagina + 1)" />
+            }
+        </footer>
     }
 </section>
 

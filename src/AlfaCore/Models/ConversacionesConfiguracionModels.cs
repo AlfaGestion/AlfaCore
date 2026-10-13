@@ -221,6 +221,75 @@ public sealed class ConversacionMercadoLibreConfigDto
     }
 }
 
+/// <summary>
+/// Chat embebible en sitios externos (canal WEBCHAT). Se persiste en TA_CONFIGURACION (claves
+/// CONV_WEBCHAT_*). La clave pública del sitio vive en AlfaCentral.dbo.bases.WebChatSiteKey en modo
+/// SaaS; en instalaciones de una sola base se guarda acá, en <see cref="SiteKey"/>.
+/// </summary>
+public sealed class ConversacionWebChatConfigDto
+{
+    public const string DefaultColor = "#0ea5e9";
+    public const string DefaultTitulo = "¿Te ayudamos?";
+    public const string DefaultMensajeBienvenida = "¡Hola! Escribinos tu consulta y te respondemos enseguida.";
+
+    public bool Activo { get; set; }
+
+    /// <summary>Dominios desde los que se acepta el widget, separados por coma. Vacío = cualquiera.</summary>
+    public string DominiosPermitidos { get; set; } = string.Empty;
+
+    public string MensajeBienvenida { get; set; } = DefaultMensajeBienvenida;
+    public string Titulo { get; set; } = DefaultTitulo;
+    public string Color { get; set; } = DefaultColor;
+
+    /// <summary>Solo instalaciones no SaaS (CONV_WEBCHAT_SITE_KEY). En SaaS la clave está en la base central.</summary>
+    public string SiteKey { get; set; } = string.Empty;
+
+    public string ConfigSource { get; set; } = string.Empty;
+
+    /// <summary>Color validado (#RRGGBB): se inyecta en el CSS del widget dentro del sitio del cliente.</summary>
+    public string ColorSeguro
+        => System.Text.RegularExpressions.Regex.IsMatch(Color ?? string.Empty, "^#[0-9a-fA-F]{6}$")
+            ? Color!
+            : DefaultColor;
+
+    public IReadOnlyList<string> GetDominiosPermitidos()
+        => (DominiosPermitidos ?? string.Empty)
+            .Split([',', ';', '\n', '\r', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeHost)
+            .Where(host => host.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    /// <summary>
+    /// Sin dominios configurados acepta cualquier origen. Con dominios, exige un header Origin cuyo
+    /// host coincida con alguno o sea un subdominio suyo (cliente.com habilita www.cliente.com).
+    /// </summary>
+    public bool IsOriginAllowed(string? origin)
+    {
+        var dominios = GetDominiosPermitidos();
+        if (dominios.Count == 0)
+            return true;
+
+        if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin.Trim(), UriKind.Absolute, out var uri))
+            return false;
+
+        var host = uri.Host.ToLowerInvariant();
+        return dominios.Any(d => host == d || host.EndsWith("." + d, StringComparison.Ordinal));
+    }
+
+    private static string NormalizeHost(string value)
+    {
+        var raw = value.Trim().ToLowerInvariant();
+        if (raw.Length == 0)
+            return string.Empty;
+
+        if (!raw.Contains("://", StringComparison.Ordinal))
+            raw = "https://" + raw;
+
+        return Uri.TryCreate(raw, UriKind.Absolute, out var uri) ? uri.Host : string.Empty;
+    }
+}
+
 public sealed class ConversacionAlfaKnowledgeConfigDto
 {
     public string BaseUrl { get; set; } = string.Empty;
@@ -302,6 +371,31 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Minutos de espera desde que llega el mensaje antes de que el bot responda, para darle
     /// margen a un agente humano a atender primero. 0 = responde de inmediato.</summary>
     public int BotEsperaMinutos { get; set; }
+
+    /// <summary>
+    /// Canales en los que responde el bot (CONV_BOT_CANALES). Sin configurar = todos, para que una base
+    /// que ya tenía el bot activo siga igual. Ej: activo en Chat web e Instagram, apagado en WhatsApp.
+    /// </summary>
+    public List<string> BotCanales { get; set; } = [.. BotCanalesDisponibles.Select(x => x.Codigo)];
+
+    /// <summary>Si el bot no encuentra respuesta (deriva), genera un ticket vinculado a la conversación.</summary>
+    public bool BotGeneraTicket { get; set; } = true;
+
+    /// <summary>Solo Chat web: el bot le pide al visitante su WhatsApp y la razón social para saber quién escribe.</summary>
+    public bool BotWebPideDatos { get; set; } = true;
+
+    public static IReadOnlyList<(string Codigo, string Nombre)> BotCanalesDisponibles { get; } =
+    [
+        ("WHATSAPP", "WhatsApp"),
+        ("INSTAGRAM", "Instagram"),
+        ("FACEBOOK", "Facebook Messenger"),
+        ("MERCADOLIBRE", "Mercado Libre"),
+        ("WEBCHAT", "Chat del sitio web")
+    ];
+
+    public bool BotRespondeEnCanal(string? canal)
+        => !string.IsNullOrWhiteSpace(canal)
+           && BotCanales.Any(x => string.Equals(x, canal.Trim(), StringComparison.OrdinalIgnoreCase));
 
     // Auto-cierre por inactividad. Cierra conversaciones donde estamos esperando al cliente
     // (último mensaje nuestro) y no responde. Manda un aviso previo antes de cerrar. Apagado por

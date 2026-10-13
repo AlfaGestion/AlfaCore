@@ -9,25 +9,21 @@
 
 <PageTitle>Comprobantes | Ventas</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Comprobantes de ventas</h2>
-            <p class="page-intro__text">Totales agrupados por tipo de comprobante con apertura de netos, IVA y retenciones del período.</p>
+            <h2>Comprobantes de ventas</h2>
+            <p>Totales agrupados por tipo de comprobante con apertura de netos, IVA y retenciones del período.</p>
         </div>
-    </div>
-
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync"
-                      Titulo="Filtros de comprobantes"
-                      Subtitulo="Acotá por fecha, cliente, tipo de comprobante u otros criterios." />
+    </header>
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="panel-card empty-state"><p>@_error</p></div>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los datos" Message="@_error" />
     }
     else if (_page is null)
     {
-        <div class="loading">Cargando comprobantes...</div>
+        <AlfaEmptyState Title="Cargando comprobantes" Message="Buscando datos del período." />
     }
     else
     {
@@ -105,7 +101,7 @@
             </div>
         }
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -118,7 +114,11 @@
     private VentasResumenTcPageDto? _page;
     private string? _error;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        _filters = FilterState.Ventas;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -132,9 +132,16 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filters/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<VentasSmartSearch Model="_filters" Options="_options" OnApply="LoadAsync" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "comprobantes")
     });
 
@@ -142,6 +149,7 @@
     {
         _filters = FilterState.Ventas;
         _options = await GestionSvc.GetVentasFilterOptionsAsync();
+        UpdatePageHeader();
         await LoadAsync();
     }
 

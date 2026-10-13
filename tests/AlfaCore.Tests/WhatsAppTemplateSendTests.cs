@@ -39,7 +39,9 @@ public sealed class WhatsAppTemplateSendTests
         // y de componentes no soportados se centralizó en WhatsAppTemplateValidation.ValidateSend, que
         // reemplazó el guard inline "requiredVariableCount < values.Count" (menos estricto: solo
         // chequeaba "al menos", no cantidad exacta ni consecutividad).
-        var variableGuardIndex = source.IndexOf("WhatsAppTemplateValidation.ValidateSend(template, values)", methodStart, StringComparison.Ordinal);
+        // SendTemplateWithDocumentAsync comparte el núcleo (SendTemplateCoreAsync) y pasa si trae
+        // documento como tercer argumento, por eso se busca el prefijo de la llamada.
+        var variableGuardIndex = source.IndexOf("WhatsAppTemplateValidation.ValidateSend(template, values", methodStart, StringComparison.Ordinal);
         Assert.True(variableGuardIndex >= 0, "No se encontró la validación de variables requeridas (WhatsAppTemplateValidation.ValidateSend).");
 
         // La validación tiene que estar ANTES de la llamada a Graph, no después -- si no, un template

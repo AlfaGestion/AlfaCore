@@ -7,14 +7,18 @@
 @inject IJSRuntime JS
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.WebUtilities
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @implements IAsyncDisposable
 
 <PageTitle>Novedades | AlfaNet</PageTitle>
+
+<div class="gd gd-modal-scope novedades-ad">
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades.css?v=20260710-recupera-css" />
+    <link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
 </HeadContent>
 
-<link rel="stylesheet" href="/css/novedades.css?v=20260710-recupera-css" />
+<link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
 
 <section class="novedades-shell">
     <aside class="novedades-sidebar">
@@ -303,6 +307,7 @@
         </article>
     </div>
 }
+</div>
 
 @code {
     private NovedadesPageDto _page = new();
@@ -372,6 +377,33 @@
         ("bi-exclamation-triangle", "Atencion")
     ];
 
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "informes",
+            Title = "Novedades",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInformes(RouteContext, Nav, "novedades"),
+        });
+    }
+
     protected override async Task OnInitializedAsync()
         => await LoadAsync(GetInitialId());
 
@@ -409,6 +441,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         if (_informesEditorJs is not null)
             await _informesEditorJs.DisposeAsync();
         if (_novedadesEditorJs is not null)

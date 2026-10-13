@@ -1,0 +1,78 @@
+@* Configuración → Canales → Chat del sitio web (canal WEBCHAT, AlfaDesign v1). *@
+
+<ConversacionesConfigPagina Titulo="Chat del sitio web" Descripcion="Burbuja de chat para tu sitio (WordPress u otro). Los mensajes entran a Conversaciones y el asistente IA responde primero.">
+    <Estado>
+        <AlfaTag Tone="@Tono(Config.Activo)">Canal: @(Config.Activo ? "activo" : "inactivo")</AlfaTag>
+        <AlfaTag Tone="@Tono(TieneClave)">Clave del sitio: @(TieneClave ? "generada" : "sin generar")</AlfaTag>
+        <AlfaTag Tone="@Tono(Dominios.Count > 0)">Dominios: @(Dominios.Count > 0 ? "restringidos" : "cualquiera")</AlfaTag>
+    </Estado>
+    <ChildContent>
+        <ConversacionesConfigTarjeta Titulo="Canal y apariencia" Columnas="2">
+            <AlfaCheckbox Class="cfg-full" Value="@Config.Activo" ValueChanged="@((bool? v) => Config.Activo = v == true)">Activar chat del sitio web</AlfaCheckbox>
+            <AlfaInput Id="webchat-titulo" Label="Título del widget" Placeholder="@ConversacionWebChatConfigDto.DefaultTitulo"
+                       Value="@Config.Titulo" ValueChanged="@((string? v) => Config.Titulo = v ?? string.Empty)" />
+            <div class="field">
+                <label for="webchat-color">Color</label>
+                <input id="webchat-color" type="color" value="@Config.ColorSeguro"
+                       @onchange="@(e => Config.Color = e.Value?.ToString() ?? string.Empty)" />
+            </div>
+            <ConversacionesConfigTexto Id="webchat-bienvenida" Label="Mensaje de bienvenida" Filas="2"
+                                       Placeholder="@ConversacionWebChatConfigDto.DefaultMensajeBienvenida"
+                                       Value="@Config.MensajeBienvenida" ValueChanged="@((string? v) => Config.MensajeBienvenida = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Dominios permitidos"
+                                     Descripcion="@(Dominios.Count == 0
+                                         ? "Vacío: el chat acepta mensajes desde cualquier sitio que tenga el código. Recomendado completarlo."
+                                         : "Incluye subdominios: misitio.com habilita www.misitio.com.")">
+            <AlfaInput Id="webchat-dominios" Label="Dominios (separados por coma)" Placeholder="misitio.com, otrositio.com.ar"
+                       Value="@Config.DominiosPermitidos" ValueChanged="@((string? v) => Config.DominiosPermitidos = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Código para pegar en el sitio"
+                                     Descripcion="Pegalo antes de </body>. En WordPress: con un plugin para insertar código en el pie, o en un bloque HTML personalizado de una entrada. data-contexto es opcional y sirve para distinguir desde qué página escriben (ej. actualizacion-v3-2).">
+            @if (TieneClave)
+            {
+                <pre class="conv-config-snippet"><code>@Snippet</code></pre>
+                <div class="cfg-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-clipboard" Disabled="@Busy" OnClick="() => OnCopiarCodigo.InvokeAsync()">Copiar código</AlfaButton>
+                </div>
+            }
+            else
+            {
+                <span class="cfg-hint">Generá la clave del sitio para obtener el código. Se hace una sola vez por base.</span>
+                <div class="cfg-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-key" Disabled="@Busy" OnClick="() => OnGenerarClave.InvokeAsync()">Generar clave</AlfaButton>
+                </div>
+            }
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigAyuda Titulo="Cómo funciona">
+            <ol>
+                <li>Generá la clave del sitio y guardá la configuración con el canal activo.</li>
+                <li>Pegá el código en el sitio.</li>
+                <li>El visitante escribe sin registrarse; puede dejar su nombre si quiere.</li>
+                <li>El mensaje entra a Conversaciones como <strong>Chat del sitio web</strong> y el asistente IA responde primero.</li>
+                <li>Si un agente responde desde la bandeja, el visitante lo ve en el widget a los pocos segundos.</li>
+            </ol>
+            <p>El visitante es anónimo: el asistente no informa saldos ni pedidos en este canal y deriva a un agente cuando no puede resolver.</p>
+        </ConversacionesConfigAyuda>
+
+        <ConversacionesConfigBarraGuardar Etiqueta="Guardar chat del sitio web" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+@code {
+    [Parameter, EditorRequired] public ConversacionWebChatConfigDto Config { get; set; } = new();
+    [Parameter] public string? SiteKey { get; set; }
+    [Parameter] public string Snippet { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public EventCallback OnGenerarClave { get; set; }
+    [Parameter] public EventCallback OnCopiarCodigo { get; set; }
+
+    private bool TieneClave => !string.IsNullOrWhiteSpace(SiteKey);
+    private IReadOnlyList<string> Dominios => Config.GetDominiosPermitidos();
+
+    private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
+}

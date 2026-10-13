@@ -17,849 +17,639 @@
 
 <PageTitle>Administrar | AlfaNet</PageTitle>
 
-<div class="page-grid admin-home-page">
-    @if (!IsSuperAdmin)
-    {
-        <section class="panel-card">
-            <div class="editor-msg editor-msg--warning">
-                <strong>Acceso restringido</strong>
-                <p>Solo los superadmin pueden acceder a esta sección.</p>
-            </div>
-        </section>
-    }
-    else
-    {
-        @if (_loading)
+@* Administrar → Clientes (AlfaDesign v1, 2026-10-07). Todo lo que se graba acá impacta en
+   ALFA_CENTRAL (compartida por staging y producción): las acciones que cortan servicio, borran
+   datos o cambian qué servidor/bases procesan los workers piden confirmación (ConfirmAsync). *@
+
+<AlfaNotification Message="@Feedback" OnDismiss="DismissFeedback" />
+
+<div class="adm-page">
+    <div class="adm">
+        @if (!IsSuperAdmin)
         {
-            <p>Cargando administraci&oacute;n central...</p>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden acceder a esta sección." />
+        }
+        else if (_loading)
+        {
+            <AlfaEmptyState Title="Cargando administración central" Message="Buscando clientes, usuarios y bases." />
         }
         else
         {
-                @if (!string.IsNullOrWhiteSpace(_message))
-                {
-                    <div class="editor-msg editor-msg--success">
-                        <strong>Listo</strong>
-                        <p>@_message</p>
-                    </div>
-                }
-
-                @if (!string.IsNullOrWhiteSpace(_error))
-                {
-                    <div class="editor-msg editor-msg--warning">
-                        <strong>No se pudo completar la operación</strong>
-                        <p>@_error</p>
-                    </div>
-                }
-
-                <section class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h2 class="panel-card__title">Infraestructura</h2>
-                            <p class="panel-card__subtitle">Cuando AlfaCore corre en más de un web service, solo uno debe procesar los workers en segundo plano (Compra IA, Conversaciones, WhatsApp, facturación) para no duplicar trabajo. Vacío = sin restricción, todos los servidores los ejecutan.</p>
-                        </div>
-                    </div>
-
-                    <div class="row g-3 align-items-end">
-                        <div class="col-12 col-lg-4">
-                            <div class="shell-empty-state">
-                                <strong>Este servidor</strong>
-                                <span>@NombreServidorLocal</span>
-                            </div>
-                        </div>
-                        <div class="col-12 col-lg-4">
-                            <label class="form-label mb-1" for="admin-servidor-workers">Servidor autorizado a correr los workers</label>
-                            <input id="admin-servidor-workers" class="form-control admin-modal-input" @bind="_servidorWorkersInput" @bind:event="oninput" placeholder="Vacío = todos los servidores" disabled="@_guardandoServidorWorkers" />
-                        </div>
-                        <div class="col-12 col-lg-4 d-flex gap-2">
-                            <button type="button" class="btn btn-primary" disabled="@_guardandoServidorWorkers" @onclick="GuardarServidorWorkersAsync">Guardar</button>
-                            <button type="button" class="btn btn-outline-light" disabled="@(_guardandoServidorWorkers || string.IsNullOrWhiteSpace(_servidorWorkersActivo))" @onclick="QuitarRestriccionServidorWorkersAsync">Quitar restricción</button>
-                        </div>
-                    </div>
-                    <div class="form-text mt-2">
-                        Activo hoy:
-                        @if (string.IsNullOrWhiteSpace(_servidorWorkersActivo))
-                        {
-                            <strong>todos los servidores (sin restricción)</strong>
-                        }
-                        else
-                        {
-                            <strong>@_servidorWorkersActivo</strong>
-                        }
-                    </div>
-                </section>
-
-                <div class="row g-3">
-                    <div class="col-12 col-xxl-4">
-                        <div class="panel-card h-100">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">Clientes</h2>
-                                    <p class="panel-card__subtitle">Buscá arriba en el encabezado. Seleccioná un cliente para cargar sus usuarios y bases.</p>
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label mb-1" for="admin-filtro-modulo">Filtrar por módulo activo</label>
-                                <select id="admin-filtro-modulo" class="form-select admin-modal-input" @onchange="OnFiltroModuloChangedAsync" disabled="@_cargandoFiltroModulo">
-                                    <option value="">Todos los clientes</option>
-                                    @foreach (var modulo in _modulosDisponibles)
-                                    {
-                                        <option value="@modulo.Id" selected="@(_filtroModuloId == modulo.Id.ToString())">@modulo.Nombre</option>
-                                    }
-                                </select>
-                                @if (_cargandoFiltroModulo)
-                                {
-                                    <span class="shell-empty-state__eyebrow">Buscando clientes con el módulo activo...</span>
-                                }
-                            </div>
-
-                            @if (FilteredClients.Count == 0)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>No se encontraron clientes.</strong>
-                                    <span>Usá "Nueva cuenta" para buscar una cuenta en VT_CLIENTES.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="table-responsive admin-table-wrap">
-                                    <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                                        <thead>
-                                            <tr>
-                                                <th>Código</th>
-                                                <th>Razón social</th>
-                                                <th>Host web</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var client in FilteredClients)
-                                            {
-                                                <tr class="admin-client-row @GetClientRowClass(client.IdCliente)"
-                                                    role="button"
-                                                    tabindex="0"
-                                                    @onclick="() => SelectClientAsync(client)">
-                                                    <td>@client.IdCliente</td>
-                                                    <td>@client.RazonSocial</td>
-                                                    <td>@client.IdWeb</td>
-                                                        <td class="text-end">
-                                                            <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => SelectClientAsync(client)" @onclick:stopPropagation="true">Abrir</button>
-                                                        </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                    <div class="col-12 col-xxl-8">
-                        <div class="panel-card h-100">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">Cuenta</h2>
-                                    <p class="panel-card__subtitle">Seleccioná un cliente para ver sus datos o abrí el frame de alta.</p>
-                                </div>
-                                <div class="d-flex gap-2 flex-wrap">
-                                    <button type="button" class="btn btn-primary" @onclick="StartNewAccount">Nueva cuenta</button>
-                                    <button type="button" class="btn btn-outline-light" disabled="@(!HasSelectedClient)" @onclick="OpenSelectedClientEditor">Editar cuenta</button>
-                                </div>
-                            </div>
-
-                            @if (!HasSelectedClient)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>No hay cliente seleccionado.</strong>
-                                    <span>Elegí un cliente de la grilla o usá "Nueva cuenta" para abrir el frame de alta.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="panel-card mb-3">
-                                    <div class="panel-card__header">
-                                        <div>
-                                            <h3 class="panel-card__title">@_clientForm.IdCliente</h3>
-                                            <p class="panel-card__subtitle">@_clientForm.RazonSocial</p>
-                                        </div>
-                                        <span class="shell-empty-state__eyebrow">Host web: @_clientForm.IdWeb</span>
-                                    </div>
-
-                                    <div class="row g-3">
-                                        <div class="col-12 col-lg-4">
-                                            <div class="shell-empty-state">
-                                                <strong>SuperAdmin</strong>
-                                                <span>@(_clientForm.SuperAdmin ? "Sí" : "No")</span>
-                                            </div>
-                                        </div>
-                                        <div class="col-12 col-lg-4">
-                                            <div class="shell-empty-state">
-                                                <strong>Usuarios</strong>
-                                                <span>@CurrentUsers.Count registro(s)</span>
-                                            </div>
-                                        </div>
-                                        <div class="col-12 col-lg-4">
-                                            <div class="shell-empty-state">
-                                                <strong>Bases</strong>
-                                                <span>@CurrentBases.Count registro(s)</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="d-flex gap-2 flex-wrap mt-3">
-                                        <button type="button" class="btn btn-primary" @onclick="OpenSelectedClientEditor">Editar datos</button>
-                                        <button type="button" class="btn btn-outline-light" @onclick="ClearSelection">Limpiar selección</button>
-                                        <button type="button" class="btn btn-outline-danger ms-auto" title="Borra módulos, usuarios, bases y el registro oficial (CUIT) — para reusar los mismos datos en un alta de prueba nueva" @onclick="OpenResetClienteModal">Reset completo (prueba)</button>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row g-3 mt-1">
-                    <div class="col-12">
-                        <div class="panel-card h-100">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">Usuarios</h2>
-                                    <p class="panel-card__subtitle">Se listan los usuarios del cliente seleccionado. La contraseña se muestra por ahora para administración central.</p>
-                                </div>
-                                <button type="button" class="btn btn-primary" disabled="@(!HasSelectedClient)" @onclick="StartNewUser">Nuevo usuario</button>
-                            </div>
-
-                            @if (!HasSelectedClient)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>Seleccioná un cliente.</strong>
-                                    <span>Los usuarios se cargan desde ALFA_CENTRAL.dbo.users.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                @if (CurrentUsers.Count == 0)
-                                {
-                                    <div class="shell-empty-state">
-                                        <strong>Sin usuarios para este cliente.</strong>
-                                        <span>Usá "Nuevo usuario" para registrar el primero.</span>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="table-responsive admin-table-wrap">
-                                        <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                                            <thead>
-                                                <tr>
-                                                    <th>Usuario</th>
-                                                    <th>Password</th>
-                                                    <th></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach (var item in CurrentUsers)
-                                                {
-                                                    <tr>
-                                                        <td>@item.UserName</td>
-                                                        <td>@item.Password</td>
-                                                        <td class="text-end">
-                                                            <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
-                                                                <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditUserAsync(item)">Editar</button>
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteUserAsync(item)">Eliminar</button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                }
-                            }
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row g-3 mt-1">
-                    <div class="col-12">
-                        <div class="panel-card h-100">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">Bases registradas</h2>
-                                    <p class="panel-card__subtitle">Se listan las bases del cliente seleccionado. La contraseña se ve por ahora, pero conviene ocultarla luego.</p>
-                                </div>
-                                <button type="button" class="btn btn-primary" disabled="@(!HasSelectedClient)" @onclick="StartNewBase">Registrar base</button>
-                            </div>
-
-                            @if (!HasSelectedClient)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>Seleccioná un cliente.</strong>
-                                    <span>Las bases se cargan desde ALFA_CENTRAL.dbo.bases.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                @if (CurrentBases.Count == 0)
-                                {
-                                    <div class="shell-empty-state">
-                                        <strong>Sin bases para este cliente.</strong>
-                                        <span>Usá "Registrar base" para crear la primera.</span>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="table-responsive admin-table-wrap">
-                                        <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                                            <thead>
-                                                <tr>
-                                                    <th>ID base</th>
-                                                    <th>Nombre</th>
-                                                    <th>Server</th>
-                                                    <th>Base</th>
-                                                    <th>Usuario</th>
-                                                    <th>Password</th>
-                                                    <th>Lectura con IA</th>
-                                                    <th>Conversaciones</th>
-                                                    <th></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach (var item in CurrentBases)
-                                                {
-                                                    <tr>
-                                                        <td>@item.IdBase</td>
-                                                        <td>@item.Nombre</td>
-                                                        <td>@item.DbServer</td>
-                                                        <td>@item.DbName</td>
-                                                        <td>@item.DbUser</td>
-                                                        <td>@item.DbPassword</td>
-                                                        <td>
-                                                            <label class="d-flex gap-2 align-items-center">
-                                                                <input type="checkbox" class="form-check-input" checked="@_basesCompraIa.Contains(item.IdBase)"
-                                                                    disabled="@(_guardandoBaseIa || !_seleccionIaDisponible)"
-                                                                    @onchange="e => CambiarBaseIaAsync(item, e.Value is true)" />
-                                                                Incluir
-                                                            </label>
-                                                        </td>
-                                                        <td>
-                                                            <label class="d-flex gap-2 align-items-center">
-                                                                <input type="checkbox" class="form-check-input" checked="@_basesConversaciones.Contains(item.IdBase)"
-                                                                    disabled="@(_guardandoBaseConversaciones || !_seleccionConversacionesDisponible)"
-                                                                    @onchange="e => CambiarBaseConversacionesAsync(item, e.Value is true)" />
-                                                                Incluir
-                                                            </label>
-                                                        </td>
-                                                        <td class="text-end">
-                                                            <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
-                                                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="() => OpenSyncConfigAsync(item)" @onclick:stopPropagation="true">Config Sync</button>
-                                                                <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditBaseAsync(item)">Editar</button>
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteBaseAsync(item)">Eliminar</button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                }
-                            }
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row g-3 mt-1">
-                    <div class="col-12">
-                        <div class="panel-card h-100">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">Módulos</h2>
-                                    <p class="panel-card__subtitle">Qué módulos tiene habilitados el cliente seleccionado. Sin autoservicio: se activan acá después de confirmar el pago por fuera del sistema.</p>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button type="button" class="btn btn-outline-light" @onclick="GoSolicitudes">Solicitudes pendientes</button>
-                                    <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Armar catálogo</button>
-                                </div>
-                            </div>
-
-                            @if (!HasSelectedClient)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>Seleccioná un cliente.</strong>
-                                    <span>Los módulos se cargan desde ALFA_CENTRAL.dbo.ClienteModulos.</span>
-                                </div>
-                            }
-                            else if (_clienteModulos.Count == 0)
-                            {
-                                <div class="shell-empty-state">
-                                    <strong>No hay módulos definidos todavía.</strong>
-                                    <span>Usá "Armar catálogo" para crear el primero.</span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="table-responsive admin-table-wrap">
-                                    <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                                        <thead>
-                                            <tr>
-                                                <th>Módulo</th>
-                                                <th>Precio</th>
-                                                <th>Estado</th>
-                                                <th>Plan</th>
-                                                <th>Activado</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var item in _clienteModulos)
-                                            {
-                                                <tr>
-                                                    <td>
-                                                        @item.Nombre
-                                                        @if (item.EsDependenciaDeOtro)
-                                                        {
-                                                            <span class="shell-empty-state__eyebrow"> (dependencia de otro módulo)</span>
-                                                        }
-                                                    </td>
-                                                    <td>@item.Precio.ToString("C2")</td>
-                                                    <td>@GetEstadoLabel(item)</td>
-                                                    <td>
-                                                        @if (item.IdPlan is not null)
-                                                        {
-                                                            <div>@item.PlanNombre</div>
-                                                            @if (item.FechaProximoCobro is not null)
-                                                            {
-                                                                <span class="shell-empty-state__eyebrow">Próx. cobro: @item.FechaProximoCobro.Value.ToString("dd/MM/yyyy")</span>
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>—</span>
-                                                        }
-                                                    </td>
-                                                    <td>
-                                                        @if (item.EstaActivo && item.ActivadoUtc is not null)
-                                                        {
-                                                            @item.ActivadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
-                                                            @if (!string.IsNullOrWhiteSpace(item.ActivadoPor))
-                                                            {
-                                                                <span> — @item.ActivadoPor</span>
-                                                            }
-                                                        }
-                                                        else if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Solicitado, StringComparison.OrdinalIgnoreCase) && item.SolicitadoUtc is not null)
-                                                        {
-                                                            @item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
-                                                            @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
-                                                            {
-                                                                <span> — @item.SolicitadoPor</span>
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>—</span>
-                                                        }
-                                                    </td>
-                                                    <td class="text-end">
-                                                        <div class="d-inline-flex gap-2">
-                                                            @if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase) && item.EstaActivo)
-                                                            {
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(_esClienteLegacySeleccionado && !CompraIaHabilitacion.RequiereActivacionExplicita(item.Codigo))" @onclick="() => SuspenderModuloAsync(item)">Cortar prueba</button>
-                                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Confirmar pago</button>
-                                                            }
-                                                            else if (item.EstaActivo)
-                                                            {
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(_esClienteLegacySeleccionado && !CompraIaHabilitacion.RequiereActivacionExplicita(item.Codigo))" @onclick="() => SuspenderModuloAsync(item)">Suspender</button>
-                                                            }
-                                                            else
-                                                            {
-                                                                @if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Solicitado, StringComparison.OrdinalIgnoreCase))
-                                                                {
-                                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RechazarModuloAsync(item)">Rechazar</button>
-                                                                }
-                                                                else
-                                                                {
-                                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => SolicitarModuloAsync(item)">Solicitar</button>
-                                                                }
-                                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Activar</button>
-                                                            }
-                                                            @if (!item.EsDependenciaDeOtro)
-                                                            {
-                                                                <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => AbrirPlanModal(item)">@(item.IdPlan is null ? "Contratar plan" : "Cambiar plan")</button>
-                                                            }
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                                @if (_esClienteLegacySeleccionado)
-                                {
-                                    <div class="form-text mt-2">Este cliente es legacy: sus módulos habituales están activos. Carga de comprobantes con IA requiere activación explícita y selección de bases.</div>
-                                }
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-        }
-    }
-</div>
-
-@if (_showPlanModal && _planModalItem is not null)
-{
-    <div class="modal-overlay" @onclick="CancelarPlanModal">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-plan-modal-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
+            <header class="adm-header">
                 <div>
-                    <h2 id="admin-plan-modal-title" class="panel-card__title">@(_planModalItem.IdPlan is null ? "Contratar plan" : "Cambiar plan")</h2>
-                    <p class="panel-card__subtitle">@_planModalItem.Nombre — sin prorrateo: un cambio de plan queda efectivo recién en el próximo período.</p>
+                    <h2>Clientes</h2>
+                    <p>Cuentas de ALFA_CENTRAL con sus usuarios, bases y módulos. Buscá arriba en el encabezado y seleccioná un cliente para ver el detalle.</p>
                 </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelarPlanModal">Cerrar</button>
-            </div>
+            </header>
 
-            @if (!string.IsNullOrWhiteSpace(_planModalError))
-            {
-                <div class="editor-msg editor-msg--warning">
-                    <strong>No se pudo completar la operación</strong>
-                    <p>@_planModalError</p>
+            <section class="adm-card" aria-label="Infraestructura">
+                <div class="adm-card__header">
+                    <div>
+                        <h3>Infraestructura</h3>
+                        <p>Con más de un web service, solo uno debe procesar los workers en segundo plano (Compra IA, Conversaciones, WhatsApp, facturación). Vacío = sin restricción, todos los servidores los ejecutan.</p>
+                    </div>
                 </div>
-            }
+                <div class="adm-card__body">
+                    <div class="adm-grid adm-grid--3 adm-infra">
+                        <div class="adm-readonly">
+                            <span class="adm-readonly__label">Este servidor</span>
+                            <span class="adm-readonly__value">@NombreServidorLocal</span>
+                        </div>
+                        <AlfaInput Label="Servidor autorizado a correr los workers"
+                                   Value="@_servidorWorkersInput"
+                                   ValueChanged="v => _servidorWorkersInput = v ?? string.Empty"
+                                   Placeholder="Vacío = todos los servidores"
+                                   Disabled="@_guardandoServidorWorkers"
+                                   HelpText="@(string.IsNullOrWhiteSpace(_servidorWorkersActivo) ? "Activo hoy: todos los servidores (sin restricción)." : $"Activo hoy: {_servidorWorkersActivo}.")" />
+                        <div class="adm-infra__actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="@_guardandoServidorWorkers" OnClick="_ => GuardarServidorWorkersAsync()">Guardar</AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_guardandoServidorWorkers || string.IsNullOrWhiteSpace(_servidorWorkersActivo))" OnClick="_ => QuitarRestriccionServidorWorkersAsync()">Quitar restricción</AlfaButton>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-            @if (_planModalLoading)
-            {
-                <p>Cargando planes del módulo...</p>
-            }
-            else if (_planModalOpciones.Count == 0)
-            {
-                <div class="shell-empty-state">
-                    <strong>Este módulo todavía no tiene planes cargados.</strong>
-                    <span>Cargalos primero desde Administrar → Módulos → Planes.</span>
-                </div>
-            }
-            else
-            {
-                <div class="mb-3">
-                    <label class="form-label">Plan</label>
-                    <select class="form-select" @bind="_planModalIdPlanSeleccionado">
-                        <option value="0">Elegí un plan...</option>
-                        @foreach (var plan in _planModalOpciones)
-                        {
-                            <option value="@plan.Id">@plan.Nombre — @plan.Precio.ToString("N2") @plan.Moneda (@GetTipoFacturacionLabel(plan.TipoFacturacion))</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-primary" disabled="@_planModalBusy" @onclick="ConfirmarPlanAsync">@(_planModalItem.IdPlan is null ? "Contratar" : "Cambiar")</button>
-                    <button type="button" class="btn btn-outline-light" disabled="@_planModalBusy" @onclick="CancelarPlanModal">Cancelar</button>
-                </div>
-            }
-        </section>
-    </div>
-}
-
-@if (_showClientEditor)
-{
-    <div class="modal-overlay" @onclick="CloseClientEditor">
-        <section class="panel-card app-modal app-modal--wide admin-modal admin-client-modal" role="dialog" aria-modal="true" aria-labelledby="admin-client-editor-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="admin-client-editor-title" class="panel-card__title">@(_newClientDraft ? "Nueva cuenta" : "Editar cuenta")</h2>
-                    <p class="panel-card__subtitle">Buscá un cliente en VT_CLIENTES o completá los datos centrales manualmente.</p>
-                </div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-outline-light" @onclick="ToggleLookupPanel">
-                        @(_showLookupPanel ? "Cerrar buscador VT_CLIENTES" : "Buscar en VT_CLIENTES")
-                    </button>
-                    <button type="button" class="btn btn-outline-light" @onclick="CloseClientEditor">Cancelar</button>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="editor-msg editor-msg--success">
-                    <strong>Listo</strong>
-                    <p>@_message</p>
-                </div>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_error))
-            {
-                <div class="editor-msg editor-msg--warning">
-                        <strong>No se pudo completar la operación</strong>
-                    <p>@_error</p>
-                </div>
-            }
-
-            @if (_showLookupPanel)
-            {
-                <div class="panel-card mb-3">
-                    <div class="panel-card__header">
+            <div class="adm-split">
+                <section class="adm-card" aria-label="Clientes">
+                    <div class="adm-card__header">
                         <div>
-                            <h3 class="panel-card__title">Buscar en VT_CLIENTES</h3>
-                            <p class="panel-card__subtitle">Filtrá por código, razón social o CUIT/documento de la base activa.</p>
+                            <h3>Clientes</h3>
+                            <p>Seleccioná un cliente para cargar sus usuarios, bases y módulos.</p>
                         </div>
                     </div>
-
-                    <div class="row g-2 align-items-end mb-3">
-                        <div class="col-12 col-lg-9">
-                            <input class="form-control admin-modal-input"
-                                   placeholder="Buscar cuenta..."
-                                   @bind="_lookupSearch"
-                                   @bind:event="oninput"
-                                   @onkeydown="HandleLookupKeyDownAsync" />
-                        </div>
-                        <div class="col-12 col-lg-3">
-                            <button type="button" class="btn btn-primary w-100" @onclick="SearchLookupAsync">Buscar</button>
-                        </div>
-                    </div>
-
-                    @if (_lookupLoading)
+                    @if (_cargandoFiltroModulo)
                     {
-                        <p>Buscando clientes...</p>
+                        <p class="adm-hint adm-card__note">Buscando clientes con el módulo activo...</p>
                     }
-                    else if (_lookupResults.Count == 0)
+                    @if (FilteredClients.Count == 0)
                     {
-                        <div class="shell-empty-state">
-                            <strong>No hubo coincidencias.</strong>
-                            <span>Probá con otra razón social, código o documento.</span>
-                        </div>
+                        <AlfaEmptyState Title="No se encontraron clientes" Message="Probá con otra búsqueda o usá “Nueva cuenta” para buscar una cuenta en VT_CLIENTES." />
                     }
                     else
                     {
-                        <div class="table-responsive admin-table-wrap">
-                            <table class="table table-sm align-middle admin-table" data-sticky-list-header>
+                        <div class="adm-table-wrap adm-clientes-scroll">
+                            <table class="adm-table">
                                 <thead>
                                     <tr>
                                         <th>Código</th>
                                         <th>Razón social</th>
-                                        <th>Documento</th>
-                                        <th>Mail</th>
-                                        <th></th>
+                                        <th>Host web</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var item in _lookupResults)
+                                    @foreach (var client in FilteredClients)
                                     {
-                                        <tr>
-                                            <td>@item.Codigo</td>
-                                            <td>@item.RazonSocial</td>
-                                            <td>@item.Documento</td>
-                                            <td>@item.Mail</td>
-                                            <td class="text-end">
-                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => SelectLookupAsync(item)">Seleccionar</button>
-                                            </td>
+                                        <tr class="is-clickable @GetClientRowClass(client.IdCliente)"
+                                            tabindex="0"
+                                            @onclick="() => SelectClientAsync(client)"
+                                            @onkeydown="e => OnClientRowKeyDownAsync(e, client)">
+                                            <td class="is-nowrap">@client.IdCliente</td>
+                                            <td>@client.RazonSocial</td>
+                                            <td><code>@client.IdWeb</code></td>
                                         </tr>
                                     }
                                 </tbody>
                             </table>
                         </div>
+                        <footer class="alfa-data-view-footer">
+                            <span class="alfa-data-view-footer__summary">@(FilteredClients.Count == 1 ? "1 cliente" : $"{FilteredClients.Count} clientes")</span>
+                        </footer>
                     }
-                </div>
-            }
+                </section>
 
-            <div class="row g-3">
-                <div class="col-12 col-lg-3">
-                    <label class="form-label">Cuenta</label>
-                    <input class="form-control admin-modal-input" @bind="_clientForm.IdCliente" />
+                <section class="adm-card" aria-label="Cuenta">
+                    <div class="adm-card__header">
+                        <div>
+                            @if (HasSelectedClient)
+                            {
+                                <h3>@(string.IsNullOrWhiteSpace(_clientForm.RazonSocial) ? _clientForm.IdCliente : _clientForm.RazonSocial)</h3>
+                                <p>
+                                    Cuenta @_clientForm.IdCliente
+                                    @if (!string.IsNullOrWhiteSpace(_clientForm.IdWeb))
+                                    {
+                                        <span> · Host web <code>@_clientForm.IdWeb</code></span>
+                                    }
+                                    else
+                                    {
+                                        <span> · Sin host web</span>
+                                    }
+                                </p>
+                            }
+                            else
+                            {
+                                <h3>Cuenta</h3>
+                                <p>Seleccioná un cliente para ver sus datos.</p>
+                            }
+                        </div>
+                        @if (HasSelectedClient)
+                        {
+                            <div class="adm-row-actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" OnClick="_ => ClearSelection()">Limpiar selección</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => OpenSelectedClientEditor()">Editar cuenta</AlfaButton>
+                            </div>
+                        }
+                    </div>
+                    @if (!HasSelectedClient)
+                    {
+                        <AlfaEmptyState Title="No hay cliente seleccionado" Message="Elegí un cliente de la lista o usá “Nueva cuenta” para dar de alta uno." />
+                    }
+                    else
+                    {
+                        <div class="adm-card__body">
+                            <div class="adm-kpis adm-kpis--4">
+                                <div class="adm-kpi">
+                                    <span>SuperAdmin</span>
+                                    <strong>@(_clientForm.SuperAdmin ? "Sí" : "No")</strong>
+                                </div>
+                                <div class="adm-kpi">
+                                    <span>Usuarios</span>
+                                    <strong>@CurrentUsers.Count</strong>
+                                </div>
+                                <div class="adm-kpi">
+                                    <span>Bases</span>
+                                    <strong>@CurrentBases.Count</strong>
+                                </div>
+                                <div class="adm-kpi">
+                                    <span>Módulos activos</span>
+                                    <strong>@_clienteModulos.Count(m => m.EstaActivo)</strong>
+                                </div>
+                            </div>
+                            <div class="adm-danger-zone">
+                                <div>
+                                    <strong>Reset completo (solo cuentas de prueba)</strong>
+                                    <p>Borra módulos, usuarios, bases y el registro oficial (CUIT) para reusar los mismos datos en un alta de prueba nueva.</p>
+                                </div>
+                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-trash3" OnClick="_ => OpenResetClienteModal()">Reset completo</AlfaButton>
+                            </div>
+                        </div>
+                    }
+                </section>
+            </div>
+
+            <section class="adm-card" aria-label="Usuarios">
+                <div class="adm-card__header">
+                    <div>
+                        <h3>Usuarios</h3>
+                        <p>Usuarios de ALFA_CENTRAL del cliente seleccionado. La contraseña se muestra por ahora para administración central.</p>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(!HasSelectedClient)" OnClick="_ => StartNewUser()">Nuevo usuario</AlfaButton>
                 </div>
-                <div class="col-12 col-lg-5">
-                    <label class="form-label">Nombre</label>
-                    <input class="form-control admin-modal-input" @bind="_clientForm.RazonSocial" />
+                @if (!HasSelectedClient)
+                {
+                    <AlfaEmptyState Title="Seleccioná un cliente" Message="Los usuarios se cargan desde ALFA_CENTRAL.dbo.users." />
+                }
+                else if (CurrentUsers.Count == 0)
+                {
+                    <AlfaEmptyState Title="Sin usuarios para este cliente" Message="Usá “Nuevo usuario” para registrar el primero." />
+                }
+                else
+                {
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Usuario</th>
+                                    <th>Contraseña</th>
+                                    <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in CurrentUsers)
+                                {
+                                    <tr>
+                                        <td>@item.UserName</td>
+                                        <td><code>@item.Password</code></td>
+                                        <td class="adm-actions-col">
+                                            <div class="adm-row-actions">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => EditUserAsync(item)">Editar</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-trash3" OnClick="_ => DeleteUserAsync(item)">Eliminar</AlfaButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            <section class="adm-card" aria-label="Bases registradas">
+                <div class="adm-card__header">
+                    <div>
+                        <h3>Bases registradas</h3>
+                        <p>Bases del cliente seleccionado. "Lectura con IA" y "Conversaciones" indican qué bases recorren esos workers.</p>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(!HasSelectedClient)" OnClick="_ => StartNewBase()">Registrar base</AlfaButton>
                 </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Host web</label>
-                    <input class="form-control admin-modal-input" @bind="_clientForm.IdWeb" placeholder="cliente-web" />
-                </div>
-                <div class="col-12 col-lg-3 d-flex align-items-end">
-                    <div class="form-check">
-                        <input class="form-check-input admin-modal-check" type="checkbox" id="admin-superadmin" @bind="_clientForm.SuperAdmin" />
-                        <label class="form-check-label" for="admin-superadmin">SuperAdmin</label>
+                @if (!HasSelectedClient)
+                {
+                    <AlfaEmptyState Title="Seleccioná un cliente" Message="Las bases se cargan desde ALFA_CENTRAL.dbo.bases." />
+                }
+                else if (CurrentBases.Count == 0)
+                {
+                    <AlfaEmptyState Title="Sin bases para este cliente" Message="Usá “Registrar base” para crear la primera." />
+                }
+                else
+                {
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th class="is-number">ID</th>
+                                    <th>Nombre</th>
+                                    <th>Base / server</th>
+                                    <th>Usuario</th>
+                                    <th>Contraseña</th>
+                                    <th>Lectura con IA</th>
+                                    <th>Conversaciones</th>
+                                    <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in CurrentBases)
+                                {
+                                    <tr>
+                                        <td class="is-number">@item.IdBase</td>
+                                        <td>@item.Nombre</td>
+                                        <td class="is-nowrap"><strong>@item.DbName</strong><small>@item.DbServer</small></td>
+                                        <td>@item.DbUser</td>
+                                        <td><code>@item.DbPassword</code></td>
+                                        <td>
+                                            <AlfaCheckbox Value="@_basesCompraIa.Contains(item.IdBase)"
+                                                          Disabled="@(_guardandoBaseIa || !_seleccionIaDisponible)"
+                                                          ValueChanged="v => CambiarBaseIaAsync(item, v == true)">Incluir</AlfaCheckbox>
+                                        </td>
+                                        <td>
+                                            <AlfaCheckbox Value="@_basesConversaciones.Contains(item.IdBase)"
+                                                          Disabled="@(_guardandoBaseConversaciones || !_seleccionConversacionesDisponible)"
+                                                          ValueChanged="v => CambiarBaseConversacionesAsync(item, v == true)">Incluir</AlfaCheckbox>
+                                        </td>
+                                        <td class="adm-actions-col">
+                                            <div class="adm-row-actions">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plug" OnClick="_ => OpenSyncConfigAsync(item)">Config Sync</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => EditBaseAsync(item)">Editar</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-trash3" OnClick="_ => DeleteBaseAsync(item)">Eliminar</AlfaButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            <section class="adm-card" aria-label="Módulos del cliente">
+                <div class="adm-card__header">
+                    <div>
+                        <h3>Módulos</h3>
+                        <p>Qué módulos tiene habilitados el cliente seleccionado. Sin autoservicio: se activan acá después de confirmar el pago por fuera del sistema.</p>
+                    </div>
+                    <div class="adm-row-actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-inbox" OnClick="_ => GoSolicitudes()">Solicitudes pendientes</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-grid" OnClick="_ => GoModulos()">Armar catálogo</AlfaButton>
                     </div>
                 </div>
-                <div class="col-12 col-lg-5">
-                    <label class="form-label">Contraseña inicial</label>
-                    <input class="form-control admin-modal-input" @bind="_clientForm.PasswordInicial" placeholder="CUIT/documento o carga manual" />
-                    <div class="form-text">Si no hay documento en VT_CLIENTES, cargala manualmente antes de grabar.</div>
-                </div>
-                <div class="col-12 col-lg-4 d-flex align-items-end">
-                    <button type="button" class="btn btn-primary me-2" @onclick="SaveClientAsync">Grabar</button>
-                    <button type="button" class="btn btn-outline-light" @onclick="ResetClientForm">Reset</button>
-                </div>
-            </div>
-        </section>
-    </div>
-}
-
-@if (_showUserEditor)
-{
-    <div class="modal-overlay" @onclick="CancelUserEditor">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-user-editor-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="admin-user-editor-title" class="panel-card__title">@(_editingUser ? "Editar usuario" : "Nuevo usuario")</h2>
-                    <p class="panel-card__subtitle">El usuario queda asociado al cliente seleccionado.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelUserEditor">Cerrar</button>
-            </div>
-            <div class="row g-3">
-                <div class="col-12 col-lg-5">
-                    <label class="form-label">Usuario</label>
-                    <input class="form-control admin-modal-input" @bind="_userForm.UserName" disabled="@_editingUser" />
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Cliente</label>
-                    <input class="form-control admin-modal-input" @bind="_userForm.IdCliente" disabled />
-                </div>
-                <div class="col-12 col-lg-3">
-                    <label class="form-label">Password</label>
-                    <input class="form-control admin-modal-input" type="text" @bind="_userForm.Password" />
-                </div>
-            </div>
-            <div class="d-flex gap-2 mt-3 flex-wrap">
-                <button type="button" class="btn btn-primary" @onclick="SaveUserAsync">@(_editingUser ? "Guardar cambios" : "Grabar usuario")</button>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelUserEditor">Cancelar</button>
-            </div>
-        </section>
-    </div>
-}
-
-@if (_showBaseEditor)
-{
-    <div class="modal-overlay" @onclick="CancelBaseEditor">
-        <section class="panel-card app-modal app-modal--wide admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-base-editor-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="admin-base-editor-title" class="panel-card__title">@(_editingBase ? "Editar base" : "Registrar base")</h2>
-                    <p class="panel-card__subtitle">La base queda asociada al cliente seleccionado.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelBaseEditor">Cerrar</button>
-            </div>
-            <div class="row g-3">
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Nombre</label>
-                    <input class="form-control admin-modal-input" @bind="_baseForm.Nombre" />
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Server</label>
-                    <input class="form-control admin-modal-input" @bind="_baseForm.DbServer" />
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Base</label>
-                    <input class="form-control admin-modal-input" @bind="_baseForm.DbName" />
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Usuario</label>
-                    <input class="form-control admin-modal-input" @bind="_baseForm.DbUser" />
-                </div>
-                <div class="col-12 col-lg-4">
-                    <label class="form-label">Password</label>
-                    <input class="form-control admin-modal-input" type="text" @bind="_baseForm.DbPassword" />
-                </div>
-            </div>
-            <div class="d-flex gap-2 mt-3 flex-wrap">
-                <button type="button" class="btn btn-primary" @onclick="SaveBaseAsync">@(_editingBase ? "Guardar cambios" : "Grabar base")</button>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelBaseEditor">Cancelar</button>
-            </div>
-        </section>
-    </div>
-}
-
-@if (_showResetClienteModal)
-{
-    <div class="modal-overlay" @onclick="CancelResetCliente">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-reset-cliente-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="admin-reset-cliente-title" class="panel-card__title">Reset completo de cliente de prueba</h2>
-                    <p class="panel-card__subtitle">Solo para cuentas de prueba — esta acción no se puede deshacer.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelResetCliente">Cerrar</button>
-            </div>
-
-            <div class="shell-empty-state">
-                <strong>Va a borrar, para <code>@_selectedClientId</code>:</strong>
-                <span>Pruebas de módulos activas · Usuarios centrales (@CurrentUsers.Count) · Bases registradas (@CurrentBases.Count) · El registro oficial (CUIT) en ALFANET2007</span>
-            </div>
-
-            <div class="row g-3 mt-1">
-                <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input admin-modal-check" type="checkbox" id="reset-cliente-drop-fisico" checked="@_resetClienteEliminarBaseFisica" @onchange="args => _resetClienteEliminarBaseFisica = args.Value is bool b && b" />
-                        <label class="form-check-label" for="reset-cliente-drop-fisico">
-                            También borrar la(s) base(s) de SQL Server física(s) y su login — irreversible, libera espacio en disco.
-                        </label>
+                @if (!HasSelectedClient)
+                {
+                    <AlfaEmptyState Title="Seleccioná un cliente" Message="Los módulos se cargan desde ALFA_CENTRAL.dbo.ClienteModulos." />
+                }
+                else if (_clienteModulos.Count == 0)
+                {
+                    <AlfaEmptyState Title="No hay módulos definidos todavía" Message="Usá “Armar catálogo” para crear el primero." />
+                }
+                else
+                {
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    <th>Módulo</th>
+                                    <th class="is-number">Precio</th>
+                                    <th>Estado</th>
+                                    <th>Plan</th>
+                                    <th>Activado</th>
+                                    <th class="adm-actions-col"><span class="visually-hidden">Acciones</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _clienteModulos)
+                                {
+                                    var esPrueba = string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase);
+                                    var esSolicitado = string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Solicitado, StringComparison.OrdinalIgnoreCase);
+                                    var bloqueadoLegacy = _esClienteLegacySeleccionado && !CompraIaHabilitacion.RequiereActivacionExplicita(item.Codigo);
+                                    <tr class="@(item.EstaActivo ? string.Empty : "is-inactive")">
+                                        <td>
+                                            <strong>@item.Nombre</strong>
+                                            @if (item.EsDependenciaDeOtro)
+                                            {
+                                                <small>Dependencia de otro módulo</small>
+                                            }
+                                        </td>
+                                        <td class="is-number">@item.Precio.ToString("C2")</td>
+                                        <td class="is-nowrap"><AlfaTag Tone="@GetEstadoTone(item)">@GetEstadoLabel(item)</AlfaTag></td>
+                                        <td>
+                                            @if (item.IdPlan is not null)
+                                            {
+                                                <span>@item.PlanNombre</span>
+                                                @if (item.FechaProximoCobro is not null)
+                                                {
+                                                    <small>Próx. cobro: @item.FechaProximoCobro.Value.ToString("dd/MM/yyyy")</small>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
+                                        <td class="is-nowrap">
+                                            @if (item.EstaActivo && item.ActivadoUtc is not null)
+                                            {
+                                                <span>@item.ActivadoUtc.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                                @if (!string.IsNullOrWhiteSpace(item.ActivadoPor))
+                                                {
+                                                    <small>@item.ActivadoPor</small>
+                                                }
+                                            }
+                                            else if (esSolicitado && item.SolicitadoUtc is not null)
+                                            {
+                                                <span>@item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                                @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
+                                                {
+                                                    <small>@item.SolicitadoPor</small>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
+                                        <td class="adm-actions-col">
+                                            <div class="adm-row-actions">
+                                                @if (esPrueba && item.EstaActivo)
+                                                {
+                                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@bloqueadoLegacy" OnClick="_ => SuspenderModuloAsync(item)">Cortar prueba</AlfaButton>
+                                                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" OnClick="_ => ActivarModuloAsync(item)">Confirmar pago</AlfaButton>
+                                                }
+                                                else if (item.EstaActivo)
+                                                {
+                                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@bloqueadoLegacy" OnClick="_ => SuspenderModuloAsync(item)">Suspender</AlfaButton>
+                                                }
+                                                else
+                                                {
+                                                    @if (esSolicitado)
+                                                    {
+                                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => RechazarModuloAsync(item)">Rechazar</AlfaButton>
+                                                    }
+                                                    else
+                                                    {
+                                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => SolicitarModuloAsync(item)">Solicitar</AlfaButton>
+                                                    }
+                                                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" OnClick="_ => ActivarModuloAsync(item)">Activar</AlfaButton>
+                                                }
+                                                @if (!item.EsDependenciaDeOtro)
+                                                {
+                                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="_ => AbrirPlanModal(item)">@(item.IdPlan is null ? "Contratar plan" : "Cambiar plan")</AlfaButton>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Para confirmar, escribí el ID de cliente (<code>@_selectedClientId</code>):</label>
-                    <input class="form-control admin-modal-input" @bind="_resetClienteConfirmText" @bind:event="oninput" placeholder="@_selectedClientId" />
-                </div>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_error))
-            {
-                <div class="alert alert-danger mt-3">@_error</div>
-            }
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="alert alert-success mt-3">@_message</div>
-            }
-
-            <div class="d-flex gap-2 mt-3 flex-wrap">
-                <button type="button" class="btn btn-danger" disabled="@(_resetClienteBusy || !string.Equals(_resetClienteConfirmText, _selectedClientId, StringComparison.Ordinal))" @onclick="ConfirmResetClienteAsync">
-                    @(_resetClienteBusy ? "Borrando..." : "Borrar todo")
-                </button>
-                <button type="button" class="btn btn-outline-light" disabled="@_resetClienteBusy" @onclick="CancelResetCliente">Cancelar</button>
-            </div>
-        </section>
+                    @if (_esClienteLegacySeleccionado)
+                    {
+                        <footer class="alfa-data-view-footer">
+                            <span class="alfa-data-view-footer__summary">Cliente legacy: sus módulos habituales están activos. Carga de comprobantes con IA requiere activación explícita y selección de bases.</span>
+                        </footer>
+                    }
+                }
+            </section>
+        }
     </div>
-}
+</div>
 
-@if (_showSyncConfigModal)
-{
-    <div class="modal-overlay" @onclick="CloseSyncConfigModal">
-        <section class="panel-card app-modal admin-modal admin-sync-modal" role="dialog" aria-modal="true" aria-labelledby="admin-sync-config-title" @onclick:stopPropagation="true">
-            <div class="admin-sync-modal__topbar">
-                <button type="button" class="btn btn-outline-light admin-sync-modal__back" @onclick="CloseSyncConfigModal">← Volver</button>
-                <div>
-                    <h2 id="admin-sync-config-title" class="panel-card__title">Configuración</h2>
-                    <p class="panel-card__subtitle">Datos de sincronización para copiar y compartir.</p>
+<AlfaDialog Open="@(_showPlanModal && _planModalItem is not null)"
+            Title="@(_planModalItem?.IdPlan is null ? "Contratar plan" : "Cambiar plan")"
+            Eyebrow="@_planModalItem?.Nombre"
+            Description="Sin prorrateo: un cambio de plan queda efectivo recién en el próximo período."
+            ErrorMessage="@NullIfEmpty(_planModalError)"
+            Loading="@_planModalBusy"
+            OnClose="CancelarPlanModal">
+    <ChildContent>
+        @if (_planModalLoading)
+        {
+            <p class="adm-hint">Cargando planes del módulo...</p>
+        }
+        else if (_planModalOpciones.Count == 0)
+        {
+            <AlfaEmptyState Title="Este módulo todavía no tiene planes" Message="Cargalos primero desde Administrar → Módulos → Planes." />
+        }
+        else
+        {
+            <AlfaSelect Label="Plan"
+                        Value="@(_planModalIdPlanSeleccionado > 0 ? _planModalIdPlanSeleccionado.ToString() : null)"
+                        ValueChanged="v => _planModalIdPlanSeleccionado = int.TryParse(v, out var id) ? id : 0"
+                        Options="@PlanModalOptions"
+                        Placeholder="Elegí un plan..." />
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_planModalBusy" OnClick="_ => CancelarPlanModal()">Cancelar</AlfaButton>
+        @if (!_planModalLoading && _planModalOpciones.Count > 0)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_planModalBusy" OnClick="_ => ConfirmarPlanAsync()">@(_planModalItem?.IdPlan is null ? "Contratar" : "Cambiar")</AlfaButton>
+        }
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@_showClientEditor"
+            Title="@(_newClientDraft ? "Nueva cuenta" : "Editar cuenta")"
+            Eyebrow="Administrar"
+            Description="Buscá un cliente en VT_CLIENTES o completá los datos centrales manualmente."
+            ErrorMessage="@NullIfEmpty(_error)"
+            Size="AlfaDialogSize.Lg"
+            OnClose="CloseClientEditor">
+    <ChildContent>
+        <div class="adm-section">
+            <div class="adm-dialog-toolbar">
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="@(_showLookupPanel ? "bi bi-x-lg" : "bi bi-search")" OnClick="_ => ToggleLookupPanel()">
+                    @(_showLookupPanel ? "Cerrar buscador" : "Buscar en VT_CLIENTES")
+                </AlfaButton>
+            </div>
+            @if (_showLookupPanel)
+            {
+                <div class="adm-lookup" @onkeydown="HandleLookupKeyDownAsync">
+                    <AlfaInput Label="Buscar en VT_CLIENTES"
+                               Value="@_lookupSearch"
+                               ValueChanged="v => _lookupSearch = v ?? string.Empty"
+                               Placeholder="Código, razón social o CUIT/documento de la base activa" />
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_lookupLoading" OnClick="_ => SearchLookupAsync()">Buscar</AlfaButton>
+                </div>
+                @if (_lookupLoading)
+                {
+                    <p class="adm-hint">Buscando clientes...</p>
+                }
+                else if (_lookupResults.Count == 0)
+                {
+                    <p class="adm-hint">Sin coincidencias todavía. Probá con otra razón social, código o documento.</p>
+                }
+                else
+                {
+                    <div class="adm-search-results">
+                        @foreach (var item in _lookupResults)
+                        {
+                            <button type="button" class="adm-search-result" @onclick="() => SelectLookupAsync(item)">
+                                <span>
+                                    <strong>@item.RazonSocial</strong>
+                                    <small>@item.Codigo · @item.Documento@(string.IsNullOrWhiteSpace(item.Mail) ? string.Empty : $" · {item.Mail}")</small>
+                                </span>
+                                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+        <div class="adm-section">
+            <h4>Datos centrales</h4>
+            <div class="adm-grid">
+                <AlfaInput Label="Cuenta" Required="true" Value="@_clientForm.IdCliente" ValueChanged="v => _clientForm.IdCliente = v ?? string.Empty" />
+                <AlfaInput Label="Nombre" Required="true" Value="@_clientForm.RazonSocial" ValueChanged="v => _clientForm.RazonSocial = v ?? string.Empty" />
+                <AlfaInput Label="Host web" Required="true" Value="@_clientForm.IdWeb" ValueChanged="v => _clientForm.IdWeb = v ?? string.Empty" Placeholder="cliente-web" />
+                <div class="adm-password-field">
+                    <AlfaInput Label="Contraseña inicial"
+                               Value="@_clientForm.PasswordInicial"
+                               ValueChanged="v => _clientForm.PasswordInicial = v"
+                               Placeholder="CUIT/documento o carga manual"
+                               HelpText="Si no hay documento en VT_CLIENTES, cargala manualmente antes de grabar." />
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => SuggestInitialPasswordAsync()">Sugerir</AlfaButton>
+                </div>
+                <div class="adm-flags adm-span-all">
+                    <AlfaCheckbox Value="@_clientForm.SuperAdmin" ValueChanged="v => _clientForm.SuperAdmin = v == true">SuperAdmin</AlfaCheckbox>
                 </div>
             </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => ResetClientForm()">Limpiar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => CloseClientEditor()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" OnClick="_ => SaveClientAsync()">Grabar</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
-            <div class="admin-sync-card">
-                <div class="admin-sync-field">
-                    <label class="form-label">Ruta Web Service (*)</label>
-                    <input class="form-control admin-modal-input" value="@_syncConfigRutaWebService" readonly />
-                </div>
+<AlfaDialog Open="@_showUserEditor"
+            Title="@(_editingUser ? "Editar usuario" : "Nuevo usuario")"
+            Eyebrow="@_userForm.IdCliente"
+            Description="El usuario queda asociado al cliente seleccionado."
+            ErrorMessage="@NullIfEmpty(_error)"
+            OnClose="CancelUserEditor">
+    <ChildContent>
+        <div class="adm-grid">
+            <AlfaInput Label="Usuario" Required="true" Value="@_userForm.UserName" ValueChanged="v => _userForm.UserName = v ?? string.Empty" Disabled="@_editingUser" />
+            <AlfaInput Label="Contraseña" Value="@_userForm.Password" ValueChanged="v => _userForm.Password = v" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => CancelUserEditor()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" OnClick="_ => SaveUserAsync()">@(_editingUser ? "Guardar cambios" : "Grabar usuario")</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
-                <div class="admin-sync-field">
-                    <label class="form-label">Código Cuenta AlfaNet (*)</label>
-                    <input class="form-control admin-modal-input" value="@(_syncConfigBase?.IdCliente ?? string.Empty)" readonly />
-                </div>
+<AlfaDialog Open="@_showBaseEditor"
+            Title="@(_editingBase ? "Editar base" : "Registrar base")"
+            Eyebrow="@_baseForm.IdCliente"
+            Description="La base queda asociada al cliente seleccionado."
+            ErrorMessage="@NullIfEmpty(_error)"
+            Size="AlfaDialogSize.Lg"
+            OnClose="CancelBaseEditor">
+    <ChildContent>
+        <div class="adm-grid">
+            <AlfaInput Label="Nombre" Required="true" Value="@_baseForm.Nombre" ValueChanged="v => _baseForm.Nombre = v ?? string.Empty" />
+            <AlfaInput Label="Server" Required="true" Value="@_baseForm.DbServer" ValueChanged="v => _baseForm.DbServer = v ?? string.Empty" />
+            <AlfaInput Label="Base" Required="true" Value="@_baseForm.DbName" ValueChanged="v => _baseForm.DbName = v ?? string.Empty" />
+            <AlfaInput Label="Usuario" Value="@_baseForm.DbUser" ValueChanged="v => _baseForm.DbUser = v ?? string.Empty" />
+            <AlfaInput Label="Contraseña" Value="@_baseForm.DbPassword" ValueChanged="v => _baseForm.DbPassword = v ?? string.Empty" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => CancelBaseEditor()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" OnClick="_ => SaveBaseAsync()">@(_editingBase ? "Guardar cambios" : "Grabar base")</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
-                <div class="admin-sync-field">
-                    <label class="form-label">Usuario Sync (*)</label>
-                    <input class="form-control admin-modal-input" @bind="_syncConfigUser" autocomplete="off" />
-                </div>
+<AlfaDialog Open="@_showResetClienteModal"
+            Title="Reset completo de cliente de prueba"
+            Eyebrow="Acción irreversible"
+            Description="Solo para cuentas de prueba: esta acción no se puede deshacer."
+            ErrorMessage="@NullIfEmpty(_error)"
+            Loading="@_resetClienteBusy"
+            OnClose="CancelResetCliente">
+    <ChildContent>
+        <div class="adm-section">
+            <p class="adm-danger-text">Va a borrar, para <code>@_selectedClientId</code>:</p>
+            <ul class="adm-reset-list">
+                <li>Pruebas de módulos activas</li>
+                <li>Usuarios centrales (@CurrentUsers.Count)</li>
+                <li>Bases registradas (@CurrentBases.Count)</li>
+                <li>El registro oficial (CUIT) en ALFANET2007</li>
+            </ul>
+            <AlfaCheckbox Value="@_resetClienteEliminarBaseFisica" ValueChanged="v => _resetClienteEliminarBaseFisica = v == true">
+                También borrar la(s) base(s) física(s) de SQL Server y su login (libera espacio en disco).
+            </AlfaCheckbox>
+            <AlfaInput Label="@($"Para confirmar, escribí el ID de cliente ({_selectedClientId})")"
+                       Value="@_resetClienteConfirmText"
+                       ValueChanged="v => _resetClienteConfirmText = v ?? string.Empty"
+                       Placeholder="@_selectedClientId" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_resetClienteBusy" OnClick="_ => CancelResetCliente()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash3"
+                    Loading="@_resetClienteBusy"
+                    Disabled="@(_resetClienteBusy || !string.Equals(_resetClienteConfirmText, _selectedClientId, StringComparison.Ordinal))"
+                    OnClick="_ => ConfirmResetClienteAsync()">@(_resetClienteBusy ? "Borrando..." : "Borrar todo")</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
-                <div class="admin-sync-field">
-                    <label class="form-label">Password Sync (*)</label>
-                    <input class="form-control admin-modal-input" type="password" @bind="_syncConfigPassword" autocomplete="off" />
-                </div>
-
-                <div class="admin-sync-field">
-                    <label class="form-label">ID Database (*)</label>
-                    <input class="form-control admin-modal-input" value="@(_syncConfigBase?.IdBase.ToString() ?? string.Empty)" readonly />
-                </div>
-
-                <div class="d-flex gap-2 flex-wrap mt-2">
-                    <button type="button" class="btn btn-primary" @onclick="CopySyncConfigAsync">Copiar configuración</button>
-                    <button type="button" class="btn btn-outline-light" @onclick="CloseSyncConfigModal">Cerrar</button>
-                </div>
+<AlfaDialog Open="@_showSyncConfigModal"
+            Title="Configuración de sincronización"
+            Eyebrow="@_syncConfigBase?.Nombre"
+            Description="Datos para copiar y compartir con quien configura el sincronizador."
+            ErrorMessage="@NullIfEmpty(_error)"
+            OnClose="CloseSyncConfigModal">
+    <ChildContent>
+        <div class="adm-grid">
+            <div class="adm-readonly adm-span-all">
+                <span class="adm-readonly__label">Ruta Web Service</span>
+                <span class="adm-readonly__value"><code>@_syncConfigRutaWebService</code></span>
             </div>
-        </section>
-    </div>
-}
+            <div class="adm-readonly">
+                <span class="adm-readonly__label">Código cuenta AlfaNet</span>
+                <span class="adm-readonly__value">@(_syncConfigBase?.IdCliente ?? string.Empty)</span>
+            </div>
+            <div class="adm-readonly">
+                <span class="adm-readonly__label">ID database</span>
+                <span class="adm-readonly__value">@(_syncConfigBase?.IdBase.ToString() ?? string.Empty)</span>
+            </div>
+            <AlfaInput Label="Usuario Sync" Required="true" Value="@_syncConfigUser" ValueChanged="v => _syncConfigUser = v ?? string.Empty" />
+            <AlfaInput Label="Password Sync" Required="true" Type="password" Value="@_syncConfigPassword" ValueChanged="v => _syncConfigPassword = v ?? string.Empty" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => CloseSyncConfigModal()">Cerrar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-clipboard" OnClick="_ => CopySyncConfigAsync()">Copiar configuración</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaConfirmDialog Open="@(_confirmTcs is not null)"
+                   Title="@_confirmTitle"
+                   Message="@_confirmMessage"
+                   SecondaryMessage="@_confirmSecondary"
+                   ConfirmLabel="@_confirmLabel"
+                   OnConfirm="() => ResolveConfirm(true)"
+                   OnCancel="() => ResolveConfirm(false)" />
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -893,32 +683,173 @@
 
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
-        Title = "Administrar",
-        Breadcrumb = ["Administrar"],
+        Title = "Clientes",
+        Breadcrumb = ["Administrar", "Clientes"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "clientes"),
-        Search = new PageHeaderSearchConfig
-        {
-            Placeholder = "Buscar cliente por código, razón social o host...",
-            Text = _clientSearch,
-            OnTextChanged = text =>
-            {
-                _clientSearch = text;
-                UpdatePageHeader();
-                StateHasChanged();
-                return Task.CompletedTask;
-            }
-        },
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderClientSmartSearch(),
+        // Las acciones corren desde el Context Toolbar (otro componente): sin InvokeAsync +
+        // StateHasChanged esta página no se re-renderiza y el diálogo no se abre.
         Actions =
         [
-            new PageHeaderAction { Key = "nueva-cuenta", Label = "Nueva cuenta", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => { StartNewAccount(); UpdatePageHeader(); return Task.CompletedTask; } },
-            new PageHeaderAction { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => ReloadAsync() }
+            new PageHeaderAction { Key = "nueva-cuenta", Label = "Nueva cuenta", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => InvokeAsync(() => { StartNewAccount(); StateHasChanged(); }) },
+            new PageHeaderAction { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => InvokeAsync(async () => { await ReloadAsync(); StateHasChanged(); }) }
         ]
     });
 
-    private async Task OnFiltroModuloChangedAsync(ChangeEventArgs e)
+    // Smart Search (mismo patrón que Contactos): el texto filtra la lista en vivo y el panel
+    // ofrece el filtro por módulo activo. Los handlers corren en esta página, pero el fragmento lo
+    // dibuja el Context Toolbar: cada cambio vuelve a publicar el header.
+    private bool _showSearchPanel;
+
+    private RenderFragment RenderClientSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var moduloActivo = FiltroModuloNombre; }
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true">
+                <i class="bi bi-search"></i>
+            </span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showSearchPanel || moduloActivo is not null ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showSearchPanel"
+                    @onclick="ToggleSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @if (moduloActivo is not null)
+                {
+                    <button type="button"
+                            class="smart-search__active-filter"
+                            title="@($"Quitar filtro {moduloActivo}")"
+                            aria-label="@($"Quitar filtro {moduloActivo}")"
+                            @onclick="() => SetFiltroModuloAsync(null)">
+                        <span>@moduloActivo</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true">
+                            <i class="bi bi-x"></i>
+                        </span>
+                    </button>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar cliente por código, razón social o host..."
+                   value="@_clientSearch"
+                   @oninput="OnClientSearchInput"
+                   @onkeydown="HandleSearchKeyDown" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleSearchKeyDown">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-grid"></i> Con módulo activo</h4>
+                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_filtroModuloId))" disabled="@_cargandoFiltroModulo" @onclick="() => SetFiltroModuloAsync(null)">Todos los clientes</button>
+                    @foreach (var modulo in _modulosDisponibles)
+                    {
+                        var id = modulo.Id.ToString();
+                        <button type="button" class="@GetSmartOptionClass(_filtroModuloId == id)" disabled="@_cargandoFiltroModulo" @onclick="() => SetFiltroModuloAsync(id)">@modulo.Nombre</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>;
+
+    private string? FiltroModuloNombre
+        => string.IsNullOrWhiteSpace(_filtroModuloId)
+            ? null
+            : _modulosDisponibles.FirstOrDefault(m => m.Id.ToString() == _filtroModuloId)?.Nombre;
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private void OnClientSearchInput(ChangeEventArgs e)
     {
-        _filtroModuloId = e.Value?.ToString();
+        _clientSearch = e.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
+    }
+
+    private void HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            CloseSearchPanel();
+    }
+
+    private void ToggleSearchPanel()
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private void CloseSearchPanel()
+    {
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private async Task SetFiltroModuloAsync(string? idModulo)
+    {
+        _showSearchPanel = false;
+        UpdatePageHeader();
+        await OnFiltroModuloChangedAsync(idModulo);
+        UpdatePageHeader();
+    }
+
+    private IReadOnlyList<AlfaSelectOption> PlanModalOptions
+        => _planModalOpciones
+            .Select(p => new AlfaSelectOption(p.Id.ToString(), $"{p.Nombre} — {p.Precio:N2} {p.Moneda} ({GetTipoFacturacionLabel(p.TipoFacturacion)})"))
+            .ToList();
+
+    // Avisos: el éxito siempre va como notificación; el error, si hay un diálogo abierto, se
+    // muestra dentro del diálogo (ErrorMessage) para no duplicarlo.
+    private bool AnyEditorOpen => _showClientEditor || _showUserEditor || _showBaseEditor || _showResetClienteModal || _showSyncConfigModal;
+
+    private AppUiMessage? Feedback
+        => !string.IsNullOrWhiteSpace(_error) && !AnyEditorOpen
+            ? AppUiMessage.Error("No se pudo completar la operación", _error)
+            : !string.IsNullOrWhiteSpace(_message)
+                ? AppUiMessage.Success("Listo", _message)
+                : null;
+
+    private void DismissFeedback()
+    {
+        _message = string.Empty;
+        if (!AnyEditorOpen)
+            _error = string.Empty;
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static AlfaTagTone GetEstadoTone(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (item.EstaActivo)
+            return string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase)
+                ? AlfaTagTone.Warning
+                : AlfaTagTone.Success;
+
+        return item.Estado switch
+        {
+            AlfaCore.Models.ClienteModuloEstados.Solicitado => AlfaTagTone.Accent,
+            AlfaCore.Models.ClienteModuloEstados.Suspendido => AlfaTagTone.Danger,
+            AlfaCore.Models.ClienteModuloEstados.Rechazado => AlfaTagTone.Danger,
+            _ => AlfaTagTone.Neutral
+        };
+    }
+
+    private async Task OnClientRowKeyDownAsync(KeyboardEventArgs e, AlfaCore.Models.AdminClienteDto client)
+    {
+        if (e.Key is "Enter" or " ")
+            await SelectClientAsync(client);
+    }
+
+    private async Task OnFiltroModuloChangedAsync(string? value)
+    {
+        _filtroModuloId = value;
         _error = string.Empty;
 
         if (string.IsNullOrWhiteSpace(_filtroModuloId) || !int.TryParse(_filtroModuloId, out var idModulo))
@@ -943,6 +874,11 @@
     private async Task CambiarBaseIaAsync(AdminBaseDto item, bool incluir)
     {
         if (_guardandoBaseIa) return;
+        if (!await ConfirmAsync(
+                incluir ? "Incluir base en Lectura con IA" : "Excluir base de Lectura con IA",
+                $"¿{(incluir ? "Incluir" : "Excluir")} la base {item.Nombre}?",
+                incluir ? "Incluir" : "Excluir"))
+            return;
         _guardandoBaseIa = true;
         _error = string.Empty;
         try
@@ -963,6 +899,11 @@
     private async Task CambiarBaseConversacionesAsync(AdminBaseDto item, bool incluir)
     {
         if (_guardandoBaseConversaciones) return;
+        if (!await ConfirmAsync(
+                incluir ? "Incluir base en Conversaciones" : "Excluir base de Conversaciones",
+                $"¿{(incluir ? "Incluir" : "Excluir")} la base {item.Nombre}?",
+                incluir ? "Incluir" : "Excluir"))
+            return;
         _guardandoBaseConversaciones = true;
         _error = string.Empty;
         try
@@ -985,6 +926,15 @@
     private async Task GuardarServidorWorkersAsync()
     {
         if (_guardandoServidorWorkers) return;
+        var destino = _servidorWorkersInput.Trim();
+        if (!await ConfirmAsync(
+                "Cambiar servidor de workers",
+                string.IsNullOrWhiteSpace(destino)
+                    ? "¿Dejar que todos los servidores corran los workers en segundo plano?"
+                    : $"¿Dejar solo a {destino} corriendo los workers en segundo plano?",
+                "Guardar",
+                "Afecta a staging y producción: los demás servidores dejan de procesar Compra IA, Conversaciones, WhatsApp y facturación."))
+            return;
         _guardandoServidorWorkers = true;
         _error = string.Empty;
         _message = string.Empty;
@@ -1004,6 +954,12 @@
     private async Task QuitarRestriccionServidorWorkersAsync()
     {
         if (_guardandoServidorWorkers) return;
+        if (!await ConfirmAsync(
+                "Quitar restricción",
+                "¿Dejar que todos los servidores corran los workers en segundo plano?",
+                "Quitar restricción",
+                "Con más de un web service activo, el trabajo en segundo plano se puede duplicar."))
+            return;
         _guardandoServidorWorkers = true;
         _error = string.Empty;
         _message = string.Empty;
@@ -1262,7 +1218,12 @@
         if (!HasSelectedClient)
             return;
 
-        if (!await ConfirmAsync($"¿Suspender el módulo {item.Nombre} para este cliente?"))
+        var esPrueba = string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase);
+        if (!await ConfirmAsync(
+                esPrueba ? "Cortar prueba" : "Suspender módulo",
+                $"¿{(esPrueba ? "Cortar la prueba de" : "Suspender")} {item.Nombre} para {_clientForm.RazonSocial}?",
+                esPrueba ? "Cortar prueba" : "Suspender",
+                "El cliente deja de tener acceso al módulo en cuanto se confirma."))
             return;
 
         _message = string.Empty;
@@ -1315,7 +1276,11 @@
         if (!HasSelectedClient)
             return;
 
-        if (!await ConfirmAsync($"¿Rechazar la solicitud del módulo {item.Nombre} para este cliente?"))
+        if (!await ConfirmAsync(
+                "Rechazar solicitud",
+                $"¿Rechazar la solicitud de {item.Nombre} para {_clientForm.RazonSocial}?",
+                "Rechazar",
+                "La solicitud se descarta; el cliente puede volver a pedirlo."))
             return;
 
         _message = string.Empty;
@@ -1543,6 +1508,29 @@
         await Task.CompletedTask;
     }
 
+    // Traído de la pantalla legacy /admin/clientes (retirada): propone como contraseña inicial el
+    // CUIT/documento del cliente en la base activa.
+    private async Task SuggestInitialPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_clientForm.IdCliente))
+        {
+            _error = "Cargá primero el ID del cliente o seleccioná una cuenta de VT_CLIENTES.";
+            _message = string.Empty;
+            return;
+        }
+
+        var password = await AdminSvc.TryResolveInitialPasswordAsync(_clientForm.IdCliente);
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            _error = "No se encontró CUIT/documento en la base activa. Cargá la contraseña inicial manualmente.";
+            _message = string.Empty;
+            return;
+        }
+
+        _clientForm.PasswordInicial = password;
+        _error = string.Empty;
+    }
+
     private async Task SaveClientAsync()
     {
         _message = string.Empty;
@@ -1644,7 +1632,11 @@
 
     private async Task DeleteUserAsync(AdminUserDto item)
     {
-        if (!await ConfirmAsync($"¿Eliminar el usuario {item.UserName}?"))
+        if (!await ConfirmAsync(
+                "Eliminar usuario",
+                $"¿Eliminar el usuario {item.UserName}?",
+                "Eliminar",
+                "Deja de poder ingresar a AlfaCore. Esta acción no se puede deshacer."))
             return;
 
         try
@@ -1744,7 +1736,11 @@
 
     private async Task DeleteBaseAsync(AdminBaseDto item)
     {
-        if (!await ConfirmAsync($"¿Eliminar la base {item.Nombre}?"))
+        if (!await ConfirmAsync(
+                "Eliminar base",
+                $"¿Eliminar la base {item.Nombre} del registro central?",
+                "Eliminar",
+                "Los usuarios del cliente dejan de verla al ingresar. La base física en SQL Server no se borra."))
             return;
 
         try
@@ -1885,20 +1881,35 @@
         _clientForm.PasswordInicial = string.Empty;
     }
 
-    private async Task<bool> ConfirmAsync(string message)
+    // Confirmación con AlfaConfirmDialog que se puede esperar (await) como el confirm() de JS:
+    // el handler que la pide queda suspendido hasta que se elige Confirmar o Cancelar.
+    private TaskCompletionSource<bool>? _confirmTcs;
+    private string _confirmTitle = string.Empty;
+    private string _confirmMessage = string.Empty;
+    private string? _confirmSecondary;
+    private string _confirmLabel = "Confirmar";
+
+    private Task<bool> ConfirmAsync(string title, string message, string confirmLabel, string? secondaryMessage = null)
     {
-        try
-        {
-            return await JS.InvokeAsync<bool>("confirm", message);
-        }
-        catch
-        {
-            return true;
-        }
+        _confirmTcs?.TrySetResult(false);
+        _confirmTitle = title;
+        _confirmMessage = message;
+        _confirmSecondary = secondaryMessage;
+        _confirmLabel = confirmLabel;
+        _confirmTcs = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        return _confirmTcs.Task;
+    }
+
+    private void ResolveConfirm(bool confirmed)
+    {
+        var tcs = _confirmTcs;
+        _confirmTcs = null;
+        tcs?.TrySetResult(confirmed);
     }
 
     private string GetClientRowClass(string idCliente)
-        => string.Equals(idCliente, _selectedClientId, StringComparison.OrdinalIgnoreCase) ? "table-active" : string.Empty;
+        => string.Equals(idCliente, _selectedClientId, StringComparison.OrdinalIgnoreCase) ? "is-selected" : string.Empty;
 
     private static bool Contains(string? value, string term)
         => !string.IsNullOrWhiteSpace(value)

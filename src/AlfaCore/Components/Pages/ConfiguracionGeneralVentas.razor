@@ -22,31 +22,10 @@
 
 <PageTitle>Ventas | Alfa Gestión</PageTitle>
 
-<div class="page-grid cfgventas-page">
+<div class="gd-page gd gd-legacy cfgventas-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-    <nav class="cfgventas-tabs" role="tablist" aria-label="Configuración de ventas">
-        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPortal ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPortal)" @onclick="() => SeleccionarSubtab(SubtabPortal)">
-            <i class="bi bi-person-vcard"></i>
-            <span>Portal del Cliente</span>
-        </button>
-        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPuntoVenta ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPuntoVenta)" @onclick="() => SeleccionarSubtab(SubtabPuntoVenta)">
-            <i class="bi bi-shop"></i>
-            <span>Punto de Venta</span>
-        </button>
-        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabFactura ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabFactura)" @onclick="() => SeleccionarSubtab(SubtabFactura)">
-            <i class="bi bi-file-earmark-check"></i>
-            <span>Facturación electrónica</span>
-        </button>
-        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabPadron ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabPadron)" @onclick="() => SeleccionarSubtab(SubtabPadron)">
-            <i class="bi bi-person-vcard-fill"></i>
-            <span>Padrón ARCA</span>
-        </button>
-        <button type="button" role="tab" class="cfgventas-tab @(_subtab == SubtabMercadoPago ? "is-active" : string.Empty)" aria-selected="@(_subtab == SubtabMercadoPago)" @onclick="() => SeleccionarSubtab(SubtabMercadoPago)">
-            <i class="bi bi-credit-card"></i>
-            <span>Mercado Pago Point</span>
-        </button>
-    </nav>
+    <AlfaTabs Items="@SubtabItems" ActiveKey="@_subtab" ActiveKeyChanged="k => SeleccionarSubtab(k ?? SubtabPortal)" AriaLabel="Configuración de ventas" />
 
     @if (_subtab == SubtabPortal)
     {
@@ -718,6 +697,15 @@
     private readonly List<PosInfo> _mpPos = [];
 
     private void SeleccionarSubtab(string subtab) => _subtab = subtab;
+
+    private static readonly IReadOnlyList<AlfaTabItem> SubtabItems =
+    [
+        new(SubtabPortal, "Portal del Cliente"),
+        new(SubtabPuntoVenta, "Punto de Venta"),
+        new(SubtabFactura, "Facturación electrónica"),
+        new(SubtabPadron, "Padrón ARCA"),
+        new(SubtabMercadoPago, "Mercado Pago Point"),
+    ];
     private void SeleccionarMpPointTab(string tab)
     {
         if (!string.Equals(tab, MpPointTabToken, StringComparison.OrdinalIgnoreCase)

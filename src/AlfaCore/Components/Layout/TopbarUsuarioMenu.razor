@@ -1,0 +1,133 @@
+@inject IJSRuntime JS
+
+@* Chip de usuario de la barra superior AlfaDesign. Agrupa lo que en el shell legacy vivía en el pie
+   del sidebar (Instalar, Tareas, Ayuda) y en la tarjeta de Portal Cliente del Inicio viejo. Las
+   acciones las ejecuta MainLayout (callbacks): este componente solo arma el menú. *@
+
+<div class="tb-usr">
+    <button type="button" class="alfa-app-topbar__chip tb-usr__trigger @(_open ? "is-active" : null)"
+            title="Usuario activo" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+            @onclick="Toggle">
+        <span class="alfa-app-topbar__avatar">@Initials</span>
+        <span>@UserName</span>
+        <i class="bi bi-chevron-down" aria-hidden="true"></i>
+    </button>
+
+    @if (_open)
+    {
+        <div class="tb-usr__backdrop" @onclick="Close"></div>
+        <section class="tb-usr__panel" role="menu" aria-label="Menú de usuario" @onkeydown="OnKeyDown">
+            <header class="tb-usr__head">
+                <span class="tb-usr__avatar">@Initials</span>
+                <strong>@UserName</strong>
+            </header>
+
+            <div class="tb-usr__group">
+                <button type="button" class="tb-usr__item" role="menuitem" @onclick="() => RunAsync(OnCambiarUsuario)">
+                    <i class="bi bi-person-gear" aria-hidden="true"></i>
+                    <span>Cambiar usuario o base</span>
+                </button>
+                @if (ShowTareas)
+                {
+                    <button type="button" class="tb-usr__item" role="menuitem" @onclick="() => RunAsync(OnTareas)">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        <span>Tareas</span>
+                    </button>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(PortalClienteUrl))
+            {
+                <div class="tb-usr__group">
+                    <div class="tb-usr__row">
+                        <a class="tb-usr__item" role="menuitem" href="@PortalClienteUrl" target="_blank" rel="noopener noreferrer" @onclick="Close">
+                            <i class="bi bi-person-badge" aria-hidden="true"></i>
+                            <span>Portal Cliente</span>
+                            <i class="bi bi-box-arrow-up-right tb-usr__ext" aria-hidden="true"></i>
+                        </a>
+                        <button type="button" class="tb-usr__icon" title="Copiar enlace del Portal Cliente" aria-label="Copiar enlace del Portal Cliente" @onclick="CopiarPortalAsync">
+                            <i class="bi @(_copiado ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    @if (_copiado)
+                    {
+                        <span class="tb-usr__hint" role="status">Enlace copiado</span>
+                    }
+                </div>
+            }
+
+            <div class="tb-usr__group">
+                @if (ShowInstalar)
+                {
+                    <button type="button" class="tb-usr__item" role="menuitem" @onclick="() => RunAsync(OnInstalar)">
+                        <i class="bi bi-download" aria-hidden="true"></i>
+                        <span>@InstalarLabel</span>
+                    </button>
+                }
+                <a class="tb-usr__item" role="menuitem" href="@AyudaUrl" @onclick="Close">
+                    <i class="bi bi-question-circle" aria-hidden="true"></i>
+                    <span>Ayuda</span>
+                </a>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(BuildStamp))
+            {
+                <footer class="tb-usr__build" title="Fecha de compilación del binario que está corriendo.">build @BuildStamp</footer>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public string UserName { get; set; } = string.Empty;
+    [Parameter] public string Initials { get; set; } = string.Empty;
+    [Parameter] public bool ShowTareas { get; set; }
+    [Parameter] public bool ShowInstalar { get; set; }
+    [Parameter] public string InstalarLabel { get; set; } = "Instalar AlfaCore";
+    [Parameter] public string? PortalClienteUrl { get; set; }
+    [Parameter] public string AyudaUrl { get; set; } = "/ayuda";
+    [Parameter] public string? BuildStamp { get; set; }
+    [Parameter] public EventCallback OnCambiarUsuario { get; set; }
+    [Parameter] public EventCallback OnTareas { get; set; }
+    [Parameter] public EventCallback OnInstalar { get; set; }
+
+    private bool _open;
+    private bool _copiado;
+
+    private void Toggle()
+    {
+        _open = !_open;
+        _copiado = false;
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            Close();
+    }
+
+    private async Task RunAsync(EventCallback callback)
+    {
+        Close();
+        await callback.InvokeAsync();
+    }
+
+    private async Task CopiarPortalAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PortalClienteUrl))
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", PortalClienteUrl);
+            _copiado = true;
+        }
+        catch
+        {
+            // Sin permiso de portapapeles: el enlace sigue disponible para abrirlo.
+            _copiado = false;
+        }
+    }
+}

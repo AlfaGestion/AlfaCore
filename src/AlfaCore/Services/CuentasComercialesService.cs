@@ -1080,6 +1080,27 @@ public sealed class CuentasComercialesService(
                     sqlTx,
                     cancellationToken: token));
 
+            if (tipo == CuentaComercialTipo.Cliente)
+            {
+                // Espejo de UnlinkContactoAsync: las conversaciones de este contacto que no tenían
+                // cliente pasan a mostrar el recién vinculado (así "cambiar cliente" = desvincular +
+                // vincular deja las conversaciones parejas). No pisa un cliente ya elegido a mano.
+                const string conversacionesSql = """
+                    IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.CONV_CONVERSACIONES
+                        SET ClienteCodigo = @Cuenta
+                        WHERE IdContacto IN (@Id, @IdContacto)
+                          AND LTRIM(RTRIM(ISNULL(ClienteCodigo, ''))) = '';
+                    END;
+                    """;
+                await cn.ExecuteAsync(new CommandDefinition(
+                    conversacionesSql,
+                    new { Id = contacto.Id, IdContacto = contacto.IdContacto, Cuenta = cuenta },
+                    sqlTx,
+                    cancellationToken: token));
+            }
+
             await tx.CommitAsync(token);
 
             await appEvents.LogAuditAsync(

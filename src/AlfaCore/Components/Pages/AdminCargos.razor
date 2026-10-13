@@ -12,152 +12,122 @@
 
 <PageTitle>Cargos | AlfaNet</PageTitle>
 
-<div class="page-grid admin-home-page">
-<div class="panel-card">
-    <p class="panel-card__subtitle">Cargos de suscripción generados por el sistema (período facturado de cada módulo contratado). No se cargan a mano acá — los genera el job diario de facturación.</p>
+@* Administrar → Cargos (AlfaDesign v1, 2026-10-07). Solo consulta: los cargos los genera el job diario
+   de facturación. Paginación principal en la Context Toolbar. *@
 
-    @if (!IsSuperAdmin)
-    {
-        <div class="editor-msg editor-msg--warning">
-            <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden ver esta sección.</p>
-        </div>
-    }
-    else
-    {
-        @if (!string.IsNullOrWhiteSpace(_error))
-        {
-            <div class="editor-msg editor-msg--warning">
-                <strong>No se pudo completar la operación</strong>
-                <p>@_error</p>
-            </div>
-        }
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-        <div class="row g-2 align-items-end mb-3">
-            <div class="col-12 col-lg-3">
-                <label class="form-label">Cliente</label>
-                <select class="form-select" @bind="_filters.IdCliente">
-                    <option value="">Todos</option>
-                    @foreach (var cliente in _clientes)
-                    {
-                        <option value="@cliente.IdCliente">@cliente.RazonSocial (@cliente.IdCliente)</option>
-                    }
-                </select>
+<div class="adm-page">
+    <div class="adm">
+        <header class="adm-header">
+            <div>
+                <h2>Cargos</h2>
+                <p>Cargos de suscripción generados por el sistema (período facturado de cada módulo contratado). No se cargan a mano: los genera el job diario de facturación.</p>
             </div>
-            <div class="col-12 col-lg-3">
-                <label class="form-label">Estado</label>
-                <select class="form-select" @bind="_filters.Estado">
-                    <option value="">Todos</option>
-                    <option value="@CargoEstados.Pendiente">Pendiente</option>
-                    <option value="@CargoEstados.Pagado">Pagado</option>
-                    <option value="@CargoEstados.PagoParcial">Pago parcial</option>
-                    <option value="@CargoEstados.Vencido">Vencido</option>
-                    <option value="@CargoEstados.Anulado">Anulado</option>
-                    <option value="@CargoEstados.Borrador">Borrador</option>
-                </select>
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Vence desde</label>
-                <input class="form-control" type="date" @bind="_fechaVencimientoDesde" />
-            </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">Vence hasta</label>
-                <input class="form-control" type="date" @bind="_fechaVencimientoHasta" />
-            </div>
-            <div class="col-12 col-lg-2">
-                <button type="button" class="btn btn-primary w-100" @onclick="() => BuscarAsync()">Buscar</button>
-            </div>
-        </div>
+        </header>
 
-        @if (_loading)
+        @if (!IsSuperAdmin)
         {
-            <p>Cargando cargos...</p>
-        }
-        else if (_items.Count == 0)
-        {
-            <div class="shell-empty-state">
-                <strong>No hay cargos para los filtros seleccionados.</strong>
-                <span>Los cargos los genera el job diario de facturación sobre módulos contratados con plan.</span>
-            </div>
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
         }
         else
         {
-            var visibleColumns = GetVisibleColumns();
-
-            <div class="table-responsive admin-table-wrap">
-                <table class="table table-sm align-middle admin-table" data-sticky-list-header>
-                    <thead>
-                        <tr>
-                            @foreach (var column in visibleColumns)
-                            {
-                                <th>@column.Label</th>
-                            }
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _items)
-                        {
-                            <tr>
-                                @foreach (var column in visibleColumns)
-                                {
-                                    <td>@RenderCell(item, column.Key)</td>
-                                }
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
-                <span class="shell-empty-state__eyebrow">@_total registro(s) — página @_pageNumber de @Math.Max(_totalPages, 1)</span>
-                <div class="d-inline-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@(!_hasPrev)" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)">Anterior</button>
-                    <button type="button" class="btn btn-sm btn-outline-light" disabled="@(!_hasNext)" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)">Siguiente</button>
-                </div>
-            </div>
-        }
-    }
-</div>
-</div>
-
-@if (_showViewSettings)
-{
-    <div class="modal-overlay" @onclick="CancelarConfiguracionVista">
-        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="cargos-view-settings-title" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h2 id="cargos-view-settings-title" class="panel-card__title">Configurar vista</h2>
-                    <p class="panel-card__subtitle">Elegí las columnas visibles y su orden.</p>
-                </div>
-                <button type="button" class="btn btn-outline-light" @onclick="CancelarConfiguracionVista">Cerrar</button>
-            </div>
-
-            <div class="d-flex flex-column gap-2">
-                @{
-                    var ordered = _viewDraft.OrderBy(c => c.Order).ToList();
-                }
-                @for (var i = 0; i < ordered.Count; i++)
-                {
-                    var column = ordered[i];
-                    var index = i;
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="form-check flex-grow-1">
-                            <input class="form-check-input" type="checkbox" id="@("cargos-col-" + column.Key)" checked="@column.Visible" @onchange="args => SetColumnVisibility(column.Key, args.Value is bool v && v)" />
-                            <label class="form-check-label" for="@("cargos-col-" + column.Key)">@column.Label</label>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-outline-light" disabled="@(index == 0)" @onclick="() => MoveColumn(column.Key, -1)"><i class="bi bi-arrow-up"></i></button>
-                        <button type="button" class="btn btn-sm btn-outline-light" disabled="@(index == ordered.Count - 1)" @onclick="() => MoveColumn(column.Key, 1)"><i class="bi bi-arrow-down"></i></button>
+            <section class="adm-card" aria-label="Filtros">
+                <div class="adm-card__body">
+                    <div class="adm-toolbar">
+                        <AlfaSelect Label="Cliente" Placeholder="Todos" Options="ClienteOptions" Value="@_filters.IdCliente" ValueChanged="@(v => _filters.IdCliente = v ?? string.Empty)" />
+                        <AlfaSelect Label="Estado" Placeholder="Todos" Options="EstadoOptions" Value="@_filters.Estado" ValueChanged="@(v => _filters.Estado = v ?? string.Empty)" />
+                        <AlfaInput Label="Vence desde" Type="date" Value="@FormatDate(_fechaVencimientoDesde)" ValueChanged="@(v => _fechaVencimientoDesde = ParseDate(v))" />
+                        <AlfaInput Label="Vence hasta" Type="date" Value="@FormatDate(_fechaVencimientoHasta)" ValueChanged="@(v => _fechaVencimientoHasta = ParseDate(v))" />
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_loading" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
                     </div>
-                }
-            </div>
+                </div>
+            </section>
 
-            <div class="d-flex gap-2 mt-3">
-                <button type="button" class="btn btn-primary" disabled="@_savingViewSettings" @onclick="GuardarConfiguracionVistaAsync">Guardar vista</button>
-                <button type="button" class="btn btn-outline-light" disabled="@_savingViewSettings" @onclick="CancelarConfiguracionVista">Cancelar</button>
-            </div>
-        </section>
+            @if (_loading && _items.Count == 0)
+            {
+                <AlfaEmptyState Title="Cargando cargos" Message="Buscando cargos para los filtros seleccionados." />
+            }
+            else if (_loadError is not null)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los cargos" Message="@_loadError" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => BuscarAsync(resetPage: false)" />
+            }
+            else if (_items.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin cargos" Message="No hay cargos para los filtros seleccionados. Los genera el job diario de facturación sobre módulos contratados con plan." />
+            }
+            else
+            {
+                var visibleColumns = GetVisibleColumns();
+
+                <section class="adm-card" aria-label="Cargos">
+                    <div class="adm-table-wrap">
+                        <table class="adm-table">
+                            <thead>
+                                <tr>
+                                    @foreach (var column in visibleColumns)
+                                    {
+                                        <th class="@(IsNumeric(column.Key) ? "is-number" : null)">@column.Label</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _items)
+                                {
+                                    <tr>
+                                        @foreach (var column in visibleColumns)
+                                        {
+                                            @if (column.Key == CargosViewColumnKeys.Estado)
+                                            {
+                                                <td><AlfaTag Tone="@GetEstadoTone(item.Estado)">@GetEstadoLabel(item.Estado)</AlfaTag></td>
+                                            }
+                                            else
+                                            {
+                                                <td class="@(IsNumeric(column.Key) ? "is-number" : null)">@RenderCell(item, column.Key)</td>
+                                            }
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="alfa-data-view-footer">
+                        <span class="alfa-data-view-footer__summary">@(_total == 1 ? "1 registro" : $"{_total} registros") · Página @_pageNumber de @Math.Max(_totalPages, 1)</span>
+                    </footer>
+                </section>
+            }
+        }
     </div>
-}
+</div>
+
+<AlfaDialog Open="@_showViewSettings"
+            Title="Configurar vista"
+            Eyebrow="Cargos"
+            Description="Elegí las columnas visibles y su orden."
+            Loading="@_savingViewSettings"
+            OnClose="CancelarConfiguracionVista">
+    <ChildContent>
+        <div class="adm-view-columns">
+            @{
+                var ordered = _viewDraft.OrderBy(c => c.Order).ToList();
+            }
+            @for (var i = 0; i < ordered.Count; i++)
+            {
+                var column = ordered[i];
+                var index = i;
+                <div class="adm-view-column">
+                    <AlfaCheckbox Value="@column.Visible" ValueChanged="@(v => SetColumnVisibility(column.Key, v == true))">@column.Label</AlfaCheckbox>
+                    <AlfaIconButton Icon="bi bi-arrow-up" Label="@($"Subir {column.Label}")" Size="AlfaSize.Sm" Disabled="@(index == 0)" OnClick="_ => MoveColumn(column.Key, -1)" />
+                    <AlfaIconButton Icon="bi bi-arrow-down" Label="@($"Bajar {column.Label}")" Size="AlfaSize.Sm" Disabled="@(index == ordered.Count - 1)" OnClick="_ => MoveColumn(column.Key, 1)" />
+                </div>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_savingViewSettings" OnClick="_ => CancelarConfiguracionVista()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingViewSettings" OnClick="_ => GuardarConfiguracionVistaAsync()">Guardar vista</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -173,7 +143,8 @@
 
     private bool _loading = true;
     private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
-    private string _error = string.Empty;
+    private string? _loadError;
+    private AppUiMessage? _feedback;
     private DateTime? _fechaVencimientoDesde;
     private DateTime? _fechaVencimientoHasta;
 
@@ -185,6 +156,19 @@
 
     private bool _showViewSettings;
     private bool _savingViewSettings;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadoOptions =
+    [
+        new(CargoEstados.Pendiente, "Pendiente"),
+        new(CargoEstados.Pagado, "Pagado"),
+        new(CargoEstados.PagoParcial, "Pago parcial"),
+        new(CargoEstados.Vencido, "Vencido"),
+        new(CargoEstados.Anulado, "Anulado"),
+        new(CargoEstados.Borrador, "Borrador")
+    ];
+
+    private IReadOnlyList<AlfaSelectOption> ClienteOptions
+        => _clientes.Select(c => new AlfaSelectOption(c.IdCliente, $"{c.RazonSocial} ({c.IdCliente})")).ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -201,7 +185,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudieron cargar los datos", UserMessage(ex));
         }
 
         await BuscarAsync(resetPage: true);
@@ -226,10 +210,24 @@
         Title = "Cargos",
         Breadcrumb = ["Administrar", "Cargos"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "cargos"),
+        Pagination = IsSuperAdmin && _total > 0
+            ? new PageHeaderPaginationConfig
+            {
+                Label = _total == 1 ? "1 registro" : $"{_total} registros",
+                PageLabel = $"{_pageNumber} / {Math.Max(_totalPages, 1)}",
+                HasPrevious = _hasPrev,
+                HasNext = _hasNext,
+                Disabled = _loading,
+                OnPrevious = () => InvokeAsync(() => CambiarPaginaAsync(_pageNumber - 1)),
+                OnNext = () => InvokeAsync(() => CambiarPaginaAsync(_pageNumber + 1))
+            }
+            : null,
         Actions =
         [
-            new PageHeaderAction { Key = "configurar-vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; } }
+            // El clic llega desde la Context Toolbar (otro componente): hay que pedir el re-render de esta página.
+            new PageHeaderAction { Key = "configurar-vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !IsSuperAdmin, OnClick = () => InvokeAsync(() => { AbrirConfiguracionVista(); StateHasChanged(); }) }
         ]
     });
 
@@ -239,7 +237,7 @@
     private async Task BuscarAsync(bool resetPage = true)
     {
         _loading = true;
-        _error = string.Empty;
+        _loadError = null;
         if (resetPage)
             _filters.PageNumber = 1;
 
@@ -259,11 +257,13 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _loadError = UserMessage(ex);
         }
         finally
         {
             _loading = false;
+            UpdatePageHeader();
+            StateHasChanged();
         }
     }
 
@@ -278,6 +278,8 @@
 
     private List<CargosViewColumnDto> GetVisibleColumns()
         => _viewSettings.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private static bool IsNumeric(string key) => key == CargosViewColumnKeys.Importe;
 
     private static string RenderCell(CargoDto item, string key) => key switch
     {
@@ -307,6 +309,22 @@
         _ => estado
     };
 
+    private static AlfaTagTone GetEstadoTone(string estado) => estado switch
+    {
+        CargoEstados.Pagado => AlfaTagTone.Success,
+        CargoEstados.Pendiente or CargoEstados.PagoParcial => AlfaTagTone.Warning,
+        CargoEstados.Vencido => AlfaTagTone.Danger,
+        _ => AlfaTagTone.Neutral
+    };
+
+    private static string? FormatDate(DateTime? value) => value?.ToString("yyyy-MM-dd");
+
+    private static DateTime? ParseDate(string? value)
+        => DateTime.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : null;
+
+    private static string UserMessage(Exception ex)
+        => ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+
     private void AbrirConfiguracionVista()
     {
         _viewDraft = _viewSettings.Select(c => new CargosViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList();
@@ -314,7 +332,10 @@
     }
 
     private void CancelarConfiguracionVista()
-        => _showViewSettings = false;
+    {
+        if (!_savingViewSettings)
+            _showViewSettings = false;
+    }
 
     private void SetColumnVisibility(string key, bool visible)
     {
@@ -353,10 +374,11 @@
             await BillingSvc.SaveCargosViewSettingsAsync(CurrentUserName(), settings);
             _viewSettings = (await BillingSvc.GetCargosViewSettingsAsync(CurrentUserName())).Columnas;
             _showViewSettings = false;
+            _feedback = AppUiMessage.Success("Vista guardada", "Las columnas se guardaron para tu usuario.");
         }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _feedback = AppUiMessage.Error("No se pudo guardar la vista", UserMessage(ex));
         }
         finally
         {

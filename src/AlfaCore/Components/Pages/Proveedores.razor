@@ -9,23 +9,21 @@
 
 <PageTitle>Proveedores | Compras</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
+<div class="gd-page gd">
+    <header class="gd-header">
         <div>
-            <h2 class="page-intro__title">Proveedores</h2>
-            <p class="page-intro__text">Tablero de compras por proveedor para analizar gasto, concentración y variación contra el período anterior.</p>
+            <h2>Proveedores</h2>
+            <p>Tablero de compras por proveedor para analizar gasto, concentración y variación contra el período anterior.</p>
         </div>
-    </div>
-
-    <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
+    </header>
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
-        <div class="consultas-error"><i class="bi bi-exclamation-triangle"></i> @_error</div>
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudieron cargar los datos" Message="@_error" />
     }
     else if (_loading)
     {
-        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Cargando…</div>
+        <AlfaEmptyState Title="Cargando" Message="Buscando datos del período." />
     }
     else
     {
@@ -77,7 +75,7 @@
             </div>
         </section>
     }
-</section>
+</div>
 
 @code {
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
@@ -91,7 +89,11 @@
     private bool _loading = true;
     private string _error = string.Empty;
 
-    protected override void OnInitialized() => UpdatePageHeader();
+    protected override void OnInitialized()
+    {
+        _filters = FilterState.Current;
+        UpdatePageHeader();
+    }
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -105,9 +107,16 @@
             PageHeader.Clear();
     }
 
+    // Filtros en el Context Toolbar (Smart Search). El fragmento lee _filters/_options al dibujarse:
+    // después de cargar las opciones se vuelve a publicar el header.
+    private RenderFragment RenderSmartSearch() => @<ComprasSmartSearch Model="_filters" Options="_options" OnApply="LoadAsync" />;
+
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "compras",
+        Search = new PageHeaderSearchConfig(),
+        SearchContent = RenderSmartSearch(),
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "proveedores")
     });
 
@@ -117,6 +126,7 @@
         try
         {
             _options = await DashboardService.GetFilterOptionsAsync();
+            UpdatePageHeader();
             await LoadAsync();
         }
         catch (Exception ex)

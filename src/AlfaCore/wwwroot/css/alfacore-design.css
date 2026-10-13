@@ -46,6 +46,9 @@
 }
 
 .shell.shell--alfa-design {
+    /* app.css fuerza `.shell__content { background: var(--color-bg) !important }` (azul marino
+       legacy): remapear la variable acá evita la franja de 16px alrededor del contenido. */
+    --color-bg: var(--alfa-bg-canvas);
     width: 100%;
     max-width: none;
     height: 100dvh;

@@ -5,159 +5,134 @@
 @inject AlfaCore.Services.ITablasReferenciaService TablasSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Tablas | AlfaNet</PageTitle>
 
-<div class="page-grid admin-home-page">
-<div class="panel-card">
-    <div class="panel-card__header">
-        <div>
-            <h1 class="panel-card__title">Tablas de referencia</h1>
-            <p class="panel-card__subtitle">Catálogos chicos que usan otras pantallas del sistema (clasificaciones de clientes, categorías, etc.). No es un módulo aparte: está disponible siempre, para todos, sin costo.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
-        </div>
-    </div>
+<div class="gd-page gd gd-legacy tablas-ref">
+    <AlfaNotification Message="@_notificacion.For(string.IsNullOrWhiteSpace(_error) ? _message : _error, isError: !string.IsNullOrWhiteSpace(_error), title: string.IsNullOrWhiteSpace(_error) ? "Listo" : "No se pudo completar la acción")"
+                      OnDismiss="() => { _message = string.Empty; _error = string.Empty; }" />
+
+    <header class="gd-header">
+        <h2>Tablas de referencia</h2>
+        <p>Catálogos chicos que usan otras pantallas del sistema (clasificaciones de clientes, categorías, etc.). Están disponibles siempre, para todos, sin costo.</p>
+    </header>
 
     @if (_loadingTablas)
     {
-        <p>Cargando tablas...</p>
+        <p class="gd-hint" role="status">Cargando tablas...</p>
+    }
+    else if (_tablas.Count == 0)
+    {
+        <AlfaEmptyState Title="Sin tablas de referencia" Message="No hay tablas de referencia registradas todavía." />
     }
     else
     {
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="editor-msg editor-msg--success">
-                <strong>Listo</strong>
-                <p>@_message</p>
-            </div>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(_error))
-        {
-            <div class="editor-msg editor-msg--warning">
-                <strong>No se pudo completar la acción</strong>
-                <p>@_error</p>
-            </div>
-        }
-
-        @if (_tablas.Count == 0)
-        {
-            <p>No hay tablas de referencia registradas todavía.</p>
-        }
-        else
-        {
-            <div class="row g-3">
-                <div class="col-12 col-xl-3">
-                    <div class="panel-card">
-                        <h2 class="panel-card__title">Tablas</h2>
-                        <div class="list-group">
-                            @foreach (var tabla in _tablas)
-                            {
-                                <button type="button"
-                                        class="list-group-item list-group-item-action @(tabla.Clave == _selectedClave ? "active" : string.Empty)"
-                                        @onclick="() => SelectTablaAsync(tabla.Clave)">
-                                    @tabla.NombreVisible
-                                </button>
-                            }
-                        </div>
-                    </div>
+        <div class="tablas-ref__layout">
+            <nav class="panel-card tablas-ref__lista" aria-label="Tablas">
+                <div class="panel-card__header">
+                    <h3 class="panel-card__title">Tablas</h3>
                 </div>
-
-                <div class="col-12 col-xl-9">
-                    @if (_selectedTabla is not null)
+                <div class="tablas-ref__items">
+                    @foreach (var tabla in _tablas)
                     {
-                        <div class="panel-card">
-                            <div class="panel-card__header">
-                                <div>
-                                    <h2 class="panel-card__title">@(_editingCodigo is not null ? $"Editar {_editingCodigo}" : "Nueva fila")</h2>
-                                    <p class="panel-card__subtitle">@_selectedTabla.NombreVisible</p>
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Código</label>
-                                <input class="form-control" @bind="_filaForm.Codigo" maxlength="8" readonly="@(_editingCodigo is not null)" />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Descripción</label>
-                                <input class="form-control" @bind="_filaForm.Descripcion" maxlength="100" />
-                            </div>
-                            @if (_selectedTabla.TieneColor)
-                            {
-                                <div class="mb-3">
-                                    <label class="form-label">Color</label>
-                                    <input class="form-control form-control-color" type="color" value="@(_filaForm.ColorHex ?? "#888888")" @onchange="OnColorChanged" />
-                                </div>
-                            }
-
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-primary" @onclick="GuardarFilaAsync" disabled="@_savingFila">
-                                    @(_editingCodigo is not null ? "Guardar cambios" : "Crear fila")
-                                </button>
-                                <button type="button" class="btn btn-outline-light" @onclick="StartNewFila">Limpiar</button>
-                            </div>
-                        </div>
-
-                        <div class="panel-card mt-3">
-                            <h2 class="panel-card__title">Filas cargadas</h2>
-
-                            @if (_loadingFilas)
-                            {
-                                <p>Cargando...</p>
-                            }
-                            else if (_filas.Count == 0)
-                            {
-                                <p>Todavía no hay filas cargadas.</p>
-                            }
-                            else
-                            {
-                                <div class="table-responsive admin-table-wrap">
-                                    <table class="table table-sm align-middle admin-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Código</th>
-                                                <th>Descripción</th>
-                                                @if (_selectedTabla.TieneColor)
-                                                {
-                                                    <th>Color</th>
-                                                }
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach (var fila in _filas)
-                                            {
-                                                <tr>
-                                                    <td>@fila.Codigo</td>
-                                                    <td>@fila.Descripcion</td>
-                                                    @if (_selectedTabla.TieneColor)
-                                                    {
-                                                        <td><span style="display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid rgba(255,255,255,.2);background:@(fila.ColorHex ?? "transparent");"></span></td>
-                                                    }
-                                                    <td class="text-end">
-                                                        <div class="d-inline-flex gap-2">
-                                                            <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditFila(fila)">Editar</button>
-                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFilaAsync(fila.Codigo)">Eliminar</button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                            }
-                        </div>
+                        <button type="button"
+                                class="tablas-ref__item @(tabla.Clave == _selectedClave ? "is-active" : null)"
+                                aria-current="@(tabla.Clave == _selectedClave ? "true" : null)"
+                                @onclick="() => SelectTablaAsync(tabla.Clave)">
+                            @tabla.NombreVisible
+                        </button>
                     }
                 </div>
+            </nav>
+
+            <div class="tablas-ref__main">
+                @if (_selectedTabla is not null)
+                {
+                    <section class="panel-card">
+                        <div class="panel-card__header">
+                            <div>
+                                <h3 class="panel-card__title">@(_editingCodigo is not null ? $"Editar {_editingCodigo}" : "Nueva fila")</h3>
+                                <p class="panel-card__subtitle">@_selectedTabla.NombreVisible</p>
+                            </div>
+                        </div>
+                        <div class="tablas-ref__form">
+                            <AlfaInput Label="Código" Value="@_filaForm.Codigo" ValueChanged="v => _filaForm.Codigo = v ?? string.Empty" MaxLength="8" Disabled="@(_editingCodigo is not null)" />
+                            <AlfaInput Label="Descripción" Value="@_filaForm.Descripcion" ValueChanged="v => _filaForm.Descripcion = v ?? string.Empty" MaxLength="100" />
+                            @if (_selectedTabla.TieneColor)
+                            {
+                                <div class="field">
+                                    <label>Color</label>
+                                    <input type="color" value="@(_filaForm.ColorHex ?? "#888888")" @onchange="OnColorChanged" />
+                                </div>
+                            }
+                            <div class="actions tablas-ref__acciones">
+                                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_savingFila" Disabled="@_savingFila" OnClick="_ => GuardarFilaAsync()">
+                                    @(_editingCodigo is not null ? "Guardar cambios" : "Crear fila")
+                                </AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-eraser" Disabled="@_savingFila" OnClick="_ => StartNewFila()">Limpiar</AlfaButton>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel-card">
+                        <div class="panel-card__header">
+                            <div>
+                                <h3 class="panel-card__title">Filas cargadas</h3>
+                                <p class="panel-card__subtitle">@(_loadingFilas ? "Cargando..." : $"{_filas.Count} fila(s)")</p>
+                            </div>
+                        </div>
+                        @if (!_loadingFilas && _filas.Count == 0)
+                        {
+                            <AlfaEmptyState Title="Sin filas" Message="Todavía no hay filas cargadas en esta tabla." />
+                        }
+                        else if (!_loadingFilas)
+                        {
+                            <div class="table-wrap">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Código</th>
+                                            <th>Descripción</th>
+                                            @if (_selectedTabla.TieneColor)
+                                            {
+                                                <th>Color</th>
+                                            }
+                                            <th class="tablas-ref__col-acciones"><span class="visually-hidden">Acciones</span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var fila in _filas)
+                                        {
+                                            <tr class="@(fila.Codigo == _editingCodigo ? "row--selected" : null)">
+                                                <td>@fila.Codigo</td>
+                                                <td>@fila.Descripcion</td>
+                                                @if (_selectedTabla.TieneColor)
+                                                {
+                                                    <td><span class="tablas-ref__color" style="background:@(fila.ColorHex ?? "transparent");"></span></td>
+                                                }
+                                                <td class="tablas-ref__col-acciones">
+                                                    <div class="tablas-ref__botones">
+                                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => EditFila(fila)">Editar</AlfaButton>
+                                                        <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-trash" OnClick="_ => EliminarFilaAsync(fila.Codigo)">Eliminar</AlfaButton>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </section>
+                }
             </div>
-        }
+        </div>
     }
-</div>
 </div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
     private List<AlfaCore.Models.TablaReferenciaDto> _tablas = [];
     private List<AlfaCore.Models.TablaReferenciaFilaDto> _filas = [];
     private AlfaCore.Models.TablaReferenciaDto? _selectedTabla;
@@ -171,6 +146,39 @@
     private string _message = string.Empty;
     private string _error = string.Empty;
 
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "archivos",
+            Title = "Tablas de referencia",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "tablas"),
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -189,9 +197,6 @@
             _loadingTablas = false;
         }
     }
-
-    private void GoHome()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/"));
 
     private async Task SelectTablaAsync(string clave)
     {

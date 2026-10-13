@@ -174,7 +174,7 @@
                 break;
 
             default:
-                <ConversacionesConfigTarjeta Titulo="Estado" Descripcion="El asistente responde solo los mensajes entrantes, en todos los canales.">
+                <ConversacionesConfigTarjeta Titulo="Estado" Descripcion="El asistente responde solo los mensajes entrantes, en los canales que elijas.">
                     @if (!OpenAiConfigurado)
                     {
                         <div class="cfg-notice">
@@ -185,6 +185,36 @@
                     <AlfaCheckbox Value="@Config.BotActivo" ValueChanged="@((bool? v) => Config.BotActivo = v == true)">
                         Activar el asistente (responde automáticamente)
                     </AlfaCheckbox>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Canales" Descripcion="Elegí en qué canales responde el asistente. En los que quedan sin marcar atiende solo tu equipo.">
+                    <div class="cfg-stack">
+                        @foreach (var canal in ConversacionAutomatizacionesConfigDto.BotCanalesDisponibles)
+                        {
+                            var codigo = canal.Codigo;
+                            <AlfaCheckbox Value="@Config.BotRespondeEnCanal(codigo)" ValueChanged="@((bool? v) => SetBotCanal(codigo, v == true))">
+                                @canal.Nombre
+                            </AlfaCheckbox>
+                        }
+                    </div>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Si no encuentra respuesta" Descripcion="Qué hace el asistente cuando no puede resolver la consulta.">
+                    <div class="cfg-stack">
+                        <AlfaCheckbox Value="@Config.BotGeneraTicket" ValueChanged="@((bool? v) => Config.BotGeneraTicket = v == true)">
+                            Generar un ticket con la consulta (se vincula a la conversación y el cliente recibe el número)
+                        </AlfaCheckbox>
+                    </div>
+                    <p class="cfg-hint">Si la conversación ya tiene un ticket abierto, no se crea otro.</p>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Chat del sitio web" Descripcion="Los visitantes del chat web son anónimos: el asistente puede pedirles datos para saber quién escribe.">
+                    <div class="cfg-stack">
+                        <AlfaCheckbox Value="@Config.BotWebPideDatos" ValueChanged="@((bool? v) => Config.BotWebPideDatos = v == true)">
+                            Pedir el número de WhatsApp y la razón social al visitante
+                        </AlfaCheckbox>
+                    </div>
+                    <p class="cfg-hint">Lo pide una sola vez, junto con su primera respuesta. Si el número coincide con un contacto cargado, la conversación queda vinculada a ese cliente.</p>
                 </ConversacionesConfigTarjeta>
 
                 <ConversacionesConfigTarjeta Titulo="Cuándo responde" Descripcion="Combiná estas opciones para que el asistente no se superponga con tu equipo.">
@@ -238,6 +268,14 @@
     [Parameter] public string Seccion { get; set; } = "general";
     [Parameter] public IReadOnlyList<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
     [Parameter] public bool OpenAiConfigurado { get; set; }
+
+    private void SetBotCanal(string codigo, bool activo)
+    {
+        var canales = Config.BotCanales.Where(x => !string.Equals(x, codigo, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (activo)
+            canales.Add(codigo);
+        Config.BotCanales = canales;
+    }
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnGuardar { get; set; }
     [Parameter] public EventCallback OnDescartar { get; set; }

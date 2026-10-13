@@ -79,6 +79,157 @@ public static class WhatsAppMessageClassifier
     }
 
     /// <summary>
+    /// Texto para lo que WhatsApp no deja ver fuera del celular. Meta lo manda como type "unsupported"
+    /// (o "errors" en el historial) con el error 131051 y sin decir qué era (raw_type "unknown" en todos
+    /// los payloads reales revisados): típicamente fotos/videos de visualización única.
+    /// </summary>
+    public const string SoloEnCelularText = "Este mensaje solo se puede ver desde WhatsApp en el celular (por ejemplo, una foto o un video de visualización única).";
+
+    public const string MensajeEliminadoText = "Se eliminó un mensaje.";
+
+    /// <summary>Tipos crudos de Meta que se muestran con <see cref="SoloEnCelularText"/>.</summary>
+    public static bool EsSoloEnCelular(string? rawType)
+        => (rawType ?? string.Empty).Trim().ToLowerInvariant() is "unsupported" or "errors" or "media_placeholder";
+
+    public static bool EsEdicion(string? rawType)
+        => string.Equals((rawType ?? string.Empty).Trim(), "edit", StringComparison.OrdinalIgnoreCase);
+
+    public static bool EsEliminacion(string? rawType)
+        => string.Equals((rawType ?? string.Empty).Trim(), "revoke", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Texto de un mensaje editado (type "edit"). No hay un payload real confirmado todavía, así que se
+    /// busca el texto nuevo en las formas posibles (edit.message.text.body, edit.text.body, edit.body...)
+    /// sin fallar si no está.
+    /// </summary>
+    public static string BuildEditedText(JsonElement message)
+    {
+        var nuevo = FindEditedBody(message);
+        return string.IsNullOrWhiteSpace(nuevo)
+            ? "✏️ Editó un mensaje (el texto nuevo se ve en el celular)."
+            : $"✏️ Mensaje editado: {nuevo.Trim()}";
+    }
+
+    public static string BuildEditedText(string? payloadJson)
+    {
+        var message = TryGetMessageElement(payloadJson, out var doc);
+        using (doc)
+            return message is JsonElement m ? BuildEditedText(m) : BuildEditedText(default(JsonElement));
+    }
+
+    /// <summary>Id (wamid) del mensaje original de una edición, si vino en alguna de sus formas.</summary>
+    public static string FindEditOriginalId(JsonElement message)
+    {
+        if (message.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        if (message.TryGetProperty("edit", out var edit) && edit.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in new[] { "original_message_id", "message_id", "id" })
+            {
+                if (edit.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(prop.GetString()))
+                    return prop.GetString()!;
+            }
+            if (edit.TryGetProperty("context", out var editContext) && editContext.ValueKind == JsonValueKind.Object
+                && editContext.TryGetProperty("id", out var editContextId) && editContextId.ValueKind == JsonValueKind.String)
+                return editContextId.GetString() ?? string.Empty;
+        }
+
+        return message.TryGetProperty("context", out var context) && context.ValueKind == JsonValueKind.Object
+               && context.TryGetProperty("id", out var contextId) && contextId.ValueKind == JsonValueKind.String
+            ? contextId.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
+    /// <summary>
+    /// Para tipos que AlfaCore no conoce (nuevos de Meta, mensajes enviados por empresas, etc.): busca un
+    /// texto legible dentro del objeto del tipo (body/text/caption/title, hasta 3 niveles). Vacío si no hay.
+    /// </summary>
+    public static string FindReadableText(JsonElement message, string type)
+    {
+        if (message.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(type)
+            || !message.TryGetProperty(type, out var content))
+            return string.Empty;
+
+        return FindTextRecursive(content, 0);
+    }
+
+    private static string FindEditedBody(JsonElement message)
+    {
+        if (message.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        if (message.TryGetProperty("edit", out var edit) && edit.ValueKind == JsonValueKind.Object)
+        {
+            var found = FindTextRecursive(edit, 0);
+            if (!string.IsNullOrWhiteSpace(found))
+                return found;
+        }
+
+        return message.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.Object
+               && text.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String
+            ? body.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
+    private static readonly string[] TextPropertyNames = ["body", "text", "caption", "title", "new_text"];
+
+    private static string FindTextRecursive(JsonElement element, int depth)
+    {
+        if (depth > 3)
+            return string.Empty;
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String when depth > 0:
+                return element.GetString() ?? string.Empty;
+            case JsonValueKind.Object:
+                foreach (var name in TextPropertyNames)
+                {
+                    if (!element.TryGetProperty(name, out var prop))
+                        continue;
+                    if (prop.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(prop.GetString()))
+                        return prop.GetString()!;
+                    if (prop.ValueKind == JsonValueKind.Object)
+                    {
+                        var nested = FindTextRecursive(prop, depth + 1);
+                        if (!string.IsNullOrWhiteSpace(nested))
+                            return nested;
+                    }
+                }
+                foreach (var prop in element.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind != JsonValueKind.Object)
+                        continue;
+                    var nested = FindTextRecursive(prop.Value, depth + 1);
+                    if (!string.IsNullOrWhiteSpace(nested))
+                        return nested;
+                }
+                return string.Empty;
+            default:
+                return string.Empty;
+        }
+    }
+
+    private static JsonElement? TryGetMessageElement(string? payloadJson, out JsonDocument? doc)
+    {
+        doc = null;
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+        try
+        {
+            doc = JsonDocument.Parse(payloadJson);
+            return doc.RootElement.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.Object
+                ? messageProp
+                : doc.RootElement;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Lee message.type del PayloadJson persistido (envelope {metadata,message} de
     /// BuildIncomingWhatsAppMessagePayloadJson, o el objeto de mensaje directo) -- mismo parseo
     /// tolerante que ya usaba Conversaciones.razor.ExtractUnsupportedType, centralizado acá.

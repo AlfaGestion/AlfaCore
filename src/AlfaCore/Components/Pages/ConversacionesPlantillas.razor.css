@@ -410,9 +410,8 @@
     cursor: not-allowed;
 }
 
-/* Selector de variables (AlfaDialog): catálogo agrupado por Group, con las
-   variables de Tareas/Guardia (CanResolveAutomaticallyInManualSend == false)
-   en una sección aparte, no clickeable -- ver FilteredContextualVariables. */
+/* Selector de variables (AlfaDialog): catálogo agrupado por Group. Las variables contextuales
+   insertables explican en su detalle cuándo se completan solas y cuándo se piden a mano. */
 .templates-v1 .variable-picker {
     display: flex;
     flex-direction: column;
@@ -485,4 +484,25 @@ button.variable-picker__option:hover {
     margin: 0;
     color: var(--alfa-text-secondary);
     font-size: var(--alfa-font-small);
+}
+
+/* Encabezado documento (plantillas que llevan un archivo adjunto, ej. Cierre de caja) */
+.templates-header-hint {
+    margin: 0;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.templates-doc-preview {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--alfa-accent) 12%, transparent);
+    color: var(--alfa-text-primary);
+    font-size: 12px;
+    font-weight: 500;
 }

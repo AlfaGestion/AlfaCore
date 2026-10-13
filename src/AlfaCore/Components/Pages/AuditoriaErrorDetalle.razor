@@ -4,6 +4,9 @@
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Detalle de Error | Alfa Gestión</PageTitle>
 
@@ -21,35 +24,13 @@ else if (_item is null)
 }
 else
 {
-    <div class="page-grid">
-        @if (_feedback is not null)
-        {
-            <div class="conversations-inline @GetFeedbackClass(_feedback)">
-                <strong>@_feedback.Title</strong>
-                <div>@_feedback.Message</div>
-                @if (_feedback.HasCode)
-                {
-                    <div>Código: @_feedback.Code</div>
-                }
-                @if (_feedback.HasSuggestion)
-                {
-                    <div>@_feedback.Suggestion</div>
-                }
-            </div>
-        }
+    <div class="gd-page gd gd-legacy">
+        <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Error #@_item.Id</h2>
-                <p class="page-intro__text">@_item.Proceso · @_item.Fecha.ToString("dd/MM/yyyy HH:mm:ss")</p>
-            </div>
-            <div class="actions">
-                <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/auditoria/errores")">
-                    <i class="bi bi-arrow-left"></i>
-                    <span>Volver a errores</span>
-                </a>
-            </div>
-        </section>
+        <header class="gd-header">
+            <h2>Error #@_item.Id</h2>
+            <p>@_item.Proceso · @_item.Fecha.ToString("dd/MM/yyyy HH:mm:ss")</p>
+        </header>
 
         <section class="two-grid">
             <article class="panel-card">
@@ -97,6 +78,41 @@ else
     private bool _loading = true;
     private AlfaCore.Models.AppUiMessage? _feedback;
     private AuditoriaErrorRowDto? _item;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "auditoria",
+        Title = $"Error #{Id}",
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAuditoria(RouteContext, Nav, "errores"),
+        Actions =
+        [
+            new PageHeaderAction
+            {
+                Key = "volver",
+                Label = "Volver a errores",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                OnClick = () => InvokeAsync(() => Nav.NavigateTo(RouteContext.BuildRoute("/auditoria/errores")))
+            }
+        ]
+    });
 
     protected override async Task OnParametersSetAsync()
     {
