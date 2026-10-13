@@ -2584,7 +2584,6 @@ public sealed class ConversacionesAutomationPipelineTests
         }
 
         public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default) => Task.FromResult(true);
-        public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();
