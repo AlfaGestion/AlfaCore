@@ -498,6 +498,12 @@ public sealed class ConversacionAsignacionRequest
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
     public string? Observaciones { get; set; }
+
+    /// <summary>
+    /// Avisar a la persona asignada (push al celular). El CRM lo apaga porque ya avisa la
+    /// oportunidad, y así no le llegan dos avisos por la misma asignación.
+    /// </summary>
+    public bool NotificarAsignado { get; set; } = true;
 }
 
 public sealed class ConversacionEstadoRequest

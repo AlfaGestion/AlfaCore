@@ -136,6 +136,9 @@ public sealed class CentroAvisosService(
         var oportunidades = tablas.Contains("CRM_OPORTUNIDADES") && tablas.Contains("CRM_ETAPAS") && tecnicos.Count > 0
             ? await GetOportunidadesAsync(cn, tecnicos, ahora, ct)
             : [];
+        var conversaciones = tablas.Contains("CONV_CONVERSACIONES") && tablas.Contains("CONV_ASIGNACIONES") && tecnicos.Count > 0
+            ? await GetConversacionesAsignadasAsync(cn, tecnicos, ahora, ct)
+            : [];
         var leidos = tablas.Contains("ALFACORE_AVISOS_LEIDOS")
             ? await GetLeidosAsync(cn, usuario, ct)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -148,7 +151,7 @@ public sealed class CentroAvisosService(
         if (tablas.Contains("ALFACORE_AVISOS_LEIDOS"))
             leidos.UnionWith(await GetClavesLeidasAsync(ct));
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema);
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema, conversaciones);
     }
 
     /// <summary>
@@ -172,7 +175,8 @@ public sealed class CentroAvisosService(
         IEnumerable<AvisoTicketFuente>? tickets = null,
         IaTopeEstadoDto? topeIa = null,
         IEnumerable<AvisoCrmFuente>? oportunidades = null,
-        IEnumerable<NovedadSistemaInfo>? sistema = null)
+        IEnumerable<NovedadSistemaInfo>? sistema = null,
+        IEnumerable<AvisoConversacionFuente>? conversaciones = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -316,6 +320,27 @@ public sealed class CentroAvisosService(
             });
         }
 
+        // Conversación asignada a un técnico del usuario por otra persona en los últimos días. La
+        // clave incluye la asignación: si se la vuelven a asignar, avisa de nuevo.
+        foreach (var c in conversaciones ?? [])
+        {
+            var idTecnico = c.IdTecnico.Trim();
+            if (idTecnico.Length == 0 || !esMio.Contains(idTecnico) || c.FechaHora < ahora.AddDays(-DiasAvisoAlta))
+                continue;
+            if (string.Equals(c.UsuarioAccion.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"conv:{c.IdConversacion.ToString(CultureInfo.InvariantCulture)}:{c.IdAsignacion.ToString(CultureInfo.InvariantCulture)}",
+                Tipo = AvisoTipos.Conversacion,
+                Titulo = string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}",
+                Detalle = "Te asignaron esta conversación",
+                FechaHora = c.FechaHora,
+                Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
         if (topeIa is { TopeCreditos: > 0 } && (topeIa.Alcanzado || topeIa.EnAviso))
         {
             var mes = ahora.ToString("yyyyMM", CultureInfo.InvariantCulture);
@@ -407,7 +432,8 @@ public sealed class CentroAvisosService(
             SELECT name FROM sys.tables
             WHERE name IN (N'CAL_EVENTOS', N'CAL_RECORDATORIOS', N'CAL_RESERVAS_REUNION',
                            N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS',
-                           N'TICK_TICKETS', N'TICK_ESTADOS', N'CRM_OPORTUNIDADES', N'CRM_ETAPAS');
+                           N'TICK_TICKETS', N'TICK_ESTADOS', N'CRM_OPORTUNIDADES', N'CRM_ETAPAS',
+                           N'CONV_CONVERSACIONES', N'CONV_ASIGNACIONES');
             """;
         var tablas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var cmd = new SqlCommand(sql, cn);
@@ -554,6 +580,48 @@ public sealed class CentroAvisosService(
             });
         }
         return oportunidades;
+    }
+
+    private static async Task<List<AvisoConversacionFuente>> GetConversacionesAsignadasAsync(
+        SqlConnection cn, IReadOnlyList<string> tecnicos, DateTime ahora, CancellationToken ct)
+    {
+        var tecnicoParams = tecnicos.Select((_, i) => $"@T{i}").ToList();
+        var sql = $"""
+            SELECT TOP (50)
+                c.IdConversacion, a.IdAsignacion, LTRIM(RTRIM(ISNULL(a.IdTecnico, N''))),
+                ISNULL(c.NombreVisible, N''), LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))), a.FechaHora
+            FROM dbo.CONV_CONVERSACIONES c
+            CROSS APPLY (
+                SELECT TOP (1) x.IdAsignacion, x.IdTecnico, x.UsuarioAccion, x.FechaHora
+                FROM dbo.CONV_ASIGNACIONES x
+                WHERE x.IdConversacion = c.IdConversacion
+                ORDER BY x.FechaHora DESC, x.IdAsignacion DESC
+            ) a
+            WHERE c.FechaHoraCierre IS NULL
+              AND LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))) IN ({string.Join(", ", tecnicoParams)})
+              AND LTRIM(RTRIM(ISNULL(a.IdTecnico, N''))) = LTRIM(RTRIM(ISNULL(c.IdTecnico, N'')))
+              AND a.FechaHora >= @Desde
+            ORDER BY a.FechaHora DESC;
+            """;
+        var conversaciones = new List<AvisoConversacionFuente>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Desde", ahora.AddDays(-DiasAvisoAlta));
+        for (var i = 0; i < tecnicos.Count; i++)
+            cmd.Parameters.AddWithValue(tecnicoParams[i], tecnicos[i]);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            conversaciones.Add(new AvisoConversacionFuente
+            {
+                IdConversacion = rd.GetInt64(0),
+                IdAsignacion = rd.GetInt64(1),
+                IdTecnico = rd.GetString(2),
+                Contacto = rd.GetString(3),
+                UsuarioAccion = rd.GetString(4),
+                FechaHora = rd.GetDateTime(5)
+            });
+        }
+        return conversaciones;
     }
 
     private static async Task<List<AvisoTicketFuente>> GetTicketsAsync(

@@ -222,4 +222,23 @@ public sealed class CentroAvisosTests
         Assert.Equal(AvisoTipos.TopeIa, tope.Tipo);
         Assert.StartsWith("/conversaciones/configuracion", tope.Ruta);
     }
+
+    [Fact]
+    public void ConversacionAsignada_AvisaAlAsignadoSalvoQueSeLaHayaAsignadoElMismo()
+    {
+        static AvisoConversacionFuente Asignacion(long id, string tecnico = "T1", string usuario = "otro", DateTime? fecha = null)
+            => new() { IdConversacion = id, IdAsignacion = id * 10, IdTecnico = tecnico, Contacto = "Ana", UsuarioAccion = usuario, FechaHora = fecha ?? Ahora.AddHours(-1) };
+        static IReadOnlyList<AvisoDto> Con(params AvisoConversacionFuente[] c)
+            => CentroAvisosService.ConstruirAvisos([], [], ["T1"], "evelyn", SinLeidos, Ahora, conversaciones: c);
+
+        var aviso = Assert.Single(Con(Asignacion(5)));
+        Assert.Equal("conv:5:50", aviso.Clave);
+        Assert.Equal(AvisoTipos.Conversacion, aviso.Tipo);
+        Assert.Equal("Conversación asignada: Ana", aviso.Titulo);
+        Assert.Equal("/conversaciones?id=5", aviso.Ruta);
+
+        Assert.Empty(Con(Asignacion(6, usuario: "EVELYN")));                // se la asignó él mismo
+        Assert.Empty(Con(Asignacion(7, tecnico: "T2")));                    // es de otro técnico
+        Assert.Empty(Con(Asignacion(8, fecha: Ahora.AddDays(-10))));        // asignación vieja
+    }
 }

@@ -3950,6 +3950,19 @@ public sealed class ConversacionesService(
                     request.UsuarioAccion,
                     request.SistemaAccion,
                     token);
+
+                // Aviso al celular de la persona asignada (antes solo se enteraba mirando la lista).
+                // La campana lo muestra aparte (CentroAvisosService, "Conversación asignada").
+                if (!string.IsNullOrWhiteSpace(technicianId) && request.NotificarAsignado
+                    && serviceProvider?.GetService(typeof(IAvisosPushNotifier)) is IAvisosPushNotifier avisosPush)
+                {
+                    await avisosPush.NotificarTecnicoAsync(
+                        technicianId,
+                        "Conversación asignada",
+                        $"{actorName} te asignó una conversación.",
+                        $"/conversaciones?id={request.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
+                        token);
+                }
             }
 
             await _appEvents.LogAuditAsync(
