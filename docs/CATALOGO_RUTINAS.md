@@ -167,13 +167,13 @@ Criterio aplicado:
 - Datos que usa: `INovedadesService`
 - Observaciones: reutiliza el editor rico de bloques para contenido con llamados, listas, imágenes, portadas y estructura de boletín.
 
-### NovedadesPopup
+### NovedadesLectura
 
 - Tipo: Page
-- Ubicación: `src/AlfaCore/Components/Shared/NovedadesPopup.razor`
-- Propósito: muestra anuncios internos publicados como popup global y permite registrar vista y lectura por usuario.
-- Datos que usa: `INovedadesService`, sesión de usuario de AlfaCore
-- Observaciones: está integrado al layout principal y falla de forma silenciosa si la base todavía no tiene aplicadas las tablas del módulo.
+- Ubicación: `src/AlfaCore/Components/Pages/NovedadesLectura.razor`
+- Propósito: página `/novedades` para todos los usuarios con las novedades publicadas (la más nueva arriba), cada una en una tarjeta que se abre y se cierra; abrirla la marca como leída.
+- Datos que usa: `INovedadesService.GetPublicadasAsync`, `INovedadesService.MarkReadAsync`, sesión de usuario de AlfaCore
+- Observaciones: reemplaza al popup global (2026-10-13). Las novedades sin leer llegan a la campana (`CentroAvisosService`), que abre esta página en la novedad (`?id=`). Estilos en `wwwroot/css/novedades-lectura.css`, incluidos los bloques "Antes / Después" y "Tarjetas con ícono" del editor.
 
 ## Informes IA de compras
 

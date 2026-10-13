@@ -118,7 +118,8 @@ public sealed class CentroAvisosTests
         Assert.Equal("nov:7", aviso.Clave);
         Assert.Equal("Mejoras en Conversaciones", aviso.Contenido);
         Assert.Contains("versión 4.2", aviso.Detalle);
-        Assert.Empty(aviso.Ruta);
+        // Se lee completa en la página Novedades (ya no hay aviso flotante).
+        Assert.Equal("/novedades?id=7", aviso.Ruta);
     }
 
     [Fact]

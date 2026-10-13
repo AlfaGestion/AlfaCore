@@ -1,0 +1,205 @@
+@page "/novedades"
+@page "/{idweb}/{idbase:int}/novedades"
+@inject AlfaCore.Services.INovedadesService NovedadesSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.WebUtilities
+@implements IDisposable
+
+@* Novedades para todos los usuarios: lo que antes salía como aviso flotante ahora llega a la
+   campana y se lee acá. Cada novedad es una tarjeta que se abre y se cierra; abrirla la marca
+   como leída. Quedan todas guardadas, la más nueva arriba. *@
+
+<PageTitle>Novedades | AlfaNet</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
+</HeadContent>
+
+<link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
+
+<section class="gd-page gd nov-lectura">
+    <header class="nov-lectura__head">
+        <div>
+            <h1>Novedades</h1>
+            <p>Lo nuevo de AlfaCore y los avisos del equipo. Tocá una novedad para abrirla o cerrarla.</p>
+        </div>
+        @if (_novedades.Count > 0)
+        {
+            <div class="nov-lectura__head-actions">
+                <button type="button" class="btn btn--ghost" @onclick="AbrirTodas"><i class="bi bi-arrows-expand" aria-hidden="true"></i> Abrir todas</button>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarTodas"><i class="bi bi-arrows-collapse" aria-hidden="true"></i> Cerrar todas</button>
+            </div>
+        }
+    </header>
+
+    @if (_loading)
+    {
+        <AlfaEmptyState Title="Cargando novedades" Message="Un momento…" />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <AlfaEmptyState Title="No se pudieron cargar las novedades" Message="@_error" />
+    }
+    else if (_novedades.Count == 0)
+    {
+        <AlfaEmptyState Title="Todavía no hay novedades" Message="Cuando publiquemos algo nuevo te va a llegar un aviso a la campana y va a quedar guardado acá." />
+    }
+    else
+    {
+        <div class="nov-lectura__lista">
+            @foreach (var novedad in _novedades)
+            {
+                var abierta = _abiertas.Contains(novedad.IdNovedad);
+                <article class="nov-card nov-card--@AcentoSeguro(novedad.Acento) @(abierta ? "is-open" : null)" id="@($"novedad-{novedad.IdNovedad}")" @key="novedad.IdNovedad">
+                    <button type="button" class="nov-card__head" aria-expanded="@(abierta ? "true" : "false")" @onclick="() => AlternarAsync(novedad)">
+                        <span class="nov-card__icon" aria-hidden="true"><i class="bi @IconoSeguro(novedad.Icono)"></i></span>
+                        <span class="nov-card__title">
+                            <small>
+                                @(string.IsNullOrWhiteSpace(novedad.Version) ? "Novedad" : novedad.Version)
+                                · @Fecha(novedad).ToString("dd/MM/yyyy")
+                                @if (!novedad.LeidaPorUsuario)
+                                {
+                                    <span class="nov-card__nueva">Nueva</span>
+                                }
+                            </small>
+                            <strong>@novedad.Titulo</strong>
+                            @if (!abierta && !string.IsNullOrWhiteSpace(novedad.Bajada))
+                            {
+                                <span>@novedad.Bajada</span>
+                            }
+                        </span>
+                        <i class="bi @(abierta ? "bi-chevron-up" : "bi-chevron-down") nov-card__chevron" aria-hidden="true"></i>
+                    </button>
+
+                    @if (abierta)
+                    {
+                        <div class="nov-card__body">
+                            @if (novedad.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(novedad.PortadaValor))
+                            {
+                                <img class="nov-card__cover" src="@novedad.PortadaValor" alt="" />
+                            }
+                            <div class="nov-contenido">@((MarkupString)novedad.Contenido)</div>
+                            @if (!string.IsNullOrWhiteSpace(novedad.Footer))
+                            {
+                                <footer class="nov-card__footer">@novedad.Footer</footer>
+                            }
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private List<NovedadDetalleDto> _novedades = [];
+    private readonly HashSet<long> _abiertas = [];
+    private bool _loading = true;
+    private string _error = string.Empty;
+    private long? _scrollA;
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    private string Usuario => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    private void UpdatePageHeader()
+        => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "novedades",
+            Title = "Novedades"
+        });
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => NovedadesSvc.GetPublicadasAsync(Usuario), "No se pudieron cargar las novedades.");
+        if (result.Success && result.Value is not null)
+        {
+            _novedades = result.Value.ToList();
+            // Llegó desde la campana (?id=): esa abierta. Si no, la más nueva sin leer (o la más nueva).
+            var pedida = IdPedido();
+            var abrir = _novedades.FirstOrDefault(n => n.IdNovedad == pedida)
+                ?? _novedades.FirstOrDefault(n => !n.LeidaPorUsuario)
+                ?? _novedades.FirstOrDefault();
+            if (abrir is not null)
+            {
+                _abiertas.Add(abrir.IdNovedad);
+                _scrollA = pedida == abrir.IdNovedad ? abrir.IdNovedad : null;
+                await MarcarLeidaAsync(abrir);
+            }
+        }
+        else
+        {
+            _error = result.Feedback?.Message ?? "Probá de nuevo en un momento.";
+        }
+
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_scrollA is long id && !_loading)
+        {
+            _scrollA = null;
+            try { await JS.InvokeVoidAsync("eval", $"document.getElementById('novedad-{id}')?.scrollIntoView({{block:'start'}})"); }
+            catch (JSException) { }
+        }
+    }
+
+    private async Task AlternarAsync(NovedadDetalleDto novedad)
+    {
+        if (!_abiertas.Remove(novedad.IdNovedad))
+        {
+            _abiertas.Add(novedad.IdNovedad);
+            await MarcarLeidaAsync(novedad);
+        }
+    }
+
+    private void AbrirTodas()
+    {
+        foreach (var n in _novedades)
+            _abiertas.Add(n.IdNovedad);
+    }
+
+    private void CerrarTodas() => _abiertas.Clear();
+
+    private async Task MarcarLeidaAsync(NovedadDetalleDto novedad)
+    {
+        if (novedad.LeidaPorUsuario || string.IsNullOrWhiteSpace(Usuario))
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await NovedadesSvc.MarkReadAsync(novedad.IdNovedad, Usuario); return true; }, "No se pudo marcar la novedad como leída.");
+        if (result.Success)
+            novedad.LeidaPorUsuario = true;
+    }
+
+    private long? IdPedido()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        return query.TryGetValue("id", out var value) && long.TryParse(value.ToString(), out var id) ? id : null;
+    }
+
+    private static DateTime Fecha(NovedadDetalleDto n)
+        => n.FechaPublicacion ?? n.FechaProgramada ?? n.FechaHoraModificacion;
+
+    private static string AcentoSeguro(string? acento)
+        => acento is NovedadAcentos.Verde or NovedadAcentos.Cian or NovedadAcentos.Ambar or NovedadAcentos.Rojo or NovedadAcentos.Grafito
+            ? acento
+            : NovedadAcentos.Azul;
+
+    private static string IconoSeguro(string? icono)
+        => !string.IsNullOrWhiteSpace(icono) && System.Text.RegularExpressions.Regex.IsMatch(icono, "^bi-[a-z0-9-]+$")
+            ? icono
+            : "bi-megaphone";
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+}

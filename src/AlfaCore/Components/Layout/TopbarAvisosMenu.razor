@@ -76,14 +76,17 @@
                 }
             </div>
 
-            @if (OnConfigurarPush.HasDelegate)
-            {
-                <footer class="tb-av__footer">
+            <footer class="tb-av__footer">
+                <button type="button" class="tb-av__link" @onclick="VerNovedades">
+                    <i class="bi bi-megaphone" aria-hidden="true"></i> Ver todas las novedades
+                </button>
+                @if (OnConfigurarPush.HasDelegate)
+                {
                     <button type="button" class="tb-av__link" @onclick="ConfigurarPushAsync">
                         <i class="bi bi-phone-vibrate" aria-hidden="true"></i> Notificaciones en este dispositivo
                     </button>
-                </footer>
-            }
+                }
+            </footer>
         </section>
     }
 </div>
@@ -201,6 +204,12 @@
         {
             _error = true;
         }
+    }
+
+    private void VerNovedades()
+    {
+        Close();
+        Nav.NavigateTo(RouteContext.BuildRoute("/novedades"));
     }
 
     private async Task ConfigurarPushAsync()

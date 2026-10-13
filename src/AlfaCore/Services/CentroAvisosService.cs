@@ -308,7 +308,9 @@ public sealed class CentroAvisosService(
                 Titulo = n.Titulo.Trim(),
                 Detalle = $"Novedad{version}",
                 Contenido = FirstNonEmpty(n.Bajada, n.Resumen),
-                FechaHora = n.FechaPublicacion
+                FechaHora = n.FechaPublicacion,
+                // Se lee completa en la página Novedades (la novedad ya no aparece como aviso flotante).
+                Ruta = $"/novedades?id={n.IdNovedad.ToString(CultureInfo.InvariantCulture)}"
             });
         }
 

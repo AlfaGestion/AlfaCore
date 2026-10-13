@@ -14,6 +14,9 @@ public interface INovedadesService
     Task DeleteAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default);
     Task DuplicateAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default);
     Task<NovedadDetalleDto?> GetPendingAnnouncementAsync(string usuario, CancellationToken ct = default);
+
+    /// <summary>Novedades publicadas (la más nueva primero) con lo que leyó el usuario: la página Novedades.</summary>
+    Task<IReadOnlyList<NovedadDetalleDto>> GetPublicadasAsync(string usuario, CancellationToken ct = default);
     Task RegisterViewAsync(long idNovedad, string usuario, CancellationToken ct = default);
     Task MarkReadAsync(long idNovedad, string usuario, CancellationToken ct = default);
     Task<string> SaveCoverImageAsync(Stream content, string fileName, string contentType, string usuarioAccion, CancellationToken ct = default);

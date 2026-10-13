@@ -1230,3 +1230,11 @@
         margin-left: 0;
     }
 }
+
+.novedades-settings-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+}
