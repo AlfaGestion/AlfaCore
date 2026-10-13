@@ -170,6 +170,14 @@
     flex: 0 0 auto;
 }
 
+.catalogo-publico-hero__tools {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    flex: 0 0 auto;
+}
+
 .catalogo-publico-meta__text {
     margin: 0;
     color: var(--color-muted);
@@ -1218,6 +1226,10 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     font-size: 0.84rem;
 }
 
+.catalogo-publico-page .catalogo-publico-hero__tools {
+    gap: 0.45rem;
+}
+
 .catalogo-publico-toolbar-sticky {
     align-self: start;
     width: auto;
@@ -1570,8 +1582,25 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
         padding-top: 2.5rem;
     }
 
+    /* Algunos WebView de iOS (por ejemplo, el navegador interno de WhatsApp)
+       recalculan mal el viewport al combinar IntersectionObserver con position: fixed.
+       En móvil el toolbar sigue su flujo normal para no generar un hueco vertical ni
+       superponerse a la grilla. */
+    .catalogo-publico-page.is-toolbar-collapsed .catalogo-publico-toolbar-sticky {
+        position: static;
+        width: auto;
+        margin: 0 -0.15rem 0.9rem;
+        padding: 0.5rem 0.15rem 0.55rem;
+        box-shadow: 0 5px 12px rgba(2, 6, 23, 0.16);
+    }
+
     .catalogo-publico-toolbar-sticky {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: max-content max-content;
+        grid-auto-rows: max-content;
+        align-content: start;
+        height: max-content;
+        min-height: 0;
         gap: 0.35rem 0.55rem;
         margin-inline: -0.15rem;
         padding-inline: 0.15rem;
@@ -1580,12 +1609,18 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     .catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search {
         grid-column: 1;
         grid-row: 1;
+        align-self: start;
+        height: max-content;
+        min-height: 0;
     }
 
     .catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search__footer {
         grid-column: 1;
         grid-row: 2;
         justify-content: space-between;
+        align-self: start;
+        height: max-content;
+        min-height: 0;
         min-width: 0;
     }
 
@@ -1678,5 +1713,9 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     .catalogo-publico-page .catalogo-publico-hero__actions {
         width: 100%;
         justify-content: flex-start;
+    }
+
+    .catalogo-publico-page .catalogo-publico-hero__tools {
+        gap: 0.35rem;
     }
 }

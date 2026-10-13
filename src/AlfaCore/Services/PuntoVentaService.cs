@@ -439,7 +439,7 @@ public sealed class PuntoVentaService(
                     Familia = ""
                 });
             }
-            await EnsureRequiredSaleProceduresAsync(cn, token);
+            await EnsureRequiredSaleProceduresAsync(cn, token, requiereCobranzaYAsiento: !esRemitoONotaPedido);
 
             // La pantalla ya envía tipo y sucursal. No hace falta volver a
             // cargar el contexto completo del POS ni toda la configuración
@@ -566,6 +566,9 @@ public sealed class PuntoVentaService(
                 await EjecutarEtapaVentaAsync(
                     "actualizar los datos del cliente en la factura",
                     () => RefreshReceiptCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, cliente, token));
+
+            if (tc.Equals("NP", StringComparison.OrdinalIgnoreCase))
+                await MarkNotaPedidoPendienteAsync(cn, comprobante.IdComprobante, token);
 
             // Un cliente eventual usa la cuenta de consumidor final para la
             // imputación, pero sus datos deben quedar en la cabecera del
@@ -882,16 +885,18 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudo cargar el contexto de cierre del comprobante.", ct);
 
-    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string? tipoComprobante = null, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetRecentReceipts", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var tc = string.IsNullOrWhiteSpace(tipoComprobante) ? DefaultTc : tipoComprobante.Trim();
+            var tc = string.IsNullOrWhiteSpace(tipoComprobante)
+                ? null
+                : tipoComprobante.Trim().ToUpperInvariant();
             var rows = await cn.QueryAsync<PuntoVentaReceiptListItemDto>(new CommandDefinition(
                 """
-                SELECT TOP (10)
+                SELECT
                     ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(TC)), '') AS TipoComprobante,
                     ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
@@ -900,7 +905,7 @@ public sealed class PuntoVentaService(
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Total,
                     CAST(ISNULL(Impreso, 0) AS bit) AS Impreso
                 FROM dbo.V_MV_CPTE
-                WHERE UPPER(LTRIM(RTRIM(TC))) = @Tc
+                WHERE (@Tc IS NULL OR UPPER(LTRIM(RTRIM(TC))) = @Tc)
                   AND (@Sucursal IS NULL OR LTRIM(RTRIM(SUCURSAL)) = @Sucursal)
                   AND (@FechaDesde IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) >= @FechaDesde)
                   AND (@FechaHasta IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) < DATEADD(day, 1, @FechaHasta))
@@ -909,7 +914,7 @@ public sealed class PuntoVentaService(
                 """,
                 new
                 {
-                    Tc = tc.ToUpperInvariant(),
+                    Tc = tc,
                     Sucursal = string.IsNullOrWhiteSpace(sucursal) ? null : NormalizeSucursal(sucursal),
                     FechaDesde = fechaDesde?.Date,
                     FechaHasta = fechaHasta?.Date
@@ -1763,20 +1768,50 @@ public sealed class PuntoVentaService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task MarkNotaPedidoPendienteAsync(SqlConnection cn, int idComprobante, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            UPDATE dbo.V_MV_CPTE
+            SET FECHAESTFIN = NULL,
+                FECHAFINALIZACION = NULL,
+                FINALIZADA = 0,
+                ANULADA = 0,
+                BLOQUEADA = 0
+            WHERE ID = @IdComprobante
+              AND UPPER(LTRIM(RTRIM(TC))) = 'NP';
+            """, cn)
+        {
+            CommandTimeout = SaleCommandTimeoutSeconds
+        };
+        cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task EnsureRequiredSaleProceduresAsync(
+        SqlConnection cn,
+        CancellationToken ct,
+        bool requiereCobranzaYAsiento)
     {
         if (_requiredSaleProceduresChecked)
             return;
 
-        var requiredProcedures = new[]
+        var requiredProcedures = new List<string>
         {
             "sp_web_Alta_Comprobante",
-            "sp_web_CpteInsumos",
-            "sp_web_CreaCobPorFactura",
-            "sp_web_creaLineaAsiento",
-            "sp_web_CreaAplicacionCobranzaFactura",
-            "sp_web_CreaAsientoFactura"
+            "sp_web_CpteInsumos"
         };
+
+        if (requiereCobranzaYAsiento)
+        {
+            requiredProcedures.AddRange(
+            [
+                "sp_web_CreaCobPorFactura",
+                "sp_web_creaLineaAsiento",
+                "sp_web_CreaAplicacionCobranzaFactura",
+                "sp_web_CreaAsientoFactura"
+            ]);
+        }
 
         var missing = new List<string>();
         foreach (var procedure in requiredProcedures)
@@ -1787,7 +1822,11 @@ public sealed class PuntoVentaService(
 
         if (missing.Count == 0)
         {
-            _requiredSaleProceduresChecked = true;
+            // Un remito solo valida los procedimientos de alta. No marcar la
+            // validación completa como realizada, porque luego una venta fiscal
+            // todavía debe comprobar cobranza y asiento.
+            if (requiereCobranzaYAsiento)
+                _requiredSaleProceduresChecked = true;
             return;
         }
 

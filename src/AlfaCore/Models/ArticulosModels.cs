@@ -68,6 +68,8 @@ public class ArticuloSaveRequest
     public bool Pesable { get; set; }
     public decimal Costo { get; set; }
     public decimal Precio { get; set; }
+    public decimal? PrecioOferta { get; set; }
+    public DateTime? OfertaHasta { get; set; }
     public decimal Precio1 { get; set; }
     public decimal Precio2 { get; set; }
     public decimal Precio3 { get; set; }
@@ -107,7 +109,7 @@ public sealed class ArticuloLookupDataDto
     public decimal TasaIvaDefault { get; set; }
     public bool PrecioIncluyeIva { get; set; }
     public bool ModoRetail { get; set; }
-    public int ClasePrecioVenta { get; set; } = 1;
+    public int ClasePrecioVenta { get; set; } = 4;
     public List<string> NombresPrecios { get; set; } = [];
 }
 

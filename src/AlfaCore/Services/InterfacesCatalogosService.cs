@@ -1714,6 +1714,31 @@ public sealed class InterfacesCatalogosService(
             return true;
         }, "No se pudo guardar la configuración del menú de catálogos.", ct);
 
+    public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveCatalogosPrecioConsumidor", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la configuración de precios.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var valor = CatalogoPrecioConsumidorSetting.Serializar(mostrar);
+
+            await UpsertConfigValueAsync(cn, detailColumn, CatalogoPrecioConsumidorSetting.Clave, valor, ConfigGroup, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveCatalogosPrecioConsumidor",
+                "TA_CONFIGURACION",
+                CatalogoPrecioConsumidorSetting.Clave,
+                "Configuración de visibilidad de precios para consumidores y leads actualizada.",
+                new { UserName = userName.Trim(), Mostrar = mostrar },
+                token);
+
+            return true;
+        }, "No se pudo guardar la visibilidad de precios del catálogo.", ct);
+
     public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicIdentity", async token =>
         {

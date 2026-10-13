@@ -59,11 +59,20 @@
                         </div>
                     </div>
 
-                    <div class="catalogo-publico-hero__theme">
-                        <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
-                                        Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
-                                        Size="AlfaSize.Sm"
-                                        OnClick="ToggleThemeAsync" />
+                    <div class="catalogo-publico-hero__tools">
+                        @if (_catalogo is { PreciosVisibles: false } && _effectiveIdBase is > 0 && !IsAuthenticatedForCurrentCatalog && _clientePorLink is null)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-person-check" Disabled="@_sessionBusy" OnClick="MostrarLoginCliente">
+                                Soy cliente
+                            </AlfaButton>
+                        }
+
+                        <div class="catalogo-publico-hero__theme">
+                            <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                                            Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
+                                            Size="AlfaSize.Sm"
+                                            OnClick="ToggleThemeAsync" />
+                        </div>
                     </div>
                 </div>
 
@@ -80,14 +89,6 @@
                 {
                 <div class="catalogo-publico-hero__actions">
                     <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetClientePorLinkLabel()</AlfaTag>
-                </div>
-                }
-                else if (_catalogo is { PreciosVisibles: false } && _effectiveIdBase is > 0)
-                {
-                <div class="catalogo-publico-hero__actions">
-                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-person-check" Disabled="@_sessionBusy" OnClick="MostrarLoginCliente">
-                        Soy cliente
-                    </AlfaButton>
                 </div>
                 }
             </section>

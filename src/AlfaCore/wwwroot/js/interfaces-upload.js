@@ -206,6 +206,25 @@
                 win.opener = null;
             }
         },
+        async downloadUrl(url, fileName) {
+            if (!url) return;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('No se pudo descargar la imagen.');
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = objectUrl;
+                anchor.download = fileName || 'imagen-articulo';
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+                URL.revokeObjectURL(objectUrl);
+            } catch {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        },
         downloadBlob(base64, mimeType, fileName) {
             if (!base64) return;
 

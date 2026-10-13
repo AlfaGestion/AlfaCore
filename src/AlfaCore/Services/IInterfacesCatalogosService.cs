@@ -42,6 +42,7 @@ public interface IInterfacesCatalogosService
     Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default);
     Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default);
     Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default);
+    Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default);
     Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default);
     Task SavePublicIdentityNameAsync(string userName, string? nombreVisible, CancellationToken ct = default);
     Task SavePublicLogoFormatAsync(string userName, string? idWeb, string logoFormat, CancellationToken ct = default);

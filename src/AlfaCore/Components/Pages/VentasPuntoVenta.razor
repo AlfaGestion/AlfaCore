@@ -3401,6 +3401,14 @@
         return (element.scrollTop + element.clientHeight) >= (element.scrollHeight - 120);
     };
 
+    window.alfaPosCatalogNeedsMore = function (element) {
+        if (!element) {
+            return false;
+        }
+
+        return element.scrollHeight <= element.clientHeight + 1;
+    };
+
     window.alfaPosFocusSelect = function (element) {
         if (!element) {
             return;
@@ -3573,6 +3581,10 @@
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenReprintModalAsync" title="Reimprimir comprobantes (Ctrl+P)">
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
+                            </button>
+                            <button type="button" class="pos-topbar__menu-item" @onclick="InstallPwaFromPosAsync" title="Instalar AlfaCore como aplicación">
+                                <i class="bi bi-download"></i>
+                                Instalar AlfaCore
                             </button>
                             <button type="button" class="pos-topbar__menu-link" @onclick="OpenCloseModuleConfirm">
                                 <i class="bi bi-box-arrow-left"></i>
@@ -4409,7 +4421,7 @@
                 <input type="date" value="@_reprintDateHastaText" @onchange="OnReprintDateHastaChanged" />
             </label>
             <button type="button" class="btn btn--primary" @onclick="LoadReprintAsync" disabled="@_reprintLoading">Buscar</button>
-            <small>Se muestran hasta 10. Punto de venta: @SucursalOperativa</small>
+            <small>Se muestran todos los comprobantes del rango seleccionado. Punto de venta: @SucursalOperativa</small>
         </div>
 
         @if (_reprintLoading)
@@ -5757,6 +5769,23 @@
             _needScanFocus = false;
             await FocusScanAsync();
         }
+
+        // Si la página actual no alcanza a llenar el área desplazable, no existe
+        // un evento de scroll que pueda solicitar la siguiente página. Completar
+        // el viewport evita que el usuario quede detenido en el mensaje inferior.
+        if (!_catalogLoading
+            && !_catalogLoadingMore
+            && _catalog.Articulos.Count > 0
+            && _catalog.TieneMasResultados)
+        {
+            var catalogoSinOverflow = await Js.InvokeAsync<bool>(
+                "alfaPosCatalogNeedsMore", _catalogGridRef);
+            if (catalogoSinOverflow)
+            {
+                await LoadMoreCatalogAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private async Task FocusScanAsync()
@@ -6256,6 +6285,20 @@
 
     private void TogglePosMenu() => _showPosMenu = !_showPosMenu;
 
+    private async Task InstallPwaFromPosAsync()
+    {
+        _showPosMenu = false;
+
+        try
+        {
+            await Js.InvokeAsync<object>("alfaCorePwa.install");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Punto de venta: no se pudo iniciar la instalación de AlfaCore.");
+        }
+    }
+
     private async Task OpenReprintModalAsync()
     {
         _showPosMenu = false;
@@ -6282,10 +6325,10 @@
                 ? hasta.Date
                 : null;
             _recentReceipts = await PuntoVentaSvc.GetRecentReceiptsAsync(
-                _context?.TipoComprobanteDefault ?? "FC",
-                SucursalOperativa,
-                fechaDesde,
-                fechaHasta);
+                tipoComprobante: null,
+                sucursal: SucursalOperativa,
+                fechaDesde: fechaDesde,
+                fechaHasta: fechaHasta);
         }
         catch (Exception ex)
         {
