@@ -1574,6 +1574,22 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
 }
 
 @media (max-width: 768px) {
+    /* En iOS/WhatsApp no dependemos del IntersectionObserver para fijar los filtros.
+       El toolbar queda sticky desde el inicio y sigue dentro del flujo del catálogo,
+       evitando tanto que desaparezca como que deje un hueco vertical al hacer scroll. */
+    .catalogo-publico-page .catalogo-publico-toolbar-sticky,
+    .catalogo-publico-page--embedded .catalogo-publico-toolbar-sticky {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 20;
+        background: var(--color-bg);
+        box-shadow: 0 5px 12px rgba(2, 6, 23, 0.16);
+    }
+
+    .catalogo-publico-page > .panel-card {
+        overflow: visible !important;
+    }
+
     .catalogo-publico-page .catalogo-publico-lightbox__content {
         width: 100%;
         max-width: 100%;
@@ -1584,13 +1600,18 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
 
     /* Algunos WebView de iOS (por ejemplo, el navegador interno de WhatsApp)
        recalculan mal el viewport al combinar IntersectionObserver con position: fixed.
-       En móvil el toolbar sigue su flujo normal para no generar un hueco vertical ni
-       superponerse a la grilla. */
+       En móvil se usa sticky: conserva los filtros visibles durante el scroll, pero
+       permanece dentro del flujo y no genera un hueco vertical en la grilla. */
     .catalogo-publico-page.is-toolbar-collapsed .catalogo-publico-toolbar-sticky {
-        position: static;
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1200;
         width: auto;
-        margin: 0 -0.15rem 0.9rem;
-        padding: 0.5rem 0.15rem 0.55rem;
+        margin: 0;
+        padding: 0.5rem 1rem 0.65rem;
+        background: var(--color-bg);
         box-shadow: 0 5px 12px rgba(2, 6, 23, 0.16);
     }
 

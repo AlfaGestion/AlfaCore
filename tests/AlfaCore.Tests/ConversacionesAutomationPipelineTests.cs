@@ -2606,6 +2606,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SavePublicIdentityNameAsync(string userName, string? nombreVisible, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SavePublicLogoFormatAsync(string userName, string? idWeb, string logoFormat, CancellationToken ct = default) => throw new NotSupportedException();
