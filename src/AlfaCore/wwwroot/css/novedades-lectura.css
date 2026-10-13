@@ -297,3 +297,25 @@
         padding: 0 var(--alfa-space-16, 16px) var(--alfa-space-16, 16px);
     }
 }
+
+/* Secciones: Novedades de AlfaCore / Comunicados */
+.nov-lectura__seccion + .nov-lectura__seccion {
+    margin-top: var(--alfa-space-24, 24px);
+}
+
+.nov-lectura__seccion-titulo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 var(--alfa-space-12, 12px);
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.nov-lectura__vacio {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+}

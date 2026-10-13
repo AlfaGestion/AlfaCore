@@ -165,7 +165,7 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("articulos", "Artículos", "/informes"),
-            ("novedades", "Novedades", "/informes/novedades")
+            ("novedades", "Comunicados", "/informes/novedades")
         ]);
 
     // Mismas entradas que el sidebar legacy de Calendario.

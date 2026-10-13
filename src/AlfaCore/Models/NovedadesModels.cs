@@ -12,6 +12,7 @@ public sealed class NovedadesMetricasDto
     public int Borradores { get; set; }
     public int Programadas { get; set; }
     public int Publicadas { get; set; }
+    public int Archivadas { get; set; }
     public int LecturasPendientes { get; set; }
 }
 

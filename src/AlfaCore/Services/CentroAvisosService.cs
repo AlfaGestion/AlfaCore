@@ -9,6 +9,9 @@ public interface ICentroAvisosService
     /// <summary>Avisos vigentes del usuario actual en la base activa (vacío si no hay sesión autorizada).</summary>
     Task<TenantScopedResult<IReadOnlyList<AvisoDto>>> GetAsync(CancellationToken ct = default);
     Task MarcarLeidosAsync(IReadOnlyCollection<string> claves, CancellationToken ct = default);
+
+    /// <summary>Novedades de AlfaCore ("sis:...") que el usuario actual ya leyó.</summary>
+    Task<IReadOnlySet<string>> GetClavesLeidasAsync(CancellationToken ct = default);
 }
 
 /// <summary>
@@ -81,6 +84,34 @@ public sealed class CentroAvisosService(
         }, ct);
     }
 
+    public async Task<IReadOnlySet<string>> GetClavesLeidasAsync(CancellationToken ct = default)
+    {
+        var vacias = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usuario = appUserSession.GetCurrentUserName();
+        if (string.IsNullOrWhiteSpace(usuario) || !TenantDataAccessGuard.IsActiveSessionAuthorized(sessionService, appUserSession))
+            return vacias;
+
+        return await ExecuteLoggedAsync<IReadOnlySet<string>>("GetClavesLeidas", async () =>
+        {
+            // Sin límite de fecha: una novedad de AlfaCore leída no vuelve a figurar como nueva.
+            const string sql = """
+                IF OBJECT_ID(N'dbo.ALFACORE_AVISOS_LEIDOS', N'U') IS NOT NULL
+                    SELECT Clave FROM dbo.ALFACORE_AVISOS_LEIDOS
+                    WHERE UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                      AND Clave LIKE N'sis:%';
+                """;
+            var leidas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using var cn = new SqlConnection(sessionService.GetConnectionString());
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Usuario", usuario.Trim());
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+                leidas.Add(rd.GetString(0));
+            return leidas;
+        }, ct);
+    }
+
     private async Task<IReadOnlyList<AvisoDto>> LoadAsync(CancellationToken ct)
     {
         var usuario = appUserSession.GetCurrentUserName();
@@ -111,7 +142,13 @@ public sealed class CentroAvisosService(
         // Nunca lanza y está cacheado: si la central no responde, simplemente no hay aviso de tope.
         var tope = iaConsumo is { Disponible: true } ? await iaConsumo.GetTopeEstadoBaseActivaAsync(ct) : null;
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades);
+        // Novedades de AlfaCore (viajan con el código): las sin leer de los últimos días.
+        var sistema = NovedadesSistemaCatalogo.Todas
+            .Where(n => n.Fecha >= ahora.Date.AddDays(-NovedadesSistemaCatalogo.DiasEnCampana));
+        if (tablas.Contains("ALFACORE_AVISOS_LEIDOS"))
+            leidos.UnionWith(await GetClavesLeidasAsync(ct));
+
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema);
     }
 
     /// <summary>
@@ -134,7 +171,8 @@ public sealed class CentroAvisosService(
         DateTime ahora,
         IEnumerable<AvisoTicketFuente>? tickets = null,
         IaTopeEstadoDto? topeIa = null,
-        IEnumerable<AvisoCrmFuente>? oportunidades = null)
+        IEnumerable<AvisoCrmFuente>? oportunidades = null,
+        IEnumerable<NovedadSistemaInfo>? sistema = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -314,8 +352,26 @@ public sealed class CentroAvisosService(
             });
         }
 
+        // Novedades de AlfaCore: una vez leídas salen de la campana (quedan en la página Novedades).
+        foreach (var n in sistema ?? [])
+        {
+            if (leidos.Contains(n.ClaveAviso))
+                continue;
+
+            avisos.Add(new AvisoDto
+            {
+                Clave = n.ClaveAviso,
+                Tipo = AvisoTipos.Novedad,
+                Titulo = n.Titulo,
+                Detalle = $"Novedad de AlfaCore · {n.Version}",
+                Contenido = n.Bajada,
+                FechaHora = n.Fecha,
+                Ruta = $"/novedades?sis={Uri.EscapeDataString(n.Id)}"
+            });
+        }
+
         foreach (var aviso in avisos)
-            aviso.Leido = aviso.Tipo != AvisoTipos.Novedad && leidos.Contains(aviso.Clave);
+            aviso.Leido = !aviso.Clave.StartsWith("nov:", StringComparison.OrdinalIgnoreCase) && leidos.Contains(aviso.Clave);
 
         return avisos
             .GroupBy(a => a.Clave, StringComparer.OrdinalIgnoreCase)
