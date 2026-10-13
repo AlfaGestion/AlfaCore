@@ -193,6 +193,7 @@ echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(l
 echo - Se preservan App_Data y wwwroot\uploads del servidor
 echo - Se actualizan los binarios y JSON del runtime
 echo - Se actualiza App_Data\updates
+echo - Se actualiza App_Data\novedades-sistema ^(notas de version^)
 echo.
 echo Destino detectado: %DEST_DIR_FULL%
 echo.
@@ -212,7 +213,7 @@ if %ROOT_COPY_EXIT% GEQ 8 (
 
 if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
   robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%DEST_DIR_FULL%\App_Data\updates" /E /PURGE /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
-  set "UPDATES_COPY_EXIT=%ERRORLEVEL%"
+  set "UPDATES_COPY_EXIT=!ERRORLEVEL!"
 )
 
 if %UPDATES_COPY_EXIT% GEQ 8 (
@@ -222,6 +223,21 @@ if %UPDATES_COPY_EXIT% GEQ 8 (
   echo No inicies el sitio/servicio hasta repetir la actualizacion completa.
   pause
   exit /b %UPDATES_COPY_EXIT%
+)
+
+rem Novedades de AlfaCore (notas de version): viajan con cada release, igual que App_Data\updates.
+set "NOVEDADES_COPY_EXIT=0"
+if exist "%SOURCE_DIR_FULL%\App_Data\novedades-sistema" (
+  robocopy "%SOURCE_DIR_FULL%\App_Data\novedades-sistema" "%DEST_DIR_FULL%\App_Data\novedades-sistema" /E /PURGE /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+  set "NOVEDADES_COPY_EXIT=!ERRORLEVEL!"
+)
+
+if %NOVEDADES_COPY_EXIT% GEQ 8 (
+  echo.
+  echo La copia de App_Data\novedades-sistema fallo con codigo %NOVEDADES_COPY_EXIT%.
+  echo Revisa permisos o la ruta destino. Las notas de version no se van a ver hasta copiarla.
+  pause
+  exit /b %NOVEDADES_COPY_EXIT%
 )
 
 if exist "%DEST_DIR_FULL%\iniciar_dashboard.bat" (
