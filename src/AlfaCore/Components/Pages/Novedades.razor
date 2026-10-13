@@ -16,9 +16,11 @@
 <div class="gd gd-modal-scope novedades-ad">
 <HeadContent>
     <link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
+    <link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
 </HeadContent>
 
 <link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
+<link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
 
 <section class="novedades-shell">
     <aside class="novedades-sidebar">
@@ -234,11 +236,10 @@
                             <label><span>Estado actual</span><input value="@EstadoLabel(_draft.Estado)" readonly /></label>
                             <label class="novedades-span-2"><span>Programar para</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
                         </div>
-                        <div class="novedades-switch-grid">
-                            <label><input type="checkbox" @bind="_draft.MostrarPopup" /><span><strong>Mostrar popup</strong><small>Aparece automaticamente al ingresar.</small></span></label>
-                            <label><input type="checkbox" @bind="_draft.LecturaObligatoria" /><span><strong>Lectura obligatoria</strong><small>No permite cerrar sin confirmar lectura.</small></span></label>
-                            <label><input type="checkbox" @bind="_draft.RepetirHastaLeer" /><span><strong>Repetir hasta leer</strong><small>Vuelve a mostrarse mientras siga pendiente.</small></span></label>
-                        </div>
+                        <p class="novedades-settings-hint">
+                            <i class="bi bi-bell"></i>
+                            Al publicarla, todos los usuarios reciben un aviso en la campana y la novedad queda guardada en la página Novedades.
+                        </p>
                         <div class="novedades-settings-actions">
                             <button type="button" class="btn btn--ghost" @onclick="SchedulePublicationAsync"><i class="bi bi-calendar2-check"></i><span>Programar</span></button>
                             <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
@@ -350,7 +351,9 @@
         new("BLOQUES", "Atencion", "Punto importante", "bi-exclamation-triangle", "warningBanner"),
         new("BLOQUES", "Imagen", "Captura o icono", "bi-image", "media"),
         new("BLOQUES", "Separador", "Linea divisoria", "bi-hr", "separator"),
-        new("BLOQUES", "Boton", "Enlace destacado", "bi-link-45deg", "button")
+        new("BLOQUES", "Boton", "Enlace destacado", "bi-link-45deg", "button"),
+        new("BLOQUES", "Antes / Después", "Cómo era y cómo queda", "bi-arrow-left-right", "compare"),
+        new("BLOQUES", "Tarjetas con ícono", "Tres puntos destacados", "bi-grid-3x2-gap", "features")
     ];
 
     private static readonly IReadOnlyList<EditorCommandOption> ToolbarCommands =
@@ -411,7 +414,7 @@
     {
         if (firstRender)
         {
-            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20261013a");
             _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
             _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-02");
             _selfReference = DotNetObjectReference.Create(this);

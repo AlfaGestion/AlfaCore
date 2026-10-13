@@ -1630,7 +1630,8 @@ public sealed class InterfacesCatalogosService(
                 """;
 
             var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(sql, new { Clave = MenuEnabledConfigKey }, cancellationToken: ct));
-            var raw = ResolveStoredValue(row.Valor, row.ValorAux);
+            // Sin la clave guardada (la mayoría de las bases) la fila viene vacía: menú deshabilitado.
+            var raw = ResolveStoredValue(row.Valor, row.ValorAux) ?? string.Empty;
             return string.Equals(raw.Trim(), "SI", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)

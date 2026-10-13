@@ -35,6 +35,15 @@ const allowedClasses = new Set([
     'ticket-link-popover',
     'ticket-link-popover__actions',
     'ticket-link-popover__fields',
+    'nov-compare',
+    'nov-compare__col',
+    'nov-compare__col--antes',
+    'nov-compare__col--despues',
+    'nov-compare__label',
+    'nov-features',
+    'nov-feature',
+    'nov-feature__icon',
+    'nov-feature__body',
     'bi',
     'bi-check-circle-fill',
     'bi-check2-circle',
@@ -157,6 +166,16 @@ export function runCommand(editor, command) {
         case 'warningBanner':
             insertHtml(buildBannerBlock('warning', 'bi-exclamation-triangle-fill', 'Revisar este punto...'));
             break;
+        case 'compare':
+            insertHtml('<div class="nov-compare"><div class="nov-compare__col nov-compare__col--antes"><span class="nov-compare__label">Antes</span><p>Cómo se hacía antes...</p></div><div class="nov-compare__col nov-compare__col--despues"><span class="nov-compare__label">Ahora</span><p>Cómo se hace ahora...</p></div></div><p><br></p>');
+            break;
+        case 'features':
+            insertHtml('<div class="nov-features">'
+                + buildFeatureCard('bi-stars', 'Novedad', 'Qué se puede hacer ahora.')
+                + buildFeatureCard('bi-lightning-charge', 'Más rápido', 'Qué paso se ahorra.')
+                + buildFeatureCard('bi-check2-circle', 'Más simple', 'Qué queda más claro.')
+                + '</div><p><br></p>');
+            break;
         case 'dangerBanner':
             insertHtml(buildBannerBlock('danger', 'bi-x-octagon-fill', 'Punto critico...'));
             break;
@@ -204,6 +223,10 @@ export function runCommand(editor, command) {
 
 function insertHtml(html) {
     document.execCommand('insertHTML', false, html);
+}
+
+function buildFeatureCard(icon, title, text) {
+    return `<div class="nov-feature"><span class="nov-feature__icon" contenteditable="false"><i class="bi ${icon}"></i></span><div class="nov-feature__body"><p><strong>${escapeHtml(title)}</strong></p><p>${escapeHtml(text)}</p></div></div>`;
 }
 
 function buildBannerBlock(kind, icon, text) {
@@ -712,7 +735,7 @@ function sanitizeNode(node) {
             if (name === 'class') {
                 child.className = child.className
                     .split(/\s+/)
-                    .filter((item) => allowedClasses.has(item))
+                    .filter((item) => allowedClasses.has(item) || isBootstrapIconClass(item))
                     .join(' ');
                 return;
             }
@@ -767,6 +790,11 @@ function sanitizeNode(node) {
 
         sanitizeNode(child);
     });
+}
+
+// Íconos de Bootstrap Icons (bi-algo): solo cambian el dibujo, así que se permite cualquiera.
+function isBootstrapIconClass(value) {
+    return /^bi-[a-z0-9-]+$/.test(value || '');
 }
 
 function isAllowedUrl(value) {

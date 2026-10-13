@@ -358,6 +358,49 @@ public sealed class NovedadesService(
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad, Usuario = NormalizeUser(usuario) }, cancellationToken: token));
         }, "No se pudo registrar la vista de la novedad.", ct);
 
+    public Task<IReadOnlyList<NovedadDetalleDto>> GetPublicadasAsync(string usuario, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetPublicadas", async token =>
+        {
+            const string sql = """
+                SELECT TOP (100)
+                    n.IdNovedad,
+                    n.Tipo,
+                    n.Estado,
+                    n.Prioridad,
+                    ISNULL(n.Version, '') AS Version,
+                    n.Titulo,
+                    ISNULL(n.Bajada, '') AS Bajada,
+                    ISNULL(n.Resumen, '') AS Resumen,
+                    ISNULL(n.Contenido, '') AS Contenido,
+                    ISNULL(n.Icono, 'bi-megaphone') AS Icono,
+                    ISNULL(n.Acento, 'azul') AS Acento,
+                    ISNULL(n.PortadaTipo, 'NONE') AS PortadaTipo,
+                    ISNULL(n.PortadaValor, '') AS PortadaValor,
+                    ISNULL(n.Footer, '') AS Footer,
+                    n.FechaProgramada,
+                    n.FechaPublicacion,
+                    n.VigenteHasta,
+                    ISNULL(n.FechaHora_Modificacion, n.FechaHora_Alta) AS FechaHoraModificacion,
+                    CONVERT(bit, CASE WHEN l.FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS LeidaPorUsuario,
+                    l.FechaHoraLeido
+                FROM dbo.ALFACORE_NOVEDADES n
+                LEFT JOIN dbo.ALFACORE_NOVEDADES_LECTURAS l
+                       ON l.IdNovedad = n.IdNovedad
+                      AND UPPER(LTRIM(RTRIM(l.Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                WHERE n.Estado = N'PUBLICADO'
+                  AND ISNULL(n.Archivado, 0) = 0
+                  AND (n.FechaProgramada IS NULL OR n.FechaProgramada <= GETDATE())
+                ORDER BY COALESCE(n.FechaPublicacion, n.FechaProgramada, n.FechaHora_Alta) DESC, n.IdNovedad DESC;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureSchemaAsync(cn, token);
+            await ActivateDueScheduledAnnouncementsAsync(cn, token);
+            var rows = await cn.QueryAsync<NovedadDetalleDto>(new CommandDefinition(sql, new { Usuario = NormalizeUser(usuario) }, cancellationToken: token));
+            return (IReadOnlyList<NovedadDetalleDto>)rows.ToList();
+        }, "No se pudieron cargar las novedades.", ct);
+
     public Task MarkReadAsync(long idNovedad, string usuario, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "MarkRead", async token =>
         {

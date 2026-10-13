@@ -71,6 +71,9 @@
 }
 
 .tb-av__footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--alfa-space-8, 8px);
     border-top: 1px solid var(--alfa-border-default, #333640);
 }
 
