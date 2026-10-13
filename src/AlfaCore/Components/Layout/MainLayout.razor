@@ -1329,6 +1329,11 @@ else
                  OnClose="CloseLoginOverlayAsync" />
 
 <AppMsgBoxHost />
+@* Ctrl+K desde cualquier pantalla. No en el modo ?directo=1: ahí no se sale del módulo. *@
+@if (AppUserSession.IsAuthenticated && !AppUserSession.RequiresInternalLogin && !IsDirectMode)
+{
+    <BuscadorGlobal />
+}
 
 @code {
     private static readonly string BuildStamp = ResolveBuildStamp();

@@ -6102,6 +6102,9 @@
     private bool NavigateToConversationUrl(long idConversacion)
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        // Si ya se salió de Conversaciones (ej. a Clientes), no se le agrega ?id= a la otra pantalla.
+        if (!uri.AbsolutePath.TrimEnd('/').EndsWith("/conversaciones", StringComparison.OrdinalIgnoreCase))
+            return false;
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in QueryHelpers.ParseQuery(uri.Query))
             values[item.Key] = item.Value.ToString();
