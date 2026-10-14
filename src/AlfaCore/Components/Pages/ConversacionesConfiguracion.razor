@@ -16,6 +16,7 @@
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupOrchestrator EmbeddedSignup
 @inject AlfaCore.Services.WhatsAppEmbeddedOperationalImportService EmbeddedOperationalImport
 @inject AlfaCore.Services.IWhatsAppPortfolioResolutionService PortfolioResolution
+@inject AlfaCore.Services.IWhatsAppUsoMetaService UsoMetaSvc
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupErrorLogger EmbeddedSignupErrorLogger
 @inject AlfaCore.Services.IWhatsAppCoexistenceSyncStore CoexistenceSyncStore
 @inject AlfaCore.Services.IAppEventService AppEvents
@@ -237,6 +238,10 @@
                             {
                                 <span>@numero.Usuarios.Count usuario(s)</span>
                             }
+                            @if (GetUsoMeta(numero) is { CercaDelLimite: true } usoFila)
+                            {
+                                <AlfaTag Tone="@GetUsoMetaTone(usoFila)">@GetUsoMetaLabel(usoFila)</AlfaTag>
+                            }
                             @if (GetPortfolioStatus(numero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Known)
                             {
                                 <span>Portfolio: @GetPortfolioName(numero)</span>
@@ -403,6 +408,60 @@
                             }
                         </dl>
                     </div>
+                    @if (GetUsoMeta(selectedNumero) is { } usoMeta)
+                    {
+                        var metodoPago = GetMetodoPago(selectedNumero);
+                        <div class="wa-business-block wa-meta-uso">
+                            <div class="wa-business-block__header">
+                                <h3>Mensajes y cobros de Meta</h3>
+                                <AlfaTag Tone="@GetUsoMetaTone(usoMeta)">@GetUsoMetaLabel(usoMeta)</AlfaTag>
+                            </div>
+                            <p class="wa-meta-uso__aviso">
+                                Estos cobros los hace <strong>Meta (WhatsApp)</strong> directamente a la cuenta de WhatsApp de tu empresa.
+                                <strong>No son cobros de AlfaCore</strong>: AlfaCore no cobra por mensaje.
+                            </p>
+                            @if (BuildUsoMetaAlerta(usoMeta, metodoPago) is { } usoAlerta)
+                            {
+                                <AlfaFeedbackPanel Message="@usoAlerta" Dismissible="false" />
+                            }
+                            <div class="wa-meta-uso__barra" role="progressbar" aria-label="Respuestas gratis usadas este mes"
+                                 aria-valuemin="0" aria-valuemax="@AlfaCore.Models.WhatsAppUsoMetaDto.MensajesServicioGratisPorMes" aria-valuenow="@usoMeta.MensajesServicio">
+                                <span class="@(usoMeta.SuperoGratis ? "is-over" : usoMeta.CercaDelLimite ? "is-near" : string.Empty)" style="width: @(usoMeta.PorcentajeServicioUsado)%"></span>
+                            </div>
+                            <p class="wa-meta-uso__conteo">
+                                <strong>@usoMeta.MensajesServicio.ToString("N0", EsAr)</strong> de @AlfaCore.Models.WhatsAppUsoMetaDto.MensajesServicioGratisPorMes.ToString("N0", EsAr) respuestas gratis usadas en @usoMeta.Desde.ToString("MMMM", EsAr)
+                                @if (!usoMeta.SuperoGratis)
+                                {
+                                    <span> · quedan @usoMeta.ServicioGratisRestantes.ToString("N0", EsAr)</span>
+                                }
+                            </p>
+                            <dl class="wa-business-definition">
+                                <div><dt>Enviados desde AlfaCore</dt><dd>@usoMeta.EnviadosDesdeAlfaCore.ToString("N0", EsAr)</dd></div>
+                                <div><dt>Enviados desde el celular</dt><dd>@usoMeta.EnviadosDesdeCelular.ToString("N0", EsAr) <span class="wa-meta-uso__gratis">gratis</span></dd></div>
+                                <div><dt>Cobrados por Meta este mes</dt><dd>@usoMeta.CobradosPorMeta.ToString("N0", EsAr)@(usoMeta.PlantillasCobradas > 0 ? $" (incluye {usoMeta.PlantillasCobradas.ToString("N0", EsAr)} plantillas)" : string.Empty)</dd></div>
+                            </dl>
+                            <ul class="wa-meta-uso__reglas">
+                                <li><strong>Desde la app WhatsApp Business del celular:</strong> gratis. Meta no cobra esos mensajes.</li>
+                                <li><strong>Desde AlfaCore (WhatsApp Business API):</strong> las primeras 1.000 respuestas de cada mes son gratis. Desde la 1.001, Meta cobra cada mensaje.</li>
+                                <li><strong>Plantillas</strong> (mensajes que inicia la empresa, como promociones o recordatorios): Meta las cobra aparte, según su tipo.</li>
+                                <li>Si la cuenta <strong>no tiene método de pago en Meta</strong>, pasadas las 1.000 respuestas Meta deja de entregar los mensajes hasta el mes siguiente.</li>
+                            </ul>
+                            <div class="wa-meta-uso__pago">
+                                <div>
+                                    <span class="wa-meta-uso__pago-label">Método de pago en Meta</span>
+                                    <AlfaTag Tone="@GetMetodoPagoTone(metodoPago)">@GetMetodoPagoLabel(metodoPago)</AlfaTag>
+                                </div>
+                                <AlfaButton Variant="@(metodoPago?.Estado == AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.Cargado ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Primary)"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-credit-card"
+                                            OnClick="@(() => AbrirCargaMetodoPagoAsync(selectedNumero))">@(metodoPago?.Estado == AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.Cargado ? "Ver método de pago en Meta" : "Cargar método de pago en Meta")</AlfaButton>
+                            </div>
+                            <p class="wa-meta-uso__ayuda">
+                                Se abre la cuenta de WhatsApp de tu empresa en Meta (business.facebook.com). <strong>No hace falta volver a conectar WhatsApp.</strong>
+                                Entrá con la cuenta de Facebook que administra el negocio y usá <em>Agregar método de pago</em>. Meta no acepta tarjetas prepagas ni virtuales.
+                            </p>
+                        </div>
+                    }
                     @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is not null
                         || GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState) is not null)
                     {
@@ -3223,6 +3282,9 @@
             await RefreshBlockedNumeroIdsAsync();
             await RefreshPortfolioNamesAsync();
             await TryResolveMissingPortfolioNamesAsync(idBase);
+            await LoadUsoMetaAsync();
+            if (SelectedApiNumero is { } seleccionado)
+                await RefreshMetodoPagoAsync(seleccionado);
         }
         else
         {
@@ -3752,6 +3814,7 @@
             UpdatePageHeader();
             await InvokeAsync(StateHasChanged);
             await RefreshSelectedNumeroBlockedFeedbackAsync(numero.IdNumero);
+            await RefreshMetodoPagoAsync(numero);
         });
 
     /// <summary>
@@ -5916,6 +5979,126 @@
 
         return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
             || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ---- Mensajes y cobros de Meta (desde 1/10/2026 Meta cobra las respuestas pasadas las 1.000/mes) ----
+
+    private static readonly System.Globalization.CultureInfo EsAr = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private IReadOnlyList<AlfaCore.Models.WhatsAppUsoMetaDto>? _usoMeta;
+    private readonly Dictionary<int, AlfaCore.Models.WhatsAppMetodoPagoMetaDto> _metodoPago = new();
+
+    private async Task LoadUsoMetaAsync()
+    {
+        try
+        {
+            _usoMeta = await UsoMetaSvc.GetUsoDelMesAsync(_lifetimeCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshMetodoPagoAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        if (_metodoPago.ContainsKey(numero.IdNumero))
+            return;
+
+        try
+        {
+            var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            _metodoPago[numero.IdNumero] = await UsoMetaSvc.GetMetodoPagoAsync(idBase, numero, _lifetimeCts.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Uso del mes del número; las conversaciones sin número asignado (IdNumero 0) se suman al número
+    /// predeterminado, que es por donde salen. Null mientras no cargó (no se muestra el bloque).
+    /// </summary>
+    private AlfaCore.Models.WhatsAppUsoMetaDto? GetUsoMeta(ConversacionWhatsAppNumeroDto numero)
+    {
+        if (_usoMeta is null || !string.IsNullOrWhiteSpace(numero.WebInstanceName))
+            return null;
+
+        var hoy = DateTime.Today;
+        var total = new AlfaCore.Models.WhatsAppUsoMetaDto
+        {
+            IdNumero = numero.IdNumero,
+            Desde = new DateTime(hoy.Year, hoy.Month, 1),
+            Hasta = new DateTime(hoy.Year, hoy.Month, 1).AddMonths(1)
+        };
+        foreach (var uso in _usoMeta.Where(u => u.IdNumero == numero.IdNumero || (u.IdNumero == 0 && IsConfiguredGlobalApiNumero(numero))))
+        {
+            total.EnviadosDesdeAlfaCore += uso.EnviadosDesdeAlfaCore;
+            total.EnviadosDesdeCelular += uso.EnviadosDesdeCelular;
+            total.MensajesServicio += uso.MensajesServicio;
+            total.CobradosPorMeta += uso.CobradosPorMeta;
+            total.PlantillasCobradas += uso.PlantillasCobradas;
+        }
+
+        return total;
+    }
+
+    private AlfaCore.Models.WhatsAppMetodoPagoMetaDto? GetMetodoPago(ConversacionWhatsAppNumeroDto numero)
+        => _metodoPago.TryGetValue(numero.IdNumero, out var estado) ? estado : null;
+
+    private static string GetUsoMetaLabel(AlfaCore.Models.WhatsAppUsoMetaDto uso)
+        => uso.SuperoGratis
+            ? "Meta ya cobra"
+            : $"{uso.MensajesServicio.ToString("N0", EsAr)} / {AlfaCore.Models.WhatsAppUsoMetaDto.MensajesServicioGratisPorMes.ToString("N0", EsAr)} gratis";
+
+    private static AlfaTagTone GetUsoMetaTone(AlfaCore.Models.WhatsAppUsoMetaDto uso)
+        => uso.SuperoGratis || uso.CercaDelLimite ? AlfaTagTone.Warning : AlfaTagTone.Neutral;
+
+    private static string GetMetodoPagoLabel(AlfaCore.Models.WhatsAppMetodoPagoMetaDto? metodo)
+        => metodo?.Estado switch
+        {
+            AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.Cargado => "Cargado",
+            AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.NoCargado => "No cargado",
+            null => "Verificando...",
+            _ => "No pudimos verificarlo"
+        };
+
+    private static AlfaTagTone GetMetodoPagoTone(AlfaCore.Models.WhatsAppMetodoPagoMetaDto? metodo)
+        => metodo?.Estado switch
+        {
+            AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.Cargado => AlfaTagTone.Success,
+            AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.NoCargado => AlfaTagTone.Danger,
+            _ => AlfaTagTone.Neutral
+        };
+
+    private static AppUiMessage? BuildUsoMetaAlerta(AlfaCore.Models.WhatsAppUsoMetaDto uso, AlfaCore.Models.WhatsAppMetodoPagoMetaDto? metodo)
+    {
+        if (metodo?.Estado == AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.Cargado)
+            return null;
+
+        if (uso.SuperoGratis)
+            return metodo?.Estado == AlfaCore.Models.WhatsAppMetodoPagoMetaEstado.NoCargado
+                ? AppUiMessage.Error("Meta puede dejar de entregar tus mensajes",
+                    "Este mes ya se usaron las 1.000 respuestas gratis y la cuenta no tiene método de pago en Meta.",
+                    "Cargá un método de pago en Meta para que tus clientes sigan recibiendo las respuestas.")
+                : AppUiMessage.Warning("Se usaron las 1.000 respuestas gratis del mes",
+                    "Desde ahora Meta cobra cada respuesta enviada desde AlfaCore. Sin método de pago en Meta, deja de entregarlas.",
+                    "Verificá que la cuenta tenga un método de pago cargado en Meta.");
+
+        if (uso.CercaDelLimite)
+            return AppUiMessage.Warning("Te acercás al límite gratis de Meta",
+                $"Quedan {uso.ServicioGratisRestantes.ToString("N0", EsAr)} respuestas gratis este mes.",
+                "Para no tener cortes, cargá un método de pago en Meta antes de llegar a 1.000.");
+
+        return null;
+    }
+
+    private async Task AbrirCargaMetodoPagoAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        var url = GetMetodoPago(numero)?.UrlCargarPago;
+        if (string.IsNullOrWhiteSpace(url))
+            url = AlfaCore.Services.WhatsAppUsoMetaService.BuildUrlCargarPago(numero.WabaId, numero.MetaBusinessId);
+
+        await JS.InvokeVoidAsync("open", url, "_blank", "noopener");
     }
 
     private bool IsConfiguredGlobalApiNumero(ConversacionWhatsAppNumeroDto numero)
