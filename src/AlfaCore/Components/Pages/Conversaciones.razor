@@ -1956,6 +1956,17 @@
                                                 <span>@GetDeliveryLabel(message.EstadoEnvio)</span>
                                             </span>
                                         </div>
+                                        @* Mensaje que no llegó: el motivo a la vista (antes solo en el tooltip del ícono). *@
+                                        @if (AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliveryError(message.EstadoEnvio, message.PayloadJson) is { } problemaEnvio)
+                                        {
+                                            <div class="message-card__problema" role="note">
+                                                <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                                                <span>
+                                                    <strong>@problemaEnvio.Title.</strong>
+                                                    @(problemaEnvio.HasSuggestion ? problemaEnvio.Suggestion : problemaEnvio.Message)
+                                                </span>
+                                            </div>
+                                        }
                                     }
                                 </article>
                                         @if (GetInlineReactions(message).Count > 0)

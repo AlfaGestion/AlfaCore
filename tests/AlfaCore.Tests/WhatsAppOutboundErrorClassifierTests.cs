@@ -122,4 +122,35 @@ public sealed class WhatsAppOutboundErrorClassifierTests
         Assert.Equal("Meta no pudo entregar este mensaje.", message!.Message);
         Assert.Equal(string.Empty, message.Code);
     }
+
+    [Fact]
+    public void RechazoPorWebhook_ExperimentoDeMarketing_SeExplicaEnVezDelGenerico()
+    {
+        // Payload real (Base106, 2026-10-13): status "failed" que llega por el webhook de estado.
+        const string payload = """
+            {"id":"wamid.X","status":"failed","timestamp":"1791925451","recipient_id":"5490000000000",
+             "errors":[{"code":130472,"title":"User's number is part of an experiment","message":"User's number is part of an experiment"}]}
+            """;
+
+        Assert.Equal(("130472", "User's number is part of an experiment"), WhatsAppOutboundErrorClassifier.ExtractGraphError(payload));
+
+        var message = WhatsAppOutboundErrorClassifier.ClassifyDeliveryError("ERROR_ENVIO", payload);
+        Assert.NotNull(message);
+        Assert.Equal("WhatsApp no entregó este mensaje de marketing", message!.Title);
+        Assert.Contains("Utilidad", message.Suggestion);
+        Assert.Equal("130472", message.Code);
+    }
+
+    [Fact]
+    public void RechazoPorWebhook_CodigoSinTraduccion_MuestraElMotivoDeMeta()
+    {
+        const string payload = """{"status":"failed","errors":[{"code":131000,"title":"Something went wrong"}]}""";
+
+        var message = WhatsAppOutboundErrorClassifier.ClassifyDeliveryError("ERROR_ENVIO", payload);
+
+        Assert.NotNull(message);
+        Assert.Equal("No se pudo enviar", message!.Title);
+        Assert.Equal("Something went wrong", message.Message);
+        Assert.Equal("131000", message.Code);
+    }
 }
