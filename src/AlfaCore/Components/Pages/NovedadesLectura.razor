@@ -1,33 +1,30 @@
 @page "/novedades"
 @page "/{idweb}/{idbase:int}/novedades"
-@inject AlfaCore.Services.INovedadesService NovedadesSvc
+@inject AlfaCore.Services.INovedadesSistemaService NovedadesSistemaSvc
+@inject AlfaCore.Services.INovedadesService ComunicadosSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
-@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @using Microsoft.AspNetCore.WebUtilities
 @implements IDisposable
 
-@* Novedades para todos los usuarios: lo que antes salía como aviso flotante ahora llega a la
-   campana y se lee acá. Cada novedad es una tarjeta que se abre y se cierra; abrirla la marca
-   como leída. Quedan todas guardadas, la más nueva arriba. *@
+@* Novedades para todos los usuarios, en dos secciones:
+   - Novedades de AlfaCore: notas de versión que escribimos nosotros (viajan con el código).
+   - Comunicados: lo que publica la empresa para su equipo (Informes → Comunicados).
+   Llegan a la campana; cada una es una tarjeta que se abre y se cierra, y abrirla la marca leída. *@
 
 <PageTitle>Novedades | AlfaNet</PageTitle>
-<HeadContent>
-    <link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
-</HeadContent>
-
-<link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013a" />
+<link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013b" />
 
 <section class="gd-page gd nov-lectura">
     <header class="nov-lectura__head">
         <div>
             <h1>Novedades</h1>
-            <p>Lo nuevo de AlfaCore y los avisos del equipo. Tocá una novedad para abrirla o cerrarla.</p>
+            <p>Lo nuevo de AlfaCore y los comunicados de tu empresa. Tocá una novedad para abrirla o cerrarla.</p>
         </div>
-        @if (_novedades.Count > 0)
+        @if (_tarjetas.Count > 0)
         {
             <div class="nov-lectura__head-actions">
                 <button type="button" class="btn btn--ghost" @onclick="AbrirTodas"><i class="bi bi-arrows-expand" aria-hidden="true"></i> Abrir todas</button>
@@ -40,74 +37,77 @@
     {
         <AlfaEmptyState Title="Cargando novedades" Message="Un momento…" />
     }
-    else if (!string.IsNullOrEmpty(_error))
-    {
-        <AlfaEmptyState Title="No se pudieron cargar las novedades" Message="@_error" />
-    }
-    else if (_novedades.Count == 0)
-    {
-        <AlfaEmptyState Title="Todavía no hay novedades" Message="Cuando publiquemos algo nuevo te va a llegar un aviso a la campana y va a quedar guardado acá." />
-    }
     else
     {
-        <div class="nov-lectura__lista">
-            @foreach (var novedad in _novedades)
+        <section class="nov-lectura__seccion" aria-labelledby="nov-sistema">
+            <h2 id="nov-sistema" class="nov-lectura__seccion-titulo"><i class="bi bi-rocket-takeoff" aria-hidden="true"></i> Novedades de AlfaCore</h2>
+            @if (Sistema.Count == 0)
             {
-                var abierta = _abiertas.Contains(novedad.IdNovedad);
-                <article class="nov-card nov-card--@AcentoSeguro(novedad.Acento) @(abierta ? "is-open" : null)" id="@($"novedad-{novedad.IdNovedad}")" @key="novedad.IdNovedad">
-                    <button type="button" class="nov-card__head" aria-expanded="@(abierta ? "true" : "false")" @onclick="() => AlternarAsync(novedad)">
-                        <span class="nov-card__icon" aria-hidden="true"><i class="bi @IconoSeguro(novedad.Icono)"></i></span>
-                        <span class="nov-card__title">
-                            <small>
-                                @(string.IsNullOrWhiteSpace(novedad.Version) ? "Novedad" : novedad.Version)
-                                · @Fecha(novedad).ToString("dd/MM/yyyy")
-                                @if (!novedad.LeidaPorUsuario)
-                                {
-                                    <span class="nov-card__nueva">Nueva</span>
-                                }
-                            </small>
-                            <strong>@novedad.Titulo</strong>
-                            @if (!abierta && !string.IsNullOrWhiteSpace(novedad.Bajada))
-                            {
-                                <span>@novedad.Bajada</span>
-                            }
-                        </span>
-                        <i class="bi @(abierta ? "bi-chevron-up" : "bi-chevron-down") nov-card__chevron" aria-hidden="true"></i>
-                    </button>
-
-                    @if (abierta)
-                    {
-                        <div class="nov-card__body">
-                            @if (novedad.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(novedad.PortadaValor))
-                            {
-                                <img class="nov-card__cover" src="@novedad.PortadaValor" alt="" />
-                            }
-                            <div class="nov-contenido">@((MarkupString)novedad.Contenido)</div>
-                            @if (!string.IsNullOrWhiteSpace(novedad.Footer))
-                            {
-                                <footer class="nov-card__footer">@novedad.Footer</footer>
-                            }
-                        </div>
-                    }
-                </article>
+                <p class="nov-lectura__vacio">Todavía no hay novedades de AlfaCore.</p>
             }
-        </div>
+            else
+            {
+                <div class="nov-lectura__lista">
+                    @foreach (var tarjeta in Sistema)
+                    {
+                        @Tarjeta(tarjeta)
+                    }
+                </div>
+            }
+        </section>
+
+        @if (Comunicados.Count > 0)
+        {
+            <section class="nov-lectura__seccion" aria-labelledby="nov-comunicados">
+                <h2 id="nov-comunicados" class="nov-lectura__seccion-titulo"><i class="bi bi-megaphone" aria-hidden="true"></i> Comunicados</h2>
+                <div class="nov-lectura__lista">
+                    @foreach (var tarjeta in Comunicados)
+                    {
+                        @Tarjeta(tarjeta)
+                    }
+                </div>
+            </section>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="nov-lectura__vacio">@_error</p>
+        }
     }
 </section>
 
 @code {
-    private List<NovedadDetalleDto> _novedades = [];
-    private readonly HashSet<long> _abiertas = [];
+    // Una tarjeta, sea novedad de AlfaCore ("sis:id") o comunicado de la empresa ("nov:id").
+    private sealed class TarjetaNovedad
+    {
+        public required string Clave { get; init; }
+        public required bool EsSistema { get; init; }
+        public required string Etiqueta { get; init; }
+        public required string Titulo { get; init; }
+        public string Bajada { get; init; } = string.Empty;
+        public DateTime Fecha { get; init; }
+        public string Icono { get; init; } = "bi-megaphone";
+        public string Acento { get; init; } = NovedadAcentos.Azul;
+        public string Contenido { get; init; } = string.Empty;
+        public string Portada { get; init; } = string.Empty;
+        public string Footer { get; init; } = string.Empty;
+        public long IdComunicado { get; init; }
+        public string IdSistema { get; init; } = string.Empty;
+        public bool Leida { get; set; }
+    }
+
+    private List<TarjetaNovedad> _tarjetas = [];
+    private readonly HashSet<string> _abiertas = new(StringComparer.OrdinalIgnoreCase);
     private bool _loading = true;
     private string _error = string.Empty;
-    private long? _scrollA;
+    private string? _scrollA;
     private PageHeaderConfig? _pageHeaderPublicado;
 
+    private List<TarjetaNovedad> Sistema => _tarjetas.Where(t => t.EsSistema).ToList();
+    private List<TarjetaNovedad> Comunicados => _tarjetas.Where(t => !t.EsSistema).ToList();
     private string Usuario => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
-    protected override void OnInitialized() => UpdatePageHeader();
-
-    private void UpdatePageHeader()
+    protected override void OnInitialized()
         => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
@@ -117,25 +117,60 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var result = await UiOps.RunAsync(() => NovedadesSvc.GetPublicadasAsync(Usuario), "No se pudieron cargar las novedades.");
-        if (result.Success && result.Value is not null)
+        var sistema = await UiOps.RunAsync(() => NovedadesSistemaSvc.GetAsync(), "No se pudieron cargar las novedades de AlfaCore.");
+        if (sistema.Success && sistema.Value is not null)
         {
-            _novedades = result.Value.ToList();
-            // Llegó desde la campana (?id=): esa abierta. Si no, la más nueva sin leer (o la más nueva).
-            var pedida = IdPedido();
-            var abrir = _novedades.FirstOrDefault(n => n.IdNovedad == pedida)
-                ?? _novedades.FirstOrDefault(n => !n.LeidaPorUsuario)
-                ?? _novedades.FirstOrDefault();
-            if (abrir is not null)
+            _tarjetas.AddRange(sistema.Value.Select(n => new TarjetaNovedad
             {
-                _abiertas.Add(abrir.IdNovedad);
-                _scrollA = pedida == abrir.IdNovedad ? abrir.IdNovedad : null;
-                await MarcarLeidaAsync(abrir);
-            }
+                Clave = n.Info.ClaveAviso,
+                EsSistema = true,
+                Etiqueta = n.Info.Version,
+                Titulo = n.Info.Titulo,
+                Bajada = n.Info.Bajada,
+                Fecha = n.Info.Fecha,
+                Icono = n.Info.Icono,
+                Acento = n.Info.Acento,
+                Contenido = n.Contenido,
+                Footer = "Equipo AlfaCore",
+                IdSistema = n.Info.Id,
+                Leida = n.Leida
+            }));
         }
-        else
+
+        var comunicados = await UiOps.RunAsync(() => ComunicadosSvc.GetPublicadasAsync(Usuario), "No se pudieron cargar los comunicados.");
+        if (comunicados.Success && comunicados.Value is not null)
         {
-            _error = result.Feedback?.Message ?? "Probá de nuevo en un momento.";
+            _tarjetas.AddRange(comunicados.Value.Select(c => new TarjetaNovedad
+            {
+                Clave = $"nov:{c.IdNovedad}",
+                EsSistema = false,
+                Etiqueta = string.IsNullOrWhiteSpace(c.Version) ? "Comunicado" : c.Version,
+                Titulo = c.Titulo,
+                Bajada = c.Bajada,
+                Fecha = c.FechaPublicacion ?? c.FechaProgramada ?? c.FechaHoraModificacion,
+                Icono = c.Icono,
+                Acento = c.Acento,
+                Contenido = c.Contenido,
+                Portada = c.PortadaTipo == NovedadPortadas.Url ? c.PortadaValor : string.Empty,
+                Footer = c.Footer,
+                IdComunicado = c.IdNovedad,
+                Leida = c.LeidaPorUsuario
+            }));
+        }
+
+        if (!sistema.Success || !comunicados.Success)
+            _error = "Algunas novedades no se pudieron cargar. Probá de nuevo en un momento.";
+
+        // Llegó desde la campana (?sis= o ?id=): esa abierta. Si no, la primera sin leer (o la más nueva).
+        var pedida = ClavePedida();
+        var abrir = _tarjetas.FirstOrDefault(t => string.Equals(t.Clave, pedida, StringComparison.OrdinalIgnoreCase))
+            ?? _tarjetas.FirstOrDefault(t => !t.Leida)
+            ?? _tarjetas.FirstOrDefault();
+        if (abrir is not null)
+        {
+            _abiertas.Add(abrir.Clave);
+            _scrollA = pedida is not null && string.Equals(abrir.Clave, pedida, StringComparison.OrdinalIgnoreCase) ? abrir.Clave : null;
+            await MarcarLeidaAsync(abrir);
         }
 
         _loading = false;
@@ -143,49 +178,95 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_scrollA is long id && !_loading)
+        if (_scrollA is { } clave && !_loading)
         {
             _scrollA = null;
-            try { await JS.InvokeVoidAsync("eval", $"document.getElementById('novedad-{id}')?.scrollIntoView({{block:'start'}})"); }
+            try { await JS.InvokeVoidAsync("eval", $"document.getElementById('{IdHtml(clave)}')?.scrollIntoView({{block:'start'}})"); }
             catch (JSException) { }
         }
     }
 
-    private async Task AlternarAsync(NovedadDetalleDto novedad)
+    private RenderFragment Tarjeta(TarjetaNovedad t) => __builder =>
     {
-        if (!_abiertas.Remove(novedad.IdNovedad))
+        var abierta = _abiertas.Contains(t.Clave);
+        <article class="nov-card nov-card--@AcentoSeguro(t.Acento) @(abierta ? "is-open" : null)" id="@IdHtml(t.Clave)" @key="t.Clave">
+            <button type="button" class="nov-card__head" aria-expanded="@(abierta ? "true" : "false")" @onclick="() => AlternarAsync(t)">
+                <span class="nov-card__icon" aria-hidden="true"><i class="bi @IconoSeguro(t.Icono)"></i></span>
+                <span class="nov-card__title">
+                    <small>
+                        @t.Etiqueta · @t.Fecha.ToString("dd/MM/yyyy")
+                        @if (!t.Leida)
+                        {
+                            <span class="nov-card__nueva">Nueva</span>
+                        }
+                    </small>
+                    <strong>@t.Titulo</strong>
+                    @if (!abierta && !string.IsNullOrWhiteSpace(t.Bajada))
+                    {
+                        <span>@t.Bajada</span>
+                    }
+                </span>
+                <i class="bi @(abierta ? "bi-chevron-up" : "bi-chevron-down") nov-card__chevron" aria-hidden="true"></i>
+            </button>
+
+            @if (abierta)
+            {
+                <div class="nov-card__body">
+                    @if (!string.IsNullOrWhiteSpace(t.Portada))
+                    {
+                        <img class="nov-card__cover" src="@t.Portada" alt="" />
+                    }
+                    <div class="nov-contenido">@((MarkupString)t.Contenido)</div>
+                    @if (!string.IsNullOrWhiteSpace(t.Footer))
+                    {
+                        <footer class="nov-card__footer">@t.Footer</footer>
+                    }
+                </div>
+            }
+        </article>
+    };
+
+    private async Task AlternarAsync(TarjetaNovedad t)
+    {
+        if (!_abiertas.Remove(t.Clave))
         {
-            _abiertas.Add(novedad.IdNovedad);
-            await MarcarLeidaAsync(novedad);
+            _abiertas.Add(t.Clave);
+            await MarcarLeidaAsync(t);
         }
     }
 
     private void AbrirTodas()
     {
-        foreach (var n in _novedades)
-            _abiertas.Add(n.IdNovedad);
+        foreach (var t in _tarjetas)
+            _abiertas.Add(t.Clave);
     }
 
     private void CerrarTodas() => _abiertas.Clear();
 
-    private async Task MarcarLeidaAsync(NovedadDetalleDto novedad)
+    private async Task MarcarLeidaAsync(TarjetaNovedad t)
     {
-        if (novedad.LeidaPorUsuario || string.IsNullOrWhiteSpace(Usuario))
+        if (t.Leida || string.IsNullOrWhiteSpace(Usuario))
             return;
 
-        var result = await UiOps.RunAsync(async () => { await NovedadesSvc.MarkReadAsync(novedad.IdNovedad, Usuario); return true; }, "No se pudo marcar la novedad como leída.");
+        var result = t.EsSistema
+            ? await UiOps.RunAsync(async () => { await NovedadesSistemaSvc.MarcarLeidaAsync(t.IdSistema); return true; }, "No se pudo marcar la novedad como leída.")
+            : await UiOps.RunAsync(async () => { await ComunicadosSvc.MarkReadAsync(t.IdComunicado, Usuario); return true; }, "No se pudo marcar el comunicado como leído.");
         if (result.Success)
-            novedad.LeidaPorUsuario = true;
+            t.Leida = true;
     }
 
-    private long? IdPedido()
+    private string? ClavePedida()
     {
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        return query.TryGetValue("id", out var value) && long.TryParse(value.ToString(), out var id) ? id : null;
+        if (query.TryGetValue("sis", out var sis) && NovedadesSistemaCatalogo.Buscar(sis.ToString()) is { } info)
+            return info.ClaveAviso;
+        if (query.TryGetValue("id", out var value) && long.TryParse(value.ToString(), out var id))
+            return $"nov:{id}";
+        return null;
     }
 
-    private static DateTime Fecha(NovedadDetalleDto n)
-        => n.FechaPublicacion ?? n.FechaProgramada ?? n.FechaHoraModificacion;
+    private static string IdHtml(string clave)
+        => "novedad-" + System.Text.RegularExpressions.Regex.Replace(clave, "[^a-zA-Z0-9-]", "-");
 
     private static string AcentoSeguro(string? acento)
         => acento is NovedadAcentos.Verde or NovedadAcentos.Cian or NovedadAcentos.Ambar or NovedadAcentos.Rojo or NovedadAcentos.Grafito

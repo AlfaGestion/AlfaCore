@@ -39,7 +39,7 @@ public sealed class ConversacionesUrgencyAlertTests
         Assert.True(urgentBlock >= 0);
         Assert.True(escaladoReturn >= 0);
         Assert.True(urgentBlock < escaladoReturn, "La detección+alerta de urgencia debe evaluarse antes del corte de escalado.");
-        Assert.Contains("TraceDiagAsync(\"EjecutarStop:PalabraEscalado\"", method, StringComparison.Ordinal); // el handoff sigue existiendo tal cual
+        Assert.Matches(@"if \(ContienePalabraEscalado\(texto, config\.BotPalabrasEscalado\)\)\s*\{\s*return;", method); // el handoff sigue existiendo tal cual
     }
 
     [Fact]

@@ -564,3 +564,40 @@
         opacity: 1;
     }
 }
+
+/* Buscador global (Ctrl+K desde cualquier pantalla): el mismo buscador del Inicio, encima de la
+   página actual. */
+.buscador-global__fondo {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    background: rgba(3, 7, 18, .55);
+}
+
+.alfa-home.buscador-global {
+    position: fixed;
+    top: 12vh;
+    left: 50%;
+    z-index: 1401;
+    display: block;
+    width: min(640px, calc(100vw - 32px));
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+    transform: translateX(-50%);
+}
+
+.buscador-global .alfa-home__search {
+    width: 100%;
+}
+
+.buscador-global .alfa-home__search {
+    position: relative;
+}
+
+.buscador-global .alfa-home__search-box {
+    background: var(--alfa-bg-surface, #16181d);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .45);
+}

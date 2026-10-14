@@ -171,9 +171,9 @@ Criterio aplicado:
 
 - Tipo: Page
 - Ubicación: `src/AlfaCore/Components/Pages/NovedadesLectura.razor`
-- Propósito: página `/novedades` para todos los usuarios con las novedades publicadas (la más nueva arriba), cada una en una tarjeta que se abre y se cierra; abrirla la marca como leída.
-- Datos que usa: `INovedadesService.GetPublicadasAsync`, `INovedadesService.MarkReadAsync`, sesión de usuario de AlfaCore
-- Observaciones: reemplaza al popup global (2026-10-13). Las novedades sin leer llegan a la campana (`CentroAvisosService`), que abre esta página en la novedad (`?id=`). Estilos en `wwwroot/css/novedades-lectura.css`, incluidos los bloques "Antes / Después" y "Tarjetas con ícono" del editor.
+- Propósito: página `/novedades` para todos los usuarios, con dos secciones: "Novedades de AlfaCore" (notas de versión) y "Comunicados" (los que publica la empresa). Cada una es una tarjeta que se abre y se cierra; abrirla la marca como leída.
+- Datos que usa: `INovedadesSistemaService` (catálogo `NovedadesSistemaCatalogo` + `App_Data/novedades-sistema/*.html`, lectura en `ALFACORE_AVISOS_LEIDOS` con clave `sis:`), `INovedadesService.GetPublicadasAsync` / `MarkReadAsync` para los comunicados.
+- Observaciones: reemplaza al popup global (2026-10-13). Lo sin leer llega a la campana (`CentroAvisosService`), que abre esta página en la novedad (`?sis=` o `?id=`). Estilos en `wwwroot/css/novedades-lectura.css`, incluidos los bloques "Antes / Después" y "Tarjetas con ícono" del editor de Comunicados (`Novedades.razor`).
 
 ## Informes IA de compras
 

@@ -450,7 +450,7 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("HumanoYaRespondioUltimoEntrante", ServiceSource, StringComparison.Ordinal);
         Assert.Contains("NOT IN ({AutomatedOutgoingSistemaAutorSqlList})", ServiceSource, StringComparison.Ordinal);
         Assert.Contains("if (humanoYaRespondio)", ServiceSource, StringComparison.Ordinal);
-        Assert.Contains("EjecutarStop:HumanoYaRespondioEsteMensaje", ServiceSource, StringComparison.Ordinal);
+        Assert.Matches(@"if \(humanoYaRespondio\)\s*\{\s*return;", ServiceSource);
 
         // La comparación es por IdMensaje contra el ÚLTIMO entrante (mismo criterio que
         // yaRespondioEsteMensaje) -- NO "alguna vez hubo un humano en la conversación", para no
@@ -2397,42 +2397,6 @@ public sealed class ConversacionesAutomationPipelineTests
         => Assert.Contains("NOT IN (N'PENDIENTE', N'EN_GESTION')", ServiceSource, StringComparison.Ordinal);
 
     // ---------------------------------------------------------------------------------------
-    // 12. TraceDiagAsync -- auditoría (no se retira: ver conclusión en el reporte).
-    // ---------------------------------------------------------------------------------------
-
-    [Fact]
-    public void TraceDiag_WritesOnlyAStepNameAndConversationId_NoMessageTextNoTokensNoPii()
-    {
-        var method = ServiceSource.IndexOf("private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)", StringComparison.Ordinal);
-        Assert.True(method >= 0);
-        var insert = ServiceSource.IndexOf("INSERT INTO dbo.AUX_ERR (Proceso, Fecha, Error, Descripcion, Usuario) VALUES (@Proceso, GETDATE(), -1, @Descripcion, N'DIAG');", method, StringComparison.Ordinal);
-        var descripcion = ServiceSource.IndexOf("cmd.Parameters.AddWithValue(\"@Descripcion\", $\"{paso} | idConversacion={idConversacion}\");", method, StringComparison.Ordinal);
-        Assert.True(insert > method && descripcion > insert);
-    }
-
-    [Fact]
-    public void TraceDiag_IsBestEffortAndNeverThrowsIntoTheRealPipeline()
-    {
-        var method = ServiceSource.IndexOf("private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)", StringComparison.Ordinal);
-        var catchAll = ServiceSource.IndexOf("catch\r\n        {\r\n            // Best-effort: un fallo acá nunca debe interrumpir el flujo real.", method, StringComparison.Ordinal);
-        Assert.True(catchAll > method);
-    }
-
-    [Fact]
-    public void TraceDiag_IsStillCalledFromEveryHotPathOfTheBotPipeline_UnboundedAuxErrGrowthRemainsARisk()
-    {
-        // Auditoría: sigue instrumentando TODO el camino del bot (entrada, cada guardarraíl, cada
-        // paso de la llamada a OpenAI), no solo fallas -- cada mensaje que activa el bot deja
-        // ~10-15 filas en dbo.AUX_ERR, una tabla sin límite de tamaño/expiración visible en este
-        // archivo. No hay evidencia en el repo de que el incidente original que motivó agregarlo
-        // ("retirar una vez encontrada la causa", ver auditoría) ya esté resuelto -- CONCLUSIÓN:
-        // AÚN NECESARIO. No se retira en este trabajo. Se deja documentado el riesgo de
-        // crecimiento no acotado de AUX_ERR para una decisión de producto explícita.
-        var occurrences = System.Text.RegularExpressions.Regex.Matches(ServiceSource, "TraceDiagAsync\\(").Count;
-        Assert.True(occurrences >= 15, $"Se esperaban muchas llamadas activas a TraceDiagAsync (hay {occurrences}); si bajó bruscamente, revisar si ya se retiró en otro lado.");
-    }
-
-    // ---------------------------------------------------------------------------------------
     // 13. Gate de módulo AUTOMATIZACIONES -- auditoría, NO se cambia.
     // ---------------------------------------------------------------------------------------
 
@@ -2584,7 +2548,6 @@ public sealed class ConversacionesAutomationPipelineTests
         }
 
         public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default) => Task.FromResult(true);
-        public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();

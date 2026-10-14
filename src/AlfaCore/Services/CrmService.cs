@@ -1189,7 +1189,8 @@ public sealed class CrmService(
                 IdTecnico = tecnicoNuevo.Trim(),
                 UsuarioAccion = NormalizeUser(usuarioAccion),
                 SistemaAccion = "AlfaCore",
-                Observaciones = $"Asignada desde CRM (oportunidad {idOportunidad.ToString(CultureInfo.InvariantCulture)})."
+                Observaciones = $"Asignada desde CRM (oportunidad {idOportunidad.ToString(CultureInfo.InvariantCulture)}).",
+                NotificarAsignado = false
             }, token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

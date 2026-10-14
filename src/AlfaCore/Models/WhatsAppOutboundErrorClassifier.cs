@@ -40,6 +40,14 @@ public static class WhatsAppGraphErrorCodes
     public const string SpamRateLimitHit = "131048";
     /// <summary>Límite de envíos de la aplicación/número alcanzado.</summary>
     public const string RateLimitHit = "130429";
+
+    /// <summary>
+    /// "User's number is part of an experiment": Meta no entrega plantillas de MARKETING a un grupo de
+    /// números elegidos al azar (experimento propio de Meta). Confirmado en producción (Base106,
+    /// 2026-10-13): la misma plantilla llegó y fue leída por otros clientes ese día, y a este número
+    /// fallaron los tres envíos. No es un error del mensaje ni de la integración.
+    /// </summary>
+    public const string MarketingExperiment = "130472";
 }
 
 /// <summary>
@@ -71,6 +79,25 @@ public static class WhatsAppOutboundErrorClassifier
         {
             using var doc = JsonDocument.Parse(deliveryPayloadJson);
             var root = doc.RootElement;
+
+            // Rechazo avisado después por el webhook de estado ("status":"failed"): el payload guardado
+            // es el status de Meta, con errors[] en vez de la forma envuelta del envío.
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("errors", out var errors)
+                && errors.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var error in errors.EnumerateArray())
+                {
+                    if (error.ValueKind != JsonValueKind.Object)
+                        continue;
+                    var errorCode = error.TryGetProperty("code", out var c) ? c.ToString() : null;
+                    var errorMessage = error.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                        ? m.GetString()
+                        : error.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+                    return (errorCode, errorMessage);
+                }
+            }
+
             if (root.ValueKind != JsonValueKind.Object
                 || !root.TryGetProperty("Error", out var errorProp)
                 || errorProp.ValueKind != JsonValueKind.String)
@@ -196,6 +223,15 @@ public static class WhatsAppOutboundErrorClassifier
                 "Destinatario inválido",
                 "Meta no pudo entregarle el mensaje a este número.",
                 "Verificá que el número tenga WhatsApp activo."),
+
+            WhatsAppGraphErrorCodes.MarketingExperiment => new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "WhatsApp no entregó este mensaje de marketing",
+                Message = "Meta está haciendo una prueba en la que no entrega mensajes de marketing a algunos números elegidos al azar, y este cliente quedó en ese grupo. No es un error de AlfaCore ni de la plantilla.",
+                Suggestion = "Para este cliente usá una plantilla de categoría Utilidad, o esperá a que te escriba: ahí le podés responder sin plantilla.",
+                Code = code
+            },
 
             WhatsAppGraphErrorCodes.SpamRateLimitHit or WhatsAppGraphErrorCodes.RateLimitHit => AppUiMessage.Warning(
                 "Envíos limitados temporalmente por Meta",

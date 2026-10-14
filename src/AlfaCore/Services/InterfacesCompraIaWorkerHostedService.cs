@@ -20,7 +20,25 @@ public sealed class InterfacesCompraIaWorkerHostedService(
 {
     private const int DefaultDelaySeconds = 15;
 
+    /// <summary>Tiempo máximo para comprobar que la base responde antes de procesarla.</summary>
+    internal const int SegundosPruebaConexion = 5;
+
+    /// <summary>Tope de espera entre reintentos de una base caída.</summary>
+    internal const int MinutosMaximoReintento = 30;
+
     private readonly Dictionary<int, bool> _reportedConnectionWarningByBase = new();
+
+    // Bases que no responden (servidores de clientes por VPN que se apagan o se desconectan): se
+    // reintentan cada vez más espaciado en vez de en cada ciclo. Antes cada base caída costaba entre
+    // 8 y 22 s de espera por ciclo (demorando a las que sí andan) y anotaba el error en AUX_ERR
+    // cada 15 s (~7.000 filas por día en producción, 2026-10).
+    private readonly Dictionary<int, BaseCaida> _basesCaidas = new();
+
+    private sealed record BaseCaida(int Fallas, DateTime ReintentarDesde, DateTime Desde);
+
+    /// <summary>Espera antes del próximo intento: 1, 2, 4, 8, 16 y luego 30 minutos.</summary>
+    internal static TimeSpan EsperaReintento(int fallas)
+        => TimeSpan.FromMinutes(Math.Min(MinutosMaximoReintento, Math.Pow(2, Math.Max(0, fallas - 1))));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -66,6 +84,22 @@ public sealed class InterfacesCompraIaWorkerHostedService(
                         break;
 
                     var delaySecondsBase = DefaultDelaySeconds;
+
+                    if (_basesCaidas.TryGetValue(b.IdBase, out var caida) && DateTime.Now < caida.ReintentarDesde)
+                    {
+                        state.MarkWarning(b.IdBase, delaySecondsBase,
+                            $"Sin acceso a la base desde {caida.Desde:dd/MM HH:mm}. Reintenta a las {caida.ReintentarDesde:HH:mm}.");
+                        continue;
+                    }
+
+                    if (!await BaseRespondeAsync(b, stoppingToken))
+                    {
+                        await RegistrarCaidaAsync(b, scope.ServiceProvider, stoppingToken);
+                        continue;
+                    }
+
+                    if (_basesCaidas.Remove(b.IdBase, out var recuperada))
+                        await RegistrarRecuperacionAsync(b, recuperada, scope.ServiceProvider, stoppingToken);
 
                     try
                     {
@@ -127,6 +161,83 @@ public sealed class InterfacesCompraIaWorkerHostedService(
                 // La cadencia del ciclo compartido sigue al intervalo mas corto entre las bases
                 // que realmente tienen el worker habilitado (si ninguna lo tiene, usa el default).
                 return intervalosActivos.Count > 0 ? intervalosActivos.Min() : DefaultDelaySeconds;
+    }
+
+    /// <summary>Prueba rápida de conexión (solo abre y cierra) con poco tiempo de espera.</summary>
+    private static async Task<bool> BaseRespondeAsync(BaseCentralDto b, CancellationToken ct)
+    {
+        try
+        {
+            var csb = new SqlConnectionStringBuilder
+            {
+                DataSource = b.DbServer,
+                InitialCatalog = b.DbName,
+                UserID = b.DbUser,
+                Password = b.DbPassword,
+                TrustServerCertificate = true,
+                ConnectTimeout = SegundosPruebaConexion,
+                Pooling = false
+            };
+            await using var cn = new SqlConnection(csb.ConnectionString);
+            await cn.OpenAsync(ct);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Base que no responde: se anota una sola vez por caída (no en cada ciclo) y se espera cada vez
+    /// más antes de reintentar.
+    /// </summary>
+    private async Task RegistrarCaidaAsync(BaseCentralDto b, IServiceProvider sp, CancellationToken ct)
+    {
+        var ahora = DateTime.Now;
+        var anterior = _basesCaidas.GetValueOrDefault(b.IdBase);
+        var fallas = (anterior?.Fallas ?? 0) + 1;
+        var caida = new BaseCaida(fallas, ahora + EsperaReintento(fallas), anterior?.Desde ?? ahora);
+        _basesCaidas[b.IdBase] = caida;
+        state.MarkWarning(b.IdBase, DefaultDelaySeconds,
+            $"Sin acceso a la base desde {caida.Desde:dd/MM HH:mm}. Reintenta a las {caida.ReintentarDesde:HH:mm}.");
+
+        if (anterior is not null)
+            return;
+
+        logger.LogWarning("Lectura de compras con IA: la base {IdBase} ({Nombre}, servidor {Servidor}) no responde. Se reintenta cada vez más espaciado.",
+            b.IdBase, b.Nombre, b.DbServer);
+        try
+        {
+            await sp.GetRequiredService<IAppEventService>().LogErrorAsync("Interfaces", "CompraIaBaseSinAcceso",
+                new InvalidOperationException($"La base {b.Nombre} (servidor {b.DbServer}) no responde."),
+                $"La lectura de compras con IA no puede conectarse a la base {b.Nombre} (servidor {b.DbServer}). Se reintenta sola, cada vez más espaciado (hasta cada {MinutosMaximoReintento} minutos). Se anota una sola vez por caída.",
+                new { b.IdBase, b.Nombre, b.DbServer }, AppEventSeverity.Warning, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo registrar la caída de la base {IdBase} en AUX_ERR.", b.IdBase);
+        }
+    }
+
+    private async Task RegistrarRecuperacionAsync(BaseCentralDto b, BaseCaida caida, IServiceProvider sp, CancellationToken ct)
+    {
+        logger.LogInformation("Lectura de compras con IA: la base {IdBase} ({Nombre}) volvió a responder.", b.IdBase, b.Nombre);
+        try
+        {
+            await sp.GetRequiredService<IAppEventService>().LogAuditAsync("Interfaces", "CompraIaBaseRecuperada", "bases",
+                b.IdBase.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                $"La lectura de compras con IA volvió a conectarse a la base {b.Nombre} (sin acceso desde {caida.Desde:dd/MM HH:mm}).",
+                new { b.IdBase, b.Nombre, b.DbServer, caida.Fallas }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudo registrar la recuperación de la base {IdBase}.", b.IdBase);
+        }
     }
 
     private void RegisterConnectionWarning(int idBase, int delaySeconds, Exception ex)
