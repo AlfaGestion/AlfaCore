@@ -8515,6 +8515,19 @@ public sealed class ConversacionesService(
 
     private async Task AutoCloseExpiredOpenWhatsAppConversationsAsync(long? idConversacion, CancellationToken ct)
     {
+        // Mantenimiento previo a leer la bandeja/los mensajes: si queda como víctima de un
+        // interbloqueo (1205) con un webhook, se reintenta en la próxima lectura en vez de fallarla.
+        try
+        {
+            await AutoCloseExpiredOpenWhatsAppConversationsCoreAsync(idConversacion, ct);
+        }
+        catch (SqlException ex) when (ex.Number == 1205)
+        {
+        }
+    }
+
+    private async Task AutoCloseExpiredOpenWhatsAppConversationsCoreAsync(long? idConversacion, CancellationToken ct)
+    {
         await ReassignStaleWhatsAppConversationsToDefaultWebAsync(idConversacion, ct);
 
         var closedState = await GetFirstClosedConversationStateAsync(ct);
@@ -12957,6 +12970,19 @@ public sealed class ConversacionesService(
 
     private async Task LinkUnassociatedWhatsAppConversationsByPhoneAsync(SqlConnection cn, CancellationToken ct, long? idConversacion = null)
     {
+        // Vinculación oportunista: si choca con un webhook que está escribiendo la misma conversación
+        // (interbloqueo, 1205) se deja para la próxima vez en vez de no poder abrir la conversación.
+        try
+        {
+            await LinkUnassociatedWhatsAppConversationsByPhoneCoreAsync(cn, ct, idConversacion);
+        }
+        catch (SqlException ex) when (ex.Number == 1205)
+        {
+        }
+    }
+
+    private async Task LinkUnassociatedWhatsAppConversationsByPhoneCoreAsync(SqlConnection cn, CancellationToken ct, long? idConversacion)
+    {
         const string sql = """
             SELECT TOP (200)
                 IdConversacion,
@@ -15957,14 +15983,23 @@ public sealed class ConversacionesService(
         }
     }
 
-    private static DateTime ParseUnixTimestamp(string? value)
-    {
-        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix))
-            return NormalizeIncomingTimestamp(TimeZoneInfo.ConvertTimeFromUtc(
-                DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime,
-                ResolveBusinessTimeZone()));
+    private const long MaxUnixSeconds = 253402300799; // 31/12/9999, tope de DateTimeOffset.
 
-        return BusinessNow();
+    internal static DateTime ParseUnixTimestamp(string? value)
+    {
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix))
+            return BusinessNow();
+
+        // Algunos eventos de Meta (sincronización de estado/historial) traen milisegundos en vez de
+        // segundos; FromUnixTimeSeconds tiraba excepción y se perdía el webhook entero.
+        if (unix > MaxUnixSeconds)
+            unix /= 1000;
+        if (unix < 0 || unix > MaxUnixSeconds)
+            return BusinessNow();
+
+        return NormalizeIncomingTimestamp(TimeZoneInfo.ConvertTimeFromUtc(
+            DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime,
+            ResolveBusinessTimeZone()));
     }
 
     private static DateTime NormalizeIncomingTimestamp(DateTime value)

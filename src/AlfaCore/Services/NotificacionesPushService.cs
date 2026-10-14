@@ -752,6 +752,26 @@ public sealed class NotificacionesPushService(
         CancellationToken ct)
     {
         var result = new NotificacionesPushSendResultDto { TotalCount = subscriptions.Count };
+
+        // Con las claves VAPID mal configuradas no sale ningún push: se anota una vez por hora (no
+        // por cada mensaje entrante, que en producción llegó a ~430 errores por día) y no se intenta.
+        string? configError = null;
+        try
+        {
+            EnsureVapidConfigured();
+        }
+        catch (InvalidOperationException ex)
+        {
+            configError = ex.Message;
+        }
+
+        if (configError is not null)
+        {
+            await RegistrarConfiguracionInvalidaAsync(configError, ct);
+            result.FailCount = subscriptions.Count;
+            return result;
+        }
+
         foreach (var subscription in subscriptions)
         {
             var item = await SendToSubscriptionAsync(cn, subscription, payload, ct);
@@ -901,9 +921,51 @@ public sealed class NotificacionesPushService(
             && !subject.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("PushNotifications:Subject debe tener formato mailto:admin@alfagestion.com o una URL http/https.");
 
-        ValidateVapidKeys(pushOptions.PublicKey, pushOptions.PrivateKey);
+        try
+        {
+            ValidateVapidKeys(pushOptions.PublicKey, pushOptions.PrivateKey);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException($"{ex.Message} {DescribirOrigenClaves()}", ex);
+        }
 
         return pushOptions;
+    }
+
+    private static long _ultimoAvisoConfiguracionInvalidaTicks;
+
+    private async Task RegistrarConfiguracionInvalidaAsync(string mensaje, CancellationToken ct)
+    {
+        var ahora = DateTime.UtcNow.Ticks;
+        var ultimo = Interlocked.Read(ref _ultimoAvisoConfiguracionInvalidaTicks);
+        if (ahora - ultimo < TimeSpan.FromHours(1).Ticks
+            || Interlocked.CompareExchange(ref _ultimoAvisoConfiguracionInvalidaTicks, ahora, ultimo) != ultimo)
+            return;
+
+        await appEvents.LogErrorAsync(ModuleName, "ConfiguracionVapidInvalida", new InvalidOperationException(mensaje),
+            "Las notificaciones push no se envían porque la configuración VAPID del servidor no es válida. Se anota una vez por hora.",
+            null, AppEventSeverity.Warning, ct);
+    }
+
+    /// <summary>
+    /// De qué fuente de configuración sale cada clave y qué largo tiene (nunca el valor), para
+    /// diagnosticar cuando el archivo parece correcto pero el sitio está leyendo otra cosa.
+    /// </summary>
+    private string DescribirOrigenClaves()
+    {
+        if (configuration is not IConfigurationRoot root)
+            return string.Empty;
+
+        string Origen(string clave)
+        {
+            var ruta = $"{PushNotificationsOptions.SectionName}:{clave}";
+            var proveedor = root.Providers.Reverse().FirstOrDefault(p => p.TryGet(ruta, out _));
+            var largo = (root[ruta] ?? string.Empty).Trim().Length;
+            return $"{clave} desde {proveedor?.ToString() ?? "ninguna fuente"} (largo {largo})";
+        }
+
+        return $"Origen: {Origen("PublicKey")}; {Origen("PrivateKey")}.";
     }
 
     private async Task DeactivateSubscriptionAsync(
