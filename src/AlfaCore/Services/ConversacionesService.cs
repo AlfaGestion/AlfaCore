@@ -8642,37 +8642,31 @@ public sealed class ConversacionesService(
     // espera. Si no, corre los guardarraíles y responde ya (ver EjecutarRespuestaBotAsync).
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
-        await TraceDiagAsync("BotStart", idConversacion, ct).ConfigureAwait(false);
         try
         {
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
             {
-                await TraceDiagAsync("BotStop:ModuloInactivo", idConversacion, ct).ConfigureAwait(false);
                 return;
             }
 
             var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
             if (!config.BotActivo || !asistenteService.IsConfigured)
             {
-                await TraceDiagAsync($"BotStop:BotActivo={config.BotActivo},OpenAiConfigured={asistenteService.IsConfigured}", idConversacion, ct).ConfigureAwait(false);
                 return;
             }
 
             var texto = (incomingText ?? string.Empty).Trim();
             if (texto.Length == 0)
             {
-                await TraceDiagAsync("BotStop:TextoVacio", idConversacion, ct).ConfigureAwait(false);
                 return;
             }
 
             if (config.BotEsperaMinutos > 0)
             {
-                await TraceDiagAsync("BotStop:Encolado", idConversacion, ct).ConfigureAwait(false);
                 await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
             }
 
-            await TraceDiagAsync("BotSigueAEjecutar", idConversacion, ct).ConfigureAwait(false);
 
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
         }
@@ -8805,7 +8799,6 @@ public sealed class ConversacionesService(
             "bot-auto-reply",
             async token =>
             {
-                await TraceDiagAsync("LockOk:EjecutarStart", idConversacion, ct).ConfigureAwait(false);
 
                 // La detección + alerta de urgencia es responsabilidad distinta de si el Bot termina
                 // respondiendo o haciendo handoff -- se evalúa acá, antes de cualquier corte de
@@ -8824,7 +8817,6 @@ public sealed class ConversacionesService(
 
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
                 {
-                    await TraceDiagAsync("EjecutarStop:PalabraEscalado", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -8833,7 +8825,6 @@ public sealed class ConversacionesService(
                     var tecnico = await GetConversationTechnicianIdAsync(idConversacion, token).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(tecnico))
                     {
-                        await TraceDiagAsync($"EjecutarStop:TecnicoAsignado={tecnico}", idConversacion, ct).ConfigureAwait(false);
                         return;
                     }
                 }
@@ -8841,25 +8832,21 @@ public sealed class ConversacionesService(
                 var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
                 if (!config.BotRespondeEnCanal(canalBot))
                 {
-                    await TraceDiagAsync($"EjecutarStop:CanalSinBot:{canalBot}", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
                 if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
                 {
-                    await TraceDiagAsync($"EjecutarStop:VentanaInactiva:{canalBot}", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
                 var (botCount, yaRespondioEsteMensaje, humanoYaRespondio) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
                 {
-                    await TraceDiagAsync($"EjecutarStop:MaxRespuestas={botCount}", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
                 if (yaRespondioEsteMensaje)
                 {
-                    await TraceDiagAsync("EjecutarStop:YaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
                 // Bug P0 (auditoría 2026-09-18): si un operador ya respondió manualmente el último
@@ -8872,14 +8859,12 @@ public sealed class ConversacionesService(
                 // yaRespondioEsteMensaje, no "alguna vez hubo un humano en la conversación").
                 if (humanoYaRespondio)
                 {
-                    await TraceDiagAsync("EjecutarStop:HumanoYaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
                 var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
                 if (config.BotSoloFueraHorario && !fueraDeHorario)
                 {
-                    await TraceDiagAsync("EjecutarStop:SoloFueraHorario", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -8889,7 +8874,6 @@ public sealed class ConversacionesService(
                 if (iaConsumo is not null
                     && await iaConsumo.GetTopeEstadoBaseActivaAsync(token).ConfigureAwait(false) is { Alcanzado: true } tope)
                 {
-                    await TraceDiagAsync($"EjecutarStop:TopeCreditosIA:{tope.CreditosUsados}/{tope.TopeCreditos}", idConversacion, ct).ConfigureAwait(false);
                     if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaTopeCreditosIa, token).ConfigureAwait(false))
                     {
                         await AddInternalEventCoreAsync(idConversacion, NotaTopeCreditosIa, null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
@@ -8920,12 +8904,10 @@ public sealed class ConversacionesService(
                             UsuarioAccion = "AlfaCore",
                             SistemaAccion = "BOT"
                         }, token).ConfigureAwait(false);
-                        await TraceDiagAsync("BotWebDatosRegistrados", idConversacion, ct).ConfigureAwait(false);
                         return;
                     }
                 }
 
-                await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
 
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
 
@@ -8945,10 +8927,8 @@ public sealed class ConversacionesService(
                 }
 
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
-                await TraceDiagAsync("Paso:MensajesOk", idConversacion, ct).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
-                await TraceDiagAsync("Paso:CuentaVinculadaOk", idConversacion, ct).ConfigureAwait(false);
                 // Un saludo/cierre no hereda las herramientas del mensaje anterior: con tools ofrecidas
                 // gpt-4o-mini tiende a derivar en vez de responder lo social.
                 var mensajePrevioCliente = EsMensajeSocial(texto)
@@ -8978,11 +8958,9 @@ public sealed class ConversacionesService(
                 // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
                 var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
                 var usaKnowledge = aclaracionMediaSinTexto is null && !EsMensajeSocial(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
-                await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
                     : new AsistenteKnowledgeContext();
-                await TraceDiagAsync("Paso:DespuesKnowledgeOk", idConversacion, ct).ConfigureAwait(false);
 
                 // Modo exclusivo automático: si AlfaKnowledge ya tiene contexto suficiente y el mensaje
                 // no necesita herramientas (saldo/precio/pedido -- eso son datos reales de AlfaCore que
@@ -8994,7 +8972,6 @@ public sealed class ConversacionesService(
                 var resueltoSoloPorKnowledge = herramientas.Count == 0
                     && knowledgeContext.HasSufficientContext
                     && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
-                await TraceDiagAsync($"Paso:Rama:resueltoSoloPorKnowledge={resueltoSoloPorKnowledge}", idConversacion, ct).ConfigureAwait(false);
 
                 ConversacionAsistenteRespuesta? result;
                 if (resueltoSoloPorKnowledge)
@@ -9021,12 +8998,9 @@ public sealed class ConversacionesService(
                         PuedeResponder = false,
                         Respuesta = aclaracionMediaSinTexto
                     };
-                    await TraceDiagAsync("BotMediaSinTexto|tipo=ACLARA", idConversacion, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await TraceDiagAsync($"Paso:AntesResponderAsync:herramientas={herramientas.Count}", idConversacion, ct).ConfigureAwait(false);
-                    await TraceDiagAsync($"BotTools|ofrecidas={BuildToolNamesTrace(herramientas)}", idConversacion, ct).ConfigureAwait(false);
                     // Lead + precio + precios a leads OFF: el link del catálogo se genera ACÁ, con la
                     // herramienta productiva, antes de llamar al modelo -- no depende de que GPT decida
                     // llamarla (caso real 4264: decía "podés ver el catálogo" sin mandar el link).
@@ -9039,17 +9013,14 @@ public sealed class ConversacionesService(
                         ? config.AsistenteInformacion
                         : await asistenteConocimiento.ComponerInformacionAsync(
                             config.AsistenteInformacion, EsMensajeSocial(texto) ? null : texto, token).ConfigureAwait(false);
-                    await TraceDiagAsync($"Paso:InformacionAsistente:chars={informacionAsistente.Length}", idConversacion, ct).ConfigureAwait(false);
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, informacionAsistente, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync,
-                        traceDiagAsync: (paso, traceCt) => TraceDiagAsync(paso, idConversacion, traceCt),
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
                         forzarConsultarPrecio: forzarConsultarPrecio,
                         linkCatalogoParaLead: linkCatalogoParaLead,
                         ct: token).ConfigureAwait(false);
-                    await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
                         && knowledgeContext.NeedsClarification
@@ -9072,7 +9043,6 @@ public sealed class ConversacionesService(
                     {
                         var (respuestaLead, usoPlantilla) = AsegurarRespuestaPrecioLead(result, linkCatalogoParaLead);
                         result = respuestaLead;
-                        await TraceDiagAsync($"BotPrecioRequiereIdentificacion|plantilla={usoPlantilla}|catalogo={linkCatalogoParaLead is not null}", idConversacion, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -9080,7 +9050,6 @@ public sealed class ConversacionesService(
                 // preguntar, pasa a un operador (contención estándar) en vez de insistir.
                 if (ultimaRespuestaFueAclaracion && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
-                    await TraceDiagAsync("BotAclaracionRepetida|derivaEnLugarDeRepreguntar=True", idConversacion, ct).ConfigureAwait(false);
                     result = null;
                 }
 
@@ -9088,7 +9057,6 @@ public sealed class ConversacionesService(
                 // "Hola" como DERIVA y la conversación escalaba con la nota de "no pudo resolver".
                 if (EsMensajeSocial(texto) && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
                 {
-                    await TraceDiagAsync($"BotSaludoNoDeriva|tipoModelo={SanitizeTraceValue(result?.Tipo ?? "(sin respuesta)")}", idConversacion, ct).ConfigureAwait(false);
                     result = new ConversacionAsistenteRespuesta
                     {
                         Tipo = "RESUELVE",
@@ -9102,7 +9070,6 @@ public sealed class ConversacionesService(
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
                     : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-                await TraceDiagAsync($"BotResult|tipo={SanitizeTraceValue(tipo)}", idConversacion, ct).ConfigureAwait(false);
                 if (usoFallbackBot)
                     tipo = "DERIVA";
 
@@ -9141,7 +9108,6 @@ public sealed class ConversacionesService(
                 if (pedirDatosWeb)
                     respuesta = $"{respuesta}\n\n{PedidoDatosVisitanteWeb}";
 
-                await TraceDiagAsync($"Paso:AntesSendMessage:tipo={tipo}", idConversacion, ct).ConfigureAwait(false);
                 await SendMessageAsync(new ConversacionSendMessageRequest
                 {
                     IdConversacion = idConversacion,
@@ -9150,7 +9116,6 @@ public sealed class ConversacionesService(
                     UsuarioAccion = "AlfaCore",
                     SistemaAccion = "BOT"
                 }, token).ConfigureAwait(false);
-                await TraceDiagAsync("Paso:DespuesSendMessageOk", idConversacion, ct).ConfigureAwait(false);
 
                 if (numeroTicketBot is int numeroNota)
                 {
@@ -10912,53 +10877,6 @@ public sealed class ConversacionesService(
         return result is not null;
     }
 
-    // DIAGNÓSTICO TEMPORAL (retirar una vez encontrada la causa de las respuestas silenciosas del
-    // bot): escribe directo a AUX_ERR por SQL, sin pasar por AppEventService/el archivo .jsonl -- ese
-    // archivo pierde escrituras por una condición de carrera cuando varios procesos escriben a la vez
-    // (confirmado en producción, "the file is being used by another process"), lo que hacía
-    // indistinguible "no se ejecutó este paso" de "se ejecutó pero el log se perdió". Esto no debería
-    // fallar nunca (columna Error es NOT NULL en AUX_ERR, se manda -1 como valor sin significado); si
-    // aun así falla, se traga el error para no romper el flujo real por un problema de diagnóstico.
-    private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)
-    {
-        try
-        {
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(ct).ConfigureAwait(false);
-            await using var cmd = new SqlCommand(
-                "INSERT INTO dbo.AUX_ERR (Proceso, Fecha, Error, Descripcion, Usuario) VALUES (@Proceso, GETDATE(), -1, @Descripcion, N'DIAG');",
-                cn);
-            cmd.Parameters.AddWithValue("@Proceso", "Conversaciones.TraceDiag");
-            cmd.Parameters.AddWithValue("@Descripcion", $"{paso} | idConversacion={idConversacion}");
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Best-effort: un fallo acá nunca debe interrumpir el flujo real.
-        }
-    }
-
-    private static string BuildToolNamesTrace(IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> herramientas)
-        => herramientas.Count == 0
-            ? "(ninguna)"
-            : string.Join(",", herramientas.Select(h => SanitizeTraceValue(h.Nombre)).Where(x => x.Length > 0));
-
-    private static string SanitizeTraceValue(string? value)
-    {
-        var text = (value ?? string.Empty).Trim();
-        if (text.Length == 0)
-            return string.Empty;
-
-        var sb = new StringBuilder(text.Length);
-        foreach (var ch in text)
-        {
-            if (char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.')
-                sb.Append(ch);
-        }
-
-        return sb.Length == 0 ? string.Empty : sb.ToString()[..Math.Min(sb.Length, 120)];
-    }
-
     private async Task RunWithConversationAutomationLockAsync(
         long idConversacion,
         string motivo,
@@ -10974,7 +10892,6 @@ public sealed class ConversacionesService(
         var lockResult = await AcquireApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
         if (lockResult < 0)
         {
-            await TraceDiagAsync($"LockSkip:{motivo}:lockResult={lockResult}", idConversacion, ct).ConfigureAwait(false);
             await _appEvents.LogAuditAsync(
                 "Conversaciones", "AutomationLockSkipped", "CONV_CONVERSACIONES",
                 idConversacion.ToString(CultureInfo.InvariantCulture),

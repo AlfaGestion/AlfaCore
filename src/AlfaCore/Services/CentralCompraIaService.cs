@@ -31,6 +31,12 @@ public sealed class CentralCompraIaService(IConfiguration configuration, IAppUse
     public Task<IReadOnlyList<BaseCentralDto>> GetBasesHabilitadasAsync(CancellationToken ct = default)
         => LoggedAsync("BasesHabilitadas", async () =>
         {
+            // Instalación sin central (standalone/LAN): no hay bases de clientes que recorrer. Antes
+            // tiraba "No está configurada la conexión central" y el worker lo anotaba en AUX_ERR en
+            // cada ciclo (miles de filas por día).
+            if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("AlfaCentral")))
+                return (IReadOnlyList<BaseCentralDto>)[];
+
             await using var cn = new SqlConnection(ConnectionString);
             // Antes de aplicar la actualización central no se autoriza ninguna conexión de cliente.
             if (!await SchemaReadyAsync(cn, ct)) return [];
