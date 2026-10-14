@@ -1,0 +1,38 @@
+{
+  "name": "AlfaCore - Punto de Venta",
+  "short_name": "Punto de Venta",
+  "description": "Punto de Venta de AlfaCore.",
+  "id": "/ventas/punto-venta",
+  "start_url": "/ventas/punto-venta?directo=1",
+  "scope": "/ventas/punto-venta",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#1f2937",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

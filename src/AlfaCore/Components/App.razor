@@ -1,4 +1,11 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject Microsoft.AspNetCore.Http.IHttpContextAccessor HttpContextAccessor
+
+@{
+    var requestPath = (HttpContextAccessor.HttpContext?.Request.Path.Value ?? string.Empty).TrimEnd('/');
+    var isPosPwaRoute = requestPath.EndsWith("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase)
+        || requestPath.EndsWith("/ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
+}
 
 <!DOCTYPE html>
 <html lang="es">
@@ -23,7 +30,18 @@
     <link rel="stylesheet" href="/css/carga-viajes.css?v=20261009b" />
     <link rel="stylesheet" href="/css/sticky-list-headers.css?v=20260715b" />
     <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link id="app-manifest" rel="manifest" href="@(isPosPwaRoute ? "/manifest-punto-venta.webmanifest?v=20261014a" : "/manifest.webmanifest")" />
+    <script>
+        (function () {
+            var path = (window.location.pathname || '').toLowerCase();
+            var manifest = document.getElementById('app-manifest');
+            if (manifest && (path === '/ventas/punto-venta'
+                || path === '/ventas/punto-venta/'
+                || path === '/ventas/punto-venta/mostrador'
+                || path === '/ventas/punto-venta/mostrador/'))
+                manifest.href = '/manifest-punto-venta.webmanifest?v=20261014a';
+        })();
+    </script>
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="theme-color" content="#1f2937" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

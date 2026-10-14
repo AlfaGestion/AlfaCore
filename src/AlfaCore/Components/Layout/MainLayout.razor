@@ -2296,11 +2296,16 @@ else
             _ => effectivePath.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
 
+        var isPosDirectRoute = normalized.Equals("ventas/punto-venta", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("ventas/punto-venta/", StringComparison.OrdinalIgnoreCase);
+
         if (query.TryGetValue("directo", out var directo)
             && string.Equals(directo.ToString(), "1", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(_currentModule))
         {
-            _directModuleKey = _currentModule;
+            // La instalación del POS no debe abrir el resto de Ventas. El módulo directo
+            // queda fijado en el prefijo propio del punto de venta.
+            _directModuleKey = isPosDirectRoute ? "ventas/punto-venta" : _currentModule;
         }
         else if (string.IsNullOrWhiteSpace(effectivePath) || string.IsNullOrWhiteSpace(_currentModule))
         {

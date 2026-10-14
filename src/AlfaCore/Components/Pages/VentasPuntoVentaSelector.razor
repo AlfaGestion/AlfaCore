@@ -8,6 +8,7 @@
 @inject IRouteContextService RouteCtx
 @inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
@@ -93,6 +94,8 @@
     private bool _esAdministrador;
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
     private AppUiMessage? _feedback;
+    private bool _directPuntoVentaChecked;
+    private const string PuntoVentaStorageKey = "alfacore.pos.puntoVentaId";
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -100,6 +103,32 @@
     {
         if (firstRender)
             UpdatePageHeader();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _directPuntoVentaChecked || _loading)
+            return;
+
+        _directPuntoVentaChecked = true;
+        if (!Nav.ToAbsoluteUri(Nav.Uri).Query.Contains("directo=1", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            var storedId = await Js.InvokeAsync<string?>("localStorage.getItem", PuntoVentaStorageKey);
+            if (!int.TryParse(storedId, out var idPuntoVenta) || idPuntoVenta <= 0)
+                return;
+
+            if (_puntosVenta.Any(x => x.Id == idPuntoVenta))
+            {
+                Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={idPuntoVenta}&directo=1"));
+            }
+        }
+        catch
+        {
+            // Si el almacenamiento no está disponible, se conserva el selector normal.
+        }
     }
 
     public void Dispose()
@@ -138,12 +167,21 @@
     private static bool EstaDisponible(string modo)
         => modo == PuntoVentaModoKeys.Mostrador || modo == PuntoVentaModoKeys.Delivery;
 
-    private Task AbrirAsync(PuntoVentaEntidadDto pv)
+    private async Task AbrirAsync(PuntoVentaEntidadDto pv)
     {
         if (!EstaDisponible(pv.Modo))
         {
             _feedback = AppUiMessage.Success("Próximamente", $"El modo Salón todavía no está disponible para \"{pv.Nombre}\".");
-            return Task.CompletedTask;
+            return;
+        }
+
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", PuntoVentaStorageKey, pv.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch
+        {
+            // La navegación y la selección del PDV no dependen de localStorage.
         }
 
         var ruta = pv.Modo switch
@@ -153,7 +191,6 @@
         };
 
         Nav.NavigateTo(RouteCtx.BuildRoute(ruta));
-        return Task.CompletedTask;
     }
 
     private static string GetModoTexto(string modo) => modo switch
