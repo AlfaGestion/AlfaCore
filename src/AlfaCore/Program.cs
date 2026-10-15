@@ -540,6 +540,48 @@ public class Program
                 : Results.NotFound();
         });
 
+        app.MapGet("/manifest-punto-venta", (HttpContext httpContext) =>
+        {
+            var requestedScope = httpContext.Request.Query["start"].ToString();
+            var scope = requestedScope.Trim();
+            if (string.IsNullOrWhiteSpace(scope)
+                || !scope.StartsWith("/", StringComparison.Ordinal)
+                || !scope.Contains("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase))
+            {
+                scope = "/ventas/punto-venta";
+            }
+
+            var idPuntoVenta = httpContext.Request.Query["idPuntoVenta"].ToString().Trim();
+            var startUrl = $"{scope}?directo=1";
+            var appId = scope;
+            if (int.TryParse(idPuntoVenta, out var parsedId) && parsedId > 0)
+            {
+                startUrl += $"&idPuntoVenta={parsedId}";
+                appId += $"#pdv-{parsedId}";
+            }
+
+            return Results.Json(new
+            {
+                name = "AlfaCore - Punto de Venta",
+                short_name = "Punto de Venta",
+                description = "Punto de Venta de AlfaCore.",
+                id = appId,
+                start_url = startUrl,
+                scope,
+                display = "standalone",
+                background_color = "#f6f8fb",
+                theme_color = "#1f2937",
+                orientation = "any",
+                icons = new[]
+                {
+                    new { src = "/icons/icon-192.png", sizes = "192x192", type = "image/png", purpose = "any" },
+                    new { src = "/icons/icon-512.png", sizes = "512x512", type = "image/png", purpose = "any" },
+                    new { src = "/icons/maskable-192.png", sizes = "192x192", type = "image/png", purpose = "maskable" },
+                    new { src = "/icons/maskable-512.png", sizes = "512x512", type = "image/png", purpose = "maskable" }
+                }
+            }, contentType: "application/manifest+json");
+        });
+
         app.MapGet("/app.css", () =>
             ResolveStaticAsset("app.css") is { } file
                 ? Results.File(file, "text/css; charset=utf-8")

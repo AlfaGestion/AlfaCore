@@ -17,6 +17,7 @@ public sealed class PuntoVentaService(
     IWebHostEnvironment env,
     IArcaConfigService arcaConfigService,
     IArcaFacturacionElectronicaService arcaFacturacion,
+    IArticuloPrecioResolverService articuloPrecioResolver,
     ILogger<PuntoVentaService> logger) : IPuntoVentaService
 {
     private const string ModuleName = "PuntoVenta";
@@ -1031,6 +1032,9 @@ public sealed class PuntoVentaService(
         }, "No se pudo actualizar el estado de impresión del comprobante.", ct);
 
     public Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default)
+        => SearchArticulosAsync(filters, null, ct);
+
+    public Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, string? clienteCodigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchArticulos", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
@@ -1039,8 +1043,14 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 throw new InvalidOperationException("La base activa no tiene V_MA_ARTICULOS. No se puede consultar el catálogo del POS.");
 
-            var pricing = await ResolvePricingContextAsync(cn, token);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+            var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
+            var ofertaSelect = clasePrecioOferta > 0
+                ? string.IsNullOrWhiteSpace(pricing.ListaPrecioActual)
+                    ? $"ISNULL(a.PRECIO{clasePrecioOferta}, 0)"
+                    : $"CASE WHEN p.FhOfertaDesde IS NOT NULL AND GETDATE() >= p.FhOfertaDesde AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN ISNULL(p.Precio{clasePrecioOferta}, 0) ELSE 0 END"
+                : "CAST(0 AS decimal(18,4))";
             var familyFilter = filters.IdFamilia.Trim();
             var rubroFilter = filters.IdRubro.Trim();
             var search = filters.Texto.Trim();
@@ -1096,6 +1106,13 @@ public sealed class PuntoVentaService(
                     ISNULL(a.PESABLE, 0) AS Pesable,
                     ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(a.PRECIO2, 0) AS PrecioBase2,
+                    ISNULL(a.PRECIO3, 0) AS PrecioBase3,
+                    ISNULL(a.PRECIO4, 0) AS PrecioBase4,
+                    ISNULL(a.PRECIO5, 0) AS PrecioBase5,
+                    ISNULL(a.PRECIO6, 0) AS PrecioBase6,
+                    ISNULL(a.PRECIO7, 0) AS PrecioBase7,
+                    ISNULL(a.PRECIO8, 0) AS PrecioBase8,
                     ISNULL(p.Precio1, 0) AS PrecioLista1,
                     ISNULL(p.Precio2, 0) AS PrecioLista2,
                     ISNULL(p.Precio3, 0) AS PrecioLista3,
@@ -1103,7 +1120,8 @@ public sealed class PuntoVentaService(
                     ISNULL(p.Precio5, 0) AS PrecioLista5,
                     ISNULL(p.Precio6, 0) AS PrecioLista6,
                     ISNULL(p.Precio7, 0) AS PrecioLista7,
-                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                    ISNULL(p.Precio8, 0) AS PrecioLista8,
+                    {ofertaSelect} AS PrecioOferta
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
@@ -1131,8 +1149,11 @@ public sealed class PuntoVentaService(
                 materializedRows.RemoveAt(materializedRows.Count - 1);
 
             var articles = materializedRows
-                .Select(row => new PuntoVentaArticleDto
+                .Select(row =>
                 {
+                    var price = ResolvePriceDetails(row, clasePrecio);
+                    return new PuntoVentaArticleDto
+                    {
                     IdArticulo = row.IdArticulo,
                     CodigoBarra = row.CodigoBarra,
                     Descripcion = row.Descripcion,
@@ -1141,12 +1162,15 @@ public sealed class PuntoVentaService(
                     IdFamilia = row.IdFamilia,
                     Familia = row.Familia,
                     IdUnidad = row.IdUnidad,
-                    PrecioUnitario = ResolvePrice(row, clasePrecio),
+                    PrecioUnitario = price.Effective,
+                    PrecioOriginal = price.Original,
+                    EsPrecioOferta = price.IsOffer,
                     TasaIva = row.TasaIva,
                     Exento = row.Exento,
                     NoControlaStock = row.NoControlaStock,
                     Pesable = row.Pesable,
                     RutaImagen = row.RutaImagen
+                    };
                 })
                 .ToList();
 
@@ -1158,6 +1182,7 @@ public sealed class PuntoVentaService(
                 ListaPrecioActual = pricing.ListaPrecioActual,
                 NombreListaPrecioActual = pricing.NombreListaPrecioActual,
                 ClasePrecioActual = pricing.ClasePrecioActual,
+                ClasePrecioOfertaActual = pricing.ClasePrecioOfertaActual,
                 UsaPrecioFallback = usaFallback,
                 TieneMasResultados = tieneMasResultados,
                 PaginaActual = pagina
@@ -1165,6 +1190,9 @@ public sealed class PuntoVentaService(
         }, "No se pudieron cargar los artículos del punto de venta.", ct);
 
     public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default)
+        => GetArticuloPorCodigoAsync(codigo, null, ct);
+
+    public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticuloPorCodigo", async token =>
         {
             var buscar = (codigo ?? string.Empty).Trim().ToUpperInvariant();
@@ -1177,8 +1205,14 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 return null;
 
-            var pricing = await ResolvePricingContextAsync(cn, token);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+            var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
+            var ofertaSelect = clasePrecioOferta > 0
+                ? string.IsNullOrWhiteSpace(pricing.ListaPrecioActual)
+                    ? $"ISNULL(a.PRECIO{clasePrecioOferta}, 0)"
+                    : $"CASE WHEN p.FhOfertaDesde IS NOT NULL AND GETDATE() >= p.FhOfertaDesde AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN ISNULL(p.Precio{clasePrecioOferta}, 0) ELSE 0 END"
+                : "CAST(0 AS decimal(18,4))";
 
             var row = await cn.QuerySingleOrDefaultAsync<PuntoVentaArticleRow>(new CommandDefinition(
                 """
@@ -1197,6 +1231,13 @@ public sealed class PuntoVentaService(
                     ISNULL(a.PESABLE, 0) AS Pesable,
                     ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(a.PRECIO2, 0) AS PrecioBase2,
+                    ISNULL(a.PRECIO3, 0) AS PrecioBase3,
+                    ISNULL(a.PRECIO4, 0) AS PrecioBase4,
+                    ISNULL(a.PRECIO5, 0) AS PrecioBase5,
+                    ISNULL(a.PRECIO6, 0) AS PrecioBase6,
+                    ISNULL(a.PRECIO7, 0) AS PrecioBase7,
+                    ISNULL(a.PRECIO8, 0) AS PrecioBase8,
                     ISNULL(p.Precio1, 0) AS PrecioLista1,
                     ISNULL(p.Precio2, 0) AS PrecioLista2,
                     ISNULL(p.Precio3, 0) AS PrecioLista3,
@@ -1204,7 +1245,8 @@ public sealed class PuntoVentaService(
                     ISNULL(p.Precio5, 0) AS PrecioLista5,
                     ISNULL(p.Precio6, 0) AS PrecioLista6,
                     ISNULL(p.Precio7, 0) AS PrecioLista7,
-                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                    ISNULL(p.Precio8, 0) AS PrecioLista8,
+                    {ofertaSelect} AS PrecioOferta
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
@@ -1229,6 +1271,7 @@ public sealed class PuntoVentaService(
             if (row is null)
                 return null;
 
+            var price = ResolvePriceDetails(row, clasePrecio);
             return new PuntoVentaArticleDto
             {
                 IdArticulo = row.IdArticulo,
@@ -1239,7 +1282,9 @@ public sealed class PuntoVentaService(
                 IdFamilia = row.IdFamilia,
                 Familia = row.Familia,
                 IdUnidad = row.IdUnidad,
-                PrecioUnitario = ResolvePrice(row, clasePrecio),
+                PrecioUnitario = price.Effective,
+                PrecioOriginal = price.Original,
+                EsPrecioOferta = price.IsOffer,
                 TasaIva = row.TasaIva,
                 Exento = row.Exento,
                 NoControlaStock = row.NoControlaStock,
@@ -1504,58 +1549,44 @@ public sealed class PuntoVentaService(
             ?? new ClienteIvaData(codigo?.Trim() ?? string.Empty, string.Empty);
     }
 
-    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct)
+    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct, string? clienteCodigo = null)
     {
-        var clasePrecio = DefaultClasePrecio;
-        if (await TableExistsAsync(cn, "TA_CONFIGURACION", ct))
-        {
-            var claseConfigurada = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
-                """
-                SELECT TOP (1)
-                    CASE
-                        WHEN ISNULL(LTRIM(RTRIM(VALOR)), '') <> '' THEN LTRIM(RTRIM(VALOR))
-                        WHEN ISNULL(CAST(ValorAux AS nvarchar(150)), '') <> '' THEN LTRIM(RTRIM(CAST(ValorAux AS nvarchar(150))))
-                        ELSE ''
-                    END
-                FROM dbo.TA_CONFIGURACION
-                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'CLASEDEPRECIODEFAULT';
-                """,
-                cancellationToken: ct));
-
-            if (!string.IsNullOrWhiteSpace(claseConfigurada))
-                clasePrecio = claseConfigurada.Trim();
-        }
+        var resolved = await articuloPrecioResolver.ResolveContextAsync(cn, clienteCodigo, ct);
+        var clasePrecio = Math.Clamp(resolved.ClasePrecio, 1, 8).ToString();
+        var clasePrecioOferta = await TryReadConfigValueAsync(cn, "CLASEPRECIOOFERTA", ct);
+        if (ParseClasePrecio(clasePrecioOferta) == 1 && !string.Equals(clasePrecioOferta.Trim(), "1", StringComparison.Ordinal))
+            clasePrecioOferta = string.Empty;
+        var idLista = resolved.IdLista?.Trim() ?? string.Empty;
+        var nombreLista = string.Empty;
 
         if (!await TableExistsAsync(cn, "V_MA_PreciosCab", ct))
         {
             return new PricingContext
             {
-                ClasePrecioActual = clasePrecio
+                ClasePrecioActual = clasePrecio,
+                ClasePrecioOfertaActual = clasePrecioOferta,
+                ListaPrecioActual = idLista
             };
         }
 
-        var lista = await cn.QuerySingleOrDefaultAsync<ListaPrecioRow>(new CommandDefinition(
-            """
-            SELECT TOP (1)
-                ISNULL(LTRIM(RTRIM(IdLista)), '') AS IdLista,
-                ISNULL(LTRIM(RTRIM(Nombre)), '') AS Nombre
-            FROM dbo.V_MA_PreciosCab
-            WHERE TipoLista = 'V'
-            ORDER BY
-                CASE
-                    WHEN (VigenciaDesde IS NULL OR VigenciaDesde <= GETDATE())
-                     AND (VigenciaHasta IS NULL OR VigenciaHasta >= GETDATE()) THEN 0
-                    ELSE 1
-                END,
-                IdLista;
-            """,
-            cancellationToken: ct));
+        if (!string.IsNullOrWhiteSpace(idLista))
+        {
+            nombreLista = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+                """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(Nombre)), '')
+                FROM dbo.V_MA_PreciosCab
+                WHERE TipoLista = 'V' AND LTRIM(RTRIM(IdLista)) = LTRIM(RTRIM(@IdLista));
+                """,
+                new { IdLista = idLista },
+                cancellationToken: ct)) ?? string.Empty;
+        }
 
         return new PricingContext
         {
             ClasePrecioActual = clasePrecio,
-            ListaPrecioActual = lista?.IdLista?.Trim() ?? string.Empty,
-            NombreListaPrecioActual = lista?.Nombre?.Trim() ?? string.Empty
+            ClasePrecioOfertaActual = clasePrecioOferta,
+            ListaPrecioActual = idLista,
+            NombreListaPrecioActual = nombreLista
         };
     }
 
@@ -2436,7 +2467,28 @@ public sealed class PuntoVentaService(
         if (precioLista > 0)
             return decimal.Round(precioLista, 2);
 
-        return decimal.Round(row.PrecioBase1, 2);
+        var precioBase = clasePrecio switch
+        {
+            2 => row.PrecioBase2,
+            3 => row.PrecioBase3,
+            4 => row.PrecioBase4,
+            5 => row.PrecioBase5,
+            6 => row.PrecioBase6,
+            7 => row.PrecioBase7,
+            8 => row.PrecioBase8,
+            _ => row.PrecioBase1
+        };
+
+        return decimal.Round(precioBase > 0m ? precioBase : row.PrecioBase1, 2);
+    }
+
+    private static (decimal Original, decimal Effective, bool IsOffer) ResolvePriceDetails(PuntoVentaArticleRow row, int clasePrecio)
+    {
+        var original = ResolvePrice(row, clasePrecio);
+        var oferta = decimal.Round(row.PrecioOferta, 2);
+        return oferta > 0m
+            ? (original, oferta, true)
+            : (original, original, false);
     }
 
     private static int ParseClasePrecio(string clasePrecio)
@@ -3056,6 +3108,7 @@ public sealed class PuntoVentaService(
         public string ListaPrecioActual { get; init; } = string.Empty;
         public string NombreListaPrecioActual { get; init; } = string.Empty;
         public string ClasePrecioActual { get; init; } = DefaultClasePrecio;
+        public string ClasePrecioOfertaActual { get; init; } = string.Empty;
     }
 
     private sealed class SpResultRow
@@ -3090,6 +3143,13 @@ public sealed class PuntoVentaService(
         public bool Pesable { get; init; }
         public string RutaImagen { get; init; } = string.Empty;
         public decimal PrecioBase1 { get; init; }
+        public decimal PrecioBase2 { get; init; }
+        public decimal PrecioBase3 { get; init; }
+        public decimal PrecioBase4 { get; init; }
+        public decimal PrecioBase5 { get; init; }
+        public decimal PrecioBase6 { get; init; }
+        public decimal PrecioBase7 { get; init; }
+        public decimal PrecioBase8 { get; init; }
         public decimal PrecioLista1 { get; init; }
         public decimal PrecioLista2 { get; init; }
         public decimal PrecioLista3 { get; init; }
@@ -3098,6 +3158,7 @@ public sealed class PuntoVentaService(
         public decimal PrecioLista6 { get; init; }
         public decimal PrecioLista7 { get; init; }
         public decimal PrecioLista8 { get; init; }
+        public decimal PrecioOferta { get; init; }
     }
 
     private sealed record MailConfig(string Server, int Port, string FromAddress, string Password, bool EnableSsl);

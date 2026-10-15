@@ -18,10 +18,10 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
         var maestroConIva = ParseBool(await ReadConfigAsync(cn, "MaestroArticuloConIVA", ct, tx));
         var fijaListasConIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASCONIVA", ct, tx));
         var fijaListasSinIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASSINIVA", ct, tx));
-        var claseDefaultRaw = await ReadConfigAsync(cn, "CLASEPRECIOVENTA", ct, tx);
-        if (string.IsNullOrWhiteSpace(claseDefaultRaw))
-            claseDefaultRaw = await ReadConfigAsync(cn, "ClaseDePrecioDefault", ct, tx);
-        var claseDefault = int.TryParse(claseDefaultRaw, out var cd) && cd is >= 1 and <= 8 ? cd : 1;
+        var claseDefaultRaw = await ReadConfigAsync(cn, "CLASEDEPRECIODEFAULT", ct, tx);
+        if (!int.TryParse(claseDefaultRaw, out var cdDefault) || cdDefault is < 1 or > 8)
+            claseDefaultRaw = await ReadConfigAsync(cn, "CLASEPRECIOVENTA", ct, tx);
+        var claseDefault = int.TryParse(claseDefaultRaw, out var cd) && cd is >= 1 and <= 8 ? cd : 4;
 
         var codigo = (clienteCodigo ?? string.Empty).Trim();
         var esConsumidorFinal = false;

@@ -3,8 +3,16 @@
 
 @{
     var requestPath = (HttpContextAccessor.HttpContext?.Request.Path.Value ?? string.Empty).TrimEnd('/');
-    var isPosPwaRoute = requestPath.EndsWith("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase)
-        || requestPath.EndsWith("/ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
+    const string posRouteMarker = "/ventas/punto-venta";
+    var posRouteIndex = requestPath.IndexOf(posRouteMarker, StringComparison.OrdinalIgnoreCase);
+    var isPosPwaRoute = posRouteIndex >= 0;
+    var posScopePath = isPosPwaRoute
+        ? requestPath[..(posRouteIndex + posRouteMarker.Length)]
+        : posRouteMarker;
+    var idPuntoVenta = HttpContextAccessor.HttpContext?.Request.Query["idPuntoVenta"].ToString();
+    var posManifestHref = $"/manifest-punto-venta?start={Uri.EscapeDataString(posScopePath)}"
+        + (string.IsNullOrWhiteSpace(idPuntoVenta) ? string.Empty : $"&idPuntoVenta={Uri.EscapeDataString(idPuntoVenta)}")
+        + "&v=20261014b";
 }
 
 <!DOCTYPE html>
@@ -30,16 +38,22 @@
     <link rel="stylesheet" href="/css/carga-viajes.css?v=20261009b" />
     <link rel="stylesheet" href="/css/sticky-list-headers.css?v=20260715b" />
     <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix" />
-    <link id="app-manifest" rel="manifest" href="@(isPosPwaRoute ? "/manifest-punto-venta.webmanifest?v=20261014a" : "/manifest.webmanifest")" />
+    <link id="app-manifest" rel="manifest" href="@(isPosPwaRoute ? posManifestHref : "/manifest.webmanifest")" />
     <script>
         (function () {
             var path = (window.location.pathname || '').toLowerCase();
             var manifest = document.getElementById('app-manifest');
-            if (manifest && (path === '/ventas/punto-venta'
-                || path === '/ventas/punto-venta/'
-                || path === '/ventas/punto-venta/mostrador'
-                || path === '/ventas/punto-venta/mostrador/'))
-                manifest.href = '/manifest-punto-venta.webmanifest?v=20261014a';
+            var marker = '/ventas/punto-venta';
+            var markerIndex = path.indexOf(marker);
+            if (!manifest || markerIndex < 0)
+                return;
+
+            var scope = path.substring(0, markerIndex + marker.length);
+            var idPuntoVenta = new URLSearchParams(window.location.search).get('idPuntoVenta');
+            var href = '/manifest-punto-venta?start=' + encodeURIComponent(scope);
+            if (idPuntoVenta)
+                href += '&idPuntoVenta=' + encodeURIComponent(idPuntoVenta);
+            manifest.href = href + '&v=20261014b';
         })();
     </script>
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />

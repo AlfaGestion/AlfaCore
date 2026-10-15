@@ -97,6 +97,9 @@
     private bool _directPuntoVentaChecked;
     private const string PuntoVentaStorageKey = "alfacore.pos.puntoVentaId";
 
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
+
     protected override void OnInitialized() => UpdatePageHeader();
 
     protected override void OnAfterRender(bool firstRender)
@@ -116,12 +119,17 @@
 
         try
         {
-            var storedId = await Js.InvokeAsync<string?>("localStorage.getItem", PuntoVentaStorageKey);
-            if (!int.TryParse(storedId, out var idPuntoVenta) || idPuntoVenta <= 0)
-                return;
+            var idPuntoVenta = IdPuntoVentaQuery.GetValueOrDefault();
+            if (idPuntoVenta <= 0)
+            {
+                var storedId = await Js.InvokeAsync<string?>("localStorage.getItem", PuntoVentaStorageKey);
+                if (!int.TryParse(storedId, out idPuntoVenta) || idPuntoVenta <= 0)
+                    return;
+            }
 
             if (_puntosVenta.Any(x => x.Id == idPuntoVenta))
             {
+                await Js.InvokeVoidAsync("localStorage.setItem", PuntoVentaStorageKey, idPuntoVenta.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={idPuntoVenta}&directo=1"));
             }
         }
