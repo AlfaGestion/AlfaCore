@@ -2023,9 +2023,17 @@
                                                 </button>
                                                 @if (message.EsRespuestaAsistente)
                                                 {
+                                                    var marcaAsistente = GetMarcaAsistente(message.IdMensaje);
+                                                    var esBuena = marcaAsistente == AlfaCore.Models.AsistenteCorreccionAcciones.Buena;
                                                     <button type="button"
-                                                            class="btn btn--ghost btn--sm message-action-button"
-                                                            title="Enseñarle al asistente: qué tendría que haber respondido"
+                                                            class="btn btn--ghost btn--sm message-action-button @(esBuena ? "is-active" : string.Empty)"
+                                                            title="@(esBuena ? "Marcada como respuesta correcta (tocá para quitar)" : "Esta respuesta del asistente estuvo bien")"
+                                                            @onclick="() => AlternarRespuestaBuenaAsync(message)">
+                                                        <i class="bi @(esBuena ? "bi-hand-thumbs-up-fill" : "bi-hand-thumbs-up")"></i>
+                                                    </button>
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button @(marcaAsistente is not null && !esBuena ? "is-active" : string.Empty)"
+                                                            title="@(marcaAsistente is not null && !esBuena ? "Ya se corrigió esta respuesta (podés cargar otra corrección)" : "Enseñarle al asistente: qué tendría que haber respondido")"
                                                             @onclick="() => AbrirEnsenarAsistente(message)">
                                                         <i class="bi bi-mortarboard"></i>
                                                     </button>
@@ -7681,6 +7689,7 @@
     {
         _selectedConversation = cache.Conversation;
         _messages = OrderConversationMessages(cache.Messages);
+        _ = CargarMarcasAsistenteAsync(idConversacion);
         _adjuntosPorMensaje = cache.AttachmentsByMessage.ToDictionary(x => x.Key, x => x.Value.ToList());
         _conversationTotalMessageCount = cache.TotalMessages;
         _hasMoreOlderMessages = cache.HasMoreOlderMessages;
@@ -12272,6 +12281,8 @@
         IReadOnlyList<ConversacionAdjuntoDto> attachments)
     {
         _messages = OrderConversationMessages(page.Messages);
+        if (page.Messages.FirstOrDefault()?.IdConversacion is long idConversacionPagina)
+            _ = CargarMarcasAsistenteAsync(idConversacionPagina);
         _adjuntosPorMensaje = GroupAttachmentsByMessage(attachments);
         _conversationTotalMessageCount = Math.Max(page.TotalMessages, _messages.Count);
         _hasMoreOlderMessages = page.HasMoreBefore;
@@ -12762,20 +12773,83 @@
     private string? _ensenarError;
     private bool _ensenarGuardando;
 
-    private bool EnsenarRespuestaTienePrecio
-        => System.Text.RegularExpressions.Regex.IsMatch(_ensenarRespuesta ?? string.Empty, @"\$\s?\d");
+    // Respuestas del asistente ya marcadas 👍 o corregidas en la conversación abierta (IdMensaje → acción).
+    private IReadOnlyDictionary<long, string> _marcasAsistente = new Dictionary<long, string>();
+    private long _marcasAsistenteConversacion;
 
-    private void AbrirEnsenarAsistente(ConversacionMensajeDto message)
+    private string? GetMarcaAsistente(long idMensaje)
+        => _marcasAsistente.TryGetValue(idMensaje, out var accion) ? accion : null;
+
+    private async Task CargarMarcasAsistenteAsync(long idConversacion)
     {
-        _ensenarMensaje = message;
-        // Lo que preguntó el cliente: el último mensaje suyo antes de esta respuesta.
-        _ensenarPregunta = _messages
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var marcas = await CorreccionesAsistenteSvc.GetMensajesMarcadosAsync(idConversacion, timeout.Token);
+            if (_selectedConversation?.IdConversacion != idConversacion)
+                return;
+            _marcasAsistente = marcas;
+            _marcasAsistenteConversacion = idConversacion;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Sólo resalta los íconos: si falla, se ven sin marcar.
+        }
+    }
+
+    private async Task AlternarRespuestaBuenaAsync(ConversacionMensajeDto message)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var marcada = await CorreccionesAsistenteSvc.AlternarRespuestaBuenaAsync(new AlfaCore.Models.AsistenteCorreccionPropuesta
+            {
+                IdConversacion = message.IdConversacion,
+                IdMensaje = message.IdMensaje,
+                PreguntaCliente = PreguntaClienteAnterior(message),
+                RespuestaAsistente = message.Texto,
+                Usuario = CurrentUserNameForAudit
+            }, timeout.Token);
+
+            var marcas = new Dictionary<long, string>(_marcasAsistente);
+            if (marcada)
+                marcas[message.IdMensaje] = AlfaCore.Models.AsistenteCorreccionAcciones.Buena;
+            else
+                marcas.Remove(message.IdMensaje);
+            _marcasAsistente = marcas;
+            _actionError = null;
+            _actionMessage = marcada
+                ? "Gracias: el asistente va a usar esta respuesta como ejemplo de cómo responder."
+                : "Se quitó la marca de respuesta correcta.";
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex is InvalidOperationException ? ex.Message : "No se pudo marcar la respuesta.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Lo que preguntó el cliente antes de esa respuesta: su último mensaje con texto.</summary>
+    private string PreguntaClienteAnterior(ConversacionMensajeDto message)
+        => _messages
             .Where(m => string.Equals(m.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase)
                         && (m.FechaHora < message.FechaHora || (m.FechaHora == message.FechaHora && m.IdMensaje < message.IdMensaje))
                         && !string.IsNullOrWhiteSpace(m.Texto))
             .OrderByDescending(m => m.FechaHora).ThenByDescending(m => m.IdMensaje)
             .Select(m => m.Texto.Trim())
             .FirstOrDefault() ?? string.Empty;
+
+    private bool EnsenarRespuestaTienePrecio
+        => System.Text.RegularExpressions.Regex.IsMatch(_ensenarRespuesta ?? string.Empty, @"\$\s?\d");
+
+    private void AbrirEnsenarAsistente(ConversacionMensajeDto message)
+    {
+        _ensenarMensaje = message;
+        _ensenarPregunta = PreguntaClienteAnterior(message);
         _ensenarRespuesta = string.Empty;
         _ensenarAccion = AlfaCore.Models.AsistenteCorreccionAcciones.Responder;
         _ensenarError = null;
@@ -12810,6 +12884,8 @@
             }, timeout.Token);
 
             _ensenarMensaje = null;
+            var marcas = new Dictionary<long, string>(_marcasAsistente) { [mensaje.IdMensaje] = guardada.Accion };
+            _marcasAsistente = marcas;
             _actionError = null;
             _actionMessage = guardada.Estado == AlfaCore.Models.AsistenteCorreccionEstados.Aprobada
                 ? "Listo: el asistente ya lo tiene en cuenta para las próximas consultas parecidas."

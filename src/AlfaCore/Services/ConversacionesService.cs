@@ -8998,7 +8998,7 @@ public sealed class ConversacionesService(
                 var correcciones = await BuscarCorreccionesAsync(texto, token).ConfigureAwait(false);
                 var correccionDirecta = correcciones.FirstOrDefault(c =>
                     c.Parecido >= ConversacionAsistenteCorreccionesService.ParecidoDirecto
-                    && c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket);
+                    && c.Correccion.Accion is AsistenteCorreccionAcciones.Responder or AsistenteCorreccionAcciones.Derivar);
                 var correccionSinTicket = correcciones.Any(c => c.Correccion.Accion == AsistenteCorreccionAcciones.SinTicket);
                 var correccionesGuia = correcciones
                     .Where(c => c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket)
@@ -10270,9 +10270,12 @@ public sealed class ConversacionesService(
         foreach (var c in correcciones)
         {
             var pregunta = c.Correccion.PreguntaCliente.Replace('\n', ' ').Trim();
-            sb.AppendLine(c.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
-                ? $"- Si el cliente pregunta algo como \"{pregunta}\": no lo resuelvas vos, pasalo a una persona (tipo DERIVA)."
-                : $"- Si el cliente pregunta algo como \"{pregunta}\": respondé en esta línea: \"{c.Correccion.RespuestaCorrecta.Trim()}\"");
+            sb.AppendLine(c.Correccion.Accion switch
+            {
+                AsistenteCorreccionAcciones.Derivar => $"- Si el cliente pregunta algo como \"{pregunta}\": no lo resuelvas vos, pasalo a una persona (tipo DERIVA).",
+                AsistenteCorreccionAcciones.Buena => $"- Ante algo como \"{pregunta}\", el equipo marcó como correcta esta respuesta (usala de ejemplo, adaptándola): \"{c.Correccion.RespuestaCorrecta.Trim()}\"",
+                _ => $"- Si el cliente pregunta algo como \"{pregunta}\": respondé en esta línea: \"{c.Correccion.RespuestaCorrecta.Trim()}\""
+            });
         }
 
         return string.IsNullOrWhiteSpace(informacion)

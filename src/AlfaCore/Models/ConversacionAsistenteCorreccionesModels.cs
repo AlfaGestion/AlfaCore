@@ -12,16 +12,20 @@ public static class AsistenteCorreccionAcciones
     /// <summary>Responder normalmente pero sin abrir un ticket automático.</summary>
     public const string SinTicket = "SIN_TICKET";
 
+    /// <summary>👍 La respuesta del asistente estuvo bien: ejemplo a seguir (nunca se responde directo con ella).</summary>
+    public const string Buena = "BUENA";
+
     public static string Normalizar(string? accion)
     {
         var a = (accion ?? string.Empty).Trim().ToUpperInvariant();
-        return a is Derivar or SinTicket ? a : Responder;
+        return a is Derivar or SinTicket or Buena ? a : Responder;
     }
 
     public static string Descripcion(string? accion) => Normalizar(accion) switch
     {
         Derivar => "Pasarlo a una persona",
         SinTicket => "No abrir ticket",
+        Buena => "Respuesta correcta",
         _ => "Responder esto"
     };
 }

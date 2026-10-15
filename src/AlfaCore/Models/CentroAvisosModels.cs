@@ -30,7 +30,11 @@ public static class AvisoTipos
     public const string Crm = "CRM";
     public const string TopeIa = "TOPE_IA";
     public const string Conversacion = "CONVERSACION";
+    public const string AsistenteAprendizaje = "ASISTENTE_APRENDIZAJE";
 }
+
+/// <summary>Correcciones del asistente pendientes de aprobar (solo para administradores de Conversaciones).</summary>
+public sealed record AvisoCorreccionesFuente(int Pendientes, int UltimoId, DateTime UltimaFecha);
 
 /// <summary>Última asignación de una conversación abierta asignada a un técnico del usuario.</summary>
 public sealed class AvisoConversacionFuente
