@@ -9078,6 +9078,20 @@ public sealed class ConversacionesService(
                     };
                 }
 
+                // Un mensaje de prueba ("Prueba chat web") tampoco se deriva ni genera ticket (2026-10-15):
+                // el modelo contestaba "parece que estás probando" pero marcaba DERIVA y abría un ticket.
+                if (EsMensajeDePrueba(texto) && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "RESUELVE",
+                        PuedeResponder = true,
+                        Respuesta = string.IsNullOrWhiteSpace(result?.Respuesta)
+                            ? "¡Hola! Recibimos tu mensaje de prueba. Cuando quieras, escribinos tu consulta."
+                            : result!.Respuesta
+                    };
+                }
+
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
@@ -9111,7 +9125,7 @@ public sealed class ConversacionesService(
                 // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
                 // ya uno abierto) y el cliente recibe el número.
                 int? numeroTicketBot = null;
-                if (tipo == "DERIVA" && config.BotGeneraTicket)
+                if (tipo == "DERIVA" && config.BotGeneraTicket && EsConsultaParaTicket(texto))
                 {
                     numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
@@ -10150,6 +10164,28 @@ public sealed class ConversacionesService(
             return "¡Genial! Si necesitás algo más, avisame.";
         return "¡Hola! ¿En qué te puedo ayudar?";
     }
+
+    private static readonly HashSet<string> PalabrasDePrueba = new(StringComparer.Ordinal)
+    {
+        "prueba", "pruebas", "probando", "probar", "pruebo", "test", "testing", "testeo", "testeando"
+    };
+
+    /// <summary>
+    /// "Prueba", "Prueba chat web", "test": alguien probando el canal, no una consulta (2026-10-15).
+    /// Mensajes cortos (hasta 5 palabras) con una palabra de prueba; "hago una prueba de factura y me
+    /// da error" sigue siendo una consulta.
+    /// </summary>
+    internal static bool EsMensajeDePrueba(string texto)
+    {
+        var palabras = Regex.Matches(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[a-z]+")
+            .Select(m => m.Value)
+            .ToArray();
+        return palabras.Length is > 0 and <= 5 && palabras.Any(PalabrasDePrueba.Contains);
+    }
+
+    /// <summary>Sólo se abre un ticket automático cuando el mensaje es una consulta real.</summary>
+    internal static bool EsConsultaParaTicket(string texto)
+        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto);
 
     internal static bool EsMensajeSocial(string texto)
     {
