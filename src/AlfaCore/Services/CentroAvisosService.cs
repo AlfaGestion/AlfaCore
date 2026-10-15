@@ -25,7 +25,8 @@ public sealed class CentroAvisosService(
     IAppUserSessionService appUserSession,
     INovedadesService novedadesService,
     IAppEventService appEvents,
-    IIaConsumoService? iaConsumo = null) : ICentroAvisosService
+    IIaConsumoService? iaConsumo = null,
+    IConversacionesAuthorizationService? conversacionesAuth = null) : ICentroAvisosService
 {
     private const string ModuleName = "CentroAvisos";
     internal const int DiasAvisoAlta = 7;
@@ -151,7 +152,11 @@ public sealed class CentroAvisosService(
         if (tablas.Contains("ALFACORE_AVISOS_LEIDOS"))
             leidos.UnionWith(await GetClavesLeidasAsync(ct));
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema, conversaciones);
+        var correcciones = tablas.Contains("CONV_ASISTENTE_CORRECCIONES") && await EsAdministradorConversacionesAsync(ct)
+            ? await GetCorreccionesPendientesAsync(cn, ct)
+            : null;
+
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema, conversaciones, correcciones);
     }
 
     /// <summary>
@@ -176,7 +181,8 @@ public sealed class CentroAvisosService(
         IaTopeEstadoDto? topeIa = null,
         IEnumerable<AvisoCrmFuente>? oportunidades = null,
         IEnumerable<NovedadSistemaInfo>? sistema = null,
-        IEnumerable<AvisoConversacionFuente>? conversaciones = null)
+        IEnumerable<AvisoConversacionFuente>? conversaciones = null,
+        AvisoCorreccionesFuente? correcciones = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -334,10 +340,29 @@ public sealed class CentroAvisosService(
             {
                 Clave = $"conv:{c.IdConversacion.ToString(CultureInfo.InvariantCulture)}:{c.IdAsignacion.ToString(CultureInfo.InvariantCulture)}",
                 Tipo = AvisoTipos.Conversacion,
-                Titulo = string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}",
-                Detalle = "Te asignaron esta conversación",
+                Titulo = c.EsPedidoNovedades
+                    ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Pide novedades" : $"Pide novedades: {c.Contacto.Trim()}")
+                    : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
+                Detalle = c.EsPedidoNovedades ? "El cliente pide novedades de su tema pendiente" : "Te asignaron esta conversación",
                 FechaHora = c.FechaHora,
                 Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
+        // Correcciones del asistente para aprobar (2026-10-15): un aviso con la cantidad; la clave lleva
+        // la última, así que una corrección nueva vuelve a avisar aunque se haya marcado leído el anterior.
+        if (correcciones is { Pendientes: > 0 } corr)
+        {
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"corr:{corr.UltimoId.ToString(CultureInfo.InvariantCulture)}",
+                Tipo = AvisoTipos.AsistenteAprendizaje,
+                Titulo = "Correcciones del asistente para revisar",
+                Detalle = corr.Pendientes == 1
+                    ? "El equipo propuso 1 corrección para el asistente IA"
+                    : $"El equipo propuso {corr.Pendientes.ToString(CultureInfo.InvariantCulture)} correcciones para el asistente IA",
+                FechaHora = corr.UltimaFecha,
+                Ruta = "/conversaciones/configuracion?seccion=asistente-ia&subseccion=aprendido"
             });
         }
 
@@ -433,7 +458,7 @@ public sealed class CentroAvisosService(
             WHERE name IN (N'CAL_EVENTOS', N'CAL_RECORDATORIOS', N'CAL_RESERVAS_REUNION',
                            N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS',
                            N'TICK_TICKETS', N'TICK_ESTADOS', N'CRM_OPORTUNIDADES', N'CRM_ETAPAS',
-                           N'CONV_CONVERSACIONES', N'CONV_ASIGNACIONES');
+                           N'CONV_CONVERSACIONES', N'CONV_ASIGNACIONES', N'CONV_ASISTENTE_CORRECCIONES');
             """;
         var tablas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var cmd = new SqlCommand(sql, cn);
@@ -582,6 +607,34 @@ public sealed class CentroAvisosService(
         return oportunidades;
     }
 
+    private async Task<bool> EsAdministradorConversacionesAsync(CancellationToken ct)
+    {
+        if (conversacionesAuth is null)
+            return false;
+        try
+        {
+            return await conversacionesAuth.CanManageAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<AvisoCorreccionesFuente?> GetCorreccionesPendientesAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1), ISNULL(MAX(IdCorreccion), 0), MAX(FechaPropuesta)
+            FROM dbo.CONV_ASISTENTE_CORRECCIONES
+            WHERE Baja = 0 AND Estado = N'PENDIENTE';
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct) || rd.GetInt32(0) == 0)
+            return null;
+        return new AvisoCorreccionesFuente(rd.GetInt32(0), rd.GetInt32(1), rd.IsDBNull(2) ? DateTime.Now : rd.GetDateTime(2));
+    }
+
     private static async Task<List<AvisoConversacionFuente>> GetConversacionesAsignadasAsync(
         SqlConnection cn, IReadOnlyList<string> tecnicos, DateTime ahora, CancellationToken ct)
     {
@@ -589,10 +642,11 @@ public sealed class CentroAvisosService(
         var sql = $"""
             SELECT TOP (50)
                 c.IdConversacion, a.IdAsignacion, LTRIM(RTRIM(ISNULL(a.IdTecnico, N''))),
-                ISNULL(c.NombreVisible, N''), LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))), a.FechaHora
+                ISNULL(c.NombreVisible, N''), LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))), a.FechaHora,
+                ISNULL(a.Observaciones, N'')
             FROM dbo.CONV_CONVERSACIONES c
             CROSS APPLY (
-                SELECT TOP (1) x.IdAsignacion, x.IdTecnico, x.UsuarioAccion, x.FechaHora
+                SELECT TOP (1) x.IdAsignacion, x.IdTecnico, x.UsuarioAccion, x.FechaHora, x.Observaciones
                 FROM dbo.CONV_ASIGNACIONES x
                 WHERE x.IdConversacion = c.IdConversacion
                 ORDER BY x.FechaHora DESC, x.IdAsignacion DESC
@@ -618,7 +672,8 @@ public sealed class CentroAvisosService(
                 IdTecnico = rd.GetString(2),
                 Contacto = rd.GetString(3),
                 UsuarioAccion = rd.GetString(4),
-                FechaHora = rd.GetDateTime(5)
+                FechaHora = rd.GetDateTime(5),
+                Observaciones = rd.GetString(6)
             });
         }
         return conversaciones;

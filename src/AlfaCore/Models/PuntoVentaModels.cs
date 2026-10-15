@@ -31,6 +31,7 @@ public sealed class PuntoVentaCatalogDto
     public string ListaPrecioActual { get; init; } = string.Empty;
     public string NombreListaPrecioActual { get; init; } = string.Empty;
     public string ClasePrecioActual { get; init; } = "1";
+    public string ClasePrecioOfertaActual { get; init; } = string.Empty;
     public bool UsaPrecioFallback { get; init; }
     public bool TieneMasResultados { get; init; }
     public int PaginaActual { get; init; } = 1;
@@ -53,6 +54,8 @@ public sealed class PuntoVentaArticleDto
     public string Familia { get; init; } = string.Empty;
     public string IdUnidad { get; init; } = string.Empty;
     public decimal PrecioUnitario { get; init; }
+    public decimal PrecioOriginal { get; init; }
+    public bool EsPrecioOferta { get; init; }
     public decimal TasaIva { get; init; }
     public bool Exento { get; init; }
     public bool NoControlaStock { get; init; }
@@ -66,6 +69,8 @@ public sealed class PuntoVentaCartItemDto
     public string Descripcion { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
     public decimal PrecioUnitario { get; set; }
+    public decimal PrecioOriginal { get; set; }
+    public bool EsPrecioOferta { get; set; }
     public decimal Cantidad { get; set; } = 1m;
     public decimal TasaIva { get; set; }
     public bool Exento { get; set; }

@@ -30,7 +30,11 @@ public static class AvisoTipos
     public const string Crm = "CRM";
     public const string TopeIa = "TOPE_IA";
     public const string Conversacion = "CONVERSACION";
+    public const string AsistenteAprendizaje = "ASISTENTE_APRENDIZAJE";
 }
+
+/// <summary>Correcciones del asistente pendientes de aprobar (solo para administradores de Conversaciones).</summary>
+public sealed record AvisoCorreccionesFuente(int Pendientes, int UltimoId, DateTime UltimaFecha);
 
 /// <summary>Última asignación de una conversación abierta asignada a un técnico del usuario.</summary>
 public sealed class AvisoConversacionFuente
@@ -40,7 +44,11 @@ public sealed class AvisoConversacionFuente
     public string IdTecnico { get; set; } = string.Empty;
     public string Contacto { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
     public DateTime FechaHora { get; set; }
+
+    /// <summary>El asistente la asignó porque el cliente pide novedades de un tema pendiente.</summary>
+    public bool EsPedidoNovedades => Observaciones.StartsWith("Pide novedades", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Oportunidad abierta del CRM asignada a un técnico/vendedor del usuario.</summary>

@@ -359,6 +359,18 @@ public sealed class ConversacionMensajeDto
     /// defecto a "Equipo Alfa", como si lo hubiera enviado AlfaCore.
     /// </summary>
     public string Origen { get; set; } = string.Empty;
+
+    /// <summary>Automatización que mandó el mensaje (BOT, AUTOMATIZACION, ...); vacío si lo mandó una persona.</summary>
+    public string AutorAutomatico { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Respuesta del asistente IA: marcada como BOT, o un saliente viejo sin autor ni origen (antes de
+    /// 2026-10-15 los mensajes automáticos se grababan sin marca).
+    /// </summary>
+    public bool EsRespuestaAsistente =>
+        string.Equals(Direction, "SALIENTE", StringComparison.OrdinalIgnoreCase)
+        && (string.Equals(AutorAutomatico, "BOT", StringComparison.OrdinalIgnoreCase)
+            || (string.IsNullOrWhiteSpace(AutorAutomatico) && string.IsNullOrWhiteSpace(UsuarioAutor) && string.IsNullOrWhiteSpace(Origen)));
 }
 
 public sealed class ConversacionMensajesPaginaDto

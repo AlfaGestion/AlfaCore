@@ -376,6 +376,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
         sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve (algo como avisar que lo vas a ver con un compañero y responder en un rato) -- redactala vos con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución.");
+        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
         if (fueraDeHorario)
@@ -389,7 +390,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
 
         sb.AppendLine();
-        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA\", \"puede_responder\": true/false, \"respuesta\": \"...\"}.");
+        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -402,7 +403,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     private static string NormalizeTipo(string? tipo, bool puedeResponder)
     {
         var t = (tipo ?? string.Empty).Trim().ToUpperInvariant();
-        if (t is "RESUELVE" or "ACLARA" or "DERIVA")
+        if (t is "RESUELVE" or "ACLARA" or "DERIVA" or "SEGUIMIENTO")
             return t;
         return puedeResponder ? "RESUELVE" : "DERIVA";
     }
