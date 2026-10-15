@@ -40,7 +40,11 @@ public sealed class AvisoConversacionFuente
     public string IdTecnico { get; set; } = string.Empty;
     public string Contacto { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
     public DateTime FechaHora { get; set; }
+
+    /// <summary>El asistente la asignó porque el cliente pide novedades de un tema pendiente.</summary>
+    public bool EsPedidoNovedades => Observaciones.StartsWith("Pide novedades", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Oportunidad abierta del CRM asignada a un técnico/vendedor del usuario.</summary>

@@ -35,7 +35,35 @@ public sealed class ConversacionesBotTicketConsultaTests
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
 
         Assert.Contains("if (EsMensajeDePrueba(texto) && !string.Equals(result?.Tipo, \"RESUELVE\"", source, StringComparison.Ordinal);
-        Assert.Contains("if (tipo == \"DERIVA\" && config.BotGeneraTicket && EsConsultaParaTicket(texto))", source, StringComparison.Ordinal);
+        Assert.Contains("if (tipo == \"DERIVA\" && config.BotGeneraTicket && !omitirTicket && EsConsultaParaTicket(texto))", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("pudieron ver algo?")]
+    [InlineData("si,ayudame con lo que pedimos ayer")]
+    [InlineData("¿Novedades?")]
+    [InlineData("Hola, alguna novedad?")]
+    [InlineData("sigo esperando")]
+    [InlineData("hola,pudiste ver algo?")]
+    public void PedidoDeNovedades_SeReconoce(string texto)
+        => Assert.True(ConversacionesService.PideNovedades(texto));
+
+    [Theory]
+    [InlineData("No me imprime la factura")]
+    [InlineData("buen día")]
+    [InlineData("Quiero dar de alta un proveedor nuevo y no encuentro la opción en el menú de compras")]
+    public void ConsultaNueva_NoEsPedidoDeNovedades(string texto)
+        => Assert.False(ConversacionesService.PideNovedades(texto));
+
+    [Fact]
+    public void PedidoDeNovedades_RespondeSinNombrarANadieYSinTicket()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+
+        Assert.DoesNotContain("{", ConversacionesService.RespuestaSeguimiento, StringComparison.Ordinal);
+        Assert.Contains("tema pendiente", ConversacionesService.RespuestaSeguimiento, StringComparison.Ordinal);
+        Assert.Matches(@"await ResponderSeguimientoAsync\(idConversacion, pendiente, token\)\.ConfigureAwait\(false\);\s*return;", source);
+        Assert.Contains("!omitirTicket && EsConsultaParaTicket(texto)", source, StringComparison.Ordinal);
     }
 
     private static string FindRepoRoot()
