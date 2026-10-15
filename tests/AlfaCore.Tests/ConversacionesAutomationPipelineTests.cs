@@ -462,10 +462,13 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Handoff_Fix_DoesNotChangeSemanticsOfTheExistingAutomatedDedupeCheck()
     {
-        // La corrección agrega una columna/condición nueva a la MISMA consulta -- no toca
-        // yaRespondioEsteMensaje (dedupe de respuestas automáticas) ni botCount (tope
-        // BotMaxRespuestas), que siguen calculándose igual que antes.
-        Assert.Contains("(SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),", ServiceSource, StringComparison.Ordinal);
+        // yaRespondioEsteMensaje (dedupe de respuestas automáticas) sigue por IdMensaje. botCount
+        // (tope BotMaxRespuestas) desde 2026-10-15 reconoce al asistente por AutorAutomatico y cuenta
+        // sólo desde la última respuesta de una persona y en las últimas 24 h (antes contaba siempre
+        // 0 porque los mensajes del asistente se grababan sin autor).
+        Assert.Contains("{AutorMensajeSql(\"b\")} = N'BOT'", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("AND b.FechaHora >= DATEADD(hour, -24, GETDATE())", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("{AutorMensajeSql()} IN ({AutomatedOutgoingSistemaAutorSqlList})", ServiceSource, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------------------

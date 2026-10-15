@@ -1320,6 +1320,7 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             LogInboxConnection(filters, cn);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
@@ -1539,6 +1540,7 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionAuditoriaMensajeDto>();
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
             cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
@@ -9500,11 +9502,12 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
+                await EnsureMensajeOrigenColumnAsync(cn, ct);
                 // Si hay un ticket abierto vinculado, un humano ya se hizo cargo de forma asíncrona
                 // (ej. "lo vamos a analizar y te avisamos") -- el cliente no está siendo ignorado, así
                 // que el aviso de "¿seguís ahí?" y el cierre automático no aplican mientras ese ticket
                 // siga abierto.
-                const string sql = """
+                var sql = $"""
                     DECLARE @ConTicketAbierto TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
                     IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
                     BEGIN
@@ -9520,7 +9523,7 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_CONVERSACIONES c
                     INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
                     OUTER APPLY (
-                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, ISNULL(mm.SistemaAutor, '') AS SistemaAutor, mm.FechaHora
+                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, {AutorMensajeSql("mm")} AS SistemaAutor, mm.FechaHora
                         FROM dbo.CONV_MENSAJES mm
                         WHERE mm.IdConversacion = c.IdConversacion AND mm.Direction IN (N'ENTRANTE', N'SALIENTE')
                         ORDER BY mm.FechaHora DESC, mm.IdMensaje DESC
@@ -9669,7 +9672,8 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
-                const string sql = """
+                await EnsureMensajeOrigenColumnAsync(cn, ct);
+                var sql = $"""
                     SELECT TOP (200)
                         c.IdConversacion,
                         LTRIM(RTRIM(ISNULL(c.IdTecnico, ''))) AS IdTecnico,
@@ -9677,7 +9681,7 @@ public sealed class ConversacionesService(
                         CASE WHEN EXISTS (
                             SELECT 1 FROM dbo.CONV_MENSAJES n
                             WHERE n.IdConversacion = c.IdConversacion
-                              AND n.Direction = N'NOTA_INTERNA' AND ISNULL(n.SistemaAutor, '') = N'SLA'
+                              AND n.Direction = N'NOTA_INTERNA' AND {AutorMensajeSql("n")} = N'SLA'
                               AND n.FechaHora > m.FechaHora
                         ) THEN 1 ELSE 0 END AS YaRecordado
                     FROM dbo.CONV_CONVERSACIONES c
@@ -10732,7 +10736,7 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_MENSAJES humSal
             WHERE humSal.IdConversacion = c.IdConversacion
               AND humSal.Direction = N'SALIENTE'
-              AND ISNULL(humSal.SistemaAutor, N'') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
+              AND {AutorMensajeSql("humSal")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
               AND humSal.IdMensaje > ISNULL((
                     SELECT MAX(ent.IdMensaje)
                     FROM dbo.CONV_MENSAJES ent
@@ -10766,13 +10770,23 @@ public sealed class ConversacionesService(
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
+                -- Tope de respuestas: cuenta las del asistente desde la última respuesta de una persona y
+                -- dentro de las últimas 24 h. En WhatsApp cada cliente tiene UNA conversación para
+                -- siempre: contar desde el principio dejaría al asistente mudo para siempre con los
+                -- clientes habituales (2026-10-15).
+                (SELECT COUNT(1) FROM dbo.CONV_MENSAJES b
+                 WHERE b.IdConversacion = @Id AND b.Direction = N'SALIENTE' AND {AutorMensajeSql("b")} = N'BOT'
+                   AND b.FechaHora >= DATEADD(hour, -24, GETDATE())
+                   AND b.IdMensaje > ISNULL((SELECT MAX(h.IdMensaje) FROM dbo.CONV_MENSAJES h
+                                             WHERE h.IdConversacion = @Id AND h.Direction = N'SALIENTE'
+                                               AND {AutorMensajeSql("h")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0)),
                 ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'), 0),
-                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN ({AutomatedOutgoingSistemaAutorSqlList})), 0),
-                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND {AutorMensajeSql()} IN ({AutomatedOutgoingSistemaAutorSqlList})), 0),
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND {AutorMensajeSql()} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -11179,17 +11193,18 @@ public sealed class ConversacionesService(
     /// </summary>
     private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, DateTime fechaLocalActual, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
             WHERE IdConversacion = @IdConversacion
               AND Direction = N'SALIENTE'
-              AND SistemaAutor = N'AUTOMATIZACION'
+              AND {AutorMensajeSql()} = N'AUTOMATIZACION'
               AND CAST(FechaHora AS date) = @FechaLocal;
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
@@ -11268,18 +11283,19 @@ public sealed class ConversacionesService(
         DateTime fechaLocalActual,
         CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
             WHERE IdConversacion = @IdConversacion
               AND Direction = N'SALIENTE'
-              AND UPPER(LTRIM(RTRIM(ISNULL(SistemaAutor, N'')))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
+              AND UPPER(LTRIM(RTRIM({AutorMensajeSql()}))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
               AND CAST(FechaHora AS date) = @FechaLocal
               AND LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N''))) = LTRIM(RTRIM(@Texto));
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@SistemaAutor", sistemaAutor);
@@ -11563,6 +11579,7 @@ public sealed class ConversacionesService(
                 SistemaAutor,
                 IdTecnicoAutor,
                 Origen,
+                AutorAutomatico,
                 FechaHora_Grabacion
             )
             VALUES
@@ -11583,6 +11600,7 @@ public sealed class ConversacionesService(
                 @SistemaAutor,
                 @IdTecnicoAutor,
                 @Origen,
+                @AutorAutomatico,
                 GETDATE()
             );
 
@@ -11611,6 +11629,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(author.Sistema));
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         cmd.Parameters.AddWithValue("@Origen", DbNullable(message.Origen));
+        cmd.Parameters.AddWithValue("@AutorAutomatico", DbNullable(ResolveAutorAutomatico(message.SistemaAutor)));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
@@ -11622,7 +11641,13 @@ public sealed class ConversacionesService(
     /// </summary>
     private static async Task EnsureMensajeOrigenColumnAsync(SqlConnection cn, CancellationToken ct)
     {
+        var clave = $"{cn.DataSource}|{cn.Database}";
+        if (ColumnasMensajeAseguradas.ContainsKey(clave))
+            return;
+
         const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NULL
+                RETURN;
             IF NOT EXISTS (
                 SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.CONV_MENSAJES') AND name = N'Origen'
@@ -11630,9 +11655,41 @@ public sealed class ConversacionesService(
             BEGIN
                 ALTER TABLE dbo.CONV_MENSAJES ADD Origen nvarchar(40) NULL;
             END;
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.CONV_MENSAJES') AND name = N'AutorAutomatico'
+            )
+            BEGIN
+                ALTER TABLE dbo.CONV_MENSAJES ADD AutorAutomatico nvarchar(30) NULL;
+            END;
             """;
         await using var cmd = new SqlCommand(sql, cn);
         await cmd.ExecuteNonQueryAsync(ct);
+        ColumnasMensajeAseguradas[clave] = true;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> ColumnasMensajeAseguradas = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Qué automatización mandó el mensaje (BOT, AUTOMATIZACION, AUTOCIERRE_AVISO, SLA...). Va en su
+    /// propia columna porque UsuarioAutor/SistemaAutor tienen FK a TA_USUARIOS y un CHECK de "los dos
+    /// o ninguno": para un mensaje automático quedaban los dos vacíos y nada podía reconocerlo (tope
+    /// de respuestas, contención repetida, aviso de cierre, fuera de horario, SLA) (2026-10-15).
+    /// </summary>
+    internal static string? ResolveAutorAutomatico(string? sistemaAutor)
+    {
+        var valor = (sistemaAutor ?? string.Empty).Trim().ToUpperInvariant();
+        return AutomatedOutgoingSistemaAutores.Contains(valor, StringComparer.Ordinal) ? valor : null;
+    }
+
+    /// <summary>
+    /// Autor efectivo de un mensaje en SQL: la automatización (AutorAutomatico) o, si no la hay, el
+    /// SistemaAutor legacy. Los automáticos grabados antes de la columna siguen vacíos (como antes).
+    /// </summary>
+    private static string AutorMensajeSql(string? alias = null)
+    {
+        var p = string.IsNullOrWhiteSpace(alias) ? string.Empty : alias + ".";
+        return $"COALESCE(NULLIF(LTRIM(RTRIM({p}AutorAutomatico)), N''), {p}SistemaAutor, N'')";
     }
 
     private static async Task<(string Usuario, string Sistema)> ResolveLegacyMessageAuthorAsync(
