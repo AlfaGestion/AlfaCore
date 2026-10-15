@@ -1,0 +1,18 @@
+{
+  "Fecha": "2026-10-15",
+  "Alcance": "Modelo solo diagnóstico; no ejecuta VB6 ni certifica la grabación comercial.",
+  "Muestra": 100,
+  "MotorComercialCoincidencias": 81,
+  "Diagnostico": {
+    "DiferenciasConNetoIgual": 19,
+    "DiferenciasConIvaSobreNetoGuardado": 19,
+    "CierresEvaluados": 100,
+    "CierreSinAjusteCoincidencias": 100,
+    "CierreConAjusteCoincidencias": 81,
+    "Limite": "Coincidencia numérica para investigar; no demuestra la rama VB6 ejecutada ni justifica cambiar la fórmula."
+  },
+  "DocumentosConDescuentoArticulo": 5,
+  "DocumentosConExencion": 6,
+  "ConfiguracionModificada": false,
+  "NuevasEmisiones": false
+}

@@ -1,0 +1,23 @@
+{
+  "fecha": "2026-10-14",
+  "modo": "Lectura, sin ejecutar binarios",
+  "ejecutables": [
+    {
+      "ruta": "Z:\\NETSISTEMAS\\SISTEMAS\\NwSistemas\\NMC_CONT\\v_mv_ventas.exe",
+      "bytes": 13037568,
+      "ultima_modificacion": "2026-10-09T20:26:21",
+      "version": "2.02.0409",
+      "sha256": "ae35208fd94e5cb3661ea4086025594eda7e4b588ea13e28796e7457761f0650"
+    },
+    {
+      "ruta": "Z:\\NETSISTEMAS\\SISTEMAS\\NwSistemas\\NMC_CONT_DEV\\V_MV_VENTAS.EXE",
+      "bytes": 13041664,
+      "ultima_modificacion": "2026-10-13T17:49:48",
+      "version": "2.02.0412",
+      "sha256": "98f039d0634d6075a27c60054fdad9a69c546cdd9c05622a67f9d7c93b764780"
+    }
+  ],
+  "proyecto_revision": 413,
+  "proyecto_autoincremento": true,
+  "limite": "Versiones y huellas no demuestran correspondencia exacta con fuentes ni identifican la versión que creó cada comprobante histórico."
+}

@@ -1,0 +1,13 @@
+{
+  "Muestra": 100,
+  "Coincidencias": 81,
+  "Diferencias": 19,
+  "FueraAlcance": 0,
+  "MaximaDiferenciaTotal": 0.01,
+  "Decimales": 2,
+  "diferenciasTotal": 19,
+  "diferenciasNeto": 0,
+  "diferenciasIva": 19,
+  "AjustaRedondeoTotal": true,
+  "Limitacion": "Comparación retrospectiva con configuración actual; no ejecuta VB6 ni certifica emisión."
+}

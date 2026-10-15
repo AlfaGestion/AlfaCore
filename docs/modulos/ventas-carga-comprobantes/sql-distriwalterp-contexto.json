@@ -1,0 +1,413 @@
+{
+  "configuracion_comercial": [
+    {
+      "Clave": "FECHAOPERHASTA",
+      "Valor": "31/12/2026",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "FECHAOPERDESDE",
+      "Valor": "01/01/2026",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "USACCOSTO",
+      "Valor": "SI",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "UsaMultilesMonedas",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "CANTIDADDECIMALES",
+      "Valor": "2",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "DescargaStockRemitos",
+      "Valor": "SI",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "EntregaParcialRemito",
+      "Valor": "SI",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "SS_BLOQUEOACTIVO",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "LIMITECREDITOSOLOAVISO",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "PIDECLAVE_LIMITECREDITO",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "PIDECLAVE_MARKUPBASE",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "PIDECLAVE_STOCKNEG",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "DESCARGASTOCKXREPARTO",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "FACTURANPPREPARADAS",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "NOFACTURASINSTOCK",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "CIERREVENTAS",
+      "Valor": "30/06/2022",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "CIERRECAJA",
+      "Valor": "01/01/2006",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "CIERRESTOCK",
+      "Valor": "01/01/2006",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "MAESTROARTICULOCOSTOCONIVA",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "USAFCELECTRONICA",
+      "Valor": "SI",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "REVALORIZAREMITOS",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "NOFACTURAVENCIDOS",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "V_SOLOPEDIDOSPREPARADOS",
+      "Valor": "NO",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "PRECIOSFINALES",
+      "Valor": "SI",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "CANTIDADDECIMALESVENTAS",
+      "Valor": "",
+      "BytesAux": 0
+    },
+    {
+      "Clave": "PRECIOSFINALESNETO",
+      "Valor": "NO",
+      "BytesAux": 0
+    }
+  ],
+  "contexto_usuario_sql": [
+    {
+      "UsuariosCorrespondientesAlLoginSql": 0
+    }
+  ],
+  "volumenes_aproximados": [
+    {
+      "Objeto": "V_MV_RESERVAS",
+      "FilasAproximadas": 171388
+    },
+    {
+      "Objeto": "MV_ASIENTOSCCOSTO",
+      "FilasAproximadas": 0
+    },
+    {
+      "Objeto": "V_MV_Cpte",
+      "FilasAproximadas": 30620
+    },
+    {
+      "Objeto": "V_MV_CpteInsumos",
+      "FilasAproximadas": 243962
+    }
+  ],
+  "talonarios": [
+    {
+      "TC": "FC",
+      "Talonario": 0,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCXM"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 1,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 3,
+      "UnidadNegocio": "1",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 4,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABX"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 5,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 9,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 10,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 11,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "FC",
+      "Talonario": 12,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "FP",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "X"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 1,
+      "UnidadNegocio": null,
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 2,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCXM"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 5,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 6,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 7,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 8,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NC",
+      "Talonario": 9,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "H",
+      "ES": "E",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 1,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 2,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 3,
+      "UnidadNegocio": "1",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 4,
+      "UnidadNegocio": "3",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 5,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "AB"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 6,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 7,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "ND",
+      "Talonario": 8,
+      "UnidadNegocio": "4",
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "ABCMX"
+    },
+    {
+      "TC": "NP",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "",
+      "ES": "",
+      "LETRAS": "X"
+    },
+    {
+      "TC": "PR",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "",
+      "ES": "",
+      "LETRAS": "X"
+    },
+    {
+      "TC": "RM",
+      "Talonario": 0,
+      "UnidadNegocio": null,
+      "DEBEHABER": "D",
+      "ES": "S",
+      "LETRAS": "XR"
+    }
+  ],
+  "consolidados_rm": [
+    {
+      "FacturasConVariosRemitosEnAplicacion": 0
+    }
+  ],
+  "muestra_pedidos_resumen": {
+    "limite": 30,
+    "criterio": "TC NP, orden IdComprobante descendente; no representa todos los pedidos ni un orden global por fecha",
+    "pedidos": 30,
+    "con_reserva": 0,
+    "sin_reserva": 30,
+    "con_fecha_preparacion": 0,
+    "identificadores_documentos": "No exportados"
+  }
+}

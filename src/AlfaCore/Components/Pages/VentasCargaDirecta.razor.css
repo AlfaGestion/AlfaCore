@@ -1,0 +1,11 @@
+.directa-page { display: flex; flex-direction: column; gap: var(--alfa-space-16, 16px); padding: var(--alfa-space-24, 24px); min-width: 0; font-size: var(--alfa-font-body, 13px); }
+.directa-fields { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(280px, 2fr) repeat(3, minmax(140px, 1fr)); gap: var(--alfa-space-12, 12px); }
+.directa-scroll { overflow-x: auto; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.directa-table { width: 100%; min-width: 980px; border-collapse: collapse; }
+.directa-table th, .directa-table td { padding: var(--alfa-space-12, 12px); border-bottom: 1px solid var(--alfa-border-default); text-align: left; }
+.directa-table th { background: var(--alfa-bg-surface); }
+.directa-table td:nth-child(3) { width: 150px; }
+.directa-table td:nth-child(5), .directa-table td:nth-child(6) { min-width: 130px; }
+.directa-total { display: flex; flex-wrap: wrap; gap: var(--alfa-space-16, 16px); padding: var(--alfa-space-16, 16px); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+@media(max-width: 1200px) { .directa-fields { grid-template-columns: 1fr 1fr; } }
+@media(max-width: 650px) { .directa-fields { grid-template-columns: 1fr; } }

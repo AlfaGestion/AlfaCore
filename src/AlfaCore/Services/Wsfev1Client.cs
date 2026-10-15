@@ -55,6 +55,16 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
                 new XElement(Ns + "MonCotiz", Formatear(solicitud.MonCotiz)),
                 new XElement(Ns + "CondicionIVAReceptorId", solicitud.CondicionIvaReceptorId));
 
+            if (solicitud.ComprobantesAsociados.Count > 0)
+            {
+                detalle.Add(new XElement(Ns + "CbtesAsoc",
+                    solicitud.ComprobantesAsociados.Select(c => new XElement(Ns + "CbteAsoc",
+                        new XElement(Ns + "Tipo", c.Tipo), new XElement(Ns + "PtoVta", c.PuntoVenta),
+                        new XElement(Ns + "Nro", c.Numero),
+                        string.IsNullOrWhiteSpace(c.Cuit) ? null : new XElement(Ns + "Cuit", c.Cuit),
+                        c.Fecha is { } fecha ? new XElement(Ns + "CbteFch", fecha.ToString("yyyyMMdd")) : null))));
+            }
+
             if (solicitud.Ivas.Count > 0)
             {
                 detalle.Add(new XElement(Ns + "Iva",
@@ -87,6 +97,52 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
         {
             return ArcaCaeResultadoDto.Fallo(ex.Message, solicitud.CbteDesde, solicitud.CbteHasta);
         }
+    }
+
+    public async Task<ArcaComprobanteConsultadoDto> ConsultarComprobanteAsync(WsaaTicket ticket, string cuit, int ptoVta,
+        int cbteTipo, long numero, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct)
+    {
+        var body = new XElement(Ns + "FECompConsultar", BuildAuth(ticket, cuit),
+            new XElement(Ns + "FeCompConsReq", new XElement(Ns + "CbteTipo", cbteTipo),
+                new XElement(Ns + "CbteNro", numero), new XElement(Ns + "PtoVta", ptoVta)));
+        var response = await PostAsync(body, ambiente, wsfeUrl, ct, reintentarServicioNoDisponible: true);
+        var result = response.Descendants().FirstOrDefault(x => x.Name.LocalName == "FECompConsultarResult")
+            ?? throw new ArcaWsfeException("FECompConsultar no devolvió el resultado esperado.");
+        VerificarErrores(result, "FECompConsultar");
+        var item = result.Elements().FirstOrDefault(x => x.Name.LocalName == "ResultGet")
+            ?? throw new ArcaWsfeException("ARCA no devolvió un comprobante para conciliar.");
+        string Campo(string key) => item.Elements().FirstOrDefault(x => x.Name.LocalName == key)?.Value
+            ?? throw new ArcaWsfeException($"Falta {key} en el comprobante consultado.");
+        decimal Importe(string key) => decimal.Parse(Campo(key), CultureInfo.InvariantCulture);
+        int Entero(string key) => int.Parse(Campo(key), CultureInfo.InvariantCulture);
+        if (Campo("Resultado") != "A" || Campo("EmisionTipo") != "CAE")
+            throw new ArcaWsfeException("La consulta no corresponde a un comprobante aprobado con CAE.");
+        var ivas = item.Elements().FirstOrDefault(x => x.Name.LocalName == "Iva")?.Elements()
+            .Select(x => new ArcaIvaAlicuotaDto(
+                int.Parse(x.Elements().Single(y => y.Name.LocalName == "Id").Value, CultureInfo.InvariantCulture),
+                decimal.Parse(x.Elements().Single(y => y.Name.LocalName == "BaseImp").Value, CultureInfo.InvariantCulture),
+                decimal.Parse(x.Elements().Single(y => y.Name.LocalName == "Importe").Value, CultureInfo.InvariantCulture))).ToList() ?? [];
+        var solicitud = new ArcaCaeSolicitudDto(cuit, Entero("PtoVta"), Entero("CbteTipo"), Entero("Concepto"), Entero("DocTipo"),
+            Campo("DocNro"), DateTime.ParseExact(Campo("CbteFch"), "yyyyMMdd", CultureInfo.InvariantCulture),
+            long.Parse(Campo("CbteDesde"), CultureInfo.InvariantCulture), long.Parse(Campo("CbteHasta"), CultureInfo.InvariantCulture),
+            Importe("ImpTotal"), Importe("ImpTotConc"), Importe("ImpNeto"), Importe("ImpOpEx"), Importe("ImpTrib"), Importe("ImpIVA"),
+            Entero("CondicionIVAReceptorId"), Campo("MonId"), Importe("MonCotiz"), ivas)
+        {
+            ComprobantesAsociados = item.Elements().FirstOrDefault(x => x.Name.LocalName == "CbtesAsoc")?.Elements()
+                .Select(x =>
+                {
+                    string Asociado(string key) => x.Elements().Single(y => y.Name.LocalName == key).Value;
+                    var cuitAsociado = x.Elements().FirstOrDefault(y => y.Name.LocalName == "Cuit")?.Value;
+                    var fechaAsociada = x.Elements().FirstOrDefault(y => y.Name.LocalName == "CbteFch")?.Value;
+                    return new ArcaComprobanteAsociadoDto(int.Parse(Asociado("Tipo"), CultureInfo.InvariantCulture),
+                        int.Parse(Asociado("PtoVta"), CultureInfo.InvariantCulture), long.Parse(Asociado("Nro"), CultureInfo.InvariantCulture),
+                        cuitAsociado, string.IsNullOrWhiteSpace(fechaAsociada) ? null :
+                            DateTime.ParseExact(fechaAsociada, "yyyyMMdd", CultureInfo.InvariantCulture));
+                }).ToList() ?? []
+        };
+        var cae = Campo("CodAutorizacion");
+        if (cae.Length != 14 || !cae.All(char.IsDigit)) throw new ArcaWsfeException("El CAE consultado no tiene el formato esperado.");
+        return new(solicitud, cae, DateTime.ParseExact(Campo("FchVto"), "yyyyMMdd", CultureInfo.InvariantCulture));
     }
 
     private static ArcaCaeResultadoDto ParseResultado(XElement result, long cbteDesde, long cbteHasta)

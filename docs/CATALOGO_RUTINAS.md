@@ -605,6 +605,194 @@ Criterio aplicado:
 - Datos que usa: modela `TemplateJson` y datos adaptados de Cotización.
 - Observaciones: es independiente de Dapper, UI y Playwright.
 
+## Ventas — Carga de Comprobantes
+
+### CargaComprobantesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesService.cs`
+- Propósito: consulta, simula, valida, graba y recupera facturas de homologación desde pedidos/remitos, controlando sesión, permiso y talonario.
+- Datos que usa: `ICargaComprobantesService`, `CargaComprobantesRepository`, sesión y permisos del usuario.
+- Observaciones: limita la emisión comercial al circuito simple de homologación; recupera operaciones y genera PDF con marca de prueba. Errores técnicos mediante `IAppEventService` hacia `AUX_ERR`.
+
+### CargaComprobantesRepository
+
+- Tipo: Repository
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesRepository.cs`
+- Propósito: obtiene contexto, documentos paginados con saldo positivo y filtros de fechas/vendedor/zona/unidad/depósito, y renglones pendientes mediante Dapper.
+- Datos que usa: tablas confirmadas `V_MV_CPTE`, `V_MV_CPTEINSUMOS`, `MV_APLICACION`, `V_MV_STOCK`, `V_MV_RESERVAS`, `TA_USUARIOS`, `TA_CONFIGURACION`, `V_TA_CPTE`; vista confirmada `VT_V_MV_INSUMOS_SALDOSRM`.
+- Observaciones: lectura únicamente; tipos verificados en DISTRIWALTERP, sin asumirlos por prefijo; cantidades repetidas requieren distribución posterior.
+
+### CargaComprobantesSimulador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesSimulador.cs`
+- Propósito: valida selección y proyecta importes históricos proporcionales a la cantidad a facturar.
+- Datos que usa: DTOs `CargaComprobantesOrigen`, `CargaComprobantesContexto`, `CargaComprobantesCantidad`.
+- Observaciones: no es una liquidación fiscal ni sustituye el totalizador VB6 completo.
+
+### VentasCargaComprobantes
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/VentasCargaComprobantes.razor`
+- Propósito: prepara, simula, valida y confirma facturas de prueba desde pedidos/remitos individuales; incluye historial, recuperación y PDF.
+- Datos que usa: `ICargaComprobantesService`, `IPageHeaderService`, `IAppUiOperationService` y componentes AlfaDesign.
+- Observaciones: ruta `/ventas/carga-comprobantes`, clave D60CCW; conserva la carga ante errores y limpia contexto al cambiar base/usuario.
+
+### CargaComprobantesModels
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/CargaComprobantesModels.cs`
+- Propósito: transporta contexto, filtros, talonarios, documentos, renglones y resultados de simulación.
+- Datos que usa: datos adaptados por el repositorio; no accede a SQL ni depende de UI.
+- Observaciones: diferencia el precio histórico del importe de referencia y conserva ID/secuencia del origen.
+
+### CargaComprobantesCalculador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesCalculador.cs`
+- Propósito: liquida artículos con precios finales históricos, Currency de cuatro decimales y ajuste lineal de neto/IVA por renglón.
+- Datos que usa: origen, cantidades y configuración de precios/precisión/alícuota general; FP consulta habilitación y `RobaIvaProforma`.
+- Observaciones: conserva la conversión Currency del IVA después de multiplicar cantidad (el retorno unitario de `clsTotales.ImporteIVA` es Double); informa capacidades pendientes y no certifica ni habilita emisión fiscal.
+
+### CargaComprobantesEdicionPrecios
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesEdicionPrecios.cs`
+- Propósito: autoriza la edición manual de precio neto/descuento en FC directa y FP, y controla el porcentaje de línea y la rebaja efectiva combinada.
+- Datos que usa: `TA_USUARIOS`, `VT_CLIENTES`, `V_TA_Cpra_Vta`, `V_TA_VENDEDORES`, claves `MaxDto`/`MaxDtoProforma` de `TA_CONFIGURACION` y referencia de lista resuelta en servidor.
+- Observaciones: relee permisos y límites en preparación/grabación, sin excepción para administrador, sin modificar maestros ni admitir autorización por PIN. Se invoca desde el preparador y reutiliza validación/cálculo transaccional; errores técnicos se registran por la capa de aplicación central.
+
+### CargaComprobantesActualizadorOrigen
+
+- Tipo: Repository
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesActualizadorOrigen.cs`
+- Propósito: actualiza los contadores del detalle de NP/RM con las reglas legacy dentro de la transacción provista por el llamador.
+- Datos que usa: `V_MV_Cpte`, `V_MV_CpteInsumos`, `VT_V_MV_INSUMOS_SALDOSRM`, snapshot de origen y cantidades.
+- Observaciones: no genera factura ni aplicación; requiere transacción y rollback ante cualquier fallo, sin conexión independiente.
+
+### CargaComprobantesElectronicaVerificador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesElectronicaVerificador.cs`
+- Propósito: valida ambiente/punto de homologación, autentica WSAA y consulta los últimos números A/B/C sin solicitar CAE.
+- Datos que usa: `IArcaConfigService`, `IWsaaClient`, `IWsfev1Client`, conexión autorizada del llamador.
+- Observaciones: rechaza producción, endpoints ajenos a homologación y emisores de unidad con otro punto de venta.
+
+### CargaComprobantesElectronicaEmisor
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesElectronicaEmisor.cs`
+- Propósito: solicita y registra una autorización de prueba en homologación a partir de un origen validado, con identidad estable de operación.
+- Datos que usa: calculador, cliente fiscal oficial, WSAA/WSFE y `ALFACORE_VENTAS_HOMO_PRUEBA`.
+- Observaciones: no consume el origen ni genera el comprobante comercial por sí solo. Emite FC/NC/ND en homologación con el plan del coordinador; valida la factura asociada en ARCA. Concilia respuestas inciertas mediante FECompConsultar y comparación de solicitud completa, incluidos comprobantes asociados; nunca reenvía automáticamente.
+
+### CargaComprobantesPlanificador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesPlanificador.cs`
+- Propósito: prepara el plan comercial y su snapshot para un NP/RM o carga directa FC/NC/ND/FP, con cuentas, vencimiento, período, talonario y efectos de stock.
+- Datos que usa: repositorio, configuración central, cliente oficial, `V_TA_INPUT_VENTAS`, `MA_CUENTAS`, subdiarios y `MV_EJERCICIOS`.
+- Observaciones: relee contexto dentro de la transacción final; rechaza capacidades no incorporadas y compara huellas antes de grabar.
+
+### CargaComprobantesDirectaPreparador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesDirectaPreparador.cs`
+- Propósito: resuelve cliente, lista/clase y artículos de un borrador sin insertar pedidos/remitos auxiliares.
+- Datos que usa: cliente oficial, configuración y resolutor de precios compartido, artículos y precios consultados en lote, unidades y depósitos.
+- Observaciones: valida alcance y cantidades; rechaza circuitos especiales pendientes de portar. No permite sobreescribir precios del servidor.
+
+### CargaComprobantesAsociadoPreparador
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesAsociadoPreparador.cs`
+- Propósito: valida la factura asociada a NC/ND y prepara la referencia fiscal y el snapshot de sus datos/aplicaciones.
+- Datos que usa: factura, artículos originales, aplicaciones previas y journals comerciales/fiscales de homologación.
+- Observaciones: NC conserva precios, costo y equivalencias originales, controla cantidades acreditadas y rechaza renglones ambiguos; bloquea otras notas pendientes sobre la factura.
+
+### CargaComprobantesDirectaModels
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/CargaComprobantesDirectaModels.cs`
+- Propósito: transporta el borrador estable de FC/NC/ND/FP y sus artículos/cantidades.
+- Datos que usa: GUID de borrador, tipo, factura asociada opcional, cliente, unidad, depósito y observaciones.
+- Observaciones: los precios y cuentas se resuelven en el servidor; el GUID no representa un pedido/remito y evita duplicar el borrador.
+
+### CargaComprobantesGrabador
+
+- Tipo: Repository
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesGrabador.cs`
+- Propósito: registra cabecera, artículos, stock, asiento con IVA, aplicación y autorización fiscal dentro de una única transacción del llamador.
+- Datos que usa: plan, `V_MV_CPTE`, `V_MV_CPTEINSUMOS`, `V_MV_STOCK`, `MV_ASIENTOS`, `MV_APLICACION`, `V_MV_CPTE_ELECTRONICOS`, `V_TA_CPTE`.
+- Observaciones: no llama a ARCA ni hace commit; numera asiento con bloqueo y exige balance cero; actualiza el siguiente número legacy. NC invierte el asiento/libro IVA; FP siempre genera asiento, omite el libro IVA y la fila electrónica.
+
+### CargaComprobantesEmisionService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CargaComprobantesEmisionService.cs`
+- Propósito: coordina ensayo con rollback, confirmación del snapshot, solicitud de CAE y grabación comercial recuperable.
+- Datos que usa: planificador, grabador, emisor electrónico, `ALFACORE_VENTAS_CARGA_OPERACION` y `ALFACORE_VENTAS_HOMO_PRUEBA`.
+- Observaciones: solo homologación; no mantiene transacción SQL durante HTTP; conserva operación aprobada pendiente de grabación ante fallo local o cambio de sesión. FP asigna numeración local y confirma movimientos/journal en una sola transacción sin WSAA/CAE. Identifica cargas directas por borrador y serializa notas por factura asociada.
+
+### CargaComprobantesGrabacionModels
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/CargaComprobantesGrabacionModels.cs`
+- Propósito: transporta el plan comercial inmutable por operación y el resultado de grabación o recuperación.
+- Datos que usa: origen, liquidación, cantidades, cuentas, huellas y datos de autorización.
+- Observaciones: no contiene certificados, claves privadas ni tickets; el journal es operativo, no configuración paralela.
+
+### ConfiguracionCargaComprobantesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConfiguracionCargaComprobantesService.cs`
+- Propósito: consulta y edición acotada de parámetros compartidos de ventas en la base activa, con referencia al inventario VB6.
+- Datos que usa: `TA_CONFIGURACION` (TABLE), `TA_USUARIOS` (TABLE), `IAppEventService`, sesión y usuario autorizados; CSV técnico embebido.
+- Observaciones: solo administrador central puede guardar; claves permitidas, validación, control de versión, transacción y auditoría; inventario legacy sin valores sensibles. `USAPROFORMA` y `UsaFacturaProforma` se conservan como claves diferentes.
+
+## Reportes comerciales
+
+### ReporteComercialService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ReporteComercialService.cs`
+- Propósito: resumen, detalle y cuenta corriente de compras/ventas con filtros y paginación.
+- Datos que usa: `Libro_ComprasConFP` (VIEW), `Libro_VentasConFP` (VIEW), `MV_ASIENTOS` (TABLE), `VT_CLIENTES` (VIEW), `VT_PROVEEDORES` (VIEW), `TA_TAREAS` (TABLE), `ALFACORE_TAREAS_WEB` (TABLE), sesión, permisos e `IAppEventService`.
+- Observaciones: Dapper; sin conexión de respaldo; verifica tenant antes/después de leer y registra errores en AUX_ERR. Usa campos fiscales signados existentes; no vuelve a invertir NC. Cuenta corriente limitada a cuentas comerciales y movimiento neto del período.
+
+### ReporteComprasService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ReporteComprasService.cs`
+- Propósito: conservar el contrato de compras delegando en el servicio compartido.
+- Datos que usa: `ReporteComercialService`, DTO existentes de reportes.
+- Observaciones: elimina las consultas a columnas inexistentes y el acceso sin sesión mediante conexión global.
+
+### ReporteComercialPanel
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/ReporteComercialPanel.razor`
+- Propósito: interfaz compartida de ambos reportes, Smart Search, pestañas, indicadores, tablas, paginación, Excel y PDF.
+- Datos que usa: `ReporteComercialService`, `ReporteComprasExcelExporter`, PageHeader y contexto de ruta/sesión.
+- Observaciones: encabezado AlfaDesign y filtros aplicados independientes del borrador; descarta lecturas/descargas al cambiar base y conserva rutas SaaS en el visor.
+
+### ReporteVentas
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/ReporteVentas.razor`
+- Propósito: acceso a Reporte de Ventas dentro del módulo Ventas.
+- Datos que usa: `ReporteComercialPanel` en modo ventas.
+- Observaciones: ruta `/ventas/reportes`, prefijo SaaS y clave nueva `D60RPTWEB`; menú instalado mediante actualización idempotente.
+
+### ReporteComprasExcelExporter
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ReporteComprasExcelExporter.cs`
+- Propósito: exportación de las tres vistas de compras/ventas con títulos y columnas según el área.
+- Datos que usa: DTO de reportes comerciales, ClosedXML.
+- Observaciones: nombre histórico preservado por compatibilidad; el panel exporta todos los registros filtrados desde el circuito autorizado, sin navegar a una descarga fuera del contexto activo.
+
 ## Stored Procedures usados
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.

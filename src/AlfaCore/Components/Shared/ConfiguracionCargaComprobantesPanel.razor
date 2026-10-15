@@ -1,0 +1,140 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ConfiguracionCargaComprobantesService Configuracion
+@inject IAppUiOperationService UiOps
+@inject ISessionService Sessions
+@inject IAppUserSessionService Users
+@implements IDisposable
+
+<section class="config-carga">
+    <AlfaNotification Message="@_feedback" />
+    <p>Parámetros de la base activa compartidos con Alfa Gestión. Cada opción indica su alcance. Guardar modifica únicamente los valores editados.</p>
+    <div class="config-carga__links">
+        <AlfaButton OnClick='() => OnNavegar.InvokeAsync("puntoventa")'>Punto de Venta</AlfaButton>
+        <AlfaButton OnClick='() => OnNavegar.InvokeAsync("factura")'>Facturación electrónica</AlfaButton>
+        <AlfaButton OnClick='() => OnNavegar.InvokeAsync("padron")'>Padrón ARCA / alta por CUIT</AlfaButton>
+    </div>
+    @if (_snapshot is null)
+    {
+        <p>Sin configuración cargada. Usá Cancelar para volver a leer la base activa.</p>
+    }
+    else
+    {
+        @if (!_snapshot.PuedeGuardar) { <p>Solo un administrador central puede modificar estos parámetros compartidos.</p> }
+        @foreach (var grupo in ConfiguracionCargaComprobantesService.Definiciones.Where(Coincide).GroupBy(x => x.Grupo))
+        {
+            <fieldset disabled="@_busy">
+                <legend>@grupo.Key</legend>
+                <div class="config-carga__grid">
+                    @foreach (var d in grupo)
+                    {
+                        var valor = _snapshot.Valores.Single(x => x.Clave == d.Clave);
+                        <div @key="d.Clave">
+                            @if (d.Tipo == "SI_NO")
+                            {
+                                <AlfaSelect Label="@d.Titulo" Value="@valor.Valor" ValueChanged="v => valor.Valor = v ?? string.Empty"
+                                    Options="@Opciones" Disabled="@(!_snapshot.PuedeGuardar || _busy)" />
+                            }
+                            else
+                            {
+                                <AlfaInput Label="@d.Titulo" Value="@valor.Valor" ValueChanged="v => valor.Valor = v ?? string.Empty"
+                                    Disabled="@(d.Tipo == "LECTURA" || !_snapshot.PuedeGuardar || _busy)" MaxLength="150" />
+                            }
+                            <small><code>@d.Clave</code> · @d.Alcance @(valor.Existe ? "" : "· Sin valor explícito")</small>
+                        </div>
+                    }
+                </div>
+            </fieldset>
+        }
+        <details>
+            <summary>Inventario de configuraciones del programa original (@_inventario.Count)</summary>
+            <p>Referencia de claves relevadas en VB6. Su presencia no implica que estén implementadas en AlfaCore. No se exponen certificados ni valores sensibles.</p>
+            <AlfaInput Label="Buscar clave legacy" Value="@_buscar" ValueChanged="v => _buscar = v ?? string.Empty" />
+            <p>@string.Join(" · ", _inventario.Where(x => x.Clave.Contains(_buscar, StringComparison.OrdinalIgnoreCase)).Take(50).Select(x => x.Clave + (x.Dinamica ? " (dinámica)" : "")))</p>
+            <small>Se muestran hasta 50 coincidencias. Afiná la búsqueda para consultar otras claves.</small>
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter] public string Busqueda { get; set; } = "";
+    private bool Coincide(ConfiguracionCargaDefinicion d)
+    {
+        var texto=ConfiguracionCatalogo.Normalizar($"{d.Clave} {d.Titulo} {d.Grupo} {d.Alcance}");
+        return ConfiguracionCatalogo.Normalizar(Busqueda).Split(' ',StringSplitOptions.RemoveEmptyEntries).All(texto.Contains);
+    }
+    [Parameter] public EventCallback<string> OnNavegar { get; set; }
+    private ConfiguracionCargaSnapshot? _snapshot;
+    private Dictionary<string, string> _original = [];
+    private IReadOnlyList<ConfiguracionCargaReferencia> _inventario = [];
+    private AppUiMessage? _feedback;
+    private bool _busy;
+    private bool _disposed;
+    private int _versionContexto;
+    private string _buscar = "";
+    private static readonly IReadOnlyList<AlfaSelectOption> Opciones = [new("", "Heredar / sin valor explícito"), new("SI", "Sí"), new("NO", "No")];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sessions.SessionChanged += ContextoChanged;
+        Users.StateChanged += ContextoChanged;
+        _inventario = ConfiguracionCargaComprobantesService.GetInventarioLegacy();
+        await RecargarAsync();
+    }
+
+    public async Task RecargarAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        var version = _versionContexto;
+        try
+        {
+            var result = await UiOps.RunAsync(() => Configuracion.GetAsync(), "No se pudo leer la configuración de comprobantes.");
+            if (_disposed || version != _versionContexto) return;
+            _feedback = result.Feedback;
+            if (result.Success && result.Value is not null)
+            {
+                _snapshot = result.Value;
+                _original = _snapshot.Valores.ToDictionary(x => x.Clave, x => x.Valor);
+            }
+        }
+        finally { _busy = false; if (!_disposed) StateHasChanged(); }
+    }
+
+    public async Task GuardarAsync()
+    {
+        if (_busy || _snapshot is null) return;
+        var cambios = _snapshot.Valores.Where(x => x.Valor != _original[x.Clave])
+            .Select(x => new ConfiguracionCargaCambio(x.Clave, x.Valor, x.Version)).ToList();
+        if (cambios.Count == 0) { _feedback = AppUiMessage.Info("Sin cambios", "No hay valores modificados para guardar."); StateHasChanged(); return; }
+        _busy = true;
+        var result = await UiOps.RunAsync(async () => { await Configuracion.GuardarAsync(_snapshot.SesionId, cambios); return true; }, "No se pudo guardar la configuración de comprobantes.");
+        _busy = false;
+        if (result.Success)
+        {
+            await RecargarAsync();
+            _feedback = AppUiMessage.Success("Guardado", "Se guardaron únicamente las claves modificadas.");
+        }
+        else _feedback = result.Feedback;
+        StateHasChanged();
+    }
+
+    private void ContextoChanged()
+    {
+        _versionContexto++;
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            _snapshot = null; _original.Clear();
+            _feedback = AppUiMessage.Warning("Cambió la sesión", "Usá Cancelar para leer la configuración de la base activa.");
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Sessions.SessionChanged -= ContextoChanged;
+        Users.StateChanged -= ContextoChanged;
+    }
+}

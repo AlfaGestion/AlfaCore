@@ -270,6 +270,7 @@ public class Program
         builder.Services.AddScoped<ISaaSTenantRouteGuard, SaaSTenantRouteGuard>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
+        builder.Services.AddScoped<ReporteComercialService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<ICierreCajaService, CierreCajaService>();
         builder.Services.AddScoped<CierreCajaExportService>();
@@ -352,6 +353,7 @@ public class Program
         builder.Services.AddScoped<IMercadoPagoPointConfigService, MercadoPagoPointConfigService>();
         builder.Services.AddScoped<IMercadoPagoPointPosService, MercadoPagoPointPosService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
+        builder.Services.AddScoped<ConfiguracionCargaComprobantesService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
@@ -405,6 +407,14 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
+        builder.Services.AddScoped<CargaComprobantesRepository>();
+        builder.Services.AddScoped<CargaComprobantesElectronicaVerificador>();
+        builder.Services.AddScoped<CargaComprobantesElectronicaEmisor>();
+        builder.Services.AddScoped<CargaComprobantesPlanificador>();
+        builder.Services.AddScoped<CargaComprobantesActualizadorOrigen>();
+        builder.Services.AddScoped<CargaComprobantesGrabador>();
+        builder.Services.AddScoped<CargaComprobantesEmisionService>();
+        builder.Services.AddScoped<ICargaComprobantesService, CargaComprobantesService>();
         builder.Services.AddScoped<IPortalClienteService, PortalClienteService>();
         builder.Services.AddScoped<IPortalClienteRecuperarClaveService, PortalClienteRecuperarClaveService>();
         builder.Services.AddScoped<IPortalClienteRegistrarEmailService, PortalClienteRegistrarEmailService>();

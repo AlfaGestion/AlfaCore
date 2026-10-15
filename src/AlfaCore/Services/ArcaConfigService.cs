@@ -14,7 +14,7 @@ public sealed class ArcaConfigService(
     private const string ClaveGlobal = "GLOBAL";
     private const int ArcaSqlCommandTimeoutSeconds = 120;
     private const string WsaaProduccionDefault = "https://wsaa.arca.gov.ar/ws/services/LoginCms?wsdl";
-    private const string WsaaHomologacionDefault = "https://wsaa.homo.arca.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsaaHomologacionDefault = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
     // La consulta de padrón es un circuito independiente de facturación y se
     // ejecuta siempre contra producción.
     private const string WsaaPadronProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
@@ -490,7 +490,7 @@ public sealed class ArcaConfigService(
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (
                 N'USAFCELECTRONICA', N'ARCA_AMBIENTE', N'ARCA_MODO_FALLO_CAE',
-                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE'
+                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE', N'WSAA_URL', N'WSFE_URL'
             )
             """;
 

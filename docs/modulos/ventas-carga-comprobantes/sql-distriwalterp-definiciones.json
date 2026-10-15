@@ -1,0 +1,295 @@
+{
+  "fecha": "2026-10-14",
+  "base": "DISTRIWALTERP",
+  "contenido": "Identidad y huellas de definiciones leídas; sin copiar texto SQL instalado",
+  "modulos": [
+    {
+      "objeto": "FMT_MV_APLICACION_IDCOMPROBANTE",
+      "tipo": "TR",
+      "caracteres": 5620,
+      "lineas": 96,
+      "sha256_utf8": "5989b3cee29e5a985a1f0139f7cb4e85f31ca16afe29ffaad83e6f4baeb9a650",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FMT_NODEL",
+      "tipo": "TR",
+      "caracteres": 5956,
+      "lineas": 122,
+      "sha256_utf8": "4a3f4054ae740e2f8a2ba9a9b23e1e8005f2d2d747b4685153b4d373e5300469",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FMT_V_MV_CPTE",
+      "tipo": "TR",
+      "caracteres": 1868,
+      "lineas": 37,
+      "sha256_utf8": "dd8906f8b52d92f947c46a0c0e4188712400c73143ffc82d6c0d14b0cc94a413",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FMT_V_MV_CPTE_INS",
+      "tipo": "TR",
+      "caracteres": 1031,
+      "lineas": 24,
+      "sha256_utf8": "4ffd087fda813ea3346363f2f847483a9c6abb5f894bd5eed37218ff2e25f299",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FMT_V_MV_STOCK",
+      "tipo": "TR",
+      "caracteres": 12446,
+      "lineas": 246,
+      "sha256_utf8": "d907839ba72cb959fa7d6437961645392a215e0bbf4c48c23362c2ce12b72fc6",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FMT_VALIDA_DEPOSITO",
+      "tipo": "TR",
+      "caracteres": 1407,
+      "lineas": 43,
+      "sha256_utf8": "27e0c8529f86ff5b310e00976841b2b457bcacf7d3b6652fb42b05e373fb59b0",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FN_FMT_LEERCODIGO",
+      "tipo": "FN",
+      "caracteres": 521,
+      "lineas": 20,
+      "sha256_utf8": "4dc9c5a314f52de9d405d6fba50627b5eab54e47e2c00a0309443c100c2f724c",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FN_OBTIENE_PROXIMO_NUMERO_CPTE",
+      "tipo": "FN",
+      "caracteres": 811,
+      "lineas": 21,
+      "sha256_utf8": "90feddd77eaec06b902d54c9c51edde2e40959b2e77070b8842b0383b02dab5f",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FN_OBTIENE_VALOR_CONFIGURACION",
+      "tipo": "FN",
+      "caracteres": 399,
+      "lineas": 12,
+      "sha256_utf8": "51eb462221935296070e1cd97f34a0ecbed347f2e2fd458d1b4e50e5f94ff847",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FN_PRECIO_CON_IVA",
+      "tipo": "FN",
+      "caracteres": 778,
+      "lineas": 18,
+      "sha256_utf8": "d1c7e28908eb2b7cc481c57926e27941e4ae0f27801a36dd24af2909aa0bc3a1",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "FN_PRECIO_SIN_IVA",
+      "tipo": "FN",
+      "caracteres": 515,
+      "lineas": 13,
+      "sha256_utf8": "527dc7507ce42f845fdcb55e18f2cd2bca9f76b37fc2fa631a82fafab38f06f3",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "MV_Asientos_ValidaFechas",
+      "tipo": "TR",
+      "caracteres": 10523,
+      "lineas": 229,
+      "sha256_utf8": "aca739ce09d3a91fd1962a8f666668541bc770cedf161e1a464e2c24f72321da",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_ComprobantesVencidos",
+      "tipo": "P ",
+      "caracteres": 630,
+      "lineas": 13,
+      "sha256_utf8": "dbfe1f2bb8ba75e301c60dd1909f5ea1238b889e88e89a7da815be3f87af5b80",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_CUENTA_HABILITADA",
+      "tipo": "P ",
+      "caracteres": 592,
+      "lineas": 18,
+      "sha256_utf8": "ebf91c310e42618c856e6ed23fa581c9e964f70263e1daddb885f7c0d633b9fe",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_FmtLeerCodigo",
+      "tipo": "P ",
+      "caracteres": 846,
+      "lineas": 20,
+      "sha256_utf8": "072f61bc7fc950f2bb72147e86076d3afe702f32c47bfc32c84b7902a720e4e6",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_VerificaCpteRelacionados",
+      "tipo": "TR",
+      "caracteres": 331,
+      "lineas": 8,
+      "sha256_utf8": "5b08a78281425b2605ab68f8e876d2eacba17992e5ff12ef4197b26b737e4c27",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_VerificaCpteRelacionados_Observ",
+      "tipo": "TR",
+      "caracteres": 352,
+      "lineas": 8,
+      "sha256_utf8": "d451db542854ad9b67f7390745c759d221265882702214b651b06f4b9faba279",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_VerificaCpteRelacionadosInsumos",
+      "tipo": "TR",
+      "caracteres": 380,
+      "lineas": 9,
+      "sha256_utf8": "212b8ad6d1e2ade82c4779d83a8bcde048536bd430082404cccb47be8e270a41",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "NW_VerificaCpteRelacionadosTareas",
+      "tipo": "TR",
+      "caracteres": 359,
+      "lineas": 9,
+      "sha256_utf8": "c417076146767a08839decd3dc60c69c7b47014608fa8bd8a7422ae37ff9e254",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "sp_web_Alta_Comprobante",
+      "tipo": "P ",
+      "caracteres": 4957,
+      "lineas": 133,
+      "sha256_utf8": "3d3159dceba86f45169b1396a4addff10aa884bc72fc7aa7155eb836765f0c90",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "sp_web_CpteInsumos",
+      "tipo": "P ",
+      "caracteres": 9318,
+      "lineas": 280,
+      "sha256_utf8": "de047d16caa3ff588a00e91d941d0340c516587b327c5854ed82d3471ed816b1",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "sp_web_CreaAplicacionCobranzaFactura",
+      "tipo": "P ",
+      "caracteres": 2366,
+      "lineas": 73,
+      "sha256_utf8": "c01acd5ee45a44422eb498991e2b5872d1578a97deae553f2019233307eb9a5d",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "sp_web_CreaCobPorFactura",
+      "tipo": "P ",
+      "caracteres": 4593,
+      "lineas": 136,
+      "sha256_utf8": "c0eac281ffc6e47821f4cd0cdbc8a0d1bcaf328d9d5b397b9c394f7100124beb",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "sp_web_creaLineaAsiento",
+      "tipo": "P ",
+      "caracteres": 4545,
+      "lineas": 135,
+      "sha256_utf8": "e7efe682fdc579ddc2d639bc7ce9bc29d3133a62f0cf7373a3605e6a2c446411",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "TRG_SECUENCIAINSUMOS",
+      "tipo": "TR",
+      "caracteres": 968,
+      "lineas": 30,
+      "sha256_utf8": "225543540869449e0f21c5e4771c93ac7030946984b9b727632312e2661557f2",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "TRG_SECUENCIAOBSERV",
+      "tipo": "TR",
+      "caracteres": 956,
+      "lineas": 30,
+      "sha256_utf8": "7d20b5181e51f5a8b60f0997e21f537bf6b7820ea1d9212aa5c507c18c5dfd32",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "TRG_SECUENCIATAREAS",
+      "tipo": "TR",
+      "caracteres": 966,
+      "lineas": 30,
+      "sha256_utf8": "4a03b4d2bd477b0f64b5406a994dec999fc2093e3677ca6fdb34dbb0665c6455",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_OCPendiente_New",
+      "tipo": "V ",
+      "caracteres": 940,
+      "lineas": 22,
+      "sha256_utf8": "767da0908ad442015a3d98eb0837679f4f36e6376e6074d566a42cbadde5f08f",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_TA_CPTE",
+      "tipo": "V ",
+      "caracteres": 568,
+      "lineas": 9,
+      "sha256_utf8": "d72f133fb69bdaad76befc085fe238314ae7b8f5ebcc5fd12b38190c259145c3",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_CPTEINSUMOS_CONS2",
+      "tipo": "V ",
+      "caracteres": 651,
+      "lineas": 18,
+      "sha256_utf8": "bf244c3425f5db78a166afb6088319e7c49b12f372fb3b3936890051fd321907",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_Insumos_OCPendiente",
+      "tipo": "V ",
+      "caracteres": 855,
+      "lineas": 10,
+      "sha256_utf8": "14ba50ab3068e8af7a29dfe0a62f2d0ae9535bb41165d96c871aecc3daf78326",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_INSUMOS_SALDOSRM",
+      "tipo": "V ",
+      "caracteres": 1034,
+      "lineas": 38,
+      "sha256_utf8": "2d3e3f72fb05f9d10f001b46c0610bf7c00d2a58b586caa226f0f5e0cb87922a",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_Stock_Cons",
+      "tipo": "V ",
+      "caracteres": 297,
+      "lineas": 9,
+      "sha256_utf8": "64160ff80b5e95bd48b2bd7ea978d8c53e2cfbce8efcee9424c4ba21f630eb3a",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_CPTEINSUMOS_CONS3P",
+      "tipo": "V ",
+      "caracteres": 784,
+      "lineas": 11,
+      "sha256_utf8": "f6e1b700cf427897a84b561b3bba3f80b4c0f3e3596a5dfa34032c6d574f0d5e",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_INSUMOS_APLICACION",
+      "tipo": "V ",
+      "caracteres": 611,
+      "lineas": 8,
+      "sha256_utf8": "39667afdde1cdec729ae25c39c79d999afa50caf1d7ccdd8755a10677de07500",
+      "definicion_disponible": true
+    },
+    {
+      "objeto": "VT_V_MV_Stock_Cons3",
+      "tipo": "V ",
+      "caracteres": 348,
+      "lineas": 7,
+      "sha256_utf8": "85305c552b17e50c78cec4a86c676428fb9495066104dfbf0b319a9af89f4d14",
+      "definicion_disponible": true
+    }
+  ]
+}
