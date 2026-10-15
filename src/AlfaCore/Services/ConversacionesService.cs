@@ -1320,6 +1320,7 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             LogInboxConnection(filters, cn);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
@@ -1539,6 +1540,7 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionAuditoriaMensajeDto>();
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
             cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
@@ -1930,7 +1932,8 @@ public sealed class ConversacionesService(
                         WHERE a.IdMensaje = m.IdMensaje
                     ) THEN 1 ELSE 0 END,
                     ISNULL(m.MarcaInterna, ''),
-                    ISNULL(m.Origen, '')
+                    ISNULL(m.Origen, ''),
+                    ISNULL(m.AutorAutomatico, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1983,7 +1986,8 @@ public sealed class ConversacionesService(
                     TecnicoAutorNombre = GetString(rd, 13),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
                     MarcaInterna = GetString(rd, 16),
-                    Origen = GetString(rd, 17)
+                    Origen = GetString(rd, 17),
+                    AutorAutomatico = GetString(rd, 18)
                 };
 
                 items.Add(item);
@@ -2029,7 +2033,8 @@ public sealed class ConversacionesService(
                             WHERE a.IdMensaje = m.IdMensaje
                         ) THEN 1 ELSE 0 END AS TieneAdjuntos,
                         ISNULL(m.MarcaInterna, '') AS MarcaInterna,
-                        ISNULL(m.Origen, '') AS Origen
+                        ISNULL(m.Origen, '') AS Origen,
+                        ISNULL(m.AutorAutomatico, '') AS AutorAutomatico
                     FROM dbo.CONV_MENSAJES m
                     INNER JOIN dbo.CONV_CONVERSACIONES c
                         ON c.IdConversacion = @IdConversacion
@@ -2074,7 +2079,8 @@ public sealed class ConversacionesService(
                     page.PayloadJson,
                     page.TieneAdjuntos,
                     page.MarcaInterna,
-                    page.Origen
+                    page.Origen,
+                    page.AutorAutomatico
                 FROM PagedMessages page
                 ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
                 """;
@@ -2153,7 +2159,8 @@ public sealed class ConversacionesService(
                     PayloadJson = GetString(rd, 14),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
                     MarcaInterna = GetString(rd, 16),
-                    Origen = GetString(rd, 17)
+                    Origen = GetString(rd, 17),
+                    AutorAutomatico = GetString(rd, 18)
                 });
             }
 
@@ -8986,8 +8993,27 @@ public sealed class ConversacionesService(
                     && knowledgeContext.HasSufficientContext
                     && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
 
+                // Correcciones que enseñó el equipo (2026-10-15): casi la misma pregunta -> se responde (o
+                // se deriva) directo con lo enseñado; parecida -> va como guía con prioridad al asistente.
+                var correcciones = await BuscarCorreccionesAsync(texto, token).ConfigureAwait(false);
+                var correccionDirecta = correcciones.FirstOrDefault(c =>
+                    c.Parecido >= ConversacionAsistenteCorreccionesService.ParecidoDirecto
+                    && c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket);
+                var correccionSinTicket = correcciones.Any(c => c.Correccion.Accion == AsistenteCorreccionAcciones.SinTicket);
+                var correccionesGuia = correcciones
+                    .Where(c => c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket)
+                    .ToList();
+                if (correcciones.Count > 0)
+                    resueltoSoloPorKnowledge = false;
+
                 ConversacionAsistenteRespuesta? result;
-                if (resueltoSoloPorKnowledge)
+                if (correccionDirecta is not null)
+                {
+                    result = correccionDirecta.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
+                        ? new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty }
+                        : new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = correccionDirecta.Correccion.RespuestaCorrecta };
+                }
+                else if (resueltoSoloPorKnowledge)
                 {
                     var respuestaConLink = knowledgeContext.SuggestedReply;
                     if (!string.IsNullOrWhiteSpace(knowledgeContext.LinkPublico)
@@ -9026,6 +9052,7 @@ public sealed class ConversacionesService(
                         ? config.AsistenteInformacion
                         : await asistenteConocimiento.ComponerInformacionAsync(
                             config.AsistenteInformacion, EsMensajeSocial(texto) ? null : texto, token).ConfigureAwait(false);
+                    informacionAsistente = AgregarCorreccionesAlContexto(informacionAsistente, correccionesGuia);
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, informacionAsistente, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
@@ -9078,6 +9105,60 @@ public sealed class ConversacionesService(
                     };
                 }
 
+                // Un mensaje de prueba ("Prueba chat web") tampoco se deriva ni genera ticket (2026-10-15):
+                // el modelo contestaba "parece que estás probando" pero marcaba DERIVA y abría un ticket.
+                if (EsMensajeDePrueba(texto) && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "RESUELVE",
+                        PuedeResponder = true,
+                        Respuesta = string.IsNullOrWhiteSpace(result?.Respuesta)
+                            ? "¡Hola! Recibimos tu mensaje de prueba. Cuando quieras, escribinos tu consulta."
+                            : result!.Respuesta
+                    };
+                }
+
+                // Pide novedades de algo anterior ("¿pudieron ver algo?", "lo que pedimos ayer") (2026-10-15):
+                // si hay un tema pendiente (ticket abierto o ya le respondió alguien del equipo) se le
+                // contesta sin nombrar a nadie, no se abre otro ticket y se avisa adentro. Si no hay nada
+                // anterior, se le pregunta a qué se refiere en vez de inventar un pendiente.
+                var omitirTicket = false;
+                if (string.Equals(result?.Tipo, "SEGUIMIENTO", StringComparison.OrdinalIgnoreCase)
+                    || (!string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase) && PideNovedades(texto)))
+                {
+                    TemaPendiente? pendiente = null;
+                    try
+                    {
+                        pendiente = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Nunca deja al cliente sin respuesta: si falla la búsqueda sigue el camino normal.
+                        await _appEvents.LogErrorAsync("Conversaciones", "BotSeguimiento", ex,
+                            "No se pudo buscar el tema pendiente de la conversación; el asistente siguió el camino normal.",
+                            new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                    }
+
+                    if (pendiente is { Hay: true })
+                    {
+                        await ResponderSeguimientoAsync(idConversacion, pendiente, token).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (pendiente is not null)
+                    {
+                        omitirTicket = true;
+                        result = ultimaRespuestaFueAclaracion
+                            ? null
+                            : new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = AclaracionSeguimientoSinTema };
+                    }
+                    else if (string.Equals(result?.Tipo, "SEGUIMIENTO", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result!.Tipo = "DERIVA";
+                    }
+                }
+
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
@@ -9111,7 +9192,10 @@ public sealed class ConversacionesService(
                 // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
                 // ya uno abierto) y el cliente recibe el número.
                 int? numeroTicketBot = null;
-                if (tipo == "DERIVA" && config.BotGeneraTicket)
+                if (correcciones.Count > 0)
+                    await RegistrarUsoCorreccionesAsync(idConversacion, correcciones, correccionDirecta, token).ConfigureAwait(false);
+
+                if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto))
                 {
                     numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
@@ -9446,11 +9530,12 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
+                await EnsureMensajeOrigenColumnAsync(cn, ct);
                 // Si hay un ticket abierto vinculado, un humano ya se hizo cargo de forma asíncrona
                 // (ej. "lo vamos a analizar y te avisamos") -- el cliente no está siendo ignorado, así
                 // que el aviso de "¿seguís ahí?" y el cierre automático no aplican mientras ese ticket
                 // siga abierto.
-                const string sql = """
+                var sql = $"""
                     DECLARE @ConTicketAbierto TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
                     IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
                     BEGIN
@@ -9466,7 +9551,7 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_CONVERSACIONES c
                     INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
                     OUTER APPLY (
-                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, ISNULL(mm.SistemaAutor, '') AS SistemaAutor, mm.FechaHora
+                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, {AutorMensajeSql("mm")} AS SistemaAutor, mm.FechaHora
                         FROM dbo.CONV_MENSAJES mm
                         WHERE mm.IdConversacion = c.IdConversacion AND mm.Direction IN (N'ENTRANTE', N'SALIENTE')
                         ORDER BY mm.FechaHora DESC, mm.IdMensaje DESC
@@ -9615,7 +9700,8 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
-                const string sql = """
+                await EnsureMensajeOrigenColumnAsync(cn, ct);
+                var sql = $"""
                     SELECT TOP (200)
                         c.IdConversacion,
                         LTRIM(RTRIM(ISNULL(c.IdTecnico, ''))) AS IdTecnico,
@@ -9623,7 +9709,7 @@ public sealed class ConversacionesService(
                         CASE WHEN EXISTS (
                             SELECT 1 FROM dbo.CONV_MENSAJES n
                             WHERE n.IdConversacion = c.IdConversacion
-                              AND n.Direction = N'NOTA_INTERNA' AND ISNULL(n.SistemaAutor, '') = N'SLA'
+                              AND n.Direction = N'NOTA_INTERNA' AND {AutorMensajeSql("n")} = N'SLA'
                               AND n.FechaHora > m.FechaHora
                         ) THEN 1 ELSE 0 END AS YaRecordado
                     FROM dbo.CONV_CONVERSACIONES c
@@ -10151,6 +10237,325 @@ public sealed class ConversacionesService(
         return "¡Hola! ¿En qué te puedo ayudar?";
     }
 
+    private async Task<IReadOnlyList<AsistenteCorreccionCoincidencia>> BuscarCorreccionesAsync(string texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || EsMensajeSocial(texto)
+            || serviceProvider?.GetService(typeof(IConversacionAsistenteCorreccionesService)) is not IConversacionAsistenteCorreccionesService correccionesService)
+            return [];
+
+        try
+        {
+            return await correccionesService.BuscarAplicablesAsync(texto, 3, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Nunca frena al asistente: sin correcciones responde como siempre.
+            await _appEvents.LogErrorAsync("Conversaciones", "AsistenteCorrecciones", ex,
+                "No se pudieron leer las correcciones del asistente; respondió sin ellas.", null, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Suma a la información del negocio las correcciones parecidas a la consulta, para que el
+    /// asistente las siga con prioridad sobre cualquier otra información.
+    /// </summary>
+    internal static string AgregarCorreccionesAlContexto(string informacion, IReadOnlyCollection<AsistenteCorreccionCoincidencia> correcciones)
+    {
+        if (correcciones.Count == 0)
+            return informacion;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("CORRECCIONES DEL EQUIPO (te las enseñaron las personas que atienden: seguilas con prioridad sobre cualquier otra información):");
+        foreach (var c in correcciones)
+        {
+            var pregunta = c.Correccion.PreguntaCliente.Replace('\n', ' ').Trim();
+            sb.AppendLine(c.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
+                ? $"- Si el cliente pregunta algo como \"{pregunta}\": no lo resuelvas vos, pasalo a una persona (tipo DERIVA)."
+                : $"- Si el cliente pregunta algo como \"{pregunta}\": respondé en esta línea: \"{c.Correccion.RespuestaCorrecta.Trim()}\"");
+        }
+
+        return string.IsNullOrWhiteSpace(informacion)
+            ? sb.ToString().Trim()
+            : $"{sb.ToString().Trim()}\n\n{informacion}";
+    }
+
+    private async Task RegistrarUsoCorreccionesAsync(long idConversacion, IReadOnlyList<AsistenteCorreccionCoincidencia> correcciones,
+        AsistenteCorreccionCoincidencia? directa, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(IConversacionAsistenteCorreccionesService)) is not IConversacionAsistenteCorreccionesService correccionesService)
+            return;
+
+        try
+        {
+            foreach (var c in correcciones)
+                await correccionesService.RegistrarUsoAsync(c.Correccion.IdCorreccion, ct).ConfigureAwait(false);
+
+            var principal = directa ?? correcciones[0];
+            await AddInternalEventCoreAsync(idConversacion,
+                $"🎓 El asistente usó lo que le enseñó el equipo ({AsistenteCorreccionAcciones.Descripcion(principal.Correccion.Accion).ToLowerInvariant()}) para \"{Truncar(principal.Correccion.PreguntaCliente, 80)}\".",
+                null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "AsistenteCorrecciones", ex,
+                "No se pudo registrar el uso de una corrección del asistente.", new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static readonly HashSet<string> PalabrasDePrueba = new(StringComparer.Ordinal)
+    {
+        "prueba", "pruebas", "probando", "probar", "pruebo", "test", "testing", "testeo", "testeando"
+    };
+
+    /// <summary>
+    /// "Prueba", "Prueba chat web", "test": alguien probando el canal, no una consulta (2026-10-15).
+    /// Mensajes cortos (hasta 5 palabras) con una palabra de prueba; "hago una prueba de factura y me
+    /// da error" sigue siendo una consulta.
+    /// </summary>
+    internal static bool EsMensajeDePrueba(string texto)
+    {
+        var palabras = Regex.Matches(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[a-z]+")
+            .Select(m => m.Value)
+            .ToArray();
+        return palabras.Length is > 0 and <= 5 && palabras.Any(PalabrasDePrueba.Contains);
+    }
+
+    private static readonly string[] FrasesPideNovedades =
+    [
+        "novedad", "pudieron ver", "pudiste ver", "pudieron revisar", "pudiste revisar", "pudieron mirar",
+        "pudiste mirar", "sigo esperando", "seguimos esperando", "como va lo", "como viene lo", "como vamos con",
+        "lo que pedimos", "lo que te pedi", "lo que les pedi", "lo que pedi", "lo de ayer", "tuvieron tiempo",
+        "hay respuesta", "alguna respuesta", "me pudieron", "me pudiste", "que paso con lo"
+    ];
+
+    /// <summary>
+    /// Red de seguridad por si el modelo no marca SEGUIMIENTO: mensaje corto que sólo pide novedades
+    /// de algo anterior ("¿pudieron ver algo?", "¿novedades?", "ayudame con lo que pedimos ayer").
+    /// </summary>
+    internal static bool PideNovedades(string texto)
+    {
+        var normalizado = Regex.Replace(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[^a-z ]+", " ");
+        normalizado = Regex.Replace(normalizado, " +", " ").Trim();
+        var palabras = normalizado.Length == 0 ? 0 : normalizado.Split(' ').Length;
+        return palabras is > 0 and <= 12 && FrasesPideNovedades.Any(f => normalizado.Contains(f, StringComparison.Ordinal));
+    }
+
+    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
+    internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
+    internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
+    internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
+
+    private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado)
+    {
+        public bool Hay => NumeroTicket.HasValue || HuboRespuestaDelEquipo;
+    }
+
+    /// <summary>
+    /// Tema pendiente de la conversación: ticket abierto, o una respuesta de una persona del equipo
+    /// (no del asistente ni de avisos automáticos). Devuelve a quién avisar: el técnico del ticket o
+    /// el último que respondió; si está ausente hoy (Calendario), el de guardia.
+    /// </summary>
+    private async Task<TemaPendiente> BuscarTemaPendienteAsync(long idConversacion, CancellationToken ct)
+    {
+        var sql = $"""
+            DECLARE @Ticket int = NULL, @TecTicket nvarchar(20) = NULL, @TecMsg nvarchar(20) = NULL, @HuboHumano bit = 0;
+            DECLARE @Hoy date = CAST(GETDATE() AS date);
+
+            IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
+                SELECT TOP (1) @Ticket = t.Numero, @TecTicket = NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))), N'')
+                FROM dbo.TICK_TICKETS t
+                LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
+                WHERE t.IdConversacion = @Id AND ISNULL(t.Baja, 0) = 0 AND ISNULL(e.EsCerrado, 0) = 0
+                ORDER BY t.IdTicket DESC;
+
+            -- Respuesta de una persona: con usuario real (los mensajes del asistente y demás automáticos
+            -- se graban sin autor porque el autor tiene FK a TA_USUARIOS) o escrita en la app del celular.
+            SELECT TOP (1)
+                @HuboHumano = 1,
+                @TecMsg = COALESCE(
+                    NULLIF(LTRIM(RTRIM(ISNULL(m.IdTecnicoAutor, N''))), N''),
+                    (SELECT TOP (1) NULLIF(LTRIM(RTRIM(t.IdTecnico)), N'')
+                     FROM dbo.V_TA_Tecnicos t
+                     WHERE UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsociado, N'')))) = UPPER(LTRIM(RTRIM(m.UsuarioAutor)))
+                       AND LTRIM(RTRIM(ISNULL(m.UsuarioAutor, N''))) <> N''))
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.IdConversacion = @Id
+              AND m.Direction = N'SALIENTE'
+              AND (
+                    (NULLIF(LTRIM(RTRIM(ISNULL(m.UsuarioAutor, N''))), N'') IS NOT NULL
+                     AND ISNULL(m.SistemaAutor, '') NOT IN ({AutomatedOutgoingSistemaAutorSqlList}))
+                    OR ISNULL(m.Origen, N'') = N'WHATSAPP_BUSINESS_APP'
+                  )
+            ORDER BY m.FechaHora DESC, m.IdMensaje DESC;
+
+            DECLARE @Tec nvarchar(20) = COALESCE(@TecTicket, @TecMsg);
+
+            IF @Tec IS NOT NULL AND OBJECT_ID(N'dbo.CAL_EVENTOS', N'U') IS NOT NULL
+               AND EXISTS (
+                    SELECT 1 FROM dbo.CAL_EVENTOS ev
+                    WHERE ISNULL(ev.Baja, 0) = 0
+                      AND ev.Tipo IN (N'AUSENCIA', N'VACACIONES')
+                      AND ISNULL(ev.Estado, N'') <> N'CANCELADO'
+                      AND LTRIM(RTRIM(ISNULL(ev.IdTecnico, N''))) = @Tec
+                      AND CAST(ev.FechaInicio AS date) <= @Hoy AND CAST(ev.FechaFin AS date) >= @Hoy)
+            BEGIN
+                SET @Tec = (
+                    SELECT TOP (1) NULLIF(LTRIM(RTRIM(ISNULL(ev.IdTecnico, N''))), N'')
+                    FROM dbo.CAL_EVENTOS ev
+                    WHERE ISNULL(ev.Baja, 0) = 0
+                      AND ev.Tipo = N'GUARDIA'
+                      AND ISNULL(ev.Estado, N'') <> N'CANCELADO'
+                      AND CAST(ev.FechaInicio AS date) <= @Hoy AND CAST(ev.FechaFin AS date) >= @Hoy
+                    ORDER BY ev.FechaInicio);
+            END;
+
+            SELECT
+                @Ticket,
+                @Tec,
+                @HuboHumano,
+                ISNULL(c.NombreVisible, N''),
+                NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'')
+            FROM dbo.CONV_CONVERSACIONES c
+            WHERE c.IdConversacion = @Id;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await EnsureMensajeOrigenColumnAsync(cn, ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await rd.ReadAsync(ct).ConfigureAwait(false))
+            return new TemaPendiente(null, false, null, string.Empty, null);
+
+        return new TemaPendiente(
+            rd.IsDBNull(0) ? null : rd.GetInt32(0),
+            !rd.IsDBNull(2) && rd.GetBoolean(2),
+            rd.IsDBNull(1) ? null : rd.GetString(1),
+            rd.IsDBNull(3) ? string.Empty : rd.GetString(3),
+            rd.IsDBNull(4) ? null : rd.GetString(4));
+    }
+
+    /// <summary>
+    /// El cliente pide novedades de un tema pendiente (2026-10-15): respuesta genérica, sin nombrar a
+    /// nadie del equipo y sin abrir otro ticket; adentro se asigna (si no tenía) y se avisa a quien
+    /// venía atendiendo o al que tiene asignada la conversación.
+    /// </summary>
+    private async Task ResponderSeguimientoAsync(long idConversacion, TemaPendiente pendiente, CancellationToken ct)
+    {
+        var hoy = BusinessNow();
+        string? respuesta = RespuestaSeguimiento;
+        if (await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaSeguimiento, hoy, ct).ConfigureAwait(false))
+        {
+            respuesta = await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaSeguimientoRepetida, hoy, ct).ConfigureAwait(false)
+                ? null
+                : RespuestaSeguimientoRepetida;
+        }
+
+        if (respuesta is not null)
+        {
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = respuesta,
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "BOT"
+            }, ct).ConfigureAwait(false);
+        }
+
+        var destino = FirstNonEmpty(pendiente.IdTecnicoAsignado, pendiente.IdTecnico);
+        var destinoId = string.IsNullOrWhiteSpace(destino) ? null : await ResolveTechnicianIdOrNullAsync(destino, ct).ConfigureAwait(false);
+        var destinoNombre = string.IsNullOrWhiteSpace(destinoId)
+            ? string.Empty
+            : FirstNonEmpty(await TryGetTechnicianNameAsync(destinoId, ct).ConfigureAwait(false), destinoId);
+
+        var conTicket = pendiente.NumeroTicket is int n ? $" (ticket #{n.ToString(CultureInfo.InvariantCulture)})" : string.Empty;
+        await AddInternalEventCoreAsync(idConversacion,
+            string.IsNullOrWhiteSpace(destinoNombre)
+                ? $"🔁 El cliente pide novedades de un tema pendiente{conTicket}. Requiere que un operador lo tome."
+                : $"🔁 El cliente pide novedades de un tema pendiente{conTicket}. Se le avisó a {destinoNombre}.",
+            null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(destinoId))
+        {
+            await RegistrarAsignacionSeguimientoAsync(idConversacion, destinoId, ct).ConfigureAwait(false);
+            if (serviceProvider?.GetService(typeof(IAvisosPushNotifier)) is IAvisosPushNotifier avisosPush)
+            {
+                var contacto = string.IsNullOrWhiteSpace(pendiente.Contacto) ? "Un cliente" : pendiente.Contacto.Trim();
+                await avisosPush.NotificarTecnicoAsync(
+                    destinoId,
+                    "Pide novedades",
+                    $"{contacto} pide novedades de su tema pendiente{conTicket}.",
+                    $"/conversaciones?id={idConversacion.ToString(CultureInfo.InvariantCulture)}",
+                    ct).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
+        }
+
+        await _appEvents.LogAuditAsync(
+            "Conversaciones", "BotSeguimiento", "CONV_CONVERSACIONES",
+            idConversacion.ToString(CultureInfo.InvariantCulture),
+            "El cliente pidió novedades de un tema pendiente; el asistente respondió sin abrir ticket y avisó al equipo.",
+            new { idConversacion, pendiente.NumeroTicket, IdTecnicoAvisado = destinoId, Respondio = respuesta is not null }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Si hoy ya salió este mismo texto sin autor (los mensajes del asistente se graban sin autor; ver
+    /// BuscarTemaPendienteAsync), para no repetirle al cliente la misma frase.
+    /// </summary>
+    private async Task<bool> YaEnvioTextoAutomaticoHoyAsync(long idConversacion, string texto, DateTime fechaLocalActual, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'SALIENTE'
+              AND NULLIF(LTRIM(RTRIM(ISNULL(UsuarioAutor, N''))), N'') IS NULL
+              AND CAST(FechaHora AS date) = @FechaLocal
+              AND LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N''))) = LTRIM(RTRIM(@Texto));
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
+        cmd.Parameters.AddWithValue("@Texto", texto.Trim());
+        return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+    }
+
+    /// <summary>
+    /// Asigna la conversación al técnico si no tenía a nadie y deja SIEMPRE el movimiento en
+    /// CONV_ASIGNACIONES: es lo que la campana (CentroAvisosService) muestra como aviso.
+    /// </summary>
+    private async Task RegistrarAsignacionSeguimientoAsync(long idConversacion, string idTecnico, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET IdTecnico = @IdTecnico, FechaHora_Modificacion = GETDATE()
+            WHERE IdConversacion = @IdConversacion
+              AND NULLIF(LTRIM(RTRIM(ISNULL(IdTecnico, N''))), N'') IS NULL;
+
+            INSERT INTO dbo.CONV_ASIGNACIONES (IdConversacion, FechaHora, IdTecnico, UsuarioAccion, SistemaAccion, Observaciones)
+            VALUES (@IdConversacion, GETDATE(), @IdTecnico, N'AlfaCore', N'BOT', @Observaciones);
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@IdTecnico", idTecnico);
+        cmd.Parameters.AddWithValue("@Observaciones", ObservacionAsignacionSeguimiento);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Sólo se abre un ticket automático cuando el mensaje es una consulta real.</summary>
+    internal static bool EsConsultaParaTicket(string texto)
+        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto);
+
     internal static bool EsMensajeSocial(string texto)
     {
         var normalizado = RemoveDiacritics(texto).ToLowerInvariant();
@@ -10425,7 +10830,7 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_MENSAJES humSal
             WHERE humSal.IdConversacion = c.IdConversacion
               AND humSal.Direction = N'SALIENTE'
-              AND ISNULL(humSal.SistemaAutor, N'') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
+              AND {AutorMensajeSql("humSal")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
               AND humSal.IdMensaje > ISNULL((
                     SELECT MAX(ent.IdMensaje)
                     FROM dbo.CONV_MENSAJES ent
@@ -10459,13 +10864,23 @@ public sealed class ConversacionesService(
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
+                -- Tope de respuestas: cuenta las del asistente desde la última respuesta de una persona y
+                -- dentro de las últimas 24 h. En WhatsApp cada cliente tiene UNA conversación para
+                -- siempre: contar desde el principio dejaría al asistente mudo para siempre con los
+                -- clientes habituales (2026-10-15).
+                (SELECT COUNT(1) FROM dbo.CONV_MENSAJES b
+                 WHERE b.IdConversacion = @Id AND b.Direction = N'SALIENTE' AND {AutorMensajeSql("b")} = N'BOT'
+                   AND b.FechaHora >= DATEADD(hour, -24, GETDATE())
+                   AND b.IdMensaje > ISNULL((SELECT MAX(h.IdMensaje) FROM dbo.CONV_MENSAJES h
+                                             WHERE h.IdConversacion = @Id AND h.Direction = N'SALIENTE'
+                                               AND {AutorMensajeSql("h")} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0)),
                 ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'), 0),
-                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN ({AutomatedOutgoingSistemaAutorSqlList})), 0),
-                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND {AutorMensajeSql()} IN ({AutomatedOutgoingSistemaAutorSqlList})), 0),
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND {AutorMensajeSql()} NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -10872,17 +11287,18 @@ public sealed class ConversacionesService(
     /// </summary>
     private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, DateTime fechaLocalActual, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
             WHERE IdConversacion = @IdConversacion
               AND Direction = N'SALIENTE'
-              AND SistemaAutor = N'AUTOMATIZACION'
+              AND {AutorMensajeSql()} = N'AUTOMATIZACION'
               AND CAST(FechaHora AS date) = @FechaLocal;
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
@@ -10961,18 +11377,19 @@ public sealed class ConversacionesService(
         DateTime fechaLocalActual,
         CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
             WHERE IdConversacion = @IdConversacion
               AND Direction = N'SALIENTE'
-              AND UPPER(LTRIM(RTRIM(ISNULL(SistemaAutor, N'')))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
+              AND UPPER(LTRIM(RTRIM({AutorMensajeSql()}))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
               AND CAST(FechaHora AS date) = @FechaLocal
               AND LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N''))) = LTRIM(RTRIM(@Texto));
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@SistemaAutor", sistemaAutor);
@@ -11256,6 +11673,7 @@ public sealed class ConversacionesService(
                 SistemaAutor,
                 IdTecnicoAutor,
                 Origen,
+                AutorAutomatico,
                 FechaHora_Grabacion
             )
             VALUES
@@ -11276,6 +11694,7 @@ public sealed class ConversacionesService(
                 @SistemaAutor,
                 @IdTecnicoAutor,
                 @Origen,
+                @AutorAutomatico,
                 GETDATE()
             );
 
@@ -11304,6 +11723,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(author.Sistema));
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         cmd.Parameters.AddWithValue("@Origen", DbNullable(message.Origen));
+        cmd.Parameters.AddWithValue("@AutorAutomatico", DbNullable(ResolveAutorAutomatico(message.SistemaAutor)));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
@@ -11315,7 +11735,13 @@ public sealed class ConversacionesService(
     /// </summary>
     private static async Task EnsureMensajeOrigenColumnAsync(SqlConnection cn, CancellationToken ct)
     {
+        var clave = $"{cn.DataSource}|{cn.Database}";
+        if (ColumnasMensajeAseguradas.ContainsKey(clave))
+            return;
+
         const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NULL
+                RETURN;
             IF NOT EXISTS (
                 SELECT 1 FROM sys.columns
                 WHERE object_id = OBJECT_ID(N'dbo.CONV_MENSAJES') AND name = N'Origen'
@@ -11323,9 +11749,41 @@ public sealed class ConversacionesService(
             BEGIN
                 ALTER TABLE dbo.CONV_MENSAJES ADD Origen nvarchar(40) NULL;
             END;
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.CONV_MENSAJES') AND name = N'AutorAutomatico'
+            )
+            BEGIN
+                ALTER TABLE dbo.CONV_MENSAJES ADD AutorAutomatico nvarchar(30) NULL;
+            END;
             """;
         await using var cmd = new SqlCommand(sql, cn);
         await cmd.ExecuteNonQueryAsync(ct);
+        ColumnasMensajeAseguradas[clave] = true;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> ColumnasMensajeAseguradas = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Qué automatización mandó el mensaje (BOT, AUTOMATIZACION, AUTOCIERRE_AVISO, SLA...). Va en su
+    /// propia columna porque UsuarioAutor/SistemaAutor tienen FK a TA_USUARIOS y un CHECK de "los dos
+    /// o ninguno": para un mensaje automático quedaban los dos vacíos y nada podía reconocerlo (tope
+    /// de respuestas, contención repetida, aviso de cierre, fuera de horario, SLA) (2026-10-15).
+    /// </summary>
+    internal static string? ResolveAutorAutomatico(string? sistemaAutor)
+    {
+        var valor = (sistemaAutor ?? string.Empty).Trim().ToUpperInvariant();
+        return AutomatedOutgoingSistemaAutores.Contains(valor, StringComparer.Ordinal) ? valor : null;
+    }
+
+    /// <summary>
+    /// Autor efectivo de un mensaje en SQL: la automatización (AutorAutomatico) o, si no la hay, el
+    /// SistemaAutor legacy. Los automáticos grabados antes de la columna siguen vacíos (como antes).
+    /// </summary>
+    private static string AutorMensajeSql(string? alias = null)
+    {
+        var p = string.IsNullOrWhiteSpace(alias) ? string.Empty : alias + ".";
+        return $"COALESCE(NULLIF(LTRIM(RTRIM({p}AutorAutomatico)), N''), {p}SistemaAutor, N'')";
     }
 
     private static async Task<(string Usuario, string Sistema)> ResolveLegacyMessageAuthorAsync(

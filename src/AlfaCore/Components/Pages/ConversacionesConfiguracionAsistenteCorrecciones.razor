@@ -1,0 +1,251 @@
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IConversacionAsistenteCorreccionesService CorreccionesSvc
+@inject IConversacionesAuthorizationService AuthorizationSvc
+@inject IAppUserSessionService AppUserSession
+
+@* Asistente IA → Lo que aprendió (2026-10-15): correcciones que el equipo le enseña al asistente desde
+   las conversaciones. Las pendientes las aprueba (o edita/rechaza) un administrador de Conversaciones. *@
+
+<ConversacionesConfigTarjeta Titulo="Cómo enseñarle"
+                             Descripcion="En una conversación, en cualquier respuesta del asistente tocá el ícono del birrete («Enseñarle al asistente») y escribí qué tendría que haber hecho. La próxima vez que pregunten algo parecido, el asistente lo sigue con prioridad.">
+    <ChildContent>
+        <div class="cfg-full corr-tabs" role="tablist">
+            <button type="button" role="tab" class="@TabClass(AsistenteCorreccionEstados.Pendiente)" @onclick="() => CambiarFiltro(AsistenteCorreccionEstados.Pendiente)">
+                Pendientes de aprobar @if (CantidadPendientes > 0) { <span class="corr-tabs__badge">@CantidadPendientes</span> }
+            </button>
+            <button type="button" role="tab" class="@TabClass(AsistenteCorreccionEstados.Aprobada)" @onclick="() => CambiarFiltro(AsistenteCorreccionEstados.Aprobada)">Aprendido</button>
+            <button type="button" role="tab" class="@TabClass(AsistenteCorreccionEstados.Rechazada)" @onclick="() => CambiarFiltro(AsistenteCorreccionEstados.Rechazada)">Rechazadas</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="cfg-full cfg-notice" role="alert">@_error</div>
+        }
+        @if (!_esAdmin)
+        {
+            <p class="cfg-full cfg-hint">Solo los administradores de Conversaciones pueden aprobar, editar o borrar lo que aprende el asistente.</p>
+        }
+    </ChildContent>
+</ConversacionesConfigTarjeta>
+
+@if (_cargando)
+{
+    <p class="cfg-hint">Cargando…</p>
+}
+else if (Filtradas.Count == 0)
+{
+    <ConversacionesConfigTarjeta Titulo="@TituloVacio" Descripcion="@DescripcionVacio" />
+}
+else
+{
+    @foreach (var c in Filtradas)
+    {
+        var editando = _editandoId == c.IdCorreccion;
+        <ConversacionesConfigTarjeta Titulo="@($"«{Recortar(c.PreguntaCliente, 90)}»")"
+                                     Descripcion="@($"Propuesta por {Nombre(c.UsuarioPropone)} el {c.FechaPropuesta.ToString("dd/MM/yyyy HH:mm", Es)}{Revision(c)}")">
+            <Extra>
+                <AlfaTag Tone="@TonoAccion(c.Accion)">@AsistenteCorreccionAcciones.Descripcion(c.Accion)</AlfaTag>
+                @if (c.Estado == AsistenteCorreccionEstados.Aprobada && c.VecesUsada > 0)
+                {
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Usada @c.VecesUsada @(c.VecesUsada == 1 ? "vez" : "veces")</AlfaTag>
+                }
+            </Extra>
+            <ChildContent>
+                @if (editando)
+                {
+                    <ConversacionesConfigTexto Id="@($"corr-preg-{c.IdCorreccion}")" Label="Lo que preguntó el cliente" Filas="2" Class="cfg-full"
+                                               Value="@_draft.PreguntaCliente" ValueChanged="@((string? v) => _draft.PreguntaCliente = v ?? string.Empty)" />
+                    <AlfaSelect Id="@($"corr-acc-{c.IdCorreccion}")" Label="Qué tiene que hacer" Options="AccionOptions"
+                                Value="@_draft.Accion" ValueChanged="@((string? v) => _draft.Accion = AsistenteCorreccionAcciones.Normalizar(v))" />
+                    @if (_draft.Accion != AsistenteCorreccionAcciones.Derivar)
+                    {
+                        <ConversacionesConfigTexto Id="@($"corr-resp-{c.IdCorreccion}")" Label="Qué tiene que responder" Filas="4" Class="cfg-full"
+                                                   Value="@_draft.RespuestaCorrecta" ValueChanged="@((string? v) => _draft.RespuestaCorrecta = v ?? string.Empty)" />
+                    }
+                    <div class="cfg-full cfg-actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Disabled="@_ocupado" OnClick="() => AprobarAsync(_draft)">Guardar y aprobar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_ocupado" OnClick="() => _editandoId = null">Cancelar</AlfaButton>
+                    </div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrWhiteSpace(c.RespuestaAsistente))
+                    {
+                        <div class="cfg-full corr-texto">
+                            <span class="corr-texto__label">Había respondido</span>
+                            <p class="corr-texto__antes">@c.RespuestaAsistente</p>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(c.RespuestaCorrecta))
+                    {
+                        <div class="cfg-full corr-texto">
+                            <span class="corr-texto__label">Tiene que responder</span>
+                            <p>@c.RespuestaCorrecta</p>
+                        </div>
+                    }
+                    @if (_esAdmin)
+                    {
+                        <div class="cfg-full cfg-actions">
+                            @if (c.Estado != AsistenteCorreccionEstados.Aprobada)
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Disabled="@_ocupado" OnClick="() => AprobarAsync(c)">Aprobar</AlfaButton>
+                            }
+                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi-pencil" Disabled="@_ocupado" OnClick="() => Editar(c)">Editar</AlfaButton>
+                            @if (c.Estado == AsistenteCorreccionEstados.Pendiente)
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-x-lg" Disabled="@_ocupado" OnClick="() => RechazarAsync(c)">Rechazar</AlfaButton>
+                            }
+                            else
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-trash" Disabled="@_ocupado" OnClick="() => EliminarAsync(c)">Eliminar</AlfaButton>
+                            }
+                        </div>
+                    }
+                }
+            </ChildContent>
+        </ConversacionesConfigTarjeta>
+    }
+}
+
+@code {
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
+
+    private static readonly IReadOnlyList<AlfaSelectOption> AccionOptions =
+    [
+        new(AsistenteCorreccionAcciones.Responder, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.Responder)),
+        new(AsistenteCorreccionAcciones.Derivar, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.Derivar)),
+        new(AsistenteCorreccionAcciones.SinTicket, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.SinTicket))
+    ];
+
+    private IReadOnlyList<AsistenteCorreccionDto> _todas = [];
+    private string _filtro = AsistenteCorreccionEstados.Pendiente;
+    private bool _cargando = true;
+    private bool _ocupado;
+    private bool _esAdmin;
+    private string? _error;
+    private int? _editandoId;
+    private AsistenteCorreccionDto _draft = new();
+
+    private List<AsistenteCorreccionDto> Filtradas => _todas.Where(c => c.Estado == _filtro).ToList();
+    private int CantidadPendientes => _todas.Count(c => c.Estado == AsistenteCorreccionEstados.Pendiente);
+
+    private string TituloVacio => _filtro switch
+    {
+        AsistenteCorreccionEstados.Pendiente => "No hay correcciones pendientes",
+        AsistenteCorreccionEstados.Aprobada => "Todavía no aprendió nada",
+        _ => "No hay correcciones rechazadas"
+    };
+
+    private string DescripcionVacio => _filtro == AsistenteCorreccionEstados.Aprobada
+        ? "Cuando el asistente responda algo que no corresponde, corregilo desde la conversación con el ícono del birrete."
+        : string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _esAdmin = await AuthorizationSvc.CanManageAsync();
+        }
+        catch
+        {
+            _esAdmin = false;
+        }
+
+        await CargarAsync();
+        // Sin pendientes, se abre directo en lo aprendido.
+        if (CantidadPendientes == 0)
+            _filtro = AsistenteCorreccionEstados.Aprobada;
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        try
+        {
+            _todas = await CorreccionesSvc.ListarAsync(null);
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = Mensaje(ex, "No se pudieron cargar las correcciones del asistente.");
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void CambiarFiltro(string estado)
+    {
+        _filtro = estado;
+        _editandoId = null;
+    }
+
+    private string TabClass(string estado) => _filtro == estado ? "corr-tabs__tab is-active" : "corr-tabs__tab";
+
+    private void Editar(AsistenteCorreccionDto c)
+    {
+        _editandoId = c.IdCorreccion;
+        _draft = new AsistenteCorreccionDto
+        {
+            IdCorreccion = c.IdCorreccion,
+            PreguntaCliente = c.PreguntaCliente,
+            Accion = c.Accion,
+            RespuestaCorrecta = c.RespuestaCorrecta
+        };
+    }
+
+    private Task AprobarAsync(AsistenteCorreccionDto c)
+        => EjecutarAsync(() => CorreccionesSvc.AprobarAsync(c, Usuario), "No se pudo aprobar la corrección.");
+
+    private Task RechazarAsync(AsistenteCorreccionDto c)
+        => EjecutarAsync(() => CorreccionesSvc.RechazarAsync(c.IdCorreccion, Usuario), "No se pudo rechazar la corrección.");
+
+    private Task EliminarAsync(AsistenteCorreccionDto c)
+        => EjecutarAsync(() => CorreccionesSvc.EliminarAsync(c.IdCorreccion, Usuario), "No se pudo eliminar la corrección.");
+
+    private async Task EjecutarAsync(Func<Task> accion, string mensajeError)
+    {
+        _ocupado = true;
+        try
+        {
+            await accion();
+            _editandoId = null;
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = Mensaje(ex, mensajeError);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private string Usuario => AppUserSession.GetCurrentUserName(string.Empty).Trim();
+
+    private static string Mensaje(Exception ex, string porDefecto) => ex switch
+    {
+        AppUserFacingException userFacing => userFacing.UserMessage,
+        InvalidOperationException => ex.Message,
+        UnauthorizedAccessException => "Solo los administradores de Conversaciones pueden hacer esto.",
+        _ => porDefecto
+    };
+
+    private static AlfaTagTone TonoAccion(string accion) => AsistenteCorreccionAcciones.Normalizar(accion) switch
+    {
+        AsistenteCorreccionAcciones.Derivar => AlfaTagTone.Warning,
+        AsistenteCorreccionAcciones.SinTicket => AlfaTagTone.Neutral,
+        _ => AlfaTagTone.Accent
+    };
+
+    private static string Nombre(string usuario) => string.IsNullOrWhiteSpace(usuario) ? "alguien del equipo" : usuario;
+
+    private static string Revision(AsistenteCorreccionDto c) => c.FechaRevision is { } fecha && !string.IsNullOrWhiteSpace(c.UsuarioRevisa)
+        ? $" · {(c.Estado == AsistenteCorreccionEstados.Rechazada ? "rechazada" : "aprobada")} por {c.UsuarioRevisa} el {fecha.ToString("dd/MM/yyyy", Es)}"
+        : string.Empty;
+
+    private static string Recortar(string texto, int max) => texto.Length <= max ? texto : texto[..max] + "…";
+}

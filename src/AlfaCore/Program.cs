@@ -301,6 +301,7 @@ public class Program
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IWhatsAppPortfolioResolutionService, WhatsAppPortfolioResolutionService>();
+        builder.Services.AddScoped<IWhatsAppUsoMetaService, WhatsAppUsoMetaService>();
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
@@ -476,6 +477,7 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
+        builder.Services.AddScoped<IConversacionAsistenteCorreccionesService, ConversacionAsistenteCorreccionesService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddSingleton<IaUsoCola>();
         builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();

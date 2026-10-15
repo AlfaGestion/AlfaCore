@@ -334,8 +334,10 @@ public sealed class CentroAvisosService(
             {
                 Clave = $"conv:{c.IdConversacion.ToString(CultureInfo.InvariantCulture)}:{c.IdAsignacion.ToString(CultureInfo.InvariantCulture)}",
                 Tipo = AvisoTipos.Conversacion,
-                Titulo = string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}",
-                Detalle = "Te asignaron esta conversación",
+                Titulo = c.EsPedidoNovedades
+                    ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Pide novedades" : $"Pide novedades: {c.Contacto.Trim()}")
+                    : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
+                Detalle = c.EsPedidoNovedades ? "El cliente pide novedades de su tema pendiente" : "Te asignaron esta conversación",
                 FechaHora = c.FechaHora,
                 Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
             });
@@ -589,10 +591,11 @@ public sealed class CentroAvisosService(
         var sql = $"""
             SELECT TOP (50)
                 c.IdConversacion, a.IdAsignacion, LTRIM(RTRIM(ISNULL(a.IdTecnico, N''))),
-                ISNULL(c.NombreVisible, N''), LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))), a.FechaHora
+                ISNULL(c.NombreVisible, N''), LTRIM(RTRIM(ISNULL(a.UsuarioAccion, N''))), a.FechaHora,
+                ISNULL(a.Observaciones, N'')
             FROM dbo.CONV_CONVERSACIONES c
             CROSS APPLY (
-                SELECT TOP (1) x.IdAsignacion, x.IdTecnico, x.UsuarioAccion, x.FechaHora
+                SELECT TOP (1) x.IdAsignacion, x.IdTecnico, x.UsuarioAccion, x.FechaHora, x.Observaciones
                 FROM dbo.CONV_ASIGNACIONES x
                 WHERE x.IdConversacion = c.IdConversacion
                 ORDER BY x.FechaHora DESC, x.IdAsignacion DESC
@@ -618,7 +621,8 @@ public sealed class CentroAvisosService(
                 IdTecnico = rd.GetString(2),
                 Contacto = rd.GetString(3),
                 UsuarioAccion = rd.GetString(4),
-                FechaHora = rd.GetDateTime(5)
+                FechaHora = rd.GetDateTime(5),
+                Observaciones = rd.GetString(6)
             });
         }
         return conversaciones;
