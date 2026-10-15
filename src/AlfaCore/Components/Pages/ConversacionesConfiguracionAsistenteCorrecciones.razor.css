@@ -1,0 +1,9 @@
+.corr-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.corr-tabs__tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--alfa-border-default, #333640); border-radius: var(--alfa-radius-full, 999px); background: transparent; color: var(--alfa-text-secondary, #a6abb5); font-size: 13px; cursor: pointer; }
+.corr-tabs__tab:hover { background: var(--alfa-state-hover, rgba(255, 255, 255, .05)); }
+.corr-tabs__tab.is-active { border-color: var(--alfa-accent, #4f8cff); color: var(--alfa-text-primary, #f5f5f7); background: var(--alfa-state-selected, rgba(79, 140, 255, .15)); }
+.corr-tabs__badge { min-width: 18px; padding: 0 6px; border-radius: var(--alfa-radius-full, 999px); background: var(--alfa-warning, #e5a83b); color: #111; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.corr-texto { display: flex; flex-direction: column; gap: 4px; }
+.corr-texto__label { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; font-weight: 600; }
+.corr-texto p { margin: 0; color: var(--alfa-text-primary, #f5f5f7); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.corr-texto p.corr-texto__antes { color: var(--alfa-text-secondary, #a6abb5); text-decoration: line-through; text-decoration-color: rgba(229, 83, 75, .6); }

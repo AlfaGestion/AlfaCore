@@ -477,6 +477,7 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
+        builder.Services.AddScoped<IConversacionAsistenteCorreccionesService, ConversacionAsistenteCorreccionesService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddSingleton<IaUsoCola>();
         builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();

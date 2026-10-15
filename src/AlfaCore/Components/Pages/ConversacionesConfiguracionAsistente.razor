@@ -142,6 +142,10 @@
                 </ConversacionesConfigTarjeta>
                 break;
 
+            case SeccionAprendido:
+                <ConversacionesConfiguracionAsistenteCorrecciones />
+                break;
+
             case SeccionConocimiento:
                 <ConversacionesConfigTarjeta Titulo="AlfaKnowledge" Columnas="2" Descripcion="Base de conocimiento externa con documentos e instructivos. La usan el asistente (si lo activás en Información del negocio) y las sugerencias de respuesta de la bandeja.">
                     <Extra>
@@ -246,7 +250,7 @@
                 break;
         }
 
-        @if (Seccion != SeccionConocimiento)
+        @if (Seccion != SeccionConocimiento && Seccion != SeccionAprendido)
         {
             <ConversacionesConfigBarraGuardar Etiqueta="Guardar asistente" HayCambios="@IsDirty" Busy="@Busy"
                                               OnGuardar="OnGuardar" OnDescartar="OnDescartar" />
@@ -256,6 +260,7 @@
 
 @code {
     internal const string SeccionConocimiento = "conocimiento";
+    internal const string SeccionAprendido = "aprendido";
 
     /// <summary>Por encima de esto se avisa que la información enviada en cada respuesta es mucha.</summary>
     internal const int TokensInformacionAviso = 6000;
@@ -325,6 +330,7 @@
         "herramientas" => "Herramientas",
         "derivacion" => "Derivación y urgencias",
         SeccionConocimiento => "Conocimiento externo",
+        SeccionAprendido => "Lo que aprendió",
         _ => "Asistente IA"
     };
 
@@ -335,6 +341,7 @@
         "herramientas" => "Datos reales del sistema que el asistente puede consultar.",
         "derivacion" => "Cuándo pasar la conversación a una persona y a quién avisar ante una urgencia.",
         SeccionConocimiento => "Conexión con AlfaKnowledge.",
+        SeccionAprendido => "Lo que tu equipo le enseñó al asistente corrigiendo sus respuestas.",
         _ => "Encendido, horarios en los que responde y límites."
     };
 

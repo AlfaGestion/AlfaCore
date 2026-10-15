@@ -1932,7 +1932,8 @@ public sealed class ConversacionesService(
                         WHERE a.IdMensaje = m.IdMensaje
                     ) THEN 1 ELSE 0 END,
                     ISNULL(m.MarcaInterna, ''),
-                    ISNULL(m.Origen, '')
+                    ISNULL(m.Origen, ''),
+                    ISNULL(m.AutorAutomatico, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1985,7 +1986,8 @@ public sealed class ConversacionesService(
                     TecnicoAutorNombre = GetString(rd, 13),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
                     MarcaInterna = GetString(rd, 16),
-                    Origen = GetString(rd, 17)
+                    Origen = GetString(rd, 17),
+                    AutorAutomatico = GetString(rd, 18)
                 };
 
                 items.Add(item);
@@ -2031,7 +2033,8 @@ public sealed class ConversacionesService(
                             WHERE a.IdMensaje = m.IdMensaje
                         ) THEN 1 ELSE 0 END AS TieneAdjuntos,
                         ISNULL(m.MarcaInterna, '') AS MarcaInterna,
-                        ISNULL(m.Origen, '') AS Origen
+                        ISNULL(m.Origen, '') AS Origen,
+                        ISNULL(m.AutorAutomatico, '') AS AutorAutomatico
                     FROM dbo.CONV_MENSAJES m
                     INNER JOIN dbo.CONV_CONVERSACIONES c
                         ON c.IdConversacion = @IdConversacion
@@ -2076,7 +2079,8 @@ public sealed class ConversacionesService(
                     page.PayloadJson,
                     page.TieneAdjuntos,
                     page.MarcaInterna,
-                    page.Origen
+                    page.Origen,
+                    page.AutorAutomatico
                 FROM PagedMessages page
                 ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
                 """;
@@ -2155,7 +2159,8 @@ public sealed class ConversacionesService(
                     PayloadJson = GetString(rd, 14),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
                     MarcaInterna = GetString(rd, 16),
-                    Origen = GetString(rd, 17)
+                    Origen = GetString(rd, 17),
+                    AutorAutomatico = GetString(rd, 18)
                 });
             }
 
@@ -8988,8 +8993,27 @@ public sealed class ConversacionesService(
                     && knowledgeContext.HasSufficientContext
                     && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
 
+                // Correcciones que enseñó el equipo (2026-10-15): casi la misma pregunta -> se responde (o
+                // se deriva) directo con lo enseñado; parecida -> va como guía con prioridad al asistente.
+                var correcciones = await BuscarCorreccionesAsync(texto, token).ConfigureAwait(false);
+                var correccionDirecta = correcciones.FirstOrDefault(c =>
+                    c.Parecido >= ConversacionAsistenteCorreccionesService.ParecidoDirecto
+                    && c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket);
+                var correccionSinTicket = correcciones.Any(c => c.Correccion.Accion == AsistenteCorreccionAcciones.SinTicket);
+                var correccionesGuia = correcciones
+                    .Where(c => c.Correccion.Accion != AsistenteCorreccionAcciones.SinTicket)
+                    .ToList();
+                if (correcciones.Count > 0)
+                    resueltoSoloPorKnowledge = false;
+
                 ConversacionAsistenteRespuesta? result;
-                if (resueltoSoloPorKnowledge)
+                if (correccionDirecta is not null)
+                {
+                    result = correccionDirecta.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
+                        ? new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty }
+                        : new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = correccionDirecta.Correccion.RespuestaCorrecta };
+                }
+                else if (resueltoSoloPorKnowledge)
                 {
                     var respuestaConLink = knowledgeContext.SuggestedReply;
                     if (!string.IsNullOrWhiteSpace(knowledgeContext.LinkPublico)
@@ -9028,6 +9052,7 @@ public sealed class ConversacionesService(
                         ? config.AsistenteInformacion
                         : await asistenteConocimiento.ComponerInformacionAsync(
                             config.AsistenteInformacion, EsMensajeSocial(texto) ? null : texto, token).ConfigureAwait(false);
+                    informacionAsistente = AgregarCorreccionesAlContexto(informacionAsistente, correccionesGuia);
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, informacionAsistente, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
@@ -9167,7 +9192,10 @@ public sealed class ConversacionesService(
                 // No encontró respuesta: se genera un ticket con la consulta (si la conversación no tiene
                 // ya uno abierto) y el cliente recibe el número.
                 int? numeroTicketBot = null;
-                if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && EsConsultaParaTicket(texto))
+                if (correcciones.Count > 0)
+                    await RegistrarUsoCorreccionesAsync(idConversacion, correcciones, correccionDirecta, token).ConfigureAwait(false);
+
+                if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto))
                 {
                     numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
@@ -10207,6 +10235,72 @@ public sealed class ConversacionesService(
         if (palabras.Overlaps(["ok", "okay", "dale", "listo", "perfecto", "genial", "joya", "barbaro", "excelente", "buenisimo"]))
             return "¡Genial! Si necesitás algo más, avisame.";
         return "¡Hola! ¿En qué te puedo ayudar?";
+    }
+
+    private async Task<IReadOnlyList<AsistenteCorreccionCoincidencia>> BuscarCorreccionesAsync(string texto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || EsMensajeSocial(texto)
+            || serviceProvider?.GetService(typeof(IConversacionAsistenteCorreccionesService)) is not IConversacionAsistenteCorreccionesService correccionesService)
+            return [];
+
+        try
+        {
+            return await correccionesService.BuscarAplicablesAsync(texto, 3, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Nunca frena al asistente: sin correcciones responde como siempre.
+            await _appEvents.LogErrorAsync("Conversaciones", "AsistenteCorrecciones", ex,
+                "No se pudieron leer las correcciones del asistente; respondió sin ellas.", null, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Suma a la información del negocio las correcciones parecidas a la consulta, para que el
+    /// asistente las siga con prioridad sobre cualquier otra información.
+    /// </summary>
+    internal static string AgregarCorreccionesAlContexto(string informacion, IReadOnlyCollection<AsistenteCorreccionCoincidencia> correcciones)
+    {
+        if (correcciones.Count == 0)
+            return informacion;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("CORRECCIONES DEL EQUIPO (te las enseñaron las personas que atienden: seguilas con prioridad sobre cualquier otra información):");
+        foreach (var c in correcciones)
+        {
+            var pregunta = c.Correccion.PreguntaCliente.Replace('\n', ' ').Trim();
+            sb.AppendLine(c.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
+                ? $"- Si el cliente pregunta algo como \"{pregunta}\": no lo resuelvas vos, pasalo a una persona (tipo DERIVA)."
+                : $"- Si el cliente pregunta algo como \"{pregunta}\": respondé en esta línea: \"{c.Correccion.RespuestaCorrecta.Trim()}\"");
+        }
+
+        return string.IsNullOrWhiteSpace(informacion)
+            ? sb.ToString().Trim()
+            : $"{sb.ToString().Trim()}\n\n{informacion}";
+    }
+
+    private async Task RegistrarUsoCorreccionesAsync(long idConversacion, IReadOnlyList<AsistenteCorreccionCoincidencia> correcciones,
+        AsistenteCorreccionCoincidencia? directa, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(IConversacionAsistenteCorreccionesService)) is not IConversacionAsistenteCorreccionesService correccionesService)
+            return;
+
+        try
+        {
+            foreach (var c in correcciones)
+                await correccionesService.RegistrarUsoAsync(c.Correccion.IdCorreccion, ct).ConfigureAwait(false);
+
+            var principal = directa ?? correcciones[0];
+            await AddInternalEventCoreAsync(idConversacion,
+                $"🎓 El asistente usó lo que le enseñó el equipo ({AsistenteCorreccionAcciones.Descripcion(principal.Correccion.Accion).ToLowerInvariant()}) para \"{Truncar(principal.Correccion.PreguntaCliente, 80)}\".",
+                null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "AsistenteCorrecciones", ex,
+                "No se pudo registrar el uso de una corrección del asistente.", new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
     }
 
     private static readonly HashSet<string> PalabrasDePrueba = new(StringComparer.Ordinal)
