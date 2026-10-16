@@ -493,7 +493,8 @@ public class Program
         builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();
         builder.Services.AddScoped<IIaConsumoService, IaConsumoService>();
         builder.Services.AddHostedService<IaUsoFlushService>();
-        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        if (!builder.Configuration.GetValue("ProcesosSegundoPlano:Deshabilitados", false))
+            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         // Para correr una instancia local contra bases que ya atiende el servidor real: sin esto, los
         // procesos de abajo (programados, auto-cierre, bot diferido, WhatsApp Web...) se ejecutarían
         // en las dos instancias a la vez y podrían duplicar envíos. Por defecto quedan activos.

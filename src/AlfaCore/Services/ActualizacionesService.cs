@@ -299,14 +299,26 @@ public sealed class ActualizacionesService(
             .ThenBy(x => x.Archivo, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Publicaciones incrementales pueden conservar el nombre anterior de estos tres scripts.
+        // Solo se omite el alias viejo si la copia nueva tiene exactamente el mismo SQL.
+        var aliases = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-004__ventas_carga_directa_operaciones.sql",
+            ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-005__ventas_tipos_carga_directa.sql",
+            ["2026-10-15-003__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-006__ventas_reporte_ventas_menu_web.sql"
+        };
+        files = files.Where(file => !aliases.TryGetValue(file.Archivo,out var nuevo) ||
+            !files.Any(other => other.Archivo.Equals(nuevo,StringComparison.OrdinalIgnoreCase) &&
+                File.ReadAllText(file.RutaCompleta).Replace("\r\n","\n").Trim() == File.ReadAllText(other.RutaCompleta).Replace("\r\n","\n").Trim())).ToArray();
+
         var duplicates = files
             .GroupBy(x => x.VersionKey, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1)
-            .Select(g => g.Key)
+            .Select(g => $"{g.Key}: {string.Join(", ",g.Select(x => x.Archivo))}")
             .ToArray();
 
         if (duplicates.Length > 0)
-            throw new InvalidOperationException($"Hay más de un script para la misma versión: {string.Join(", ", duplicates)}.");
+            throw new VersionDuplicadaException($"Hay más de un script para la misma versión: {string.Join(", ", duplicates)}.");
 
         return files;
     }
@@ -669,6 +681,11 @@ public sealed class ActualizacionesService(
             var incidentId = await appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException("La base activa no tiene completo el esquema esperado para el módulo de actualizaciones.", incidentId, ex);
         }
+        catch (VersionDuplicadaException ex)
+        {
+            var incidentId = await appEvents.LogErrorAsync(module,action,ex,userMessage,null,AppEventSeverity.Error,ct);
+            throw new AppUserFacingException(ex.Message,incidentId,ex);
+        }
         catch (InvalidOperationException)
         {
             throw;
@@ -679,6 +696,8 @@ public sealed class ActualizacionesService(
             throw new AppUserFacingException(userMessage, incidentId, ex);
         }
     }
+
+    private sealed class VersionDuplicadaException(string message) : InvalidOperationException(message);
 
     private sealed class UpdateSource
     {

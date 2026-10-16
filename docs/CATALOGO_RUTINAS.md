@@ -793,6 +793,16 @@ Criterio aplicado:
 - Datos que usa: DTO de reportes comerciales, ClosedXML.
 - Observaciones: nombre histórico preservado por compatibilidad; el panel exporta todos los registros filtrados desde el circuito autorizado, sin navegar a una descarga fuera del contexto activo.
 
+## Actualizaciones de base de datos
+
+### ActualizacionesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ActualizacionesService.cs`
+- Propósito: descubrir scripts, validar versiones y coordinar panel, historial y ejecución de actualizaciones de la base activa.
+- Datos que usa: `TA_CONFIGURACION` (TABLE), `AUX_ACTUALIZACION_HIST` (TABLE creada/verificada por el servicio), archivos SQL, `IAppEventService`, motor SQL y estado de ejecución.
+- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`.
+
 ## Stored Procedures usados
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.

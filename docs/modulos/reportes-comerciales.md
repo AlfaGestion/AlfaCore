@@ -18,7 +18,7 @@ El servicio exige sesión autorizada y permiso `D5005` (Compras) o `D60RPTWEB` (
 
 Se usa el shell AlfaDesign con `ModuleKey`, Smart Search y pie compartido; `compras`, `ventas` y `configuracion` ya están en la lista de módulos gestionados. Los filtros editados se separan de los aplicados, para no paginar/exportar otro conjunto sin generar. Excel recorre las páginas del filtro aplicado en el circuito autorizado y reutiliza la descarga de blobs del sistema. PDF imprime la página visible. El visor mantiene el prefijo SaaS en navegación normal. Con `directo=1` se oculta el enlace al visor de otro módulo; Configuración tampoco ofrece accesos a otros módulos en ese modo.
 
-Nueva ruta `/ventas/reportes`, con prefijo SaaS cuando corresponda. Actualización `2026-10-15-003__ventas_reporte_ventas_menu_web.sql`: guardias, NombreWeb, alta de clave nueva bajo D60, mapeo y permisos explícitos idempotentes. No altera opciones legacy existentes; una colisión con otro proceso detiene la instalación.
+Nueva ruta `/ventas/reportes`, con prefijo SaaS cuando corresponda. Actualización `2026-10-15-006__ventas_reporte_ventas_menu_web.sql`: guardias, NombreWeb, alta de clave nueva bajo D60, mapeo y permisos explícitos idempotentes. No altera opciones legacy existentes; una colisión con otro proceso detiene la instalación.
 
 ConfiguracionHub mueve la búsqueda al toolbar y agrega filtro por área. El catálogo incorpora accesos a las pestañas de ventas y palabras clave de configuraciones confirmadas. En la pestaña Carga de comprobantes, la búsqueda filtra campos sin perder cambios ni modificar valores.
 
