@@ -35,4 +35,4 @@ No se emitieron comprobantes, no se modificaron movimientos comerciales ni se de
 
 ## Incidencia posterior de Actualizaciones
 
-Se corrigió la colisión de números tras integrar cambios remotos. El script de menú de Reporte de Ventas ahora se llama `2026-10-15-006__ventas_reporte_ventas_menu_web.sql`; su contenido no cambia. [Causa, pruebas y límites](actualizaciones-colision-versiones-2026-10-15.md).
+Se corrigió la colisión de números tras integrar cambios remotos. El script de menú de Reporte de Ventas ahora se llama `2026-10-15-009__ventas_reporte_ventas_menu_web.sql`; su contenido no cambia. [Causa, pruebas y límites](actualizaciones-colision-versiones-2026-10-15.md).

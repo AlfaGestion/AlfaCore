@@ -8,13 +8,13 @@ La integración del remoto incorporó tres scripts de Conversaciones con version
 
 ## Corrección
 
-Se conservan las versiones de Conversaciones. Los scripts de Ventas mantienen su SQL y cambian de nombre:
+Se conservan las versiones de Conversaciones recibidas del remoto (004/005/006). Los scripts de Ventas mantienen su SQL y quedan con los siguientes nombres vigentes:
 
 | Anterior | Nuevo |
 |---|---|
-| 2026-10-15-001 — ventas_carga_directa_operaciones | 2026-10-15-004 |
-| 2026-10-15-002 — ventas_tipos_carga_directa | 2026-10-15-005 |
-| 2026-10-15-003 — ventas_reporte_ventas_menu_web | 2026-10-15-006 |
+| 2026-10-15-001 — ventas_carga_directa_operaciones | 2026-10-15-007 |
+| 2026-10-15-002 — ventas_tipos_carga_directa | 2026-10-15-008 |
+| 2026-10-15-003 — ventas_reporte_ventas_menu_web | 2026-10-15-009 |
 
 Son scripts idempotentes; no se reescribe historial ni FECHAUPDATE_CORE, no se marca una migración como aplicada y no se elimina ninguna protección del actualizador. Se actualizaron referencias documentales al nombre vigente.
 
@@ -35,3 +35,10 @@ La pantalla muestra un estado de error persistente con detalle, código y Reinte
 Las pruebas de duplicados, logging y pantalla usan archivos temporales/servicios simulados; no ejecutan SQL de migración ni escriben en la base 106. La conexión directa de diagnóstico a esa base no pudo completarse desde esta sesión. Queda pendiente la comprobación del panel con la sesión autenticada del usuario. No se afirma haber revisado su historial ni aplicado sus actualizaciones.
 
 Para futuras integraciones, incluir `ActualizacionesScriptsTests` en la regresión, además de los tests del módulo modificado.
+
+
+## Integración del remoto antes del push
+
+El commit remoto `904180a` también corrigió la colisión, moviendo los tres scripts de Conversaciones a 004/005/006. Al integrar ambas soluciones, el siguiente bloque libre de Ventas pasa a **007/008/009**. La corrección local inicial había usado 004/005/006; la tabla anterior ya refleja la numeración final integrada. Los alias de Ventas de 001/002/003 y de la corrección intermedia 004/005/006 apuntan a 007/008/009, y se siguen omitiendo únicamente al comprobar igualdad de SQL con la copia vigente. No se cambia ningún contenido de migración ni el historial de las bases.
+
+Verificación final de integración: compilación correcta, **8 pruebas aprobadas, sin omitidas ni fallas**, incluyendo alias inicial e intermedio tanto idéntico como distinto y unicidad global de scripts. Catálogo: 99 rutinas sin errores.

@@ -13,19 +13,21 @@ namespace AlfaCore.Tests;
 public sealed class ActualizacionesErroresTests
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void AliasViejoSoloSeOmiteSiElNuevoTieneElMismoSql(bool mismoSql)
+    [InlineData(true,"001")]
+    [InlineData(false,"001")]
+    [InlineData(true,"004")]
+    [InlineData(false,"004")]
+    public void AliasViejoSoloSeOmiteSiElNuevoTieneElMismoSql(bool mismoSql,string anterior)
     {
         using var folder=new ScriptsFolder();
-        folder.Add("2026-10-15-001__conversaciones.sql","SELECT 2;");
-        folder.Add("2026-10-15-001__ventas_carga_directa_operaciones.sql","SELECT 1;\r\n");
-        folder.Add("2026-10-15-004__ventas_carga_directa_operaciones.sql",mismoSql?"SELECT 1;\n":"SELECT 3;");
-        if(!mismoSql) { var ex=Assert.Throws<TargetInvocationException>(()=>GetScripts(folder.Path));Assert.Contains("2026-10-15-001",ex.InnerException!.Message);return; }
+        folder.Add($"2026-10-15-{anterior}__conversaciones.sql","SELECT 2;");
+        folder.Add($"2026-10-15-{anterior}__ventas_carga_directa_operaciones.sql","SELECT 1;\r\n");
+        folder.Add("2026-10-15-007__ventas_carga_directa_operaciones.sql",mismoSql?"SELECT 1;\n":"SELECT 3;");
+        if(!mismoSql) { var ex=Assert.Throws<TargetInvocationException>(()=>GetScripts(folder.Path));Assert.Contains($"2026-10-15-{anterior}",ex.InnerException!.Message);return; }
         var scripts=GetScripts(folder.Path);
         Assert.Equal(2,scripts.Count);
-        Assert.Contains(scripts,x=>x.VersionKey=="2026-10-15-004");
-        Assert.DoesNotContain(scripts,x=>x.Archivo=="2026-10-15-001__ventas_carga_directa_operaciones.sql");
+        Assert.Contains(scripts,x=>x.VersionKey=="2026-10-15-007");
+        Assert.DoesNotContain(scripts,x=>x.Archivo==$"2026-10-15-{anterior}__ventas_carga_directa_operaciones.sql");
     }
 
     [Fact]

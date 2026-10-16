@@ -303,9 +303,12 @@ public sealed class ActualizacionesService(
         // Solo se omite el alias viejo si la copia nueva tiene exactamente el mismo SQL.
         var aliases = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-004__ventas_carga_directa_operaciones.sql",
-            ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-005__ventas_tipos_carga_directa.sql",
-            ["2026-10-15-003__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-006__ventas_reporte_ventas_menu_web.sql"
+            ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
+            ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
+            ["2026-10-15-003__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
+            ["2026-10-15-004__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
+            ["2026-10-15-005__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
+            ["2026-10-15-006__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
         };
         files = files.Where(file => !aliases.TryGetValue(file.Archivo,out var nuevo) ||
             !files.Any(other => other.Archivo.Equals(nuevo,StringComparison.OrdinalIgnoreCase) &&
