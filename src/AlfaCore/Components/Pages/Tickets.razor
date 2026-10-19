@@ -783,6 +783,14 @@
             </div>
         }
 
+        @if (string.IsNullOrWhiteSpace(_detail?.ClienteCodigo) && _parteHoraTipoTrabajo != ParteHoraTipoTrabajoKeys.Interno)
+        {
+            <div class="conversations-hours-hint">
+                <i class="bi bi-info-circle"></i>
+                <span>Este ticket no tiene cliente: para cargar el parte asignale un cliente al ticket o elegí el tipo «@FormatParteHoraTipoTicket(ParteHoraTipoTrabajoKeys.Interno)».</span>
+            </div>
+        }
+
         @if (!string.IsNullOrWhiteSpace(_parteHoraError))
         {
             <div class="conversations-error conversations-notice">@_parteHoraError</div>
@@ -2755,9 +2763,13 @@
         }
         catch (Exception ex)
         {
-            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.Message
-                : "No se pudo guardar el parte de horas. Revisá los datos y volvé a intentar.";
+            // Las validaciones del parte (cliente, técnico, duración) dicen qué falta: se muestran tal cual.
+            _parteHoraError = ex switch
+            {
+                AlfaCore.Services.AppValidationException validation => validation.UserMessage,
+                AlfaCore.Services.AppUserFacingException userFacing => userFacing.Message,
+                _ => "No se pudo guardar el parte de horas. Revisá los datos y volvé a intentar."
+            };
         }
         finally
         {

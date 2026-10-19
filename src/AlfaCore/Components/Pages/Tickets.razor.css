@@ -236,3 +236,21 @@ html[data-theme="light"] .tickets-list-head-table th {
 .tk-parte-cabecera { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .tk-parte-fecha { display: flex; flex-direction: column; gap: 4px; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; font-weight: 600; }
 .tk-parte-fecha input { min-width: 160px; }
+
+/* Ventana de parte de horas: las columnas estaban definidas sólo en Conversaciones (estilos con alcance
+   a esa página), así que en Tickets se veían apiladas. */
+.tk-parte-cabecera { grid-column: 1 / -1; }
+.conversations-hours-lines { display: grid; gap: 8px; grid-column: 1 / -1; }
+.conversations-hours-lines__header,
+.conversations-hours-lines__row { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(110px, .7fr) minmax(150px, 1.4fr) 70px 78px; gap: 8px; align-items: center; }
+.conversations-hours-lines__header > span:last-child,
+.conversations-hours-lines__row > span:last-child { display: none; }
+.conversations-hours-lines__header { color: var(--alfa-text-secondary, #a6abb5); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.conversations-hours-lines__row input,
+.conversations-hours-lines__row select { min-width: 0; width: 100%; }
+
+@media (max-width: 720px) {
+    .conversations-hours-lines__header { display: none; }
+    .conversations-hours-lines__row { grid-template-columns: 1fr 1fr; padding: 10px; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; }
+    .conversations-hours-lines__row input[type="text"] { grid-column: 1 / -1; }
+}
