@@ -3001,49 +3001,34 @@
     </div>
 }
 
-@if (_showContextNotesModal && HasContextNotes)
-{
-    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onmousedown="CloseContextNotesModal">
-        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onmousedown:stopPropagation @onclick:stopPropagation>
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Observaciones</h3>
-                    <p class="panel-card__subtitle">@GetConversationHeader(_selectedConversation!)</p>
-                </div>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContextNotesModal" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
-                <button type="button"
-                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.Observaciones ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _contextNotesTab = ContextNotesTabs.Observaciones">
-                    Observaciones (@_contextNotes.ObservationSections.Count)
-                </button>
-                <button type="button"
-                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.OtrasNotas ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _contextNotesTab = ContextNotesTabs.OtrasNotas">
-                    Otras notas (@_contextNotes.OtherSections.Count)
-                </button>
-            </div>
-            <div style="display:grid;gap:.85rem;">
-                @foreach (var note in ActiveContextNoteSections)
-                {
-                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);min-width:0;max-width:100%;overflow:hidden;">
-                        <span class="context-card__label">@note.Label</span>
-                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">@note.Text</div>
-                    </div>
-                }
-                @if (ActiveContextNoteSections.Count == 0)
-                {
-                    <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
-                        No hay información cargada en esta solapa.
-                    </div>
-                }
-            </div>
-        </div>
+@* Observaciones del cliente y del contacto (2026-10-19): ventana del diseño AlfaDesign. Se cierra con Esc,
+   con la X o con un clic afuera del recuadro; nunca por hacer clic o seleccionar texto adentro. *@
+<AlfaDialog Open="@(_showContextNotesModal && HasContextNotes)"
+            Title="Observaciones"
+            Description="@(_selectedConversation is null ? null : GetConversationHeader(_selectedConversation))"
+            Size="AlfaDialogSize.Lg"
+            Class="context-notes-dialog"
+            OnClose="CloseContextNotesModal">
+    <AlfaTabs AriaLabel="Observaciones y notas"
+              Items="@ContextNotesTabItems"
+              ActiveKey="@_contextNotesTab"
+              ActiveKeyChanged="@((string? key) => _contextNotesTab = key ?? ContextNotesTabs.Observaciones)" />
+    <div class="context-notes-dialog__list">
+        @foreach (var note in ActiveContextNoteSections)
+        {
+            <article class="context-notes-dialog__note">
+                <span class="context-notes-dialog__label">@note.Label</span>
+                <div class="context-notes-dialog__text">@note.Text</div>
+            </article>
+        }
+        @if (ActiveContextNoteSections.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                            Title="Sin información"
+                            Message="No hay información cargada en esta solapa." />
+        }
     </div>
-}
+</AlfaDialog>
 
 @if (_showTemplatePanel)
 {
@@ -6696,6 +6681,12 @@
 
     private void CloseContextNotesModal()
         => _showContextNotesModal = false;
+
+    private IReadOnlyList<AlfaTabItem> ContextNotesTabItems =>
+    [
+        new(ContextNotesTabs.Observaciones, "Observaciones", Badge: _contextNotes.ObservationSections.Count.ToString(CultureInfo.InvariantCulture)),
+        new(ContextNotesTabs.OtrasNotas, "Otras notas", Badge: _contextNotes.OtherSections.Count.ToString(CultureInfo.InvariantCulture))
+    ];
 
     private void ClearContextNotesState()
     {
@@ -12214,7 +12205,10 @@
     // conversación: el usuario mira/edita el ticket y simplemente cierra esa pestaña al terminar.
     private async Task OpenTicket(long idTicket)
     {
-        var url = Nav.ToAbsoluteUri($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}").ToString();
+        // Con la base en la ruta (/{idweb}/{idbase}/tickets): sin ella, la pestaña nueva no sabe qué base
+        // usar y pedía identificarse de nuevo ("Sin base activa").
+        var ruta = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/tickets"), "id", idTicket.ToString(CultureInfo.InvariantCulture));
+        var url = Nav.ToAbsoluteUri(ruta).ToString();
         await JS.InvokeVoidAsync("open", url, "_blank");
     }
 

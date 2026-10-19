@@ -39,7 +39,7 @@ public sealed class ConversacionesAutorAutomaticoTests
     public void ElScriptAgregaLaColumna()
     {
         var script = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "App_Data", "updates",
-            "2026-10-15-001__conversaciones_mensajes_autor_automatico.sql"));
+            "2026-10-15-004__conversaciones_mensajes_autor_automatico.sql"));
         Assert.Contains("ADD AutorAutomatico nvarchar(30) NULL", script, StringComparison.Ordinal);
     }
 

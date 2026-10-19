@@ -78,7 +78,7 @@ public sealed class ConversacionAsistenteCorreccionesTests
             current = current.Parent;
         Assert.NotNull(current);
         var script = File.ReadAllText(Path.Combine(current!.FullName, "src", "AlfaCore", "App_Data", "updates",
-            "2026-10-15-002__conversaciones_asistente_correcciones.sql"));
+            "2026-10-15-005__conversaciones_asistente_correcciones.sql"));
         Assert.Contains("CREATE TABLE dbo.CONV_ASISTENTE_CORRECCIONES", script, StringComparison.Ordinal);
     }
 }
