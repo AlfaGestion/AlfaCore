@@ -2023,9 +2023,17 @@
                                                 </button>
                                                 @if (message.EsRespuestaAsistente)
                                                 {
+                                                    var marcaAsistente = GetMarcaAsistente(message.IdMensaje);
+                                                    var esBuena = marcaAsistente == AlfaCore.Models.AsistenteCorreccionAcciones.Buena;
                                                     <button type="button"
-                                                            class="btn btn--ghost btn--sm message-action-button"
-                                                            title="Enseñarle al asistente: qué tendría que haber respondido"
+                                                            class="btn btn--ghost btn--sm message-action-button @(esBuena ? "is-active" : string.Empty)"
+                                                            title="@(esBuena ? "Marcada como respuesta correcta (tocá para quitar)" : "Esta respuesta del asistente estuvo bien")"
+                                                            @onclick="() => AlternarRespuestaBuenaAsync(message)">
+                                                        <i class="bi @(esBuena ? "bi-hand-thumbs-up-fill" : "bi-hand-thumbs-up")"></i>
+                                                    </button>
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button @(marcaAsistente is not null && !esBuena ? "is-active" : string.Empty)"
+                                                            title="@(marcaAsistente is not null && !esBuena ? "Ya se corrigió esta respuesta (podés cargar otra corrección)" : "Enseñarle al asistente: qué tendría que haber respondido")"
                                                             @onclick="() => AbrirEnsenarAsistente(message)">
                                                         <i class="bi bi-mortarboard"></i>
                                                     </button>
@@ -2993,49 +3001,34 @@
     </div>
 }
 
-@if (_showContextNotesModal && HasContextNotes)
-{
-    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onmousedown="CloseContextNotesModal">
-        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onmousedown:stopPropagation @onclick:stopPropagation>
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Observaciones</h3>
-                    <p class="panel-card__subtitle">@GetConversationHeader(_selectedConversation!)</p>
-                </div>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContextNotesModal" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
-                <button type="button"
-                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.Observaciones ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _contextNotesTab = ContextNotesTabs.Observaciones">
-                    Observaciones (@_contextNotes.ObservationSections.Count)
-                </button>
-                <button type="button"
-                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.OtrasNotas ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _contextNotesTab = ContextNotesTabs.OtrasNotas">
-                    Otras notas (@_contextNotes.OtherSections.Count)
-                </button>
-            </div>
-            <div style="display:grid;gap:.85rem;">
-                @foreach (var note in ActiveContextNoteSections)
-                {
-                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);min-width:0;max-width:100%;overflow:hidden;">
-                        <span class="context-card__label">@note.Label</span>
-                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">@note.Text</div>
-                    </div>
-                }
-                @if (ActiveContextNoteSections.Count == 0)
-                {
-                    <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
-                        No hay información cargada en esta solapa.
-                    </div>
-                }
-            </div>
-        </div>
+@* Observaciones del cliente y del contacto (2026-10-19): ventana del diseño AlfaDesign. Se cierra con Esc,
+   con la X o con un clic afuera del recuadro; nunca por hacer clic o seleccionar texto adentro. *@
+<AlfaDialog Open="@(_showContextNotesModal && HasContextNotes)"
+            Title="Observaciones"
+            Description="@(_selectedConversation is null ? null : GetConversationHeader(_selectedConversation))"
+            Size="AlfaDialogSize.Lg"
+            Class="context-notes-dialog"
+            OnClose="CloseContextNotesModal">
+    <AlfaTabs AriaLabel="Observaciones y notas"
+              Items="@ContextNotesTabItems"
+              ActiveKey="@_contextNotesTab"
+              ActiveKeyChanged="@((string? key) => _contextNotesTab = key ?? ContextNotesTabs.Observaciones)" />
+    <div class="context-notes-dialog__list">
+        @foreach (var note in ActiveContextNoteSections)
+        {
+            <article class="context-notes-dialog__note">
+                <span class="context-notes-dialog__label">@note.Label</span>
+                <div class="context-notes-dialog__text">@note.Text</div>
+            </article>
+        }
+        @if (ActiveContextNoteSections.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                            Title="Sin información"
+                            Message="No hay información cargada en esta solapa." />
+        }
     </div>
-}
+</AlfaDialog>
 
 @if (_showTemplatePanel)
 {
@@ -6689,6 +6682,12 @@
     private void CloseContextNotesModal()
         => _showContextNotesModal = false;
 
+    private IReadOnlyList<AlfaTabItem> ContextNotesTabItems =>
+    [
+        new(ContextNotesTabs.Observaciones, "Observaciones", Badge: _contextNotes.ObservationSections.Count.ToString(CultureInfo.InvariantCulture)),
+        new(ContextNotesTabs.OtrasNotas, "Otras notas", Badge: _contextNotes.OtherSections.Count.ToString(CultureInfo.InvariantCulture))
+    ];
+
     private void ClearContextNotesState()
     {
         _loadingContextNotes = false;
@@ -7681,6 +7680,7 @@
     {
         _selectedConversation = cache.Conversation;
         _messages = OrderConversationMessages(cache.Messages);
+        _ = CargarMarcasAsistenteAsync(idConversacion);
         _adjuntosPorMensaje = cache.AttachmentsByMessage.ToDictionary(x => x.Key, x => x.Value.ToList());
         _conversationTotalMessageCount = cache.TotalMessages;
         _hasMoreOlderMessages = cache.HasMoreOlderMessages;
@@ -12205,7 +12205,10 @@
     // conversación: el usuario mira/edita el ticket y simplemente cierra esa pestaña al terminar.
     private async Task OpenTicket(long idTicket)
     {
-        var url = Nav.ToAbsoluteUri($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}").ToString();
+        // Con la base en la ruta (/{idweb}/{idbase}/tickets): sin ella, la pestaña nueva no sabe qué base
+        // usar y pedía identificarse de nuevo ("Sin base activa").
+        var ruta = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/tickets"), "id", idTicket.ToString(CultureInfo.InvariantCulture));
+        var url = Nav.ToAbsoluteUri(ruta).ToString();
         await JS.InvokeVoidAsync("open", url, "_blank");
     }
 
@@ -12272,6 +12275,8 @@
         IReadOnlyList<ConversacionAdjuntoDto> attachments)
     {
         _messages = OrderConversationMessages(page.Messages);
+        if (page.Messages.FirstOrDefault()?.IdConversacion is long idConversacionPagina)
+            _ = CargarMarcasAsistenteAsync(idConversacionPagina);
         _adjuntosPorMensaje = GroupAttachmentsByMessage(attachments);
         _conversationTotalMessageCount = Math.Max(page.TotalMessages, _messages.Count);
         _hasMoreOlderMessages = page.HasMoreBefore;
@@ -12762,20 +12767,83 @@
     private string? _ensenarError;
     private bool _ensenarGuardando;
 
-    private bool EnsenarRespuestaTienePrecio
-        => System.Text.RegularExpressions.Regex.IsMatch(_ensenarRespuesta ?? string.Empty, @"\$\s?\d");
+    // Respuestas del asistente ya marcadas 👍 o corregidas en la conversación abierta (IdMensaje → acción).
+    private IReadOnlyDictionary<long, string> _marcasAsistente = new Dictionary<long, string>();
+    private long _marcasAsistenteConversacion;
 
-    private void AbrirEnsenarAsistente(ConversacionMensajeDto message)
+    private string? GetMarcaAsistente(long idMensaje)
+        => _marcasAsistente.TryGetValue(idMensaje, out var accion) ? accion : null;
+
+    private async Task CargarMarcasAsistenteAsync(long idConversacion)
     {
-        _ensenarMensaje = message;
-        // Lo que preguntó el cliente: el último mensaje suyo antes de esta respuesta.
-        _ensenarPregunta = _messages
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var marcas = await CorreccionesAsistenteSvc.GetMensajesMarcadosAsync(idConversacion, timeout.Token);
+            if (_selectedConversation?.IdConversacion != idConversacion)
+                return;
+            _marcasAsistente = marcas;
+            _marcasAsistenteConversacion = idConversacion;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Sólo resalta los íconos: si falla, se ven sin marcar.
+        }
+    }
+
+    private async Task AlternarRespuestaBuenaAsync(ConversacionMensajeDto message)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var marcada = await CorreccionesAsistenteSvc.AlternarRespuestaBuenaAsync(new AlfaCore.Models.AsistenteCorreccionPropuesta
+            {
+                IdConversacion = message.IdConversacion,
+                IdMensaje = message.IdMensaje,
+                PreguntaCliente = PreguntaClienteAnterior(message),
+                RespuestaAsistente = message.Texto,
+                Usuario = CurrentUserNameForAudit
+            }, timeout.Token);
+
+            var marcas = new Dictionary<long, string>(_marcasAsistente);
+            if (marcada)
+                marcas[message.IdMensaje] = AlfaCore.Models.AsistenteCorreccionAcciones.Buena;
+            else
+                marcas.Remove(message.IdMensaje);
+            _marcasAsistente = marcas;
+            _actionError = null;
+            _actionMessage = marcada
+                ? "Gracias: el asistente va a usar esta respuesta como ejemplo de cómo responder."
+                : "Se quitó la marca de respuesta correcta.";
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex is InvalidOperationException ? ex.Message : "No se pudo marcar la respuesta.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Lo que preguntó el cliente antes de esa respuesta: su último mensaje con texto.</summary>
+    private string PreguntaClienteAnterior(ConversacionMensajeDto message)
+        => _messages
             .Where(m => string.Equals(m.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase)
                         && (m.FechaHora < message.FechaHora || (m.FechaHora == message.FechaHora && m.IdMensaje < message.IdMensaje))
                         && !string.IsNullOrWhiteSpace(m.Texto))
             .OrderByDescending(m => m.FechaHora).ThenByDescending(m => m.IdMensaje)
             .Select(m => m.Texto.Trim())
             .FirstOrDefault() ?? string.Empty;
+
+    private bool EnsenarRespuestaTienePrecio
+        => System.Text.RegularExpressions.Regex.IsMatch(_ensenarRespuesta ?? string.Empty, @"\$\s?\d");
+
+    private void AbrirEnsenarAsistente(ConversacionMensajeDto message)
+    {
+        _ensenarMensaje = message;
+        _ensenarPregunta = PreguntaClienteAnterior(message);
         _ensenarRespuesta = string.Empty;
         _ensenarAccion = AlfaCore.Models.AsistenteCorreccionAcciones.Responder;
         _ensenarError = null;
@@ -12810,6 +12878,8 @@
             }, timeout.Token);
 
             _ensenarMensaje = null;
+            var marcas = new Dictionary<long, string>(_marcasAsistente) { [mensaje.IdMensaje] = guardada.Accion };
+            _marcasAsistente = marcas;
             _actionError = null;
             _actionMessage = guardada.Estado == AlfaCore.Models.AsistenteCorreccionEstados.Aprobada
                 ? "Listo: el asistente ya lo tiene en cuenta para las próximas consultas parecidas."

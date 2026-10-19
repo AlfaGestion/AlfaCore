@@ -79,9 +79,18 @@ public sealed record ArcaCaeSolicitudDto(
     int CondicionIvaReceptorId,
     string MonId,
     decimal MonCotiz,
-    IReadOnlyList<ArcaIvaAlicuotaDto> Ivas);
+    IReadOnlyList<ArcaIvaAlicuotaDto> Ivas)
+{
+    /// <summary>Documentos que ajusta una nota. Se conserva también para conciliar una respuesta perdida.</summary>
+    public IReadOnlyList<ArcaComprobanteAsociadoDto> ComprobantesAsociados { get; init; } = [];
+}
+
+public sealed record ArcaComprobanteAsociadoDto(int Tipo, int PuntoVenta, long Numero, string? Cuit = null, DateTime? Fecha = null);
 
 public sealed record ArcaObservacionDto(int Codigo, string Mensaje);
+
+/// <summary>Comprobante recuperado de ARCA: permite conciliar sin reenviar FECAESolicitar.</summary>
+public sealed record ArcaComprobanteConsultadoDto(ArcaCaeSolicitudDto Solicitud, string Cae, DateTime Vencimiento);
 
 public sealed record ArcaCaeResultadoDto(
     bool ExitoTecnico,

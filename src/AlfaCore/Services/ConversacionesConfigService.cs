@@ -973,6 +973,8 @@ public sealed class ConversacionesConfigService(
                     "Cerramos esta conversación por inactividad. Cuando lo necesites, escribinos de nuevo. ¡Gracias!"),
                 SlaActivo = ReadValue(values, "CONV_SLA_ACTIVO", string.Empty) == "1",
                 SlaHorasRecordatorio = ReadIntValue(values, "CONV_SLA_HORAS_RECORDATORIO", 0, 2),
+                EncuestaActiva = ReadValue(values, "CONV_ENCUESTA_ACTIVA", string.Empty) == "1",
+                EncuestaPregunta = ReadValue(values, "CONV_ENCUESTA_PREGUNTA", string.Empty, ConversacionEncuestaTextos.PreguntaPorDefecto),
                 SlaHorasReasignar = ReadIntValue(values, "CONV_SLA_HORAS_REASIGNAR", 0, 4),
                 AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
                 AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
@@ -1124,6 +1126,14 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_AUTOCIERRE_HORAS_CIERRE", (config.AutoCierreHorasCierre <= 0 ? 24 : config.AutoCierreHorasCierre).ToString(inv)));
             items.Add(("CONV_AUTOCIERRE_MENSAJE_AVISO", (config.AutoCierreMensajeAviso ?? string.Empty).Trim()));
             items.Add(("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim()));
+        }
+
+        if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Encuesta))
+        {
+            items.Add(("CONV_ENCUESTA_ACTIVA", config.EncuestaActiva ? "1" : "0"));
+            items.Add(("CONV_ENCUESTA_PREGUNTA", string.IsNullOrWhiteSpace(config.EncuestaPregunta)
+                ? ConversacionEncuestaTextos.PreguntaPorDefecto
+                : config.EncuestaPregunta.Trim()));
         }
 
         if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Sla))

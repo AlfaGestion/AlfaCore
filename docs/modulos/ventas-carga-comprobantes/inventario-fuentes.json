@@ -1,0 +1,1020 @@
+{
+  "proyecto": "V_MV_VENTAS.vbp",
+  "alcance": "Fuentes referenciadas por VBP; no incluye implementación de DLL/OCX binarios, SQL instalado ni análisis de alcanzabilidad.",
+  "lectores": [
+    "Cfg",
+    "Cfg$",
+    "Cfg2",
+    "Cfg2$",
+    "sp_Cfg",
+    "sp_Cfg$"
+  ],
+  "archivos": 125,
+  "lineas": 146049,
+  "llamadas_configuracion": 1026,
+  "claves_o_prefijos_literales_distintos": 475,
+  "llamadas_con_clave_dinamica": 43,
+  "referencias_faltantes": [],
+  "fuentes": [
+    {
+      "tipo": "Module",
+      "archivo": "..\\NMC_LIB\\LIB\\Def_QCon.bas",
+      "bytes": 19654,
+      "lineas": 480,
+      "sha256": "a3f9b4913ae2aac22b265f6b6a1afc10378242eafc93d377eafc46b7aae36453",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "clsTotales.cls",
+      "bytes": 106253,
+      "lineas": 2255,
+      "sha256": "f0026606d91bdd840e01ce8615b6741491d22858422f80ac9edfa2c0e9fcaaba",
+      "llamadas_configuracion": 33
+    },
+    {
+      "tipo": "Class",
+      "archivo": "ClsCmnCptes.cls",
+      "bytes": 260807,
+      "lineas": 4923,
+      "sha256": "c2b5399e7cb0727f51693f6dac2133cad87426f116ecc04a597793549d5e7a68",
+      "llamadas_configuracion": 48
+    },
+    {
+      "tipo": "Module",
+      "archivo": "stuff.bas",
+      "bytes": 199135,
+      "lineas": 4179,
+      "sha256": "529f866b0fab60b7156a1c6fdaa0d36d332c20cb469cd42c2937f55191423681",
+      "llamadas_configuracion": 58
+    },
+    {
+      "tipo": "Form",
+      "archivo": "VtaTot.frm",
+      "bytes": 241492,
+      "lineas": 5871,
+      "sha256": "223890b54b755bc4ee281e12be1615c96d017ea4dd4937effa9795463f239a8e",
+      "llamadas_configuracion": 22
+    },
+    {
+      "tipo": "Form",
+      "archivo": "ConCompr.frm",
+      "bytes": 55201,
+      "lineas": 925,
+      "sha256": "ada9dc2c4a537e8618c0c48edcc99d86d81762580f2379aa50e75c297fa167c6",
+      "llamadas_configuracion": 12
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModGlobal.bas",
+      "bytes": 872418,
+      "lineas": 19552,
+      "sha256": "6e6edb871089ff9d3e989cff776e009759a2964233031959a529fb29f0dd0f7a",
+      "llamadas_configuracion": 204
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmLotesySeries.frm",
+      "bytes": 38136,
+      "lineas": 1022,
+      "sha256": "0b83f3c8280f1f76ff8137e37887f63f87d4e7b175efd79d53b63d3307510852",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Module",
+      "archivo": "IMP_Recibos.bas",
+      "bytes": 42598,
+      "lineas": 797,
+      "sha256": "3366426471b45eee84031d5e341452ffe0cb9f5081e6f2503db161095d6a635e",
+      "llamadas_configuracion": 2
+    },
+    {
+      "tipo": "Module",
+      "archivo": "V_MV_Ventas.bas",
+      "bytes": 2680,
+      "lineas": 83,
+      "sha256": "efda0e891d7f37733a3faee92f41fca43c86f50df5f66eb3a69059b1ebdf017d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmMenus.frm",
+      "bytes": 40562,
+      "lineas": 1402,
+      "sha256": "4661abca015da465907e5dfe895afcf06cf5aa876223d93ec6a2bb0ea7a4d68e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Rt_Stock.bas",
+      "bytes": 22219,
+      "lineas": 516,
+      "sha256": "97c09f4c63b5bde48dd56ee66a18aa24bd71abe45b8bf51c70f39fa1c066f03b",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDatosTarjeta.frm",
+      "bytes": 10558,
+      "lineas": 329,
+      "sha256": "29a33145f80c8aaded21652ac71a4e554ebf818c9f3bfd8833748b6c4420e6e9",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "RT_MediosDePago.bas",
+      "bytes": 10948,
+      "lineas": 327,
+      "sha256": "a5b6c07e7c01750ff819b116b4841dce2b5f614bf3971456576318c36c32fda8",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Stuff_PrnFiscal.bas",
+      "bytes": 1146,
+      "lineas": 35,
+      "sha256": "77e30c46984ac0fdbabc5f7c413c065f62d140cfe039b695c42c1ffd037462fb",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDatosAdicTareas.frm",
+      "bytes": 24838,
+      "lineas": 698,
+      "sha256": "2093c92647f7528d5d22cba6868f1b430ce62cf2224cb44b18b84550bfb5fccf",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "..\\nmc_lib\\Dll3\\Login_V.frm",
+      "bytes": 5773,
+      "lineas": 207,
+      "sha256": "802997ea6cfc1eeecb9f6f54a5a148387caa4751c32f1b213808e069288408a0",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "..\\nmc_lib\\Dll2\\DLL_Decl.bas",
+      "bytes": 15906,
+      "lineas": 297,
+      "sha256": "83b8b158fdafa6768fd359d602a11c82e6a84e1a04c15369bbf49d1a8ee10d15",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDespacho.frm",
+      "bytes": 8227,
+      "lineas": 276,
+      "sha256": "3860e64d6c027e6e9ce959e8f263abe1fcdaaf9c3e6075776a5c85172e9b5338",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "ClsCCosto.cls",
+      "bytes": 19325,
+      "lineas": 445,
+      "sha256": "0154fef6880f087806f5fb3aef2d5725f9dd0bfbef3101af1608a30d7c63c540",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmConfirmaCCosto.frm",
+      "bytes": 56892,
+      "lineas": 1579,
+      "sha256": "f110638f4aecd35bbe76c82b5fbcc9dc137cf15a6355fd0db94dd1813afd3eab",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDatosReparto.frm",
+      "bytes": 10278,
+      "lineas": 334,
+      "sha256": "ed663b6b3674c747addc5504202f026ce9ddd5d2e980904a194a2b417859083f",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmLoteyPosicion.frm",
+      "bytes": 30685,
+      "lineas": 845,
+      "sha256": "cdb69f7126ee35c142827e189ec174525ad2dc7a261316524697f2f286326687",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmFiltroReposicion.frm",
+      "bytes": 4278,
+      "lineas": 149,
+      "sha256": "3d2784460705ec4665e8ab5165218b0dfc947c8b16fb70176fd118df28f1507c",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmFiltrosCarga.frm",
+      "bytes": 14676,
+      "lineas": 403,
+      "sha256": "b96feec1991c01d04fa19c28cb83483f57b1be78710842a487ca0a6905e4c6aa",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "TOOLTIP.BAS",
+      "bytes": 2585,
+      "lineas": 81,
+      "sha256": "f13dce59cfd60cd993618af7f785faf011221dac8fd8d7c200eada9655e54c65",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "TOOLTIP.FRM",
+      "bytes": 1235,
+      "lineas": 48,
+      "sha256": "6c636bc5ab7e7418910384761effe2652a9b7939380a96ee4040cc2b16bbb0c6",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmConsultaBONOS.frm",
+      "bytes": 11810,
+      "lineas": 322,
+      "sha256": "eefe0fcb34c4c76807428a0c04cfc5b63bb655f799210a627c9444df781ce414",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmAsientoNDPRoNCPE.frm",
+      "bytes": 85402,
+      "lineas": 2294,
+      "sha256": "ecbbb6f0c169a4bd150398966cc484645fcd89d643c1552f12a1c412c93fc8b7",
+      "llamadas_configuracion": 6
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmClaveAutorizacion.frm",
+      "bytes": 11760,
+      "lineas": 336,
+      "sha256": "582a82814dd0f3b3878285395f8ace13b24f168ac0f9d5e1433a830b0114f1d8",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCuentayOrden.frm",
+      "bytes": 9579,
+      "lineas": 282,
+      "sha256": "48e3552eca1328be6b57ddadea44914eaf55c672c83e9d9af41413ba76fca54c",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCpteXLote.frm",
+      "bytes": 3555,
+      "lineas": 117,
+      "sha256": "718d5d9d7590688545f91fccd77ffbebe93b775c83efff5aba3e3e5375ff90f5",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModConciliaciones.bas",
+      "bytes": 18522,
+      "lineas": 419,
+      "sha256": "d40b5930bfbc83f64256f29ebf77ac658d051a99bc0e93b6de5cfcb92e841606",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmPideEquivalencia.frm",
+      "bytes": 4268,
+      "lineas": 150,
+      "sha256": "8685f8396851e2f591c45365eefb0c39b19d24e3d5dc7f7aec284fbf75109908",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmTareasOT.frm",
+      "bytes": 4999,
+      "lineas": 170,
+      "sha256": "edf5c08414d9cd4333482c269165f9743705f997b1d6d76e3cea736be97b0a75",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ABM_Varios.bas",
+      "bytes": 39503,
+      "lineas": 982,
+      "sha256": "f5d1da2694806937e46912ef57fe6760014728a1e35649706ef55458e2350525",
+      "llamadas_configuracion": 3
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDetalleSaldoAnterior.frm",
+      "bytes": 17513,
+      "lineas": 450,
+      "sha256": "6e6859e91cd87c673e9446e9bb98ff7eba06de77ed68673686ddfbf4003e5ff6",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmMuestraUltimosPrecios.frm",
+      "bytes": 8695,
+      "lineas": 235,
+      "sha256": "ed1fdb9140411351b05ce9583bb0d767465f64c9bf26fc82bc60a01ca8553bf8",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModIIBBRetPercOnLine.bas",
+      "bytes": 5977,
+      "lineas": 149,
+      "sha256": "4011e60849dfe87cbacbc680e6a918af12e794384af99d9b0d0fb5b788937b04",
+      "llamadas_configuracion": 6
+    },
+    {
+      "tipo": "Module",
+      "archivo": "StuffBorradorVentas.bas",
+      "bytes": 1242,
+      "lineas": 29,
+      "sha256": "340e7f762368803409b176442cdee7d89b9c03c7bb56884d25b9ffbf784fa333",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmConsArticulos.frm",
+      "bytes": 147648,
+      "lineas": 3908,
+      "sha256": "cb465a4c5c756af7bc8979d141d3f847b509d26272a8860f36566ce29cd7c5a4",
+      "llamadas_configuracion": 13
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModExportarExcel.bas",
+      "bytes": 61649,
+      "lineas": 1610,
+      "sha256": "32f0cad0035396473121e46bc8cbe92d1640f8b8c08019ad42e9ee08c088e6ef",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Module",
+      "archivo": "STUFF3.bas",
+      "bytes": 16164,
+      "lineas": 422,
+      "sha256": "1d6953c06869d013dc0f68d704a35a14804efa845c8098119bebc428e24899e4",
+      "llamadas_configuracion": 2
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Rt_eMailAux.bas",
+      "bytes": 13297,
+      "lineas": 331,
+      "sha256": "e2a0aa9c58567a0571198bdcb40ead7871b827e1d74fd47cfa8d108326fbf8c0",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmUnegocio.frm",
+      "bytes": 7886,
+      "lineas": 248,
+      "sha256": "666a05eb00c67d3173b89580b87deb74284e2aed2735783d9b1e6d80cf784d57",
+      "llamadas_configuracion": 7
+    },
+    {
+      "tipo": "Class",
+      "archivo": "cFormulas.cls",
+      "bytes": 72291,
+      "lineas": 1772,
+      "sha256": "39162ef85105539719838922f221d469e2f9073bb7538d1f8c9b59f500ca578d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "Lib_ClsCons3.cls",
+      "bytes": 18566,
+      "lineas": 535,
+      "sha256": "c2d61c33dd939a0707ea20c6c2b5beadecaacf9c5ad5912e50f803ee6bd4f87a",
+      "llamadas_configuracion": 8
+    },
+    {
+      "tipo": "Form",
+      "archivo": "..\\nmc_lib\\Dll3\\Lib_FrmCons3.frm",
+      "bytes": 54091,
+      "lineas": 1576,
+      "sha256": "34b5f62fd299803d6a05058600953f5b83041a6f5fecc5d190fb2403d73ad9f7",
+      "llamadas_configuracion": 13
+    },
+    {
+      "tipo": "Form",
+      "archivo": "Lib_FrmCons3Tree.frm",
+      "bytes": 21619,
+      "lineas": 676,
+      "sha256": "6f6b261e10bb05b5177bebafe89ab60151d1411925c58f237fb08e9572f9e69b",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmArtRelacionadosVenta.frm",
+      "bytes": 4932,
+      "lineas": 134,
+      "sha256": "c7ea29a894d0f427bcb64a43f43483f6c5200ff50fccdc7077de4bb534eb36d2",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModImprimeEnComandera.bas",
+      "bytes": 23707,
+      "lineas": 556,
+      "sha256": "4f4bac2ba7c2cc23c955a5eb14099b4280198c3f9f1476f384597c945af347c2",
+      "llamadas_configuracion": 9
+    },
+    {
+      "tipo": "Module",
+      "archivo": "V_MA_MANT.bas",
+      "bytes": 43235,
+      "lineas": 1123,
+      "sha256": "025e4ae237afdec788028018f85f49c457204e8516661d646f4ac68a4ef01f15",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCliEventual.frm",
+      "bytes": 57095,
+      "lineas": 1643,
+      "sha256": "badee4fb4c89b3a6631e532b5b1e1155e4d857f11d82d341ab96fe83a416bb39",
+      "llamadas_configuracion": 10
+    },
+    {
+      "tipo": "Class",
+      "archivo": "cStringBuilder.cls",
+      "bytes": 6883,
+      "lineas": 244,
+      "sha256": "a3ceb65ea6c4b3e76c4a0154180e04fe65bf46aa97a18d10c9cce8791b901bc0",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "cJSONScript.cls",
+      "bytes": 7125,
+      "lineas": 212,
+      "sha256": "32a5921f1d34f094456c4cede80d312767194754ce47733474406e0eb95fd056",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModCuitAFIP.bas",
+      "bytes": 13174,
+      "lineas": 332,
+      "sha256": "baa10e36d35ce1b13779a809be205cf5f5f5e9286432abd763da355eb5fba120",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Module",
+      "archivo": "JSON.bas",
+      "bytes": 18016,
+      "lineas": 667,
+      "sha256": "23dfe3c74421ef5810430c0b7c2e589f62d51a01de1175162e366433e4a9b463",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmArtAlta.frm",
+      "bytes": 141151,
+      "lineas": 3653,
+      "sha256": "61e303f7bec6bf11e41ff717534dbec7a34ad26178e977b445def338e159f6d3",
+      "llamadas_configuracion": 26
+    },
+    {
+      "tipo": "UserControl",
+      "archivo": "..\\nmc_lib\\OCXNEW\\NwDBGrid\\NwDbGridSinUDB.ctl",
+      "bytes": 110695,
+      "lineas": 3052,
+      "sha256": "0532b10b329eb52be6df2837358cf81b19019e72c14406bf409178f27546d5e4",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmCotizar.frm",
+      "bytes": 8095,
+      "lineas": 305,
+      "sha256": "fcba1ec788603a5064205db6a88e8db6b3798f519c7abbeb6785320625fbcb3e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "..\\nmc_lib\\OCXNEW\\NwDBGrid\\FrmCampos.frm",
+      "bytes": 15167,
+      "lineas": 467,
+      "sha256": "ec75ad1a0bdc917313392e6a9eb74c8faee3d5c87c8a34a378fea6cdbb93777a",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCargaPercepciones.frm",
+      "bytes": 7813,
+      "lineas": 257,
+      "sha256": "383e2b5adcd7ccd30040338d946467bea26fd59e7136716b5b78195e2dc171bf",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmPropsPuertoCOMMventas.frm",
+      "bytes": 36388,
+      "lineas": 1117,
+      "sha256": "be19e2dd845b7d10da626f5d7a8fb9b54059b5ca0f8be62bd8b65205e367ba20",
+      "llamadas_configuracion": 3
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmPesajeVentas.frm",
+      "bytes": 31848,
+      "lineas": 981,
+      "sha256": "73e369e966edac534010814f5e8249c20073637f3d82eb4bd60685ff3d5cab26",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "MsgboxTemporal.bas",
+      "bytes": 1387,
+      "lineas": 41,
+      "sha256": "aa605900caa208d858903828de53c727613e08ae75339259942913cd19b9c2b7",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmMsgBoxTemporal.frm",
+      "bytes": 3672,
+      "lineas": 139,
+      "sha256": "37ac9418ee416d2b1e3647ec4c9712cdf41633d3c3fc5aa595e9e0cb7e676c8e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmSexoTalleColor.frm",
+      "bytes": 20361,
+      "lineas": 647,
+      "sha256": "2fc4b2a21f187a50cd4c1a813ef9395aa4b3c25803f2454933d83937919757e2",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmDatosImagen.frm",
+      "bytes": 21056,
+      "lineas": 515,
+      "sha256": "f5bcac44ca2a426da5c24a9abb68f71809b674e9bcb578c9b831eb00b11fdd7e",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Module",
+      "archivo": "RT_BusquedaTextual.bas",
+      "bytes": 3392,
+      "lineas": 110,
+      "sha256": "081b8c9a19339fc0c1d12351efc7f52726286430df342724c846ed6b46258b5e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "EM_RenumeraCpte.frm",
+      "bytes": 78885,
+      "lineas": 1728,
+      "sha256": "6176dd54dec9c6cc0b90c4e69be7ece3de7db3b15607825316708aeb1795fa86",
+      "llamadas_configuracion": 10
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Rt_ImgThumbs.bas",
+      "bytes": 37233,
+      "lineas": 1036,
+      "sha256": "36f15ce6d308b8c8ab556ef55110377a219dc3792e47d88e71ec7d4c1484853b",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmImagenNew.frm",
+      "bytes": 4365,
+      "lineas": 147,
+      "sha256": "90456e005b37a87bc048ac0e94fe8b85cde8fd4ace672b88fca4039357cd2417",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "Dll_dis.frm",
+      "bytes": 6308,
+      "lineas": 203,
+      "sha256": "211974870abf93c94e41dc2a901264a35dae3d0595843432a93cf016440b866d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "DLL_DIS.CLS",
+      "bytes": 2221,
+      "lineas": 77,
+      "sha256": "4befa251c3bab7d8fec1bc98b41751ed1bbf686f64829b6e9c89a9cc0d96b991",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModAlfaCloud.bas",
+      "bytes": 32243,
+      "lineas": 842,
+      "sha256": "f829183f3154f8ebef486adf2feb4eb81afbc5530575e4051c73015a53e7b803",
+      "llamadas_configuracion": 3
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmNotificacionRecepcioon.frm",
+      "bytes": 3227,
+      "lineas": 86,
+      "sha256": "d0ebdb63f81ff918b4d5c075c82f7f1b0ed43ae4ae3af1679fa156066acaac8e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmInputContrasenia.frm",
+      "bytes": 5706,
+      "lineas": 180,
+      "sha256": "f2b9ad956539e40f3cac6a70b7a451dcf9515819bcd95611def509893164fbb4",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmMsg.frm",
+      "bytes": 1678,
+      "lineas": 57,
+      "sha256": "5a6b50fe84b013d947c935cf1811ba9b1e81beebdc4640469744bab8dd830090",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmMainftp.frm",
+      "bytes": 19755,
+      "lineas": 579,
+      "sha256": "25fa55e54214e0471fcbc4229754b835f8791e85b3fb5f84df45e1f1f5027566",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "cDirItem.cls",
+      "bytes": 791,
+      "lineas": 33,
+      "sha256": "c281392267f6b0a22b36022fe80535c730dcf7a0052b2fc9f301d26a85ec40de",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "cDirList.cls",
+      "bytes": 1940,
+      "lineas": 63,
+      "sha256": "90b643398d0a860e8b26ffb7d54f1748d2b588665244887de6f7ecbbe392fa8d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "clsFTP.cls",
+      "bytes": 14988,
+      "lineas": 463,
+      "sha256": "c60b9bfd36f36ea9c268081e9ccd7e7abdc8cd800afc5cd62214b09ecf584731",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "SimpleFtp.bas",
+      "bytes": 5884,
+      "lineas": 83,
+      "sha256": "61be831e7b201e244d04d23d8959513b5f5e961edf155409ed7f6c018a482510",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "SWFTPshopcart.bas",
+      "bytes": 14631,
+      "lineas": 361,
+      "sha256": "0ab789e6a48bcb3f22b92364b7cf1fc7ab6cd3b24d98b815e3f5076eddab3e07",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModNotificacion.bas",
+      "bytes": 6252,
+      "lineas": 187,
+      "sha256": "55050f550756a21d5fc2d3e9a304a4d4d05ec7ff4a7cd498f8b7ca73fe2f6abb",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmEnviarTTareas.frm",
+      "bytes": 131429,
+      "lineas": 3687,
+      "sha256": "b92e2439e22db50beea21882557942928b16812de355426deefee9fa2f8322dc",
+      "llamadas_configuracion": 28
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Fmtnroas.bas",
+      "bytes": 7636,
+      "lineas": 202,
+      "sha256": "e071fcd7902c6e10e645e50a9dadda9aaa081cb89649796f926829316c6ef6ce",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModPuntos.bas",
+      "bytes": 19085,
+      "lineas": 483,
+      "sha256": "06e8e4b12b26e5945f31a8a6505187d218e6847edd96affbb1835ba7e01c4f53",
+      "llamadas_configuracion": 7
+    },
+    {
+      "tipo": "Class",
+      "archivo": "clsCpteElectronico.cls",
+      "bytes": 1953,
+      "lineas": 94,
+      "sha256": "ea5fec169d423b4c08345e35c532e6107b6d419efd8f0c07a48188367ed2337e",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModFacturacionElectronica.bas",
+      "bytes": 102931,
+      "lineas": 2369,
+      "sha256": "e0d32e3575222f6bd3a1a2145fb27136f600f4fbaf7e12662fcadb9c70136646",
+      "llamadas_configuracion": 38
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmDisplayFacturacionElectronica.frm",
+      "bytes": 3904,
+      "lineas": 130,
+      "sha256": "41e6edf0ca05a1088ad19a8047282b9c0c744bca952685aac4b321e3578b6dd0",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmSistemaDeTransmisionFacturaDeCreditoMiPyme.frm",
+      "bytes": 4268,
+      "lineas": 133,
+      "sha256": "6c8fe63ea39979cac0f030dcc3c16b98ddafd514b7927aaea569791dc09fbb00",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmModoTrabajoPuntoDeVenta.frm",
+      "bytes": 9311,
+      "lineas": 296,
+      "sha256": "3549a0d935900e400b186fbe5d25f6413beed1851d1b4fd6f572229162bcf112",
+      "llamadas_configuracion": 7
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCargaMovCaja.frm",
+      "bytes": 41006,
+      "lineas": 1158,
+      "sha256": "f9429d6b1a9d54656ef8845487b04f164d68145a470c9f2a96291d18b32edf44",
+      "llamadas_configuracion": 2
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmCierreZVentas.frm",
+      "bytes": 10083,
+      "lineas": 285,
+      "sha256": "852b1a5039a5f2ecf01d50a0b78c66c8ef818ac0c0f907351274a2bcdbf0f659",
+      "llamadas_configuracion": 6
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModGruposEmp.bas",
+      "bytes": 46747,
+      "lineas": 1225,
+      "sha256": "52c0963b65445272a81bb77efea380457c32b5fb94c0c0e640c5a1b8d6edbf81",
+      "llamadas_configuracion": 14
+    },
+    {
+      "tipo": "Module",
+      "archivo": "CierreAperturaCaja.bas",
+      "bytes": 31582,
+      "lineas": 667,
+      "sha256": "cebf0c1c2c60fa5fe9dfd650102bd2af4460e9dfd1b0ec820b9984017cbe837a",
+      "llamadas_configuracion": 7
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmFiltroOCPend.frm",
+      "bytes": 6648,
+      "lineas": 209,
+      "sha256": "c7c5fc043aaaaf29ae2a32cfc80fa802cdaf32e85933eaf0b29391e8f954e841",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmFhOperativa.frm",
+      "bytes": 11640,
+      "lineas": 329,
+      "sha256": "67aa7818c128ec7b10f5e0c7afc44fe4f1d8f289f54db87a9a7b40d6d2467359",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Class",
+      "archivo": "ResCpteElec.cls",
+      "bytes": 583,
+      "lineas": 24,
+      "sha256": "fa57dc750f091d4ed9c28f781ad64997179fa77c645b50dc2e9b249de00f9d04",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmPideBLKG.frm",
+      "bytes": 4051,
+      "lineas": 129,
+      "sha256": "da18cd77ebdb3cf699db5af4e6baad82dd9da5dbfdc49dfc94cbcd583f6cce7c",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModConstructora.bas",
+      "bytes": 1993,
+      "lineas": 58,
+      "sha256": "9fdfcc86976bdac7b88a1ca267e63005c3188c51654861151c460d6f01b1f300",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "..\\nmc_lib\\Dll3\\Acceso.Frm",
+      "bytes": 24951,
+      "lineas": 808,
+      "sha256": "8f8feb2f45654de65005b29a31084a8a2c03f82cb32a7f2c1f3a002185100f0d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Class",
+      "archivo": "..\\nmc_lib\\Dll3\\Dll_db.cls",
+      "bytes": 87886,
+      "lineas": 2358,
+      "sha256": "7ac517a2d405ba288c0e6c1a4a771b8dcddc9c971d161f2fee03503b9afca31d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "..\\nmc_lib\\LIB\\Lbm_cmn.bas",
+      "bytes": 45127,
+      "lineas": 1239,
+      "sha256": "88b5b4a5f72ec3f2ea30f48be657e29bb2be4b25b187441a6624710181321461",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModSolicitudCredito.bas",
+      "bytes": 7296,
+      "lineas": 220,
+      "sha256": "2fa4e49a5641d6dabf4db068a9c18b27e866d93f5115d365dee4c7bceb9720d6",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmImportarQR.frm",
+      "bytes": 1950,
+      "lineas": 73,
+      "sha256": "9aa467a179bfcae85dd3b9d246c18abd514c8baa4b2f197d0a0020f020a3444d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "modHelpDeskWeb.bas",
+      "bytes": 4304,
+      "lineas": 126,
+      "sha256": "ec334c26781bcf734fda48312095ff40f8316f26a5f84bfd0f1c72bd717f0153",
+      "llamadas_configuracion": 2
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmDatosExportacion.frm",
+      "bytes": 21413,
+      "lineas": 542,
+      "sha256": "1aa755f5ff29bbbb7d14b4c7dbd054d7a8568279c64cd155afcbd14ef3d477c2",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "Rt_BusquedaCodigo.bas",
+      "bytes": 7474,
+      "lineas": 218,
+      "sha256": "f4dff5c16f0b79def3d5139e6aadb470d684bc8e1848666342224a6d59bdbd89",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "FrmCuotas.frm",
+      "bytes": 31543,
+      "lineas": 971,
+      "sha256": "9a64ba50215e15d1bddd6860b22daf19cc657317e433e4fa703f20532e190d78",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Class",
+      "archivo": "ModMouse.cls",
+      "bytes": 46808,
+      "lineas": 777,
+      "sha256": "9f1818f7719246e631e7f69a8b2f9812358eb268990f148e2ab921c65be17837",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmStatusPeticionRentas2.frm",
+      "bytes": 5421,
+      "lineas": 180,
+      "sha256": "dd6078a021da5e2fecd6ceb1df15f2901f4a645434daafc4807f43a449eae613",
+      "llamadas_configuracion": 1
+    },
+    {
+      "tipo": "Form",
+      "archivo": "V_mv_vta.frm",
+      "bytes": 1483407,
+      "lineas": 30154,
+      "sha256": "6ecf2dfbb5c31dfbf488b3f00fcc9e77e498b53bcad4c4a5effd007ca87c1a93",
+      "llamadas_configuracion": 387
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModAutoSaveCarga.bas",
+      "bytes": 24719,
+      "lineas": 776,
+      "sha256": "d2d75eef7a37714b807ccee6cb08bbfa0e0c6f4465d06526e0df4690d8ebba0a",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmReconectar.frm",
+      "bytes": 2793,
+      "lineas": 98,
+      "sha256": "4931ed010b2989f4f672d18684774f9291694cfe7426aa4bf9c5c3e49eb31d2f",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "UserControl",
+      "archivo": "UtilNetBar.ctl",
+      "bytes": 127310,
+      "lineas": 3478,
+      "sha256": "ff60f8431d9adf6453ca7edea8572fa6233b6c8f4c66e96ec1266445d2517d58",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "UserControl",
+      "archivo": "..\\nmc_lib\\OCXNEW\\Busqueda Codigo\\BusquedaCodigo.ctl",
+      "bytes": 96773,
+      "lineas": 2662,
+      "sha256": "90e8450c574f90cb590973ac1826a897c76b7da21d4285909bba52a115984568",
+      "llamadas_configuracion": 2
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModUtilNetBar.bas",
+      "bytes": 8960,
+      "lineas": 289,
+      "sha256": "f7f5ed9d679f6cfc08522e68d4f2f1cd7994049d13769bed88e4fab59df4fb4d",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModEstadoARCA.bas",
+      "bytes": 16842,
+      "lineas": 515,
+      "sha256": "78dfb01fc328943cad7d7014624a33a49fd34d4b759970e55aa96d9f6ffcb6d0",
+      "llamadas_configuracion": 8
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModAlfaCore.bas",
+      "bytes": 335,
+      "lineas": 6,
+      "sha256": "f9418b7a2595b20faae0e2721124b012abca2643fd1d47dd68ffe9a8bfb370c9",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "UserControl",
+      "archivo": "..\\nmc_lib\\OCXNEW\\UCTecladoNum\\UCTecladoNum.ctl",
+      "bytes": 13858,
+      "lineas": 437,
+      "sha256": "afc2a167c90acb9dff50518dc1ae5f588214d1678aac1e0a2ff59b529bdc4398",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModOfertasVencidas.bas",
+      "bytes": 5606,
+      "lineas": 98,
+      "sha256": "971005a983079cee1b59adbb12837636e36774cd512dfd2d43c0b317f8a9fb16",
+      "llamadas_configuracion": 3
+    },
+    {
+      "tipo": "Form",
+      "archivo": "frmPagoPoint.frm",
+      "bytes": 25070,
+      "lineas": 667,
+      "sha256": "7a8da09a3b984bae3ff222434b5865fd927904cf7625ecd423289b8f762b71be",
+      "llamadas_configuracion": 0
+    },
+    {
+      "tipo": "Module",
+      "archivo": "ModPagoPoint.bas",
+      "bytes": 21693,
+      "lineas": 488,
+      "sha256": "dbc90f2d0fd83641929650b44eefd390c44adfa11cdd1c193fa38c38697b3309",
+      "llamadas_configuracion": 5
+    }
+  ]
+}

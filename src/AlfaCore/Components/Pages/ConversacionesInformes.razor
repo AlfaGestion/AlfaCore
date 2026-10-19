@@ -1,6 +1,7 @@
 @page "/conversaciones/informes"
 @page "/{idweb}/{idbase:int}/conversaciones/informes"
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
+@inject AlfaCore.Services.ConversacionesInformeExcelExporter ExcelExporter
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -14,6 +15,8 @@
 <AlfaNotification Message="@FeedbackMessage" OnDismiss="() => _feedback = null" />
 
 <div class="inf-page">
+    <AlfaTabs Items="ConversacionesSatisfaccion.VistasInformes" ActiveKey="mensuales" ActiveKeyChanged="CambiarVista" AriaLabel="Informes" />
+
     <ConversacionesConfigPagina Titulo="Informes mensuales" Amplia="true"
                                 Descripcion="Resumen de atención por cliente. Se genera una vez por mes y queda guardado.">
         <Estado>
@@ -292,6 +295,12 @@
         };
     }
 
+    private void CambiarVista(string? key)
+    {
+        if (key == "satisfaccion")
+            Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones/informes/satisfaccion"));
+    }
+
     // Si ya existe un informe guardado para el período elegido, lo abre solo (sin regenerar).
     private async Task AutoAbrirPeriodoAsync()
     {
@@ -387,10 +396,18 @@
     {
         if (_informe is null)
             return;
-        var url = idbase.HasValue && !string.IsNullOrEmpty(idweb)
-            ? $"/{idweb}/{idbase}/conversaciones/informes/{_informe.IdInforme}/excel"
-            : $"/conversaciones/informes/{_informe.IdInforme}/excel";
-        await Js.InvokeVoidAsync("dashboardExport.downloadFile", url);
+        // Se arma acá, dentro de la sesión de la pantalla: el enlace .../excel es un request HTTP
+        // sin esa sesión y fallaba siempre en las rutas /{idweb}/{idbase}/ (2026-10-19).
+        try
+        {
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(ExcelExporter.Exportar(_informe)),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                AlfaCore.Services.ConversacionesInformeExcelExporter.NombreArchivo(_informe));
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, $"No se pudo generar el Excel: {ex.Message}");
+        }
     }
 
     private async Task CargarTendenciaAsync()

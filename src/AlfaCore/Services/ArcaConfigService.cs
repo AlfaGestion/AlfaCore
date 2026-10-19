@@ -492,7 +492,7 @@ public sealed class ArcaConfigService(
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (
                 N'USAFCELECTRONICA', N'ARCA_AMBIENTE', N'ARCA_MODO_FALLO_CAE',
-                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE'
+                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE', N'WSAA_URL', N'WSFE_URL'
             )
             """;
 

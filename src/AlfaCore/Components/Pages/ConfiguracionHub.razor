@@ -19,10 +19,6 @@
                 <h2>Configuración</h2>
                 <p>Todas las configuraciones del sistema a las que tenés acceso, en un solo lugar.</p>
             </div>
-            <div class="hub__search">
-                <AlfaInput Id="hub-buscar" Type="search" Placeholder="Buscar: horario, logo, permisos, WhatsApp…"
-                           Value="@_texto" ValueChanged="OnTextoChanged" />
-            </div>
         </header>
 
         @if (Resultados.Count == 0)
@@ -66,9 +62,12 @@
     [SupplyParameterFromQuery(Name = "buscar")] public string? BuscarQuery { get; set; }
 
     private string _texto = string.Empty;
+    private string _area = string.Empty;
+    private bool _filtrosAbiertos;
     private IReadOnlyList<ConfiguracionEntrada> _visibles = ConfiguracionCatalogo.Entradas;
 
-    private IReadOnlyList<ConfiguracionEntrada> Resultados => ConfiguracionCatalogo.Buscar(_visibles, _texto);
+    private bool EsDirecto => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo",out var v) && v.ToString() == "1";
+    private IReadOnlyList<ConfiguracionEntrada> Resultados => ConfiguracionCatalogo.Buscar(_visibles.Where(e => (!EsDirecto || e.Modulo == "configuracion") && (string.IsNullOrEmpty(_area) || e.Area == _area)), _texto);
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -92,17 +91,42 @@
             // Sin menú dinámico se listan todas: cada pantalla aplica su propio control de acceso.
             _visibles = ConfiguracionCatalogo.Entradas;
         }
+        UpdatePageHeader();
     }
 
-    private void OnTextoChanged(string? value) => _texto = value ?? string.Empty;
+    private void OnTextoChanged(string? value) { _texto = value ?? string.Empty; UpdatePageHeader(); }
 
     private void UpdatePageHeader()
         => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             ModuleKey = "configuracion",
-            Title = "Configuración"
+            Title = "Configuración",
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderBusqueda()
         });
+
+    private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdatePageHeader(); }
+    private void CambiarArea(string? value) { _area = value ?? ""; UpdatePageHeader(); }
+    private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : "")">
+            <span class="smart-search__search-icon"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button" aria-label="Filtrar configuraciones" aria-expanded="@_filtrosAbiertos" @onclick="AlternarFiltros"><i class="bi bi-funnel-fill"></i></button>
+            @if (!string.IsNullOrEmpty(_area)) { <button type="button" class="smart-search__active-filter" @onclick='() => CambiarArea("")'>@_area ×</button> }
+            <input type="search" aria-label="Buscar configuración" placeholder="Buscar opción, módulo o palabra clave…" value="@_texto" @oninput="e => OnTextoChanged(e.Value?.ToString())" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros de configuración" @onclick="AlternarFiltros"><i class="bi bi-caret-down-fill"></i></button>
+        </div>
+        @if (_filtrosAbiertos)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="AlternarFiltros"></button>
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation>
+                <div class="smart-search__column"><h4>Área</h4>
+                    <AlfaSelect Label="Área de configuración" Value="@_area" ValueChanged="CambiarArea" Options="@(new List<AlfaSelectOption> { new("", "Todas") }.Concat(ConfiguracionCatalogo.Areas.Select(a => new AlfaSelectOption(a,a))).ToList())" />
+                </div>
+                <div class="smart-search__actions"><AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick='() => { _texto=""; _area=""; _filtrosAbiertos=false; UpdatePageHeader(); }'>Limpiar</AlfaButton><AlfaButton OnClick="AlternarFiltros">Aplicar</AlfaButton></div>
+            </div>
+        }
+    </div>;
 
     public void Dispose()
     {

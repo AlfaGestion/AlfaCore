@@ -78,7 +78,62 @@ public sealed class ConversacionAsistenteCorreccionesTests
             current = current.Parent;
         Assert.NotNull(current);
         var script = File.ReadAllText(Path.Combine(current!.FullName, "src", "AlfaCore", "App_Data", "updates",
-            "2026-10-15-002__conversaciones_asistente_correcciones.sql"));
+            "2026-10-15-005__conversaciones_asistente_correcciones.sql"));
         Assert.Contains("CREATE TABLE dbo.CONV_ASISTENTE_CORRECCIONES", script, StringComparison.Ordinal);
+    }
+}
+
+public sealed class ConversacionAsistenteCorreccionesAvisoTests
+{
+    private static readonly DateTime Ahora = new(2026, 10, 15, 12, 0, 0);
+
+    [Fact]
+    public void CorreccionesPendientes_AvisanAlAdministradorYLlevanALoQueAprendio()
+    {
+        var avisos = CentroAvisosService.ConstruirAvisos([], [], [], "admin", new HashSet<string>(), Ahora,
+            correcciones: new AvisoCorreccionesFuente(3, 42, Ahora.AddMinutes(-5)));
+
+        var aviso = Assert.Single(avisos, a => a.Tipo == AvisoTipos.AsistenteAprendizaje);
+        Assert.Equal("corr:42", aviso.Clave);
+        Assert.Contains("3 correcciones", aviso.Detalle, StringComparison.Ordinal);
+        Assert.Equal("/conversaciones/configuracion?seccion=asistente-ia&subseccion=aprendido", aviso.Ruta);
+    }
+
+    [Fact]
+    public void SinPendientesOYaLeido_NoAvisa()
+    {
+        Assert.DoesNotContain(CentroAvisosService.ConstruirAvisos([], [], [], "admin", new HashSet<string>(), Ahora),
+            a => a.Tipo == AvisoTipos.AsistenteAprendizaje);
+        Assert.DoesNotContain(CentroAvisosService.ConstruirAvisos([], [], [], "admin", new HashSet<string> { "corr:42" }, Ahora,
+                correcciones: new AvisoCorreccionesFuente(1, 42, Ahora)),
+            a => a.Tipo == AvisoTipos.AsistenteAprendizaje && !a.Leido);
+    }
+
+    [Fact]
+    public void RespuestaBuena_VaComoEjemploYNuncaSeRespondeDirecto()
+    {
+        var info = ConversacionesService.AgregarCorreccionesAlContexto(string.Empty,
+        [
+            new AsistenteCorreccionCoincidencia(new AsistenteCorreccionDto
+            {
+                PreguntaCliente = "horario",
+                Accion = AsistenteCorreccionAcciones.Buena,
+                RespuestaCorrecta = "Atendemos de 9 a 18."
+            }, 1.0)
+        ]);
+        Assert.Contains("marcó como correcta esta respuesta (usala de ejemplo", info, StringComparison.Ordinal);
+
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("c.Correccion.Accion is AsistenteCorreccionAcciones.Responder or AsistenteCorreccionAcciones.Derivar", source, StringComparison.Ordinal);
+        Assert.Equal(AsistenteCorreccionAcciones.Buena, AsistenteCorreccionAcciones.Normalizar("buena"));
+    }
+
+    private static string FindRepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null && !File.Exists(Path.Combine(current.FullName, "AlfaCore.sln")))
+            current = current.Parent;
+        Assert.NotNull(current);
+        return current!.FullName;
     }
 }

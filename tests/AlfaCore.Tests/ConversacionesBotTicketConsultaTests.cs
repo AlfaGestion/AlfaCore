@@ -66,6 +66,52 @@ public sealed class ConversacionesBotTicketConsultaTests
         Assert.Contains("!omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto)", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("ya esta arreglado")]
+    [InlineData("Ya está arreglado, gracias!")]
+    [InlineData("ya anda")]
+    [InlineData("Listo, ya me funciona")]
+    [InlineData("lo pude solucionar, ya lo solucioné")]
+    [InlineData("Se arregló solo, gracias")]
+    [InlineData("ya no hace falta")]
+    public void AvisoDeTemaResuelto_SeReconoce(string texto)
+        => Assert.True(ConversacionesService.AvisaTemaResuelto(texto));
+
+    [Theory]
+    [InlineData("¿ya está arreglado?")]
+    [InlineData("todavía no anda")]
+    [InlineData("ya anda pero me sale otro error")]
+    [InlineData("sigue sin funcionar")]
+    [InlineData("pudieron ver algo?")]
+    [InlineData("No me imprime la factura")]
+    public void PreguntaONegacion_NoEsAvisoDeResuelto(string texto)
+        => Assert.False(ConversacionesService.AvisaTemaResuelto(texto));
+
+    [Fact]
+    public void AvisoDeResuelto_SeAtiendeAntesQueElPedidoDeNovedades()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var resuelto = source.IndexOf("if (AvisaTemaResuelto(texto))", StringComparison.Ordinal);
+        var novedades = source.IndexOf("var omitirTicket = false;", StringComparison.Ordinal);
+        Assert.True(resuelto > 0 && resuelto < novedades);
+        Assert.DoesNotContain("?", ConversacionesService.RespuestaTemaResuelto, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AvisoDeResuelto_QuedaAsentadoEnElTicketConElMensajeDelCliente()
+    {
+        var nota = ConversacionesService.ConstruirNotaAvisoResuelto("ya esta arreglado", "WHATSAPP", "Legión S. A.", 10482, new DateTime(2026, 10, 19, 10, 50, 0));
+
+        Assert.Contains("Legión S. A.", nota, StringComparison.Ordinal);
+        Assert.Contains("por WhatsApp", nota, StringComparison.Ordinal);
+        Assert.Contains("\"ya esta arreglado\"", nota, StringComparison.Ordinal);
+        Assert.Contains("19/10/2026 10:50", nota, StringComparison.Ordinal);
+        Assert.Contains("conversación #10482", nota, StringComparison.Ordinal);
+
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("await AsentarAvisoResueltoEnTicketAsync(idTicket, idConversacion, pendiente, textoCliente, ct)", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

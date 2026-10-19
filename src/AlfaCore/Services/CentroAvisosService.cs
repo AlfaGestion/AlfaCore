@@ -25,7 +25,8 @@ public sealed class CentroAvisosService(
     IAppUserSessionService appUserSession,
     INovedadesService novedadesService,
     IAppEventService appEvents,
-    IIaConsumoService? iaConsumo = null) : ICentroAvisosService
+    IIaConsumoService? iaConsumo = null,
+    IConversacionesAuthorizationService? conversacionesAuth = null) : ICentroAvisosService
 {
     private const string ModuleName = "CentroAvisos";
     internal const int DiasAvisoAlta = 7;
@@ -151,7 +152,16 @@ public sealed class CentroAvisosService(
         if (tablas.Contains("ALFACORE_AVISOS_LEIDOS"))
             leidos.UnionWith(await GetClavesLeidasAsync(ct));
 
-        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema, conversaciones);
+        var esAdminConversaciones = (tablas.Contains("CONV_ASISTENTE_CORRECCIONES") || tablas.Contains("CONV_ENCUESTAS"))
+            && await EsAdministradorConversacionesAsync(ct);
+        var correcciones = tablas.Contains("CONV_ASISTENTE_CORRECCIONES") && esAdminConversaciones
+            ? await GetCorreccionesPendientesAsync(cn, ct)
+            : null;
+        var calificaciones = tablas.Contains("CONV_ENCUESTAS") && (esAdminConversaciones || tecnicos.Count > 0)
+            ? await GetCalificacionesMalasAsync(cn, esAdminConversaciones, tecnicos, ahora, ct)
+            : [];
+
+        return ConstruirAvisos(eventos, novedades, tecnicos, usuario, leidos, ahora, tickets, tope, oportunidades, sistema, conversaciones, correcciones, calificaciones);
     }
 
     /// <summary>
@@ -176,7 +186,9 @@ public sealed class CentroAvisosService(
         IaTopeEstadoDto? topeIa = null,
         IEnumerable<AvisoCrmFuente>? oportunidades = null,
         IEnumerable<NovedadSistemaInfo>? sistema = null,
-        IEnumerable<AvisoConversacionFuente>? conversaciones = null)
+        IEnumerable<AvisoConversacionFuente>? conversaciones = null,
+        AvisoCorreccionesFuente? correcciones = null,
+        IEnumerable<AvisoCalificacionFuente>? calificaciones = null)
     {
         var avisos = new List<AvisoDto>();
         var hoy = ahora.Date;
@@ -336,10 +348,50 @@ public sealed class CentroAvisosService(
                 Tipo = AvisoTipos.Conversacion,
                 Titulo = c.EsPedidoNovedades
                     ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Pide novedades" : $"Pide novedades: {c.Contacto.Trim()}")
-                    : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
-                Detalle = c.EsPedidoNovedades ? "El cliente pide novedades de su tema pendiente" : "Te asignaron esta conversación",
+                    : c.EsAvisoResuelto
+                        ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Tema resuelto" : $"Tema resuelto: {c.Contacto.Trim()}")
+                        : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
+                Detalle = c.EsPedidoNovedades
+                    ? "El cliente pide novedades de su tema pendiente"
+                    : c.EsAvisoResuelto ? "El cliente avisa que ya quedó resuelto: revisá si se puede cerrar el ticket" : "Te asignaron esta conversación",
                 FechaHora = c.FechaHora,
                 Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
+        // Encuesta de satisfacción respondida con "Mal" en los últimos días (2026-10-19): a quien atendió
+        // y a los administradores de Conversaciones.
+        foreach (var c in calificaciones ?? [])
+        {
+            if (c.FechaRespuesta < ahora.AddDays(-DiasAvisoAlta))
+                continue;
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"csat:{c.IdEncuesta.ToString(CultureInfo.InvariantCulture)}",
+                Tipo = AvisoTipos.CalificacionMala,
+                Titulo = string.IsNullOrWhiteSpace(c.Contacto) ? "Calificación mala" : $"Calificación mala: {c.Contacto.Trim()}",
+                Detalle = string.IsNullOrWhiteSpace(c.Comentario)
+                    ? "Calificó la atención como «Mal». Conviene recontactarlo."
+                    : $"«{(c.Comentario.Length <= 120 ? c.Comentario : c.Comentario[..120] + "…")}»",
+                FechaHora = c.FechaRespuesta,
+                Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
+
+        // Correcciones del asistente para aprobar (2026-10-15): un aviso con la cantidad; la clave lleva
+        // la última, así que una corrección nueva vuelve a avisar aunque se haya marcado leído el anterior.
+        if (correcciones is { Pendientes: > 0 } corr)
+        {
+            avisos.Add(new AvisoDto
+            {
+                Clave = $"corr:{corr.UltimoId.ToString(CultureInfo.InvariantCulture)}",
+                Tipo = AvisoTipos.AsistenteAprendizaje,
+                Titulo = "Correcciones del asistente para revisar",
+                Detalle = corr.Pendientes == 1
+                    ? "El equipo propuso 1 corrección para el asistente IA"
+                    : $"El equipo propuso {corr.Pendientes.ToString(CultureInfo.InvariantCulture)} correcciones para el asistente IA",
+                FechaHora = corr.UltimaFecha,
+                Ruta = "/conversaciones/configuracion?seccion=asistente-ia&subseccion=aprendido"
             });
         }
 
@@ -435,7 +487,7 @@ public sealed class CentroAvisosService(
             WHERE name IN (N'CAL_EVENTOS', N'CAL_RECORDATORIOS', N'CAL_RESERVAS_REUNION',
                            N'ALFACORE_NOVEDADES', N'ALFACORE_NOVEDADES_LECTURAS', N'ALFACORE_AVISOS_LEIDOS',
                            N'TICK_TICKETS', N'TICK_ESTADOS', N'CRM_OPORTUNIDADES', N'CRM_ETAPAS',
-                           N'CONV_CONVERSACIONES', N'CONV_ASIGNACIONES');
+                           N'CONV_CONVERSACIONES', N'CONV_ASIGNACIONES', N'CONV_ASISTENTE_CORRECCIONES', N'CONV_ENCUESTAS');
             """;
         var tablas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await using var cmd = new SqlCommand(sql, cn);
@@ -582,6 +634,62 @@ public sealed class CentroAvisosService(
             });
         }
         return oportunidades;
+    }
+
+    private async Task<bool> EsAdministradorConversacionesAsync(CancellationToken ct)
+    {
+        if (conversacionesAuth is null)
+            return false;
+        try
+        {
+            return await conversacionesAuth.CanManageAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<List<AvisoCalificacionFuente>> GetCalificacionesMalasAsync(
+        SqlConnection cn, bool todas, IReadOnlyList<string> tecnicos, DateTime ahora, CancellationToken ct)
+    {
+        var tecnicoParams = tecnicos.Select((_, i) => $"@T{i}").ToList();
+        var filtro = todas || tecnicoParams.Count == 0
+            ? string.Empty
+            : $"AND LTRIM(RTRIM(ISNULL(e.IdTecnicoAtendio, N''))) IN ({string.Join(", ", tecnicoParams)})";
+        var sql = $"""
+            SELECT TOP (30) e.IdEncuesta, e.IdConversacion, ISNULL(c.NombreVisible, N''), ISNULL(e.Comentario, N''), e.FechaRespuesta
+            FROM dbo.CONV_ENCUESTAS e
+            INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = e.IdConversacion
+            WHERE e.Calificacion = 1 AND e.FechaRespuesta >= @Desde {filtro}
+            ORDER BY e.FechaRespuesta DESC;
+            """;
+        var lista = new List<AvisoCalificacionFuente>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Desde", ahora.AddDays(-DiasAvisoAlta));
+        if (!todas)
+        {
+            for (var i = 0; i < tecnicos.Count; i++)
+                cmd.Parameters.AddWithValue(tecnicoParams[i], tecnicos[i]);
+        }
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            lista.Add(new AvisoCalificacionFuente(rd.GetInt64(0), rd.GetInt64(1), rd.GetString(2), rd.GetString(3), rd.GetDateTime(4)));
+        return lista;
+    }
+
+    private static async Task<AvisoCorreccionesFuente?> GetCorreccionesPendientesAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1), ISNULL(MAX(IdCorreccion), 0), MAX(FechaPropuesta)
+            FROM dbo.CONV_ASISTENTE_CORRECCIONES
+            WHERE Baja = 0 AND Estado = N'PENDIENTE';
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct) || rd.GetInt32(0) == 0)
+            return null;
+        return new AvisoCorreccionesFuente(rd.GetInt32(0), rd.GetInt32(1), rd.IsDBNull(2) ? DateTime.Now : rd.GetDateTime(2));
     }
 
     private static async Task<List<AvisoConversacionFuente>> GetConversacionesAsignadasAsync(

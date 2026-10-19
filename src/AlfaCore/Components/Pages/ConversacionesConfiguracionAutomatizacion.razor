@@ -41,6 +41,22 @@
         </ConversacionesConfigPagina>
         break;
 
+    case "encuesta":
+        <ConversacionesConfigPagina Titulo="Encuesta de satisfacción" Descripcion="Al cerrar una conversación de WhatsApp, el cliente califica la atención con un toque. Las respuestas se ven en Informes → Satisfacción.">
+            <Estado><AlfaTag Tone="@Tono(Config.EncuestaActiva)">@(Config.EncuestaActiva ? "Activa" : "Apagada")</AlfaTag></Estado>
+            <ChildContent>
+                <ConversacionesConfigTarjeta Titulo="Encuesta al cerrar"
+                                             Descripcion="Se manda cuando alguien del equipo cierra la conversación y todavía está abierta la ventana de 24 h. Como máximo una por semana por cliente; no se manda en los cierres automáticos. Solo números de WhatsApp oficial (API de Meta).">
+                    <AlfaCheckbox Value="@Config.EncuestaActiva" ValueChanged="@((bool? v) => Config.EncuestaActiva = v == true)">Mandar la encuesta al cerrar una conversación</AlfaCheckbox>
+                    <ConversacionesConfigTexto Id="encuesta-pregunta" Label="Pregunta" Filas="2" MaxLength="900"
+                                               HelpText="El cliente responde con tres botones: 😀 Muy bien · 😐 Regular · 😞 Mal. Después puede dejar un comentario."
+                                               Value="@Config.EncuestaPregunta" ValueChanged="@((string? v) => Config.EncuestaPregunta = v ?? string.Empty)" />
+                </ConversacionesConfigTarjeta>
+                @Barra
+            </ChildContent>
+        </ConversacionesConfigPagina>
+        break;
+
     case "sla":
         <ConversacionesConfigPagina Titulo="Seguimientos / SLA" Descripcion="Vigila las conversaciones en las que el cliente espera respuesta. No le manda nada al cliente.">
             <Estado><AlfaTag Tone="@Tono(Config.SlaActivo)">@(Config.SlaActivo ? "Activo" : "Apagado")</AlfaTag></Estado>

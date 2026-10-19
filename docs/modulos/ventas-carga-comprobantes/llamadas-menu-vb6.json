@@ -1,0 +1,243 @@
+{
+  "fecha": "2026-10-14",
+  "menu": "Z:\\NETSISTEMAS\\SISTEMAS\\NwSistemas\\NMC_CONT\\SQL\\Menu.Sql",
+  "encoding": "CP1252",
+  "menu_sha256": "026ab832745a119b299107032c12d5e2c9f228f7958b530e8b812b521e748a5a",
+  "llamadas": [
+    {
+      "linea": 128,
+      "menu": "ALFA",
+      "padre": "D40",
+      "clave": "D4016",
+      "nombre": "Carga de Recepción de Equipo",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "REC"
+    },
+    {
+      "linea": 149,
+      "menu": "ALFA",
+      "padre": "D5001",
+      "clave": "D5006",
+      "nombre": "Notas de Debitos a Proveedores",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DebitosProveedores"
+    },
+    {
+      "linea": 198,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6001",
+      "nombre": "Carga de Comprobantes",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": ""
+    },
+    {
+      "linea": 199,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A98",
+      "nombre": "Facturas ",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "FC"
+    },
+    {
+      "linea": 200,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A99",
+      "nombre": "Facturas Proforma",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "FP"
+    },
+    {
+      "linea": 201,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A95",
+      "nombre": "Notas de Credito ",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "NC"
+    },
+    {
+      "linea": 202,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A94",
+      "nombre": "Notas de Debito",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ND"
+    },
+    {
+      "linea": 203,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6002",
+      "nombre": "Notas de Pedido",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SoloNotasPedido"
+    },
+    {
+      "linea": 204,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6090",
+      "nombre": "Remitos en Comodato",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "EnComodato"
+    },
+    {
+      "linea": 205,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6091",
+      "nombre": "Devolución de Remitos en Comodato",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DevolucionEnComodato"
+    },
+    {
+      "linea": 206,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A55",
+      "nombre": "Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SOLOREMITOS"
+    },
+    {
+      "linea": 207,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A58",
+      "nombre": "Remitos y Presupuestos ",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "RMPR"
+    },
+    {
+      "linea": 208,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6053",
+      "nombre": "Carga de Comprobantes - Punto de Venta",
+      "ejecutable": "V_MV_VENTASPDV",
+      "modo": ""
+    },
+    {
+      "linea": 209,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6054",
+      "nombre": "Carga de Comprobantes - MODO GRAFICO",
+      "ejecutable": "V_MV_VENTASPDVG",
+      "modo": ""
+    },
+    {
+      "linea": 217,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6036",
+      "nombre": "Modificacion de Notas de Pedido",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionPedidos"
+    },
+    {
+      "linea": 218,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6038",
+      "nombre": "Modificacion de Presupuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionPresupuestos"
+    },
+    {
+      "linea": 219,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6037",
+      "nombre": "Remito para Transporte",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "REMITOTR"
+    },
+    {
+      "linea": 220,
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6096",
+      "nombre": "Presupuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "PR"
+    },
+    {
+      "linea": 297,
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8040",
+      "nombre": "Notas de Pedido por Reposicion",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SoloNotasPedidoCD"
+    },
+    {
+      "linea": 298,
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8045",
+      "nombre": "Remitos por Transferencias",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "RemitoTransferencia"
+    },
+    {
+      "linea": 300,
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8055",
+      "nombre": "Carga de Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SOLOREMITOS"
+    },
+    {
+      "linea": 302,
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8073",
+      "nombre": "Modificacion de Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionRemitos"
+    },
+    {
+      "linea": 305,
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8057",
+      "nombre": "Devolucion a Proveedores",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DEVOLUCIONPROVEEDORES"
+    },
+    {
+      "linea": 380,
+      "menu": "ALFA",
+      "padre": "D87",
+      "clave": "D8710",
+      "nombre": "Remitos para Reparto",
+      "ejecutable": "V_MV_VENTAS_SOLOREPARTO",
+      "modo": "RemitosReparto"
+    },
+    {
+      "linea": 381,
+      "menu": "ALFA",
+      "padre": "D87",
+      "clave": "D8712",
+      "nombre": "Facturacion",
+      "ejecutable": "V_MV_VENTAS_SOLOREPARTO",
+      "modo": ""
+    },
+    {
+      "linea": 527,
+      "menu": "ALFA",
+      "padre": "D9890",
+      "clave": "D989009",
+      "nombre": "Modificación de Comprobantes de Ventas",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionFacturas"
+    }
+  ],
+  "limite": "Mapeo de referencia; no confirma igualdad binario/fuentes. Sin argumentos de conexión."
+}

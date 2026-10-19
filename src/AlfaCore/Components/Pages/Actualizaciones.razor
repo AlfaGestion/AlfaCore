@@ -17,9 +17,14 @@
         <p>Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</p>
     </header>
 
-    <AlfaNotification Message="@_notificacion.For(_message, _isError ? AppUiFeedbackSeverity.Error : _isWorkingMessage ? AppUiFeedbackSeverity.Info : AppUiFeedbackSeverity.Success, _isError ? "No se pudo completar la actualización" : "Actualizaciones")" OnDismiss="() => _message = string.Empty" />
+    <AlfaNotification Message="@(string.IsNullOrWhiteSpace(_message) ? null : _notificacion.For(_message, _isError ? AppUiFeedbackSeverity.Error : _isWorkingMessage ? AppUiFeedbackSeverity.Info : AppUiFeedbackSeverity.Success, _isError ? "No se pudo completar la actualización" : "Actualizaciones"))" OnDismiss="() => _message = string.Empty" />
 
-    @if (!_loaded)
+    @if (_loadError is not null && !_busy)
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar el panel de actualizaciones"
+            Message="@BuildFeedbackText(_loadError)" ActionLabel="Reintentar" ActionIcon="bi bi-arrow-clockwise" OnAction="_ => RecargarAsync()" />
+    }
+    else if (!_loaded)
     {
         <section class="panel-card">
             <div class="loading">Cargando panel de actualizaciones...</div>
@@ -253,6 +258,7 @@
     private bool _loaded;
     private bool _busy;
     private string _message = string.Empty;
+    private AppUiMessage? _loadError;
     private bool _isError;
     private bool _isWorkingMessage;
 
@@ -294,7 +300,7 @@
                     Label = "Ejecutar pendientes",
                     Icon = "bi-play-circle",
                     Style = PageHeaderActionStyle.Primary,
-                    Disabled = _busy || !_loaded,
+                    Disabled = _busy || !_loaded || _loadError is not null,
                     OnClick = () => InvokeAsync(async () => { await EjecutarPendientesAsync(); StateHasChanged(); })
                 },
                 new PageHeaderAction
@@ -318,6 +324,7 @@
     private async Task RecargarAsync()
     {
         _busy = true;
+        _loadError = null;
         SetMessage("Cargando panel de actualizaciones y revisando scripts disponibles...", false, isWorking: true);
         await FlushWorkingMessageAsync();
         try
@@ -325,7 +332,8 @@
             var result = await UiOps.RunAsync(() => ActualizacionesSvc.GetDashboardAsync(), "No se pudo cargar el panel de actualizaciones.");
             if (!result.Success)
             {
-                SetMessage(BuildFeedbackText(result.Feedback), true);
+                _loadError = result.Feedback ?? AppUiMessage.Error("No se pudo cargar el panel", "Reintentá la consulta.");
+                SetMessage(BuildFeedbackText(_loadError), true);
                 return;
             }
 

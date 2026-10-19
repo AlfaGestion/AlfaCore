@@ -212,6 +212,56 @@
         max-height: 520px;
     }
 
+    .partes-horas-page .partes-dialog__grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px 16px;
+    }
+
+    .partes-horas-page .partes-dialog__ticket {
+        display: flex;
+        gap: 8px;
+    }
+
+    .partes-horas-page .partes-dialog__ticket input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .partes-horas-page .partes-dialog__hint {
+        color: var(--alfa-text-secondary, #a6abb5);
+        font-size: 12px;
+    }
+
+    .partes-horas-page .partes-dialog__checks {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding-top: 22px;
+    }
+
+    .partes-horas-page .partes-dialog__tickets {
+        max-height: 220px;
+        margin-top: 12px;
+    }
+
+    .partes-horas-page .partes-dialog__subtitulo {
+        margin: 20px 0 10px;
+        color: var(--alfa-text-primary, #f5f5f7);
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    @@media (max-width: 720px) {
+        .partes-horas-page .partes-dialog__grid {
+            grid-template-columns: 1fr;
+        }
+
+        .partes-horas-page .partes-dialog__checks {
+            padding-top: 0;
+        }
+    }
+
     .partes-lines {
         display: grid;
         gap: 8px;
@@ -376,20 +426,20 @@
         </div>
     </section>
 
-    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    @* Con la ventana de parte abierta, los avisos van adentro de ella (EditorError). *@
+    <AlfaNotification Message="@(_showEditor ? null : _feedback)" OnDismiss="() => _feedback = null" />
 
-    @if (_showEditor)
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")</h3>
-                    <p class="panel-card__subtitle">Imputá tiempo a un cliente y, cuando aplique, vinculalo con un ticket.</p>
-                </div>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditor">Cerrar</button>
-            </div>
-
-            <div class="filters-grid filters-grid--wide">
+    @* Nuevo/editar parte (2026-10-19): ventana flotante AlfaDialog en lugar de abrirse dentro de la pantalla. *@
+    <AlfaDialog Open="@_showEditor"
+                Title="@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")"
+                Description="Imputá tiempo a un cliente y, cuando aplique, vinculalo con un ticket."
+                Size="AlfaDialogSize.Xl"
+                Loading="@_saving"
+                ErrorMessage="@EditorError"
+                Class="partes-dialog"
+                OnClose="CerrarEditor">
+        <ChildContent>
+            <div class="partes-dialog__grid">
                 <div class="field">
                     <label>Fecha</label>
                     <InputDate @bind-Value="_form.Fecha" />
@@ -400,30 +450,20 @@
                 </div>
                 <div class="field">
                     <label>Ticket</label>
-                    <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_form.IdTecnico">
-                        <option value="">Sin técnico</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
+                    <div class="partes-dialog__ticket">
+                        <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarTicketsAsync" disabled="@_saving">
+                            <i class="bi bi-search"></i> Buscar
+                        </button>
+                    </div>
+                    @if (_form.IdTicket is long idTicketElegido)
+                    {
+                        <small class="partes-dialog__hint">Vinculado al ticket #@idTicketElegido.ToString("00", System.Globalization.CultureInfo.InvariantCulture)</small>
+                    }
                 </div>
                 <div class="field">
                     <label>Usuario</label>
                     <input type="text" @bind="_form.Usuario" @bind:event="oninput" />
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_form.TipoTrabajo">
-                        @foreach (var tipo in _lookups.TiposTrabajo)
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
                 </div>
                 <div class="field">
                     <label>Estado</label>
@@ -434,16 +474,46 @@
                         }
                     </select>
                 </div>
-                <label class="checkbox">
-                    <input type="checkbox" @bind="_form.Facturable" />
-                    <span>Facturable</span>
-                </label>
-                <label class="checkbox">
-                    <input type="checkbox" @bind="_form.Excedente" />
-                    <span>Excedente</span>
-                </label>
+                <div class="partes-dialog__checks">
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.Facturable" />
+                        <span>Facturable</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.Excedente" />
+                        <span>Excedente</span>
+                    </label>
+                </div>
             </div>
 
+            @if (_ticketOptions.Count > 0)
+            {
+                <div class="usuarios-table-wrap partes-dialog__tickets">
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Cliente</th>
+                                <th>Título</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ticket in _ticketOptions)
+                            {
+                                <tr>
+                                    <td>@ticket.CodigoVisible</td>
+                                    <td>@ticket.ClienteCodigo - @ticket.ClienteNombre</td>
+                                    <td>@ticket.Titulo</td>
+                                    <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarTicket(ticket)">Usar</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <h3 class="partes-dialog__subtitulo">Trabajo realizado</h3>
             <div class="partes-lines">
                 <div class="partes-lines__header">
                     <span>Técnico</span>
@@ -477,52 +547,25 @@
                                @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
                                placeholder="Descripción de la tarea" />
                         <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" />
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
+                        <button type="button" class="btn btn--ghost btn--sm" title="Quitar línea" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 }
-                <div class="actions">
+                <div>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="AgregarLinea">
                         <i class="bi bi-plus-circle"></i> Agregar línea
                     </button>
                 </div>
             </div>
-
-            <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="BuscarTicketsAsync" disabled="@_saving">Buscar ticket</button>
-                <button type="button" class="btn btn--primary" @onclick="GuardarParteAsync" disabled="@_saving">Guardar</button>
-                <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">Cancelar</button>
-            </div>
-
-            @if (_ticketOptions.Count > 0)
-            {
-                <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table" data-sticky-list-header>
-                        <thead>
-                            <tr>
-                                <th>Ticket</th>
-                                <th>Cliente</th>
-                                <th>Título</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var ticket in _ticketOptions)
-                            {
-                                <tr>
-                                    <td>@ticket.CodigoVisible</td>
-                                    <td>@ticket.ClienteCodigo - @ticket.ClienteNombre</td>
-                                    <td>@ticket.Titulo</td>
-                                    <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarTicket(ticket)">Usar</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-    }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">Cancelar</button>
+            <button type="button" class="btn btn--primary" @onclick="GuardarParteAsync" disabled="@_saving">
+                <i class="bi bi-floppy"></i> Guardar
+            </button>
+        </Footer>
+    </AlfaDialog>
 
     <section class="panel-card">
         <div class="panel-card__header">
@@ -1012,14 +1055,22 @@
         ];
         _ticketNumeroBusqueda = null;
         _ticketOptions.Clear();
+        _feedback = null;
         _showEditor = true;
     }
 
     private void CerrarEditor()
     {
+        if (_saving)
+            return;
         _showEditor = false;
         _ticketOptions.Clear();
     }
+
+    /// <summary>Con la ventana abierta, los avisos de validación/guardado se muestran adentro de ella.</summary>
+    private string? EditorError => _showEditor && _feedback is { } aviso && aviso.Severity != AppUiFeedbackSeverity.Success
+        ? string.IsNullOrWhiteSpace(aviso.Message) ? aviso.Title : aviso.Message
+        : null;
 
     private async Task EditarParteAsync(long id)
     {
@@ -1059,6 +1110,7 @@
             }
         ];
         _ticketNumeroBusqueda = null;
+        _feedback = null;
         _showEditor = true;
     }
 

@@ -27,6 +27,11 @@
 
     <AlfaTabs Items="@SubtabItems" ActiveKey="@_subtab" ActiveKeyChanged="k => SeleccionarSubtab(k ?? SubtabPortal)" AriaLabel="Configuración de ventas" />
 
+    @if (_subtab == SubtabCarga)
+    {
+        <ConfiguracionCargaComprobantesPanel @ref="_cargaPanel" OnNavegar="SeleccionarSubtab" Busqueda="@_buscarOpcion" />
+    }
+
     @if (_subtab == SubtabPortal)
     {
     <section class="panel-card">
@@ -646,6 +651,20 @@
     // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
     private PageHeaderConfig? _pageHeaderPublicado;
 
+    private string _buscarOpcion = "";
+    private const string SubtabCarga = "carga-comprobantes";
+    private ConfiguracionCargaComprobantesPanel? _cargaPanel;
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    private string? _ultimoTab;
+    protected override void OnParametersSet()
+    {
+        if (Tab != _ultimoTab && !_saving)
+        {
+            _ultimoTab = Tab;
+            if (SubtabItems.Any(x => x.Key == Tab)) _subtab = Tab!;
+        }
+    }
+
     private const string SubtabPortal = "portal";
     private const string SubtabPuntoVenta = "puntoventa";
     private const string SubtabFactura = "factura";
@@ -696,10 +715,11 @@
     private readonly List<TerminalInfo> _mpTerminales = [];
     private readonly List<PosInfo> _mpPos = [];
 
-    private void SeleccionarSubtab(string subtab) => _subtab = subtab;
+    private void SeleccionarSubtab(string subtab) { if (!_saving) { _subtab = subtab; UpdatePageHeader(); } }
 
     private static readonly IReadOnlyList<AlfaTabItem> SubtabItems =
     [
+        new(SubtabCarga, "Carga de comprobantes"),
         new(SubtabPortal, "Portal del Cliente"),
         new(SubtabPuntoVenta, "Punto de Venta"),
         new(SubtabFactura, "Facturación electrónica"),
@@ -910,7 +930,9 @@
 
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
+        ModuleKey = "configuracion-general",
         Title = "Ventas",
+        Search = _subtab == SubtabCarga ? new PageHeaderSearchConfig { Text = _buscarOpcion, Placeholder = "Buscar opción de carga: precio, IVA, descuento…", OnTextChanged = texto => InvokeAsync(() => { _buscarOpcion = texto; UpdatePageHeader(); StateHasChanged(); }) } : null,
         Breadcrumb = ["Configuración General", "Ventas"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "ventas"),
@@ -942,6 +964,14 @@
 
     private async Task GuardarAsync()
     {
+        if (_saving) return;
+        if (_subtab == SubtabCarga)
+        {
+            _saving = true; UpdatePageHeader();
+            try { if (_cargaPanel is not null) await _cargaPanel.GuardarAsync(); }
+            finally { _saving = false; UpdatePageHeader(); }
+            return;
+        }
         _saving = true;
         UpdatePageHeader();
         var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveVentasPortalClienteAsync(_portal); return true; }, "No se pudo guardar la configuración del Portal Cliente.");
@@ -1020,6 +1050,11 @@
 
     private async Task CancelarAsync()
     {
+        if (_subtab == SubtabCarga)
+        {
+            if (!_saving && _cargaPanel is not null) await _cargaPanel.RecargarAsync();
+            return;
+        }
         if (_saving)
             return;
 

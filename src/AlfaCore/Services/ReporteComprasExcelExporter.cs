@@ -10,19 +10,19 @@ public sealed class ReporteComprasExcelExporter
 
     // ── Resumen ───────────────────────────────────────────────────────────────
 
-    public byte[] ExportarResumen(ResumenComprasDto resumen, FiltrosReporteCompras filtros)
+    public byte[] ExportarResumen(ResumenComprasDto resumen, FiltrosReporteCompras filtros, bool ventas = false)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Resumen de Compras");
+        var ws = wb.Worksheets.Add(ventas ? "Resumen de Ventas" : "Resumen de Compras");
 
         // Fila 1: título
-        SetTitulo(ws, "Resumen de Compras", 7);
+        SetTitulo(ws, ventas ? "Resumen de Ventas" : "Resumen de Compras", 7);
 
         // Fila 2: período y fecha de exportación
         SetSubtitulo(ws, BuildPeriodo(filtros), 7);
 
         // Fila 3: KPIs
-        ws.Cell(3, 1).Value = "Total comprado";
+        ws.Cell(3, 1).Value = ventas ? "Total vendido" : "Total comprado";
         ws.Cell(3, 2).Value = resumen.TotalComprado;
         ws.Cell(3, 3).Value = "Neto";
         ws.Cell(3, 4).Value = resumen.NetoTotal;
@@ -30,7 +30,7 @@ public sealed class ReporteComprasExcelExporter
         ws.Cell(3, 6).Value = resumen.IvaTotal;
         ws.Cell(3, 7).Value = "Comprobantes";
         ws.Cell(3, 8).Value = resumen.CantidadComprobantes;
-        ws.Cell(3, 9).Value = "Proveedores";
+        ws.Cell(3, 9).Value = ventas ? "Clientes" : "Proveedores";
         ws.Cell(3, 10).Value = resumen.CantidadProveedores;
         for (int c = 1; c <= 10; c++)
         {
@@ -39,7 +39,7 @@ public sealed class ReporteComprasExcelExporter
         }
 
         // Fila 5: encabezados de tabla
-        var headers = new[] { "Cuenta", "Proveedor", "Comprobantes", "Neto", "IVA", "Total", "% Part." };
+        var headers = new[] { "Cuenta", ventas ? "Cliente" : "Proveedor", "Comprobantes", "Neto", "IVA", "Total", "% Part." };
         SetHeaders(ws, 5, headers);
 
         // Datos
@@ -67,15 +67,15 @@ public sealed class ReporteComprasExcelExporter
 
     // ── Detalle ───────────────────────────────────────────────────────────────
 
-    public byte[] ExportarDetalle(IReadOnlyList<DetalleComprasFilaDto> items, FiltrosReporteCompras filtros, int total)
+    public byte[] ExportarDetalle(IReadOnlyList<DetalleComprasFilaDto> items, FiltrosReporteCompras filtros, int total, bool ventas = false)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Detalle de Compras");
+        var ws = wb.Worksheets.Add(ventas ? "Detalle de Ventas" : "Detalle de Compras");
 
-        SetTitulo(ws, "Detalle de Compras", 10);
+        SetTitulo(ws, ventas ? "Detalle de Ventas" : "Detalle de Compras", 10);
         SetSubtitulo(ws, $"{BuildPeriodo(filtros)} — {total} comprobantes", 10);
 
-        var headers = new[] { "Fecha", "TC", "Comprobante", "Cuenta", "Proveedor", "Motivo", "Neto", "IVA", "Total", "Usuario" };
+        var headers = new[] { "Fecha", "TC", "Comprobante", "Cuenta", ventas ? "Cliente" : "Proveedor", "Motivo", "Neto", "IVA", "Total", "Usuario" };
         SetHeaders(ws, 3, headers);
 
         for (int i = 0; i < items.Count; i++)
@@ -101,6 +101,21 @@ public sealed class ReporteComprasExcelExporter
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         return ms.ToArray();
+    }
+
+    public byte[] ExportarCuentaCorriente(IReadOnlyList<CuentaCorrienteFilaDto> items, FiltrosReporteCompras filtros, decimal saldo, bool ventas = false)
+    {
+        using var wb=new XLWorkbook(); var ws=wb.Worksheets.Add("Cuenta corriente");
+        SetTitulo(ws, ventas ? "Cuenta corriente de clientes" : "Cuenta corriente de proveedores",8);
+        SetSubtitulo(ws,$"{BuildPeriodo(filtros)} · Movimiento neto del período: {saldo:N2}",8);
+        SetHeaders(ws,3,["Cuenta",ventas?"Cliente":"Proveedor","Fecha","TC","Comprobante","D/H","Importe","Signado"]);
+        for(var i=0;i<items.Count;i++) { var x=items[i]; var r=i+4;
+            ws.Cell(r,1).Value=x.Cuenta;ws.Cell(r,2).Value=x.RazonSocial;SetDateCell(ws.Cell(r,3),x.Fecha);
+            ws.Cell(r,4).Value=x.Tc;ws.Cell(r,5).Value=x.IdComprobante;ws.Cell(r,6).Value=x.DebeHaber;
+            SetDecimalCell(ws.Cell(r,7),x.Importe);SetDecimalCell(ws.Cell(r,8),x.ImporteSignado);
+        }
+        ws.Columns().AdjustToContents(8,60);ws.SheetView.FreezeRows(3);
+        using var ms=new MemoryStream();wb.SaveAs(ms);return ms.ToArray();
     }
 
     // ── Nombres de archivo ────────────────────────────────────────────────────
@@ -168,7 +183,7 @@ public sealed class ReporteComprasExcelExporter
     {
         var desde = f.FechaDesde?.ToString("dd/MM/yyyy") ?? "—";
         var hasta = f.FechaHasta?.ToString("dd/MM/yyyy") ?? "—";
-        var extra = string.IsNullOrWhiteSpace(f.Proveedor) ? string.Empty : $" · Proveedor: {f.Proveedor}";
+        var extra = string.IsNullOrWhiteSpace(f.Proveedor) ? string.Empty : $" · Cuenta: {f.Proveedor}";
         var tc    = string.IsNullOrWhiteSpace(f.TipoComprobante) ? string.Empty : $" · TC: {f.TipoComprobante}";
         return $"Período: {desde} al {hasta}{extra}{tc}";
     }

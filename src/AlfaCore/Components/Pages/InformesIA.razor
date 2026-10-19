@@ -245,7 +245,7 @@
 
     private async Task OpenResultAsync(Guid executionId)
     {
-        var absoluteUrl = Nav.ToAbsoluteUri($"/compras/informesia/resultado/{executionId}").ToString();
+        var absoluteUrl = Nav.ToAbsoluteUri(RouteContext.BuildRoute($"/compras/informesia/resultado/{executionId}")).ToString();
         await JS.InvokeVoidAsync("openInNewTab", absoluteUrl);
     }
 

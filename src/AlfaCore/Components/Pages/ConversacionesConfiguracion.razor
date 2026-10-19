@@ -1204,7 +1204,8 @@
             new("bienvenida", "Bienvenida"),
             new("reglas", "Reglas"),
             new("auto-cierre", "Auto-cierre"),
-            new("sla", "SLA")
+            new("sla", "SLA"),
+            new("encuesta", "Encuesta de satisfacción")
         ]),
         new("informes", "Informes", []),
         new("operacion-accesos", "Operación y accesos",
@@ -4415,6 +4416,8 @@
             SlaActivo = source.SlaActivo,
             SlaHorasRecordatorio = source.SlaHorasRecordatorio,
             SlaHorasReasignar = source.SlaHorasReasignar,
+            EncuestaActiva = source.EncuestaActiva,
+            EncuestaPregunta = source.EncuestaPregunta,
             AsistenteComportamiento = source.AsistenteComportamiento,
             AsistenteInformacion = source.AsistenteInformacion,
             AsistentePolitica = source.AsistentePolitica,
@@ -4466,6 +4469,8 @@
            && left.SlaActivo == right.SlaActivo
            && left.SlaHorasRecordatorio == right.SlaHorasRecordatorio
            && left.SlaHorasReasignar == right.SlaHorasReasignar
+           && left.EncuestaActiva == right.EncuestaActiva
+           && left.EncuestaPregunta == right.EncuestaPregunta
            && left.AsistenteComportamiento == right.AsistenteComportamiento
            && left.AsistenteInformacion == right.AsistenteInformacion
            && left.AsistentePolitica == right.AsistentePolitica
@@ -4684,6 +4689,7 @@
                 "bienvenida" => ConversacionAutomatizacionSeccion.Bienvenida,
                 "auto-cierre" => ConversacionAutomatizacionSeccion.AutoCierre,
                 "sla" => ConversacionAutomatizacionSeccion.Sla,
+                "encuesta" => ConversacionAutomatizacionSeccion.Encuesta,
                 "reglas" => ConversacionAutomatizacionSeccion.Ninguna,
                 _ => ConversacionAutomatizacionSeccion.Horario
             },
@@ -4698,6 +4704,7 @@
             ConversacionAutomatizacionSeccion.Bienvenida => "Bienvenida guardada",
             ConversacionAutomatizacionSeccion.AutoCierre => "Auto-cierre guardado",
             ConversacionAutomatizacionSeccion.Sla => "Seguimientos guardados",
+            ConversacionAutomatizacionSeccion.Encuesta => "Encuesta de satisfacción guardada",
             _ => "Horario guardado"
         };
 

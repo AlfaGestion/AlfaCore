@@ -22,6 +22,12 @@ public interface IConversacionAsistenteCorreccionesService
     /// <summary>Correcciones aprobadas parecidas a la consulta, de la más parecida a la menos.</summary>
     Task<IReadOnlyList<AsistenteCorreccionCoincidencia>> BuscarAplicablesAsync(string consulta, int maximo = 3, CancellationToken ct = default);
     Task RegistrarUsoAsync(int idCorreccion, CancellationToken ct = default);
+
+    /// <summary>👍 Marca (o desmarca, si ya estaba) una respuesta del asistente como correcta. Devuelve si quedó marcada.</summary>
+    Task<bool> AlternarRespuestaBuenaAsync(AsistenteCorreccionPropuesta propuesta, CancellationToken ct = default);
+
+    /// <summary>Respuestas del asistente de la conversación ya marcadas como buenas o corregidas: IdMensaje → acción.</summary>
+    Task<IReadOnlyDictionary<long, string>> GetMensajesMarcadosAsync(long idConversacion, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -61,6 +67,8 @@ public sealed class ConversacionAsistenteCorreccionesService(
         ArgumentNullException.ThrowIfNull(propuesta);
         var pregunta = Recortar(propuesta.PreguntaCliente, 1000);
         var accion = AsistenteCorreccionAcciones.Normalizar(propuesta.Accion);
+        if (accion == AsistenteCorreccionAcciones.Buena)
+            throw new InvalidOperationException("Para marcar una respuesta como correcta usá el 👍.");
         var correcta = (propuesta.RespuestaCorrecta ?? string.Empty).Trim();
         if (pregunta.Length == 0)
             throw new InvalidOperationException("Falta la pregunta del cliente.");
@@ -247,6 +255,78 @@ public sealed class ConversacionAsistenteCorreccionesService(
             .ThenByDescending(c => c.Correccion.FechaRevision ?? c.Correccion.FechaPropuesta)
             .Take(Math.Max(1, maximo))
             .ToList();
+    }
+
+    public async Task<bool> AlternarRespuestaBuenaAsync(AsistenteCorreccionPropuesta propuesta, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(propuesta);
+        var pregunta = Recortar(propuesta.PreguntaCliente, 1000);
+        var respuesta = (propuesta.RespuestaAsistente ?? string.Empty).Trim();
+        if (propuesta.IdMensaje is null || respuesta.Length == 0)
+            throw new InvalidOperationException("No se encontró la respuesta del asistente.");
+
+        // Ya marcada -> se desmarca (baja). Si no, se marca aprobada: es sólo un ejemplo, no necesita revisión.
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_ASISTENTE_CORRECCIONES', N'U') IS NULL
+            BEGIN
+                SELECT CAST(-1 AS int);
+                RETURN;
+            END;
+            DECLARE @Existente int = (
+                SELECT TOP (1) IdCorreccion FROM dbo.CONV_ASISTENTE_CORRECCIONES
+                WHERE IdMensaje = @IdMensaje AND Accion = N'BUENA' AND Baja = 0);
+            IF @Existente IS NOT NULL
+            BEGIN
+                UPDATE dbo.CONV_ASISTENTE_CORRECCIONES SET Baja = 1 WHERE IdCorreccion = @Existente;
+                SELECT CAST(0 AS int);
+                RETURN;
+            END;
+            INSERT INTO dbo.CONV_ASISTENTE_CORRECCIONES
+                (IdConversacion, IdMensaje, PreguntaCliente, RespuestaAsistente, Accion, RespuestaCorrecta,
+                 Estado, UsuarioPropone, FechaPropuesta, UsuarioRevisa, FechaRevision)
+            VALUES
+                (@IdConversacion, @IdMensaje, @Pregunta, @Respuesta, N'BUENA', @Respuesta,
+                 N'APROBADA', @Usuario, GETDATE(), @Usuario, GETDATE());
+            SELECT CAST(1 AS int);
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", (object?)propuesta.IdConversacion ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@IdMensaje", propuesta.IdMensaje.Value);
+        cmd.Parameters.AddWithValue("@Pregunta", pregunta.Length == 0 ? "(sin texto)" : pregunta);
+        cmd.Parameters.AddWithValue("@Respuesta", respuesta);
+        cmd.Parameters.AddWithValue("@Usuario", (object?)NullSiVacio(Recortar(propuesta.Usuario, 50)) ?? DBNull.Value);
+        var resultado = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        if (resultado < 0)
+            throw new InvalidOperationException("Esta base todavía no tiene habilitadas las correcciones del asistente. Probá de nuevo en unos minutos.");
+
+        await appEvents.LogAuditAsync("Conversaciones", resultado == 1 ? "AsistenteRespuestaBuena" : "AsistenteRespuestaBuenaQuitada",
+            "CONV_MENSAJES", propuesta.IdMensaje.Value.ToString(CultureInfo.InvariantCulture),
+            resultado == 1 ? "Respuesta del asistente marcada como correcta." : "Se quitó la marca de respuesta correcta.",
+            new { propuesta.IdConversacion }, ct);
+        return resultado == 1;
+    }
+
+    public async Task<IReadOnlyDictionary<long, string>> GetMensajesMarcadosAsync(long idConversacion, CancellationToken ct = default)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_ASISTENTE_CORRECCIONES', N'U') IS NULL
+                RETURN;
+            SELECT IdMensaje, Accion
+            FROM dbo.CONV_ASISTENTE_CORRECCIONES
+            WHERE IdConversacion = @Id AND IdMensaje IS NOT NULL AND Baja = 0 AND Estado <> N'RECHAZADA'
+            ORDER BY IdCorreccion;
+            """;
+        var marcas = new Dictionary<long, string>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            marcas[rd.GetInt64(0)] = rd.GetString(1);
+        return marcas;
     }
 
     public Task RegistrarUsoAsync(int idCorreccion, CancellationToken ct = default)

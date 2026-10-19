@@ -9,7 +9,7 @@
    las conversaciones. Las pendientes las aprueba (o edita/rechaza) un administrador de Conversaciones. *@
 
 <ConversacionesConfigTarjeta Titulo="Cómo enseñarle"
-                             Descripcion="En una conversación, en cualquier respuesta del asistente tocá el ícono del birrete («Enseñarle al asistente») y escribí qué tendría que haber hecho. La próxima vez que pregunten algo parecido, el asistente lo sigue con prioridad.">
+                             Descripcion="En una conversación, en cualquier respuesta del asistente tocá el ícono del birrete («Enseñarle al asistente») y escribí qué tendría que haber hecho; si respondió bien, tocá el pulgar arriba. La próxima vez que pregunten algo parecido, el asistente lo sigue con prioridad.">
     <ChildContent>
         <div class="cfg-full corr-tabs" role="tablist">
             <button type="button" role="tab" class="@TabClass(AsistenteCorreccionEstados.Pendiente)" @onclick="() => CambiarFiltro(AsistenteCorreccionEstados.Pendiente)">
@@ -21,6 +21,15 @@
         @if (!string.IsNullOrWhiteSpace(_error))
         {
             <div class="cfg-full cfg-notice" role="alert">@_error</div>
+        }
+        @if (_todas.Count > 0)
+        {
+            var buenas = Contar(AsistenteCorreccionAcciones.Buena);
+            var aprendidas = _todas.Count(c => c.Estado == AsistenteCorreccionEstados.Aprobada && c.Accion != AsistenteCorreccionAcciones.Buena);
+            <p class="cfg-full cfg-hint">
+                <i class="bi bi-hand-thumbs-up"></i> @buenas @(buenas == 1 ? "respuesta marcada como correcta" : "respuestas marcadas como correctas") ·
+                <i class="bi bi-mortarboard"></i> @aprendidas @(aprendidas == 1 ? "corrección aprendida" : "correcciones aprendidas")
+            </p>
         }
         @if (!_esAdmin)
         {
@@ -43,7 +52,7 @@ else
     {
         var editando = _editandoId == c.IdCorreccion;
         <ConversacionesConfigTarjeta Titulo="@($"«{Recortar(c.PreguntaCliente, 90)}»")"
-                                     Descripcion="@($"Propuesta por {Nombre(c.UsuarioPropone)} el {c.FechaPropuesta.ToString("dd/MM/yyyy HH:mm", Es)}{Revision(c)}")">
+                                     Descripcion="@($"{(c.Accion == AsistenteCorreccionAcciones.Buena ? "Marcada" : "Propuesta")} por {Nombre(c.UsuarioPropone)} el {c.FechaPropuesta.ToString("dd/MM/yyyy HH:mm", Es)}{Revision(c)}")">
             <Extra>
                 <AlfaTag Tone="@TonoAccion(c.Accion)">@AsistenteCorreccionAcciones.Descripcion(c.Accion)</AlfaTag>
                 @if (c.Estado == AsistenteCorreccionEstados.Aprobada && c.VecesUsada > 0)
@@ -70,14 +79,21 @@ else
                 }
                 else
                 {
-                    @if (!string.IsNullOrWhiteSpace(c.RespuestaAsistente))
+                    @if (c.Accion == AsistenteCorreccionAcciones.Buena)
+                    {
+                        <div class="cfg-full corr-texto">
+                            <span class="corr-texto__label">Respondió así y estuvo bien</span>
+                            <p>@c.RespuestaCorrecta</p>
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(c.RespuestaAsistente))
                     {
                         <div class="cfg-full corr-texto">
                             <span class="corr-texto__label">Había respondido</span>
                             <p class="corr-texto__antes">@c.RespuestaAsistente</p>
                         </div>
                     }
-                    @if (!string.IsNullOrWhiteSpace(c.RespuestaCorrecta))
+                    @if (c.Accion != AsistenteCorreccionAcciones.Buena && !string.IsNullOrWhiteSpace(c.RespuestaCorrecta))
                     {
                         <div class="cfg-full corr-texto">
                             <span class="corr-texto__label">Tiene que responder</span>
@@ -115,7 +131,8 @@ else
     [
         new(AsistenteCorreccionAcciones.Responder, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.Responder)),
         new(AsistenteCorreccionAcciones.Derivar, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.Derivar)),
-        new(AsistenteCorreccionAcciones.SinTicket, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.SinTicket))
+        new(AsistenteCorreccionAcciones.SinTicket, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.SinTicket)),
+        new(AsistenteCorreccionAcciones.Buena, AsistenteCorreccionAcciones.Descripcion(AsistenteCorreccionAcciones.Buena))
     ];
 
     private IReadOnlyList<AsistenteCorreccionDto> _todas = [];
@@ -129,6 +146,8 @@ else
 
     private List<AsistenteCorreccionDto> Filtradas => _todas.Where(c => c.Estado == _filtro).ToList();
     private int CantidadPendientes => _todas.Count(c => c.Estado == AsistenteCorreccionEstados.Pendiente);
+
+    private int Contar(string accion) => _todas.Count(c => c.Estado == AsistenteCorreccionEstados.Aprobada && c.Accion == accion);
 
     private string TituloVacio => _filtro switch
     {
@@ -238,6 +257,7 @@ else
     {
         AsistenteCorreccionAcciones.Derivar => AlfaTagTone.Warning,
         AsistenteCorreccionAcciones.SinTicket => AlfaTagTone.Neutral,
+        AsistenteCorreccionAcciones.Buena => AlfaTagTone.Success,
         _ => AlfaTagTone.Accent
     };
 

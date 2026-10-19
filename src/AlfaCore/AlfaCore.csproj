@@ -8,6 +8,9 @@
     <UserSecretsId>AlfaCore-Development</UserSecretsId>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**</DefaultItemExcludes>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../docs/modulos/ventas-carga-comprobantes/configuracion-vb6.csv" LogicalName="AlfaCore.Ventas.ConfiguracionVb6.csv" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />

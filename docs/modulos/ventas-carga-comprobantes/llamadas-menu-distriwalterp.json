@@ -1,0 +1,269 @@
+{
+  "fecha": "2026-10-14",
+  "base": "DISTRIWALTERP",
+  "modo": "Lectura",
+  "llamadas": [
+    {
+      "menu": "ALFA",
+      "padre": "D40",
+      "clave": "D4016",
+      "nombre": "Carga de Recepción de Equipo",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "REC",
+      "habilitado_legacy": "0"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D40",
+      "clave": "D4025",
+      "nombre": "Remito por OT - Envio de Repuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "EnvioRepuesto",
+      "habilitado_legacy": "0"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D40",
+      "clave": "D4026",
+      "nombre": "Remito por OT",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "EnvioMantenimiento",
+      "habilitado_legacy": "0"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D5001",
+      "clave": "D5006",
+      "nombre": "Notas de Debitos a Proveedores",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DebitosProveedores",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6001",
+      "clave": "D600101",
+      "nombre": "Facturación",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6001",
+      "clave": "D600102",
+      "nombre": "Facturación Electrónica",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "FacturaElectronica",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6002",
+      "nombre": "Notas de Pedido",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SoloNotasPedido",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6036",
+      "nombre": "Modificacion de Notas de Pedido",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionPedidos",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6037",
+      "nombre": "Remito para Transporte",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "REMITOTR",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6038",
+      "nombre": "Modificacion de Presupuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionPresupuestos",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6053",
+      "nombre": "Carga de Comprobantes - Punto de Venta",
+      "ejecutable": "V_MV_VENTASPDV",
+      "modo": "",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6054",
+      "nombre": "Carga de Comprobantes - MODO GRAFICO",
+      "ejecutable": "V_MV_VENTASPDVG",
+      "modo": "",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6090",
+      "nombre": "Remitos en Comodato",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "EnComodato",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6091",
+      "nombre": "Devolución de Remitos en Comodato",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DevolucionEnComodato",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6096",
+      "nombre": "Presupuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "PR",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A55",
+      "nombre": "Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SOLOREMITOS",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A58",
+      "nombre": "Remitos y Presupuestos",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "RMPR",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A94",
+      "nombre": "Notas de Debito",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ND",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A95",
+      "nombre": "Notas de Credito",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "NC",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A98",
+      "nombre": "Facturas",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "FC",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D6000",
+      "clave": "D6A99",
+      "nombre": "Facturas Proforma",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "FP",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8040",
+      "nombre": "Notas de Pedido por Reposicion",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SoloNotasPedidoCD",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8045",
+      "nombre": "Remitos por Transferencias",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "RemitoTransferencia",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8055",
+      "nombre": "Carga de Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "SOLOREMITOS",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8057",
+      "nombre": "Devolucion a Proveedores",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "DEVOLUCIONPROVEEDORES",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D8000",
+      "clave": "D8073",
+      "nombre": "Modificacion de Remitos de Venta",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionRemitos",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D87",
+      "clave": "D8710",
+      "nombre": "Remitos para Reparto",
+      "ejecutable": "V_MV_VENTAS_SOLOREPARTO",
+      "modo": "RemitosReparto",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D87",
+      "clave": "D8712",
+      "nombre": "Facturacion",
+      "ejecutable": "V_MV_VENTAS_SOLOREPARTO",
+      "modo": "",
+      "habilitado_legacy": "1"
+    },
+    {
+      "menu": "ALFA",
+      "padre": "D9890",
+      "clave": "D989009",
+      "nombre": "Modificación de Comprobantes de Ventas",
+      "ejecutable": "V_MV_VENTAS",
+      "modo": "ModificacionFacturas",
+      "habilitado_legacy": "1"
+    }
+  ],
+  "limite": "Sin PROCESO completo ni argumentos de conexión."
+}
