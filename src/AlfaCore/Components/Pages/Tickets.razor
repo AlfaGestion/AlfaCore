@@ -753,111 +753,87 @@
 @* Ventanas emergentes fuera del wrapper de la página: display:contents, solo aporta el scope .gd
    para que tomen el aspecto AlfaDesign. *@
 <div class="gd gd-legacy gd-modal-scope">
-@if (_showParteHorasDialog)
-{
-    <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CancelCloseTicketParteHorasDialog"></div>
-    <section class="panel-card conversations-modal conversations-hours-dialog"
-             aria-labelledby="tickets-hours-title"
-             tabindex="-1"
-             @onkeydown="HandleTicketParteHorasDialogKeyDownAsync">
-        <div class="conversations-hours-dialog__head">
-            <div class="conversations-hours-dialog__title">
-                <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
-                <div>
-                    <h3 id="tickets-hours-title" class="panel-card__title">Parte de horas</h3>
-                    <p class="panel-card__subtitle">@(CargandoParteSinCerrar
-                        ? $"Cargá el tiempo trabajado en {_detail?.CodigoVisible}."
-                        : $"Estás cerrando {_detail?.CodigoVisible}. ¿Cargamos el tiempo trabajado?")</p>
-                </div>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-
+@* Parte de horas del ticket (2026-10-19): AlfaDialog. Se abre desde la solapa (solo cargar) o al cerrar
+   el ticket (cargar y cerrar / cerrar sin parte). *@
+<AlfaDialog Open="@_showParteHorasDialog"
+            Title="Parte de horas"
+            Description="@(CargandoParteSinCerrar
+                ? $"Cargá el tiempo trabajado en {_detail?.CodigoVisible}."
+                : $"Estás cerrando {_detail?.CodigoVisible}. ¿Cargamos el tiempo trabajado?")"
+            Size="AlfaDialogSize.Md"
+            Loading="@_savingParteHora"
+            ErrorMessage="@_parteHoraError"
+            Class="tk-parte-dialog"
+            OnClose="CancelCloseTicketParteHorasDialog">
+    <ChildContent>
         @if (_ticketPartesHoras.Count > 0)
         {
-            <div class="conversations-hours-hint">
-                <i class="bi bi-info-circle"></i>
-                <span>Este ticket ya tiene @GetTicketPartesHorasSubtitle().</span>
-            </div>
+            <p class="tk-parte-aviso"><i class="bi bi-info-circle"></i> Este ticket ya tiene @GetTicketPartesHorasSubtitle().</p>
         }
-
         @if (string.IsNullOrWhiteSpace(_detail?.ClienteCodigo) && _parteHoraTipoTrabajo != ParteHoraTipoTrabajoKeys.Interno)
         {
-            <div class="conversations-hours-hint">
-                <i class="bi bi-info-circle"></i>
-                <span>Este ticket no tiene cliente: para cargar el parte asignale un cliente al ticket o elegí el tipo «@FormatParteHoraTipoTicket(ParteHoraTipoTrabajoKeys.Interno)».</span>
-            </div>
+            <p class="tk-parte-aviso tk-parte-aviso--atencion">
+                <i class="bi bi-exclamation-circle"></i>
+                Este ticket no tiene cliente: asignale uno al ticket o elegí el tipo «@FormatParteHoraTipoTicket(ParteHoraTipoTrabajoKeys.Interno)».
+            </p>
         }
 
-        @if (!string.IsNullOrWhiteSpace(_parteHoraError))
+        <div class="tk-parte-form">
+            <div class="field">
+                <label for="tk-parte-fecha">Fecha</label>
+                <input id="tk-parte-fecha" type="date" @bind="_parteHoraFecha" max="@DateTime.Today.ToString("yyyy-MM-dd")" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-tecnico">Técnico</label>
+                <select id="tk-parte-tecnico" @bind="_parteHoraIdTecnico" disabled="@_savingParteHora">
+                    <option value="">Elegí un técnico</option>
+                    @foreach (var tecnico in _lookups.Tecnicos)
+                    {
+                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="tk-parte-tipo">Tipo</label>
+                <select id="tk-parte-tipo" @bind="_parteHoraTipoTrabajo" disabled="@_savingParteHora">
+                    @foreach (var tipo in ParteHoraTipoTrabajoKeys.All)
+                    {
+                        <option value="@tipo">@FormatParteHoraTipoTicket(tipo)</option>
+                    }
+                </select>
+            </div>
+            <div class="field tk-parte-form__ancho">
+                <label for="tk-parte-tarea">Tarea</label>
+                <input id="tk-parte-tarea" type="text" maxlength="1000" placeholder="Qué se hizo" @bind="_parteHoraDescripcion" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-horas">Horas</label>
+                <input id="tk-parte-horas" type="number" min="0" max="24" step="1" @bind="_parteHoraHoras" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-minutos">Minutos</label>
+                <input id="tk-parte-minutos" type="number" min="0" max="59" step="5" @bind="_parteHoraMinutos" disabled="@_savingParteHora" />
+            </div>
+            <label class="checkbox tk-parte-form__check">
+                <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
+                <span>Facturable</span>
+            </label>
+        </div>
+    </ChildContent>
+    <Footer>
+        @if (CargandoParteSinCerrar)
         {
-            <div class="conversations-error conversations-notice">@_parteHoraError</div>
+            <button type="button" class="btn btn--ghost" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora">Cancelar</button>
         }
-
-        <div class="conversations-hours-form">
-            <div class="tk-parte-cabecera">
-                <label class="tk-parte-fecha">
-                    <span>Fecha</span>
-                    <input type="date" @bind="_parteHoraFecha" max="@DateTime.Today.ToString("yyyy-MM-dd")" disabled="@_savingParteHora" />
-                </label>
-                <label class="conversations-hours-check">
-                    <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
-                    <span>Facturable</span>
-                </label>
-            </div>
-
-            <div class="conversations-hours-lines">
-                <div class="conversations-hours-lines__header">
-                    <span>Técnico</span>
-                    <span>Tipo</span>
-                    <span>Tarea</span>
-                    <span>Horas</span>
-                    <span>Minutos</span>
-                    <span></span>
-                </div>
-                <div class="conversations-hours-lines__row">
-                    <select @bind="_parteHoraIdTecnico" disabled="@_savingParteHora">
-                        <option value="">Sin técnico</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
-                        }
-                    </select>
-                    <select @bind="_parteHoraTipoTrabajo" disabled="@_savingParteHora">
-                        @foreach (var tipo in ParteHoraTipoTrabajoKeys.All)
-                        {
-                            <option value="@tipo">@FormatParteHoraTipoTicket(tipo)</option>
-                        }
-                    </select>
-                    <input type="text" maxlength="1000" placeholder="Descripción de la tarea" @bind="_parteHoraDescripcion" disabled="@_savingParteHora" />
-                    <input type="number" min="0" max="24" step="1" @bind="_parteHoraHoras" disabled="@_savingParteHora" />
-                    <input type="number" min="0" max="59" step="1" @bind="_parteHoraMinutos" disabled="@_savingParteHora" />
-                    <span></span>
-                </div>
-            </div>
-        </div>
-
-        <div class="actions conversations-hours-actions">
-            <button type="button" class="btn btn--primary" @onclick="SaveTicketParteHorasAsync" disabled="@_savingParteHora">
-                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : CargandoParteSinCerrar ? "Guardar parte" : "Guardar parte y cerrar")
-            </button>
-            @if (CargandoParteSinCerrar)
-            {
-                <button type="button" class="btn btn--ghost" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora">
-                    Cancelar
-                </button>
-            }
-            else
-            {
-                <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">
-                    Cerrar sin cargar parte
-                </button>
-            }
-        </div>
-    </section>
-}
+        else
+        {
+            <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">Cerrar sin cargar parte</button>
+        }
+        <button type="button" class="btn btn--primary" @onclick="SaveTicketParteHorasAsync" disabled="@_savingParteHora">
+            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : CargandoParteSinCerrar ? "Guardar parte" : "Guardar parte y cerrar")
+        </button>
+    </Footer>
+</AlfaDialog>
 </div>
 
 @code {
@@ -2684,14 +2660,6 @@
         _showParteHorasDialog = false;
         _parteHoraPendingCloseStatusCode = string.Empty;
         _parteHoraError = null;
-    }
-
-    private Task HandleTicketParteHorasDialogKeyDownAsync(KeyboardEventArgs args)
-    {
-        if (args.Key == "Escape")
-            CancelCloseTicketParteHorasDialog();
-
-        return Task.CompletedTask;
     }
 
     private async Task SaveTicketParteHorasAsync()

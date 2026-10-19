@@ -233,24 +233,16 @@ html[data-theme="light"] .tickets-list-head-table th {
     .tk-etapa { padding: 6px 14px 6px 18px; font-size: 12px; }
 }
 .tk-solapa__acciones { display: flex; justify-content: flex-end; }
-.tk-parte-cabecera { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.tk-parte-fecha { display: flex; flex-direction: column; gap: 4px; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; font-weight: 600; }
-.tk-parte-fecha input { min-width: 160px; }
 
-/* Ventana de parte de horas: las columnas estaban definidas sólo en Conversaciones (estilos con alcance
-   a esa página), así que en Tickets se veían apiladas. */
-.tk-parte-cabecera { grid-column: 1 / -1; }
-.conversations-hours-lines { display: grid; gap: 8px; grid-column: 1 / -1; }
-.conversations-hours-lines__header,
-.conversations-hours-lines__row { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(110px, .7fr) minmax(150px, 1.4fr) 70px 78px; gap: 8px; align-items: center; }
-.conversations-hours-lines__header > span:last-child,
-.conversations-hours-lines__row > span:last-child { display: none; }
-.conversations-hours-lines__header { color: var(--alfa-text-secondary, #a6abb5); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.conversations-hours-lines__row input,
-.conversations-hours-lines__row select { min-width: 0; width: 100%; }
+/* Ventana de parte de horas (AlfaDialog, 2026-10-19). */
+.tk-parte-aviso { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; background: var(--alfa-bg-surface-raised, #1d2026); color: var(--alfa-text-secondary, #a6abb5); font-size: 13px; line-height: 1.45; }
+.tk-parte-aviso--atencion { border-color: rgba(229, 168, 59, .45); color: var(--alfa-text-primary, #f5f5f7); }
+.tk-parte-aviso--atencion i { color: var(--alfa-warning, #e5a83b); }
+.tk-parte-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; align-items: end; }
+.tk-parte-form__ancho { grid-column: 1 / -1; }
+.tk-parte-form__check { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; }
+.tk-parte-form__check input { width: 16px; height: 16px; margin: 0; accent-color: #14b8a6; }
 
-@media (max-width: 720px) {
-    .conversations-hours-lines__header { display: none; }
-    .conversations-hours-lines__row { grid-template-columns: 1fr 1fr; padding: 10px; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; }
-    .conversations-hours-lines__row input[type="text"] { grid-column: 1 / -1; }
+@media (max-width: 560px) {
+    .tk-parte-form { grid-template-columns: 1fr 1fr; }
 }
