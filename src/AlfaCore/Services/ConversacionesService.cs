@@ -9123,6 +9123,26 @@ public sealed class ConversacionesService(
                 // si hay un tema pendiente (ticket abierto o ya le respondió alguien del equipo) se le
                 // contesta sin nombrar a nadie, no se abre otro ticket y se avisa adentro. Si no hay nada
                 // anterior, se le pregunta a qué se refiere en vez de inventar un pendiente.
+                // Avisa que el tema se resolvió ("ya está arreglado", "ya anda") (2026-10-19): se agradece y se
+                // avisa adentro para cerrar el ticket. Antes caía como "pide novedades" (caso Legión, ticket #92).
+                if (AvisaTemaResuelto(texto))
+                {
+                    TemaPendiente? pendienteResuelto = null;
+                    try
+                    {
+                        pendienteResuelto = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        await _appEvents.LogErrorAsync("Conversaciones", "BotTemaResuelto", ex,
+                            "No se pudo buscar el tema pendiente; se respondió el agradecimiento sin avisar al equipo.",
+                            new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                    }
+
+                    await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, token).ConfigureAwait(false);
+                    return;
+                }
+
                 var omitirTicket = false;
                 if (string.Equals(result?.Tipo, "SEGUIMIENTO", StringComparison.OrdinalIgnoreCase)
                     || (!string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase) && PideNovedades(texto)))
@@ -10344,6 +10364,109 @@ public sealed class ConversacionesService(
         return palabras is > 0 and <= 12 && FrasesPideNovedades.Any(f => normalizado.Contains(f, StringComparison.Ordinal));
     }
 
+    private static readonly string[] FrasesTemaResuelto =
+    [
+        "ya esta arreglado", "ya esta solucionado", "ya esta resuelto", "ya esta funcionando", "ya esta andando",
+        "ya quedo", "ya anda", "ya funciona", "ya me anda", "ya me funciona", "ya lo pude", "ya pude",
+        "ya lo solucione", "ya lo resolvi", "ya lo arregle", "ya se soluciono", "ya se arreglo", "ya se resolvio",
+        "se soluciono", "se arreglo solo", "se resolvio", "esta solucionado", "quedo solucionado", "quedo resuelto",
+        "solucionado", "resuelto gracias", "ya no hace falta", "ya no es necesario", "ya lo encontre"
+    ];
+
+    private static readonly HashSet<string> PalabrasQueNieganResuelto = new(StringComparer.Ordinal)
+    {
+        "no", "todavia", "aun", "sigue", "sigo", "pero", "tampoco", "nunca"
+    };
+
+    /// <summary>
+    /// El cliente avisa que su tema quedó resuelto ("ya está arreglado", "ya anda", "lo pude solucionar").
+    /// No cuenta si pregunta ("¿ya está arreglado?") o niega/condiciona ("todavía no anda", "anda pero...").
+    /// </summary>
+    internal static bool AvisaTemaResuelto(string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || texto.Contains('?') || texto.Contains('¿'))
+            return false;
+
+        var normalizado = Regex.Replace(RemoveDiacritics(texto).ToLowerInvariant(), "[^a-z ]+", " ");
+        normalizado = Regex.Replace(normalizado, " +", " ").Trim();
+        var palabras = normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (palabras.Length is 0 or > 15)
+            return false;
+
+        var conBordes = $" {normalizado} ";
+        var frase = FrasesTemaResuelto.FirstOrDefault(f => conBordes.Contains($" {f} ", StringComparison.Ordinal));
+        if (frase is null)
+            return false;
+
+        // Las negaciones se buscan fuera de la frase ("ya no hace falta" sí es un aviso; "todavía no anda" no).
+        var resto = conBordes.Replace($" {frase} ", " ", StringComparison.Ordinal);
+        return !resto.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(PalabrasQueNieganResuelto.Contains);
+    }
+
+    internal const string RespuestaTemaResuelto = "¡Qué bueno que ya quedó resuelto! Gracias por avisarnos 🙂 Cualquier cosa, escribinos.";
+    internal const string ObservacionAsignacionResuelto = "Avisa que se resolvió su tema";
+
+    /// <summary>
+    /// El cliente avisa que se resolvió: se le agradece (una vez por día) y, si había un tema pendiente, se
+    /// deja la nota y se avisa a quien lo atendía para que cierre el ticket. No abre ticket ni pide novedades.
+    /// </summary>
+    private async Task ResponderTemaResueltoAsync(long idConversacion, TemaPendiente? pendiente, CancellationToken ct)
+    {
+        if (!await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaTemaResuelto, BusinessNow(), ct).ConfigureAwait(false))
+        {
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = RespuestaTemaResuelto,
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "BOT"
+            }, ct).ConfigureAwait(false);
+        }
+
+        if (pendiente is not { Hay: true })
+        {
+            await _appEvents.LogAuditAsync("Conversaciones", "BotTemaResuelto", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El cliente avisó que su tema se resolvió; no había tema pendiente.", new { idConversacion }, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var destino = FirstNonEmpty(pendiente.IdTecnicoAsignado, pendiente.IdTecnico);
+        var destinoId = string.IsNullOrWhiteSpace(destino) ? null : await ResolveTechnicianIdOrNullAsync(destino, ct).ConfigureAwait(false);
+        var destinoNombre = string.IsNullOrWhiteSpace(destinoId)
+            ? string.Empty
+            : FirstNonEmpty(await TryGetTechnicianNameAsync(destinoId, ct).ConfigureAwait(false), destinoId);
+        var conTicket = pendiente.NumeroTicket is int n ? $" del ticket #{n.ToString(CultureInfo.InvariantCulture)}" : string.Empty;
+        var cerrar = pendiente.NumeroTicket.HasValue ? " Revisar si se puede cerrar el ticket." : string.Empty;
+
+        await AddInternalEventCoreAsync(idConversacion,
+            string.IsNullOrWhiteSpace(destinoNombre)
+                ? $"✅ El cliente avisa que el tema{conTicket} ya quedó resuelto.{cerrar}"
+                : $"✅ El cliente avisa que el tema{conTicket} ya quedó resuelto. Se le avisó a {destinoNombre}.{cerrar}",
+            null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(destinoId))
+        {
+            await RegistrarAsignacionSeguimientoAsync(idConversacion, destinoId, ct, ObservacionAsignacionResuelto).ConfigureAwait(false);
+            if (serviceProvider?.GetService(typeof(IAvisosPushNotifier)) is IAvisosPushNotifier avisosPush)
+            {
+                var contacto = string.IsNullOrWhiteSpace(pendiente.Contacto) ? "Un cliente" : pendiente.Contacto.Trim();
+                await avisosPush.NotificarTecnicoAsync(
+                    destinoId,
+                    "Tema resuelto",
+                    $"{contacto} avisa que su tema{conTicket} ya quedó resuelto.",
+                    $"/conversaciones?id={idConversacion.ToString(CultureInfo.InvariantCulture)}",
+                    ct).ConfigureAwait(false);
+            }
+        }
+
+        await _appEvents.LogAuditAsync("Conversaciones", "BotTemaResuelto", "CONV_CONVERSACIONES",
+            idConversacion.ToString(CultureInfo.InvariantCulture),
+            "El cliente avisó que su tema se resolvió; el asistente agradeció y avisó al equipo.",
+            new { idConversacion, pendiente.NumeroTicket, IdTecnicoAvisado = destinoId }, ct).ConfigureAwait(false);
+    }
+
     internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
     internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
@@ -10535,7 +10658,7 @@ public sealed class ConversacionesService(
     /// Asigna la conversación al técnico si no tenía a nadie y deja SIEMPRE el movimiento en
     /// CONV_ASIGNACIONES: es lo que la campana (CentroAvisosService) muestra como aviso.
     /// </summary>
-    private async Task RegistrarAsignacionSeguimientoAsync(long idConversacion, string idTecnico, CancellationToken ct)
+    private async Task RegistrarAsignacionSeguimientoAsync(long idConversacion, string idTecnico, CancellationToken ct, string? observaciones = null)
     {
         const string sql = """
             UPDATE dbo.CONV_CONVERSACIONES
@@ -10551,7 +10674,7 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@IdTecnico", idTecnico);
-        cmd.Parameters.AddWithValue("@Observaciones", ObservacionAsignacionSeguimiento);
+        cmd.Parameters.AddWithValue("@Observaciones", observaciones ?? ObservacionAsignacionSeguimiento);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 

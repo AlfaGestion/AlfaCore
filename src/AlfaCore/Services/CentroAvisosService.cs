@@ -342,8 +342,12 @@ public sealed class CentroAvisosService(
                 Tipo = AvisoTipos.Conversacion,
                 Titulo = c.EsPedidoNovedades
                     ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Pide novedades" : $"Pide novedades: {c.Contacto.Trim()}")
-                    : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
-                Detalle = c.EsPedidoNovedades ? "El cliente pide novedades de su tema pendiente" : "Te asignaron esta conversación",
+                    : c.EsAvisoResuelto
+                        ? (string.IsNullOrWhiteSpace(c.Contacto) ? "Tema resuelto" : $"Tema resuelto: {c.Contacto.Trim()}")
+                        : (string.IsNullOrWhiteSpace(c.Contacto) ? "Conversación asignada" : $"Conversación asignada: {c.Contacto.Trim()}"),
+                Detalle = c.EsPedidoNovedades
+                    ? "El cliente pide novedades de su tema pendiente"
+                    : c.EsAvisoResuelto ? "El cliente avisa que ya quedó resuelto: revisá si se puede cerrar el ticket" : "Te asignaron esta conversación",
                 FechaHora = c.FechaHora,
                 Ruta = $"/conversaciones?id={c.IdConversacion.ToString(CultureInfo.InvariantCulture)}"
             });

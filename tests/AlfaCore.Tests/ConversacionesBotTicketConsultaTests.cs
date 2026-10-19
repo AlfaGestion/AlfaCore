@@ -66,6 +66,37 @@ public sealed class ConversacionesBotTicketConsultaTests
         Assert.Contains("!omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto)", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("ya esta arreglado")]
+    [InlineData("Ya está arreglado, gracias!")]
+    [InlineData("ya anda")]
+    [InlineData("Listo, ya me funciona")]
+    [InlineData("lo pude solucionar, ya lo solucioné")]
+    [InlineData("Se arregló solo, gracias")]
+    [InlineData("ya no hace falta")]
+    public void AvisoDeTemaResuelto_SeReconoce(string texto)
+        => Assert.True(ConversacionesService.AvisaTemaResuelto(texto));
+
+    [Theory]
+    [InlineData("¿ya está arreglado?")]
+    [InlineData("todavía no anda")]
+    [InlineData("ya anda pero me sale otro error")]
+    [InlineData("sigue sin funcionar")]
+    [InlineData("pudieron ver algo?")]
+    [InlineData("No me imprime la factura")]
+    public void PreguntaONegacion_NoEsAvisoDeResuelto(string texto)
+        => Assert.False(ConversacionesService.AvisaTemaResuelto(texto));
+
+    [Fact]
+    public void AvisoDeResuelto_SeAtiendeAntesQueElPedidoDeNovedades()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var resuelto = source.IndexOf("if (AvisaTemaResuelto(texto))", StringComparison.Ordinal);
+        var novedades = source.IndexOf("var omitirTicket = false;", StringComparison.Ordinal);
+        Assert.True(resuelto > 0 && resuelto < novedades);
+        Assert.DoesNotContain("?", ConversacionesService.RespuestaTemaResuelto, StringComparison.Ordinal);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

@@ -49,6 +49,9 @@ public sealed class AvisoConversacionFuente
 
     /// <summary>El asistente la asignó porque el cliente pide novedades de un tema pendiente.</summary>
     public bool EsPedidoNovedades => Observaciones.StartsWith("Pide novedades", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>El asistente la asignó porque el cliente avisa que su tema ya se resolvió.</summary>
+    public bool EsAvisoResuelto => Observaciones.StartsWith("Avisa que se resolvi", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Oportunidad abierta del CRM asignada a un técnico/vendedor del usuario.</summary>
