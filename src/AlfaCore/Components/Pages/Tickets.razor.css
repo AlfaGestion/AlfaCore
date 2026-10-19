@@ -232,3 +232,7 @@ html[data-theme="light"] .tickets-list-head-table th {
     .tk-prop--etiquetas { grid-column: auto; }
     .tk-etapa { padding: 6px 14px 6px 18px; font-size: 12px; }
 }
+.tk-solapa__acciones { display: flex; justify-content: flex-end; }
+.tk-parte-cabecera { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.tk-parte-fecha { display: flex; flex-direction: column; gap: 4px; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; font-weight: 600; }
+.tk-parte-fecha input { min-width: 160px; }

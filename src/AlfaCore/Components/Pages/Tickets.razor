@@ -531,6 +531,11 @@
                     </div>
 
                     <div class="tk-solapa" hidden="@(_fichaTab != FichaTabHoras)">
+                        <div class="tk-solapa__acciones">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AbrirCargaParteHoras" disabled="@(_saving || _savingParteHora)">
+                                <i class="bi bi-stopwatch"></i> Cargar parte de horas
+                            </button>
+                        </div>
                     @if (_loadingTicketPartesHoras)
                     {
                         <div class="usuarios-empty">Buscando partes de horas...</div>
@@ -760,7 +765,9 @@
                 <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
                 <div>
                     <h3 id="tickets-hours-title" class="panel-card__title">Parte de horas</h3>
-                    <p class="panel-card__subtitle">Estás cerrando @_detail?.CodigoVisible. ¿Cargamos el tiempo trabajado?</p>
+                    <p class="panel-card__subtitle">@(CargandoParteSinCerrar
+                        ? $"Cargá el tiempo trabajado en {_detail?.CodigoVisible}."
+                        : $"Estás cerrando {_detail?.CodigoVisible}. ¿Cargamos el tiempo trabajado?")</p>
                 </div>
             </div>
             <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
@@ -782,10 +789,16 @@
         }
 
         <div class="conversations-hours-form">
-            <label class="conversations-hours-check">
-                <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
-                <span>Facturable</span>
-            </label>
+            <div class="tk-parte-cabecera">
+                <label class="tk-parte-fecha">
+                    <span>Fecha</span>
+                    <input type="date" @bind="_parteHoraFecha" max="@DateTime.Today.ToString("yyyy-MM-dd")" disabled="@_savingParteHora" />
+                </label>
+                <label class="conversations-hours-check">
+                    <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
+                    <span>Facturable</span>
+                </label>
+            </div>
 
             <div class="conversations-hours-lines">
                 <div class="conversations-hours-lines__header">
@@ -820,11 +833,20 @@
 
         <div class="actions conversations-hours-actions">
             <button type="button" class="btn btn--primary" @onclick="SaveTicketParteHorasAsync" disabled="@_savingParteHora">
-                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte y cerrar")
+                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : CargandoParteSinCerrar ? "Guardar parte" : "Guardar parte y cerrar")
             </button>
-            <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">
-                Cerrar sin cargar parte
-            </button>
+            @if (CargandoParteSinCerrar)
+            {
+                <button type="button" class="btn btn--ghost" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora">
+                    Cancelar
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">
+                    Cerrar sin cargar parte
+                </button>
+            }
         </div>
     </section>
 }
@@ -870,6 +892,10 @@
     private string _parteHoraIdTecnico = string.Empty;
     private string _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
     private string _parteHoraDescripcion = string.Empty;
+    private DateTime _parteHoraFecha = DateTime.Today;
+
+    /// <summary>La ventana de parte de horas se abrió desde la solapa (sin cerrar el ticket).</summary>
+    private bool CargandoParteSinCerrar => string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode);
     private int _parteHoraHoras;
     private int _parteHoraMinutos = 30;
     private bool _parteHoraFacturable = true;
@@ -2400,6 +2426,13 @@
             return;
         }
 
+        // Cerrar desde la barra pide el parte de horas igual que al cerrar con Guardar.
+        if (IsClosingTicketTransition(_detail.CodigoEstado, codigoEstado))
+        {
+            PromptCloseTicketParteHoras(codigoEstado);
+            return;
+        }
+
         var anterior = _form.CodigoEstado;
         _form.CodigoEstado = codigoEstado;
         _cambiandoEtapa = true;
@@ -2598,6 +2631,24 @@
         return !wasClosed && willBeClosed;
     }
 
+    /// <summary>Solapa Partes de horas: cargar tiempo trabajado sin cerrar el ticket (2026-10-19).</summary>
+    private void AbrirCargaParteHoras()
+    {
+        if (_detail is null)
+            return;
+
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraIdTecnico = string.IsNullOrWhiteSpace(_form.IdTecnico) ? _detail.IdTecnico ?? string.Empty : _form.IdTecnico;
+        _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
+        _parteHoraDescripcion = _detail.Titulo;
+        _parteHoraFecha = DateTime.Today;
+        _parteHoraHoras = 0;
+        _parteHoraMinutos = 30;
+        _parteHoraFacturable = true;
+        _parteHoraError = null;
+        _showParteHorasDialog = true;
+    }
+
     private void PromptCloseTicketParteHoras(string closeStatusCode)
     {
         if (_detail is null)
@@ -2605,6 +2656,7 @@
 
         _parteHoraPendingCloseStatusCode = closeStatusCode;
         _form.CodigoEstado = _detail.CodigoEstado;
+        _parteHoraFecha = DateTime.Today;
 
         _parteHoraIdTecnico = _form.IdTecnico ?? string.Empty;
         _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
@@ -2665,9 +2717,15 @@
         _parteHoraError = null;
         try
         {
+            if (_parteHoraFecha.Date > DateTime.Today)
+            {
+                _parteHoraError = "La fecha del parte no puede ser futura.";
+                return;
+            }
+
             var idParte = await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
             {
-                Fecha = DateTime.Today,
+                Fecha = _parteHoraFecha.Date,
                 ClienteCodigo = _detail.ClienteCodigo,
                 IdContacto = _detail.IdContacto,
                 IdTicket = _detail.IdTicket,
@@ -2680,6 +2738,16 @@
                 Descripcion = _parteHoraDescripcion,
                 UsuarioAccion = CurrentUserName
             });
+
+            if (CargandoParteSinCerrar)
+            {
+                _showParteHorasDialog = false;
+                _fichaTab = FichaTabHoras;
+                await LoadTicketPartesHorasAsync(_detail.IdTicket);
+                SetFeedback(AppUiMessage.Success("Parte de horas guardado",
+                    $"Se cargó el parte #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} en {_detail.CodigoVisible}."));
+                return;
+            }
 
             await FinalizeTicketCloseAsync(
                 "Ticket cerrado",
