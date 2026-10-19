@@ -554,7 +554,7 @@ public class Program
             }
 
             var idPuntoVenta = httpContext.Request.Query["idPuntoVenta"].ToString().Trim();
-            var startUrl = $"{scope}?directo=1";
+            var startUrl = $"{scope}/mostrador?directo=1";
             var appId = scope;
             if (int.TryParse(idPuntoVenta, out var parsedId) && parsedId > 0)
             {

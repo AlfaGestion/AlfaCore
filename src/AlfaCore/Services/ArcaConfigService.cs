@@ -13,8 +13,10 @@ public sealed class ArcaConfigService(
     private const string ModuleName = "ArcaFacturacionElectronica";
     private const string ClaveGlobal = "GLOBAL";
     private const int ArcaSqlCommandTimeoutSeconds = 120;
-    private const string WsaaProduccionDefault = "https://wsaa.arca.gov.ar/ws/services/LoginCms?wsdl";
-    private const string WsaaHomologacionDefault = "https://wsaa.homo.arca.gov.ar/ws/services/LoginCms?wsdl";
+    // ARCA mantiene publicados los endpoints AFIP para WSAA y son los que
+    // resuelven correctamente desde los servidores de AlfaCore.
+    private const string WsaaProduccionDefault = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl";
+    private const string WsaaHomologacionDefault = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
     // La consulta de padrón es un circuito independiente de facturación y se
     // ejecuta siempre contra producción.
     private const string WsaaPadronProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
@@ -581,6 +583,24 @@ public sealed class ArcaConfigService(
             return ambiente == ArcaAmbiente.Produccion ? produccion : homologacion;
 
         var normalized = configured.Trim().TrimEnd('/');
+        // Algunas bases quedaron configuradas con hosts ARCA que no resuelven
+        // desde el servidor (www.homo.arca.gov.ar, wsaahomo.arca.gov.ar o
+        // wsaa.homo.arca.gov.ar). Se conserva la configuración almacenada,
+        // pero se usa el endpoint WSAA operativo publicado por ARCA.
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var configuredUri)
+            && (configuredUri.Host.Equals("www.homo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)
+                || configuredUri.Host.Equals("wsaahomo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)
+                || configuredUri.Host.Equals("wsaa.homo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)))
+        {
+            return homologacion;
+        }
+
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out configuredUri)
+            && configuredUri.Host.Equals("wsaa.arca.gov.ar", StringComparison.OrdinalIgnoreCase))
+        {
+            return produccion;
+        }
+
         var officialProduction = produccion.Trim().TrimEnd('/');
         var officialHomologacion = homologacion.Trim().TrimEnd('/');
         var configuredBase = normalized.EndsWith("?wsdl", StringComparison.OrdinalIgnoreCase)

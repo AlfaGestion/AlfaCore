@@ -41,6 +41,13 @@
     <link id="app-manifest" rel="manifest" href="@(isPosPwaRoute ? posManifestHref : "/manifest.webmanifest")" />
     <script>
         (function () {
+            // Capturar temprano el evento evita perderlo mientras se cargan Blazor y pwa.js.
+            window._alfaCoreDeferredInstallPrompt = null;
+            window.addEventListener('beforeinstallprompt', function (event) {
+                event.preventDefault();
+                window._alfaCoreDeferredInstallPrompt = event;
+            });
+
             var path = (window.location.pathname || '').toLowerCase();
             var manifest = document.getElementById('app-manifest');
             var marker = '/ventas/punto-venta';
@@ -263,7 +270,7 @@
     <script src="js/auth-tree.js?v=20260526a"></script>
     <script src="js/conversaciones.js?v=20260722a"></script>
     <script src="js/interfaces-upload.js?v=20260526b"></script>
-    <script src="js/pwa.js?v=20260521e"></script>
+    <script src="js/pwa.js?v=20261016-pos-install-direct-start"></script>
     <script src="js/sticky-table-scroll.js?v=20260525a"></script>
     <script src="js/sticky-list-headers.js?v=20260715c"></script>
     <script src="js/sidebar-hover-state.js?v=20260611a"></script>
