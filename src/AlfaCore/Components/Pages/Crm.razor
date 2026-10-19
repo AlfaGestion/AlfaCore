@@ -954,141 +954,190 @@
         }
     </div>;
 
-    private RenderFragment RenderOpportunityPage() => @<section class="crm-opportunity-page">
-        <div class="crm-opportunity-main">
+    // Ficha de la oportunidad (2026-10-19), mismo criterio que la de Tickets: título grande, barra de etapas
+    // (cambia al instante; "Perdida" pide el motivo), datos en grilla compacta y un bloque con solapas.
+    private RenderFragment RenderOpportunityPage() => @<section class="crm-opportunity-page crm-ficha">
+        <header class="crm-ficha__head">
+            <div class="crm-ficha__titulo">
+                <span class="crm-ficha__codigo">@(_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible}" : "Nueva")</span>
+                <input maxlength="180" @bind="_form.Titulo" disabled="@_saving" placeholder="Nombre de la oportunidad" aria-label="Nombre de la oportunidad" />
+            </div>
             <div class="crm-detail-actions">
-                <button type="button" class="btn btn--primary btn--sm" @onclick="ShowQuotePlaceholder"><i class="bi bi-file-earmark-plus"></i> Nueva cotización</button>
+                <button type="button" class="btn btn--primary btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Articulos)" disabled="@(_saving || _detail is null)"><i class="bi bi-file-earmark-plus"></i> Nueva cotización</button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowMeetingPlaceholder"><i class="bi bi-calendar2-event"></i> Sin reuniones</button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenConversationFromDetail"><i class="bi bi-chat-dots"></i> Ver chat</button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowQuotePlaceholder"><i class="bi bi-pencil-square"></i> Cotizaciones 0</button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CreateSimilarLead"><i class="bi bi-star"></i> Lead similar</button>
             </div>
+        </header>
 
-            <section class="crm-opportunity-form">
-                <div class="crm-opportunity-title">
-                    <span>@(_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible}" : "Nueva")</span>
-                    <input maxlength="180" @bind="_form.Titulo" disabled="@_saving" placeholder="Nombre de la oportunidad" />
-                </div>
+        <nav class="crm-etapas" aria-label="Etapa de la oportunidad">
+            @foreach (var stage in _lookups.Etapas.OrderBy(x => x.Orden).ThenBy(x => x.IdEtapa))
+            {
+                var actual = _form.IdEtapa == stage.IdEtapa;
+                <button type="button"
+                        class="@CrmEtapaClass(stage)"
+                        aria-current="@(actual ? "step" : null)"
+                        title="@(actual ? "Etapa actual" : $"Pasar a {stage.Nombre}")"
+                        disabled="@(_saving || _cambiandoEtapa)"
+                        @onclick="() => CambiarEtapaDesdeFichaAsync(stage.IdEtapa)">
+                    @stage.Nombre
+                </button>
+            }
+        </nav>
 
-                <div class="crm-editor-grid">
-                    <div class="field">
-                        <label>Etapa</label>
-                        <select @bind="_form.IdEtapa" disabled="@_saving">
-                            @foreach (var stage in _lookups.Etapas)
-                            {
-                                <option value="@stage.IdEtapa">@stage.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    @if (FormStageIsLost)
-                    {
-                        <div class="field">
-                            <label>Motivo de pérdida <span class="crm-required">*</span></label>
-                            <select @bind="_form.IdMotivoPerdida" disabled="@_saving">
-                                <option value="">Elegí un motivo…</option>
-                                @foreach (var motivo in _lookups.MotivosPerdida)
-                                {
-                                    <option value="@motivo.IdMotivo">@motivo.Nombre</option>
-                                }
-                            </select>
-                        </div>
-                    }
-                    <div class="field">
-                        <label>Asignado</label>
-                        <select @bind="_form.IdTecnico" disabled="@_saving">
-                            <option value="">Sin asignar</option>
-                            @foreach (var tech in _lookups.Tecnicos)
-                            {
-                                <option value="@tech.IdTecnico">@tech.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Importe estimado</label>
-                        <input type="number" step="0.01" min="0" @bind="_form.ImporteEstimado" disabled="@_saving" />
-                    </div>
-                    <div class="field">
-                        <label>Probabilidad</label>
-                        <input type="number" min="0" max="100" @bind="_form.Probabilidad" disabled="@_saving" />
-                    </div>
-                    <div class="field">
-                        <label>Prioridad</label>
-                        <select @bind="_form.Prioridad" disabled="@_saving">
-                            <option value="0">Sin prioridad</option>
-                            <option value="1">Baja</option>
-                            <option value="2">Media</option>
-                            <option value="3">Alta</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Cierre estimado</label>
-                        <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
-                    </div>
-                    <div class="field crm-cliente-field">
-                        <label>Código cliente</label>
-                        <input maxlength="60" @bind="_form.ClienteCodigo" @bind:event="oninput" @bind:after="OnClienteBuscarAfter" disabled="@_saving" placeholder="Código o nombre..." autocomplete="off" />
-                        @if (_clienteDropdownOpen && _clienteResultados.Count > 0)
+        <div class="crm-props">
+            @if (FormStageIsLost)
+            {
+                <div class="crm-prop">
+                    <label>Motivo de pérdida <span class="crm-required">*</span></label>
+                    <select @bind="_form.IdMotivoPerdida" disabled="@_saving">
+                        <option value="">Elegí un motivo…</option>
+                        @foreach (var motivo in _lookups.MotivosPerdida)
                         {
-                            <div class="crm-cliente-drop">
-                                @foreach (var cli in _clienteResultados)
-                                {
-                                    <button type="button" class="crm-cliente-opt" @onclick="() => SeleccionarCliente(cli)">
-                                        <strong>@cli.RazonSocial</strong>
-                                        <small>@cli.Codigo</small>
-                                    </button>
-                                }
-                            </div>
+                            <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="crm-prop crm-cliente-field">
+                <label>Cliente</label>
+                <input maxlength="60" @bind="_form.ClienteCodigo" @bind:event="oninput" @bind:after="OnClienteBuscarAfter" disabled="@_saving" placeholder="Código o nombre..." autocomplete="off" />
+                @if (_clienteDropdownOpen && _clienteResultados.Count > 0)
+                {
+                    <div class="crm-cliente-drop">
+                        @foreach (var cli in _clienteResultados)
+                        {
+                            <button type="button" class="crm-cliente-opt" @onclick="() => SeleccionarCliente(cli)">
+                                <strong>@cli.RazonSocial</strong>
+                                <small>@cli.Codigo</small>
+                            </button>
                         }
                     </div>
-                    <div class="field">
-                        <label>ID contacto</label>
-                        <input type="number" @bind="_form.IdContacto" disabled="@_saving" />
-                    </div>
-                    <div class="field">
-                        <label>Canal origen</label>
-                        <select @bind="_form.CanalOrigen" disabled="@_saving">
-                            <option value="">Manual</option>
-                            <option value="WHATSAPP">WhatsApp</option>
-                            <option value="INSTAGRAM">Instagram</option>
-                            <option value="FACEBOOK">Facebook</option>
-                            <option value="MERCADOLIBRE">Mercado Libre</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Conversación origen</label>
-                        <input type="number" @bind="_form.IdConversacion" disabled="@_saving" />
-                    </div>
-                    <div class="field field--wide">
-                        <label>Descripción @if (_extrayendoDatosIa) { <span class="crm-ia-hint"><i class="bi bi-stars"></i> completando con IA…</span> }</label>
-                        <textarea rows="6" maxlength="4000" @bind="_form.Descripcion" disabled="@_saving"></textarea>
-                    </div>
-                </div>
-
-                <div class="crm-tags-select">
-                    @foreach (var tag in _lookups.Etiquetas)
+                }
+            </div>
+            <div class="crm-prop">
+                <label>Asignado</label>
+                <select @bind="_form.IdTecnico" disabled="@_saving">
+                    <option value="">Sin asignar</option>
+                    @foreach (var tech in _lookups.Tecnicos)
                     {
-                        <label class="checkbox">
-                            <input type="checkbox" checked="@_selectedTags.Contains(tag.IdEtiqueta)" @onchange="args => ToggleTag(tag.IdEtiqueta, args)" disabled="@_saving" />
-                            <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
-                        </label>
+                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="crm-prop">
+                <label>Importe estimado</label>
+                <input type="number" step="0.01" min="0" @bind="_form.ImporteEstimado" disabled="@_saving" />
+            </div>
+            <div class="crm-prop">
+                <label>Probabilidad (%)</label>
+                <input type="number" min="0" max="100" @bind="_form.Probabilidad" disabled="@_saving" />
+            </div>
+            <div class="crm-prop">
+                <label>Cierre estimado</label>
+                <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
+            </div>
+            <div class="crm-prop">
+                <label>Prioridad</label>
+                <div class="crm-estrellas" role="radiogroup" aria-label="Prioridad">
+                    @for (var nivel = 1; nivel <= 3; nivel++)
+                    {
+                        var n = nivel;
+                        <button type="button"
+                                role="radio"
+                                aria-checked="@(_form.Prioridad == n ? "true" : "false")"
+                                class="crm-estrella @(_form.Prioridad >= n ? "is-on" : string.Empty)"
+                                title="@GetPriorityLabel(n)"
+                                disabled="@_saving"
+                                @onclick="() => _form.Prioridad = _form.Prioridad == n ? n - 1 : n">
+                            <i class="bi @(_form.Prioridad >= n ? "bi-star-fill" : "bi-star")"></i>
+                        </button>
+                    }
+                    <span class="crm-estrellas__texto">@(_form.Prioridad <= 0 ? "Sin prioridad" : GetPriorityLabel(_form.Prioridad))</span>
+                </div>
+            </div>
+            <div class="crm-prop">
+                <label>Canal de origen</label>
+                <select @bind="_form.CanalOrigen" disabled="@_saving">
+                    <option value="">Manual</option>
+                    <option value="WHATSAPP">WhatsApp</option>
+                    <option value="INSTAGRAM">Instagram</option>
+                    <option value="FACEBOOK">Facebook</option>
+                    <option value="MERCADOLIBRE">Mercado Libre</option>
+                </select>
+            </div>
+            <div class="crm-prop crm-prop--etiquetas">
+                <label>Etiquetas</label>
+                <div class="crm-etiquetas">
+                    @foreach (var tag in _lookups.Etiquetas.Where(t => _selectedTags.Contains(t.IdEtiqueta)))
+                    {
+                        <span class="crm-tag crm-etiqueta" style="border-color:@tag.Color;color:@tag.Color">
+                            @tag.Nombre
+                            <button type="button" title="Quitar etiqueta" disabled="@_saving" @onclick="() => _selectedTags.Remove(tag.IdEtiqueta)"><i class="bi bi-x"></i></button>
+                        </span>
+                    }
+                    <button type="button" class="crm-etiquetas__agregar" title="Agregar o quitar etiquetas" disabled="@_saving" @onclick="() => _showTagPicker = !_showTagPicker">
+                        <i class="bi bi-tag"></i>@(_selectedTags.Count == 0 ? " Agregar" : string.Empty)
+                    </button>
+                    @if (_showTagPicker)
+                    {
+                        <button type="button" class="crm-popover-fondo" aria-label="Cerrar etiquetas" @onclick="() => _showTagPicker = false"></button>
+                        <div class="crm-popover" role="dialog" aria-label="Etiquetas">
+                            @foreach (var tag in _lookups.Etiquetas)
+                            {
+                                <label class="crm-popover__opcion">
+                                    <input type="checkbox" checked="@_selectedTags.Contains(tag.IdEtiqueta)" @onchange="args => ToggleTag(tag.IdEtiqueta, args)" disabled="@_saving" />
+                                    <span class="crm-popover__color" style="background:@tag.Color"></span>
+                                    <span>@tag.Nombre</span>
+                                </label>
+                            }
+                            @if (_lookups.Etiquetas.Count == 0)
+                            {
+                                <span class="muted">Todavía no hay etiquetas.</span>
+                            }
+                        </div>
                     }
                 </div>
-            </section>
+            </div>
+        </div>
 
-            <section class="crm-activity-panel">
-                <div class="crm-section-head">
-                    <div>
-                        <h3>Actividad</h3>
-                        <p>Notas comerciales, cambios de etapa y próximos pasos.</p>
+        <div class="crm-solapas">
+            <AlfaTabs AriaLabel="Contenido de la oportunidad"
+                      Items="@CrmFichaTabs"
+                      ActiveKey="@_crmFichaTab"
+                      ActiveKeyChanged="@((string? key) => _crmFichaTab = key ?? CrmTabDescripcion)" />
+
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabDescripcion)">
+                @if (_extrayendoDatosIa)
+                {
+                    <span class="crm-ia-hint"><i class="bi bi-stars"></i> completando con IA…</span>
+                }
+                <textarea rows="8" maxlength="4000" @bind="_form.Descripcion" disabled="@_saving" placeholder="Qué necesita el cliente, contexto, acuerdos..." aria-label="Descripción"></textarea>
+                <details class="crm-ficha__tecnico">
+                    <summary>Datos de vinculación</summary>
+                    <div class="crm-props">
+                        <div class="crm-prop">
+                            <label>ID contacto</label>
+                            <input type="number" @bind="_form.IdContacto" disabled="@_saving" />
+                        </div>
+                        <div class="crm-prop">
+                            <label>Conversación de origen</label>
+                            <input type="number" @bind="_form.IdConversacion" disabled="@_saving" />
+                        </div>
                     </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddNoteAsync" disabled="@_saving || _detail is null || string.IsNullOrWhiteSpace(_noteText)">
+                </details>
+            </div>
+
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabActividad)">
+                @if (_detail is not null)
+                {
+                    <div class="crm-solapa__acciones">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddNoteAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_noteText))">
                             <i class="bi bi-journal-plus"></i> Registrar nota
                         </button>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenConversationFromDetail"><i class="bi bi-whatsapp"></i> WhatsApp</button>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowActivityPlaceholder"><i class="bi bi-clock-history"></i> Actividad</button>
                     </div>
-                </div>
+                }
                 @if (_detail is null)
                 {
                     <p class="muted">Guardá la oportunidad para empezar a registrar actividad.</p>
@@ -1112,22 +1161,9 @@
                         }
                     </div>
                 }
-            </section>
-        </div>
+            </div>
 
-        <aside class="crm-opportunity-side">
-            <section class="crm-side-panel">
-                <h3>Resumen</h3>
-                <dl class="crm-summary">
-                    <div><dt>Valor</dt><dd>@FormatMoney(_form.ImporteEstimado)</dd></div>
-                    <div><dt>Probabilidad</dt><dd>@_form.Probabilidad%</dd></div>
-                    <div><dt>Prioridad</dt><dd>@GetPriorityLabel(_form.Prioridad)</dd></div>
-                    <div><dt>Cierre</dt><dd>@(_form.FechaCierreEstimada?.ToString("dd/MM/yyyy") ?? "-")</dd></div>
-                </dl>
-            </section>
-
-            <section class="crm-side-panel">
-                <h3>Próximas acciones</h3>
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabAcciones)">
                 @if (_detail is null)
                 {
                     <p class="muted">Guardá la oportunidad para agendar su próxima acción.</p>
@@ -1171,12 +1207,10 @@
                         </div>
                     }
                 }
-            </section>
+            </div>
 
-            <section class="crm-side-panel">
-                <div class="crm-section-head">
-                    <h3>Cotizaciones</h3>
-                    <div class="actions">
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabCotizaciones)">
+                <div class="crm-solapa__acciones">
                         <button type="button" class="btn btn--primary btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Articulos)" disabled="@(_saving || _detail is null)" title="Cotización de artículos">
                             <i class="bi bi-box-seam"></i> Artículos
                         </button>
@@ -1186,7 +1220,6 @@
                         <a class="btn btn--ghost btn--sm" href="@BuildCotizacionModuloUrl()" title="Abrir el módulo general de Cotizaciones, precargado con esta oportunidad">
                             <i class="bi bi-file-earmark-text"></i> Nueva cotización
                         </a>
-                    </div>
                 </div>
                 @if (_detail is null)
                 {
@@ -1213,13 +1246,12 @@
                         }
                     </div>
                 }
-            </section>
+            </div>
 
-            <section class="crm-side-panel">
-                <h3>Origen</h3>
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabOrigen)">
                 @if (_detail?.IdConversacion is long idConv)
                 {
-                    <a class="btn btn--ghost btn--sm" href="@($"/conversaciones?id={idConv}")">
+                    <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
                         <i class="bi bi-chat-dots"></i> Ver conversación
                     </a>
                 }
@@ -1238,8 +1270,8 @@
                         </article>
                     }
                 }
-            </section>
-        </aside>
+            </div>
+        </div>
     </section>;
 
     protected override async Task OnInitializedAsync()
@@ -1735,10 +1767,97 @@
                 UsuarioAccion = CurrentUserName
             });
             await ReloadCurrentViewAsync(resetPage: false);
+            if (_showEditor && _form.IdOportunidad == opportunityId)
+            {
+                _form.IdEtapa = targetStageId;
+                _form.IdMotivoPerdida = _lostMotivoId;
+            }
             ShowOk("Oportunidad marcada como perdida", "Se registró el motivo de pérdida.");
         });
         CancelLostReason();
         UpdatePageHeader();
+    }
+
+    // ---- Ficha de la oportunidad (2026-10-19) ----
+    private const string CrmTabDescripcion = "descripcion";
+    private const string CrmTabActividad = "actividad";
+    private const string CrmTabAcciones = "acciones";
+    private const string CrmTabCotizaciones = "cotizaciones";
+    private const string CrmTabOrigen = "origen";
+    private string _crmFichaTab = CrmTabDescripcion;
+    private bool _showTagPicker;
+    private bool _cambiandoEtapa;
+
+    private IReadOnlyList<AlfaTabItem> CrmFichaTabs =>
+    [
+        new(CrmTabDescripcion, "Descripción"),
+        new(CrmTabActividad, "Actividad", Badge: Contar(_detail?.Actividad.Count)),
+        new(CrmTabAcciones, "Próximas acciones", Badge: Contar(_detail?.Tareas.Count(t => !t.Completada))),
+        new(CrmTabCotizaciones, "Cotizaciones", Badge: Contar(_cotizaciones.Count)),
+        new(CrmTabOrigen, "Origen", Badge: Contar(_detail?.MensajesOrigenDetalle.Count))
+    ];
+
+    private static string? Contar(int? cantidad)
+        => cantidad is > 0 ? cantidad.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+
+    private string CrmEtapaClass(CrmEtapaDto stage)
+    {
+        if (_form.IdEtapa == stage.IdEtapa)
+            return stage.EsPerdida ? "crm-etapa is-actual is-perdida" : stage.EsGanada ? "crm-etapa is-actual is-ganada" : "crm-etapa is-actual";
+        var actual = _lookups.Etapas.FirstOrDefault(x => x.IdEtapa == _form.IdEtapa);
+        return actual is not null && !stage.EsPerdida && !stage.EsGanada && stage.Orden < actual.Orden ? "crm-etapa is-pasada" : "crm-etapa";
+    }
+
+    /// <summary>
+    /// Barra de etapas: en una oportunidad guardada cambia al instante (como el tablero); "Perdida" abre
+    /// la ventana del motivo. En una nueva queda en el formulario hasta Guardar.
+    /// </summary>
+    private async Task CambiarEtapaDesdeFichaAsync(int idEtapa)
+    {
+        if (_form.IdEtapa == idEtapa)
+            return;
+
+        if (_form.IdOportunidad <= 0 || _detail is null)
+        {
+            _form.IdEtapa = idEtapa;
+            return;
+        }
+
+        if (_lookups.Etapas.Any(x => x.IdEtapa == idEtapa && x.EsPerdida))
+        {
+            _lostOpportunityId = _form.IdOportunidad;
+            _lostStageId = idEtapa;
+            _lostMotivoId = null;
+            _showLostReason = true;
+            return;
+        }
+
+        var anterior = _form.IdEtapa;
+        _form.IdEtapa = idEtapa;
+        _cambiandoEtapa = true;
+        try
+        {
+            var ok = false;
+            await RunAsync(async () =>
+            {
+                await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
+                {
+                    IdOportunidad = _form.IdOportunidad,
+                    IdEtapa = idEtapa,
+                    UsuarioAccion = CurrentUserName
+                });
+                ok = true;
+                ShowOk("Etapa actualizada", $"La oportunidad pasó a {_lookups.Etapas.FirstOrDefault(x => x.IdEtapa == idEtapa)?.Nombre}.");
+            });
+            if (!ok)
+                _form.IdEtapa = anterior;
+            else
+                _form.IdMotivoPerdida = null;
+        }
+        finally
+        {
+            _cambiandoEtapa = false;
+        }
     }
 
     private void CancelLostReason()

@@ -882,7 +882,7 @@
     private bool CargandoParteSinCerrar => string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode);
     private int _parteHoraHoras;
     private int _parteHoraMinutos = 30;
-    private bool _parteHoraFacturable = true;
+    private bool _parteHoraFacturable;
     private int _pagedTotal;
     private int _pageNumber = 1;
     private int _totalPages;
@@ -2628,7 +2628,7 @@
         _parteHoraFecha = DateTime.Today;
         _parteHoraHoras = 0;
         _parteHoraMinutos = 30;
-        _parteHoraFacturable = true;
+        _parteHoraFacturable = false;
         _parteHoraError = null;
         _showParteHorasDialog = true;
     }
@@ -2647,7 +2647,7 @@
         _parteHoraDescripcion = _detail.Titulo;
         _parteHoraHoras = 0;
         _parteHoraMinutos = 30;
-        _parteHoraFacturable = true;
+        _parteHoraFacturable = false;
         _parteHoraError = null;
         _showParteHorasDialog = true;
     }
