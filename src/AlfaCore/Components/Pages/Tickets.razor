@@ -205,36 +205,189 @@
 
     @if (_showEditor)
     {
-        <section class="panel-card tickets-editor">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}")</h3>
-                    <p class="panel-card__subtitle">@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
+        @* Ficha del ticket (2026-10-19): título, barra de etapas (cambia al instante, como en Odoo), datos
+           compactos arriba y un bloque con solapas: Descripción, Mensajes, Actividad y Partes de horas. *@
+        <section class="panel-card tickets-editor tk-ficha">
+            <header class="tk-ficha__head">
+                <div class="tk-ficha__titulo">
+                    <h2>
+                        @if (!_isNew && _detail is not null)
+                        {
+                            <span class="tk-ficha__codigo">@_detail.CodigoVisible</span>
+                        }
+                        <span>@(_isNew ? "Nuevo ticket" : DisplayOrFallback(_form.Titulo, "Sin nombre"))</span>
+                    </h2>
+                    <p>@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
                 </div>
                 <div class="actions">
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
                     {
-                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
+                        <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
                             <i class="bi bi-chat-dots"></i> Ver chat
                         </a>
                     }
                     @if (!_isNew && _detail?.IdContacto is int idContacto)
                     {
-                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/contactos?editar={idContacto}")">
+                        <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/contactos?editar={idContacto}")">
                             <i class="bi bi-person-lines-fill"></i> Ver contacto
                         </a>
                     }
                 </div>
+            </header>
+
+            <nav class="tk-etapas" aria-label="Etapa del ticket">
+                @foreach (var state in EtapasOrdenadas)
+                {
+                    var actual = string.Equals(state.CodigoEstado, _form.CodigoEstado, StringComparison.OrdinalIgnoreCase);
+                    <button type="button"
+                            class="@EtapaClass(state)"
+                            aria-current="@(actual ? "step" : null)"
+                            title="@(actual ? "Etapa actual" : $"Pasar a {state.Nombre}")"
+                            disabled="@(_saving || _cambiandoEtapa)"
+                            @onclick="() => CambiarEtapaDesdeFichaAsync(state.CodigoEstado)">
+                        @state.Nombre
+                    </button>
+                }
+            </nav>
+
+            <div class="field tk-ficha__nombre">
+                <label for="tk-nombre">Nombre del ticket</label>
+                <input id="tk-nombre" type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
             </div>
 
-            <div class="tickets-editor-grid">
-                <div class="tickets-editor-main">
-                    <div class="field">
-                        <label>Nombre del ticket</label>
-                        <input type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
+            <div class="tk-props">
+                <div class="tk-prop tickets-lookup">
+                    <label>Cliente / empresa</label>
+                    @if (!string.IsNullOrWhiteSpace(_selectedClientLabel))
+                    {
+                        <span class="tk-valor">
+                            <span>@_selectedClientLabel</span>
+                            <button type="button" title="Quitar cliente" @onclick="ClearTicketClient" disabled="@_saving"><i class="bi bi-x"></i></button>
+                        </span>
+                    }
+                    else
+                    {
+                        <input type="text" value="@_ticketClientSearch" @oninput="OnTicketClientSearchInputAsync" disabled="@_saving" placeholder="Buscar cliente..." />
+                        @if (_ticketClientSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var client in _ticketClientSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketClient(client)" disabled="@_saving">
+                                        <strong>@client.RazonSocial</strong>
+                                        <small>@client.Codigo @client.Localidad</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="tk-prop tickets-lookup">
+                    <label>Usuario / contacto</label>
+                    @if (!string.IsNullOrWhiteSpace(_selectedContactLabel))
+                    {
+                        <span class="tk-valor">
+                            <span>@_selectedContactLabel</span>
+                            <button type="button" title="Quitar contacto" @onclick="ClearTicketContact" disabled="@_saving"><i class="bi bi-x"></i></button>
+                        </span>
+                    }
+                    else
+                    {
+                        <input type="text" value="@_ticketContactSearch" @oninput="OnTicketContactSearchInputAsync" disabled="@_saving" placeholder="Buscar contacto..." />
+                        @if (_ticketContactSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var contact in _ticketContactSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketContact(contact)" disabled="@_saving">
+                                        <strong>@contact.Nombre</strong>
+                                        <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="tk-prop">
+                    <label for="tk-asignado">Asignado a</label>
+                    <select id="tk-asignado" @bind="_form.IdTecnico" disabled="@_saving">
+                        <option value="">Sin asignar</option>
+                        @foreach (var tech in _lookups.Tecnicos)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="tk-prop">
+                    <label>Prioridad</label>
+                    <div class="tk-estrellas" role="radiogroup" aria-label="Prioridad">
+                        @for (var nivel = 1; nivel <= 3; nivel++)
+                        {
+                            var n = nivel;
+                            <button type="button"
+                                    role="radio"
+                                    aria-checked="@(_form.Prioridad == n ? "true" : "false")"
+                                    class="tk-estrella @(_form.Prioridad >= n ? "is-on" : string.Empty)"
+                                    title="@RenderPriority(n)"
+                                    disabled="@_saving"
+                                    @onclick="() => _form.Prioridad = _form.Prioridad == n ? n - 1 : n">
+                                <i class="bi @(_form.Prioridad >= n ? "bi-star-fill" : "bi-star")"></i>
+                            </button>
+                        }
+                        <span class="tk-estrellas__texto">@(_form.Prioridad <= 0 ? "Sin prioridad" : RenderPriority(_form.Prioridad))</span>
                     </div>
-                    <div class="field">
-                        <label>Descripción</label>
+                </div>
+                <div class="tk-prop tk-prop--etiquetas">
+                    <label>Etiquetas</label>
+                    <div class="tk-etiquetas">
+                        @foreach (var tag in _lookups.Etiquetas.Where(t => _formTagIds.Contains(t.IdEtiqueta)))
+                        {
+                            <span class="tickets-tag-chip tk-etiqueta" style="border-color:@tag.Color;color:@tag.Color">
+                                @tag.Nombre
+                                <button type="button" title="Quitar etiqueta" disabled="@_saving"
+                                        @onclick="() => _formTagIds.Remove(tag.IdEtiqueta)"><i class="bi bi-x"></i></button>
+                            </span>
+                        }
+                        <button type="button" class="tk-etiquetas__agregar" title="Agregar o quitar etiquetas"
+                                disabled="@_saving" @onclick="() => _showTagPicker = !_showTagPicker">
+                            <i class="bi bi-tag"></i>@(_formTagIds.Count == 0 ? " Agregar" : string.Empty)
+                        </button>
+                        @if (_showTagPicker)
+                        {
+                            <button type="button" class="tk-popover-fondo" aria-label="Cerrar etiquetas" @onclick="() => _showTagPicker = false"></button>
+                            <div class="tk-popover" role="dialog" aria-label="Etiquetas">
+                                @foreach (var tag in _lookups.Etiquetas)
+                                {
+                                    <label class="tk-popover__opcion">
+                                        <input type="checkbox"
+                                               checked="@_formTagIds.Contains(tag.IdEtiqueta)"
+                                               @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
+                                               disabled="@_saving" />
+                                        <span class="tk-popover__color" style="background:@tag.Color"></span>
+                                        <span>@tag.Nombre</span>
+                                    </label>
+                                }
+                                @if (_lookups.Etiquetas.Count == 0)
+                                {
+                                    <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
+                                }
+                                <button type="button" class="tk-popover__accion" @onclick="() => { _showTagPicker = false; OpenTagManager(); }" disabled="@_saving">
+                                    <i class="bi bi-tags"></i> Administrar etiquetas
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="tk-solapas">
+                <AlfaTabs AriaLabel="Contenido del ticket"
+                          Items="@FichaTabs"
+                          ActiveKey="@_fichaTab"
+                          ActiveKeyChanged="@((string? key) => _fichaTab = key ?? FichaTabDescripcion)" />
+
+                @* La descripción se mantiene montada (oculta en las otras solapas): el editor guarda su estado en el navegador. *@
+                <div class="tk-solapa" hidden="@(_fichaTab != FichaTabDescripcion)">
                         <div class="tickets-rich-editor">
                             <div class="tickets-rich-editor__surface"
                                  @ref="_descriptionEditor"
@@ -284,114 +437,11 @@
                                 </div>
                             }
                         </div>
-                    </div>
                 </div>
-                <aside class="tickets-editor-side">
-                    <div class="field">
-                        <label>Etapa</label>
-                        <select @bind="_form.CodigoEstado" disabled="@_saving">
-                            @foreach (var state in _lookups.Estados)
-                            {
-                                <option value="@state.CodigoEstado">@state.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Prioridad</label>
-                        <select @bind="_form.Prioridad" disabled="@_saving">
-                            <option value="0">Sin prioridad</option>
-                            <option value="1">Baja</option>
-                            <option value="2">Media</option>
-                            <option value="3">Alta</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Asignado a</label>
-                        <select @bind="_form.IdTecnico" disabled="@_saving">
-                            <option value="">Sin asignar</option>
-                            @foreach (var tech in _lookups.Tecnicos)
-                            {
-                                <option value="@tech.IdTecnico">@tech.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Etiquetas</label>
-                        <div class="tickets-tag-picker">
-                            @foreach (var tag in _lookups.Etiquetas)
-                            {
-                                <label class="tickets-tag-option">
-                                    <input type="checkbox"
-                                           checked="@_formTagIds.Contains(tag.IdEtiqueta)"
-                                           @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
-                                           disabled="@_saving" />
-                                    <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
-                                </label>
-                            }
-                            @if (_lookups.Etiquetas.Count == 0)
-                            {
-                                <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
-                            }
-                        </div>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
-                            <i class="bi bi-tags"></i> Administrar etiquetas
-                        </button>
-                    </div>
-                    <div class="field tickets-lookup">
-                        <label>Cliente / empresa</label>
-                        <input type="text" value="@_ticketClientSearch" @oninput="OnTicketClientSearchInputAsync" disabled="@_saving" placeholder="Buscar cliente..." />
-                        @if (!string.IsNullOrWhiteSpace(_selectedClientLabel))
-                        {
-                            <span class="tickets-lookup__selected">@_selectedClientLabel <button type="button" @onclick="ClearTicketClient" disabled="@_saving"><i class="bi bi-x"></i></button></span>
-                        }
-                        @if (_ticketClientSuggestions.Count > 0)
-                        {
-                            <div class="tickets-lookup__results">
-                                @foreach (var client in _ticketClientSuggestions)
-                                {
-                                    <button type="button" @onclick="() => SelectTicketClient(client)" disabled="@_saving">
-                                        <strong>@client.RazonSocial</strong>
-                                        <small>@client.Codigo @client.Localidad</small>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                    <div class="field tickets-lookup">
-                        <label>Usuario / contacto</label>
-                        <input type="text" value="@_ticketContactSearch" @oninput="OnTicketContactSearchInputAsync" disabled="@_saving" placeholder="Buscar contacto..." />
-                        @if (!string.IsNullOrWhiteSpace(_selectedContactLabel))
-                        {
-                            <span class="tickets-lookup__selected">@_selectedContactLabel <button type="button" @onclick="ClearTicketContact" disabled="@_saving"><i class="bi bi-x"></i></button></span>
-                        }
-                        @if (_ticketContactSuggestions.Count > 0)
-                        {
-                            <div class="tickets-lookup__results">
-                                @foreach (var contact in _ticketContactSuggestions)
-                                {
-                                    <button type="button" @onclick="() => SelectTicketContact(contact)" disabled="@_saving">
-                                        <strong>@contact.Nombre</strong>
-                                        <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                </aside>
-            </div>
 
-        </section>
-
-        @if (!_isNew && _detail is not null)
-        {
-            <section class="tickets-detail-layout">
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Mensajes incluidos</h3>
-                            <p class="panel-card__subtitle">@_detail.MensajesOrigenDetalle.Count mensaje(s) guardados como contexto.</p>
-                        </div>
-                    </div>
+                @if (!_isNew && _detail is not null)
+                {
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabMensajes)">
                     @if (_detail.MensajesOrigenDetalle.Count == 0)
                     {
                         <div class="usuarios-empty">Este ticket no tiene mensajes de conversación vinculados.</div>
@@ -456,14 +506,31 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Partes de horas</h3>
-                            <p class="panel-card__subtitle">@GetTicketPartesHorasSubtitle()</p>
-                        </div>
                     </div>
+
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabActividad)">
+                    <div class="field">
+                        <label>Nueva nota</label>
+                        <textarea rows="3" @bind="_newNote"></textarea>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
+                            <i class="bi bi-chat-left-text"></i> Registrar nota
+                        </button>
+                    </div>
+                    <div class="tickets-activity">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <div class="tickets-activity__item">
+                                <strong>@activity.TipoActividad</strong>
+                                <p>@activity.Descripcion</p>
+                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                    </div>
+
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabHoras)">
                     @if (_loadingTicketPartesHoras)
                     {
                         <div class="usuarios-empty">Buscando partes de horas...</div>
@@ -485,36 +552,10 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Actividad</h3>
-                            <p class="panel-card__subtitle">Notas e historial del ticket.</p>
-                        </div>
                     </div>
-                    <div class="field">
-                        <label>Nueva nota</label>
-                        <textarea rows="3" @bind="_newNote"></textarea>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
-                            <i class="bi bi-chat-left-text"></i> Registrar nota
-                        </button>
-                    </div>
-                    <div class="tickets-activity">
-                        @foreach (var activity in _detail.Actividad)
-                        {
-                            <div class="tickets-activity__item">
-                                <strong>@activity.TipoActividad</strong>
-                                <p>@activity.Descripcion</p>
-                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
-                            </div>
-                        }
-                    </div>
-                </div>
-            </section>
-        }
+                }
+            </div>
+        </section>
     }
     else if (_loading && !HasVisibleTicketData())
     {
@@ -2312,6 +2353,85 @@
         _selectedContactLabel = string.Empty;
         _ticketClientSuggestions = [];
         _ticketContactSuggestions = [];
+    }
+
+    // ---- Ficha del ticket (2026-10-19) ----
+    private const string FichaTabDescripcion = "descripcion";
+    private const string FichaTabMensajes = "mensajes";
+    private const string FichaTabActividad = "actividad";
+    private const string FichaTabHoras = "horas";
+    private string _fichaTab = FichaTabDescripcion;
+    private bool _showTagPicker;
+    private bool _cambiandoEtapa;
+
+    private IReadOnlyList<AlfaTabItem> FichaTabs => _isNew || _detail is null
+        ? [new(FichaTabDescripcion, "Descripción")]
+        :
+        [
+            new(FichaTabDescripcion, "Descripción"),
+            new(FichaTabMensajes, "Mensajes", Badge: _detail.MensajesOrigenDetalle.Count > 0 ? _detail.MensajesOrigenDetalle.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
+            new(FichaTabActividad, "Actividad", Badge: _detail.Actividad.Count > 0 ? _detail.Actividad.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
+            new(FichaTabHoras, "Partes de horas", Badge: _ticketPartesHoras.Count > 0 ? _ticketPartesHoras.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null)
+        ];
+
+    private IReadOnlyList<TicketEstadoDto> EtapasOrdenadas
+        => _lookups.Estados.OrderBy(x => x.Orden).ThenBy(x => x.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    private string EtapaClass(TicketEstadoDto state)
+    {
+        var actual = EtapasOrdenadas.FirstOrDefault(x => string.Equals(x.CodigoEstado, _form.CodigoEstado, StringComparison.OrdinalIgnoreCase));
+        if (actual is not null && string.Equals(state.CodigoEstado, actual.CodigoEstado, StringComparison.OrdinalIgnoreCase))
+            return "tk-etapa is-actual";
+        return actual is not null && !state.EsCerrado && state.Orden < actual.Orden ? "tk-etapa is-pasada" : "tk-etapa";
+    }
+
+    /// <summary>
+    /// Barra de etapas: en un ticket existente la etapa se guarda al instante (igual que arrastrarlo en el
+    /// tablero); en uno nuevo queda en el formulario hasta Guardar.
+    /// </summary>
+    private async Task CambiarEtapaDesdeFichaAsync(string codigoEstado)
+    {
+        if (string.Equals(_form.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_isNew || _detail is null)
+        {
+            _form.CodigoEstado = codigoEstado;
+            return;
+        }
+
+        var anterior = _form.CodigoEstado;
+        _form.CodigoEstado = codigoEstado;
+        _cambiandoEtapa = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.QuickUpdateAsync(new TicketQuickUpdateRequest
+                {
+                    IdTicket = _detail.IdTicket,
+                    CodigoEstado = codigoEstado,
+                    UsuarioAccion = CurrentUserName
+                });
+                return true;
+            }, "No se pudo cambiar la etapa del ticket.");
+
+            if (!result.Success)
+            {
+                _form.CodigoEstado = anterior;
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            var estado = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase));
+            _detail.CodigoEstado = codigoEstado;
+            _detail.EstadoNombre = estado?.Nombre ?? _detail.EstadoNombre;
+            SetFeedback(AppUiMessage.Success("Etapa actualizada", $"El ticket pasó a {estado?.Nombre ?? codigoEstado}."));
+        }
+        finally
+        {
+            _cambiandoEtapa = false;
+        }
     }
 
     private void ToggleTicketTag(int idEtiqueta, ChangeEventArgs args)
