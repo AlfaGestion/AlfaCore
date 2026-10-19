@@ -9139,7 +9139,7 @@ public sealed class ConversacionesService(
                             new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
                     }
 
-                    await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, token).ConfigureAwait(false);
+                    await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, texto, token).ConfigureAwait(false);
                     return;
                 }
 
@@ -10410,7 +10410,7 @@ public sealed class ConversacionesService(
     /// El cliente avisa que se resolvió: se le agradece (una vez por día) y, si había un tema pendiente, se
     /// deja la nota y se avisa a quien lo atendía para que cierre el ticket. No abre ticket ni pide novedades.
     /// </summary>
-    private async Task ResponderTemaResueltoAsync(long idConversacion, TemaPendiente? pendiente, CancellationToken ct)
+    private async Task ResponderTemaResueltoAsync(long idConversacion, TemaPendiente? pendiente, string textoCliente, CancellationToken ct)
     {
         if (!await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaTemaResuelto, BusinessNow(), ct).ConfigureAwait(false))
         {
@@ -10446,6 +10446,10 @@ public sealed class ConversacionesService(
                 : $"✅ El cliente avisa que el tema{conTicket} ya quedó resuelto. Se le avisó a {destinoNombre}.{cerrar}",
             null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
 
+        // Queda asentado en el propio ticket (2026-10-19): si después se cierra, se puede rastrear por qué.
+        if (pendiente.IdTicket is long idTicket)
+            await AsentarAvisoResueltoEnTicketAsync(idTicket, idConversacion, pendiente, textoCliente, ct).ConfigureAwait(false);
+
         if (!string.IsNullOrWhiteSpace(destinoId))
         {
             await RegistrarAsignacionSeguimientoAsync(idConversacion, destinoId, ct, ObservacionAsignacionResuelto).ConfigureAwait(false);
@@ -10467,14 +10471,59 @@ public sealed class ConversacionesService(
             new { idConversacion, pendiente.NumeroTicket, IdTecnicoAvisado = destinoId }, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Nota en la actividad del ticket con lo que escribió el cliente, cuándo y por dónde. Nunca frena la
+    /// respuesta: si falla se registra y sigue.
+    /// </summary>
+    private async Task AsentarAvisoResueltoEnTicketAsync(long idTicket, long idConversacion, TemaPendiente pendiente, string textoCliente, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
+            return;
+
+        try
+        {
+            await ticketsService.AddNoteAsync(new TicketNotaRequest
+            {
+                IdTicket = idTicket,
+                Texto = ConstruirNotaAvisoResuelto(textoCliente, pendiente.Canal, pendiente.Contacto, idConversacion, BusinessNow()),
+                UsuarioAccion = "Asistente IA"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "BotTemaResueltoNotaTicket", ex,
+                "No se pudo dejar en el ticket la nota de que el cliente avisó que se resolvió.",
+                new { idTicket, idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal static string ConstruirNotaAvisoResuelto(string textoCliente, string canal, string contacto, long idConversacion, DateTime fecha)
+    {
+        var por = string.IsNullOrWhiteSpace(canal) ? "la conversación" : canal.Trim().ToUpperInvariant() switch
+        {
+            "WHATSAPP" => "WhatsApp",
+            "WEBCHAT" => "el chat del sitio web",
+            "INSTAGRAM" => "Instagram",
+            "FACEBOOK" => "Facebook",
+            "MERCADOLIBRE" => "Mercado Libre",
+            _ => canal.Trim()
+        };
+        var quien = string.IsNullOrWhiteSpace(contacto) ? "El cliente" : $"El cliente ({contacto.Trim()})";
+        var mensaje = Truncar((textoCliente ?? string.Empty).Trim(), 300);
+        return $"✅ {quien} avisó por {por} que el tema quedó resuelto: \"{mensaje}\" " +
+               $"({fecha.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)}, conversación #{idConversacion.ToString(CultureInfo.InvariantCulture)}). " +
+               "Lo registró el asistente; el ticket sigue abierto hasta que alguien del equipo lo cierre.";
+    }
+
     internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
     internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
 
-    private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado)
+    private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado, long? IdTicket = null)
     {
         public bool Hay => NumeroTicket.HasValue || HuboRespuestaDelEquipo;
+        public string Canal { get; init; } = string.Empty;
     }
 
     /// <summary>
@@ -10485,11 +10534,11 @@ public sealed class ConversacionesService(
     private async Task<TemaPendiente> BuscarTemaPendienteAsync(long idConversacion, CancellationToken ct)
     {
         var sql = $"""
-            DECLARE @Ticket int = NULL, @TecTicket nvarchar(20) = NULL, @TecMsg nvarchar(20) = NULL, @HuboHumano bit = 0;
+            DECLARE @Ticket int = NULL, @IdTicket bigint = NULL, @TecTicket nvarchar(20) = NULL, @TecMsg nvarchar(20) = NULL, @HuboHumano bit = 0;
             DECLARE @Hoy date = CAST(GETDATE() AS date);
 
             IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
-                SELECT TOP (1) @Ticket = t.Numero, @TecTicket = NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))), N'')
+                SELECT TOP (1) @Ticket = t.Numero, @IdTicket = t.IdTicket, @TecTicket = NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))), N'')
                 FROM dbo.TICK_TICKETS t
                 LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
                 WHERE t.IdConversacion = @Id AND ISNULL(t.Baja, 0) = 0 AND ISNULL(e.EsCerrado, 0) = 0
@@ -10541,7 +10590,9 @@ public sealed class ConversacionesService(
                 @Tec,
                 @HuboHumano,
                 ISNULL(c.NombreVisible, N''),
-                NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'')
+                NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N''),
+                @IdTicket,
+                ISNULL(c.Canal, N'')
             FROM dbo.CONV_CONVERSACIONES c
             WHERE c.IdConversacion = @Id;
             """;
@@ -10560,7 +10611,11 @@ public sealed class ConversacionesService(
             !rd.IsDBNull(2) && rd.GetBoolean(2),
             rd.IsDBNull(1) ? null : rd.GetString(1),
             rd.IsDBNull(3) ? string.Empty : rd.GetString(3),
-            rd.IsDBNull(4) ? null : rd.GetString(4));
+            rd.IsDBNull(4) ? null : rd.GetString(4),
+            rd.IsDBNull(5) ? null : rd.GetInt64(5))
+        {
+            Canal = rd.IsDBNull(6) ? string.Empty : rd.GetString(6)
+        };
     }
 
     /// <summary>
