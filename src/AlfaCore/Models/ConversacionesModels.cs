@@ -450,6 +450,12 @@ public sealed class ConversacionSendMessageRequest
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+
+    /// <summary>
+    /// Botones de respuesta rápida (máx. 3): el mensaje sale como interactivo de WhatsApp (sólo API de
+    /// Meta). Se usa en la encuesta de satisfacción (2026-10-19).
+    /// </summary>
+    public IReadOnlyList<ConversacionBotonRespuesta>? Botones { get; set; }
 }
 
 public sealed class ConversacionesInboxPreferenceDto

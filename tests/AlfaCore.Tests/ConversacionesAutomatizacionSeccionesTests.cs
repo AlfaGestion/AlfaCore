@@ -28,7 +28,8 @@ public sealed class ConversacionesAutomatizacionSeccionesTests
         "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS",
         "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK",
         CatalogoPrecioConsumidorSetting.Clave,
-        "CONV_INFORME_INSTRUCCIONES"
+        "CONV_INFORME_INSTRUCCIONES",
+        "CONV_ENCUESTA_ACTIVA", "CONV_ENCUESTA_PREGUNTA"
     ];
 
     private static readonly ConversacionAutomatizacionSeccion[] SeccionesIndividuales =
@@ -38,7 +39,8 @@ public sealed class ConversacionesAutomatizacionSeccionesTests
         ConversacionAutomatizacionSeccion.Asistente,
         ConversacionAutomatizacionSeccion.AutoCierre,
         ConversacionAutomatizacionSeccion.Sla,
-        ConversacionAutomatizacionSeccion.Informe
+        ConversacionAutomatizacionSeccion.Informe,
+        ConversacionAutomatizacionSeccion.Encuesta
     ];
 
     private static string[] Claves(ConversacionAutomatizacionSeccion secciones)

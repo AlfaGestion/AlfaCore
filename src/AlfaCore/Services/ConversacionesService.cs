@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
-public sealed class ConversacionesService(
+public sealed partial class ConversacionesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -2677,7 +2677,9 @@ public sealed class ConversacionesService(
                 MessageType = NormalizeMessageType(request.MessageType),
                 Direction = "SALIENTE",
                 EstadoEnvio = initialState,
-                Text = request.Texto.Trim(),
+                Text = request.Botones is { Count: > 0 } botonesTexto
+                    ? $"{request.Texto.Trim()}\n\n{string.Join(" · ", botonesTexto.Select(b => b.Titulo))}"
+                    : request.Texto.Trim(),
                 PayloadJson = string.Empty,
                 FechaHora = now,
                 UsuarioAutor = request.UsuarioAccion,
@@ -2714,7 +2716,9 @@ public sealed class ConversacionesService(
             {
                 try
                 {
-                    var sendResult = await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    var sendResult = request.Botones is { Count: > 0 } botones
+                        ? await SendInteractiveButtonsToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), botones, token)
+                        : await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
                     whatsAppMessageId = sendResult.WhatsAppMessageId;
                     finalState = sendResult.EstadoEnvio;
                     payload = sendResult.PayloadJson;
@@ -4085,6 +4089,15 @@ public sealed class ConversacionesService(
                 new { CodigoEstado = state, request.Observaciones, request.UsuarioAccion, request.SistemaAccion },
                 token);
 
+            // Encuesta de satisfacción: sólo cuando cierra una persona (los cierres automáticos por
+            // inactividad o por vencer la ventana no traen usuario o vienen como AUTOCIERRE).
+            if (isClosed && !wasClosed
+                && !string.IsNullOrWhiteSpace(request.UsuarioAccion)
+                && !string.Equals(request.SistemaAccion, "AUTOCIERRE", StringComparison.OrdinalIgnoreCase))
+            {
+                await TryEnviarEncuestaAlCerrarAsync(request.IdConversacion, request.UsuarioAccion, previousTechnicianId, token);
+            }
+
             return true;
         }, "No se pudo cambiar el estado de la conversación.", ct);
     }
@@ -4335,6 +4348,12 @@ public sealed class ConversacionesService(
                         BuildReactionSummary(incoming.Text, incoming: true),
                         token,
                         reopenIfClosed: false);
+                }
+                // Respuesta a la encuesta de satisfacción (botón o comentario): se registra sin reabrir
+                // la conversación ni correr las respuestas automáticas (2026-10-19).
+                else if (isNewMessage && await TryProcesarRespuestaEncuestaAsync(conversationId, messageId, incoming, CancellationToken.None))
+                {
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: false);
                 }
                 else
                 {
@@ -10992,7 +11011,7 @@ public sealed class ConversacionesService(
     // quedó técnicamente "sin asignar") y por TryAutoReplyReglasAsync/SoloSinAsignar (mismo criterio,
     // ver auditoría 2026-09-18 y su seguimiento 2026-09-21).
     private static readonly string[] AutomatedOutgoingSistemaAutores =
-        ["AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA", "SLA", "PROGRAMADO"];
+        ["AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA", "SLA", "PROGRAMADO", "ENCUESTA"];
 
     private static readonly string AutomatedOutgoingSistemaAutorSqlList =
         string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
@@ -12409,6 +12428,7 @@ public sealed class ConversacionesService(
                   FROM dbo.CONV_MENSAJES m
                   WHERE m.IdConversacion = c.IdConversacion
                     AND m.Direction = N'ENTRANTE'
+                    AND ISNULL(m.Origen, N'') <> N'ENCUESTA'
                     AND (
                         c.FechaHoraCierre IS NULL
                         OR m.FechaHora > c.FechaHoraCierre
@@ -12821,6 +12841,57 @@ public sealed class ConversacionesService(
             throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar plantilla");
+        return new WhatsAppSendResult
+        {
+            EstadoEnvio = "ENVIADO_META",
+            WhatsAppMessageId = messageId,
+            PayloadJson = responseBody
+        };
+    }
+
+    /// <summary>Mensaje interactivo de WhatsApp con hasta 3 botones de respuesta rápida.</summary>
+    private async Task<WhatsAppSendResult> SendInteractiveButtonsToWhatsAppAsync(
+        ConversacionWhatsAppConfigDto config, string phone, string text, IReadOnlyList<ConversacionBotonRespuesta> botones, CancellationToken ct)
+    {
+        var url = $"https://graph.facebook.com/{config.ApiVersion}/{config.PhoneNumberId}/messages";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"] = "individual",
+            ["to"] = phone,
+            ["type"] = "interactive",
+            ["interactive"] = new Dictionary<string, object?>
+            {
+                ["type"] = "button",
+                ["body"] = new Dictionary<string, object?> { ["text"] = text.Length <= 1024 ? text : text[..1024] },
+                ["action"] = new Dictionary<string, object?>
+                {
+                    ["buttons"] = botones.Take(3).Select(b => new Dictionary<string, object?>
+                    {
+                        ["type"] = "reply",
+                        ["reply"] = new Dictionary<string, object?>
+                        {
+                            ["id"] = b.Id,
+                            ["title"] = b.Titulo.Length <= 20 ? b.Titulo : b.Titulo[..20]
+                        }
+                    }).ToList()
+                }
+            }
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Meta devolvió {(int)response.StatusCode}: {responseBody}");
+
+        var messageId = RequireSentMessageId(responseBody, "enviar mensaje con botones");
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",

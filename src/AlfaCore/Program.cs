@@ -452,6 +452,7 @@ public class Program
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
         builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<ConversacionesInformeExcelExporter>();
+        builder.Services.AddScoped<IConversacionesSatisfaccionService, ConversacionesSatisfaccionService>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();

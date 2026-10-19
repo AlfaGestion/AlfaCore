@@ -31,7 +31,11 @@ public static class AvisoTipos
     public const string TopeIa = "TOPE_IA";
     public const string Conversacion = "CONVERSACION";
     public const string AsistenteAprendizaje = "ASISTENTE_APRENDIZAJE";
+    public const string CalificacionMala = "CALIFICACION_MALA";
 }
+
+/// <summary>Encuesta de satisfacción respondida con "Mal" (2026-10-19).</summary>
+public sealed record AvisoCalificacionFuente(long IdEncuesta, long IdConversacion, string Contacto, string Comentario, DateTime FechaRespuesta);
 
 /// <summary>Correcciones del asistente pendientes de aprobar (solo para administradores de Conversaciones).</summary>
 public sealed record AvisoCorreccionesFuente(int Pendientes, int UltimoId, DateTime UltimaFecha);
