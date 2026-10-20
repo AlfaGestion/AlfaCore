@@ -148,6 +148,23 @@ public sealed class ReportesComercialesTests
             typeof(ReporteComercialPanel).GetMethod("OnTipoReporteChanged",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,["CuentaCorriente"]);
             await header.Current.Actions.Single(x=>x.Key=="generar").OnClick!();
             Assert.Contains("Movimiento neto del período",System.Net.WebUtility.HtmlDecode(root.ToHtmlString()));
+            {
+                var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+                Assert.Contains("Saldo inicial",html);Assert.Contains("Saldo parcial",html);Assert.Contains("Saldo al cierre",html);
+                typeof(ReporteComercialPanel).GetMethod("TogglePanel",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,null);
+                var search=await renderer.RenderComponentAsync<CargaComprobantesUiTests.FragmentHost>(ParameterView.FromDictionary(
+                    new Dictionary<string,object?> { [nameof(CargaComprobantesUiTests.FragmentHost.Content)]=header.Current.SearchContent }));
+                var searchHtml=System.Net.WebUtility.HtmlDecode(search.ToHtmlString());
+                if(ventas) { Assert.Contains("Vendedor del cliente",searchHtml);Assert.Contains("Zona del cliente",searchHtml); }
+                else { Assert.DoesNotContain("Vendedor del cliente",searchHtml);Assert.Contains("haber suma deuda",html); }
+                Assert.Contains("Sin unidad asignada",searchHtml);
+                // Cambiar borradores y arrays no altera filtros ya aplicados al reporte/exportación.
+                var aplicados=(FiltrosReporteCompras)typeof(ReporteComercialPanel).GetField("_aplicados",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(panel)!;
+                typeof(ReporteComercialPanel).GetMethod("CambiarUnidad",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,["__PRUEBA__",true]);
+                Assert.Empty(aplicados.UnidadesNegocio);Assert.Contains("__PRUEBA__",f.UnidadesNegocio);
+                f.UnidadesNegocio=[];
+                typeof(ReporteComercialPanel).GetMethod("ClosePanel",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,null);
+            }
             if(CargaComprobantesBrowserFactAttribute.BrowserPath is not null)
             {
                 var dir=new DirectoryInfo(AppContext.BaseDirectory);
@@ -161,6 +178,25 @@ public sealed class ReportesComercialesTests
                     await page.SetViewportSizeAsync(width,900);await page.SetContentAsync($"<style>{css}</style>{root.ToHtmlString()}");
                     Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= window.innerWidth"));
                     Assert.True(await page.GetByText("Movimiento neto del período",new() { Exact=true }).IsVisibleAsync());
+                }
+                {
+                    foreach(var tipo in (ventas ? new[] { "Saldos", "ControlCredito", "CuentaCorrienteResumida", "CuentaCorrienteAnalitica" }
+                        : new[] { "Saldos", "CuentaCorrienteResumida", "CuentaCorrienteAnalitica" }))
+                    {
+                        typeof(ReporteComercialPanel).GetMethod("OnTipoReporteChanged",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,[tipo]);
+                        if(tipo=="CuentaCorrienteAnalitica")Assert.Equal(DateTime.Today.AddYears(-50),f.FechaDesde);
+                        await header.Current.Actions.Single(x=>x.Key=="generar").OnClick!();
+                        var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+                        Assert.Contains(tipo.StartsWith("CuentaCorriente")?"Importe original":"Saldo de la selección",html);
+                        if(tipo=="ControlCredito")Assert.Contains("Disponible global",html);
+                        if(tipo=="CuentaCorrienteAnalitica")Assert.Contains("Aplicación:",html);
+                        foreach(var width in new[]{2048,1440,1024})
+                        {
+                            await page.SetViewportSizeAsync(width,900);await page.SetContentAsync($"<style>{css}</style>{root.ToHtmlString()}");
+                            Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= window.innerWidth"));
+                        }
+                        if(tipo=="CuentaCorrienteResumida")f.FechaDesde=DateTime.Today.AddYears(-50);
+                    }
                 }
             }
             typeof(ReporteComercialPanel).GetMethod("OnTipoReporteChanged",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(panel,["DetalleDeCompras"]);

@@ -1,6 +1,6 @@
 # Ventas — Carga de Comprobantes
 
-Fecha de inicio: 2026-10-14. Actualización: 2026-10-15. Estado: consulta, simulación y grabación comercial acotada en homologación, con ensayo transaccional previo y recuperación de operación. El circuito completo incluye factura, detalle, stock aplicable, asiento/IVA y aplicación al origen. No está habilitada la emisión en producción ni certificada la equivalencia general de todas las configuraciones legacy.
+Fecha de inicio: 2026-10-14. Actualización: 2026-10-18. Estado: consulta, simulación y grabación comercial acotada en homologación, con ensayo transaccional previo y recuperación de operación. El circuito completo incluye factura, detalle, stock aplicable, asiento/IVA y aplicación al origen. No está habilitada la emisión en producción ni certificada la equivalencia general de todas las configuraciones legacy.
 
 ## Objetivo y alcance acordado
 
@@ -20,6 +20,14 @@ En esta etapa se excluyen por pedido del usuario:
 La exclusión de autorización de emisión no elimina los permisos de acceso del usuario, los controles fiscales ni las validaciones comerciales. No se portan la solicitud de PIN ni sus registros como condición de emisión en esta etapa. Cualquier otra política que mezcle una validación con la autorización requiere separar ambas antes de implementarla.
 
 No se alteran globalmente configuraciones legacy para desactivar estas capacidades. Las exclusiones pertenecen al alcance del módulo nuevo. Los documentos de origen que requieran reservas, preparación o distribución de centros de costo para mantener consistencia no se habilitan hasta establecer un circuito compatible. No se borran reservas existentes ni se omite silenciosamente un efecto requerido.
+
+## Ampliación del 17/10/2026
+
+Consolidación de hasta 30 NP o RM compatibles, edición de precios/descuentos en orígenes y ND, hasta tres alícuotas con artículos exentos y carga directa por bultos. Ver [contrato, evidencia original y límites](consolidacion-iva-unidades.md). La ampliación no certifica equivalencia general ni habilita producción.
+
+## Ampliación del 18/10/2026
+
+Selección de lista y clase de precio en FC directa, FP y ND, con permisos, clases del usuario, vigencia y obligatoriedad revalidadas al grabar. Ver [contrato y límites](seleccion-lista-clase.md). El descuento general y la selección sobre NP/RM siguen pendientes.
 
 ## Evidencia y documentos
 

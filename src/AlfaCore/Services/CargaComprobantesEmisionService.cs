@@ -42,59 +42,60 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         if (operacion == Guid.Empty) throw new CargaComprobantesReglaException("Falta la identidad de la operación.");
         var recurso = directa?.FacturaAsociadaId is { } idAsociado ? $"CargaComprobantes.Nota.{idAsociado}"
             : directa is null ? $"CargaComprobantes.Origen.{origenId}" : $"CargaComprobantes.Directa.{directa.Borrador}";
-        var bloqueo = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=@Recurso,@LockMode='Exclusive',@LockOwner='Session',@LockTimeout=0; SELECT @r;
-            """, new { Recurso = recurso }, cancellationToken: ct));
-        if (bloqueo < 0) throw new CargaComprobantesReglaException("Ese origen se está facturando desde otra ventana.");
-        try
+        var origenes = directa is null ? CargaComprobantesConsolidacion.Identidades(origenId, cantidades) : [];
+        await using var bloqueos = await CargaComprobantesBloqueo.TomarAsync(cn,
+            directa is null ? origenes.Select(x => $"CargaComprobantes.Origen.{x}") : [recurso], ct);
+        var anterior = await GetAsync(cn, ctx, operacion, ct);
+        if (anterior is not null)
         {
-            var anterior = await GetAsync(cn, ctx, operacion, ct);
-            if (anterior is not null)
+            if (anterior.OrigenId != origenId || anterior.Borrador != directa?.Borrador)
+                throw new CargaComprobantesReglaException("La operación corresponde a otro origen o borrador.");
+            return anterior; // Recuperación explícita: nunca modificar ni reenviar una operación ya creada.
+        }
+        if (directa is not null)
+        {
+            var previa = await cn.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
+                "SELECT Operacion FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Borrador=@Borrador;",
+                new { directa.Borrador }, cancellationToken: ct));
+            if (previa.HasValue) return (await GetAsync(cn, ctx, previa.Value, ct))!;
+        }
+        if (directa is null)
+        {
+            // OPENJSON requiere compatibilidad SQL 130. Las bases legacy conservan niveles inferiores.
+            // El journal guarda pocos intentos activos; leer solo esos planes sin cambiar la base.
+            var pendientes = await cn.QueryAsync<string>(new CommandDefinition(
+                "SELECT PlanJson FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Estado NOT IN ('GRABADA','RECHAZADA');",
+                cancellationToken:ct));
+            foreach(var jsonPendiente in pendientes)
             {
-                if (anterior.OrigenId != origenId || anterior.Borrador != directa?.Borrador)
-                    throw new CargaComprobantesReglaException("La operación corresponde a otro origen o borrador.");
-                return anterior; // Recuperación explícita: nunca modificar ni reenviar una operación ya creada.
-            }
-            if (directa is not null)
-            {
-                var previa = await cn.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
-                    "SELECT Operacion FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Borrador=@Borrador;",
-                    new { directa.Borrador }, cancellationToken: ct));
-                if (previa.HasValue) return (await GetAsync(cn, ctx, previa.Value, ct))!;
-            }
-            if (directa is null && await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-                SELECT COUNT(*) FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION
-                WHERE OrigenId=@Id AND Estado NOT IN ('GRABADA','RECHAZADA');
-                """, new { Id = origenId }, cancellationToken: ct)) != 0)
-                throw new CargaComprobantesReglaException("El origen tiene una operación pendiente. Recuperala antes de generar otra factura.");
-            if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT COUNT(*) FROM dbo.ALFACORE_VENTAS_HOMO_PRUEBA WHERE Operacion=@Operacion;",
-                new { Operacion = operacion }, cancellationToken: ct)) != 0)
-                throw new CargaComprobantesReglaException("La operación es una prueba fiscal anterior sin plan comercial; no puede convertirse en una factura.");
-            var plan = await ValidarAsync(cn, ctx, origenId, talonario, cantidades, ct, directa);
-            if (plan.Huella != huellaEsperada)
-                throw new CargaComprobantesReglaException("Cambió el documento, la fecha, el cliente o la configuración desde la vista validada. Volvé a simular y validar antes de confirmar; no se pidió CAE.");
-            validarSesion();
-            await cn.ExecuteAsync(new CommandDefinition("""
-                INSERT INTO dbo.ALFACORE_VENTAS_CARGA_OPERACION(Operacion,OrigenId,UnidadNegocio,Usuario,Ambiente,Estado,PlanJson,Borrador,Tc,FacturaAsociadaId)
-                VALUES(@Operacion,@OrigenId,@UnidadNegocio,@Usuario,'HOMOLOGACION','PREPARADA',@Plan,@Borrador,@Tc,@FacturaAsociadaId);
-                """, new { Operacion = operacion, OrigenId = origenId, plan.UnidadNegocio, plan.Usuario,
-                    Plan = JsonSerializer.Serialize(plan), Borrador = directa?.Borrador, plan.Tc, FacturaAsociadaId = directa?.FacturaAsociadaId }, cancellationToken: ct));
-            try
-            {
-                if (!plan.EsElectronico) return await CompletarProformaAsync(cn, ctx, plan, operacion, validarSesion, ct);
-                var cae = await electronica.EmitirAsync(cn, ctx, plan.Origen, plan.Cantidades, operacion, ct, plan.Fecha, plan.CuitEmisor, plan);
-                return await CompletarAsync(cn, ctx, plan, cae, validarSesion, ct);
-            }
-            catch (Exception ex)
-            {
-                await MarcarErrorAsync(cn, operacion, ex, CancellationToken.None);
-                throw;
+                var pendiente=JsonSerializer.Deserialize<CargaComprobantesPlanGrabacion>(jsonPendiente)
+                    ?? throw new CargaComprobantesReglaException("Hay una operación cuyo plan necesita revisión antes de emitir.");
+                if(pendiente.Directa is null && pendiente.Partes.Any(x=>origenes.Contains(x.OrigenId)))
+                    throw new CargaComprobantesReglaException("Un origen tiene una operación pendiente. Recuperala antes de generar otra factura.");
             }
         }
-        finally
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT COUNT(*) FROM dbo.ALFACORE_VENTAS_HOMO_PRUEBA WHERE Operacion=@Operacion;",
+            new { Operacion = operacion }, cancellationToken: ct)) != 0)
+            throw new CargaComprobantesReglaException("La operación es una prueba fiscal anterior sin plan comercial; no puede convertirse en una factura.");
+        var plan = await ValidarAsync(cn, ctx, origenId, talonario, cantidades, ct, directa);
+        if (plan.Huella != huellaEsperada)
+            throw new CargaComprobantesReglaException("Cambió el documento, la fecha, el cliente o la configuración desde la vista validada. Volvé a simular y validar antes de confirmar; no se pidió CAE.");
+        validarSesion();
+        await cn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO dbo.ALFACORE_VENTAS_CARGA_OPERACION(Operacion,OrigenId,UnidadNegocio,Usuario,Ambiente,Estado,PlanJson,Borrador,Tc,FacturaAsociadaId)
+            VALUES(@Operacion,@OrigenId,@UnidadNegocio,@Usuario,'HOMOLOGACION','PREPARADA',@Plan,@Borrador,@Tc,@FacturaAsociadaId);
+            """, new { Operacion = operacion, OrigenId = origenId, plan.UnidadNegocio, plan.Usuario,
+                Plan = JsonSerializer.Serialize(plan), Borrador = directa?.Borrador, plan.Tc, FacturaAsociadaId = directa?.FacturaAsociadaId }, cancellationToken: ct));
+        try
         {
-            await cn.ExecuteAsync(new CommandDefinition("EXEC sys.sp_releaseapplock @Resource=@Recurso,@LockOwner='Session';",
-                new { Recurso = recurso }, cancellationToken: CancellationToken.None));
+            if (!plan.EsElectronico) return await CompletarProformaAsync(cn, ctx, plan, operacion, validarSesion, ct);
+            var cae = await electronica.EmitirAsync(cn, ctx, plan.Origen, plan.Cantidades, operacion, ct, plan.Fecha, plan.CuitEmisor, plan);
+            return await CompletarAsync(cn, ctx, plan, cae, validarSesion, ct);
+        }
+        catch (Exception ex)
+        {
+            await MarcarErrorAsync(cn, operacion, ex, CancellationToken.None);
+            throw;
         }
     }
 
@@ -105,18 +106,16 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         if (actual.Estado is "GRABADA" or "RECHAZADA") return actual;
         var recurso = actual.FacturaAsociadaId is { } idAsociado ? $"CargaComprobantes.Nota.{idAsociado}"
             : actual.Borrador is { } borrador ? $"CargaComprobantes.Directa.{borrador}" : $"CargaComprobantes.Origen.{actual.OrigenId}";
-        var bloqueo = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=@Recurso,@LockMode='Exclusive',@LockOwner='Session',@LockTimeout=0; SELECT @r;
-            """, new { Recurso = recurso }, cancellationToken: ct));
-        if (bloqueo < 0) throw new CargaComprobantesReglaException("La operación continúa ejecutándose en otra ventana.");
+        var json = await cn.QuerySingleAsync<string>(new CommandDefinition("SELECT PlanJson FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Operacion=@Operacion;",
+            new { Operacion = operacion }, cancellationToken: ct));
+        var plan = JsonSerializer.Deserialize<CargaComprobantesPlanGrabacion>(json)
+            ?? throw new CargaComprobantesReglaException("No se pudo recuperar el plan de grabación.");
+        await using var bloqueos = await CargaComprobantesBloqueo.TomarAsync(cn,
+            plan.Directa is null ? plan.Partes.Select(x => $"CargaComprobantes.Origen.{x.OrigenId}") : [recurso], ct);
         try
         {
             actual = (await GetAsync(cn, ctx, operacion, ct))!;
             if (actual.Estado is "GRABADA" or "RECHAZADA") return actual;
-            var json = await cn.QuerySingleAsync<string>(new CommandDefinition("SELECT PlanJson FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Operacion=@Operacion;",
-                new { Operacion = operacion }, cancellationToken: ct));
-            var plan = JsonSerializer.Deserialize<CargaComprobantesPlanGrabacion>(json)
-                ?? throw new CargaComprobantesReglaException("No se pudo recuperar el plan de grabación.");
             if (!plan.EsElectronico) return await CompletarProformaAsync(cn, ctx, plan, operacion, validarSesion, ct);
             var prueba = await cn.QuerySingleOrDefaultAsync<CargaComprobantesElectronicaPrueba>(new CommandDefinition("""
                 SELECT Operacion,OrigenId,Estado,PuntoVenta,TipoComprobante,Numero,Importe,Cae,Vencimiento
@@ -133,11 +132,6 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             return await CompletarAsync(cn, ctx, plan, prueba, validarSesion, ct);
         }
         catch (Exception ex) { await MarcarErrorAsync(cn, operacion, ex, CancellationToken.None); throw; }
-        finally
-        {
-            await cn.ExecuteAsync(new CommandDefinition("EXEC sys.sp_releaseapplock @Resource=@Recurso,@LockOwner='Session';",
-                new { Recurso = recurso }, cancellationToken: CancellationToken.None));
-        }
     }
 
     private async Task<CargaComprobantesGrabacionResultado> CompletarProformaAsync(SqlConnection cn, CargaComprobantesContexto ctx,

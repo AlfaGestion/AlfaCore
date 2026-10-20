@@ -22,9 +22,10 @@ public sealed class CargaComprobantesRepository
             FROM dbo.TA_CONFIGURACION
             WHERE LTRIM(RTRIM(CLAVE)) IN ('EntregaParcialRemito','DescargaStockRemitos','CantidadDecimales','CantidadDecimalesVentas',
                 'PreciosFinales','PreciosFinalesNeto','RevalorizaRemitos','PIVA','AjustaRedondeoTotal','PV_EFACTURA',
-                'UsaFacturaProforma','RobaIvaProforma','UsaFacturaProformaSinRegistracion');
+                'UsaFacturaProforma','RobaIvaProforma','UsaFacturaProformaSinRegistracion','ArtExentoaNoGrav');
             """, transaction: transaction, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase);
         contexto.EntregaParcial = valores.GetValueOrDefault("ENTREGAPARCIALREMITO") == "SI";
+        contexto.ArtExentoANoGrav = valores.GetValueOrDefault("ARTEXENTOANOGRAV") == "SI";
         contexto.DescargaStockRemitos = valores.GetValueOrDefault("DESCARGASTOCKREMITOS") == "SI";
         contexto.PreciosFinales = valores.GetValueOrDefault("PRECIOSFINALES") == "SI";
         contexto.UsaFacturaProforma = valores.GetValueOrDefault("USAFACTURAPROFORMA") == "SI";
@@ -73,6 +74,7 @@ public sealed class CargaComprobantesRepository
         contexto.Zonas = (await filtros.ReadAsync<CargaComprobantesOpcionFiltro>()).ToList();
         contexto.UnidadesNegocio = (await filtros.ReadAsync<CargaComprobantesOpcionFiltro>()).ToList();
         contexto.Depositos = (await filtros.ReadAsync<CargaComprobantesOpcionFiltro>()).ToList();
+        await new CargaComprobantesSeleccionPrecios().CargarCatalogosAsync(cn, contexto, ct, transaction);
         return contexto;
     }
 

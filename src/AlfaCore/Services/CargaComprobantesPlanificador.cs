@@ -15,6 +15,35 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, DateTime fecha,
         CancellationToken ct, SqlTransaction? tx = null, CargaComprobantesDirecta? directa = null)
     {
+        if (directa is null)
+        {
+            var ids = CargaComprobantesConsolidacion.Identidades(origenId, cantidades);
+            if (ids.Length > 1)
+            {
+                if(await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                    SELECT CASE WHEN OBJECT_ID('dbo.ALFACORE_VENTAS_CARGA_ORIGEN_LINEA','U') IS NOT NULL
+                        AND CHARINDEX('ALFACORE_VENTAS_CARGA_ORIGEN_LINEA',UPPER(OBJECT_DEFINITION(OBJECT_ID('dbo.VT_V_MV_INSUMOS_APLICACION'))))>0
+                        THEN 1 ELSE 0 END;
+                    """,transaction:tx,cancellationToken:ct))!=1)
+                    throw new CargaComprobantesReglaException("Ejecutá las actualizaciones de base para habilitar varios orígenes con pendientes correctos por renglón.");
+                var cabeceras = await cn.QueryAsync<string>(new CommandDefinition("""
+                    SELECT DISTINCT CONVERT(nvarchar(10),ISNULL(CLASEPRECIO,0))+'|'+ISNULL(LTRIM(RTRIM(IdVendedor)),'')+'|'+
+                        CONVERT(nvarchar(10),ISNULL(SucursalCuenta,0)) FROM dbo.V_MV_CPTE WHERE ID IN @Ids;
+                    """, new { Ids=ids },tx,cancellationToken:ct));
+                if(cabeceras.Count()!=1)
+                    throw new CargaComprobantesReglaException("Los orígenes deben compartir clase de precio, vendedor y sucursal del cliente.");
+                var partes = new List<CargaComprobantesPlanGrabacion>();
+                foreach (var id in ids.OrderBy(x => x == origenId ? 0 : 1).ThenBy(x => x))
+                {
+                    var seleccion = cantidades.Where(x => (x.OrigenId == 0 ? origenId : x.OrigenId) == id)
+                        .Select(x => new CargaComprobantesCantidad { LineaId = x.LineaId, Cantidad = x.Cantidad,
+                            PrecioUnitarioNeto = x.PrecioUnitarioNeto, Descuento = x.Descuento }).ToList();
+                    partes.Add(await CrearAsync(cn, contexto, id, talonario, seleccion, fecha, ct, tx));
+                }
+                contexto = await repository.GetContextoAsync(cn, contexto.Usuario, ct, tx, incluirCatalogos: false);
+                return CargaComprobantesConsolidacion.UnirPlanes(partes, contexto, cantidades);
+            }
+        }
         // Releer también configuración/alcance en la transacción final; no conservar defaults anteriores al CAE.
         contexto = await repository.GetContextoAsync(cn, contexto.Usuario, ct, tx, incluirCatalogos: false);
         var carga = directa is null ? default : await new CargaComprobantesDirectaPreparador().PrepararAsync(cn, contexto, directa, ct, tx);
@@ -24,10 +53,23 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
             .PrepararAsync(cn, directa, origen, fecha, ct, tx);
         if (directa is not null)
             cantidades = origen.Lineas.Select(x => new CargaComprobantesCantidad { LineaId = x.Id, Cantidad = x.CantidadOriginal }).ToList();
+        else if (cantidades.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue))
+        {
+            var politica = await new CargaComprobantesEdicionPrecios().LeerAsync(cn, contexto.Usuario, origen.Cuenta, "FC", ct, tx, origenId);
+            foreach (var seleccion in cantidades.Where(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue))
+            {
+                var linea = origen.Lineas.SingleOrDefault(x => x.Id == seleccion.LineaId)
+                    ?? throw new CargaComprobantesReglaException("El precio editado no pertenece al origen seleccionado.");
+                var referencia = linea.PrecioSinIva;
+                var tasa = linea.Exento || origen.ExentoIvaArticulos ? 0 : linea.AlicuotaIva == 0 ? contexto.AlicuotaGeneral : linea.AlicuotaIva;
+                var (neto, final, dto) = CargaComprobantesEdicionPrecios.Aplicar(new()
+                { Articulo = linea.Articulo, Cantidad = seleccion.Cantidad, PrecioUnitarioNeto = seleccion.PrecioUnitarioNeto,
+                    Descuento = seleccion.Descuento }, "FC", politica, referencia, linea.Precio, tasa, contexto.Decimales, linea.Descuento);
+                linea.PrecioReferenciaNeto = referencia; linea.PrecioSinIva = neto; linea.Precio = final; linea.Descuento = dto;
+            }
+        }
         var liquidacion = CargaComprobantesCalculador.Calcular(origen, contexto, cantidades);
-        if ((tcDestino != "FP" && (liquidacion.NetoNoGravado != 0 || liquidacion.Alicuotas.Count != 1)) ||
-            liquidacion.ImpuestosInternos != 0 || liquidacion.Alicuotas.Count > 1)
-            throw new CargaComprobantesReglaException("La grabación inicial admite artículos gravados con una alícuota y sin impuestos internos.");
+        _ = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
         if (origen.TieneDevolucion || (origen.Tc == "RM" && contexto.DescargaStockRemitos != origen.TieneStock))
             throw new CargaComprobantesReglaException("El circuito de stock del remito necesita revisión antes de facturarlo.");
         if (!contexto.EntregaParcial && origen.Lineas.Where(x => x.Pendiente > 0)
@@ -134,6 +176,7 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         var plan = new CargaComprobantesPlanGrabacion
         {
             Directa = directa, ClasePrecio = directa is null ? 0 : carga.Precios.ClasePrecio,
+            ArtExentoANoGrav = liquidacion.NetoNoGravado != 0 && contexto.ArtExentoANoGrav,
             SentidoContable = directa is null ? null : tal.DebeHaber, SignoStock = directa is null ? 0 : tal.Stock == "E" ? 1 : -1,
             Asociado = asociado.Fiscal, AsociadoComprobante = asociado.Comprobante, AsociadoHuella = asociado.Huella,
             OrigenId = origenId, Talonario = talonario, Origen = origen, Liquidacion = liquidacion,

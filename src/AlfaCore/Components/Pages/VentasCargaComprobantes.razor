@@ -60,7 +60,7 @@
     {
         <section class="cc-intro">
             <div><span class="cc-eyebrow">VENTAS · DOCUMENTOS DE ORIGEN</span><h2>Prepará tu próxima factura</h2>
-                <p>Elegí un pedido o remito y revisá las cantidades que quedan por facturar.</p></div>
+                <p>Elegí uno o varios pedidos o remitos compatibles y revisá las cantidades que quedan por facturar.</p></div>
             <span class="cc-status">Facturación de prueba · Homologación</span>
         </section>
         <p class="cc-filter-note">Solo pedidos o remitos con saldo pendiente. Sin fechas, se consulta todo el historial. La zona corresponde a la asignación actual del cliente.</p>
@@ -69,11 +69,11 @@
             <section class="cc-data-view" aria-label="Documentos pendientes" aria-busy="@_busy">
                 <div class="cc-table-scroll">
                     <table class="cc-table">
-                        <thead><tr><th>Fecha</th><th>Comprobante</th><th>Cliente</th><th>Unidad / depósito</th><th class="cc-number">Importe origen</th><th>Acción</th></tr></thead>
+                        <thead><tr><th>Seleccionar</th><th>Fecha</th><th>Comprobante</th><th>Cliente</th><th>Unidad / depósito</th><th class="cc-number">Importe origen</th><th>Acción</th></tr></thead>
                         <tbody>
                         @foreach (var doc in _result.Items)
                         {
-                            <tr @key="doc.Id"><td>@doc.Fecha?.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.Comprobante</strong></td>
+                            <tr @key="doc.Id"><td><AlfaCheckbox Value="@_seleccionados.Contains(doc.Id)" ValueChanged="v => Seleccionar(doc.Id, v == true)" Disabled="@_busy">@doc.Tc @doc.Comprobante</AlfaCheckbox></td><td>@doc.Fecha?.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.Comprobante</strong></td>
                                 <td>@doc.Cliente<small>@doc.Cuenta</small></td><td>@doc.UnidadNegocio / @doc.Deposito</td><td class="cc-number">@Moneda(doc.Importe)</td>
                                 <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => CargarAsync(doc.Id)">Cargar</AlfaButton></td></tr>
                         }
@@ -95,6 +95,10 @@
                 <p>Cuenta @_origen.Cuenta · Unidad @_origen.UnidadNegocio · Depósito @_origen.Deposito · Lista @_origen.Lista</p></div>
             <AlfaSelect Label="Talonario de factura" Value="@_talonario" ValueChanged="CambiarTalonario" Options="@TalonarioOptions" Placeholder="Elegir talonario" Disabled="@(_busy || _grabacion is not null)" />
         </section>
+        @if (_documentos.Count > 1)
+        {
+            <p class="cc-filter-note">@_documentos.Count orígenes: @string.Join(" · ", _documentos.Select(x => $"{x.Tc} {x.Comprobante}"))</p>
+        }
         @if (_origen.TieneReservas || _origen.TienePreparacion || _origen.TieneOtrosDetalles)
         {
             <AlfaNotification Message="@AppUiMessage.Warning("Origen con circuito adicional", "Este documento puede consultarse; su simulación completa requiere incorporar reservas, preparación, servicios u otros conceptos.")" />
@@ -103,17 +107,25 @@
             <div class="cc-data-view">
                 <div class="cc-table-scroll">
                     <table class="cc-table">
-                        <thead><tr><th>Artículo</th><th>Unidad</th><th class="cc-number">Original</th><th class="cc-number">Pendiente</th><th class="cc-quantity">A facturar</th><th class="cc-number">Precio origen</th><th class="cc-number">Dto. %</th></tr></thead>
+                        <thead><tr><th>Artículo</th><th>Unidad</th><th class="cc-number">Original</th><th class="cc-number">Pendiente</th><th class="cc-quantity">A facturar</th><th class="cc-number">Precio neto</th><th class="cc-number">Dto. %</th><th>Edición</th></tr></thead>
                         <tbody>
                         @foreach (var linea in _origen.Lineas)
                         {
                             <tr @key="linea.Id"><td><strong>@linea.Descripcion</strong><small>@linea.Articulo · Renglón @linea.Secuencia
+                                    @if (_documentos.Count > 1) { <span> · @OrigenLinea(linea.Id)</span> }
                                     @if (linea.RenglonesArticulo > 1) { <span> · Requiere distribuir el pendiente entre renglones</span> }</small></td>
                                 <td>@linea.Unidad</td><td class="cc-number">@Cantidad(linea.CantidadOriginal)</td><td class="cc-number">@Cantidad(linea.Pendiente)</td>
                                 <td><AlfaInput Type="number" Step="any" Id="@($"cc-cantidad-{linea.Id}")" Label="@($"Cantidad de {linea.Articulo}")"
                                     Value="@_cantidades[linea.Id]" ValueChanged="v => CambiarCantidad(linea.Id, v)"
-                                    Disabled="@(_busy || _grabacion is not null || linea.Pendiente <= 0 || linea.RenglonesArticulo > 1)" /></td>
-                                <td class="cc-number">@Moneda(linea.Precio)</td><td class="cc-number">@linea.Descuento.ToString("N2")</td></tr>
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || linea.Pendiente <= 0 || linea.RenglonesArticulo > 1)" /></td>
+                                <td><AlfaInput Type="number" Step="0.0001" Label="@($"Precio neto {linea.Id}")"
+                                    Value="@PrecioEditor(linea)" ValueChanged="v => EditarLinea(linea.Id, v, false)"
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || !_contexto.PuedeEditarPrecio)" /></td>
+                                <td><AlfaInput Type="number" Step="0.0001" Label="@($"Descuento {linea.Id}")"
+                                    Value="@DescuentoEditor(linea)" ValueChanged="v => EditarLinea(linea.Id, v, true)"
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || !_contexto.PuedeEditarDescuento)" /></td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_busy || _grabacion is not null || _intentoComercial)"
+                                    OnClick="_ => RestablecerLinea(linea.Id)">Restablecer</AlfaButton></td></tr>
                         }
                         </tbody>
                     </table>
@@ -193,6 +205,43 @@
     private readonly CargaComprobantesFiltro _filtro = new();
     private CargaComprobantesFiltro _filtroAplicado = new();
     private readonly Dictionary<int, string?> _cantidades = [];
+    private readonly HashSet<int> _seleccionados = [];
+    private List<CargaComprobantesOrigen> _documentos = [];
+    private readonly Dictionary<int, string?> _precios = [];
+    private readonly Dictionary<int, string?> _descuentos = [];
+    private string OrigenLinea(int id) => _documentos.Where(x => x.Lineas.Any(l => l.Id == id)).Select(x => $"{x.Tc} {x.Comprobante}").FirstOrDefault() ?? "";
+    private string? PrecioEditor(CargaComprobantesLineaOrigen linea) => _precios.GetValueOrDefault(linea.Id, (linea.PrecioReferenciaNeto ?? linea.PrecioSinIva).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private string? DescuentoEditor(CargaComprobantesLineaOrigen linea) => _descuentos.GetValueOrDefault(linea.Id,
+        (_documentos.SelectMany(x=>x.Lineas).FirstOrDefault(x=>x.Id==linea.Id)?.Descuento ?? linea.Descuento).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private void RestablecerLinea(int id)
+    {
+        if(_busy || _grabacion is not null || _intentoComercial)return;
+        _precios.Remove(id);_descuentos.Remove(id);_simulacion=null;_planGrabacion=null;UpdateHeader();
+    }
+    private void EditarLinea(int id, string? value, bool descuento)
+    {
+        if (_busy || _grabacion is not null || _intentoComercial) return;
+        (descuento ? _descuentos : _precios)[id] = value;
+        _simulacion = null; _planGrabacion = null; UpdateHeader();
+    }
+    private void Seleccionar(int id, bool value) { if (value) _seleccionados.Add(id); else _seleccionados.Remove(id); UpdateHeader(); }
+    private Task CargarSeleccionAsync() => RunAsync(async () =>
+    {
+        if (_seleccionados.Count is < 1 or > 30) throw new CargaComprobantesReglaException("Seleccioná entre uno y 30 orígenes.");
+        var documentos = new List<CargaComprobantesOrigen>();
+        foreach (var id in _seleccionados.Order())
+        {
+            documentos.Add(await Service.GetOrigenAsync(id, _lifetime.Token));
+            var operacion = await Service.GetUltimaGrabacionAsync(id, _lifetime.Token);
+            if (operacion is not null && operacion.Estado is not ("GRABADA" or "RECHAZADA"))
+                throw new CargaComprobantesReglaException("Un origen tiene una operación pendiente. Recuperala desde Comprobantes de prueba.");
+        }
+        var unido = CargaComprobantesConsolidacion.Unir(documentos);
+        _documentos = documentos; _origen = unido; _cantidades.Clear(); _precios.Clear(); _descuentos.Clear();
+        foreach (var linea in unido.Lineas) _cantidades[linea.Id] = linea.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _grabacion = null; _planGrabacion = null; _simulacion = null; _electronica = null; _pruebaElectronica = null;
+        _intentoComercial = false; _operacionComercial = Guid.NewGuid(); _operacionPrueba = Guid.NewGuid(); _talonario = null;
+    });
     private string? _talonario;
     private AppUiMessage? _feedback;
     private PageHeaderConfig? _header;
@@ -264,7 +313,7 @@
         var prueba = await Service.GetUltimaPruebaElectronicaAsync(id, _lifetime.Token);
         _grabacion = await Service.GetUltimaGrabacionAsync(id, _lifetime.Token);
         _planGrabacion = null; _operacionComercial = _grabacion?.Operacion ?? Guid.NewGuid(); _intentoComercial = false;
-        _origen = doc; _simulacion = null; _electronica = null; _pruebaElectronica = null;
+        _origen = doc; _documentos = [doc]; _precios.Clear(); _descuentos.Clear(); _simulacion = null; _electronica = null; _pruebaElectronica = null;
         _filtrosAbiertos = false;
         _operacionPrueba = Guid.NewGuid(); _talonario = null; _cantidades.Clear();
         _pruebaElectronica = prueba;
@@ -287,7 +336,16 @@
             if (!decimal.TryParse(item.Value, System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowLeadingSign,
                 System.Globalization.CultureInfo.InvariantCulture, out var cantidad))
                 throw new InvalidOperationException("Revisá las cantidades ingresadas.");
-            cantidades.Add(new() { LineaId = item.Key, Cantidad = cantidad });
+            decimal? Edicion(Dictionary<int,string?> valores)
+            {
+                if (!valores.TryGetValue(item.Key, out var valor)) return null;
+                if (!decimal.TryParse(valor, System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowLeadingSign,
+                    System.Globalization.CultureInfo.InvariantCulture, out var numero)) throw new InvalidOperationException("Revisá el precio o descuento ingresado.");
+                return numero;
+            }
+            cantidades.Add(new() { LineaId = item.Key, Cantidad = cantidad,
+                OrigenId = _documentos.Count > 1 ? _documentos.Single(x => x.Lineas.Any(l => l.Id == item.Key)).Id : 0,
+                PrecioUnitarioNeto = Edicion(_precios), Descuento = Edicion(_descuentos) });
         }
         return cantidades;
     }
@@ -346,13 +404,13 @@
             _pruebaElectronica = await Service.EmitirPruebaElectronicaAsync(_origen.Id, talonario, LeerCantidades(), _operacionPrueba, _lifetime.Token);
         });
     }
-    private Task VolverAsync() { _origen = null; _simulacion = null; _electronica = null; _pruebaElectronica = null; _cantidades.Clear(); _feedback = null;
+    private Task VolverAsync() { _origen = null; _documentos.Clear(); _precios.Clear(); _descuentos.Clear(); _simulacion = null; _electronica = null; _pruebaElectronica = null; _cantidades.Clear(); _feedback = null;
         _grabacion = null; _planGrabacion = null; _intentoComercial = false; _operacionComercial = Guid.NewGuid(); UpdateHeader(); return InvokeAsync(StateHasChanged); }
     private Task NuevaFacturaAsync() => RunAsync(async () =>
     {
         if (_origen is null) return;
         var pendiente = await Service.GetOrigenAsync(_origen.Id, _lifetime.Token);
-        _origen = pendiente; _simulacion = null; _planGrabacion = null; _grabacion = null; _pruebaElectronica = null;
+        _origen = pendiente; _documentos = [pendiente]; _precios.Clear(); _descuentos.Clear(); _simulacion = null; _planGrabacion = null; _grabacion = null; _pruebaElectronica = null;
         _intentoComercial = false; _operacionComercial = Guid.NewGuid(); _cantidades.Clear();
         foreach (var linea in pendiente.Lineas) _cantidades[linea.Id] = linea.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
     });
@@ -384,6 +442,7 @@
         {
             if (_disposed) return;
             _contexto = null; _origen = null; _result = null; _simulacion = null; _electronica = null; _cantidades.Clear();
+            _seleccionados.Clear(); _documentos.Clear(); _precios.Clear(); _descuentos.Clear();
             _pruebaElectronica = null; _confirmarPrueba = false; _operacionPrueba = Guid.NewGuid();
             _grabacion = null; _planGrabacion = null; _confirmarGrabacion = false; _operacionComercial = Guid.NewGuid();
             _intentoComercial = false; _mostrarHistorial = false; _recientes = [];
@@ -404,7 +463,8 @@
         Search = _origen is null && _contexto is not null ? new() : null,
         SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,
         Actions = _origen is null
-            ? [new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary,
+            ? [new() { Key = "cargar-seleccion", Label = $"Cargar selección ({_seleccionados.Count})", Icon = "bi-check2-square", Disabled = _busy || _seleccionados.Count == 0, OnClick = CargarSeleccionAsync },
+                new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary,
                     Disabled = _busy || _contexto is null, OnClick = () => { Navigation.NavigateTo(Navigation.Uri.Split('?')[0].TrimEnd('/') + "/nuevo" + new Uri(Navigation.Uri).Query); return Task.CompletedTask; } },
                 new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy, OnClick = _contexto is null ? InicializarAsync : () => BuscarAsync(false) },
                 new() { Key = "historial", Label = "Comprobantes de prueba", Icon = "bi-clock-history", Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
@@ -416,7 +476,7 @@
                 new() { Key = "recuperar", Label = "Recuperar operación", Icon = "bi-arrow-repeat", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || (!_intentoComercial && _grabacion is null) || _grabacion?.Estado is "GRABADA" or "RECHAZADA", OnClick = () => RecuperarOperacionAsync(_operacionComercial) },
                 new() { Key = "pdf", Label = "PDF factura", Icon = "bi-file-earmark-pdf", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado != "GRABADA", OnClick = () => DescargarFacturaAsync(_operacionComercial) },
                 new() { Key = "nueva-pendiente", Label = "Nueva factura sobre pendientes", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado is not ("GRABADA" or "RECHAZADA"), OnClick = NuevaFacturaAsync },
-                new() { Key = "prueba-arca", Label = "Solo probar autorización ARCA", Icon = "bi-send", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _electronica is null || _simulacion?.Liquidacion is null || _pruebaElectronica is not null || _grabacion is not null || _intentoComercial, OnClick = AbrirPruebaAsync },
+                new() { Key = "prueba-arca", Label = "Solo probar autorización ARCA", Icon = "bi-send", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _documentos.Count > 1 || _precios.Count > 0 || _descuentos.Count > 0 || _electronica is null || _simulacion?.Liquidacion is null || _pruebaElectronica is not null || _grabacion is not null || _intentoComercial, OnClick = AbrirPruebaAsync },
                 new() { Key = "conciliar-prueba", Label = "Conciliar prueba ARCA", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _pruebaElectronica is null, OnClick = RecuperarPruebaAsync },
                 new() { Key = "simular", Label = "Simular factura", Icon = "bi-calculator", Disabled = _busy || _grabacion is not null || _intentoComercial, OnClick = SimularAsync }],
         Pagination = _origen is null && _result is not null ? new()

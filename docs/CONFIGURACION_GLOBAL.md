@@ -1,5 +1,11 @@
 # Modelo de Configuración Central - TA_CONFIGURACION
 
+## Conciliación bancaria inteligente
+
+`CONCILIACION-DIAS-BANCO` (CAJA): margen de fecha para sugerencias banco/Alfa, valor inicial `3`, entero entre 0 y 31. Se conserva el valor existente al actualizar. No confirma vínculos ni habilita diferencias de importe.
+
+`CONCILIACION-TOLERANCIA` (grupo `CAJA`): margen para sugerencias exactas y múltiples, con valor inicial `1.00` y punto decimal. Se conserva el valor existente durante la actualización. No habilita ajustes contables automáticos. Ver [documentación del módulo](modulos/conciliacion-bancaria.md).
+
 ## ⚠️ Regla crítica del sistema
 
 La tabla `TA_CONFIGURACION` es el **repositorio único de configuración del sistema**.

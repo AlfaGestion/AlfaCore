@@ -1,0 +1,19 @@
+.conciliacion-comparacion { min-width: 0; }
+.conciliacion-comparacion__filtros { display: grid; grid-template-columns: minmax(250px,2fr) repeat(2,minmax(140px,1fr)) minmax(150px,1fr); gap: var(--alfa-space-12); align-items: end; margin-bottom: var(--alfa-space-16); }
+.conciliacion-comparacion__seleccion { display: flex; flex-wrap: wrap; align-items: center; gap: var(--alfa-space-12); padding: var(--alfa-space-12); margin-block: var(--alfa-space-16); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.conciliacion-comparacion__listas { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--alfa-space-16); }
+.conciliacion-comparacion__lista { min-width: 0; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-12); }
+.conciliacion-comparacion h3 { font-size: var(--alfa-font-body); margin-block: 0 var(--alfa-space-12); }
+.conciliacion-comparacion p { overflow-wrap: anywhere; }
+.conciliacion-comparacion__scroll { overflow: auto; max-height: 52vh; }
+.conciliacion-comparacion table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.conciliacion-comparacion th, .conciliacion-comparacion td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--alfa-border-default); }
+.conciliacion-comparacion th { position: sticky; top: 0; background: var(--alfa-bg-surface); z-index: 1; white-space: nowrap; }
+.conciliacion-comparacion small, .conciliacion-comparacion td strong { display: block; margin-top: var(--alfa-space-8); }
+.conciliacion-comparacion small { color: var(--alfa-text-secondary); }
+.conciliacion-comparacion .numero { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.conciliacion-comparacion .is-selected { background: var(--alfa-state-selected); }
+.conciliacion-comparacion td ::deep button { margin-top: var(--alfa-space-8); }
+.conciliacion-comparacion .alfa-data-view-footer { flex-wrap: wrap; gap: var(--alfa-space-8); }
+@media(max-width:1100px) { .conciliacion-comparacion__listas { grid-template-columns: minmax(0,1fr); } .conciliacion-comparacion__filtros { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .conciliacion-comparacion__filtros { grid-template-columns: minmax(0,1fr); } }

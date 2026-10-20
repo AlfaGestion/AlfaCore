@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 /// <summary>Lectura común de libros de compras/ventas y movimientos de sus cuentas comerciales.</summary>
-public sealed class ReporteComercialService(ISessionService sessions, IAppUserSessionService users,
+public sealed partial class ReporteComercialService(ISessionService sessions, IAppUserSessionService users,
     IPermissionService permissions, IAppEventService events)
 {
     private sealed class ReglaReporteException(string message) : InvalidOperationException(message);
@@ -28,6 +28,7 @@ public sealed class ReporteComercialService(ISessionService sessions, IAppUserSe
                     ELSE ISNULL(l.LIVA_ImpNetoGrav,0)+ISNULL(l.LIVA_ImpNetoNGrav,0)+ISNULL(l.LIVA_EXENTO,0) END NetoSignado,
                 ISNULL(l.LIVA_ImpIVA,0)+ISNULL(l.LIVA_ImpIVARec,0)+ISNULL(l.LIVA_ImpIva2,0)+ISNULL(l.LIVA_ImpIVA3,0)+ISNULL(l.LIVA_ImpIVA4,0) IvaSignado
             FROM {Fuente(ventas)} l
+            {FiltroCarteraComercial(ventas,"l.CUENTA", "l.UNEGOCIO", requiereCliente:false)}
         )
         """;
     private static object Parametros(FiltrosReporteCompras f)
@@ -37,17 +38,37 @@ public sealed class ReporteComercialService(ISessionService sessions, IAppUserSe
         var literal=texto?.Replace("\\","\\\\").Replace("%","\\%").Replace("_","\\_").Replace("[","\\[");
         return new { FechaDesde=f.FechaDesde?.Date, FechaHasta=f.FechaHasta?.Date, Proveedor=texto,
             Busqueda="%"+literal+"%", TipoComprobante=string.IsNullOrWhiteSpace(f.TipoComprobante)?null:f.TipoComprobante.Trim(),
+            Vendedor=string.IsNullOrWhiteSpace(f.Vendedor)?null:f.Vendedor.Trim(), f.SinVendedor,
+            Zona=string.IsNullOrWhiteSpace(f.Zona)?null:f.Zona.Trim(), f.SinZona,
+            Unidades=f.UnidadesNegocio.Select(x=>x.Trim()).Distinct().ToArray(), SinFiltroUnidad=f.UnidadesNegocio.Length==0,
             Skip=(f.Pagina-1)*f.TamanioPagina, PageSize=f.TamanioPagina };
     }
     public static void Validar(FiltrosReporteCompras f)
     {
-        if(f.FechaDesde>f.FechaHasta || f.FechaHasta?.Date==DateTime.MaxValue.Date || f.Pagina<1 || f.TamanioPagina is <1 or >500 ||
+        if(f.UnidadesNegocio.Length>200 || (f.SinVendedor && !string.IsNullOrWhiteSpace(f.Vendedor)) ||
+            (f.SinZona && !string.IsNullOrWhiteSpace(f.Zona)) ||
+            f.FechaDesde>f.FechaHasta || f.FechaHasta?.Date==DateTime.MaxValue.Date || f.Pagina<1 || f.TamanioPagina is <1 or >500 ||
             (long)(f.Pagina-1)*f.TamanioPagina>int.MaxValue)
             throw new ReglaReporteException("Revisá el período y la paginación del reporte.");
     }
     public Task<ReporteComprasOptionsDto> GetOptionsAsync(bool ventas,CancellationToken ct=default)
-        => EjecutarAsync(ventas,"Opciones",async cn=>new ReporteComprasOptionsDto { TiposComprobante=(await cn.QueryAsync<string>(new CommandDefinition(
-            $"SELECT DISTINCT LTRIM(RTRIM(TC)) FROM {Fuente(ventas)} WHERE ISNULL(TC,'')<>'' ORDER BY 1",cancellationToken:ct))).ToList() },ct);
+        => EjecutarAsync(ventas,"Opciones",async cn=>
+        {
+            var tipos=(await cn.QueryAsync<string>(new CommandDefinition(
+                $"SELECT DISTINCT LTRIM(RTRIM(TC)) FROM {Fuente(ventas)} WHERE ISNULL(TC,'')<>'' ORDER BY 1",cancellationToken:ct))).ToList();
+            if(!ventas) return new ReporteComprasOptionsDto { TiposComprobante=tipos,
+                UnidadesNegocio=(await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("SELECT LTRIM(RTRIM(Codigo)) Codigo, MAX(Descripcion) Nombre FROM dbo.V_TA_UnidadNegocio GROUP BY LTRIM(RTRIM(Codigo)) ORDER BY Codigo",cancellationToken:ct))).ToList() };
+            using var r=await cn.QueryMultipleAsync(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(IdVendedor)) Codigo, MAX(Nombre) Nombre FROM dbo.V_TA_VENDEDORES
+                GROUP BY LTRIM(RTRIM(IdVendedor)) ORDER BY Codigo;
+                SELECT LTRIM(RTRIM(Codigo)) Codigo, MAX(Descripcion) Nombre FROM dbo.V_TA_UnidadNegocio
+                GROUP BY LTRIM(RTRIM(Codigo)) ORDER BY Codigo;
+                SELECT DISTINCT LTRIM(RTRIM(ZONA)) FROM dbo.VT_CLIENTES WHERE NULLIF(LTRIM(RTRIM(ZONA)),'') IS NOT NULL ORDER BY 1;
+                """,cancellationToken:ct));
+            return new ReporteComprasOptionsDto { TiposComprobante=tipos,
+                Vendedores=(await r.ReadAsync<ReporteFiltroOpcion>()).ToList(),
+                UnidadesNegocio=(await r.ReadAsync<ReporteFiltroOpcion>()).ToList(), Zonas=(await r.ReadAsync<string>()).ToList() };
+        },ct);
     public Task<ResumenComprasDto> GetResumenAsync(bool ventas,FiltrosReporteCompras f,CancellationToken ct=default)
         => EjecutarAsync(ventas,"Resumen",async cn=>
         {
@@ -75,30 +96,7 @@ public sealed class ReporteComercialService(ISessionService sessions, IAppUserSe
             return new DetalleComprasResultDto { TotalRegistros=await r.ReadSingleAsync<int>(),Items=(await r.ReadAsync<DetalleComprasFilaDto>()).ToList(),PaginaActual=f.Pagina,TamanioPagina=f.TamanioPagina };
         },ct);
     public Task<CuentaCorrienteResultDto> GetCuentaCorrienteAsync(bool ventas,FiltrosReporteCompras f,CancellationToken ct=default)
-        => EjecutarAsync(ventas,"CuentaCorriente",async cn=>
-        {
-            // EXISTS evita multiplicar asientos si un maestro contiene más de una referencia a la cuenta.
-            var origen=$"""
-                WITH Movimientos AS (
-                    SELECT a.FECHA,a.TC,LTRIM(RTRIM(a.CUENTA)) Cuenta,
-                        COALESCE((SELECT MAX(p.RAZON_SOCIAL) FROM {Terceros(ventas)} p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA))),a.CUENTA) RazonSocial,
-                        ISNULL(a.SUCURSAL,'')+ISNULL(a.NUMERO,'')+ISNULL(a.LETRA,'') IdComprobante,
-                        a.[DEBE-HABER] DebeHaber,ISNULL(a.IMPORTE,0) Importe,
-                        CASE WHEN a.[DEBE-HABER]='{(ventas?"D":"H")}' THEN ISNULL(a.IMPORTE,0) ELSE -ISNULL(a.IMPORTE,0) END ImporteSignado,
-                        a.[NUMERO ASIENTO] Asiento,a.SECUENCIA
-                    FROM dbo.MV_ASIENTOS a
-                    WHERE EXISTS(SELECT 1 FROM {Terceros(ventas)} p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA)))
-                )
-                """;
-            var sql=origen+$"SELECT COUNT(*) TotalRegistros,ISNULL(SUM(l.ImporteSignado),0) SaldoTotal FROM Movimientos l {Filtro};"+origen+$"""
-                SELECT l.Cuenta,l.RazonSocial,l.FECHA Fecha,LTRIM(RTRIM(l.TC)) Tc,l.IdComprobante,l.DebeHaber,l.Importe,l.ImporteSignado
-                FROM Movimientos l {Filtro} ORDER BY l.FECHA DESC,l.ASIENTO DESC,l.SECUENCIA,l.Cuenta,l.TC,l.IdComprobante
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
-                """;
-            using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,Parametros(f),commandTimeout:60,cancellationToken:ct));
-            var tot=await r.ReadSingleAsync<CuentaCorrienteResultDto>();
-            return new CuentaCorrienteResultDto { TotalRegistros=tot.TotalRegistros,SaldoTotal=tot.SaldoTotal,Items=(await r.ReadAsync<CuentaCorrienteFilaDto>()).ToList(),PaginaActual=f.Pagina,TamanioPagina=f.TamanioPagina };
-        },ct);
+        => GetCuentaCorrienteDetalladaAsync(ventas,f,ct);
     private async Task<T> EjecutarAsync<T>(bool ventas,string accion,Func<SqlConnection,Task<T>> consulta,CancellationToken ct)
     {
         if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var id))

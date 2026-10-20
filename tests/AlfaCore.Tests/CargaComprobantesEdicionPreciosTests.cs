@@ -55,8 +55,8 @@ public sealed class CargaComprobantesEdicionPreciosTests
         Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesEdicionPrecios.Aplicar(l, "FP", p, 100, 121, 21, 2));
         l.Descuento = null; l.PrecioUnitarioNeto = 80;
         Assert.Equal(80m, CargaComprobantesEdicionPrecios.Aplicar(l, "FP", p, 100, 121, 21, 2).Neto);
-        foreach (var tc in new[] { "NC", "ND" })
-            Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesEdicionPrecios.Aplicar(l, tc, p, 100, 121, 21, 2));
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesEdicionPrecios.Aplicar(l, "NC", p, 100, 121, 21, 2));
+        Assert.Equal(80m,CargaComprobantesEdicionPrecios.Aplicar(l,"ND",p,100,121,21,2).Neto);
     }
 
     [Fact]

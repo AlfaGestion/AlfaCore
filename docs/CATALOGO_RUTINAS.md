@@ -11,6 +11,22 @@ Criterio aplicado:
 
 ## Navegación y base operativa
 
+### CobranzasService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CobranzasService.cs`
+- Propósito: prepara y registra cobranzas rápidas CB desde Conciliación, con banco, retenciones y aplicación parcial a un comprobante; base compartida para el futuro módulo Cobranzas.
+- Datos que usa: `V_MV_CPTE`, `MV_ASIENTOS`, `MV_APLICACION`, `VE_CPTES_SALDOS_VENTAS`, `MA_CUENTAS`, `V_TA_CPTE`, `MA_SUBDIARIOS`, `MA_SUBDIARIOSCOMPROBANTES`, `MV_EJERCICIOS`, `TA_USUARIOS`, `TA_CONFIGURACION`, `ALFACORE_COBRANZA_OPERACION` y tablas `BK_` de conciliación.
+- Observaciones: sesión y permisos por unidad, transacción Serializable, numeración bloqueada, hash/idempotencia y control único por movimiento. Medios en pesos DB/RI/RB/RG/RO, certificado en TJ_AUTORIZO. Sugiere la última retención confirmada del cliente/unidad desde MV_ASIENTOS, con diferencia editable y memoria en el propio recibo. Ver `docs/modulos/cobranzas.md`.
+
+### ConciliacionBancariaService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConciliacionBancariaService.cs`
+- Propósito: importa extractos de Provincia, Santander y Mercado Pago, evita duplicados y prepara clasificación y propuestas para revisión en Caja y Bancos.
+- Datos que usa: `BK_ImportacionExtracto`, `BK_ExtractoMovimiento`, `BK_MovimientoClasificado`, `BK_MovimientoMatch`, `BK_MovimientoAplicacion`, `BK_ReglaInterpretacion`, `BK_AliasClienteBanco`, `BK_GeneracionAlfaLog`, `MA_CUENTAS`, `VT_CLIENTES`, `VE_CPTES_SALDOS_VENTAS`, `VE_COBRANZAS_REALIZADAS`, `TA_CONFIGURACION`.
+- Observaciones: usa sesión activa, permisos, Dapper y transacción; permite corrección manual versionada de clasificación y consulta contextual de facturas/orígenes en `ConciliacionBancariaService.Revision.cs` y cuenta corriente con recibos legacy, contrapartidas y aplicaciones en `ConciliacionBancariaService.CuentaCorriente.cs` (MV_ASIENTOS, MV_APLICACION, V_MV_CPTE, TA_MONEDAS y TA_USUARIOS). El parcial `ConciliacionBancariaService.Vinculos.cs` compara banco/contabilidad, confirma y deshace vínculos auditados en BK_Conciliacion/Banco/Alfa, respetando MV_CONCILIACION legacy y MV_ASIENTOS.Conciliado. El parcial `ConciliacionBancariaService.CobroExistente.cs` reconoce recibos legacy en BK_CobroExistente, con confirmación e idempotencia, sin generar nuevas registraciones ni conciliar. ConciliacionExtractoLector admite XLSX, XLS y CSV, con normalización mediante ConciliacionArchivoTabular/ExcelDataReader y detección de la variante Provincia con cabecera en fila 6. Mercado Pago admite archivos renombrados con fecha de referencia explícita, sugerida desde creación del XLSX cuando existe y revalidada al importar; las conversiones no inventan fechas de descarga. El parcial ConciliacionBancariaService.Clientes.cs permite asignar cliente con prioridad manual, regenerar la propuesta y recordar un alias bancario en BK_AliasClienteBanco para próximas importaciones, con auditoría, reevaluación individual y controles de conflicto. Normaliza CUIT y distingue cuentas del mismo titular por coincidencia única de saldo/importe, incluso con alias recordado. No genera cobranzas ni asientos. Ver `docs/modulos/conciliacion-bancaria.md`.
+
 ### Launcher
 
 - Tipo: Page

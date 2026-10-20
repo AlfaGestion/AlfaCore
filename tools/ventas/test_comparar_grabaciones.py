@@ -17,6 +17,22 @@ def captura():
 
 
 class CompararGrabacionesTests(unittest.TestCase):
+    def test_consolidado_conserva_todos_los_origenes_y_sus_aplicaciones(self):
+        a = captura()
+        a["Secciones"]["OrigenCabecera"] = [{"TC": "NP", "IDCOMPROBANTE": "000400000001X"},
+                                            {"TC": "NP", "IDCOMPROBANTE": "000400000002X"}]
+        a["Secciones"]["AplicacionesEmitidas"] = [{"TCO_ORIGEN": "NP", "IDCOMPROBANTE_ORIGEN": x["IDCOMPROBANTE"], "IMPORTE": 50}
+                                                     for x in a["Secciones"]["OrigenCabecera"]]
+        b = copy.deepcopy(a)
+        b["Secciones"]["OrigenCabecera"].reverse()
+        self.assertTrue(comparar(a, b)["Coincide"])
+        b["Secciones"]["AplicacionesEmitidas"].pop()
+        self.assertFalse(comparar(a, b)["Coincide"])
+        a["Secciones"]["TrazabilidadOrigen"] = [{"DetalleDestinoId": 1, "OrigenId": 10, "DetalleOrigenId": 100}]
+        b = copy.deepcopy(a)
+        b["Secciones"]["TrazabilidadOrigen"][0]["DetalleOrigenId"] = 200
+        self.assertFalse(comparar(a, b)["Coincide"])
+
     def test_orden_filas_no_cambia_igualdad_pero_secuencia_si(self):
         a = captura()
         a["Secciones"]["Articulos"].append({"SECUENCIA": 2, "CANTIDAD": 3, "IMPORTE": 2})

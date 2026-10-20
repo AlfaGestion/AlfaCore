@@ -1,0 +1,33 @@
+.conciliacion-page { gap: var(--alfa-space-16); min-width: 0; }
+.conciliacion-reclasificar { display: grid; grid-template-columns: minmax(180px,1fr) minmax(240px,2fr) auto; gap: var(--alfa-space-12); align-items: end; margin-block: var(--alfa-space-16); }
+.conciliacion-scroll--comparar { max-height: 32vh; }
+.conciliacion-detalle-titulo { font-size: var(--alfa-font-body); margin-block: var(--alfa-space-16) var(--alfa-space-8); }
+.conciliacion-comprobante-info { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-12); margin-top: var(--alfa-space-12); overflow-wrap: anywhere; }
+@media(max-width:1024px) { .conciliacion-reclasificar { grid-template-columns: minmax(0,1fr); } }
+.conciliacion-page .panel-card { padding: var(--alfa-space-16); min-width: 0; }
+.conciliacion-campos { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); gap: 16px; max-width: 1000px; }
+.conciliacion-campos--cuenta { grid-template-columns: minmax(260px, 1fr); }
+.conciliacion-filtros { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(220px, 1fr) auto; align-items: end; gap: var(--alfa-space-16); padding-bottom: var(--alfa-space-16); border-bottom: 1px solid var(--alfa-border-default); }
+.conciliacion-filtros__acciones { display: flex; gap: var(--alfa-space-8); align-items: center; }
+.conciliacion-tabla th ::deep .alfa-button { padding-inline: 0; font-weight: 600; }
+.conciliacion-archivo { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px dashed var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-surface); }
+.conciliacion-archivo ::deep input[type=file] { color: var(--alfa-text-secondary); max-width: 100%; font-size: var(--alfa-font-body); }
+.conciliacion-archivo ::deep input[type=file]::file-selector-button { background: var(--alfa-bg-input); color: var(--alfa-text-primary); border: 1px solid var(--alfa-border-strong); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-8) var(--alfa-space-12); margin-right: var(--alfa-space-12); cursor: pointer; }
+.conciliacion-resumen, .conciliacion-alcance { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; padding: 12px 0; }
+.conciliacion-scroll { overflow: auto; max-height: 56vh; }
+.conciliacion-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.conciliacion-tabla th, .conciliacion-tabla td { border-bottom: 1px solid var(--alfa-border-default); padding: 10px 12px; text-align: left; vertical-align: top; }
+.conciliacion-tabla th { position: sticky; top: 0; background: var(--alfa-bg-surface); z-index: 1; white-space: nowrap; }
+.conciliacion-tabla--acciones th:last-child, .conciliacion-tabla--acciones td:last-child { position: sticky; right: 0; min-width: 110px; background: var(--alfa-bg-surface); box-shadow: -1px 0 var(--alfa-border-default); }
+.conciliacion-tabla--acciones th:last-child { z-index: 2; }
+.conciliacion-tabla td.conciliacion-numero { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.conciliacion-descripcion { min-width: 250px; max-width: 480px; overflow-wrap: anywhere; }
+.conciliacion-acciones { display: flex; gap: 8px; }
+.conciliacion-asignar-cliente { display: grid; gap: var(--alfa-space-12); padding: var(--alfa-space-16); margin-block: var(--alfa-space-16); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.conciliacion-asignar-cliente h3 { margin: 0; font-size: var(--alfa-font-body); }
+.conciliacion-asignar-cliente p { margin: 0; color: var(--alfa-text-secondary); }
+.conciliacion-ingreso { color: var(--alfa-success); }
+.conciliacion-egreso { color: var(--alfa-danger); }
+.conciliacion-tabla tr.is-selected { background: var(--alfa-state-selected); }
+.conciliacion-tabla--acciones tr.is-selected td:last-child { background: var(--alfa-state-selected); }
+@media(max-width: 1024px) { .conciliacion-campos { grid-template-columns: 1fr; } .conciliacion-filtros { grid-template-columns: minmax(240px, 1fr) minmax(200px, 1fr); } .conciliacion-filtros__acciones { grid-column: 1 / -1; } }

@@ -14,6 +14,10 @@ Actualización de evidencia: [relevamiento de DISTRIWALTERP](sql-distriwalterp-h
 
 Estado `Fuente`: comportamiento localizado en VB6; requiere cerrar mapeo por campo, objetos SQL y prueba. Estado `Diseño`: requisito propuesto para el producto. Estado `Diferido`: excluido de la etapa actual. Las líneas se fijan respecto de las fuentes identificadas en `inventario-fuentes.json`.
 
+## Ampliación del 17/10/2026
+
+Se implementó un subconjunto adicional de CC-02/03/04/05/10/11/12: varios orígenes compatibles conservando líneas, edición de precios con permisos, tres alícuotas/exentos y conversión de bultos a la unidad de venta. Ver [alcance y restricciones](consolidacion-iva-unidades.md). El estado Fuente de la matriz no se transforma en certificación general por esta ampliación.
+
 ## Circuitos y reglas
 
 | ID | Circuito/regla | Evidencia VB6 | Configuración o dependencia relevante | Efecto que se debe comprobar | Estado |
@@ -123,3 +127,7 @@ La comparación normaliza únicamente diferencias aprobadas (identificadores té
 - Política de precios al traer pedidos/remitos (mantener, revalorizar, confirmar) por configuración.
 - Circuitos efectivos de impresión/electrónica, defaults y excepciones de los clientes prioritarios.
 - Referencia de operador para comprobar acciones de teclado, orden de carga y mensajes.
+
+## Ampliación del 18/10/2026: selección de precios
+
+CC-09 incorpora selección de lista y clase en FC directa, FP y ND con permisos, vigencia y obligatoriedad; la NC conserva precios históricos. Ver [contrato y reglas VB6](seleccion-lista-clase.md). Ofertas, escalas, venta al costo y selección/revalorización sobre NP/RM continúan pendientes. CC-10 no incorpora todavía descuento general ni su asiento; los descuentos por línea mantienen el alcance previo. Las pruebas y limitaciones efectivas se registran en el historial de avances.

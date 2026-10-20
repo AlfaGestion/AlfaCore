@@ -1,0 +1,57 @@
+<div class="kpi-grid">
+    <KpiCard Titulo="Saldo inicial" Valor="@Moneda(Resultado.SaldoInicialTotal)" Icono="=" />
+    <KpiCard Titulo="Movimiento neto del período" Valor="@Moneda(Resultado.SaldoTotal)" Icono="↔" />
+    <KpiCard Titulo="Saldo al cierre" Valor="@Moneda(Resultado.SaldoFinalTotal)" Icono="=" />
+</div>
+
+<DataTable Titulo="@(Ventas ? "Cuenta corriente por cliente" : "Cuenta corriente por proveedor")" Subtitulo="@(Ventas ? "Importes contables · debe suma, haber resta" : "Importes contables · haber suma deuda, debe resta")">
+    <Header>
+        <tr>
+            <th>Fecha</th><th>TC</th><th>Comprobante</th>
+            <th style="text-align:right;">Debe</th><th style="text-align:right;">Haber</th>
+            <th style="text-align:right;">Saldo parcial</th>
+        </tr>
+    </Header>
+    <Rows>
+        @if (Resultado.Items.Count == 0)
+        {
+            <tr><td colspan="6"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos ni saldos para mostrar" Message="Revisá el período y los filtros de cartera." /></td></tr>
+        }
+        @foreach (var cuenta in Resultado.Items.GroupBy(x => x.Cuenta))
+        {
+            var primera = cuenta.First();
+            <tr class="data-table__totals">
+                <td colspan="6">
+                    <strong>@cuenta.Key · @primera.RazonSocial</strong>
+                    <div>Saldo inicial: @Moneda(primera.SaldoInicial) · Saldo previo a estas líneas: @Moneda(primera.SaldoAnteriorLinea)</div>
+                </td>
+            </tr>
+            @foreach (var fila in cuenta)
+            {
+                @if (fila.EsSaldoInicial)
+                {
+                    <tr><td colspan="5">Sin movimientos en el período. Se conserva el saldo inicial.</td><td style="text-align:right;">@Moneda(fila.SaldoParcial)</td></tr>
+                }
+                else
+                {
+                    <tr>
+                        <td>@fila.Fecha.ToString("dd/MM/yyyy")</td><td>@fila.Tc</td><td>@fila.IdComprobante</td>
+                        <td style="text-align:right;">@Moneda(fila.DebeHaber == "D" ? fila.Importe : 0)</td>
+                        <td style="text-align:right;">@Moneda(fila.DebeHaber == "H" ? fila.Importe : 0)</td>
+                        <td style="text-align:right;"><strong>@Moneda(fila.SaldoParcial)</strong></td>
+                    </tr>
+                }
+                @if (fila.UltimaLineaCuenta)
+                {
+                    <tr class="data-table__totals"><td colspan="5">Saldo al cierre · @fila.Cuenta</td><td style="text-align:right;">@Moneda(fila.SaldoFinalCuenta)</td></tr>
+                }
+            }
+        }
+    </Rows>
+</DataTable>
+
+@code {
+    [Parameter] public bool Ventas { get; set; } = true;
+    [Parameter, EditorRequired] public CuentaCorrienteResultDto Resultado { get; set; } = new();
+    private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

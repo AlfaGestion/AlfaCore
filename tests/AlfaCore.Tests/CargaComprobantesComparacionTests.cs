@@ -56,7 +56,8 @@ public sealed class CargaComprobantesComparacionTests
                         SELECT CLAVE,VALOR,CONVERT(nvarchar(max),ValorAux) ValorAux FROM dbo.TA_CONFIGURACION
                         WHERE LTRIM(RTRIM(CLAVE)) IN ('EQU_FC','EQU_NC','EQU_ND','EQU_FP','PreciosFinales',
                             'PreciosFinalesNeto','AjustaRedondeoTotal','RobaIvaProforma','UsaFacturaProforma',
-                            'UsaFacturaProformaSinRegistracion')
+                            'UsaFacturaProformaSinRegistracion','ArtExentoaNoGrav','ConfirmaUDEquiv','EntregaParcialRemito',
+                            'MaxDto','MaxDtoProforma','UsaListasDePrecios')
                         """, new { });
                     var clave = configuracion.SingleOrDefault(x => Convert.ToString(x["CLAVE"])?.Trim() == "EQU_" + tc);
                     var valor = clave is null ? "" : Convert.ToString(clave["VALOR"])?.Trim();
@@ -80,22 +81,27 @@ public sealed class CargaComprobantesComparacionTests
                     secciones["AplicacionesRecibidas"] = await Leer("""
                         SELECT * FROM dbo.MV_APLICACION WHERE LTRIM(RTRIM(TCO_ORIGEN))=@Tc AND IDCOMPROBANTE_ORIGEN=@Comprobante
                         """, p);
-                    var origen = new { Tc = Convert.ToString(c["TCORIGEN"])?.Trim(),
-                        Comprobante = Convert.ToString(c["COMPROBANTEORIGEN"])?.Trim() };
-                    secciones["OrigenCabecera"] = new List<Dictionary<string, object?>>();
-                    secciones["OrigenArticulos"] = new List<Dictionary<string, object?>>();
-                    if (!string.IsNullOrWhiteSpace(origen.Tc) && !string.IsNullOrWhiteSpace(origen.Comprobante))
-                    {
-                        secciones["OrigenCabecera"] = await Leer("""
-                            SELECT * FROM dbo.V_MV_CPTE WHERE LTRIM(RTRIM(TC))=@Tc
-                                AND LTRIM(RTRIM(IDCOMPROBANTE))=@Comprobante AND IDCOMPLEMENTO=0
-                            """, origen);
-                        secciones["OrigenArticulos"] = await Leer("""
-                            SELECT * FROM dbo.V_MV_CPTEINSUMOS WHERE LTRIM(RTRIM(TC))=@Tc
-                                AND LTRIM(RTRIM(IDCOMPROBANTE))=@Comprobante AND IDCOMPLEMENTO=0
-                            """, origen);
-                        Assert.Single((List<Dictionary<string, object?>>)secciones["OrigenCabecera"]);
-                    }
+                    // La cabecera consolidada no inventa un origen único: recorrer también las aplicaciones.
+                    const string origenesSql = """
+                        SELECT o.* FROM dbo.V_MV_CPTE o WHERE o.IDCOMPLEMENTO=0 AND LTRIM(RTRIM(o.TC)) IN ('NP','RM','FC') AND
+                        (EXISTS(SELECT 1 FROM dbo.V_MV_CPTE c WHERE c.ID=@Id AND LTRIM(RTRIM(c.TCORIGEN))=LTRIM(RTRIM(o.TC))
+                            AND c.COMPROBANTEORIGEN=o.IDCOMPROBANTE)
+                         OR EXISTS(SELECT 1 FROM dbo.MV_APLICACION a WHERE LTRIM(RTRIM(a.TC))=@Tc AND a.IDCOMPROBANTE=@Comprobante
+                            AND LTRIM(RTRIM(a.TCO_ORIGEN))=LTRIM(RTRIM(o.TC)) AND a.IDCOMPROBANTE_ORIGEN=o.IDCOMPROBANTE));
+                        """;
+                    var origenes = await Leer(origenesSql, new { Id=id, Tc=tc, Comprobante=comprobante });
+                    secciones["OrigenCabecera"] = origenes;
+                    var detalleOrigenes = new List<Dictionary<string,object?>>();
+                    foreach (var origen in origenes)
+                        detalleOrigenes.AddRange(await Leer("SELECT * FROM dbo.V_MV_CPTEINSUMOS WHERE TC=@Tc AND IDCOMPROBANTE=@Comprobante AND IDCOMPLEMENTO=0",
+                            new { Tc=origen["TC"], Comprobante=origen["IDCOMPROBANTE"] }));
+                    secciones["OrigenArticulos"] = detalleOrigenes;
+                    if(await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID('dbo.ALFACORE_VENTAS_CARGA_ORIGEN_LINEA','U') IS NULL THEN 0 ELSE 1 END",transaction:tx))==1)
+                        secciones["TrazabilidadOrigen"]=await Leer("""
+                            SELECT t.* FROM dbo.ALFACORE_VENTAS_CARGA_ORIGEN_LINEA t
+                            JOIN dbo.V_MV_CPTEINSUMOS i ON i.ID=t.DetalleDestinoId
+                            WHERE LTRIM(RTRIM(i.TC))=@Tc AND i.IDCOMPROBANTE=@Comprobante;
+                            """,p);
                     var captura = new { Version = 1, CapturaUtc = DateTime.UtcNow, Base = cn.Database,
                         DocumentoId = id, Tc = tc, Comprobante = comprobante.Trim(),
                         Advertencia = "Estado actual, no delta antes/después; equivalencia contable según configuración actual. No certifica VB6.",

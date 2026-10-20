@@ -1,0 +1,213 @@
+@using System.Globalization
+@using AlfaCore.Services
+@implements IDisposable
+@inject ConciliacionBancariaService Servicio
+@inject IAppUiOperationService UiOps
+
+<section class="conciliacion-comparacion" aria-label="Comparación banco contra Alfa">
+    <div class="conciliacion-comparacion__filtros">
+        <AlfaSelect Label="Cuenta bancaria (pesos)" Value="@_cuenta" ValueChanged="v=>_cuenta=v ?? string.Empty" Options="@OpcionesCuentas" Placeholder="Seleccionar cuenta" Disabled="@_busy" />
+        <AlfaInput Label="Desde" Type="date" Value="@_desde" ValueChanged="v=>_desde=v ?? string.Empty" Disabled="@_busy" />
+        <AlfaInput Label="Hasta" Type="date" Value="@_hasta" ValueChanged="v=>_hasta=v ?? string.Empty" Disabled="@_busy" />
+        <AlfaSelect Label="Conciliación" Value="@_estado" ValueChanged="v=>_estado=v ?? string.Empty" Options="@Estados" Disabled="@_busy" />
+        <AlfaInput Label="Buscar en ambas listas" Value="@_buscar" ValueChanged="v=>_buscar=v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
+        <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="Consultar" Disabled="@_busy">Comparar</AlfaButton>
+    </div>
+    <AlfaFeedbackPanel Message="@_feedback" />
+    @if (_busy) { <p role="status">Procesando conciliación…</p> }
+    @if (_datos is { } datos && _aplicado is { } filtro)
+    {
+        <p>Cuenta <strong>@filtro.Cuenta</strong> · @filtro.Desde.ToString("dd/MM/yyyy") al @filtro.Hasta.ToString("dd/MM/yyyy") · Pesos</p>
+        <p>Movimientos del período: banco <strong>@Dinero(datos.Resumen.TotalBanco)</strong> · Alfa <strong>@Dinero(datos.Resumen.TotalAlfa)</strong> · Diferencia <strong>@Dinero(datos.Resumen.TotalBanco-datos.Resumen.TotalAlfa)</strong>.</p>
+        <p>Son totales de movimientos importados y contables autorizados, sin saldos iniciales ni cierre de período. Las sugerencias comparan importe, sentido y fechas con margen de @datos.Resumen.Dias días; requieren tu confirmación.</p>
+        @if (FiltrosModificados) { <p role="status">Hay filtros modificados. Pulsá Comparar para aplicarlos antes de seleccionar movimientos.</p> }
+        <div class="conciliacion-comparacion__seleccion">
+            <span>Seleccionados: banco @_banco.Count · <strong>@Dinero(TotalBanco)</strong></span>
+            <span>Alfa @_alfa.Count · <strong>@Dinero(TotalAlfa)</strong></span>
+            <span>Diferencia: <strong>@Dinero(TotalBanco-TotalAlfa)</strong></span>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(!PuedeConciliar)" OnClick="()=>_confirmar=true">Conciliar selección</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="LimpiarSeleccion">Limpiar selección</AlfaButton>
+        </div>
+        <div class="conciliacion-comparacion__listas">
+            <section class="conciliacion-comparacion__lista" aria-label="Movimientos del banco">
+                <h3>Banco · extractos importados</h3>
+                <div class="conciliacion-comparacion__scroll"><table>
+                    <thead><tr><th>Elegir</th><th>Fecha / referencia</th><th>Descripción</th><th>Importe</th><th>Estado / acciones</th></tr></thead>
+                    <tbody>@foreach(var b in datos.Banco)
+                    {
+                        <tr class="@(_banco.ContainsKey(b.Id) ? "is-selected" : null)">
+                            <td><AlfaCheckbox Value="@_banco.ContainsKey(b.Id)" ValueChanged="v=>ElegirBanco(b,v==true)" Disabled="@(_busy||FiltrosModificados||b.ConciliacionId.HasValue)"><span class="visually-hidden">Seleccionar #@b.Id</span></AlfaCheckbox></td>
+                            <td>@b.Fecha.ToString("dd/MM/yyyy")<br />@b.Referencia</td><td>@b.Detalle</td><td class="numero">@Dinero(b.Importe)</td>
+                            <td>@(b.ConciliacionId.HasValue ? $"Conciliado #{b.ConciliacionId}" : "Pendiente")
+                                @if(b.Alterado) { <strong>Datos modificados: revisar</strong> }
+                                <small>Registración: @b.Registracion</small>
+                                @if(datos.Sugerencias.FirstOrDefault(s=>s.MovimientoId==b.Id) is { } s)
+                                {
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>UsarSugerencia(b,s)">
+                                        Proponer @s.Asiento.Comprobante · @s.Candidatos candidato(s)
+                                    </AlfaButton>
+                                }
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>Historial(b.Id)">Historial</AlfaButton>
+                            </td>
+                        </tr>
+                    }</tbody>
+                </table></div>
+                @if(datos.Banco.Count==0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos del banco" Message="Revisá la cuenta, las fechas, los filtros o importá el extracto correspondiente." /> }
+                <footer class="alfa-data-view-footer">
+                    <span>@datos.Resumen.Banco registros · Página @filtro.PaginaBanco · 50 por página</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaBanco==1)" OnClick="()=>Paginar(true,-1)">Anterior banco</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaBanco*50>=datos.Resumen.Banco)" OnClick="()=>Paginar(true,1)">Siguiente banco</AlfaButton>
+                </footer>
+            </section>
+            <section class="conciliacion-comparacion__lista" aria-label="Movimientos registrados en Alfa">
+                <h3>Alfa · cuenta bancaria contable</h3>
+                <div class="conciliacion-comparacion__scroll"><table>
+                    <thead><tr><th>Elegir</th><th>Fecha / comprobante</th><th>Detalle</th><th>Importe</th><th>Conciliación</th></tr></thead>
+                    <tbody>@foreach(var a in datos.Alfa)
+                    {
+                        <tr class="@(_alfa.ContainsKey(a.Clave) ? "is-selected" : null)">
+                            <td><AlfaCheckbox Value="@_alfa.ContainsKey(a.Clave)" ValueChanged="v=>ElegirAlfa(a,v==true)" Disabled="@(_busy||FiltrosModificados||a.Legacy||a.ConciliacionId.HasValue||a.Moneda!="1")"><span class="visually-hidden">Seleccionar @a.Comprobante</span></AlfaCheckbox></td>
+                            <td>@a.Fecha.ToString("dd/MM/yyyy")<br />@a.Comprobante<small>Unidad @a.Unidad · Moneda @a.Moneda</small></td>
+                            <td>@a.Detalle<small>Referencia: @a.Referencia</small></td><td class="numero">@Dinero(a.Importe)</td>
+                            <td>@(a.ConciliacionId.HasValue ? $"Conciliado #{a.ConciliacionId}" : a.Legacy ? "Conciliado en Alfa Gestión" : "Pendiente")
+                                @if(a.Alterado) { <strong>Datos modificados: revisar</strong> }
+                                @if(a.ConciliacionId is { } id) { <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>VerVinculo(id)">Ver vínculo</AlfaButton> }
+                            </td>
+                        </tr>
+                    }</tbody>
+                </table></div>
+                @if(datos.Alfa.Count==0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos de Alfa" Message="No hay registros para estos filtros y las unidades autorizadas." /> }
+                <footer class="alfa-data-view-footer">
+                    <span>@datos.Resumen.Alfa registros · Página @filtro.PaginaAlfa · 50 por página</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaAlfa==1)" OnClick="()=>Paginar(false,-1)">Anterior Alfa</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaAlfa*50>=datos.Resumen.Alfa)" OnClick="()=>Paginar(false,1)">Siguiente Alfa</AlfaButton>
+                </footer>
+            </section>
+        </div>
+    }
+    else if(!_busy) { <AlfaEmptyState Title="Comparar banco y Alfa" Message="Elegí la cuenta bancaria y el período. Podés vincular uno o varios movimientos de cada lado por el mismo total." /> }
+</section>
+
+<AlfaDialog Open="@_confirmar" Title="Confirmar conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_confirmar=false">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@_feedback" />
+        <p>Cuenta @_aplicado?.Cuenta · Total banco @Dinero(TotalBanco) · Total Alfa @Dinero(TotalAlfa)</p>
+        <p>Se vincularán estos movimientos completos y se marcarán conciliados. No se genera un asiento ni una cobranza.</p>
+        <h3>Banco</h3>@foreach(var b in _banco.Values) { <p>@b.Fecha.ToString("dd/MM/yyyy") · @b.Detalle · @Dinero(b.Importe)</p> }
+        <h3>Alfa</h3>@foreach(var a in _alfa.Values) { <p>@a.Fecha.ToString("dd/MM/yyyy") · @a.Comprobante · @a.Detalle · @Dinero(a.Importe)</p> }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="()=>_confirmar=false">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(!PuedeConciliar)" OnClick="Confirmar">Confirmar conciliación</AlfaButton>
+    </Footer>
+</AlfaDialog>
+<AlfaDialog Open="@_verHistorial" Title="Historial de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="CerrarHistorial">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@_feedback" />
+        @if(_historial.Count==0 && _vinculo is null) { <p>Sin conciliaciones registradas en AlfaCore para este movimiento.</p> }
+        @foreach(var h in _historial)
+        {
+            <p>#@h.Id · @(h.Activa ? "Activa" : "Desconciliada") · @h.Usuario · @h.FechaUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="()=>VerVinculo(h.Id)">Ver</AlfaButton></p>
+        }
+        @if(_vinculo is { } v)
+        {
+            <h3>Vínculo #@v.Cabecera.Id · Cuenta @v.Cabecera.Cuenta</h3>
+            <p>@(v.Cabecera.Activa ? "Conciliado" : "Desconciliado") · @v.Cabecera.Usuario · @v.Cabecera.FechaUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+            @foreach(var b in v.Banco) { <p>Banco: @b.Fecha.ToString("dd/MM/yyyy") · @b.Detalle · @Dinero(b.Importe)</p> }
+            @foreach(var a in v.Alfa) { <p>Alfa: @a.Fecha.ToString("dd/MM/yyyy") · @a.Comprobante · @a.Detalle · @Dinero(a.Importe)</p> }
+            @if(v.Cabecera.Activa)
+            {
+                <p>Desconciliar libera el grupo completo y conserva su historial. No elimina la registración contable.</p>
+                <AlfaInput Label="Motivo para desconciliar" Value="@_motivo" ValueChanged="v=>_motivo=v ?? string.Empty" MaxLength="300" Disabled="@_busy" />
+                <AlfaButton Variant="AlfaButtonVariant.Danger" Disabled="@(_busy||_motivo.Trim().Length<3)" OnClick="Desconciliar">Desconciliar este vínculo</AlfaButton>
+            }
+            else { <p>Motivo: @v.Cabecera.Motivo · @v.Cabecera.UsuarioAnulacion · @v.Cabecera.FechaAnulacionUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p> }
+        }
+    </ChildContent>
+    <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="CerrarHistorial">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public string? CuentaInicial { get; set; }
+    private readonly CancellationTokenSource _lifetime=new();
+    private bool _busy,_disposed,_confirmar,_verHistorial;
+    private string _cuenta="",_desde=DateTime.Today.AddDays(1-DateTime.Today.Day).ToString("yyyy-MM-dd"),_hasta=DateTime.Today.ToString("yyyy-MM-dd"),_estado="Pendientes",_buscar="",_motivo="";
+    private IReadOnlyList<ConciliacionCuenta> _cuentas=[];
+    private IReadOnlyList<AlfaSelectOption> OpcionesCuentas=>_cuentas.Where(c=>c.Moneda=="1").Select(c=>new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList();
+    private static readonly IReadOnlyList<AlfaSelectOption> Estados=[new("Pendientes","Pendientes"),new("Conciliados","Conciliados"),new("Todos","Todos")];
+    private ConciliacionComparacion? _datos;
+    private ConciliacionCompararFiltro? _aplicado;
+    private AppUiMessage? _feedback;
+    private readonly Dictionary<long,ConciliacionFilaBanco> _banco=[];
+    private readonly Dictionary<ConciliacionAsientoClave,ConciliacionFilaAlfa> _alfa=[];
+    private IReadOnlyList<ConciliacionVinculoCabecera> _historial=[];
+    private ConciliacionVinculoDetalle? _vinculo;
+    private long? _historialMovimiento;
+    private Guid _operacion=Guid.NewGuid();
+    private decimal TotalBanco=>_banco.Values.Sum(b=>b.Importe);
+    private decimal TotalAlfa=>_alfa.Values.Sum(a=>a.Importe);
+    private bool FiltrosModificados=>_aplicado is { } f && (f.Cuenta!=_cuenta||f.Desde.ToString("yyyy-MM-dd")!=_desde||f.Hasta.ToString("yyyy-MM-dd")!=_hasta||f.Estado!=_estado||f.Buscar!=_buscar);
+    private bool PuedeConciliar=>!_busy&&!FiltrosModificados&&_banco.Count is >0 and <=100&&_alfa.Count is >0 and <=100&&TotalBanco!=0&&TotalBanco==TotalAlfa
+        &&_banco.Values.All(b=>Math.Sign(b.Importe)==Math.Sign(TotalBanco))&&_alfa.Values.All(a=>Math.Sign(a.Importe)==Math.Sign(TotalBanco));
+    protected override Task OnInitializedAsync()=>Ejecutar(async()=>{
+        _cuentas=await Servicio.CuentasAsync(_lifetime.Token);
+        if(_cuentas.Any(c=>c.Codigo==CuentaInicial&&c.Moneda=="1")) _cuenta=CuentaInicial!;
+    });
+    private Task Consultar()=>Ejecutar(async()=>{
+        if(!DateTime.TryParseExact(_desde,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var desde)
+            ||!DateTime.TryParseExact(_hasta,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var hasta))
+        { _feedback=AppUiMessage.Error("Fechas inválidas","Ingresá las fechas desde y hasta.");return; }
+        await Cargar(new(_cuenta,desde,hasta,_estado,_buscar));LimpiarSeleccion();
+    });
+    private async Task Cargar(ConciliacionCompararFiltro filtro)
+    {
+        var datos=await Servicio.CompararAsync(filtro,_lifetime.Token);_lifetime.Token.ThrowIfCancellationRequested();
+        _datos=datos;_aplicado=filtro;
+    }
+    public Task ActualizarAsync()=>Ejecutar(async()=>{if(_aplicado is { } f) { await Cargar(f);LimpiarSeleccion(); }});
+    private Task Paginar(bool banco,int delta)=>Ejecutar(async()=>{
+        if(_aplicado is not { } f)return;
+        await Cargar(banco ? f with{PaginaBanco=f.PaginaBanco+delta} : f with{PaginaAlfa=f.PaginaAlfa+delta});
+    });
+    private void ElegirBanco(ConciliacionFilaBanco b,bool elegir) { if(elegir)_banco[b.Id]=b;else _banco.Remove(b.Id);_operacion=Guid.NewGuid(); }
+    private void ElegirAlfa(ConciliacionFilaAlfa a,bool elegir) { if(elegir)_alfa[a.Clave]=a;else _alfa.Remove(a.Clave);_operacion=Guid.NewGuid(); }
+    private void LimpiarSeleccion() { _banco.Clear();_alfa.Clear();_operacion=Guid.NewGuid();_confirmar=false; }
+    private void UsarSugerencia(ConciliacionFilaBanco b,ConciliacionSugerencia s)
+    { LimpiarSeleccion();ElegirBanco(b,true);ElegirAlfa(s.Asiento,true);_confirmar=true; }
+    private Task Confirmar()=>Ejecutar(async()=>{
+        if(_aplicado is not { } f)return;
+        var id=await Servicio.ConciliarAsync(new(_operacion,f,_banco.Values.Select(b=>new ConciliacionBancoSeleccion(b.Id,b.Huella)).ToList(),
+            _alfa.Values.Select(a=>new ConciliacionAlfaSeleccion(a.Clave,a.Huella)).ToList()),_lifetime.Token);
+        LimpiarSeleccion();_feedback=AppUiMessage.Success("Conciliación confirmada",$"Vínculo #{id} registrado.");
+        await Cargar(f);
+    });
+    private Task Historial(long movimientoId)=>Ejecutar(async()=>{
+        var h=await Servicio.HistorialBancoAsync(movimientoId,_lifetime.Token);_lifetime.Token.ThrowIfCancellationRequested();
+        _historial=h;_historialMovimiento=movimientoId;_vinculo=null;_motivo="";_verHistorial=true;
+        if(h.FirstOrDefault() is { } v)_vinculo=await Servicio.VinculoAsync(v.Id,_lifetime.Token);
+    });
+    private Task VerVinculo(long id)=>Ejecutar(async()=>{
+        var v=await Servicio.VinculoAsync(id,_lifetime.Token);_lifetime.Token.ThrowIfCancellationRequested();
+        _vinculo=v;_motivo="";_verHistorial=true;
+    });
+    private void CerrarHistorial() { _verHistorial=false;_historial=[];_vinculo=null;_historialMovimiento=null;_motivo=""; }
+    private Task Desconciliar()=>Ejecutar(async()=>{
+        if(_vinculo is not { } v)return;
+        await Servicio.DesconciliarAsync(v.Cabecera.Id,_motivo,_lifetime.Token);
+        _vinculo=await Servicio.VinculoAsync(v.Cabecera.Id,_lifetime.Token);
+        if(_historialMovimiento is { } m)_historial=await Servicio.HistorialBancoAsync(m,_lifetime.Token);
+        if(_aplicado is { } f)await Cargar(f);LimpiarSeleccion();
+        _feedback=AppUiMessage.Success("Vínculo desconciliado","Las registraciones contables se conservan.");
+    });
+    private async Task Ejecutar(Func<Task> action)
+    {
+        if(_busy||_disposed)return;_busy=true;_feedback=null;
+        try { await action(); }
+        catch(OperationCanceledException) { }
+        catch(Exception ex) { if(!_disposed)_feedback=UiOps.BuildMessage(ex,"Conciliación bancaria"); }
+        finally { _busy=false;if(!_disposed)await InvokeAsync(StateHasChanged); }
+    }
+    private static string Dinero(decimal valor)=>valor.ToString(valor==decimal.Round(valor,2) ? "N2" : "N4",CultureInfo.GetCultureInfo("es-AR"));
+    public void Dispose() { _disposed=true;_lifetime.Cancel();_lifetime.Dispose(); }
+}

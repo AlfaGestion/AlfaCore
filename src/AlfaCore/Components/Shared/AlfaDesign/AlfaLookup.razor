@@ -67,12 +67,14 @@
                     var item = _items[index];
                     var optionIndex = index;
                     <button type="button"
+                            @key="ItemKey(item)"
                             id="@OptionId(optionIndex)"
                             class="alfa-lookup__option @(IsSelected(item) || _activeIndex == optionIndex ? "is-selected" : string.Empty)"
                             role="option"
                             aria-selected="@IsSelected(item)"
                             @onmouseenter="() => _activeIndex = optionIndex"
                             @onmousedown:preventDefault="true"
+                            @onmousedown="() => SelectAsync(item)"
                             @onclick="() => SelectAsync(item)">
                         @ItemTemplate(item)
                     </button>
@@ -109,6 +111,7 @@
     private string ErrorMessage { get; set; } = string.Empty;
     private int _activeIndex = -1;
     private bool _hasEditSnapshot;
+    private bool _disposed;
     private TItem? _editSnapshotItem;
     private string _editSnapshotText = string.Empty;
 
@@ -167,7 +170,13 @@
         // que la selección llegue primero al handler de click. El pequeño margen también
         // evita cerrar la lista antes de que Blazor procese un click fuera del control.
         await Task.Delay(50);
-        if (Open)
+        if(_disposed || !Open) return;
+        try
+        {
+            if(await JS.InvokeAsync<bool>("AlfaLookupPopover.containsFocus",_root)) return;
+        }
+        catch(JSDisconnectedException) { return; }
+        if (Open && !_disposed)
         {
             Open = false;
             _activeIndex = -1;
@@ -222,6 +231,8 @@
 
     private async Task SelectAsync(TItem item)
     {
+        if(Disabled || (!Open && IsSelected(item))) return;
+        _searchCts?.Cancel();
         SelectedItem = item;
         _hasEditSnapshot = false;
         _editSnapshotItem = null;
@@ -288,6 +299,7 @@
 
     public void Dispose()
     {
+        _disposed=true;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

@@ -35,6 +35,11 @@
                 Options="@_contexto.Depositos.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Elegí un depósito" />
             <AlfaSelect Label="Talonario de factura" Value="@_talonario" ValueChanged="v => Cambiar(() => _talonario = v)" Disabled="@Bloqueado"
                 Options="@Talonarios" Placeholder="Elegí un talonario" />
+            <AlfaSelect Label="Lista de precios" Value="@ListaSeleccionada" ValueChanged="ListaChanged"
+                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarLista)" Options="@ListasPrecio" Placeholder="Del cliente" />
+            <AlfaSelect Label="Clase de precio" Value="@_draft.ClasePrecio?.ToString()" ValueChanged="ClaseChanged"
+                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarClase)"
+                Options="@_contexto.ClasesPrecio.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Del cliente" />
         </section>
         @if (_draft.Tc is "NC" or "ND")
         {
@@ -52,13 +57,15 @@
             <ItemTemplate Context="a">@a.IdArticulo · @a.Descripcion · @Dinero(a.PrecioUnitarioConIva)</ItemTemplate>
         </AlfaLookup>
         <div class="directa-scroll"><table class="directa-table">
-            <thead><tr><th>Artículo</th><th>Descripción</th><th>Cantidad</th><th>Neto de lista</th><th>Precio neto</th><th>Dto. %</th><th></th></tr></thead>
+            <thead><tr><th>Artículo</th><th>Descripción</th><th>Cantidad</th><th>Bultos</th><th>Neto de lista</th><th>Precio neto</th><th>Dto. %</th><th></th></tr></thead>
             <tbody>@foreach (var item in _draft.Lineas)
             {
                 <tr @key="item.Articulo"><td>@item.Articulo</td><td>@_articulos.GetValueOrDefault(item.Articulo)?.Descripcion</td><td>
                     <AlfaInput Label="@($"Cantidad {item.Articulo}")" Type="number" Step="0.0001" Value="@item.Cantidad.ToString(CultureInfo.InvariantCulture)"
-                        ValueChanged="v => CantidadChanged(item, v)" Disabled="@Bloqueado" />
-                    </td><td>@Dinero(_articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0)</td>
+                        ValueChanged="v => CantidadChanged(item, v)" Disabled="@(Bloqueado || item.Bultos.HasValue)" />
+                    </td><td><AlfaInput Label="@($"Bultos {item.Articulo}")" Type="number" Step="0.0001"
+                        Value="@item.Bultos?.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => BultosChanged(item,v)" Disabled="@(Bloqueado || _draft.Tc == "NC")" /></td>
+                    <td>@Dinero(_articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0)</td>
                     <td><AlfaInput Label="@($"Precio neto {item.Articulo}")" Type="number" Step="0.0001"
                         Value="@((item.PrecioUnitarioNeto ?? _articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0).ToString(CultureInfo.InvariantCulture))"
                         ValueChanged="v => PrecioChanged(item, v)" Disabled="@(Bloqueado || !Editable || !_contexto.PuedeEditarPrecio)" /></td>
@@ -71,13 +78,20 @@
             }</tbody>
         </table></div>
         <p>El precio editable es sin IVA, antes del descuento. Validar relee la lista y controla el límite combinado de rebaja y descuento según tu usuario, vendedor y condición de venta.</p>
+        <p>Lista y clase se heredan del cliente. Al cambiarlas se restablecen las ediciones de precio y descuento; validá para actualizar los importes de los artículos cargados. Las notas de crédito conservan los precios de su factura.</p>
+        <p>Si ingresás bultos, se usan para calcular la cantidad en la unidad de venta según las equivalencias del artículo. Dejá Bultos vacío para usar Cantidad.</p>
         <AlfaInput Label="Observaciones" Value="@_draft.Observaciones" ValueChanged="v => Cambiar(() => _draft.Observaciones = v ?? string.Empty)" MaxLength="1000" Disabled="@Bloqueado" />
         @if (_plan is { } p)
         {
             <section class="directa-total" aria-label="Liquidación validada">
                 <strong>@p.Tc @p.Letra · Punto @p.PuntoVenta</strong>
-                <span>Neto @Dinero(p.Liquidacion.NetoGravado) · IVA @Dinero(p.Liquidacion.Iva)</span>
+                <span>Lista: @(string.IsNullOrEmpty(p.Origen.Lista) ? "Maestro de artículos" : p.Origen.Lista) · Clase: @p.ClasePrecio</span>
+                <span>Neto gravado @Dinero(p.Liquidacion.NetoGravado) · Exento @Dinero(p.Liquidacion.NetoNoGravado)</span>
+                @foreach (var grupo in p.Liquidacion.Alicuotas)
+                { <span>IVA @grupo.Alicuota.ToString("0.####") %: @Dinero(grupo.Iva)</span> }
                 <strong>Total @Dinero(p.Liquidacion.Total)</strong>
+                @foreach(var linea in p.Origen.Lineas)
+                { <span>@linea.Articulo: @linea.CantidadOriginal.ToString("N4") @linea.Unidad · @linea.BultosReferencia.ToString("N4") bultos · @linea.KilosReferencia.ToString("N4") kg</span> }
                 <span>Vencimiento @p.Vencimiento.ToString("dd/MM/yyyy") · Stock: @(p.SignoStock == 1 ? "entrada" : "salida") de artículos</span>
             </section>
         }
@@ -122,6 +136,10 @@
     private readonly CancellationTokenSource _lifetime = new();
     private bool Bloqueado => _busy || _intento;
     private bool Terminal => _resultado?.Estado is "GRABADA" or "RECHAZADA";
+    private const string ListaMaestro = "__MAESTRO";
+    private string? ListaSeleccionada => _draft.ListaPrecio is null ? null : _draft.ListaPrecio.Length == 0 ? ListaMaestro : _draft.ListaPrecio;
+    private IReadOnlyList<AlfaSelectOption> ListasPrecio => new[] { new AlfaSelectOption(ListaMaestro, "Maestro de artículos (sin lista)") }
+        .Concat((_contexto?.ListasPrecio ?? []).Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion))).ToList();
     private IReadOnlyList<AlfaSelectOption> Talonarios => _contexto?.TalonariosDirecta
         .Where(x => x.Tc == _draft.Tc && (x.UnidadNegocio.Length == 0 || x.UnidadNegocio == _draft.UnidadNegocio))
         .Select(x => new AlfaSelectOption(x.Talonario.ToString(), $"{x.Talonario} · {x.Descripcion}")).ToList() ?? [];
@@ -143,12 +161,31 @@
         // AlfaLookup avisa selección nula en cada tecla: conservar el texto enlazado.
         if (cliente is not null) _clienteTexto = $"{cliente.Codigo} · {cliente.Descripcion}";
         LimpiarAsociado();
+        _draft.ListaPrecio = null; _draft.ClasePrecio = null;
         foreach (var a in _articulos.Values) { a.PrecioUnitarioConIva = 0; a.PrecioUnitarioNeto = 0; }
         LimpiarEdiciones();
     });
     private void LimpiarAsociado() { _asociado = null; _asociadoTexto = ""; _draft.FacturaAsociadaId = null; }
-    private void TipoChanged(string? value) => Cambiar(() => { _draft.Tc = value ?? "FC"; _talonario = null; LimpiarAsociado(); LimpiarEdiciones(); });
-    private bool Editable => _draft.Tc is "FC" or "FP";
+    private void TipoChanged(string? value) => Cambiar(() => { _draft.Tc = value ?? "FC"; _talonario = null; LimpiarAsociado(); LimpiarEdiciones();
+        if (!Editable) { _draft.ListaPrecio = null; _draft.ClasePrecio = null; } });
+    private void ListaChanged(string? value) => Cambiar(() =>
+    {
+        _draft.ListaPrecio = string.IsNullOrEmpty(value) ? null : value == ListaMaestro ? "" : value;
+        InvalidarPrecios();
+    });
+    private void ClaseChanged(string? value) => Cambiar(() =>
+    {
+        _draft.ClasePrecio = int.TryParse(value, out var clase) ? clase : null;
+        InvalidarPrecios();
+    });
+    private void InvalidarPrecios()
+    {
+        LimpiarEdiciones(); _articulo = null; _articuloTexto = "";
+        foreach (var a in _articulos.Values) { a.PrecioUnitarioConIva = 0; a.PrecioUnitarioNeto = 0; }
+    }
+    private bool Editable => _draft.Tc is "FC" or "FP" or "ND";
+    private void BultosChanged(CargaComprobantesDirectaLinea item,string? value)
+    { if(_draft.Tc!="NC") Cambiar(()=>item.Bultos=string.IsNullOrWhiteSpace(value)?null:EdicionNumero(value)); }
     private void LimpiarEdiciones() { foreach (var item in _draft.Lineas) { item.PrecioUnitarioNeto = null; item.Descuento = null; } }
     private void UnidadChanged(string? value) => Cambiar(() => { _draft.UnidadNegocio = value ?? ""; _draft.Deposito = ""; _talonario = null; LimpiarAsociado(); });
     private Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarAsociados(string texto, CancellationToken ct)
@@ -168,7 +205,8 @@
         _mostrarClientes = false;
     }
     private Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulos(string texto, CancellationToken ct)
-        => Service.BuscarArticulosDirectaAsync(_draft.Cliente, texto, ct);
+        => Service.BuscarArticulosDirectaAsync(new CargaComprobantesDirecta {
+            Cliente = _draft.Cliente, Tc = _draft.Tc, ListaPrecio = _draft.ListaPrecio, ClasePrecio = _draft.ClasePrecio }, texto, ct);
     private void AgregarArticulo(CrmCotizacionArticuloDto? a)
     {
         if (a is null || Bloqueado) return;

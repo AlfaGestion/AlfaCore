@@ -51,11 +51,14 @@ public sealed class CargaComprobantesService(
         }, ct);
 
     public Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(string cliente, string texto, CancellationToken ct = default)
+        => BuscarArticulosDirectaAsync(new CargaComprobantesDirecta { Cliente = cliente }, texto, ct);
+
+    public Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(CargaComprobantesDirecta directa, string texto, CancellationToken ct = default)
         => ExecuteAsync("ArticulosDirecta", async (cn, ctx, token) =>
         {
-            if (string.IsNullOrWhiteSpace(cliente)) throw new CargaComprobantesReglaException("Primero elegí el cliente para resolver sus precios.");
+            if (string.IsNullOrWhiteSpace(directa.Cliente)) throw new CargaComprobantesReglaException("Primero elegí el cliente para resolver sus precios.");
             var precios = new ArticuloPrecioResolverService();
-            var pricing = await precios.ResolveContextAsync(cn, cliente, token);
+            var pricing = await new CargaComprobantesSeleccionPrecios().ResolverAsync(cn, ctx.Usuario, directa, token);
             return await precios.SearchArticulosAsync(cn, pricing, texto, 30, token);
         }, ct);
 
@@ -142,6 +145,9 @@ public sealed class CargaComprobantesService(
         IReadOnlyList<CargaComprobantesCantidad> cantidades, Guid operacion, CancellationToken ct = default)
         => ExecuteAsync("EmitirPruebaHomologacion", async (cn, contexto, token) =>
         {
+            if (CargaComprobantesConsolidacion.Identidades(origenId,cantidades).Length>1 ||
+                cantidades.Any(x=>x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue))
+                throw new CargaComprobantesReglaException("Para varios orígenes o precios editados usá Validar grabación y Grabar factura de prueba.");
             var origen = await repository.GetOrigenAsync(cn, contexto, origenId, token);
             if (!contexto.Talonarios.Any(x => x.Talonario == talonario && (x.UnidadNegocio.Length == 0 || x.UnidadNegocio == origen.UnidadNegocio)))
                 throw new CargaComprobantesReglaException("Elegí un talonario compatible con el origen.");
@@ -163,6 +169,16 @@ public sealed class CargaComprobantesService(
         IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct = default)
         => ExecuteAsync("Simular", async (cn, contexto, token) =>
         {
+            if (CargaComprobantesConsolidacion.Identidades(origenId, cantidades).Length > 1 ||
+                cantidades.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue))
+            {
+                var plan = await new CargaComprobantesPlanificador(repository).CrearAsync(cn, contexto, origenId, talonario, cantidades,
+                    await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token)), token);
+                return new CargaComprobantesSimulacion { Liquidacion = plan.Liquidacion, ImporteReferencia = plan.Liquidacion.Total,
+                    LineasSeleccionadas = plan.Liquidacion.Lineas.Count,
+                    EfectoStock = plan.DescargaStock ? "Generará salida de stock al emitir." : "Los remitos ya descargaron stock.",
+                    Avisos = [$"{plan.Partes.Count} documentos de origen. La simulación no reserva cantidades ni emite comprobantes."] };
+            }
             var origen = await repository.GetOrigenAsync(cn, contexto, origenId, token);
             if (!contexto.Talonarios.Any(x => x.Talonario == talonario &&
                 (x.UnidadNegocio.Length == 0 || x.UnidadNegocio == origen.UnidadNegocio)))

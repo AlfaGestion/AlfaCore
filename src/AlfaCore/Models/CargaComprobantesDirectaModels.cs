@@ -7,6 +7,11 @@ public sealed class CargaComprobantesDirecta
     public string Tc { get; set; } = "FC";
     public int? FacturaAsociadaId { get; set; }
     public string Cliente { get; set; } = "";
+    /// <summary>Null hereda del cliente; vacío selecciona el maestro sin lista.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ListaPrecio { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? ClasePrecio { get; set; }
     public string UnidadNegocio { get; set; } = "";
     public string Deposito { get; set; } = "";
     public string Observaciones { get; set; } = "";
@@ -17,6 +22,8 @@ public sealed class CargaComprobantesDirectaLinea
 {
     public string Articulo { get; set; } = "";
     public decimal Cantidad { get; set; } = 1;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? Bultos { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public decimal? PrecioUnitarioNeto { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

@@ -36,18 +36,20 @@ public sealed class CargaComprobantesDirectaPreparador
             FROM dbo.VT_CLIENTES WHERE LTRIM(RTRIM(CODIGO))=@Cliente AND ISNULL(BLOQUEO,0)=0 AND ISNULL(Dada_De_Baja,0)=0;
             """, new { Cliente = draft.Cliente.Trim() }, tx, cancellationToken: ct))
             ?? throw new CargaComprobantesReglaException("El cliente no está disponible, está bloqueado o fue dado de baja.");
-        var pricing = await new ArticuloPrecioResolverService().ResolveContextAsync(cn, draft.Cliente, ct, tx);
+        var seleccionPrecios = new CargaComprobantesSeleccionPrecios();
+        var pricing = await seleccionPrecios.ResolverAsync(cn, ctx.Usuario, draft, ct, tx);
+        await seleccionPrecios.ValidarArticulosAsync(cn, ctx.Usuario, draft.Tc, pricing, draft.Lineas.Select(x => x.Articulo), ct, tx);
         var edicion = new CargaComprobantesEdicionPrecios();
         var politica = draft.Lineas.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue)
             ? await edicion.LeerAsync(cn, ctx.Usuario, draft.Cliente, draft.Tc, ct, tx) : null;
         var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
         var rows = (await cn.QueryAsync<Articulo>(new CommandDefinition($"""
             SELECT LTRIM(RTRIM(a.IDARTICULO)) Codigo,a.DESCRIPCION Descripcion,LTRIM(RTRIM(a.IDUNIDAD)) Unidad,
-                ISNULL(a.TasaIVA,0) Iva,ISNULL(a.PRECIO{clase},0) PrecioMaestro,ISNULL(p.Precio{clase},0) PrecioLista,
+                ISNULL(a.TasaIVA,0) Iva,CONVERT(bit,ISNULL(a.EXENTO,0)) Exento,ISNULL(a.PRECIO{clase},0) PrecioMaestro,ISNULL(p.Precio{clase},0) PrecioLista,
                 CONVERT(bit,CASE WHEN ISNULL(a.Suspendido,0)<>0 OR ISNULL(a.SuspendidoV,0)<>0 OR ISNULL(a.USASERIE,0)<>0
                     OR ISNULL(a.USALOTE,0)<>0 OR ISNULL(a.UsaTalle,0)<>0 OR ISNULL(a.PideEquivalencia,0)<>0
                     OR ISNULL(a.PideMedidas,0)<>0 OR ISNULL(a.EnComodato,0)<>0 OR ISNULL(a.IMPUESTOS,0)<>0 OR ISNULL(a.ITC,0)<>0
-                    OR ISNULL(a.EXENTO,0)<>0 OR ISNULL(LTRIM(RTRIM(a.CuentaContable)),'')<>''
+                    OR ISNULL(LTRIM(RTRIM(a.CuentaContable)),'')<>''
                     OR ISNULL(LTRIM(RTRIM(a.IdPercepcion)),'')<>'' OR ISNULL(LTRIM(RTRIM(a.Moneda)),'1') NOT IN ('','1')
                     OR ISNULL(a.Dto1,0)<>0 OR ISNULL(a.Dto2,0)<>0 OR ISNULL(a.Dto3,0)<>0 OR ISNULL(a.Dto4,0)<>0
                     OR ISNULL(a.Dto5,0)<>0 OR ISNULL(a.Dto6,0)<>0 OR ISNULL(a.Dto7,0)<>0 OR ISNULL(a.Dto8,0)<>0 OR ISNULL(a.Dto9,0)<>0
@@ -64,10 +66,14 @@ public sealed class CargaComprobantesDirectaPreparador
         if (rows.Count != draft.Lineas.Count || rows.Any(x => x.Especial || string.IsNullOrWhiteSpace(x.Unidad)))
             throw new CargaComprobantesReglaException("Un artículo no está disponible o requiere equivalencias, impuestos, ofertas, descuentos o un circuito especial pendiente de incorporar.");
         var lineas = new List<CargaComprobantesLineaOrigen>();
+        var unidades = await CargaComprobantesUnidades.LeerAsync(cn, rows.Select(x => x.Codigo), ct, tx);
         foreach (var item in draft.Lineas)
         {
             var a = rows.Single(x => string.Equals(x.Codigo, item.Articulo.Trim(), StringComparison.OrdinalIgnoreCase));
-            var tasa = a.Iva == 0 ? ctx.AlicuotaGeneral : a.Iva;
+            if (draft.Tc == "NC" && item.Bultos.HasValue)
+                throw new CargaComprobantesReglaException("La nota de crédito conserva las unidades y cantidades de su factura; ingresá la cantidad a acreditar.");
+            var medidas = unidades.Resolver(a.Codigo,a.Unidad,item.Cantidad,item.Bultos);
+            var tasa = a.Exento ? 0 : a.Iva == 0 ? ctx.AlicuotaGeneral : a.Iva;
             var bruto = pricing.UsaListas && a.PrecioLista > 0 ? a.PrecioLista : a.PrecioMaestro;
             var (neto, final) = ArticuloPrecioResolverService.SplitPrice(bruto, tasa, pricing.PreciosConIva);
             if (neto <= 0) throw new CargaComprobantesReglaException($"El artículo {a.Codigo} no tiene un precio de venta positivo.");
@@ -75,11 +81,14 @@ public sealed class CargaComprobantesDirectaPreparador
             var descuento = 0m;
             var editada = item.PrecioUnitarioNeto.HasValue || item.Descuento.HasValue;
             if (editada)
-                (neto, final, descuento) = CargaComprobantesEdicionPrecios.Aplicar(item, draft.Tc, politica!, neto, final, tasa, ctx.Decimales);
+                (neto, final, descuento) = CargaComprobantesEdicionPrecios.Aplicar(new()
+                { Articulo=item.Articulo,Cantidad=medidas.Unidades,PrecioUnitarioNeto=item.PrecioUnitarioNeto,Descuento=item.Descuento }, draft.Tc, politica!, neto, final, tasa, ctx.Decimales);
             lineas.Add(new() { Id = lineas.Count + 1, Secuencia = lineas.Count + 1, Articulo = a.Codigo, Descripcion = a.Descripcion,
-                Unidad = a.Unidad, Deposito = draft.Deposito.Trim(), CantidadOriginal = item.Cantidad, Pendiente = item.Cantidad,
+                Unidad = a.Unidad, Deposito = draft.Deposito.Trim(), CantidadOriginal = medidas.Unidades, Pendiente = medidas.Unidades,
                 CoeficienteUnidad = 1, RenglonesArticulo = 1, PrecioSinIva = neto, Precio = final, AlicuotaIva = tasa,
-                Descuento = descuento, PrecioReferenciaNeto = editada ? referencia : null });
+                CantidadReferencia = medidas.Bultos != 0 || medidas.Kilos != 0 || medidas.MetrosCubicos != 0 ? medidas.Unidades : 0,
+                BultosReferencia=medidas.Bultos,KilosReferencia=medidas.Kilos,MetrosCubicosReferencia=medidas.MetrosCubicos,
+                Exento = a.Exento, Descuento = descuento, PrecioReferenciaNeto = editada ? referencia : null });
         }
         origen.Tc = draft.Tc == "FP" ? "FP" : "DIRECTA"; origen.Moneda = "1"; origen.DatosCalculoDisponibles = true;
         origen.UnidadNegocio = draft.UnidadNegocio.Trim(); origen.Deposito = draft.Deposito.Trim();
@@ -93,6 +102,7 @@ public sealed class CargaComprobantesDirectaPreparador
         public string Descripcion { get; set; } = "";
         public string Unidad { get; set; } = "";
         public decimal Iva { get; set; }
+        public bool Exento { get; set; }
         public decimal PrecioMaestro { get; set; }
         public decimal PrecioLista { get; set; }
         public bool Especial { get; set; }

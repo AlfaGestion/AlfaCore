@@ -8,9 +8,9 @@ Se verificaron tipos y columnas en `sys.objects`/`sys.columns` y definición de 
 
 `ReporteComercialService` normaliza las vistas mediante CTE: razón social desde `CABNOMBRE`, importe desde `IMPORTE`, netos fiscales desde los campos `LIVA_ImpNetoGrav`, no gravado y exento; IVA desde sus cinco componentes registrados. Estos campos ya tienen signo en esta base, incluidas NC: no se invierten otra vez. En proformas el neto usa `IMPORTE_SINIVA` si existe, o las bases registradas; no inventa un neto a partir del total si el origen no lo informa. No deriva IVA como diferencia entre total y neto ni transforma proformas en asientos de libro IVA.
 
-La cuenta corriente utiliza `[DEBE-HABER]`, `[NUMERO ASIENTO]`, `SECUENCIA` y la concatenación sucursal/número/letra. `EXISTS` sobre `CTACODIGO` de la vista de terceros evita incluir cuentas contables ajenas y multiplicar asientos por joins. Ventas: D positivo/H negativo. Compras: H positivo/D negativo. El saldo mostrado es el movimiento neto del período filtrado; no es un estado de deuda por aplicación ni incluye apertura.
+La cuenta corriente utiliza `[DEBE-HABER]`, `[NUMERO ASIENTO]`, `SECUENCIA` y la concatenación sucursal/número/letra. `EXISTS` sobre `CTACODIGO` de la vista de terceros evita incluir cuentas contables ajenas y multiplicar asientos por joins. Ventas: D positivo/H negativo. Compras: H positivo/D negativo. Ambas áreas incluyen apertura, saldo parcial por línea y cierre, agrupados por código y orden cronológico estable usando la PK completa. Las pestañas separadas Resumida y Analítica analizan los comprobantes y sus aplicaciones actuales.
 
-DTO, interfaz y exportador de Compras conservan sus nombres históricos por compatibilidad. Compras y Ventas comparten el panel y las consultas; no hay copia independiente del módulo.
+DTO, interfaz y exportador de Compras conservan sus nombres históricos por compatibilidad. Compras y Ventas comparten el panel y la infraestructura; la cuenta corriente ampliada, Saldos y los reportes por aplicaciones reutilizan consultas/tablas parametrizadas por área, con signos y fuentes propios. Los filtros de unidad multiselección, vendedor principal y zona del maestro actual se aplican también a resumen/detalle de Ventas.
 
 ## Contexto, permisos e interfaz
 
@@ -24,6 +24,17 @@ ConfiguracionHub mueve la búsqueda al toolbar y agrega filtro por área. El cat
 
 ## Validación y límites
 
+Compras: [cuenta corriente con apertura, Saldos, Resumida y Analítica](reportes-compras-cuenta-corriente.md), incluyendo reglas de signo y fuentes CO verificadas.
+
+Ampliación de cartera: [cuenta corriente, saldos y cobranzas — relevamiento VB6/RPT y plan](reportes-ventas-cuenta-corriente.md). Implementadas cuenta corriente con apertura/acumulados, Saldos, Control de Crédito contable, Cuenta Corriente Resumida (solo deuda positiva) y Analítica con aplicaciones. Resumida/analítica usan VE_CPTES_SALDOS_UNEG y aplicaciones actuales; las fechas filtran emisión. El disponible de crédito usa deuda global al corte y límite actual; la exposición adicional por cheques/remitos sigue pendiente. Las restantes opciones del plan siguen pendientes.
+
 Ver [registro de esta pasada](../gestion/configuracion-reportes-comerciales-avances.md). La comparación automatizada usa las fuentes actuales de DISTRIWALTERP; no certifica la calidad de todos los datos históricos ni corrige las vistas legacy. Se conserva su cobertura histórica y la inclusión de proformas. No hay conversión monetaria ni certificación multimoneda en esta entrega. Ninguna prueba emite comprobantes.
 
 [Manual de usuario](../../src/AlfaCore/Docs/manual_reportes_comerciales.md).
+
+
+## Jerarquía web del menú
+
+Reporte de Ventas comparte navegación con el dashboard gerencial. La pestaña Inicio apunta a `/ventas-dashboard`, conservando el prefijo de la base; `/ventas` redirige históricamente al POS. Punto de Venta mantiene su navegación independiente y no aparece entre las pestañas del dashboard/reporte.
+
+El instalador declara `ALFACORE_MENU_WEB.PadreClave = D60`, además del padre legacy en TA_MENU. Las instalaciones anteriores se reparan con `2026-10-16-001__ventas_reporte_ventas_padre_menu_web.sql`. [Incidencia confirmada y reparación en las bases 106/153](../gestion/reporte-ventas-menu-2026-10-16.md).

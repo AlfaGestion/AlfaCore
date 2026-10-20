@@ -141,3 +141,11 @@ Este diagnóstico queda preparado para ese contraste. La próxima ampliación fu
 5. Completar control antes/después de pendientes, numeración, estados y auditoría/efectos indirectos. La aceptación requiere evidencia de cada circuito y configuración, además de la revisión funcional del operador.
 
 No ejecutar automáticamente el EXE instalado contra una base distinta ni cambiar archivos de la carpeta legacy. La preparación de capturas y comparador está terminada; la ejecución pareada y la explicación definitiva de las diferencias siguen pendientes en el [registro de continuidad](../../gestion/ventas-carga-comprobantes-avances-y-pendientes.md).
+
+## Ampliación del 17/10/2026: varias referencias de origen
+
+El exportador recorre también las aplicaciones emitidas y conserva todos los orígenes y sus artículos. La cabecera de una factura consolidada puede tener TCORIGEN/COMPROBANTEORIGEN vacíos; eso ya no produce una captura sin orígenes. Las secciones mantienen su contrato de listas planas, compatible con el comparador. Se agregaron las claves de exentos, unidades y descuentos al contexto. Nueve pruebas Python verifican el comparador, incluida la pérdida de una aplicación secundaria.
+
+Ejecutable instalado leído: versión 2.02.0409, modificación 09/10/2026. Las fuentes consultadas en esta pasada tienen SHA-256: `V_mv_vta.frm` = `21DE407AE0445741387C606872059DC95D79093D50CDA9E43F136A62A4E60AF3`; `Rt_Stock.bas` = `97C09F4C63B5BDE48DD56EE66A18AA24BD71ABE45B8BF51C70F39FA1C066F03B`. Se leyeron los originales sin modificarlos. Esto identifica evidencia; no prueba correspondencia completa de binario, fuentes y DLL.
+
+La ejecución pareada sigue pendiente. No se cambió el cierre monetario para eliminar las 19 diferencias retrospectivas. Ver [nuevo contrato de consolidación, IVA y unidades](consolidacion-iva-unidades.md).

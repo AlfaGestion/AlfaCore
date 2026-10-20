@@ -102,3 +102,7 @@ Antes de crear un documento nuevo:
 4. Evitar dejar archivos sueltos en la raíz de `docs/`, salvo los considerados base.
 
 Reportes comerciales: [documentación técnica](./modulos/reportes-comerciales.md), [manual de Compras/Ventas y búsqueda de Configuración](../src/AlfaCore/Docs/manual_reportes_comerciales.md) y [avances de la pasada](./gestion/configuracion-reportes-comerciales-avances.md).
+
+Cuenta corriente de Compras: [fuentes, comportamiento y validación](./modulos/reportes-compras-cuenta-corriente.md).
+
+Conciliación bancaria inteligente: [integración y alcance](modulos/conciliacion-bancaria.md), [manual de uso](../src/AlfaCore/Docs/manual_conciliacion_bancaria.md).

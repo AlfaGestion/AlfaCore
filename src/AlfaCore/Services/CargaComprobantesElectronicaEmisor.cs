@@ -47,8 +47,7 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
         var (docTipo, docNumero) = ArcaCodigosAfip.ResolverDocumento(cliente.DocumentoDescripcion, cliente.DocumentoNumero);
         if (plan is { EsElectronico: false }) throw new CargaComprobantesReglaException("La proforma no solicita CAE.");
         var liquidacion = plan?.Liquidacion ?? CargaComprobantesCalculador.Calcular(origen, contexto, cantidades);
-        if (liquidacion.NetoNoGravado != 0 || liquidacion.ImpuestosInternos != 0)
-            throw new CargaComprobantesReglaException("La primera prueba electrónica admite artículos gravados sin impuestos internos.");
+        _ = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
         var tipo = plan?.TipoArca ?? (letra == "A" ? 1 : 6);
         var recurso = $"CargaComprobantes.Homo.{emisor.Cuit}.{emisor.PuntoVentaElectronico}.{tipo}";
         var bloqueo = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
@@ -117,15 +116,10 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
     public static ArcaCaeSolicitudDto CrearSolicitud(ArcaEmisorConfig emisor, CargaComprobantesLiquidacion liquidacion,
         int tipo, int condicion, int documentoTipo, string documentoNumero, long numero, DateTime fecha)
     {
-        decimal Moneda(decimal x) => decimal.Round(x, 2, MidpointRounding.ToEven);
-        var ivas = liquidacion.Alicuotas.Select(x => new ArcaIvaAlicuotaDto(ArcaCodigosAfip.ResolverIdAlicuotaIva(x.Alicuota), Moneda(x.Neto), Moneda(x.Iva))).ToList();
-        var total = Moneda(liquidacion.Total);
-        var diferencia = total - ivas.Sum(x => x.BaseImponible + x.Importe);
-        if (ivas.Count == 0 || Math.Abs(diferencia) > .02m || total <= 0)
-            throw new CargaComprobantesReglaException("El desglose de IVA requiere revisión antes de solicitar CAE.");
-        if (diferencia != 0) ivas[0] = ivas[0] with { Importe = ivas[0].Importe + diferencia };
+        var fiscal = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
+        var ivas = fiscal.Alicuotas.Select(x => new ArcaIvaAlicuotaDto(ArcaCodigosAfip.ResolverIdAlicuotaIva(x.Alicuota), x.Neto, x.Iva)).ToList();
         return new(emisor.Cuit, emisor.PuntoVentaElectronico, tipo, 1, documentoTipo, documentoNumero,
-            fecha.Date, numero, numero, total, 0, ivas.Sum(x => x.BaseImponible), 0, 0, ivas.Sum(x => x.Importe), condicion, "PES", 1, ivas);
+            fecha.Date, numero, numero, fiscal.Total, 0, fiscal.NetoGravado, fiscal.Exento, 0, fiscal.Iva, condicion, "PES", 1, ivas);
     }
 
     public async Task<CargaComprobantesElectronicaPrueba> RecuperarAsync(SqlConnection cn, CargaComprobantesContexto contexto,

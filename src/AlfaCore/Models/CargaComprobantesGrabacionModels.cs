@@ -2,6 +2,13 @@ namespace AlfaCore.Models;
 
 public sealed class CargaComprobantesPlanGrabacion
 {
+    // Solo los consolidados guardan partes. NULL mantiene el contrato JSON de operaciones anteriores.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<CargaComprobantesPlanGrabacion>? Origenes { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ArtExentoANoGrav { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<CargaComprobantesPlanGrabacion> Partes => Origenes is { Count: > 0 } ? Origenes : [this];
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public CargaComprobantesDirecta? Directa { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]

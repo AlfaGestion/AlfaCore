@@ -23,7 +23,7 @@
 
     @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
     {
-        <p class="gd-hint">Se muestran movimientos de @(Ventas ? "clientes" : "proveedores") del período. El saldo corresponde al movimiento neto del período filtrado; no incluye saldo de apertura.</p>
+        <p class="gd-hint">Agrupado por código de cuenta, en orden cronológico. Incluye saldo inicial y acumulado por línea. Los importes son contables; el tipo de comprobante solo limita las líneas visibles y no recalcula el saldo.</p>
     }
 
     @* ── Estado inicial / carga / error ─────────────────────────────── *@
@@ -37,8 +37,8 @@
     }
     else if (!_mostrarResultados)
     {
-        <AlfaEmptyState Title="@($"{TipoReporteLabel(_tipoReporte)} — {GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta)}")"
-                        Message="@($"Ajustá período, {Tercero.ToLowerInvariant()} o tipo de comprobante en el buscador de arriba y generá el reporte.")"
+        <AlfaEmptyState Title="@($"{TipoReporteLabel(_tipoReporte)} — {(EsSaldos ? $"Al {(_filtros.FechaHasta??DateTime.Today):dd/MM/yyyy}" : GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta))}")"
+                        Message="@(EsSaldos ? "Elegí fecha de corte y filtros de cartera en el buscador superior y generá el reporte." : $"Ajustá período, {Tercero.ToLowerInvariant()} o tipo de comprobante en el buscador de arriba y generá el reporte.")"
                         ActionLabel="Generar reporte"
                         ActionIcon="bi bi-play-fill"
                         OnAction="_ => GenerarAsync()" />
@@ -174,69 +174,23 @@
     @* ── Resultados: Cuenta Corriente ──────────────────────────────── *@
     @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.CuentaCorriente && _cuentaCorriente is not null)
     {
-        <div class="kpi-grid">
-            <KpiCard Titulo="Movimiento neto del período"
-                     Valor="@Moneda(_cuentaCorriente.SaldoTotal)"
-                     Descripcion="@(_cuentaCorriente.SaldoTotal >= 0 ? (Ventas ? "A cobrar a clientes" : "A pagar a proveedores") : (Ventas ? "A favor de clientes" : "A favor de la empresa"))"
-                     Icono="=" />
-            <KpiCard Titulo="Movimientos"
-                     Valor="@_cuentaCorriente.TotalRegistros.ToString("N0")"
-                     Icono="M" />
-        </div>
+        <CuentaCorrienteVentasTabla Resultado="_cuentaCorriente" Ventas="Ventas" />
+    }
 
-        <DataTable Titulo="@($"Cuenta corriente de {(Ventas ? "clientes" : "proveedores")}")"
-                   Subtitulo="@GetSubtituloCC()">
-            <Header>
-                <tr>
-                    <th>Cuenta</th>
-                    <th>@Tercero</th>
-                    <th>Fecha</th>
-                    <th>TC</th>
-                    <th>Comprobante</th>
-                    <th style="text-align:center;">D/H</th>
-                    <th style="text-align:right;">Importe</th>
-                    <th style="text-align:right;">Signado</th>
-                </tr>
-            </Header>
-            <Rows>
-                @if (_cuentaCorriente.Items.Count == 0)
-                {
-                    <tr>
-                        <td colspan="8">
-                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos en el período" Message="Revisá el período y la cuenta seleccionados." />
-                        </td>
-                    </tr>
-                }
-                else
-                {
-                    @foreach (var item in _cuentaCorriente.Items)
-                    {
-                        <tr>
-                            <td>@item.Cuenta</td>
-                            <td><strong>@item.RazonSocial</strong></td>
-                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
-                            <td>@item.Tc</td>
-                            <td>@item.IdComprobante</td>
-                            <td style="text-align:center;">
-                                <span class="badge-state @(item.DebeHaber == "H" ? "badge-state--danger" : "badge-state--ok")">
-                                    @item.DebeHaber
-                                </span>
-                            </td>
-                            <td style="text-align:right;">@Moneda(item.Importe)</td>
-                            <td style="text-align:right;" class="@(item.ImporteSignado < 0 ? "balance-pos" : string.Empty)">
-                                <strong>@Moneda(item.ImporteSignado)</strong>
-                            </td>
-                        </tr>
-                    }
-                }
-            </Rows>
-        </DataTable>
+    @if (_mostrarResultados && EsSaldos && _saldos is not null)
+    {
+        <SaldosVentasTabla Resultado="_saldos" ControlCredito="@(_tipoReporte == TipoReporteCompras.ControlCredito)" FechaCorte="_aplicados.FechaHasta" Ventas="Ventas" />
+    }
+
+    @if (_mostrarResultados && EsDocumentosCC && _documentosCC is not null)
+    {
+        <ComprobantesCuentaCorrienteTabla Resultado="_documentosCC" Analitico="@(_tipoReporte == TipoReporteCompras.CuentaCorrienteAnalitica)" Ventas="Ventas" />
     }
 
     @if (_mostrarResultados)
     {
         <footer class="alfa-data-view-footer">
-            <span class="alfa-data-view-footer__summary">@(_tipoReporte == TipoReporteCompras.ResumenDeCompras ? $"{_resumen?.CantidadProveedores ?? 0} cuentas · {_resumen?.CantidadComprobantes ?? 0} registros" : _tipoReporte == TipoReporteCompras.DetalleDeCompras ? GetSubtituloDetalle() : GetSubtituloCC())</span>
+            <span class="alfa-data-view-footer__summary">@(_tipoReporte == TipoReporteCompras.ResumenDeCompras ? $"{_resumen?.CantidadProveedores ?? 0} cuentas · {_resumen?.CantidadComprobantes ?? 0} registros" : _tipoReporte == TipoReporteCompras.DetalleDeCompras ? GetSubtituloDetalle() : EsSaldos ? GetSubtituloSaldos() : EsDocumentosCC ? GetSubtituloDocumentosCC() : GetSubtituloCC())</span>
             @if (_tipoReporte != TipoReporteCompras.ResumenDeCompras)
             {
                 <div class="alfa-data-view-footer__controls">
@@ -254,7 +208,7 @@
     private bool EsDirecto => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo",out var v) && v.ToString() == "1";
     private string Tercero => Ventas ? "Cliente" : "Proveedor";
     private FiltrosReporteCompras _aplicados = new();
-    private static FiltrosReporteCompras Copiar(FiltrosReporteCompras f) => new() { FechaDesde=f.FechaDesde,FechaHasta=f.FechaHasta,Proveedor=f.Proveedor,TipoComprobante=f.TipoComprobante,Pagina=f.Pagina,TamanioPagina=f.TamanioPagina };
+    private static FiltrosReporteCompras Copiar(FiltrosReporteCompras f) => new() { FechaDesde=f.FechaDesde,FechaHasta=f.FechaHasta,Proveedor=f.Proveedor,TipoComprobante=f.TipoComprobante,Pagina=f.Pagina,TamanioPagina=f.TamanioPagina, Vendedor=f.Vendedor,SinVendedor=f.SinVendedor,Zona=f.Zona,SinZona=f.SinZona,UnidadesNegocio=[..f.UnidadesNegocio],IncluirSaldosCero=f.IncluirSaldosCero };
 
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
@@ -269,6 +223,10 @@
     private ResumenComprasDto?        _resumen;
     private DetalleComprasResultDto?  _detalleCompras;
     private CuentaCorrienteResultDto? _cuentaCorriente;
+    private SaldosVentasResultDto? _saldos;
+    private ComprobantesCuentaCorrienteResultDto? _documentosCC;
+    private bool EsDocumentosCC => _tipoReporte is TipoReporteCompras.CuentaCorrienteResumida or TipoReporteCompras.CuentaCorrienteAnalitica;
+    private bool EsSaldos => _tipoReporte == TipoReporteCompras.Saldos || (Ventas && _tipoReporte == TipoReporteCompras.ControlCredito);
 
     private AppUiMessage? _error;
     private bool _isLoading;
@@ -291,7 +249,7 @@
     private void ContextoChanged()
     {
         _contextCts.Cancel(); _contextCts.Dispose(); _contextCts = new();
-        _ = InvokeAsync(() => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _options=new(); _mostrarResultados=false;
+        _ = InvokeAsync(() => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _saldos=null; _documentosCC=null; _options=new(); _mostrarResultados=false;
             _error=AppUiMessage.Warning("Cambió la sesión", "Volvé a generar el reporte en la base activa."); UpdatePageHeader(); StateHasChanged(); });
     }
 
@@ -312,24 +270,34 @@
     [
         new(nameof(TipoReporteCompras.ResumenDeCompras), Ventas ? "Resumen de ventas" : "Resumen de compras"),
         new(nameof(TipoReporteCompras.DetalleDeCompras), Ventas ? "Detalle de ventas" : "Detalle de compras"),
-        new(nameof(TipoReporteCompras.CuentaCorriente), "Cuenta corriente")
+        new(nameof(TipoReporteCompras.CuentaCorriente), "Cuenta corriente"),
+        new(nameof(TipoReporteCompras.Saldos), "Saldos"),
+        ..(Ventas ? new AlfaTabItem[] { new(nameof(TipoReporteCompras.ControlCredito), "Saldos Control de Crédito") } : []),
+        new(nameof(TipoReporteCompras.CuentaCorrienteResumida), "Cuenta corriente resumida"),
+        new(nameof(TipoReporteCompras.CuentaCorrienteAnalitica), "Cuenta corriente analítica")
     ];
 
     private string TipoReporteLabel(TipoReporteCompras tipo) => tipo switch
     {
         TipoReporteCompras.DetalleDeCompras => Ventas ? "Detalle de ventas" : "Detalle de compras",
         TipoReporteCompras.CuentaCorriente => "Cuenta corriente",
+        TipoReporteCompras.Saldos => "Saldos",
+        TipoReporteCompras.ControlCredito => "Saldos Control de Crédito",
+        TipoReporteCompras.CuentaCorrienteResumida => "Cuenta corriente resumida",
+        TipoReporteCompras.CuentaCorrienteAnalitica => "Cuenta corriente analítica",
         _ => Ventas ? "Resumen de ventas" : "Resumen de compras"
     };
 
     private void OnTipoReporteChanged(string? key)
     {
         if (_isLoading) return;
-        if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || tipo == _tipoReporte)
+        if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || !Enum.IsDefined(tipo) || (!Ventas && tipo==TipoReporteCompras.ControlCredito) || tipo == _tipoReporte)
             return;
 
         // Cada tipo tiene su propio resultado: al cambiar de pestaña se vuelve al estado inicial.
+        var veniaDeDocumentosCC=EsDocumentosCC;
         _tipoReporte = tipo;
+        if (EsDocumentosCC && !veniaDeDocumentosCC) { _filtros.FechaDesde=null; _filtros.FechaHasta=DateTime.Today; }
         _mostrarResultados = false;
         _error = null;
         UpdatePageHeader();
@@ -339,6 +307,8 @@
     {
         TipoReporteCompras.DetalleDeCompras => _detalleCompras?.TotalPaginas ?? 0,
         TipoReporteCompras.CuentaCorriente => _cuentaCorriente?.TotalPaginas ?? 0,
+        TipoReporteCompras.Saldos or TipoReporteCompras.ControlCredito => _saldos?.TotalPaginas ?? 0,
+        TipoReporteCompras.CuentaCorrienteResumida or TipoReporteCompras.CuentaCorrienteAnalitica => _documentosCC?.TotalPaginas ?? 0,
         _ => 0
     };
 
@@ -407,11 +377,13 @@
         @if (_panelAbierto)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="ClosePanel"></button>
-            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleSearchKeyDownAsync">
+            <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation @onkeydown="HandleSearchKeyDownAsync">
                 <div class="smart-search__column">
-                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
-                    @{ var rangoActivo = GestionRangosFecha.Detectar(_filtros.FechaDesde, _filtros.FechaHasta); }
-                    @foreach (var rango in GestionRangosFecha.Todos.Where(r => r.Key != "todo"))
+                    <h4><i class="bi bi-calendar-range"></i> @(EsSaldos ? "Fecha de corte" : EsDocumentosCC ? "Fechas de emisión" : "Período")</h4>
+                    @if (!EsSaldos)
+                    {
+                    var rangoActivo = GestionRangosFecha.Detectar(_filtros.FechaDesde, _filtros.FechaHasta);
+                    foreach (var rango in GestionRangosFecha.Todos.Where(r => EsDocumentosCC || r.Key != "todo"))
                     {
                         <button type="button" class="@(rangoActivo == rango.Key ? "smart-option is-active" : "smart-option")" @onclick="() => SetRango(rango.Key)">@rango.Label</button>
                     }
@@ -419,11 +391,14 @@
                         <label>Desde</label>
                         <input type="date" value="@(_filtros.FechaDesde?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: true)" />
                     </div>
+                    }
                     <div class="smart-search__inline">
-                        <label>Hasta</label>
+                        <label>@(EsSaldos ? "Al día" : "Hasta")</label>
                         <input type="date" value="@(_filtros.FechaHasta?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: false)" />
                     </div>
                 </div>
+                @if (!EsSaldos)
+                {
                 <div class="smart-search__column">
                     <h4><i class="bi bi-receipt"></i> Comprobante</h4>
                     <div class="smart-search__inline">
@@ -437,6 +412,38 @@
                         </select>
                     </div>
                 </div>
+                }
+                @if (EsSaldos)
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-list-check"></i> Cuentas</h4>
+                        <AlfaCheckbox Value="_filtros.IncluirSaldosCero" ValueChanged="CambiarIncluirCero">Incluir saldos cero</AlfaCheckbox>
+                        <p class="gd-hint">@(Ventas ? "Control de crédito también incluye cuentas con límite asignado, aunque su saldo sea cero." : "Incluye proveedores sin movimientos, con saldo cero.")</p>
+                    </div>
+                }
+                @if (Ventas)
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-person-badge"></i> Cartera del cliente</h4>
+                        <AlfaSelect Label="Vendedor del cliente" Value="@(_filtros.Vendedor ?? string.Empty)" Placeholder="Todos" Disabled="_filtros.SinVendedor"
+                            Options="@_options.Vendedores.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
+                            ValueChanged="v => CambiarCartera(v, true)" />
+                        <AlfaCheckbox Value="_filtros.SinVendedor" ValueChanged="v => SinAsignacion(v, true)">Sin vendedor</AlfaCheckbox>
+                        <AlfaSelect Label="Zona del cliente" Value="@(_filtros.Zona ?? string.Empty)" Placeholder="Todas" Disabled="_filtros.SinZona"
+                            Options="@_options.Zonas.Select(x => new AlfaSelectOption(x, x)).ToList()"
+                            ValueChanged="v => CambiarCartera(v, false)" />
+                        <AlfaCheckbox Value="_filtros.SinZona" ValueChanged="v => SinAsignacion(v, false)">Sin zona</AlfaCheckbox>
+                    </div>
+                }
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-building"></i> Unidades de negocio</h4>
+                        <p class="gd-hint">Sin selección: todas las unidades, incluso movimientos sin unidad.</p>
+                        @foreach (var unidad in _options.UnidadesNegocio)
+                        {
+                            <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(unidad.Codigo)" ValueChanged="v => CambiarUnidad(unidad.Codigo, v)">@unidad.Codigo · @unidad.Nombre</AlfaCheckbox>
+                        }
+                        <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(string.Empty)" ValueChanged="v => CambiarUnidad(string.Empty, v)">Sin unidad asignada</AlfaCheckbox>
+                    </div>
                 <div class="smart-search__actions">
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => LimpiarAsync()">Limpiar</AlfaButton>
                     <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-play-fill" OnClick="_ => GenerarDesdePanelAsync()">Generar reporte</AlfaButton>
@@ -444,6 +451,32 @@
             </div>
         }
     </div>;
+
+    private void CambiarIncluirCero(bool? valor)
+    {
+        _filtros.IncluirSaldosCero=valor==true; UpdatePageHeader();
+    }
+
+    private void CambiarCartera(string? value, bool vendedor)
+    {
+        var texto=string.IsNullOrWhiteSpace(value)?null:value.Trim();
+        if (vendedor) _filtros.Vendedor=texto; else _filtros.Zona=texto;
+        UpdatePageHeader();
+    }
+
+    private void SinAsignacion(bool? value, bool vendedor)
+    {
+        if (vendedor) { _filtros.SinVendedor=value==true; _filtros.Vendedor=null; }
+        else { _filtros.SinZona=value==true; _filtros.Zona=null; }
+        UpdatePageHeader();
+    }
+
+    private void CambiarUnidad(string codigo, bool? value)
+    {
+        _filtros.UnidadesNegocio=value==true ? _filtros.UnidadesNegocio.Append(codigo).Distinct().ToArray()
+            : _filtros.UnidadesNegocio.Where(x=>x!=codigo).ToArray();
+        UpdatePageHeader();
+    }
 
     private void OnProveedorInput(ChangeEventArgs e)
     {
@@ -515,6 +548,7 @@
         // Generar desde cero siempre arranca en la página 1; la paginación llama a CargarAsync.
         _filtros.Pagina = 1;
         _aplicados = Copiar(_filtros);
+        if (EsSaldos) { _aplicados.FechaDesde=null; _aplicados.TipoComprobante=null; _aplicados.FechaHasta ??= DateTime.Today; }
         await CargarAsync();
     }
 
@@ -536,6 +570,14 @@
                     break;
                 case TipoReporteCompras.DetalleDeCompras:
                     _detalleCompras = await ReporteService.GetDetalleAsync(Ventas, _aplicados, ct);
+                    break;
+                case TipoReporteCompras.CuentaCorrienteResumida:
+                case TipoReporteCompras.CuentaCorrienteAnalitica:
+                    _documentosCC = Ventas ? await ReporteService.GetComprobantesCuentaCorrienteAsync(_aplicados, _tipoReporte==TipoReporteCompras.CuentaCorrienteAnalitica, ct) : await ReporteService.GetComprobantesCuentaCorrienteComprasAsync(_aplicados, _tipoReporte==TipoReporteCompras.CuentaCorrienteAnalitica, ct);
+                    break;
+                case TipoReporteCompras.Saldos:
+                case TipoReporteCompras.ControlCredito:
+                    _saldos = Ventas ? await ReporteService.GetSaldosVentasAsync(_aplicados, _tipoReporte==TipoReporteCompras.ControlCredito, ct) : await ReporteService.GetSaldosComprasAsync(_aplicados, ct);
                     break;
                 case TipoReporteCompras.CuentaCorriente:
                     _cuentaCorriente = await ReporteService.GetCuentaCorrienteAsync(Ventas, _aplicados, ct);
@@ -581,12 +623,14 @@
     {
         if (_isLoading) return Task.CompletedTask;
         (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular("mes");
+        _filtros.IncluirSaldosCero=false;
+        _filtros.Vendedor=null; _filtros.SinVendedor=false; _filtros.Zona=null; _filtros.SinZona=false; _filtros.UnidadesNegocio=[];
         _filtros.Proveedor       = null;
         _filtros.TipoComprobante = null;
         _filtros.Pagina          = 1;
         _resumen         = null;
         _detalleCompras  = null;
-        _cuentaCorriente = null;
+        _cuentaCorriente = null; _saldos=null; _documentosCC=null;
         _mostrarResultados = false;
         _error = null;
         _panelAbierto = false;
@@ -604,11 +648,20 @@
 
     private List<FilterChip> BuildFilterChips()
     {
-        var chips = new List<FilterChip> { new("periodo", GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta)) };
-        if (!string.IsNullOrWhiteSpace(_filtros.TipoComprobante))
+        var chips = new List<FilterChip> { new("periodo", EsSaldos ? $"Al {(_filtros.FechaHasta??DateTime.Today):dd/MM/yyyy}" : GestionRangosFecha.Etiqueta(_filtros.FechaDesde, _filtros.FechaHasta)) };
+        if (!EsSaldos && !string.IsNullOrWhiteSpace(_filtros.TipoComprobante))
             chips.Add(new("tc", $"TC: {_filtros.TipoComprobante}"));
         if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
             chips.Add(new("proveedor", $"{Tercero}: {_filtros.Proveedor}"));
+        if (Ventas)
+        {
+            if (_filtros.Vendedor is not null) chips.Add(new("vendedor", $"Vendedor: {_filtros.Vendedor}"));
+            if (_filtros.SinVendedor) chips.Add(new("vendedor", "Sin vendedor"));
+            if (_filtros.Zona is not null) chips.Add(new("zona", $"Zona: {_filtros.Zona}"));
+            if (_filtros.SinZona) chips.Add(new("zona", "Sin zona"));
+        }
+        if (_filtros.UnidadesNegocio.Length>0) chips.Add(new("unidades", $"Unidades: {string.Join(", ", _filtros.UnidadesNegocio.Select(x => x == "" ? "Sin unidad" : x))}"));
+        if (EsSaldos && _filtros.IncluirSaldosCero) chips.Add(new("cero", "Incluye saldos cero"));
         return chips;
     }
 
@@ -616,6 +669,10 @@
     {
         switch (key)
         {
+            case "cero": _filtros.IncluirSaldosCero=false; break;
+            case "unidades": _filtros.UnidadesNegocio=[]; break;
+            case "vendedor": _filtros.Vendedor=null; _filtros.SinVendedor=false; break;
+            case "zona": _filtros.Zona=null; _filtros.SinZona=false; break;
             case "periodo": _panelAbierto = true; break;
             case "tc": _filtros.TipoComprobante = null; break;
             case "proveedor": _filtros.Proveedor = null; break;
@@ -640,7 +697,21 @@
         {
             var f=Copiar(_aplicados); f.Pagina=1; f.TamanioPagina=500;
             byte[] bytes;
-            if (_tipoReporte == TipoReporteCompras.ResumenDeCompras) bytes=Exporter.ExportarResumen(_resumen!, f, Ventas);
+            if (EsDocumentosCC)
+            {
+                var items=new List<ComprobanteCuentaCorrienteDto>();
+                while(true) { var r=Ventas ? await ReporteService.GetComprobantesCuentaCorrienteAsync(f,_tipoReporte==TipoReporteCompras.CuentaCorrienteAnalitica,ct) : await ReporteService.GetComprobantesCuentaCorrienteComprasAsync(f,_tipoReporte==TipoReporteCompras.CuentaCorrienteAnalitica,ct); items.AddRange(r.Items);
+                    if(r.Items.Count==0 || items.Count>=r.TotalRegistros)break; f.Pagina++; }
+                bytes=Exporter.ExportarComprobantesCuentaCorriente(items,f,_tipoReporte==TipoReporteCompras.CuentaCorrienteAnalitica,Ventas);
+            }
+            else if (EsSaldos)
+            {
+                var items=new List<SaldoVentasFilaDto>();
+                while(true) { var r=Ventas ? await ReporteService.GetSaldosVentasAsync(f,_tipoReporte==TipoReporteCompras.ControlCredito,ct) : await ReporteService.GetSaldosComprasAsync(f,ct); items.AddRange(r.Items);
+                    if(r.Items.Count==0 || items.Count>=r.TotalRegistros)break; f.Pagina++; }
+                bytes=Exporter.ExportarSaldosVentas(items,f,_tipoReporte==TipoReporteCompras.ControlCredito,Ventas);
+            }
+            else if (_tipoReporte == TipoReporteCompras.ResumenDeCompras) bytes=Exporter.ExportarResumen(_resumen!, f, Ventas);
             else if (_tipoReporte == TipoReporteCompras.DetalleDeCompras)
             {
                 var items=new List<DetalleComprasFilaDto>();
@@ -667,9 +738,15 @@
         _detalleCompras is null ? string.Empty
             : $"{_detalleCompras.TotalRegistros} comprobantes — página {_filtros.Pagina} de {_detalleCompras.TotalPaginas}";
 
+    private string GetSubtituloDocumentosCC() => _documentosCC is null ? string.Empty
+        : $"{_documentosCC.TotalRegistros} comprobantes · {_documentosCC.CantidadClientes} {(Ventas?"clientes":"proveedores")} · página {_aplicados.Pagina} de {_documentosCC.TotalPaginas} · pendiente: {Moneda(_documentosCC.PendienteTotal)}";
+
+    private string GetSubtituloSaldos() => _saldos is null ? string.Empty
+        : $"{_saldos.TotalRegistros} cuentas · página {_aplicados.Pagina} de {_saldos.TotalPaginas} · saldo de selección: {Moneda(_saldos.SaldoTotal)}";
+
     private string GetSubtituloCC() =>
         _cuentaCorriente is null ? string.Empty
-            : $"{_cuentaCorriente.TotalRegistros} movimientos — saldo: {Moneda(_cuentaCorriente.SaldoTotal)}";
+            : $"{_cuentaCorriente.TotalRegistros} líneas · página {_aplicados.Pagina} de {_cuentaCorriente.TotalPaginas} · saldo al cierre: {Moneda(_cuentaCorriente.SaldoFinalTotal)}";
 
     private static string Moneda(decimal v) =>
         v.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));

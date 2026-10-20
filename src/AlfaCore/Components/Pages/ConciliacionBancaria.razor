@@ -1,0 +1,652 @@
+@page "/caja-bancos/conciliacion-bancaria"
+@page "/{idweb}/{idbase:int}/caja-bancos/conciliacion-bancaria"
+@using AlfaCore.Services
+@using AlfaCore.ConciliacionBancaria.Domain.Enums
+@using AlfaCore.ConciliacionBancaria.Domain.Entities
+@using AlfaCore.ConciliacionBancaria.Application.DTOs
+@using AlfaCore.ConciliacionBancaria.Application.Services
+@inject ConciliacionBancariaService Servicio
+@inject CobranzasService Cobranzas
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuarios
+@inject IAppEventService Eventos
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Conciliación bancaria inteligente | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd conciliacion-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    <AlfaTabs Items="@Tabs" ActiveKey="@_tab" ActiveKeyChanged="CambiarTab" AriaLabel="Conciliación bancaria" />
+
+    @if (_tab == "importar")
+    {
+        <section class="panel-card conciliacion-importar" aria-busy="@_busy">
+            <h3 class="panel-card__title">Importar extracto</h3>
+            <p>Elegí el extracto descargado del banco. Detectaremos su formato y prepararemos la revisión.</p>
+            <label class="conciliacion-archivo">
+                <span>Archivo Excel o CSV (.xlsx, .xls, .csv, hasta 20 MB)</span>
+                <InputFile OnChange="SeleccionarArchivo" accept=".xlsx,.xls,.csv" disabled="@_busy" />
+            </label>
+            @if (_archivo is not null)
+            {
+                <p><strong>@_archivo.Nombre</strong></p>
+                @if(_requiereFecha || _archivo.FechaReferencia.HasValue)
+                {
+                    <div class="conciliacion-campos">
+                        <AlfaInput Label="Fecha de referencia de la descarga" Type="date" Value="@_fechaReferencia" ValueChanged="CambiarFechaReferencia" Disabled="@_busy" />
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="ProcesarArchivo">Procesar archivo</AlfaButton>
+                    </div>
+                    <p>Esta fecha permite interpretar Hoy, Ayer y fechas sin año. La sugerencia proviene de la creación del Excel; verificá que corresponda a la descarga.</p>
+                }
+                <div class="conciliacion-campos @(!_requiereBanco ? "conciliacion-campos--cuenta" : "")">
+                    @if (_requiereBanco)
+                    {
+                        <AlfaSelect Label="Formato del extracto" Value="@_banco" ValueChanged="CambiarBanco"
+                            Options="@Bancos" Placeholder="Elegir formato bancario" Disabled="@_busy" />
+                    }
+                    <AlfaSelect Label="Cuenta bancaria en Alfa" Value="@_cuenta" ValueChanged="CambiarCuenta"
+                        Options="@OpcionesCuentas" Placeholder="Seleccionar cuenta bancaria" Disabled="@_busy" />
+                </div>
+                <p role="status">@_lecturaMensaje</p>
+                @if (_listo)
+                {
+                    <div class="conciliacion-resumen">
+                        <span><strong>@_cantidad</strong> movimientos</span>
+                        <span>Ingresos: <strong>@Dinero(_ingresos)</strong></span>
+                        <span>Egresos: <strong>@Dinero(_egresos)</strong></span>
+                        <span>Total neto: <strong>@Dinero(_ingresos - _egresos)</strong></span>
+                    </div>
+                }
+            }
+        </section>
+        <section class="panel-card">
+            <h3 class="panel-card__title">Importaciones recientes</h3>
+            @if (_importaciones.Total == 0)
+            {
+                <AlfaEmptyState Title="Sin importaciones" Message="Seleccioná un extracto para comenzar." />
+            }
+            else
+            {
+                <div class="conciliacion-scroll">
+                    <table class="conciliacion-tabla conciliacion-tabla--acciones">
+                        <thead><tr><th>#</th><th>Banco</th><th>Archivo</th><th>Cuenta</th><th>Fecha</th><th>Usuario</th><th>Mov.</th><th>Total</th><th>Estado</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in _importaciones.Items)
+                            {
+                                <tr @key="item.Id">
+                                    <td>@item.Id</td><td>@item.Banco</td><td>@item.Archivo</td><td>@item.Cuenta</td>
+                                    <td>@FechaLocal(item.FechaUtc)</td><td>@item.Usuario</td><td>@item.Movimientos</td>
+                                    <td class="conciliacion-numero">@Dinero(item.Total)</td><td>@Estado(item.Estado)</td>
+                                    <td class="conciliacion-acciones">
+                                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => AbrirImportacion(item.Id)">Revisar</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _eliminar = item">Eliminar</AlfaButton>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="alfa-data-view-footer"><span class="alfa-data-view-footer__summary">@_importaciones.Total importaciones · 50 por página</span></footer>
+            }
+        </section>
+    }
+    else if (_tab=="conciliar")
+    {
+        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" />
+    }
+    else
+    {
+        <section class="panel-card">
+            <form class="conciliacion-filtros" @onsubmit="AplicarFiltros" @onsubmit:preventDefault aria-label="Filtros de movimientos">
+                <AlfaInput Label="Buscar movimientos" Value="@_buscar" ValueChanged="v => _buscar = v ?? string.Empty"
+                    Placeholder="Descripción, referencia, cliente, importe…" MaxLength="200" Disabled="@_busy" />
+                <AlfaSelect Label="Clasificación" Value="@_clasificacion" ValueChanged="CambiarClasificacion"
+                    Options="@Clasificaciones" Placeholder="Todas las clasificaciones" Disabled="@_busy" />
+                <div class="conciliacion-filtros__acciones">
+                    <AlfaButton Type="submit" Icon="bi bi-search" Disabled="@_busy">Buscar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="LimpiarFiltros">Limpiar</AlfaButton>
+                </div>
+            </form>
+            <div class="conciliacion-alcance">
+                <span>@(_filtro.HasValue ? $"Importación #{_filtro}" : "Todas las importaciones")</span>
+                @if (_filtro.HasValue)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="VerTodas">Ver todas</AlfaButton>
+                }
+            </div>
+            @if (_movimientos.Total == 0)
+            {
+                <AlfaEmptyState Title="Sin movimientos" Message="@(_buscarAplicado.Length > 0 || _clasificacionAplicada.Length > 0 ? "No hay coincidencias. Cambiá o limpiá los filtros." : "Importá un extracto o seleccioná otra importación.")" />
+            }
+            else
+            {
+                <div class="conciliacion-scroll">
+                    <table class="conciliacion-tabla conciliacion-tabla--acciones">
+                        <thead><tr>
+                            @foreach (var columna in Columnas)
+                            {
+                                <th aria-sort="@AriaOrden(columna.Key)">
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy"
+                                        OnClick="() => Ordenar(columna.Key)">@columna.Label @IndicadorOrden(columna.Key)</AlfaButton>
+                                </th>
+                            }
+                            <th>Acciones</th>
+                        </tr></thead>
+                        <tbody>
+                            @foreach (var item in _movimientos.Items)
+                            {
+                                <tr @key="item.Id" class="@(_seleccion?.Id == item.Id ? "is-selected" : "")">
+                                    <td>@item.Fecha.ToString("dd/MM/yyyy")</td><td>@item.Banco</td><td class="conciliacion-descripcion">@item.Descripcion</td><td>@item.Referencia</td>
+                                    <td class="conciliacion-numero @(item.Importe >= 0 ? "conciliacion-ingreso" : "conciliacion-egreso")">@Dinero(item.Importe)</td>
+                                    <td>@Separar(item.Categoria)</td><td>@item.Cliente</td><td class="conciliacion-descripcion">@item.Propuesta</td>
+                                    <td>@item.Confianza.ToString("N0")%</td><td>@item.Estado</td><td>@(item.ConciliacionId.HasValue ? $"Conciliado #{item.ConciliacionId}" : "Pendiente")</td>
+                                    <td>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => SeleccionarMovimiento(item)">Detalle</AlfaButton>
+                                        @if (item.Categoria=="Cobranza" && item.Importe>0 && item.Estado!="Cobrado")
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>SeleccionarMovimiento(item)">Marcar como cobrado</AlfaButton>
+                                            @if(item.TipoMatch!="CobranzaYaRegistrada" && !item.ConciliacionId.HasValue)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy"
+                                                    OnClick="() => string.IsNullOrWhiteSpace(item.Cliente) ? SeleccionarMovimiento(item) : AbrirCobranza(item)">@(string.IsNullOrWhiteSpace(item.Cliente) ? "Asignar cliente" : "Cobrar")</AlfaButton>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="alfa-data-view-footer"><span class="alfa-data-view-footer__summary">@_movimientos.Total movimientos · 50 por página</span></footer>
+            }
+        </section>
+        @if (_seleccion is not null)
+        {
+            <AlfaDialog Open="true" Title="@($"Detalle del movimiento #{_seleccion.Id}")"
+                Size="AlfaDialogSize.Xl" Loading="@_busy" OnClose="CerrarDetalle">
+                <ChildContent>
+                <p>@_seleccion.Descripcion</p>
+                <p>@_seleccion.Observaciones</p>
+                @if (_seleccion.Estado!="Cobrado")
+                {
+                    <div class="conciliacion-reclasificar">
+                        <AlfaSelect Label="Clasificación del movimiento" Value="@_categoriaRevision" ValueChanged="v => _categoriaRevision=v ?? string.Empty"
+                            Options="@Clasificaciones" Disabled="@_busy" />
+                        <AlfaInput Label="Motivo de la corrección (opcional)" Value="@_motivoRevision" ValueChanged="v => _motivoRevision=v ?? string.Empty"
+                            MaxLength="300" Disabled="@_busy" />
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || _categoriaRevision==_seleccion.Categoria)"
+                            OnClick="GuardarClasificacion">Guardar clasificación</AlfaButton>
+                    </div>
+                }
+                @if (_seleccion.Estado!="Cobrado" && _seleccion.ConciliacionId is null && _seleccion.Importe>0 && _seleccion.Categoria=="Cobranza")
+                {
+                    <div class="conciliacion-asignar-cliente">
+                        <h3>Asignar cliente</h3>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="ReevaluarPropuesta">Reevaluar propuesta con los comprobantes actuales</AlfaButton>
+                        <AlfaLookup TItem="ClientSearchResultDto" Label="Cliente" Placeholder="Buscar por nombre, código o CUIT"
+                            SearchText="@_buscarCliente" SearchTextChanged="v => _buscarCliente=v"
+                            SelectedItem="@_clienteAsignar" SelectedItemChanged="SeleccionarCliente" Disabled="@_busy"
+                            SearchFunc="Servicio.BuscarClientesAsync" ItemKey="c => c.ClientCode">
+                            <ItemTemplate Context="c">@c.ClientCode · @c.ClientName · @c.Cuit</ItemTemplate>
+                        </AlfaLookup>
+                        @if (_clienteAsignar is { } clienteSeleccionado)
+                        {
+                            <p>Cliente seleccionado: <strong>@clienteSeleccionado.ClientName</strong> · @clienteSeleccionado.ClientCode</p>
+                        }
+                        <AlfaCheckbox Value="@_recordarCliente" ValueChanged="v => _recordarCliente=v==true" Disabled="@_busy">Recordar este nombre bancario para próximas importaciones</AlfaCheckbox>
+                        @if (_recordarCliente)
+                        {
+                            <AlfaInput Label="Nombre del pagador en el extracto" Value="@_aliasCliente" ValueChanged="v => _aliasCliente=v ?? string.Empty"
+                                MaxLength="200" Disabled="@_busy" />
+                            <p>Usá un nombre que identifique al pagador, por ejemplo «Maderas San Blas Srl». La asociación se usará para proponer el cliente; los comprobantes se seguirán revisando.</p>
+                        }
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || _clienteAsignar is null)" OnClick="GuardarCliente">Asignar cliente</AlfaButton>
+                    </div>
+                }
+                @if (_detalle.Count == 0)
+                {
+                    <p>Sin propuesta de aplicación a comprobantes.</p>
+                }
+                else
+                {
+                    <p><strong>@_detalle[0].ClientName</strong> (@_detalle[0].ClientCode) · @Separar(_detalle[0].MatchType) · @_detalle[0].Confidence.ToString("N0")%</p>
+                    <p>@_detalle[0].ProposalSummary</p>
+                }
+                <AlfaTabs Items="@DetalleTabs" ActiveKey="@_detalleTab" ActiveKeyChanged="v => _detalleTab=v ?? string.Empty" AriaLabel="Información del cliente" />
+                <div hidden="@(_detalleTab!="cuenta")">
+                    <ConciliacionCuentaCorrientePanel @key="(_seleccion.Id,_detalleVersion)" MovimientoId="@_seleccion.Id" FechaMovimiento="@_seleccion.Fecha"
+                        PuedeReconocer="@(_seleccion.Estado!="Cobrado" && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0)" CobroReconocido="ActualizarCobroReconocido" />
+                </div>
+                <div hidden="@(_detalleTab!="comprobantes")">
+                @if (_detalle.Count>0)
+                {
+                    <p>Los importes de la propuesta corresponden al momento de importar. Compará debajo con la información actual del comprobante.</p>
+                    @if (_detalle.Any(d => d.DocumentType is not null))
+                    {
+                        <div class="conciliacion-scroll"><table class="conciliacion-tabla">
+                            <thead><tr><th>Comprobante</th><th>Saldo pendiente</th><th>Aplicación propuesta</th><th>Parcial</th></tr></thead>
+                            <tbody>@foreach (var doc in _detalle.Where(d => d.DocumentType is not null))
+                            {
+                                <tr><td>@doc.DocumentDisplay</td><td>@Dinero(doc.PendingBalance ?? 0)</td><td>@Dinero(doc.AppliedAmount ?? 0)</td><td>@(doc.IsPartial == true ? "Sí" : "No")</td></tr>
+                            }</tbody>
+                        </table></div>
+                    }
+                }
+                @if (_contexto.Comprobantes.Count>0)
+                {
+                    <h3 class="conciliacion-detalle-titulo">Comprobantes del cliente para comparar</h3>
+                    <p>Hasta 40 comprobantes próximos a la fecha del movimiento, incluyendo los propuestos. Seleccioná Ver para consultar su información.</p>
+                    <div class="conciliacion-scroll conciliacion-scroll--comparar"><table class="conciliacion-tabla">
+                        <thead><tr><th>Fecha</th><th>Comprobante</th><th>Vencimiento</th><th>Moneda</th><th>Total</th><th>Saldo actual</th><th>Referencia</th><th></th></tr></thead>
+                        <tbody>@foreach (var c in _contexto.Comprobantes)
+                        {
+                            <tr class="@(c.Id==_comprobanteDetalleId ? "is-selected" : null)">
+                                <td>@c.Fecha?.ToString("dd/MM/yyyy")</td><td>@c.Display</td><td>@c.Vencimiento?.ToString("dd/MM/yyyy")</td>
+                                <td>@c.Moneda</td><td class="conciliacion-numero">@Dinero(c.Importe)</td>
+                                <td class="conciliacion-numero">@(c.SaldoActual.HasValue ? Dinero(c.SaldoActual.Value) : "Sin pendiente informado")</td>
+                                <td>@(c.Anulada ? "Anulado" : c.Propuesto ? "Propuesto" : "Otro comprobante")</td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _comprobanteDetalleId=c.Id">Ver</AlfaButton></td>
+                            </tr>
+                        }</tbody>
+                    </table></div>
+                    @if (_comprobanteInfo is { } info)
+                    {
+                        <section class="conciliacion-comprobante-info">
+                            <h3 class="conciliacion-detalle-titulo">@info.Display</h3>
+                            <p><strong>@info.Nombre</strong> · Documento/CUIT @info.Cuit · Unidad @info.Unidad</p>
+                            @if(!string.IsNullOrWhiteSpace(info.Comentarios)) { <p>Comentarios: @info.Comentarios</p> }
+                            @if(!string.IsNullOrWhiteSpace(info.Observaciones)) { <p>Observaciones: @info.Observaciones</p> }
+                            @if(!string.IsNullOrWhiteSpace(info.Conceptos)) { <p>Conceptos (primeros 5 renglones): @info.Conceptos</p> }
+                            @if(_contexto.Origenes.Any(o=>o.FacturaId==info.Id))
+                            {
+                                <p><strong>Pedidos/remitos de origen</strong></p>
+                                @foreach(var origen in _contexto.Origenes.Where(o=>o.FacturaId==info.Id))
+                                {
+                                    <p>@origen.Tc @origen.Comprobante · @origen.Fecha?.ToString("dd/MM/yyyy") @origen.Comentarios</p>
+                                }
+                            }
+                            else { <p>Sin pedidos/remitos de origen vinculados.</p> }
+                        </section>
+                    }
+                }
+                </div>
+                </ChildContent>
+                <Footer>
+                    @if (_detalleTab=="comprobantes" && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0 && _seleccion.Estado!="Cobrado" && _seleccion.TipoMatch!="CobranzaYaRegistrada" && !_seleccion.ConciliacionId.HasValue)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_seleccion.Cliente) || (_comprobanteInfo is { } elegido && (elegido.Anulada || elegido.SaldoActual is not >0)))"
+                            OnClick="() => AbrirCobranza(_seleccion,_comprobanteInfo?.Clave)">Cobrar</AlfaButton>
+                    }
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="CerrarDetalle">Cerrar</AlfaButton>
+                </Footer>
+            </AlfaDialog>
+        }
+    }
+    <CobranzaRapidaDialog Preparacion="@_cobranza" Busy="@_busy" Error="@_errorCobranza" ComprobantePreferido="@_comprobantePreferido"
+        OnClose="CerrarCobranza" OnConfirm="ConfirmarCobranza" />
+    <AlfaConfirmDialog Open="@(_eliminar is not null)" Title="Eliminar importación"
+        Message="@($"Se eliminará la importación #{_eliminar?.Id} y sus movimientos y propuestas.")"
+        SecondaryMessage="No se modifican comprobantes ni asientos de Alfa." ConfirmLabel="Eliminar"
+        Loading="@_busy" OnConfirm="EliminarImportacion" OnCancel="() => _eliminar = null" />
+</div>
+
+@code {
+    private PageHeaderConfig? _header;
+    private CancellationTokenSource _lifetime = new();
+    private bool _disposed, _busy, _listo, _requiereBanco, _requiereFecha;
+    private string _fechaReferencia="";
+    private string _buscar = "", _buscarAplicado = "", _clasificacion = "", _clasificacionAplicada = "", _orden = "fecha";
+    private bool _descendente = true;
+    private string _tab = "importar", _banco = "", _cuenta = "", _lecturaMensaje = "";
+    private int _paginaImport = 1, _paginaMov = 1, _cantidad;
+    private decimal _ingresos, _egresos;
+    private long? _filtro;
+    private ConciliacionArchivo? _archivo;
+    private AppUiMessage? _feedback;
+    private IReadOnlyList<ConciliacionCuenta> _cuentas = [];
+    private PagedResult<ConciliacionImportacion> _importaciones = new();
+    private PagedResult<ConciliacionMovimiento> _movimientos = new();
+    private IReadOnlyList<MatchDetailItem> _detalle = [];
+    private string _detalleTab="cuenta";
+    private static readonly IReadOnlyList<AlfaTabItem> DetalleTabs = [new("cuenta","Cuenta corriente"),new("comprobantes","Comprobantes")];
+    private ConciliacionContextoComprobantes _contexto=new([],[]);
+    private int _comprobanteDetalleId;
+    private string _categoriaRevision="",_motivoRevision="";
+    private ConciliacionComprobanteInfo? _comprobanteInfo => _contexto.Comprobantes.FirstOrDefault(c=>c.Id==_comprobanteDetalleId);
+    private ConciliacionImportacion? _eliminar;
+    private ConciliacionMovimiento? _seleccion;
+    private CobranzaPreparacion? _cobranza;
+    private string? _errorCobranza, _comprobantePreferido;
+    private ConciliacionComparacionPanel? _comparacion;
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
+    private static readonly IReadOnlyList<AlfaSelectOption> Bancos = Enum.GetValues<BankSource>().Select(b => new AlfaSelectOption(b.ToString(), b == BankSource.MercadoPago ? "Mercado Pago" : b.ToString())).ToList();
+    private IReadOnlyList<AlfaSelectOption> OpcionesCuentas => _cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} — {c.Descripcion}")).ToList();
+    private static readonly IReadOnlyList<AlfaSelectOption> Clasificaciones = Enum.GetValues<MovementCategory>()
+        .Select(c=>new AlfaSelectOption(c.ToString(),Separar(c.ToString()))).OrderBy(c=>c.Label).ToList();
+    private static readonly (string Key,string Label)[] Columnas = [
+        ("fecha","Fecha"),("banco","Banco"),("descripcion","Descripción original"),("referencia","Referencia"),
+        ("importe","Importe"),("clasificacion","Clasificación"),("cliente","Cliente probable"),("propuesta","Propuesta"),
+        ("confianza","Confianza"),("estado","Registración"),("conciliacion","Conciliación")];
+    private ConciliacionMovimientoFiltros FiltrosMovimientos(int pagina,long? importacion=null,bool todas=false) => new() {
+        ImportacionId=todas ? null : importacion ?? _filtro, Pagina=pagina, Buscar=_buscarAplicado,
+        Clasificacion=_clasificacionAplicada, OrdenPor=_orden, Descendente=_descendente };
+    private string AriaOrden(string key) => _orden!=key ? "none" : _descendente ? "descending" : "ascending";
+    private string IndicadorOrden(string key) => _orden!=key ? "↕" : _descendente ? "↓" : "↑";
+    private Task AplicarFiltros() => Operar(async ct =>
+    {
+        _buscarAplicado=_buscar.Trim(); _clasificacionAplicada=_clasificacion; _paginaMov=1;
+        await CargarPagina(ct);
+    });
+    private async Task CambiarClasificacion(string? value)
+    {
+        _clasificacion=value ?? "";
+        await AplicarFiltros();
+    }
+    private Task LimpiarFiltros()
+    {
+        _buscar=""; _clasificacion="";
+        return AplicarFiltros();
+    }
+    private Task Ordenar(string key) => Operar(async ct =>
+    {
+        _descendente=_orden==key ? !_descendente : false; _orden=key; _paginaMov=1;
+        await CargarPagina(ct);
+    });
+
+    protected override void OnInitialized()
+    {
+        Sesiones.SessionChanged += CambiarSesion;
+        Usuarios.StateChanged += CambiarSesion;
+        PublicarHeader();
+    }
+    protected override async Task OnInitializedAsync() => await Operar(async ct =>
+    {
+        _cuentas = await Servicio.CuentasAsync(ct);
+        _importaciones = await Servicio.ImportacionesAsync(1, ct);
+    });
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) PublicarHeader(); }
+
+    private async Task Operar(Func<CancellationToken,Task> action)
+    {
+        if (_busy || _disposed) return;
+        var lifetime = _lifetime;
+        _busy = true;
+        PublicarHeader();
+        await InvokeAsync(StateHasChanged);
+        try { await action(lifetime.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (!lifetime.IsCancellationRequested)
+            {
+                if (ex is not AppUserFacingException && TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))
+                {
+                    var mensaje=ex is InvalidOperationException ? ex.Message : "No se pudo leer el archivo. Revisá que sea un Excel válido de hasta 20 MB.";
+                    var code=await Eventos.LogErrorAsync("ConciliacionBancaria","Pantalla",ex,mensaje);
+                    ex=new AppUserFacingException(mensaje,code,ex);
+                }
+                _feedback = UiOps.BuildMessage(ex,"Conciliación bancaria");
+            }
+        }
+        finally { if (ReferenceEquals(lifetime,_lifetime) && !_disposed) { _busy = false; PublicarHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private async Task SeleccionarArchivo(InputFileChangeEventArgs e)
+    {
+        await Operar(async ct =>
+        {
+            _listo = false; _requiereBanco = false; _requiereFecha=false; _fechaReferencia=""; _banco = ""; _cuenta = ""; _archivo = null; _feedback = null; _lecturaMensaje = "Leyendo archivo…";
+            if (e.File.Size > ConciliacionExtractoLector.MaxBytes)
+                throw new InvalidOperationException("El archivo supera los 20 MB. Seleccioná un extracto más pequeño.");
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(ConciliacionExtractoLector.MaxBytes,ct).CopyToAsync(ms,ct);
+            ct.ThrowIfCancellationRequested();
+            _archivo = new(e.File.Name,ms.ToArray());
+            await Leer(ct);
+        });
+    }
+    private async Task Leer(CancellationToken ct)
+    {
+        if (_archivo is null) return;
+        ConciliacionLectura lectura;
+        try { lectura = await Servicio.LeerAsync(_archivo,Enum.TryParse<BankSource>(_banco,out var banco) ? banco : null,ct); }
+        catch (AppUserFacingException) { _lecturaMensaje="No se pudo procesar el archivo. Revisá el mensaje e intentá nuevamente."; throw; }
+        ct.ThrowIfCancellationRequested();
+        _requiereBanco = lectura.Banco is null;
+        _banco = lectura.Banco?.ToString() ?? "";
+        _lecturaMensaje = lectura.Mensaje;
+        _requiereFecha=lectura.RequiereFechaReferencia;
+        if(_requiereFecha && _fechaReferencia.Length==0 && lectura.FechaReferenciaSugerida is { } sugerida)
+            _fechaReferencia=sugerida.ToString("yyyy-MM-dd");
+        _cantidad = lectura.Movimientos.Count;
+        _ingresos = lectura.Movimientos.Where(m => m.Amount > 0).Sum(m => m.Amount);
+        _egresos = -lectura.Movimientos.Where(m => m.Amount < 0).Sum(m => m.Amount);
+        _listo = _cantidad > 0;
+        if (string.IsNullOrWhiteSpace(_cuenta) && lectura.Banco is not null)
+            _cuenta = ConciliacionExtractoLector.SugerirCuenta(lectura.Banco.Value,_cuentas);
+    }
+    private async Task CambiarBanco(string? value)
+    {
+        _banco = value ?? ""; _listo = false; _cuenta = "";
+        if (_banco.Length > 0) await Operar(Leer);
+        PublicarHeader();
+    }
+    private void CambiarCuenta(string? value) { _cuenta = value ?? ""; PublicarHeader(); }
+    private void CambiarFechaReferencia(string? value)
+    {
+        _fechaReferencia=value ?? "";_requiereFecha=true;_listo=false;
+        _lecturaMensaje="Confirmá la fecha de referencia y pulsá Procesar archivo.";
+        if(_archivo is not null)_archivo=_archivo with{FechaReferencia=null};
+        PublicarHeader();
+    }
+    private Task ProcesarArchivo()=>Operar(async ct=>
+    {
+        if(_archivo is null)return;
+        if(!DateTime.TryParseExact(_fechaReferencia,"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,out var fecha)||fecha.Year<1900)
+            throw new InvalidOperationException("Indicá una fecha de referencia válida para la descarga.");
+        _archivo=_archivo with{FechaReferencia=fecha.Date};
+        await Leer(ct);
+    });
+    private Task Importar() => Operar(async ct =>
+    {
+        if (_archivo is null || !_listo || !Enum.TryParse<BankSource>(_banco,out var banco)) return;
+        var result = await Servicio.ImportarAsync(_archivo,banco,_cuenta,ct);
+        ct.ThrowIfCancellationRequested();
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success,Title = "Extracto importado",
+            Message = $"Importación #{result.ImportacionId}: {result.Movimientos} movimientos · Total: {Dinero(result.Total)} · Duplicados omitidos: {result.Duplicados}." };
+        _buscar = _buscarAplicado = _clasificacion = _clasificacionAplicada = "";
+        _filtro = result.ImportacionId; _paginaMov = 1; _paginaImport = 1; _tab = "revisar";
+        _listo = false;
+        _importaciones = await Servicio.ImportacionesAsync(1,ct);
+        _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1),ct);
+        _seleccion = null; _detalle = [];
+    });
+    private Task AbrirImportacion(long id) => Operar(async ct =>
+    {
+        var rows = await Servicio.MovimientosAsync(FiltrosMovimientos(1,id),ct);
+        ct.ThrowIfCancellationRequested();
+        _filtro = id; _paginaMov = 1; _movimientos = rows; _tab = "revisar"; _seleccion = null; _detalle = [];
+    });
+    private Task VerTodas() => Operar(async ct =>
+    {
+        _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1,todas:true),ct);
+        _filtro = null; _paginaMov = 1; _seleccion = null; _detalle = [];
+    });
+    private Task CambiarTab(string? tab) => Operar(async ct =>
+    {
+        _tab = tab ?? "importar";
+        await CargarPagina(ct);
+    });
+    private async Task CargarPagina(CancellationToken ct)
+    {
+        if (_tab == "importar") _importaciones = await Servicio.ImportacionesAsync(_paginaImport,ct);
+        else if (_tab=="conciliar") { if(_comparacion is not null) await _comparacion.ActualizarAsync(); }
+        else { _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct); _seleccion = null; _detalle = []; }
+    }
+    private Task AbrirCobranza(ConciliacionMovimiento row,string? preferido=null) => Operar(async ct =>
+    {
+        var preparacion=await Cobranzas.PrepararConciliacionAsync(row.Id,ct);
+        if(preferido is not null && !preparacion.Documentos.Any(d=>$"{d.Tc}|{d.Comprobante}"==preferido))
+            throw new InvalidOperationException("El comprobante elegido no está disponible para cobrar en pesos o cambió su saldo. Revisá la selección.");
+        var propuestas=await Servicio.DetalleAsync(row.Id,ct);
+        ct.ThrowIfCancellationRequested();
+        var primera=propuestas.FirstOrDefault(d=>d.DocumentType is not null);
+        _comprobantePreferido=preferido ?? (primera is null ? null : $"{primera.DocumentType}|{primera.EmissionCenter:D4}{primera.DocumentNumber:D8}{primera.Letter}");
+        _seleccion=null; _detalle=[]; _feedback=null; _errorCobranza=null; _cobranza=preparacion;
+    });
+    private void CerrarCobranza() { if(!_busy) { _cobranza=null; _errorCobranza=null; } }
+    private Task ConfirmarCobranza(CobranzaSolicitud solicitud) => Operar(async ct =>
+    {
+        _errorCobranza=null;
+        CobranzaResultado result;
+        try { result=await Cobranzas.CobrarAsync(solicitud,ct); }
+        catch(AppUserFacingException ex) { _errorCobranza=ex.Message; return; }
+        ct.ThrowIfCancellationRequested();
+        _cobranza=null;
+        _feedback=new() { Severity=AppUiFeedbackSeverity.Success,Title="Cobranza registrada",Message=$"CB {result.Comprobante} · Importe {Dinero(result.Importe)}" };
+        await CargarPagina(ct);
+    });
+    private Task ActualizarCobroReconocido()=>Operar(async ct=>
+    {
+        var movimientos=await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct);
+        ct.ThrowIfCancellationRequested();_movimientos=movimientos;
+        if(_seleccion is not null)_seleccion.Estado="Cobrado";
+        _feedback=AppUiMessage.Success("Cobro existente confirmado","El movimiento quedó Cobrado. La conciliación bancaria se mantiene separada.");
+    });
+    private void CerrarDetalle()
+    {
+        _seleccion = null; _detalle = []; _contexto=new([],[]); _comprobanteDetalleId=0;
+    }
+    private Task GuardarClasificacion() => Operar(async ct =>
+    {
+        if(_seleccion is null) return;
+        await Servicio.ReclasificarAsync(_seleccion.Id,_categoriaRevision,_motivoRevision,ct);
+        await CargarPagina(ct);
+        _feedback=AppUiMessage.Success("Clasificación guardada","La corrección queda registrada para este movimiento.");
+    });
+    private ClientSearchResultDto? _clienteAsignar;
+    private string _buscarCliente="",_aliasCliente="";
+    private bool _recordarCliente=true;
+    private int _detalleVersion;
+    private void SeleccionarCliente(ClientSearchResultDto? cliente)
+    {
+        _clienteAsignar=cliente;
+        if(cliente is not null) _buscarCliente=$"{cliente.ClientCode} · {cliente.ClientName}";
+    }
+    private Task GuardarCliente() => Operar(async ct=>
+    {
+        if(_seleccion is null || _clienteAsignar is null) return;
+        var row=_seleccion;
+        await Servicio.AsignarClienteAsync(row.Id,_clienteAsignar.ClientCode,_recordarCliente,_aliasCliente,ct);
+        await ActualizarDetalleCliente(row,ct);
+        _feedback=AppUiMessage.Success("Cliente asignado",_recordarCliente ? "La asociación quedó guardada para próximas importaciones." : "La asignación se aplicó a este movimiento.");
+    });
+    private Task ReevaluarPropuesta() => Operar(async ct=>
+    {
+        if(_seleccion is null) return;
+        var row=_seleccion;
+        await Servicio.ReevaluarPropuestaAsync(row.Id,ct);
+        await ActualizarDetalleCliente(row,ct);
+        _feedback=AppUiMessage.Success("Propuesta reevaluada","Revisá el cliente y los comprobantes sugeridos.");
+    });
+    private async Task ActualizarDetalleCliente(ConciliacionMovimiento row,CancellationToken ct)
+    {
+        var detalle=await Servicio.DetalleAsync(row.Id,ct);
+        var contexto=await Servicio.ContextoComprobantesAsync(row.Id,ct);
+        var movimientos=await Servicio.MovimientosAsync(FiltrosMovimientos(_paginaMov),ct);
+        ct.ThrowIfCancellationRequested();
+        _movimientos=movimientos;_detalle=detalle;_contexto=contexto;
+        row.Cliente=detalle.FirstOrDefault()?.ClientName ?? row.Cliente;
+        row.Propuesta=detalle.FirstOrDefault()?.ProposalSummary ?? row.Propuesta;
+        _comprobanteDetalleId=(contexto.Comprobantes.FirstOrDefault(c=>c.Propuesto) ?? contexto.Comprobantes.FirstOrDefault())?.Id ?? 0;
+        _detalleVersion++;
+        if(detalle.FirstOrDefault() is { } propuesta) { row.TipoMatch=propuesta.MatchType.ToString();row.Confianza=propuesta.Confidence; }
+    }
+    private Task SeleccionarMovimiento(ConciliacionMovimiento row) => Operar(async ct =>
+    {
+        var detalle = await Servicio.DetalleAsync(row.Id,ct);
+        var contexto = await Servicio.ContextoComprobantesAsync(row.Id,ct);
+        ct.ThrowIfCancellationRequested();
+        _detalleTab="cuenta";
+        _seleccion = row; _detalle = detalle; _contexto=contexto;
+        _comprobanteDetalleId=(contexto.Comprobantes.FirstOrDefault(c=>c.Propuesto) ?? contexto.Comprobantes.FirstOrDefault())?.Id ?? 0;
+        _categoriaRevision=row.Categoria;_motivoRevision="";
+        _clienteAsignar=null;_buscarCliente="";_recordarCliente=true;
+        _aliasCliente=ContraparteBancaria.Extraer(row.Descripcion.Split('·')[0]).Nombre;
+    });
+    private Task EliminarImportacion() => Operar(async ct =>
+    {
+        if (_eliminar is null) return;
+        await Servicio.EliminarAsync(_eliminar.Id,ct);
+        _eliminar = null; _filtro = null; _paginaImport = 1; _paginaMov = 1;
+        _importaciones = await Servicio.ImportacionesAsync(1,ct);
+        _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1,todas:true),ct);
+        _seleccion = null; _detalle = [];
+        if (_archivo is not null) await Leer(ct);
+        _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Importación eliminada", Message = "Se eliminaron los movimientos y propuestas de esa importación." };
+    });
+    private Task Paginar(int delta) => Operar(async ct =>
+    {
+        if (_tab == "importar") _paginaImport = Math.Max(1,_paginaImport+delta);
+        else _paginaMov = Math.Max(1,_paginaMov+delta);
+        await CargarPagina(ct);
+    });
+    private void PublicarHeader()
+    {
+        if (_disposed) return;
+        var total = _tab == "importar" ? _importaciones.Total : _movimientos.Total;
+        var pagina = _tab == "importar" ? _paginaImport : _paginaMov;
+        PageHeader.Set(_header = new PageHeaderConfig {
+            ModuleKey = "caja-bancos", ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            Title = "Conciliación bancaria inteligente", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria inteligente"],
+            TopNavigationItems = Navegacion(),
+            Actions = [
+                new() { Key = "importar",Label = "Importar extracto",Icon = "bi-upload",Style = PageHeaderActionStyle.Primary,
+                    Disabled = _tab!="importar" || _busy || !_listo || string.IsNullOrWhiteSpace(_cuenta),Busy = _busy,OnClick = Importar },
+                new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) }
+            ],
+            Pagination = _tab=="conciliar" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
+                HasPrevious = pagina>1,HasNext = pagina*50<total,Disabled = _busy,OnPrevious = () => Paginar(-1),OnNext = () => Paginar(1) }
+        });
+    }
+    private IReadOnlyList<PageHeaderTopNavItem> Navegacion()
+    {
+        var url=RouteContext.BuildRoute("/caja-bancos/conciliacion-bancaria");
+        var query=Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (query.TryGetValue("directo",out var value) && value=="1") url+="?directo=1";
+        return [new PageHeaderTopNavItem { Key="conciliacion",Label="Conciliación bancaria",Active=true,
+            Url=url,OnClick=()=> { Nav.NavigateTo(url);return Task.CompletedTask; } }];
+    }
+    private void CambiarSesion() => _ = InvokeAsync(async () =>
+    {
+        if (_disposed) return;
+        _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
+        _tab="importar"; _comparacion=null;
+        _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
+        _seleccion = null; _eliminar = null; _detalle = []; _feedback = null; _filtro = null;
+        _contexto=new([],[]);_comprobanteDetalleId=0;_categoriaRevision=_motivoRevision="";
+        _clienteAsignar=null;_buscarCliente=_aliasCliente="";_recordarCliente=true;_detalleVersion=0;
+        _cobranza=null; _errorCobranza=null; _comprobantePreferido=null;
+        _banco = ""; _cuenta = ""; _paginaImport = _paginaMov = 1;
+        _requiereBanco = false; _requiereFecha=false;_fechaReferencia=""; _buscar = _buscarAplicado = _clasificacion = _clasificacionAplicada = "";
+        _orden = "fecha"; _descendente = true;
+        if (TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))
+            await Operar(async ct => { _cuentas = await Servicio.CuentasAsync(ct); await CargarPagina(ct); });
+        PublicarHeader(); StateHasChanged();
+    });
+    private static string Dinero(decimal value) => value.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+    private static string Estado(string s) => s == "IMPORTED" ? "Importado" : s;
+    private static string Separar(string s) => System.Text.RegularExpressions.Regex.Replace(s,"(?<=[a-záéíóúñ])(?=[A-ZÁÉÍÓÚÑ])"," ");
+    private static string FechaLocal(DateTime d) => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(d,DateTimeKind.Utc),TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time")).ToString("dd/MM/yyyy HH:mm");
+    public void Dispose()
+    {
+        _disposed = true; Sesiones.SessionChanged -= CambiarSesion; Usuarios.StateChanged -= CambiarSesion;
+        _lifetime.Cancel(); _lifetime.Dispose();
+        if (ReferenceEquals(PageHeader.Current,_header)) PageHeader.Clear();
+    }
+}

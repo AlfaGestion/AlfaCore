@@ -23,6 +23,10 @@ INSERT INTO dbo.ALFACORE_MENU_WEB(Menu,Clave,RutaWeb,Componente,Icono,Habilitado
 SELECT m.Menu,N''D60RPTWEB'',N''/ventas/reportes'',N''ReporteVentas'',N''bi-bar-chart-line'',1,60007,0,N''Reporte de Ventas''
 FROM dbo.TA_MENU m WHERE m.Clave=N''D60RPTWEB'' AND NOT EXISTS(SELECT 1 FROM dbo.ALFACORE_MENU_WEB w WHERE w.Menu=m.Menu AND w.Clave=m.Clave);
 UPDATE dbo.ALFACORE_MENU_WEB SET RutaWeb=N''/ventas/reportes'',Componente=N''ReporteVentas'',Icono=N''bi-bar-chart-line'',NombreWeb=N''Reporte de Ventas'',HabilitadoWeb=1 WHERE Clave=N''D60RPTWEB'';';
+-- La navegación web usa PadreClave, no el Titulo del árbol legacy.
+IF COL_LENGTH(N'dbo.ALFACORE_MENU_WEB',N'PadreClave') IS NOT NULL
+    EXEC sys.sp_executesql N'UPDATE dbo.ALFACORE_MENU_WEB SET PadreClave=N''D60''
+        WHERE Menu=N''ALFA'' AND Clave=N''D60RPTWEB'';';
 -- Solo la fila que acaba de crearse: no altera opciones legacy existentes.
 IF @Creada=1 AND COL_LENGTH(N'dbo.TA_MENU',N'DESCRIPCION') IS NOT NULL
     UPDATE dbo.TA_MENU SET DESCRIPCION=N'Resumen, detalle y cuenta corriente de ventas.'

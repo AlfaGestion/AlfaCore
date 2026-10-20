@@ -27,15 +27,15 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildVentas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
-            ("inicio", "Inicio", "/ventas"),
+            // /ventas conserva el acceso histórico al POS; el inicio gerencial tiene ruta propia.
+            ("inicio", "Inicio", "/ventas-dashboard"),
             ("reportes", "Reporte de Ventas", "/ventas/reportes"),
             ("clientes", "Clientes", "/ventas/clientes"),
             ("comprobantes", "Comprobantes", "/ventas/comprobantes"),
             ("rubros", "Rubros", "/ventas/rubros"),
             ("familias", "Familias", "/ventas/familias"),
             ("articulos", "Artículos", "/ventas/articulos"),
-            ("comparativo", "Comparativo", "/ventas/comparativo"),
-            ("punto-venta", "Punto de Venta", "/ventas/punto-venta")
+            ("comparativo", "Comparativo", "/ventas/comparativo")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildPuntoVenta(IRouteContextService routeContext, NavigationManager nav, string activeKey)

@@ -23,6 +23,10 @@ public sealed class CargaComprobantesContexto
     public bool AdminCentral { get; set; }
     public bool PuedeEditarPrecio { get; set; }
     public bool PuedeEditarDescuento { get; set; }
+    public bool PuedeCambiarLista { get; set; }
+    public bool PuedeCambiarClase { get; set; }
+    public IReadOnlyList<CargaComprobantesOpcionFiltro> ListasPrecio { get; set; } = [];
+    public IReadOnlyList<CargaComprobantesOpcionFiltro> ClasesPrecio { get; set; } = [];
     public bool EntregaParcial { get; set; }
     public bool DescargaStockRemitos { get; set; }
     public int Decimales { get; set; } = 2;
@@ -33,6 +37,7 @@ public sealed class CargaComprobantesContexto
     public bool UsaFacturaProforma { get; set; }
     public bool RobaIvaProforma { get; set; }
     public bool ProformaSinRegistracion { get; set; }
+    public bool ArtExentoANoGrav { get; set; }
     public decimal AlicuotaGeneral { get; set; }
     public int PuntoVentaElectronico { get; set; }
     public IReadOnlyList<CargaComprobantesTalonario> Talonarios { get; set; } = [];
@@ -147,6 +152,12 @@ public sealed class CargaComprobantesLineaOrigen
 
 public sealed class CargaComprobantesCantidad
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int OrigenId { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? PrecioUnitarioNeto { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? Descuento { get; set; }
     public int LineaId { get; set; }
     public decimal Cantidad { get; set; }
 }

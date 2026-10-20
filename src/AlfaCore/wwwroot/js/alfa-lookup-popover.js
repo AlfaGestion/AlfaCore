@@ -34,5 +34,9 @@
         results.style.bottom = "auto";
     }
 
-    window.AlfaLookupPopover = { position };
+    function containsFocus(root) {
+        return !!root && root.contains(document.activeElement);
+    }
+
+    window.AlfaLookupPopover = { position, containsFocus };
 })();

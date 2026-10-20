@@ -9,16 +9,17 @@ namespace AlfaCore.Services;
 public sealed class CargaComprobantesEdicionPrecios
 {
     public async Task<CargaComprobantesPoliticaPrecio> LeerAsync(SqlConnection cn, string usuario, string cliente,
-        string tc, CancellationToken ct, SqlTransaction? tx = null)
+        string tc, CancellationToken ct, SqlTransaction? tx = null, int? origenId = null)
     {
         var datos = await cn.QuerySingleAsync<Datos>(new CommandDefinition("""
             SELECT CONVERT(bit,ISNULL(u.V_ModificaPrecio,1)) Precio,CONVERT(bit,ISNULL(u.V_Descuentos,1)) Descuento,
                 ISNULL(cond.DtoMaximo,0) Condicion,ISNULL(v.Dto_maximo,0) Vendedor
             FROM dbo.TA_USUARIOS u CROSS JOIN dbo.VT_CLIENTES cl
-            JOIN dbo.V_TA_Cpra_Vta cond ON LTRIM(RTRIM(cond.IDCOND_CPRA_VTA))=LTRIM(RTRIM(cl.IDCOND_CPRA_VTA))
-            LEFT JOIN dbo.V_TA_VENDEDORES v ON LTRIM(RTRIM(v.IdVendedor))=LTRIM(RTRIM(cl.IdVendedor))
+            LEFT JOIN dbo.V_MV_CPTE o ON o.ID=@OrigenId AND LTRIM(RTRIM(o.CUENTA))=LTRIM(RTRIM(cl.CODIGO))
+            JOIN dbo.V_TA_Cpra_Vta cond ON LTRIM(RTRIM(cond.IDCOND_CPRA_VTA))=LTRIM(RTRIM(CASE WHEN @OrigenId IS NULL THEN cl.IDCOND_CPRA_VTA ELSE o.IDCOND_CPRA_VTA END))
+            LEFT JOIN dbo.V_TA_VENDEDORES v ON LTRIM(RTRIM(v.IdVendedor))=LTRIM(RTRIM(CASE WHEN @OrigenId IS NULL THEN cl.IdVendedor ELSE o.IdVendedor END))
             WHERE UPPER(LTRIM(RTRIM(u.NOMBRE)))=UPPER(@Usuario) AND LTRIM(RTRIM(cl.CODIGO))=@Cliente;
-            """, new { Usuario = usuario, Cliente = cliente.Trim() }, tx, cancellationToken: ct));
+            """, new { Usuario = usuario, Cliente = cliente.Trim(), OrigenId = origenId }, tx, cancellationToken: ct));
         var cfg = (await cn.QueryAsync<Config>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) Clave,
                 COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),ValorAux),'') Valor
@@ -51,15 +52,15 @@ public sealed class CargaComprobantesEdicionPrecios
 
     public static (decimal Neto, decimal Final, decimal Descuento) Aplicar(CargaComprobantesDirectaLinea linea,
         string tc, CargaComprobantesPoliticaPrecio politica, decimal referenciaNeto, decimal referenciaFinal,
-        decimal tasa, int decimales)
+        decimal tasa, int decimales, decimal referenciaDescuento = 0)
     {
-        if (tc is not ("FC" or "FP"))
-            throw new CargaComprobantesReglaException("La edición manual de precios/descuentos está habilitada para facturas directas y proformas; las notas conservan su circuito de precios.");
+        if (tc is not ("FC" or "FP" or "ND"))
+            throw new CargaComprobantesReglaException("La edición manual de precios/descuentos admite facturas, proformas y notas de débito; las notas de crédito conservan sus precios históricos.");
         if ((linea.PrecioUnitarioNeto.HasValue && !politica.PuedeEditarPrecio) ||
             (linea.Descuento.HasValue && !politica.PuedeEditarDescuento))
             throw new CargaComprobantesReglaException("Tu usuario no tiene permiso para modificar el precio o el descuento solicitado.");
         var neto = linea.PrecioUnitarioNeto ?? referenciaNeto;
-        var dto = linea.Descuento ?? 0;
+        var dto = linea.Descuento ?? referenciaDescuento;
         if (neto <= 0 || neto > 99999999.9999m || dto < 0 || dto >= 100 ||
             decimal.Round(neto,4) != neto || decimal.Round(dto,4) != dto || decimales is < 0 or > 4)
             throw new CargaComprobantesReglaException("Ingresá un precio neto positivo y un descuento entre 0 y menos de 100, con hasta cuatro decimales.");

@@ -93,6 +93,19 @@ public sealed class CargaComprobantesUiTests
             Assert.False(header.Current.Actions.Single(x => x.Key == "validar").Disabled);
             fake.FallarGrabacionDirecta = false;
             await header.Current.Actions.Single(x => x.Key == "validar").OnClick!();
+            Invoke(page, "ListaChanged", "3");
+            Assert.Equal("3", draft.ListaPrecio);
+            Assert.Null(draft.Lineas[0].PrecioUnitarioNeto); Assert.Null(draft.Lineas[0].Descuento);
+            Assert.True(header.Current.Actions.Single(x => x.Key == "grabar").Disabled);
+            Invoke(page, "ClaseChanged", "5"); Assert.Equal(5, draft.ClasePrecio);
+            await InvokeAsync(page, "BuscarArticulos", "resma", CancellationToken.None);
+            Assert.Equal("3", fake.BusquedaPrecios!.ListaPrecio); Assert.Equal(5, fake.BusquedaPrecios.ClasePrecio);
+            Invoke(page, "ListaChanged", "__MAESTRO"); Assert.Equal("", draft.ListaPrecio);
+            Invoke(page, "ListaChanged", ""); Assert.Null(draft.ListaPrecio);
+            Invoke(page, "TipoChanged", "NC"); Assert.Null(draft.ClasePrecio); Assert.Null(draft.ListaPrecio);
+            Invoke(page, "TipoChanged", "FC");
+            page.GetType().GetField("_talonario", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(page, "2");
+            await header.Current.Actions.Single(x => x.Key == "validar").OnClick!();
             directHtml = root.ToHtmlString();
             await InvokeAsync(page, "GrabarAsync");
             Assert.Equal(1, fake.DirectasGrabadas); Assert.Contains("Comprobante grabado", root.ToHtmlString());
@@ -118,6 +131,8 @@ public sealed class CargaComprobantesUiTests
                 await page.SetContentAsync($"<html><head><meta charset='utf-8'><style>{css}</style><style>body{{margin:0;font-family:Segoe UI,sans-serif}}*{{box-sizing:border-box}}</style></head><body>{directHtml}</body></html>");
                 Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= window.innerWidth"));
                 Assert.True(await page.GetByLabel("Tipo de comprobante").IsVisibleAsync());
+                Assert.True(await page.GetByLabel("Lista de precios", new() { Exact = true }).IsEnabledAsync());
+                Assert.True(await page.GetByLabel("Clase de precio", new() { Exact = true }).IsEnabledAsync());
                 Assert.True(await page.GetByLabel("Cantidad PAPEL", new() { Exact = true }).IsVisibleAsync());
                 Assert.True(await page.GetByLabel("Precio neto PAPEL", new() { Exact = true }).IsEnabledAsync());
                 Assert.True(await page.GetByLabel("Descuento PAPEL", new() { Exact = true }).IsEnabledAsync());
@@ -148,7 +163,7 @@ public sealed class CargaComprobantesUiTests
         services.AddSingleton<IComponentActivator>(activator);
         using var provider = services.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
-        string list = "", editor = "", filters = "";
+        string list = "", editor = "", filters = "", consolidado = "";
         await renderer.Dispatcher.InvokeAsync(async () =>
         {
             var root = await renderer.RenderComponentAsync<VentasCargaComprobantes>();
@@ -212,6 +227,19 @@ public sealed class CargaComprobantesUiTests
             Assert.False(header.Current.Actions.Single(x => x.Key == "pdf").Disabled);
             Assert.Equal("ventas", provider.GetRequiredService<IPageHeaderService>().Current.ModuleKey);
             Assert.Single(provider.GetRequiredService<IPageHeaderService>().Current.TopNavigationItems);
+            await InvokeAsync(component,"VolverAsync");
+            Invoke(component,"Seleccionar",1,true);Invoke(component,"Seleccionar",2,true);
+            await header.Current.Actions.Single(x=>x.Key=="cargar-seleccion").OnClick!();
+            Invoke(component,"CambiarTalonario","2");
+            Invoke(component,"EditarLinea",22,"110",false);
+            await header.Current.Actions.Single(x=>x.Key=="simular").OnClick!();
+            await header.Current.Actions.Single(x=>x.Key=="validar-grabacion").OnClick!();
+            Assert.Equal(new[]{1,2},fake.UltimasCantidades!.Select(x=>x.OrigenId).Distinct());
+            Assert.Equal(110m,fake.UltimasCantidades!.Single(x=>x.LineaId==22).PrecioUnitarioNeto);
+            Assert.Contains("2 orígenes",System.Net.WebUtility.HtmlDecode(root.ToHtmlString()));
+            consolidado=root.ToHtmlString();
+            Invoke(component,"RestablecerLinea",22);
+            Assert.True(header.Current.Actions.Single(x=>x.Key=="grabar").Disabled);
             borrador.Vendedor = "ANTERIOR"; borrador.FechaDesde = new DateTime(2024, 1, 1);
             Invoke(component, "ContextChanged");
             Assert.Equal("", borrador.Vendedor); Assert.Null(borrador.FechaDesde);
@@ -225,7 +253,7 @@ public sealed class CargaComprobantesUiTests
             Headless = true, ExecutablePath = CargaComprobantesBrowserFactAttribute.BrowserPath
         });
         var page = await browser.NewPageAsync();
-        foreach (var html in new[] { list, editor })
+        foreach (var html in new[] { list, consolidado, editor })
         {
             foreach (var width in new[] { 2048, 1440, 1024 })
             {
@@ -309,6 +337,9 @@ public sealed class CargaComprobantesUiTests
         public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarClientesDirectaAsync(string texto, CancellationToken ct = default)
         { UltimaBusquedaCliente = texto; return Task.FromResult<IReadOnlyList<CargaComprobantesOpcionFiltro>>([new() { Codigo = "1", Descripcion = "Papelera de prueba" }]); }
         public Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(string cliente, string texto, CancellationToken ct = default) => throw new NotSupportedException();
+        public CargaComprobantesDirecta? BusquedaPrecios { get; private set; }
+        public Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(CargaComprobantesDirecta directa, string texto, CancellationToken ct = default)
+        { BusquedaPrecios = directa; return Task.FromResult<IReadOnlyList<CrmCotizacionArticuloDto>>([]); }
         public Task<CargaComprobantesPlanGrabacion> ValidarDirectaAsync(CargaComprobantesDirecta directa, int talonario, CancellationToken ct = default)
         {
             if (FallarDirecta) throw new CargaComprobantesReglaException("Validación directa rechazada");
@@ -328,6 +359,9 @@ public sealed class CargaComprobantesUiTests
         private readonly CargaComprobantesContexto _context = new()
         {
             PuedeEditarPrecio = true, PuedeEditarDescuento = true,
+            PuedeCambiarLista = true, PuedeCambiarClase = true,
+            ListasPrecio = [new() { Codigo = "3", Descripcion = "Mayorista" }],
+            ClasesPrecio = [new() { Codigo = "4", Descripcion = "Venta" }, new() { Codigo = "5", Descripcion = "Oferta" }],
             UnidadNegocio = "4", UnidadesNegocio = [new() { Codigo = "4", Descripcion = "Distribuidora" }],
             Depositos = [new() { Codigo = "1", Descripcion = "Principal" }],
             TalonariosDirecta = [new() { Tc = "FC", Talonario = 2, Letras = "AB", Descripcion = "Factura" }],
@@ -347,7 +381,12 @@ public sealed class CargaComprobantesUiTests
         public Task<byte[]> GetPdfFacturaAsync(Guid operacion, CancellationToken ct = default) => Task.FromResult<byte[]>([]);
         public Task<CargaComprobantesPlanGrabacion> ValidarGrabacionAsync(int origenId, int talonario,
             IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct = default)
-            => Task.FromResult(new CargaComprobantesPlanGrabacion { OrigenId = origenId, Origen = _origen, Talonario = talonario, PuntoVenta = 1007, Liquidacion = CargaComprobantesCalculador.Calcular(_origen, _context, cantidades) });
+        {
+            UltimasCantidades=cantidades;
+            var origen=OrigenSeleccionado(origenId,cantidades);
+            return Task.FromResult(new CargaComprobantesPlanGrabacion { OrigenId=origenId,Origen=origen,Talonario=talonario,PuntoVenta=1007,
+                Liquidacion=CargaComprobantesCalculador.Calcular(origen,_context,cantidades) });
+        }
         public Task<CargaComprobantesGrabacionResultado> GrabarFacturaAsync(int origenId, int talonario,
             IReadOnlyList<CargaComprobantesCantidad> cantidades, Guid operacion, string huellaEsperada, CancellationToken ct = default)
             => Task.FromResult(new CargaComprobantesGrabacionResultado { Operacion = operacion, OrigenId = origenId, Estado = "GRABADA", Comprobante = "100700000186A", NumeroAsiento = 2 });
@@ -371,9 +410,23 @@ public sealed class CargaComprobantesUiTests
             UltimoFiltro = filtro;
             return Task.FromResult(new PagedResult<CargaComprobantesOrigen> { Items = [_origen], Total = 1, PageNumber = filtro.PageNumber, PageSize = 25 });
         }
-        public Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default) => Task.FromResult(_origen);
+        public IReadOnlyList<CargaComprobantesCantidad>? UltimasCantidades {get;private set;}
+        private CargaComprobantesOrigen Documento(int id)
+        {
+            var d=System.Text.Json.JsonSerializer.Deserialize<CargaComprobantesOrigen>(System.Text.Json.JsonSerializer.Serialize(_origen))!;
+            d.Id=id;d.Comprobante=$"00010000000{id}X";d.Lineas[0].Id=id*11;return d;
+        }
+        private CargaComprobantesOrigen OrigenSeleccionado(int id,IReadOnlyList<CargaComprobantesCantidad> cantidades)
+        {
+            var docs=cantidades.Select(x=>x.OrigenId==0?id:x.OrigenId).Distinct().Select(Documento).ToList();
+            var o=CargaComprobantesConsolidacion.Unir(docs);
+            foreach(var q in cantidades)
+                if(q.PrecioUnitarioNeto is {} neto){var l=o.Lineas.Single(x=>x.Id==q.LineaId);l.PrecioReferenciaNeto=l.PrecioSinIva;l.PrecioSinIva=neto;l.Precio=neto*1.21m;}
+            return o;
+        }
+        public Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default) => Task.FromResult(Documento(id));
         public Task<CargaComprobantesSimulacion> SimularAsync(int id, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct = default)
-            => Task.FromResult(CargaComprobantesSimulador.Simular(_origen, _context, cantidades));
+            => Task.FromResult(CargaComprobantesSimulador.Simular(OrigenSeleccionado(id,cantidades), _context, cantidades));
     }
 }
 
