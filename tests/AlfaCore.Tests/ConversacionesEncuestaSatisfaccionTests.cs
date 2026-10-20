@@ -111,7 +111,7 @@ public sealed class ConversacionesEncuestaSatisfaccionTests
     public void ElScriptCreaLaTabla()
     {
         var script = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "App_Data", "updates",
-            "2026-10-19-001__conversaciones_encuestas_satisfaccion.sql"));
+            "2026-10-20-004__conversaciones_encuestas_satisfaccion.sql"));
         Assert.Contains("CREATE TABLE dbo.CONV_ENCUESTAS", script, StringComparison.Ordinal);
         Assert.Contains("IF OBJECT_ID(N'dbo.CONV_ENCUESTAS', N'U') IS NULL", script, StringComparison.Ordinal);
     }
