@@ -8512,13 +8512,30 @@
         if (_busyAction || _selectedConversation is null)
             return;
 
+        // Bloquear antes del primer await: Enter y el botón pueden entrar durante el interop.
+        _busyAction = true;
+        try
+        {
+            await SendReplyCoreAsync();
+        }
+        finally
+        {
+            _busyAction = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendReplyCoreAsync()
+    {
+        if (_selectedConversation is null)
+            return;
+
         _replyText = await GetReplyTextareaValueAsync();
         var textToSend = _replyText.Trim();
         var attachmentsToSend = _pendingAttachments.ToList();
         if (string.IsNullOrWhiteSpace(textToSend) && attachmentsToSend.Count == 0)
             return;
 
-        _busyAction = true;
         _actionMessage = null;
         _actionError = null;
 
@@ -8598,7 +8615,6 @@
         }
         finally
         {
-            _busyAction = false;
             await ClearTypingAsync();
             // Refresca el panel de "bloqueado por Meta" con o sin error -- si este envío tuvo éxito
             // después de un 131031 anterior, el panel debe desaparecer ya mismo, sin esperar a que el

@@ -115,7 +115,7 @@ public sealed class Meta131031PanelTests
     }
 
     [Theory]
-    [InlineData("private async Task SendReplyAsync()")]
+    [InlineData("private async Task SendReplyCoreAsync()")]
     [InlineData("private async Task SendTemplateAsync()")]
     [InlineData("private async Task SendOrRemoveReactionAsync(long messageId, string emoji, bool remove)")]
     public void EverySendPath_RefreshesTheBlockedPanel_AfterCompleting_SoItClearsWithoutSwitchingConversation(string methodSignature)
