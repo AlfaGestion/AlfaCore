@@ -33,24 +33,17 @@
         }
     }
 
-    function scheduleReload(delayMs) {
+    async function tryReconnect() {
         clearReloadTimer();
-        window.__alfaCoreReconnectReloadTimer = window.setTimeout(function () {
-            window.__alfaCoreReconnectReloadTimer = null;
-            window.location.reload();
-        }, delayMs);
-    }
-
-    function tryReconnect() {
         try {
             if (window.Blazor && typeof window.Blazor.reconnect === 'function') {
-                window.Blazor.reconnect();
+                await window.Blazor.reconnect();
                 return;
             }
         } catch {
         }
 
-        window.location.reload();
+        setStatus(getModal(), 'No se pudo recuperar la conexión. Podés reintentar o recargar manualmente.');
     }
 
     function currentState(modal) {
@@ -63,25 +56,20 @@
     }
 
     function applyState(modal, state) {
+        clearReloadTimer();
         modal.setAttribute('aria-hidden', state === 'hide' ? 'true' : 'false');
 
         if (state === 'hide') {
-            if (modal.dataset.hadDisconnect === 'true') {
-                setStatus(modal, 'La conexión volvió. Vamos a recargar la página para reactivar los botones.');
-                scheduleReload(250);
-            }
-
-            modal.dataset.hadDisconnect = 'false';
+            // Blazor recuperó el mismo circuito y sus handlers. Recargar aquí borra el trabajo.
+            setStatus(modal, 'La conexión volvió. Podés seguir trabajando.');
             return;
         }
-
-        modal.dataset.hadDisconnect = 'true';
 
         if (state === 'show' || state === 'paused') {
             setStatus(modal, 'Reconectando con el servidor. Esperá un momento.');
         } else if (state === 'failed') {
             setStatus(modal, 'No se pudo reconectar todavía. Vamos a reintentar automáticamente.');
-            window.setTimeout(tryReconnect, 250);
+            window.__alfaCoreReconnectReloadTimer = window.setTimeout(tryReconnect, 250);
         } else if (state === 'rejected') {
             // El servidor descartó el circuito (reinicio, deploy, crash): no hay sesión que
             // reconectar. No recargar automáticamente: hacerlo genera un bucle de recargas y
@@ -100,7 +88,6 @@
             return;
 
         modal.dataset.reconnectWired = 'true';
-        modal.dataset.hadDisconnect = 'false';
         setStatus(modal, 'Preparando la reconexión...');
         clearReloadTimer();
 

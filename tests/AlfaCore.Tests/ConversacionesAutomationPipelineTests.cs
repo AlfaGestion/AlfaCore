@@ -1795,7 +1795,8 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Tools_ConsumerPriceConfig_IsStoredPerTenantConfiguration()
     {
-        Assert.Contains("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", ConfigServiceSource, StringComparison.Ordinal);
+        // La lista de claves que se leen sale de las que se graban (incluye la del catálogo).
+        Assert.Contains("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", ConversacionesConfigService.AutomatizacionesClavesLeidas);
         Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetAutomatizacionesConfig\")", ConfigServiceSource, StringComparison.Ordinal);
         Assert.Contains("await using var cn = new SqlConnection(tenant.ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);
         Assert.Contains("await using var cn = new SqlConnection(ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);

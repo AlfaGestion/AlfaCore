@@ -77,8 +77,8 @@ public static class ConfiguracionCatalogo
 
         new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y accesos.", AreaConversaciones,
             "/conversaciones/configuracion", "bi-chat-left-text", ["conversaciones"], "whatsapp instagram facebook mercado libre", Principal: true),
-        new("conv-whatsapp", "WhatsApp", "Conectar números de WhatsApp Business o la API de Meta.", AreaConversaciones,
-            "/conversaciones/configuracion?seccion=canales&subseccion=whatsapp-business", "bi-whatsapp", ["conversaciones"], "qr numero meta cloud api"),
+        new("conv-whatsapp", "WhatsApp", "Conectar números de WhatsApp con Meta y ver su uso.", AreaConversaciones,
+            "/conversaciones/configuracion?seccion=canales&subseccion=whatsapp-api", "bi-whatsapp", ["conversaciones"], "numero meta cloud api coexistence"),
         new("conv-asistente", "Asistente IA", "Personalidad, información del negocio y herramientas del bot.", AreaConversaciones,
             "/conversaciones/configuracion?seccion=asistente-ia&subseccion=general", "bi-robot", ["conversaciones"], "bot ia openai chatgpt respuestas automaticas"),
         new("conv-informacion", "Información del negocio para el asistente", "Bloques por tema y archivos (PDF, Word, manuales) que el asistente usa para responder.", AreaConversaciones,

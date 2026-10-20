@@ -2612,6 +2612,21 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    // Claves que se leen = exactamente las que se graban (BuildAutomatizacionesItems con Todas). Antes era
+    // una lista escrita a mano y quedaron afuera CONV_BOT_CANALES, CONV_BOT_GENERA_TICKET,
+    // CONV_BOT_WEB_PIDE_DATOS y la encuesta: se guardaban pero al leer siempre volvía el valor por
+    // defecto (2026-10-20).
+    private static readonly Lazy<string[]> _automatizacionesClavesLeidas = new(() =>
+        BuildAutomatizacionesItems(new ConversacionAutomatizacionesConfigDto(), ConversacionAutomatizacionSeccion.Todas)
+            .Select(x => x.Clave.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray());
+
+    internal static IReadOnlyList<string> AutomatizacionesClavesLeidas => _automatizacionesClavesLeidas.Value;
+
+    private static string AutomatizacionesClavesSqlList
+        => string.Join(", ", AutomatizacionesClavesLeidas.Select(k => "'" + k.Replace("'", "''") + "'"));
+
     private static string BuildAutomatizacionesSelectSql(string detailColumn)
         => $"""
             SELECT
@@ -2619,42 +2634,7 @@ public sealed class ConversacionesConfigService(
                 ISNULL(VALOR, ''),
                 ISNULL({detailColumn}, '')
             FROM dbo.TA_CONFIGURACION
-            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
-            (
-                'CONV_AUTOMATIZACIONES_ACTIVO',
-                'CONV_AUTOMATIZACIONES_MENSAJE',
-                'CONV_AUTOMATIZACIONES_DIAS',
-                'CONV_AUTOMATIZACIONES_HORA_DESDE',
-                'CONV_AUTOMATIZACIONES_HORA_HASTA',
-                'CONV_BIENVENIDA_ACTIVO',
-                'CONV_BIENVENIDA_MENSAJE',
-                'CONV_BOT_ACTIVO',
-                'CONV_BOT_SOLO_SIN_ASIGNAR',
-                'CONV_BOT_PALABRAS_ESCALADO',
-                'CONV_BOT_MAX_RESPUESTAS',
-                'CONV_BOT_SOLO_FUERA_HORARIO',
-                'CONV_BOT_ESPERA_MINUTOS',
-                'CONV_AUTOCIERRE_ACTIVO',
-                'CONV_AUTOCIERRE_HORAS_AVISO',
-                'CONV_AUTOCIERRE_HORAS_CIERRE',
-                'CONV_AUTOCIERRE_MENSAJE_AVISO',
-                'CONV_AUTOCIERRE_MENSAJE_CIERRE',
-                'CONV_SLA_ACTIVO',
-                'CONV_SLA_HORAS_RECORDATORIO',
-                'CONV_SLA_HORAS_REASIGNAR',
-                'CONV_ASISTENTE_FUERA_HORARIO',
-                'CONV_ASISTENTE_URGENCIA_PALABRAS',
-                'CONV_ASISTENTE_URGENCIA_TEMPLATE',
-                'CONV_ASISTENTE_URGENCIA_TECNICOS',
-                'CONV_ASISTENTE_USA_KNOWLEDGE',
-                'CONV_ASISTENTE_HERRAMIENTA_PRECIOS',
-                'CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE',
-                'CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR',
-                'CONV_ASISTENTE_HERRAMIENTA_PEDIDOS',
-                'CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK',
-                'CATALOGO_MUESTRA_PRECIO_CONSUMIDOR',
-                'CONV_INFORME_INSTRUCCIONES'
-            )
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ({AutomatizacionesClavesSqlList})
             """;
 
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)

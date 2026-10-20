@@ -1636,21 +1636,21 @@
                                 if (lastMessageDate != messageDate)
                                 {
                                     lastMessageDate = messageDate;
-                                    <div class="conversation-date-divider">
+                                    <div @key="@($"d:{messageDate:yyyyMMdd}")" class="conversation-date-divider">
                                         <span>@FormatConversationDateDivider(message.FechaHora)</span>
                                     </div>
                                 }
 
                                 @if (_firstNewMessageId == message.IdMensaje)
                                 {
-                                    <div class="message-new-divider">
+                                    <div @key="@("nuevo")" class="message-new-divider">
                                         <span>Nuevo</span>
                                     </div>
                                 }
 
                                 @if (IsInternalEventMessage(message))
                                 {
-                                    <div class="conversation-event-divider">
+                                    <div @key="message.IdMensaje" class="conversation-event-divider">
                                         @if (TryGetTicketIdFromEvent(message, out var eventTicketId))
                                         {
                                             <button type="button" class="conversation-event-divider__text conversation-event-divider__link" @onclick="() => OpenTicket(eventTicketId)">
@@ -1666,7 +1666,10 @@
                                     continue;
                                 }
 
-                                <div id="@GetMessageDomId(message.IdMensaje)"
+                                @* @key: al llegar un mensaje (o el separador "Nuevo") los demás no se reciclan por
+                                   posición; si no, el audio que se estaba escuchando se cortaba (2026-10-20). *@
+                                <div @key="message.IdMensaje"
+                                     id="@GetMessageDomId(message.IdMensaje)"
                                      class="message-row @GetMessageRowClass(message) @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
                                      @ondblclick="() => QuoteMessageAsync(message)">
                                     @if (_ticketSelectionMode)
@@ -1836,7 +1839,7 @@
                                                 }
                                                 else if (IsAudioAttachment(adj))
                                                 {
-                                                    <div class="message-attachment message-attachment--audio">
+                                                    <div @key="adj.IdAdjunto" class="message-attachment message-attachment--audio">
                                                         @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <audio class="wa-audio-player__media" preload="metadata">
@@ -4226,7 +4229,8 @@
     private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
-        => CompactVisibleMessages(OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x))));
+        // DistinctBy: cada mensaje lleva @key por IdMensaje en la lista; un duplicado haría fallar el render.
+        => CompactVisibleMessages(OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)).DistinctBy(x => x.IdMensaje)));
     private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
         => _canalActivo == "MERCADOLIBRE"
             ? BuildMercadoLibreInboxGroups()
@@ -8512,13 +8516,30 @@
         if (_busyAction || _selectedConversation is null)
             return;
 
+        // Bloquear antes del primer await: Enter y el botón pueden entrar durante el interop.
+        _busyAction = true;
+        try
+        {
+            await SendReplyCoreAsync();
+        }
+        finally
+        {
+            _busyAction = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendReplyCoreAsync()
+    {
+        if (_selectedConversation is null)
+            return;
+
         _replyText = await GetReplyTextareaValueAsync();
         var textToSend = _replyText.Trim();
         var attachmentsToSend = _pendingAttachments.ToList();
         if (string.IsNullOrWhiteSpace(textToSend) && attachmentsToSend.Count == 0)
             return;
 
-        _busyAction = true;
         _actionMessage = null;
         _actionError = null;
 
@@ -8598,7 +8619,6 @@
         }
         finally
         {
-            _busyAction = false;
             await ClearTypingAsync();
             // Refresca el panel de "bloqueado por Meta" con o sin error -- si este envío tuvo éxito
             // después de un 131031 anterior, el panel debe desaparecer ya mismo, sin esperar a que el
