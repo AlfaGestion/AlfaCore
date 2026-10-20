@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
-public sealed class ConversacionesService(
+public sealed partial class ConversacionesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -2677,7 +2677,9 @@ public sealed class ConversacionesService(
                 MessageType = NormalizeMessageType(request.MessageType),
                 Direction = "SALIENTE",
                 EstadoEnvio = initialState,
-                Text = request.Texto.Trim(),
+                Text = request.Botones is { Count: > 0 } botonesTexto
+                    ? $"{request.Texto.Trim()}\n\n{string.Join(" · ", botonesTexto.Select(b => b.Titulo))}"
+                    : request.Texto.Trim(),
                 PayloadJson = string.Empty,
                 FechaHora = now,
                 UsuarioAutor = request.UsuarioAccion,
@@ -2714,7 +2716,9 @@ public sealed class ConversacionesService(
             {
                 try
                 {
-                    var sendResult = await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    var sendResult = request.Botones is { Count: > 0 } botones
+                        ? await SendInteractiveButtonsToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), botones, token)
+                        : await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
                     whatsAppMessageId = sendResult.WhatsAppMessageId;
                     finalState = sendResult.EstadoEnvio;
                     payload = sendResult.PayloadJson;
@@ -4085,6 +4089,15 @@ public sealed class ConversacionesService(
                 new { CodigoEstado = state, request.Observaciones, request.UsuarioAccion, request.SistemaAccion },
                 token);
 
+            // Encuesta de satisfacción: sólo cuando cierra una persona (los cierres automáticos por
+            // inactividad o por vencer la ventana no traen usuario o vienen como AUTOCIERRE).
+            if (isClosed && !wasClosed
+                && !string.IsNullOrWhiteSpace(request.UsuarioAccion)
+                && !string.Equals(request.SistemaAccion, "AUTOCIERRE", StringComparison.OrdinalIgnoreCase))
+            {
+                await TryEnviarEncuestaAlCerrarAsync(request.IdConversacion, request.UsuarioAccion, previousTechnicianId, token);
+            }
+
             return true;
         }, "No se pudo cambiar el estado de la conversación.", ct);
     }
@@ -4335,6 +4348,12 @@ public sealed class ConversacionesService(
                         BuildReactionSummary(incoming.Text, incoming: true),
                         token,
                         reopenIfClosed: false);
+                }
+                // Respuesta a la encuesta de satisfacción (botón o comentario): se registra sin reabrir
+                // la conversación ni correr las respuestas automáticas (2026-10-19).
+                else if (isNewMessage && await TryProcesarRespuestaEncuestaAsync(conversationId, messageId, incoming, CancellationToken.None))
+                {
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: false);
                 }
                 else
                 {
@@ -9123,6 +9142,26 @@ public sealed class ConversacionesService(
                 // si hay un tema pendiente (ticket abierto o ya le respondió alguien del equipo) se le
                 // contesta sin nombrar a nadie, no se abre otro ticket y se avisa adentro. Si no hay nada
                 // anterior, se le pregunta a qué se refiere en vez de inventar un pendiente.
+                // Avisa que el tema se resolvió ("ya está arreglado", "ya anda") (2026-10-19): se agradece y se
+                // avisa adentro para cerrar el ticket. Antes caía como "pide novedades" (caso Legión, ticket #92).
+                if (AvisaTemaResuelto(texto))
+                {
+                    TemaPendiente? pendienteResuelto = null;
+                    try
+                    {
+                        pendienteResuelto = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        await _appEvents.LogErrorAsync("Conversaciones", "BotTemaResuelto", ex,
+                            "No se pudo buscar el tema pendiente; se respondió el agradecimiento sin avisar al equipo.",
+                            new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                    }
+
+                    await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, texto, token).ConfigureAwait(false);
+                    return;
+                }
+
                 var omitirTicket = false;
                 if (string.Equals(result?.Tipo, "SEGUIMIENTO", StringComparison.OrdinalIgnoreCase)
                     || (!string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase) && PideNovedades(texto)))
@@ -10344,14 +10383,166 @@ public sealed class ConversacionesService(
         return palabras is > 0 and <= 12 && FrasesPideNovedades.Any(f => normalizado.Contains(f, StringComparison.Ordinal));
     }
 
+    private static readonly string[] FrasesTemaResuelto =
+    [
+        "ya esta arreglado", "ya esta solucionado", "ya esta resuelto", "ya esta funcionando", "ya esta andando",
+        "ya quedo", "ya anda", "ya funciona", "ya me anda", "ya me funciona", "ya lo pude", "ya pude",
+        "ya lo solucione", "ya lo resolvi", "ya lo arregle", "ya se soluciono", "ya se arreglo", "ya se resolvio",
+        "se soluciono", "se arreglo solo", "se resolvio", "esta solucionado", "quedo solucionado", "quedo resuelto",
+        "solucionado", "resuelto gracias", "ya no hace falta", "ya no es necesario", "ya lo encontre"
+    ];
+
+    private static readonly HashSet<string> PalabrasQueNieganResuelto = new(StringComparer.Ordinal)
+    {
+        "no", "todavia", "aun", "sigue", "sigo", "pero", "tampoco", "nunca"
+    };
+
+    /// <summary>
+    /// El cliente avisa que su tema quedó resuelto ("ya está arreglado", "ya anda", "lo pude solucionar").
+    /// No cuenta si pregunta ("¿ya está arreglado?") o niega/condiciona ("todavía no anda", "anda pero...").
+    /// </summary>
+    internal static bool AvisaTemaResuelto(string texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || texto.Contains('?') || texto.Contains('¿'))
+            return false;
+
+        var normalizado = Regex.Replace(RemoveDiacritics(texto).ToLowerInvariant(), "[^a-z ]+", " ");
+        normalizado = Regex.Replace(normalizado, " +", " ").Trim();
+        var palabras = normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (palabras.Length is 0 or > 15)
+            return false;
+
+        var conBordes = $" {normalizado} ";
+        var frase = FrasesTemaResuelto.FirstOrDefault(f => conBordes.Contains($" {f} ", StringComparison.Ordinal));
+        if (frase is null)
+            return false;
+
+        // Las negaciones se buscan fuera de la frase ("ya no hace falta" sí es un aviso; "todavía no anda" no).
+        var resto = conBordes.Replace($" {frase} ", " ", StringComparison.Ordinal);
+        return !resto.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(PalabrasQueNieganResuelto.Contains);
+    }
+
+    internal const string RespuestaTemaResuelto = "¡Qué bueno que ya quedó resuelto! Gracias por avisarnos 🙂 Cualquier cosa, escribinos.";
+    internal const string ObservacionAsignacionResuelto = "Avisa que se resolvió su tema";
+
+    /// <summary>
+    /// El cliente avisa que se resolvió: se le agradece (una vez por día) y, si había un tema pendiente, se
+    /// deja la nota y se avisa a quien lo atendía para que cierre el ticket. No abre ticket ni pide novedades.
+    /// </summary>
+    private async Task ResponderTemaResueltoAsync(long idConversacion, TemaPendiente? pendiente, string textoCliente, CancellationToken ct)
+    {
+        if (!await YaEnvioTextoAutomaticoHoyAsync(idConversacion, RespuestaTemaResuelto, BusinessNow(), ct).ConfigureAwait(false))
+        {
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = RespuestaTemaResuelto,
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "BOT"
+            }, ct).ConfigureAwait(false);
+        }
+
+        if (pendiente is not { Hay: true })
+        {
+            await _appEvents.LogAuditAsync("Conversaciones", "BotTemaResuelto", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El cliente avisó que su tema se resolvió; no había tema pendiente.", new { idConversacion }, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var destino = FirstNonEmpty(pendiente.IdTecnicoAsignado, pendiente.IdTecnico);
+        var destinoId = string.IsNullOrWhiteSpace(destino) ? null : await ResolveTechnicianIdOrNullAsync(destino, ct).ConfigureAwait(false);
+        var destinoNombre = string.IsNullOrWhiteSpace(destinoId)
+            ? string.Empty
+            : FirstNonEmpty(await TryGetTechnicianNameAsync(destinoId, ct).ConfigureAwait(false), destinoId);
+        var conTicket = pendiente.NumeroTicket is int n ? $" del ticket #{n.ToString(CultureInfo.InvariantCulture)}" : string.Empty;
+        var cerrar = pendiente.NumeroTicket.HasValue ? " Revisar si se puede cerrar el ticket." : string.Empty;
+
+        await AddInternalEventCoreAsync(idConversacion,
+            string.IsNullOrWhiteSpace(destinoNombre)
+                ? $"✅ El cliente avisa que el tema{conTicket} ya quedó resuelto.{cerrar}"
+                : $"✅ El cliente avisa que el tema{conTicket} ya quedó resuelto. Se le avisó a {destinoNombre}.{cerrar}",
+            null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+
+        // Queda asentado en el propio ticket (2026-10-19): si después se cierra, se puede rastrear por qué.
+        if (pendiente.IdTicket is long idTicket)
+            await AsentarAvisoResueltoEnTicketAsync(idTicket, idConversacion, pendiente, textoCliente, ct).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(destinoId))
+        {
+            await RegistrarAsignacionSeguimientoAsync(idConversacion, destinoId, ct, ObservacionAsignacionResuelto).ConfigureAwait(false);
+            if (serviceProvider?.GetService(typeof(IAvisosPushNotifier)) is IAvisosPushNotifier avisosPush)
+            {
+                var contacto = string.IsNullOrWhiteSpace(pendiente.Contacto) ? "Un cliente" : pendiente.Contacto.Trim();
+                await avisosPush.NotificarTecnicoAsync(
+                    destinoId,
+                    "Tema resuelto",
+                    $"{contacto} avisa que su tema{conTicket} ya quedó resuelto.",
+                    $"/conversaciones?id={idConversacion.ToString(CultureInfo.InvariantCulture)}",
+                    ct).ConfigureAwait(false);
+            }
+        }
+
+        await _appEvents.LogAuditAsync("Conversaciones", "BotTemaResuelto", "CONV_CONVERSACIONES",
+            idConversacion.ToString(CultureInfo.InvariantCulture),
+            "El cliente avisó que su tema se resolvió; el asistente agradeció y avisó al equipo.",
+            new { idConversacion, pendiente.NumeroTicket, IdTecnicoAvisado = destinoId }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Nota en la actividad del ticket con lo que escribió el cliente, cuándo y por dónde. Nunca frena la
+    /// respuesta: si falla se registra y sigue.
+    /// </summary>
+    private async Task AsentarAvisoResueltoEnTicketAsync(long idTicket, long idConversacion, TemaPendiente pendiente, string textoCliente, CancellationToken ct)
+    {
+        if (serviceProvider?.GetService(typeof(ITicketsService)) is not ITicketsService ticketsService)
+            return;
+
+        try
+        {
+            await ticketsService.AddNoteAsync(new TicketNotaRequest
+            {
+                IdTicket = idTicket,
+                Texto = ConstruirNotaAvisoResuelto(textoCliente, pendiente.Canal, pendiente.Contacto, idConversacion, BusinessNow()),
+                UsuarioAccion = "Asistente IA"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "BotTemaResueltoNotaTicket", ex,
+                "No se pudo dejar en el ticket la nota de que el cliente avisó que se resolvió.",
+                new { idTicket, idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal static string ConstruirNotaAvisoResuelto(string textoCliente, string canal, string contacto, long idConversacion, DateTime fecha)
+    {
+        var por = string.IsNullOrWhiteSpace(canal) ? "la conversación" : canal.Trim().ToUpperInvariant() switch
+        {
+            "WHATSAPP" => "WhatsApp",
+            "WEBCHAT" => "el chat del sitio web",
+            "INSTAGRAM" => "Instagram",
+            "FACEBOOK" => "Facebook",
+            "MERCADOLIBRE" => "Mercado Libre",
+            _ => canal.Trim()
+        };
+        var quien = string.IsNullOrWhiteSpace(contacto) ? "El cliente" : $"El cliente ({contacto.Trim()})";
+        var mensaje = Truncar((textoCliente ?? string.Empty).Trim(), 300);
+        return $"✅ {quien} avisó por {por} que el tema quedó resuelto: \"{mensaje}\" " +
+               $"({fecha.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)}, conversación #{idConversacion.ToString(CultureInfo.InvariantCulture)}). " +
+               "Lo registró el asistente; el ticket sigue abierto hasta que alguien del equipo lo cierre.";
+    }
+
     internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
     internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
 
-    private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado)
+    private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado, long? IdTicket = null)
     {
         public bool Hay => NumeroTicket.HasValue || HuboRespuestaDelEquipo;
+        public string Canal { get; init; } = string.Empty;
     }
 
     /// <summary>
@@ -10362,11 +10553,11 @@ public sealed class ConversacionesService(
     private async Task<TemaPendiente> BuscarTemaPendienteAsync(long idConversacion, CancellationToken ct)
     {
         var sql = $"""
-            DECLARE @Ticket int = NULL, @TecTicket nvarchar(20) = NULL, @TecMsg nvarchar(20) = NULL, @HuboHumano bit = 0;
+            DECLARE @Ticket int = NULL, @IdTicket bigint = NULL, @TecTicket nvarchar(20) = NULL, @TecMsg nvarchar(20) = NULL, @HuboHumano bit = 0;
             DECLARE @Hoy date = CAST(GETDATE() AS date);
 
             IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
-                SELECT TOP (1) @Ticket = t.Numero, @TecTicket = NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))), N'')
+                SELECT TOP (1) @Ticket = t.Numero, @IdTicket = t.IdTicket, @TecTicket = NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, N''))), N'')
                 FROM dbo.TICK_TICKETS t
                 LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
                 WHERE t.IdConversacion = @Id AND ISNULL(t.Baja, 0) = 0 AND ISNULL(e.EsCerrado, 0) = 0
@@ -10418,7 +10609,9 @@ public sealed class ConversacionesService(
                 @Tec,
                 @HuboHumano,
                 ISNULL(c.NombreVisible, N''),
-                NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'')
+                NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N''),
+                @IdTicket,
+                ISNULL(c.Canal, N'')
             FROM dbo.CONV_CONVERSACIONES c
             WHERE c.IdConversacion = @Id;
             """;
@@ -10437,7 +10630,11 @@ public sealed class ConversacionesService(
             !rd.IsDBNull(2) && rd.GetBoolean(2),
             rd.IsDBNull(1) ? null : rd.GetString(1),
             rd.IsDBNull(3) ? string.Empty : rd.GetString(3),
-            rd.IsDBNull(4) ? null : rd.GetString(4));
+            rd.IsDBNull(4) ? null : rd.GetString(4),
+            rd.IsDBNull(5) ? null : rd.GetInt64(5))
+        {
+            Canal = rd.IsDBNull(6) ? string.Empty : rd.GetString(6)
+        };
     }
 
     /// <summary>
@@ -10535,7 +10732,7 @@ public sealed class ConversacionesService(
     /// Asigna la conversación al técnico si no tenía a nadie y deja SIEMPRE el movimiento en
     /// CONV_ASIGNACIONES: es lo que la campana (CentroAvisosService) muestra como aviso.
     /// </summary>
-    private async Task RegistrarAsignacionSeguimientoAsync(long idConversacion, string idTecnico, CancellationToken ct)
+    private async Task RegistrarAsignacionSeguimientoAsync(long idConversacion, string idTecnico, CancellationToken ct, string? observaciones = null)
     {
         const string sql = """
             UPDATE dbo.CONV_CONVERSACIONES
@@ -10551,7 +10748,7 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@IdTecnico", idTecnico);
-        cmd.Parameters.AddWithValue("@Observaciones", ObservacionAsignacionSeguimiento);
+        cmd.Parameters.AddWithValue("@Observaciones", observaciones ?? ObservacionAsignacionSeguimiento);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -10814,7 +11011,7 @@ public sealed class ConversacionesService(
     // quedó técnicamente "sin asignar") y por TryAutoReplyReglasAsync/SoloSinAsignar (mismo criterio,
     // ver auditoría 2026-09-18 y su seguimiento 2026-09-21).
     private static readonly string[] AutomatedOutgoingSistemaAutores =
-        ["AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA", "SLA", "PROGRAMADO"];
+        ["AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA", "SLA", "PROGRAMADO", "ENCUESTA"];
 
     private static readonly string AutomatedOutgoingSistemaAutorSqlList =
         string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
@@ -12231,6 +12428,7 @@ public sealed class ConversacionesService(
                   FROM dbo.CONV_MENSAJES m
                   WHERE m.IdConversacion = c.IdConversacion
                     AND m.Direction = N'ENTRANTE'
+                    AND ISNULL(m.Origen, N'') <> N'ENCUESTA'
                     AND (
                         c.FechaHoraCierre IS NULL
                         OR m.FechaHora > c.FechaHoraCierre
@@ -12643,6 +12841,57 @@ public sealed class ConversacionesService(
             throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar plantilla");
+        return new WhatsAppSendResult
+        {
+            EstadoEnvio = "ENVIADO_META",
+            WhatsAppMessageId = messageId,
+            PayloadJson = responseBody
+        };
+    }
+
+    /// <summary>Mensaje interactivo de WhatsApp con hasta 3 botones de respuesta rápida.</summary>
+    private async Task<WhatsAppSendResult> SendInteractiveButtonsToWhatsAppAsync(
+        ConversacionWhatsAppConfigDto config, string phone, string text, IReadOnlyList<ConversacionBotonRespuesta> botones, CancellationToken ct)
+    {
+        var url = $"https://graph.facebook.com/{config.ApiVersion}/{config.PhoneNumberId}/messages";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["messaging_product"] = "whatsapp",
+            ["recipient_type"] = "individual",
+            ["to"] = phone,
+            ["type"] = "interactive",
+            ["interactive"] = new Dictionary<string, object?>
+            {
+                ["type"] = "button",
+                ["body"] = new Dictionary<string, object?> { ["text"] = text.Length <= 1024 ? text : text[..1024] },
+                ["action"] = new Dictionary<string, object?>
+                {
+                    ["buttons"] = botones.Take(3).Select(b => new Dictionary<string, object?>
+                    {
+                        ["type"] = "reply",
+                        ["reply"] = new Dictionary<string, object?>
+                        {
+                            ["id"] = b.Id,
+                            ["title"] = b.Titulo.Length <= 20 ? b.Titulo : b.Titulo[..20]
+                        }
+                    }).ToList()
+                }
+            }
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Meta devolvió {(int)response.StatusCode}: {responseBody}");
+
+        var messageId = RequireSentMessageId(responseBody, "enviar mensaje con botones");
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",

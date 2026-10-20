@@ -1,46 +1,35 @@
 window.alfaCorePwa = (function () {
-    let deferredInstallPrompt = null;
+    let deferredInstallPrompt = window._alfaCoreDeferredInstallPrompt || null;
     let dotNetRef = null;
+    let installPromptWaiter = null;
 
     window.addEventListener('beforeinstallprompt', event => {
         event.preventDefault();
         deferredInstallPrompt = event;
+        window._alfaCoreDeferredInstallPrompt = event;
+        if (installPromptWaiter) {
+            installPromptWaiter(true);
+            installPromptWaiter = null;
+        }
         notifyInstallState();
     });
 
     window.addEventListener('appinstalled', () => {
         deferredInstallPrompt = null;
+        window._alfaCoreDeferredInstallPrompt = null;
         notifyInstallState();
     });
-
-    function isLocalDevelopmentHost() {
-        return window.location.hostname === 'localhost'
-            || window.location.hostname === '127.0.0.1';
-    }
-
-    async function unregisterServiceWorkers() {
-        if (!('serviceWorker' in navigator))
-            return;
-
-        try {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(registrations.map(registration => registration.unregister()));
-        } catch {
-            // En desarrollo no bloqueamos si el navegador no permite limpiar registros.
-        }
-    }
 
     async function registerServiceWorker() {
         if (!('serviceWorker' in navigator))
             return false;
 
-        if (isLocalDevelopmentHost()) {
-            await unregisterServiceWorkers();
-            return false;
-        }
-
         try {
-            await navigator.serviceWorker.register('/service-worker.js');
+            // localhost también es un contexto seguro para PWA. No se desregistra
+            // el worker en cada recarga: eso deja la página sin controlador y
+            // evita que el navegador dispare beforeinstallprompt.
+            const registration = await navigator.serviceWorker.register('/service-worker.js');
+            await registration.update();
             return true;
         } catch {
             return false;
@@ -271,14 +260,54 @@ window.alfaCorePwa = (function () {
         },
 
         install: async function () {
+            if (!deferredInstallPrompt && 'serviceWorker' in navigator) {
+                await new Promise(resolve => {
+                    const timer = setTimeout(() => {
+                        installPromptWaiter = null;
+                        resolve();
+                    }, 1500);
+                    installPromptWaiter = ready => {
+                        clearTimeout(timer);
+                        resolve(ready);
+                    };
+                });
+            }
+
             if (!deferredInstallPrompt)
-                return { accepted: false, reason: 'not-available' };
+                return false;
 
             deferredInstallPrompt.prompt();
             const choice = await deferredInstallPrompt.userChoice;
             deferredInstallPrompt = null;
+            window._alfaCoreDeferredInstallPrompt = null;
             notifyInstallState();
-            return { accepted: choice.outcome === 'accepted' };
+            return choice.outcome === 'accepted';
+        },
+
+        preparePuntoVentaInstall: function (idPuntoVenta) {
+            const id = Number.parseInt(idPuntoVenta, 10);
+            if (!Number.isInteger(id) || id <= 0)
+                return false;
+
+            const storageKey = 'alfacore.pos.puntoVentaId';
+            localStorage.setItem(storageKey, String(id));
+
+            const pathname = window.location.pathname || '';
+            const marker = '/ventas/punto-venta';
+            const markerIndex = pathname.toLowerCase().indexOf(marker);
+            if (markerIndex < 0)
+                return true;
+
+            const scope = pathname.substring(0, markerIndex + marker.length);
+            const manifest = document.getElementById('app-manifest');
+            if (manifest) {
+                manifest.href = '/manifest-punto-venta?start='
+                    + encodeURIComponent(scope)
+                    + '&idPuntoVenta=' + encodeURIComponent(String(id))
+                    + '&v=' + Date.now().toString();
+            }
+
+            return true;
         },
 
         getDeviceId: getDeviceId,

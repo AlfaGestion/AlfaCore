@@ -328,7 +328,8 @@ public enum ConversacionAutomatizacionSeccion
     AutoCierre = 8,
     Sla = 16,
     Informe = 32,
-    Todas = Horario | Bienvenida | Asistente | AutoCierre | Sla | Informe
+    Encuesta = 64,
+    Todas = Horario | Bienvenida | Asistente | AutoCierre | Sla | Informe | Encuesta
 }
 
 /// <summary>
@@ -416,6 +417,11 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool SlaActivo { get; set; }
     public int SlaHorasRecordatorio { get; set; } = 2;
     public int SlaHorasReasignar { get; set; } = 4;
+
+    /// <summary>Encuesta de satisfacción al cerrar una conversación de WhatsApp (API de Meta) (2026-10-19).</summary>
+    public bool EncuestaActiva { get; set; }
+
+    public string EncuestaPregunta { get; set; } = ConversacionEncuestaTextos.PreguntaPorDefecto;
 
     // Asistente IA (cerebro del bot). Se persiste en dbo.CONV_ASISTENTE (texto largo).
     /// <summary>Comportamiento / persona / instrucciones del asistente (system prompt).</summary>

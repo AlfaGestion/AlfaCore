@@ -4896,7 +4896,7 @@
         }
 
         .pos-charge-modal__totals-head {
-            grid-template-columns: 1fr;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             gap: 0.35rem;
         }
 
@@ -4909,11 +4909,28 @@
         }
 
         .pos-charge-modal__payment-entry {
-            grid-template-columns: 1fr;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             gap: 0.4rem;
         }
 
+        .pos-charge-modal__payment-entry .pos-charge-modal__code-filter {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .pos-charge-modal__payment-entry .pos-charge-modal__amount {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .pos-charge-modal__payment-entry .pos-charge-modal__selected-method {
+            grid-column: 1 / -1;
+            grid-row: 2;
+        }
+
         .pos-charge-modal__payment-entry .pos-charge-modal__action {
+            grid-column: 1 / -1;
+            grid-row: 3;
             width: 100%;
             min-height: 2.65rem;
         }
@@ -5008,13 +5025,11 @@
         }
 
         .pos-charge-modal__actions .pos-charge-modal__ghost {
-            grid-column: 1 / -1;
+            grid-column: auto;
         }
 
         .pos-shortcuts-hint--modal {
-            flex-wrap: wrap;
-            gap: 0.25rem 0.45rem;
-            font-size: 0.62rem;
+            display: none;
         }
 
         /* El modal ocupa exactamente el viewport disponible. Así el título
@@ -6034,6 +6049,7 @@
                    @bind="_chargeAmountInput"
                    @bind:event="oninput"
                    @onkeydown="HandleChargeAmountKeyDown"
+                   inputmode="decimal"
                    placeholder="Importe" />
             <button type="button" class="pos-charge-modal__action" @onclick="() => AddSelectedPaymentAsync()" disabled="@(_paymentMethodsLoading || _mpCobrando)">Agregar</button>
         </div>
@@ -7213,6 +7229,9 @@
     private string _paymentMethodCodeFilter = string.Empty;
     private string _tipoComprobanteSeleccionado = "FC";
     private string _receiptEmail = string.Empty;
+    private bool _pendingDraftRecoveryChecked;
+    private bool _pendingDraftRestoring;
+    private string? _lastPendingDraftJson;
 
     private string SucursalOperativa
         => !string.IsNullOrWhiteSpace(_puntoVentaSucursal)
@@ -7709,11 +7728,26 @@
             try
             {
                 await Js.InvokeVoidAsync("localStorage.setItem", "alfacore.pos.puntoVentaId", _idPuntoVentaActual.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                await Js.InvokeVoidAsync("alfaCorePwa.preparePuntoVentaInstall", _idPuntoVentaActual);
             }
             catch
             {
-                // La operación del POS no depende de localStorage.
+                // La instalación y la persistencia local no bloquean el funcionamiento del POS.
             }
+
+            if (IdPedidoQuery is null && _pedidoContexto is null)
+                await RecoverPendingDraftAsync();
+            else
+                _pendingDraftRecoveryChecked = true;
+        }
+
+        if (_pendingDraftRecoveryChecked
+            && !_pendingDraftRestoring
+            && _idPuntoVentaActual > 0
+            && IdPedidoQuery is null
+            && _pedidoContexto is null)
+        {
+            await PersistPendingDraftAsync();
         }
 
         if (_printReceiptAfterRender && _showReceiptModal && _lastSaleResult is not null)
@@ -7780,6 +7814,124 @@
                 // El reset del scroll es solo una mejora visual; no debe afectar el POS.
             }
         }
+    }
+
+    private string PendingDraftStorageKey()
+    {
+        var baseId = Convert.ToString(
+            SessionSvc.GetActiveSession()?.BaseId,
+            System.Globalization.CultureInfo.InvariantCulture) ?? "0";
+        return $"alfacore.pos.pending.{baseId}.{_idPuntoVentaActual}";
+    }
+
+    private async Task RecoverPendingDraftAsync()
+    {
+        _pendingDraftRecoveryChecked = true;
+        try
+        {
+            var json = await Js.InvokeAsync<string?>(
+                "localStorage.getItem",
+                PendingDraftStorageKey());
+            if (string.IsNullOrWhiteSpace(json))
+                return;
+
+            var draft = System.Text.Json.JsonSerializer.Deserialize<PendingPosDraft>(json);
+            if (draft is null || draft.IdPuntoVenta != _idPuntoVentaActual || !draft.Items.Any())
+            {
+                await Js.InvokeVoidAsync("localStorage.removeItem", PendingDraftStorageKey());
+                return;
+            }
+
+            var recuperar = await Js.InvokeAsync<bool>(
+                "confirm",
+                $"Hay un comprobante pendiente con {draft.Items.Sum(x => x.Cantidad):0.##} artículo(s) por {FmtMoney(draft.Items.Sum(x => x.Subtotal))}. ¿Querés recuperarlo?");
+
+            if (!recuperar)
+            {
+                await Js.InvokeVoidAsync("localStorage.removeItem", PendingDraftStorageKey());
+                return;
+            }
+
+            _pendingDraftRestoring = true;
+            CartState.Clear();
+            foreach (var item in draft.Items)
+                _cartItems.Add(item);
+
+            _tipoComprobanteSeleccionado = draft.TipoComprobante is "FC" or "NC" or "FP" or "NCFP" or "RM" or "NP"
+                ? draft.TipoComprobante
+                : _tipoComprobanteSeleccionado;
+            _cuentaCliente = draft.CuentaCliente ?? string.Empty;
+            _cuentaClienteNombre = draft.CuentaClienteNombre ?? string.Empty;
+            _clienteDocumentoTipo = draft.ClienteDocumentoTipo ?? string.Empty;
+            _clienteNumeroDocumento = draft.ClienteNumeroDocumento ?? string.Empty;
+            _clienteIva = draft.ClienteIva ?? string.Empty;
+
+            // Los pagos no se recuperan: si la recarga ocurrió durante una
+            // cobranza, volver a cargarlos podría duplicar el importe.
+            await RecalculateCartPricesAsync();
+            await LoadCatalogAsync();
+            _lastPendingDraftJson = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // La recuperación es una ayuda local; nunca debe impedir abrir el POS.
+        }
+        finally
+        {
+            _pendingDraftRestoring = false;
+        }
+    }
+
+    private async Task PersistPendingDraftAsync()
+    {
+        try
+        {
+            if (!_cartItems.Any())
+            {
+                if (_lastPendingDraftJson is not null)
+                {
+                    await Js.InvokeVoidAsync("localStorage.removeItem", PendingDraftStorageKey());
+                    _lastPendingDraftJson = null;
+                }
+
+                return;
+            }
+
+            var draft = new PendingPosDraft
+            {
+                IdPuntoVenta = _idPuntoVentaActual,
+                TipoComprobante = _tipoComprobanteSeleccionado,
+                CuentaCliente = _cuentaCliente,
+                CuentaClienteNombre = _cuentaClienteNombre,
+                ClienteDocumentoTipo = _clienteDocumentoTipo,
+                ClienteNumeroDocumento = _clienteNumeroDocumento,
+                ClienteIva = _clienteIva,
+                Items = _cartItems.ToList()
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(draft);
+            if (string.Equals(json, _lastPendingDraftJson, StringComparison.Ordinal))
+                return;
+
+            await Js.InvokeVoidAsync("localStorage.setItem", PendingDraftStorageKey(), json);
+            _lastPendingDraftJson = json;
+        }
+        catch
+        {
+            // El borrador local no debe afectar el funcionamiento del POS.
+        }
+    }
+
+    private sealed class PendingPosDraft
+    {
+        public int IdPuntoVenta { get; set; }
+        public string TipoComprobante { get; set; } = "FC";
+        public string CuentaCliente { get; set; } = string.Empty;
+        public string CuentaClienteNombre { get; set; } = string.Empty;
+        public string ClienteDocumentoTipo { get; set; } = string.Empty;
+        public string ClienteNumeroDocumento { get; set; } = string.Empty;
+        public string ClienteIva { get; set; } = string.Empty;
+        public List<PuntoVentaCartItemDto> Items { get; set; } = [];
     }
 
     private async Task FocusScanAsync()
@@ -8395,7 +8547,14 @@
 
         try
         {
-            await Js.InvokeAsync<object>("alfaCorePwa.install");
+            var hasPosInstallPreparation = await Js.InvokeAsync<bool>(
+                "alfaCorePwaFunctionExists",
+                "preparePuntoVentaInstall");
+            if (!hasPosInstallPreparation)
+                return;
+
+            var accepted = await Js.InvokeAsync<bool>("alfaCorePwa.install");
+            _ = accepted;
         }
         catch (Exception ex)
         {
@@ -9546,6 +9705,10 @@
             ShowChargeSuccess($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
             _cartItems.Clear();
             _paymentLines.Clear();
+            // Después de grabar, una nueva venta móvil debe comenzar en la
+            // carga de artículos y no quedar detrás del recibo en cobranza.
+            _mobileCartView = false;
+            _mobileScrollToTop = true;
             _showChargeModal = false;
             var receiptItems = soldItems
                 .Concat(soldPayments
@@ -9789,6 +9952,8 @@
     private void ContinueWithNewReceipt()
     {
         CloseReceiptModal();
+        _mobileCartView = false;
+        _mobileScrollToTop = true;
         _lastSaleResult = null;
         _receiptItems.Clear();
         _receiptPayments.Clear();

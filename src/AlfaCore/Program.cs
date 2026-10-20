@@ -455,6 +455,7 @@ public class Program
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
         builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<ConversacionesInformeExcelExporter>();
+        builder.Services.AddScoped<IConversacionesSatisfaccionService, ConversacionesSatisfaccionService>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -568,7 +569,7 @@ public class Program
             }
 
             var idPuntoVenta = httpContext.Request.Query["idPuntoVenta"].ToString().Trim();
-            var startUrl = $"{scope}?directo=1";
+            var startUrl = $"{scope}/mostrador?directo=1";
             var appId = scope;
             if (int.TryParse(idPuntoVenta, out var parsedId) && parsedId > 0)
             {

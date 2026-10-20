@@ -1096,7 +1096,7 @@
     private string _anyDeskPath = string.Empty;
     private string _activePrimaryTab = "resumen";
     private string _activeChannelTab = "whatsapp";
-    private string _activeWhatsAppSection = "numeros";
+    private string _activeWhatsAppSection = "general";
     private string _activeSecondaryTab = string.Empty;
     private readonly HashSet<string> _expandedSettingsCategories = new(StringComparer.OrdinalIgnoreCase);
     private bool Loading { get; set; }
@@ -1179,9 +1179,11 @@
     private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
     [
         new("resumen", "Resumen", []),
+        // "WhatsApp Business" (vincular por QR / código, sin Meta) se retiró del menú el 2026-10-20:
+        // ya no se usa. La pantalla sigue existiendo sólo para administrar números viejos que todavía
+        // estén conectados así (se llega desde Operación y accesos → Editar accesos).
         new("canales", "Canales",
         [
-            new("whatsapp-business", "WhatsApp Business"),
             new("whatsapp-api", "WhatsApp conectados"),
             new("instagram", "Instagram"),
             new("facebook", "Facebook"),
@@ -1204,7 +1206,8 @@
             new("bienvenida", "Bienvenida"),
             new("reglas", "Reglas"),
             new("auto-cierre", "Auto-cierre"),
-            new("sla", "SLA")
+            new("sla", "SLA"),
+            new("encuesta", "Encuesta de satisfacción")
         ]),
         new("informes", "Informes", []),
         new("operacion-accesos", "Operación y accesos",
@@ -1426,7 +1429,7 @@
             _activePrimaryTab = "canales";
             _activeChannelTab = string.Equals(canal, "whatsapp", StringComparison.OrdinalIgnoreCase) ? "whatsapp" : _activeChannelTab;
             if (_activeChannelTab == "whatsapp")
-                _activeWhatsAppSection = "numeros";
+                _activeWhatsAppSection = "general";
             _activeSecondaryTab = GetActiveSecondaryTab();
             return;
         }
@@ -2832,7 +2835,7 @@
 
     private Task OnWhatsAppSectionChanged(string? section)
     {
-        _activeWhatsAppSection = section ?? "numeros";
+        _activeWhatsAppSection = section ?? "general";
         _activeSecondaryTab = GetActiveSecondaryTab();
         SyncWhatsAppPollingWithNavigation();
         UpdatePageHeader();
@@ -4415,6 +4418,8 @@
             SlaActivo = source.SlaActivo,
             SlaHorasRecordatorio = source.SlaHorasRecordatorio,
             SlaHorasReasignar = source.SlaHorasReasignar,
+            EncuestaActiva = source.EncuestaActiva,
+            EncuestaPregunta = source.EncuestaPregunta,
             AsistenteComportamiento = source.AsistenteComportamiento,
             AsistenteInformacion = source.AsistenteInformacion,
             AsistentePolitica = source.AsistentePolitica,
@@ -4466,6 +4471,8 @@
            && left.SlaActivo == right.SlaActivo
            && left.SlaHorasRecordatorio == right.SlaHorasRecordatorio
            && left.SlaHorasReasignar == right.SlaHorasReasignar
+           && left.EncuestaActiva == right.EncuestaActiva
+           && left.EncuestaPregunta == right.EncuestaPregunta
            && left.AsistenteComportamiento == right.AsistenteComportamiento
            && left.AsistenteInformacion == right.AsistenteInformacion
            && left.AsistentePolitica == right.AsistentePolitica
@@ -4684,6 +4691,7 @@
                 "bienvenida" => ConversacionAutomatizacionSeccion.Bienvenida,
                 "auto-cierre" => ConversacionAutomatizacionSeccion.AutoCierre,
                 "sla" => ConversacionAutomatizacionSeccion.Sla,
+                "encuesta" => ConversacionAutomatizacionSeccion.Encuesta,
                 "reglas" => ConversacionAutomatizacionSeccion.Ninguna,
                 _ => ConversacionAutomatizacionSeccion.Horario
             },
@@ -4698,6 +4706,7 @@
             ConversacionAutomatizacionSeccion.Bienvenida => "Bienvenida guardada",
             ConversacionAutomatizacionSeccion.AutoCierre => "Auto-cierre guardado",
             ConversacionAutomatizacionSeccion.Sla => "Seguimientos guardados",
+            ConversacionAutomatizacionSeccion.Encuesta => "Encuesta de satisfacción guardada",
             _ => "Horario guardado"
         };
 

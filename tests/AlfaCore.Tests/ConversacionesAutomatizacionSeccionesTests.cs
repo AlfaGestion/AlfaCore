@@ -28,7 +28,8 @@ public sealed class ConversacionesAutomatizacionSeccionesTests
         "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS",
         "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK",
         CatalogoPrecioConsumidorSetting.Clave,
-        "CONV_INFORME_INSTRUCCIONES"
+        "CONV_INFORME_INSTRUCCIONES",
+        "CONV_ENCUESTA_ACTIVA", "CONV_ENCUESTA_PREGUNTA"
     ];
 
     private static readonly ConversacionAutomatizacionSeccion[] SeccionesIndividuales =
@@ -38,13 +39,25 @@ public sealed class ConversacionesAutomatizacionSeccionesTests
         ConversacionAutomatizacionSeccion.Asistente,
         ConversacionAutomatizacionSeccion.AutoCierre,
         ConversacionAutomatizacionSeccion.Sla,
-        ConversacionAutomatizacionSeccion.Informe
+        ConversacionAutomatizacionSeccion.Informe,
+        ConversacionAutomatizacionSeccion.Encuesta
     ];
 
     private static string[] Claves(ConversacionAutomatizacionSeccion secciones)
         => ConversacionesConfigService.BuildAutomatizacionesItems(new ConversacionAutomatizacionesConfigDto(), secciones)
             .Select(x => x.Clave)
             .ToArray();
+
+    [Fact]
+    public void SeLeenTodasLasClavesQueSeGraban()
+    {
+        // Antes la lectura tenía su propia lista a mano: la encuesta, CONV_BOT_CANALES,
+        // CONV_BOT_GENERA_TICKET y CONV_BOT_WEB_PIDE_DATOS se guardaban pero nunca se leían.
+        var grabadas = Claves(ConversacionAutomatizacionSeccion.Todas).Select(x => x.ToUpperInvariant()).ToHashSet();
+        Assert.Subset(ConversacionesConfigService.AutomatizacionesClavesLeidas.ToHashSet(), grabadas);
+        Assert.Contains("CONV_ENCUESTA_ACTIVA", ConversacionesConfigService.AutomatizacionesClavesLeidas);
+        Assert.Contains("CONV_BOT_GENERA_TICKET", ConversacionesConfigService.AutomatizacionesClavesLeidas);
+    }
 
     [Fact]
     public void Todas_GrabaExactamenteLasClavesHistoricas()
