@@ -1636,21 +1636,21 @@
                                 if (lastMessageDate != messageDate)
                                 {
                                     lastMessageDate = messageDate;
-                                    <div class="conversation-date-divider">
+                                    <div @key="@($"d:{messageDate:yyyyMMdd}")" class="conversation-date-divider">
                                         <span>@FormatConversationDateDivider(message.FechaHora)</span>
                                     </div>
                                 }
 
                                 @if (_firstNewMessageId == message.IdMensaje)
                                 {
-                                    <div class="message-new-divider">
+                                    <div @key="@("nuevo")" class="message-new-divider">
                                         <span>Nuevo</span>
                                     </div>
                                 }
 
                                 @if (IsInternalEventMessage(message))
                                 {
-                                    <div class="conversation-event-divider">
+                                    <div @key="message.IdMensaje" class="conversation-event-divider">
                                         @if (TryGetTicketIdFromEvent(message, out var eventTicketId))
                                         {
                                             <button type="button" class="conversation-event-divider__text conversation-event-divider__link" @onclick="() => OpenTicket(eventTicketId)">
@@ -1666,7 +1666,10 @@
                                     continue;
                                 }
 
-                                <div id="@GetMessageDomId(message.IdMensaje)"
+                                @* @key: al llegar un mensaje (o el separador "Nuevo") los demás no se reciclan por
+                                   posición; si no, el audio que se estaba escuchando se cortaba (2026-10-20). *@
+                                <div @key="message.IdMensaje"
+                                     id="@GetMessageDomId(message.IdMensaje)"
                                      class="message-row @GetMessageRowClass(message) @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
                                      @ondblclick="() => QuoteMessageAsync(message)">
                                     @if (_ticketSelectionMode)
@@ -1836,7 +1839,7 @@
                                                 }
                                                 else if (IsAudioAttachment(adj))
                                                 {
-                                                    <div class="message-attachment message-attachment--audio">
+                                                    <div @key="adj.IdAdjunto" class="message-attachment message-attachment--audio">
                                                         @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <audio class="wa-audio-player__media" preload="metadata">
@@ -4226,7 +4229,8 @@
     private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
-        => CompactVisibleMessages(OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x))));
+        // DistinctBy: cada mensaje lleva @key por IdMensaje en la lista; un duplicado haría fallar el render.
+        => CompactVisibleMessages(OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)).DistinctBy(x => x.IdMensaje)));
     private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
         => _canalActivo == "MERCADOLIBRE"
             ? BuildMercadoLibreInboxGroups()
