@@ -11,6 +11,8 @@ public static class TiposDocumentoCore
     public const string CobranzaA = "COBRANZA_A";
     public const string CobranzaB = "COBRANZA_B";
     public const string CobranzaC = "COBRANZA_C";
+    public const string CobranzaX = "COBRANZA_CB_X";
+    // Se conserva la clave histórica de proformas para mantener sus plantillas guardadas.
     public const string CobranzaProforma = "COBRANZA_X";
     public const string CobranzaContado = "COBRANZA_CONTADO";
     public const string NotaDebitoA = "NOTA_DEBITO_A";
@@ -49,7 +51,7 @@ public static class TiposDocumentoCore
 
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaProforma, CobranzaContado,
+        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaX, CobranzaProforma, CobranzaContado,
         NotaDebitoA, NotaDebitoB, NotaDebitoC, NotaCreditoA, NotaCreditoB, NotaCreditoC,
         FacturaA, FacturaB, FacturaC,
         CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
@@ -60,7 +62,7 @@ public static class TiposDocumentoCore
         [FacturaA] = "A",
         [FacturaB] = "B",
         [FacturaC] = "C", [RemitoR] = "R", [RemitoX] = "X", [NotaPedido] = "X",
-        [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaProforma] = "X", [CobranzaContado] = "X",
+        [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaX] = "X", [CobranzaProforma] = "X", [CobranzaContado] = "X",
         [NotaDebitoA] = "A", [NotaDebitoB] = "B", [NotaDebitoC] = "C",
         [NotaCreditoA] = "A", [NotaCreditoB] = "B", [NotaCreditoC] = "C"
     };
@@ -83,6 +85,7 @@ public static class TiposDocumentoCore
             CobranzaA => "Cobranza A",
             CobranzaB => "Cobranza B",
             CobranzaC => "Cobranza C",
+            CobranzaX => "Cobranza X",
             CobranzaProforma => "Factura proforma",
             CobranzaContado => "Cobranza contado",
             NotaDebitoA => "Nota de débito A",
@@ -115,7 +118,7 @@ public static class TiposDocumentoCore
             "RM" => l == "X" ? RemitoX : RemitoR,
             "NP" => NotaPedido,
             "CBCT" => CobranzaContado,
-            "CB" => l == "X" ? CobranzaProforma : l == "B" ? CobranzaB : l == "C" ? CobranzaC : CobranzaA,
+            "CB" => l == "X" ? CobranzaX : l == "B" ? CobranzaB : l == "C" ? CobranzaC : CobranzaA,
             "ND" => l == "B" ? NotaDebitoB : l == "C" ? NotaDebitoC : NotaDebitoA,
             "NC" => l == "B" ? NotaCreditoB : l == "C" ? NotaCreditoC : NotaCreditoA,
             _ => l == "B" ? FacturaB : l == "C" ? FacturaC : FacturaA

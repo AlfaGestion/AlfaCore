@@ -142,7 +142,13 @@
                                 <tr @key="item.Id" class="@(_seleccion?.Id == item.Id ? "is-selected" : "")">
                                     <td>@item.Fecha.ToString("dd/MM/yyyy")</td><td>@item.Banco</td><td class="conciliacion-descripcion">@item.Descripcion</td><td>@item.Referencia</td>
                                     <td class="conciliacion-numero @(item.Importe >= 0 ? "conciliacion-ingreso" : "conciliacion-egreso")">@Dinero(item.Importe)</td>
-                                    <td>@Separar(item.Categoria)</td><td>@item.Cliente</td><td class="conciliacion-descripcion">@item.Propuesta</td>
+                                    <td>@Separar(item.Categoria)</td><td>@item.Cliente</td><td class="conciliacion-descripcion">
+                                        @item.Propuesta
+                                        @if(item.AvisoPosibleDuplicado is { } aviso)
+                                        {
+                                            <p class="conciliacion-aviso-duplicado"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @aviso</p>
+                                        }
+                                    </td>
                                     <td>@item.Confianza.ToString("N0")%</td><td>@item.Estado</td><td>@(item.ConciliacionId.HasValue ? $"Conciliado #{item.ConciliacionId}" : "Pendiente")</td>
                                     <td>
                                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => SeleccionarMovimiento(item)">Detalle</AlfaButton>
@@ -152,7 +158,7 @@
                                             @if(item.TipoMatch!="CobranzaYaRegistrada" && !item.ConciliacionId.HasValue)
                                             {
                                                 <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy"
-                                                    OnClick="() => string.IsNullOrWhiteSpace(item.Cliente) ? SeleccionarMovimiento(item) : AbrirCobranza(item)">@(string.IsNullOrWhiteSpace(item.Cliente) ? "Asignar cliente" : "Cobrar")</AlfaButton>
+                                                    OnClick="() => string.IsNullOrWhiteSpace(item.Cliente) || item.AvisoPosibleDuplicado is not null ? SeleccionarMovimiento(item) : AbrirCobranza(item)">@(string.IsNullOrWhiteSpace(item.Cliente) ? "Asignar cliente" : item.AvisoPosibleDuplicado is not null ? "Revisar posible duplicado" : "Cobrar")</AlfaButton>
                                             }
                                         }
                                     </td>
@@ -169,8 +175,66 @@
             <AlfaDialog Open="true" Title="@($"Detalle del movimiento #{_seleccion.Id}")"
                 Size="AlfaDialogSize.Xl" Loading="@_busy" OnClose="CerrarDetalle">
                 <ChildContent>
-                <p>@_seleccion.Descripcion</p>
-                <p>@_seleccion.Observaciones</p>
+                <div class="conciliacion-detalle-resumen">
+                    <section class="conciliacion-detalle-cliente" aria-label="Cliente y saldo">
+                        <span class="conciliacion-detalle-etiqueta">Cliente</span>
+                        <strong class="conciliacion-detalle-nombre">@(_detalle.FirstOrDefault()?.ClientName is { Length: >0 } nombre ? nombre : string.IsNullOrWhiteSpace(_seleccion.Cliente) ? "Sin cliente asignado" : _seleccion.Cliente)</strong>
+                        @if (_detalle.FirstOrDefault()?.ClientCode is { Length: >0 } codigo)
+                        {
+                            <span class="conciliacion-detalle-secundario">Código @codigo</span>
+                        }
+                        <span class="conciliacion-detalle-etiqueta">Saldo del cliente</span>
+                        <div class="conciliacion-detalle-saldos" aria-live="polite">
+                            @if (_saldoDetalle is { ConsultaFallida:true })
+                            {
+                                <span>No se pudo consultar el saldo. Reintentá en Cuenta corriente.</span>
+                            }
+                            else if (_saldoDetalle is { } resumen)
+                            {
+                                @foreach(var saldo in resumen.Saldos)
+                                {
+                                    <strong class="conciliacion-detalle-importe">@saldo.Moneda @Dinero(saldo.Saldo)</strong>
+                                }
+                                @if(resumen.Saldos.Count==0) { <span>Sin movimientos al corte</span> }
+                                <span class="conciliacion-detalle-secundario">Al @resumen.FechaCorte.ToString("dd/MM/yyyy") · según unidades autorizadas</span>
+                            }
+                            else
+                            {
+                                <span>@(string.IsNullOrWhiteSpace(_detalle.FirstOrDefault()?.ClientCode) ? "Asigná un cliente para consultar su saldo." : "Consultando saldo…")</span>
+                            }
+                        </div>
+                    </section>
+                    <section class="conciliacion-detalle-banco" aria-label="Movimiento bancario">
+                        <span class="conciliacion-detalle-etiqueta">Movimiento bancario · @_seleccion.Banco</span>
+                        <strong class="conciliacion-detalle-importe @(_seleccion.Importe>=0 ? "conciliacion-ingreso" : "conciliacion-egreso")">$ @Dinero(_seleccion.Importe)</strong>
+                        <span class="conciliacion-detalle-secundario">@_seleccion.Fecha.ToString("dd/MM/yyyy") · @Separar(_seleccion.Categoria)</span>
+                        <p>@_seleccion.Descripcion</p>
+                        <span class="conciliacion-detalle-secundario">Registración: @_seleccion.Estado · Conciliación: @(_seleccion.ConciliacionId.HasValue ? $"#{_seleccion.ConciliacionId}" : "Pendiente")</span>
+                    </section>
+                </div>
+                @if(_seleccion.AvisoPosibleDuplicado is { } avisoDuplicado)
+                {
+                    <AlfaFeedbackPanel Message="@(new AppUiMessage { Severity=AppUiFeedbackSeverity.Warning,Title="Revisá el cobro existente",Message=avisoDuplicado })" />
+                }
+                <section class="conciliacion-detalle-propuesta" aria-label="Propuesta de aplicación">
+                    <div>
+                        <span class="conciliacion-detalle-etiqueta">Propuesta de aplicación</span>
+                        @if (_detalle.Count>0)
+                        {
+                            <p>@_detalle[0].ProposalSummary</p>
+                            <span class="conciliacion-detalle-secundario">@Separar(_detalle[0].MatchType) · Confianza @_detalle[0].Confidence.ToString("N0")%</span>
+                        }
+                        else { <p>Sin propuesta de aplicación a comprobantes.</p> }
+                    </div>
+                    @if (_seleccion.Estado!="Cobrado" && _seleccion.ConciliacionId is null && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="ReevaluarPropuesta">Reevaluar propuesta</AlfaButton>
+                    }
+                </section>
+                <AlfaTabs Items="@DetalleTabs" ActiveKey="@_detalleTab" ActiveKeyChanged="v => _detalleTab=v ?? string.Empty" AriaLabel="Información del cliente" />
+                <div hidden="@(_detalleTab!="revision")">
+                <h3 class="conciliacion-detalle-titulo">Clasificación del movimiento</h3>
+                <p class="conciliacion-detalle-secundario">@_seleccion.Observaciones</p>
                 @if (_seleccion.Estado!="Cobrado")
                 {
                     <div class="conciliacion-reclasificar">
@@ -185,8 +249,7 @@
                 @if (_seleccion.Estado!="Cobrado" && _seleccion.ConciliacionId is null && _seleccion.Importe>0 && _seleccion.Categoria=="Cobranza")
                 {
                     <div class="conciliacion-asignar-cliente">
-                        <h3>Asignar cliente</h3>
-                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="ReevaluarPropuesta">Reevaluar propuesta con los comprobantes actuales</AlfaButton>
+                        <h3>@(string.IsNullOrWhiteSpace(_seleccion.Cliente) ? "Asignar cliente" : "Cambiar cliente")</h3>
                         <AlfaLookup TItem="ClientSearchResultDto" Label="Cliente" Placeholder="Buscar por nombre, código o CUIT"
                             SearchText="@_buscarCliente" SearchTextChanged="v => _buscarCliente=v"
                             SelectedItem="@_clienteAsignar" SelectedItemChanged="SeleccionarCliente" Disabled="@_busy"
@@ -207,19 +270,11 @@
                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || _clienteAsignar is null)" OnClick="GuardarCliente">Asignar cliente</AlfaButton>
                     </div>
                 }
-                @if (_detalle.Count == 0)
-                {
-                    <p>Sin propuesta de aplicación a comprobantes.</p>
-                }
-                else
-                {
-                    <p><strong>@_detalle[0].ClientName</strong> (@_detalle[0].ClientCode) · @Separar(_detalle[0].MatchType) · @_detalle[0].Confidence.ToString("N0")%</p>
-                    <p>@_detalle[0].ProposalSummary</p>
-                }
-                <AlfaTabs Items="@DetalleTabs" ActiveKey="@_detalleTab" ActiveKeyChanged="v => _detalleTab=v ?? string.Empty" AriaLabel="Información del cliente" />
+                </div>
                 <div hidden="@(_detalleTab!="cuenta")">
-                    <ConciliacionCuentaCorrientePanel @key="(_seleccion.Id,_detalleVersion)" MovimientoId="@_seleccion.Id" FechaMovimiento="@_seleccion.Fecha"
-                        PuedeReconocer="@(_seleccion.Estado!="Cobrado" && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0)" CobroReconocido="ActualizarCobroReconocido" />
+                    <ConciliacionCuentaCorrientePanel @ref="_cuentaDetalle" @key="(_seleccion.Id,_detalleVersion)" MovimientoId="@_seleccion.Id" FechaMovimiento="@_seleccion.Fecha"
+                        PuedeReconocer="@(_seleccion.Estado!="Cobrado" && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0)" CobroReconocido="ActualizarCobroReconocido"
+                        SaldoConsultado="ActualizarSaldoDetalle" SaldoEnCabecera="true" />
                 </div>
                 <div hidden="@(_detalleTab!="comprobantes")">
                 @if (_detalle.Count>0)
@@ -276,9 +331,13 @@
                 </div>
                 </ChildContent>
                 <Footer>
+                    @if (_seleccion.Categoria=="Cobranza" && _seleccion.Importe>0 && _seleccion.Estado!="Cobrado")
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_busy" OnClick="MostrarReconocimientoCobro">Marcar como cobrado</AlfaButton>
+                    }
                     @if (_detalleTab=="comprobantes" && _seleccion.Categoria=="Cobranza" && _seleccion.Importe>0 && _seleccion.Estado!="Cobrado" && _seleccion.TipoMatch!="CobranzaYaRegistrada" && !_seleccion.ConciliacionId.HasValue)
                     {
-                        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_seleccion.Cliente) || (_comprobanteInfo is { } elegido && (elegido.Anulada || elegido.SaldoActual is not >0)))"
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_seleccion.Cliente) || (_comprobanteInfo is { } elegido && (elegido.Anulada || elegido.SaldoActual is not >0)))"
                             OnClick="() => AbrirCobranza(_seleccion,_comprobanteInfo?.Clave)">Cobrar</AlfaButton>
                     }
                     <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="CerrarDetalle">Cerrar</AlfaButton>
@@ -312,7 +371,19 @@
     private PagedResult<ConciliacionMovimiento> _movimientos = new();
     private IReadOnlyList<MatchDetailItem> _detalle = [];
     private string _detalleTab="cuenta";
-    private static readonly IReadOnlyList<AlfaTabItem> DetalleTabs = [new("cuenta","Cuenta corriente"),new("comprobantes","Comprobantes")];
+    private static readonly IReadOnlyList<AlfaTabItem> DetalleTabs = [new("cuenta","Cuenta corriente"),new("comprobantes","Comprobantes"),new("revision","Clasificación y cliente")];
+    private ConciliacionSaldoResumen? _saldoDetalle;
+    private ConciliacionCuentaCorrientePanel? _cuentaDetalle;
+    private async Task MostrarReconocimientoCobro()
+    {
+        _detalleTab="cuenta";
+        await InvokeAsync(StateHasChanged);
+        if(_cuentaDetalle is not null) await _cuentaDetalle.AccionarReconocimientoAsync();
+    }
+    private void ActualizarSaldoDetalle(ConciliacionSaldoResumen resumen)
+    {
+        if(_seleccion?.Id==resumen.MovimientoId) _saldoDetalle=resumen;
+    }
     private ConciliacionContextoComprobantes _contexto=new([],[]);
     private int _comprobanteDetalleId;
     private string _categoriaRevision="",_motivoRevision="";
@@ -520,6 +591,7 @@
     });
     private void CerrarDetalle()
     {
+        _saldoDetalle=null;
         _seleccion = null; _detalle = []; _contexto=new([],[]); _comprobanteDetalleId=0;
     }
     private Task GuardarClasificacion() => Operar(async ct =>
@@ -565,6 +637,7 @@
         row.Propuesta=detalle.FirstOrDefault()?.ProposalSummary ?? row.Propuesta;
         _comprobanteDetalleId=(contexto.Comprobantes.FirstOrDefault(c=>c.Propuesto) ?? contexto.Comprobantes.FirstOrDefault())?.Id ?? 0;
         _detalleVersion++;
+        _saldoDetalle=null;
         if(detalle.FirstOrDefault() is { } propuesta) { row.TipoMatch=propuesta.MatchType.ToString();row.Confianza=propuesta.Confidence; }
     }
     private Task SeleccionarMovimiento(ConciliacionMovimiento row) => Operar(async ct =>
@@ -573,6 +646,7 @@
         var contexto = await Servicio.ContextoComprobantesAsync(row.Id,ct);
         ct.ThrowIfCancellationRequested();
         _detalleTab="cuenta";
+        _saldoDetalle=null;
         _seleccion = row; _detalle = detalle; _contexto=contexto;
         _comprobanteDetalleId=(contexto.Comprobantes.FirstOrDefault(c=>c.Propuesto) ?? contexto.Comprobantes.FirstOrDefault())?.Id ?? 0;
         _categoriaRevision=row.Categoria;_motivoRevision="";

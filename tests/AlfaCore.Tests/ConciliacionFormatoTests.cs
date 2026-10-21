@@ -9,6 +9,43 @@ namespace AlfaCore.Tests;
 
 public sealed class ConciliacionFormatoTests
 {
+    [Theory]
+    [InlineData("29-sept-2026")]
+    [InlineData("29-SEPT-2026")]
+    [InlineData("29-sept.-2026")]
+    [InlineData("29/sept/2026")]
+    public async Task ProvinciaAceptaSeptiembreAbreviadoSinCambiarElDia(string fecha)
+    {
+        var archivo=new ConciliacionArchivo("provincia.csv",Encoding.UTF8.GetBytes($"Fecha;Descripción;Importe;Saldo\n{fecha};Transferencia;123,45;1000,00"));
+        var resultado=await new ConciliacionExtractoLector().LeerAsync(archivo,BankSource.Provincia);
+        var movimiento=Assert.Single(resultado.Movimientos);
+        Assert.Equal(new DateTime(2026,9,29),movimiento.MovementDate);
+        Assert.Equal(123.45m,movimiento.Amount);
+    }
+
+    [Fact]
+    public async Task ProvinciaNoAceptaUnDiaInexistenteDeSeptiembre()
+    {
+        var archivo=new ConciliacionArchivo("provincia.csv",Encoding.UTF8.GetBytes("Fecha;Descripción;Importe;Saldo\n31-sept-2026;Transferencia;123,45;1000,00"));
+        var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>new ConciliacionExtractoLector().LeerAsync(archivo,BankSource.Provincia));
+        Assert.Contains("fecha",error.Message);
+    }
+
+    [ProvinciaSeptiembreRealFact]
+    public async Task ProvinciaSeptiembreRealSeLeeCompletoSinModificarElArchivo()
+    {
+        var path=@"C:\dev\Extractos\Provincia\provincia_2026-09-01_2026-09-30.xls";
+        var contenido=await File.ReadAllBytesAsync(path);
+        var resultado=await new ConciliacionExtractoLector().LeerAsync(new(Path.GetFileName(path),contenido));
+        Assert.Equal(BankSource.Provincia,resultado.Banco);
+        Assert.Equal(20,resultado.Movimientos.Count);
+        Assert.Equal(672335.08m,resultado.Movimientos.Sum(m=>m.Amount));
+        Assert.All(resultado.Movimientos,m=>Assert.InRange(m.MovementDate,new DateTime(2026,9,1),new DateTime(2026,9,30)));
+        Assert.Contains(resultado.Movimientos,m=>m.MovementDate==new DateTime(2026,9,29));
+        Assert.Equal(contenido,await File.ReadAllBytesAsync(path));
+        Console.WriteLine($"Provincia septiembre: {resultado.Movimientos.Count} movimientos; total {resultado.Movimientos.Sum(m=>m.Amount)}.");
+    }
+
     [ProvinciaRealFact]
     public async Task ProvinciaRealXlsYXlsxConCabeceraEnFilaSeisProducenLosMismosMovimientos()
     {
@@ -108,5 +145,14 @@ public sealed class ProvinciaRealFactAttribute:FactAttribute
     {
         if(!File.Exists(@"C:\dev\Extractos\MercadoPago\Provincia 102026.xls")||!File.Exists(@"C:\dev\Extractos\MercadoPago\Provincia 102026.xlsx"))
             Skip="Requiere los dos extractos Provincia 102026 del usuario (solo lectura).";
+    }
+}
+
+public sealed class ProvinciaSeptiembreRealFactAttribute:FactAttribute
+{
+    public ProvinciaSeptiembreRealFactAttribute()
+    {
+        if(!File.Exists(@"C:\dev\Extractos\Provincia\provincia_2026-09-01_2026-09-30.xls"))
+            Skip="Requiere el extracto Provincia septiembre del usuario (solo lectura).";
     }
 }

@@ -39,6 +39,12 @@ public sealed class ConciliacionImportacion
 }
 public sealed class ConciliacionMovimiento
 {
+    public string? ReciboPosible { get; set; }
+    public DateTime? FechaPosibleCobro { get; set; }
+    public decimal? ImportePosibleCobro { get; set; }
+    public string? AvisoPosibleDuplicado => ReciboPosible is not null && FechaPosibleCobro.HasValue && ImportePosibleCobro.HasValue
+        ? $"Posible duplicado: {ReciboPosible} del {FechaPosibleCobro:dd/MM/yyyy}, $ {ImportePosibleCobro.Value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}. Diferencia con el banco: $ {(ImportePosibleCobro.Value-Importe).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}. Revisá el recibo en Cuenta corriente antes de cobrar."
+        : null;
     public string TipoMatch { get; set; }="";
     public long? ConciliacionId { get; set; }
     public long Id { get; set; }

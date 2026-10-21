@@ -1,4 +1,5 @@
 using AlfaCore.ConciliacionBancaria.Domain.Enums;
+using System.Text.RegularExpressions;
 
 namespace AlfaCore.ConciliacionBancaria.Infrastructure.Excel;
 
@@ -21,6 +22,14 @@ namespace AlfaCore.ConciliacionBancaria.Infrastructure.Excel;
 public sealed class ProvinciaExcelStatementParser : BaseExcelStatementParser
 {
     public override BankSource Source => BankSource.Provincia;
+
+    protected override bool ParseMovementDate(string value, out DateTime date)
+    {
+        // Provincia exporta septiembre como «sept», que no coincide con «sep» de es-AR.
+        var normalizada = Regex.Replace(value, @"(?<=\d[-/ ])sept\.?(?=[-/ ]\d{4}(?:\s|$))", "09",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return base.ParseMovementDate(normalizada, out date);
+    }
 
     protected override ExcelParserConfig Config { get; } = new()
     {

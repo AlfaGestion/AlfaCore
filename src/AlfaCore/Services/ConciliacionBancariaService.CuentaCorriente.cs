@@ -7,7 +7,7 @@ public sealed partial class ConciliacionBancariaService
 {
     // Misma fuente y exclusión EsResumen que la cuenta corriente comercial. Los saldos
     // incluyen toda la historia anterior al corte y nunca suman monedas distintas.
-    private const string CuentaCorrienteBaseSql = """
+    private const string CuentaCorrienteBaseSql = AlfaCore.ConciliacionBancaria.Infrastructure.ConciliacionRepository.ToleranciaCobroSql + """
         DECLARE @cliente nvarchar(30),@fecha date,@importe money;
         SELECT @fecha=m.FechaMovimiento,@importe=m.Importe FROM dbo.BK_ExtractoMovimiento m WHERE m.MovimientoId=@movimientoId;
         SELECT TOP(1) @cliente=p.ClienteCodigo FROM dbo.BK_MovimientoMatch p
@@ -25,7 +25,7 @@ public sealed partial class ConciliacionBancariaService
             ISNULL(a.USUARIO_LOGEADO,'') Usuario,ISNULL(LTRIM(RTRIM(a.IDCAJAS)),'') Caja,
             ISNULL(LTRIM(RTRIM(a.UNEGOCIO)),'') Unidad,
             CONVERT(bit,CASE WHEN LTRIM(RTRIM(a.TC)) IN ('CB','CBFP','CBCT') AND a.SECUENCIA=1
-                AND ABS(ABS(a.IMPORTE)-@importe)<=0.01 AND a.FECHA>=DATEADD(day,-15,@fecha)
+                AND ABS(ABS(a.IMPORTE)-@importe)<=@toleranciaCobro AND a.FECHA>=DATEADD(day,-15,@fecha)
                 AND a.FECHA<DATEADD(day,16,@fecha) THEN 1 ELSE 0 END) PosibleCoincidencia
         INTO #CtaBase FROM dbo.MV_ASIENTOS a
         LEFT JOIN dbo.TA_MONEDAS mon ON LTRIM(RTRIM(mon.CODIGO))=LTRIM(RTRIM(a.MONEDA))

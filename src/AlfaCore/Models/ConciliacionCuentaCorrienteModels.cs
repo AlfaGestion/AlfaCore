@@ -36,6 +36,9 @@ public sealed class ConciliacionCtaSaldo
 public sealed record ConciliacionCuentaCorriente(IReadOnlyList<ConciliacionCtaMovimiento> Movimientos,
     IReadOnlyList<ConciliacionCtaMovimiento> Coincidencias, IReadOnlyList<ConciliacionCtaSaldo> Saldos);
 
+public sealed record ConciliacionSaldoResumen(long MovimientoId, DateTime FechaCorte,
+    IReadOnlyList<ConciliacionCtaSaldo> Saldos, bool ConsultaFallida = false);
+
 public sealed class ConciliacionContrapartida
 {
     public string Cuenta { get; set; } = "";

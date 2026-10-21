@@ -1,6 +1,13 @@
 .cobranza-editor { display: grid; gap: var(--alfa-space-16); }
 .cobranza-editor p { margin: 0; }
 .cobranza-editor h3 { margin: 0; font-size: var(--alfa-font-body); }
+.cobranza-editor__documentos { max-height: 30vh; overflow: auto; min-width: 0; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.cobranza-editor__documentos table { width: 100%; border-collapse: collapse; font-size: var(--alfa-font-body); color: var(--alfa-text-primary); }
+.cobranza-editor__documentos th, .cobranza-editor__documentos td { padding: var(--alfa-space-8); border-bottom: 1px solid var(--alfa-border-default); text-align: left; vertical-align: middle; }
+.cobranza-editor__documentos th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-surface); }
+.cobranza-editor__documentos ::deep .alfa-checkbox__label, .cobranza-editor__documentos ::deep .alfa-field__label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cobranza-editor__documentos td:last-child { min-width: 150px; }
+.cobranza-editor__documentos .numero { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cobranza-editor__sugerencia { grid-column: 1 / -1; font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); }
 .cobranza-editor__totales { display: grid; gap: var(--alfa-space-4); margin-right: auto; font-size: var(--alfa-font-small); }
 .cobranza-editor__cabecera { display: grid; grid-template-columns: 1fr 2fr; gap: var(--alfa-space-16); }

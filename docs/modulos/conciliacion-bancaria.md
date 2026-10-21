@@ -1,5 +1,39 @@
 # Conciliación bancaria inteligente
 
+## Cobrar una propuesta múltiple (2026-10-21)
+
+Cobranza rápida ahora precarga todos los comprobantes vigentes de una propuesta Múltiple y permite editar selección e importes. Genera una CB para el mismo cliente y unidad, con aplicaciones independientes y validación de saldos dentro de la transacción. Ver [contrato y persistencia de cobranzas](cobranzas.md#cobranza-de-varios-comprobantes-2026-10-21). El importe del banco permanece fijo; las retenciones integran el total a distribuir y la diferencia por aplicar debe quedar en cero.
+
+## Jerarquía del detalle y saldo visible (2026-10-21)
+
+El pie fijo del detalle incluye **Marcar como cobrado** para todo ingreso Cobranza pendiente, en cualquiera de las solapas. Abre Cuenta corriente y despliega el recibo seleccionado para revisar la confirmación. Cuando falta un recibo válido, muestra una advertencia con las condiciones existentes (cliente, pesos y ±15 días); no interpreta saldo cero como prueba de cobro y no modifica esas validaciones. El foco se dirige al recibo abierto o al aviso para que el contenido no quede fuera de vista.
+
+La acción del pie reutiliza el mismo handler de reconocimiento del panel: si el usuario ya confirmó el recibo y completó la observación requerida por una diferencia de importe, confirma con el circuito existente; en caso contrario abre el formulario y conserva los datos ingresados. No se agregan escrituras ni reglas de reconocimiento. `ConciliacionDetalleVisualTests` comprueba el botón visible en el pie a 2048/1440/1024, apertura del recibo, confirmación inicialmente desmarcada y aviso cuando no hay recibo seleccionado; la persistencia sigue cubierta por `ConciliacionCobroExistenteTests` con rollback.
+
+El diálogo muestra primero dos bloques: cliente/código/saldo y movimiento bancario (importe, fecha, banco y estados). El saldo utiliza la consulta oficial de cuenta corriente existente, incluye toda la historia anterior al corte y conserva monedas y autorización por unidad; no es la suma de las 30 filas visibles ni un saldo actual sin fecha. Se mantiene el corte inicial de fecha bancaria +15 días, editable desde Cuenta corriente, y siempre se muestra la fecha junto al saldo.
+
+`ConciliacionCuentaCorrientePanel` publica `ConciliacionSaldoResumen` al completar la consulta de saldos, antes de buscar el detalle del recibo. La cabecera permanece visible en las tres solapas. La página limpia el resumen al cambiar de movimiento o cliente y descarta respuestas correspondientes a otro movimiento. Ante una falla de detalle de asiento se conservan cuenta corriente y saldo ya consultados, mostrando el error parcial.
+
+Las opciones de corrección se agrupan en **Clasificación y cliente**. **Cuenta corriente** y **Comprobantes** mantienen sus consultas y acciones; la propuesta y su reevaluación quedan aparte. El asiento seleccionado se muestra en una sección nativa desplegable, cerrada inicialmente y abierta al seleccionar Ver/Ver recibo; Enter/Espacio permiten abrirla con teclado. No existe un componente acordeón en el catálogo AlfaDesign. Tipografía de importes de 24 px y nombres de 16 px, locales al resumen; el resto utiliza tokens. Se actualiza la versión de `AlfaCore.styles.css` para invalidar caché.
+
+Validación: compilación y tres pruebas dirigidas correctas (nuevo detalle, consulta contable y circuito de pantalla). `ConciliacionDetalleVisualTests` compara el saldo contra la consulta real de `ALFANET2007_PRUEBAS`, verifica separación por moneda, fecha y descarte de respuestas de otro movimiento; con Chrome disponible renderiza 2048/1440/1024, comprueba que el saldo entre completo en la primera vista, ausencia de overflow global/del diálogo, formulario secundario oculto y apertura/cierre del recibo con Enter. Capturas locales ignoradas por Git: `artifacts/conciliacion/detalle-saldo-{ancho}.png`.
+
+AlfaDesign, alcance de esta revisión: **Cumple: 10/13**. Categorías verificadas o sin cambios de alcance: búsqueda, Data View, sizing (no aplica al resumen), acciones, componentes, tokens, estados, formularios, responsive y funcionalidad. Pendientes de homologación integral: shell global autenticado (1), foco/Escape del modal en sesión Blazor real (9) y build/test de la solución completa (13; sí se ejecutaron compilación del proyecto, pruebas dirigidas, catálogo y diff). El despliegue y la contabilidad no cambian con esta reorganización. Legacy restante: otras pantallas y la tabla de revisión mantienen su alcance anterior.
+
+## Fechas de septiembre exportadas por Provincia (2026-10-21)
+
+`ProvinciaExcelStatementParser` normaliza el mes abreviado `sept` (también `SEPT` y `sept.`) a `09` antes de utilizar el parseo habitual. Esto resuelve fechas como `29-sept-2026` en XLS, XLSX y CSV sin alterar los archivos ni aceptar días inexistentes. El cambio queda limitado al lector de Provincia.
+
+Se verificó en modo lectura `provincia_2026-09-01_2026-09-30.xls`: 20 movimientos de septiembre de 2026, total 672.335,08, coincidentes con los valores originales leídos mediante ExcelDataReader. `ConciliacionFormatoTests` conserva esa regresión y casos de abreviaturas, mayúsculas y fecha inválida.
+
+## Aviso de posible cobro duplicado (2026-10-21)
+
+La revisión consulta los recibos actuales de `MV_ASIENTOS` para las 50 filas visibles, aunque la propuesta almacenada diga Anticipo o se haya importado antes de registrar el recibo. Para ingresos ARS pendientes clasificados Cobranza, compara el mismo cliente, crédito de secuencia 1, moneda 1 y fecha dentro de ±15 días, usando `CONCILIACION-TOLERANCIA` para la diferencia de importe (valor inicial 1,00). Respeta las unidades autorizadas y excluye recibos con cabecera anulada. Si hay varios candidatos muestra el más cercano por importe y fecha; Cuenta corriente permite comparar los demás.
+
+El listado y el detalle muestran el recibo, fecha, importe y diferencia. El botón de generación de la fila pasa a **Revisar posible duplicado** y abre el detalle. Es una advertencia: no cambia la propuesta histórica, no marca el movimiento como Cobrado y no confirma una conciliación. La comparación de recibos en Cuenta corriente y el control del motor al reevaluar/importar también utilizan esa tolerancia, reemplazando el umbral anterior de 0,01; no se amplía el margen de fechas ni se autoriza ninguna diferencia contable automáticamente.
+
+La regresión `ConciliacionPosibleDuplicadoTests` crea un extracto y copia un recibo dentro de una transacción en `ALFANET2007_PRUEBAS`, comprueba un desfase de 7 días y diferencia de 0,81, los descartes por importe, moneda, signo y fecha, y revierte las filas del ensayo.
+
 Cobranza rápida CB y relevamiento de Ventas/Cobranzas legacy: [base compartida de Cobranzas](cobranzas.md). Requiere actualización 004. Cobrar está disponible desde la fila o desde el detalle para ingresos clasificados como Cobranza; valida cliente, saldo, unidad y banco nuevamente al confirmar.
 
 Primera integración en AlfaCore, 19/10/2026. Ruta `/caja-bancos/conciliacion-bancaria`, también con prefijo de empresa/base. Clave web propia `D75-CONCILIA-IA`, hija de Caja y Bancos (`D75`). Se conservan las opciones legacy de conciliación.

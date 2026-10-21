@@ -149,7 +149,8 @@ public sealed class FacturaDocumentService(
                 TiposDocumentoCore.RemitoR or TiposDocumentoCore.RemitoX => "RM",
                 TiposDocumentoCore.NotaPedido => "NP",
                 TiposDocumentoCore.CobranzaContado => "CBCT",
-                TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaProforma => "CB",
+                TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaX => "CB",
+                TiposDocumentoCore.CobranzaProforma => "FP",
                 _ => string.Empty
             };
             if (tc.Length == 0) return [];

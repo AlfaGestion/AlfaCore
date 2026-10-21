@@ -44,6 +44,7 @@ public sealed class CobranzaPreparacion
     public IReadOnlyList<CobranzaMedio> Medios { get; set; } = [];
     public IReadOnlyList<CobranzaTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CobranzaRetencionSugerida> RetencionesSugeridas { get; set; } = [];
+    public IReadOnlyList<CobranzaAplicacion> AplicacionesSugeridas { get; set; } = [];
 }
 
 public sealed class CobranzaRetencionSugerida
@@ -56,6 +57,9 @@ public sealed class CobranzaRetencionSugerida
 }
 
 public sealed record CobranzaPago(string Cuenta, decimal Importe, string Certificado = "");
+public sealed record CobranzaAplicacion(int FacturaId, decimal Importe);
 public sealed record CobranzaSolicitud(Guid Operacion, int FacturaId, DateTime Fecha, int Talonario,
-    IReadOnlyList<CobranzaPago> Pagos, long? MovimientoId = null, string? Detalle = null);
+    IReadOnlyList<CobranzaPago> Pagos, long? MovimientoId = null, string? Detalle = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CobranzaAplicacion>? Aplicaciones = null);
 public sealed record CobranzaResultado(Guid Operacion, int CobranzaId, string Comprobante, int NumeroAsiento, decimal Importe);

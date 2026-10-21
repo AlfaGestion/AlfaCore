@@ -1,4 +1,18 @@
 .conciliacion-page { gap: var(--alfa-space-16); min-width: 0; }
+.conciliacion-aviso-duplicado { color: var(--alfa-warning); margin-block: var(--alfa-space-8); font-weight: 600; }
+.conciliacion-detalle-resumen { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: var(--alfa-space-16); margin-bottom: var(--alfa-space-16); }
+.conciliacion-detalle-cliente, .conciliacion-detalle-banco { display: flex; flex-direction: column; align-items: flex-start; gap: var(--alfa-space-8); padding: var(--alfa-space-16); min-width: 0; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-surface); overflow-wrap: anywhere; }
+.conciliacion-detalle-cliente { border-top: 2px solid var(--alfa-accent); }
+.conciliacion-detalle-etiqueta { font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); font-weight: 600; }
+.conciliacion-detalle-nombre { font-size: 16px; line-height: 1.3; }
+.conciliacion-detalle-importe { font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.conciliacion-detalle-secundario { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); }
+.conciliacion-detalle-saldos { display: flex; flex-direction: column; gap: var(--alfa-space-4); }
+.conciliacion-detalle-banco p, .conciliacion-detalle-propuesta p { margin: 0; }
+.conciliacion-detalle-propuesta { display: flex; align-items: center; justify-content: space-between; gap: var(--alfa-space-16); padding-block: var(--alfa-space-16); }
+.conciliacion-detalle-propuesta > div { display: grid; gap: var(--alfa-space-4); min-width: 0; overflow-wrap: anywhere; }
+.conciliacion-detalle-propuesta ::deep button { flex-shrink: 0; }
+@media(max-width: 700px) { .conciliacion-detalle-resumen { grid-template-columns: minmax(0,1fr); } .conciliacion-detalle-propuesta { flex-direction: column; align-items: flex-start; } }
 .conciliacion-reclasificar { display: grid; grid-template-columns: minmax(180px,1fr) minmax(240px,2fr) auto; gap: var(--alfa-space-12); align-items: end; margin-block: var(--alfa-space-16); }
 .conciliacion-scroll--comparar { max-height: 32vh; }
 .conciliacion-detalle-titulo { font-size: var(--alfa-font-body); margin-block: var(--alfa-space-16) var(--alfa-space-8); }

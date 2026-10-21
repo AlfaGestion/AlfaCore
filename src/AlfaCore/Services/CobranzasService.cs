@@ -184,10 +184,24 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
                 talonarios.AddRange(await Talonarios(cn,unidad,null,token));
                 if(await UltimaRetencionAsync(cn,mov.Cliente,unidad,null,token) is { } retencion) retenciones.Add(retencion);
             }
+            var propuestas=(await cn.QueryAsync<CobranzaAplicacion>(Cmd("""
+                SELECT f.ID FacturaId,CONVERT(decimal(18,2),a.ImporteAplicado) Importe
+                FROM dbo.BK_MovimientoAplicacion a
+                JOIN dbo.V_MV_CPTE f ON LTRIM(RTRIM(f.TC))=a.TipoComprobante AND f.LETRA=a.Letra
+                    AND f.SUCURSAL=RIGHT('0000'+CONVERT(varchar(12),a.CentroEmisor),4)
+                    AND f.NUMERO=RIGHT('00000000'+CONVERT(varchar(20),a.NumeroComprobante),8)
+                    AND LTRIM(RTRIM(f.CUENTA))=@cliente AND f.IDCOMPLEMENTO=0
+                WHERE a.MatchId=(SELECT TOP(1) MatchId FROM dbo.BK_MovimientoMatch
+                    WHERE MovimientoId=@id AND EstadoPropuesta<>'RECLASIFICADO' ORDER BY MatchId DESC)
+                ORDER BY f.ID;
+                """,new { id=mov.Id,cliente=mov.Cliente },null,token))).AsList();
+            var propuestaVigente=propuestas.Count is >0 and <=50 && propuestas.Select(a=>a.FacturaId).Distinct().Count()==propuestas.Count
+                && propuestas.All(a=>a.Importe>0 && docs.Any(d=>d.Id==a.FacturaId && d.Saldo>=a.Importe))
+                && docs.Where(d=>propuestas.Any(a=>a.FacturaId==d.Id)).Select(d=>d.Unidad).Distinct().Count()==1;
             VerificarSesion(session);
             return new CobranzaPreparacion { MovimientoId=mov.Id,Fecha=mov.Fecha,CuentaBanco=mov.Cuenta,ImporteBanco=mov.Importe,
                 Documentos=docs,Medios=medios,Talonarios=talonarios.DistinctBy(t=>(t.Talonario,t.Unidad)).ToList(),
-                RetencionesSugeridas=retenciones };
+                RetencionesSugeridas=retenciones,AplicacionesSugeridas=propuestaVigente ? propuestas : [] };
         },ct);
 
     public static decimal ValidarImportes(CobranzaSolicitud solicitud)
@@ -201,7 +215,18 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
             throw new InvalidOperationException("Informá medios de pago con importes positivos de hasta dos decimales y referencias de hasta 50 caracteres.");
         var total=solicitud.Pagos.Sum(p=>p.Importe);
         if(total>=10000000000000000m) throw new InvalidOperationException("El importe de la cobranza excede el máximo permitido.");
+        ResolverAplicaciones(solicitud,total);
         return total;
+    }
+
+    internal static IReadOnlyList<CobranzaAplicacion> ResolverAplicaciones(CobranzaSolicitud solicitud,decimal total)
+    {
+        var aplicaciones=solicitud.Aplicaciones ?? [new(solicitud.FacturaId,total)];
+        if(aplicaciones.Count is <1 or >50 || aplicaciones.Any(a=>a.FacturaId<=0 || a.Importe<=0 || a.Importe!=decimal.Round(a.Importe,2))
+            || aplicaciones.Select(a=>a.FacturaId).Distinct().Count()!=aplicaciones.Count
+            || !aplicaciones.Any(a=>a.FacturaId==solicitud.FacturaId) || aplicaciones.Sum(a=>a.Importe)!=total)
+            throw new InvalidOperationException("Seleccioná comprobantes distintos con importes positivos de dos decimales. El total aplicado debe coincidir con banco más retenciones.");
+        return aplicaciones;
     }
 
     public Task<CobranzaResultado> CobrarAsync(CobranzaSolicitud solicitud,CancellationToken ct=default)
@@ -230,6 +255,7 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
     {
         CommandDefinition Q(string sql,object? args=null)=>Cmd(sql,args,tx,ct);
         var total=ValidarImportes(solicitud);
+        var aplicaciones=ResolverAplicaciones(solicitud,total);
         var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(solicitud))));
         await cn.ExecuteAsync(Q("""
             DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource='ALFACORE_COBRANZAS',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=30000;
@@ -252,17 +278,23 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
             if(await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.ALFACORE_COBRANZA_OPERACION WHERE MovimientoId=@movimiento;",new{movimiento}))>0)
                 throw new InvalidOperationException("El movimiento ya fue cobrado. Actualizá la revisión.");
         }
-        var factura=await cn.QuerySingleOrDefaultAsync<Factura>(Q("""
+        var facturas=(await cn.QueryAsync<Factura>(Q("""
             SELECT f.ID,f.TC,f.IDCOMPROBANTE Comprobante,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.UNEGOCIO)) Unidad,
                 LTRIM(RTRIM(f.MONEDA)) Moneda,CONVERT(bit,ISNULL(f.ANULADA,0)) Anulada,f.NOMBRE Nombre,
                 COALESCE(NULLIF(LTRIM(RTRIM(f.IdVendedor)),''),NULLIF(LTRIM(RTRIM(c.IdVendedor)),'')) Vendedor
             FROM dbo.V_MV_CPTE f WITH(UPDLOCK,HOLDLOCK)
             LEFT JOIN dbo.VT_CLIENTES c ON LTRIM(RTRIM(c.CODIGO))=LTRIM(RTRIM(f.CUENTA))
-            WHERE f.ID=@FacturaId AND f.IDCOMPLEMENTO=0;
-            """,new { solicitud.FacturaId })) ?? throw new InvalidOperationException("La factura ya no está disponible.");
-        ValidarUnidad(user,factura.Unidad);
+            WHERE f.ID IN @ids AND f.IDCOMPLEMENTO=0;
+            """,new { ids=aplicaciones.Select(a=>a.FacturaId).ToArray() }))).AsList();
+        if(facturas.Count!=aplicaciones.Count) throw new InvalidOperationException("Uno de los comprobantes ya no está disponible.");
+        var factura=facturas.Single(f=>f.Id==solicitud.FacturaId);
+        foreach(var elegida in facturas)
+        {
+        ValidarUnidad(user,elegida.Unidad);
+        if(elegida.Cliente!=factura.Cliente || elegida.Unidad!=factura.Unidad)
+            throw new InvalidOperationException("Un recibo debe aplicar a comprobantes del mismo cliente y unidad de negocio.");
         // Cabeceras legacy pueden omitir MONEDA: resolverla del asiento una vez bloqueado.
-        if(factura.Anulada||factura.Tc.Trim() is not ("FC" or "FP" or "ND")||(!string.IsNullOrWhiteSpace(factura.Moneda)&&factura.Moneda!="1"))
+        if(elegida.Anulada||elegida.Tc.Trim() is not ("FC" or "FP" or "ND")||(!string.IsNullOrWhiteSpace(elegida.Moneda)&&elegida.Moneda!="1"))
             throw new InvalidOperationException("Seleccioná una factura, proforma o nota de débito vigente en pesos.");
         // La vista oficial de saldos incluye aplicaciones previas y movimientos contables.
         // La vista oficial contiene NOLOCK: proteger las filas y rangos antes de leerla.
@@ -272,12 +304,16 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
                 AND NUMERO=SUBSTRING(@comprobante,5,8) AND LETRA=RIGHT(@comprobante,1);
             SELECT COUNT(*) FROM dbo.MV_APLICACION WITH(UPDLOCK,HOLDLOCK)
             WHERE LTRIM(RTRIM(CUENTA))=@cliente AND TCO_ORIGEN=@tc AND IDCOMPROBANTE_ORIGEN=@comprobante;
-            """,new { cliente=factura.Cliente,tc=factura.Tc,comprobante=factura.Comprobante }));
+            """,new { cliente=elegida.Cliente,tc=elegida.Tc,comprobante=elegida.Comprobante }));
+        }
         var docs=await Documentos(cn,factura.Cliente,tx,ct);
-        var doc=docs.SingleOrDefault(d=>d.Id==solicitud.FacturaId);
+        foreach(var aplicada in aplicaciones)
+        {
+        var doc=docs.SingleOrDefault(d=>d.Id==aplicada.FacturaId);
         if(doc is not null&&doc.Moneda!="1")
             throw new InvalidOperationException("La moneda del comprobante no es pesos o no se puede determinar desde su asiento.");
-        if(doc is null||total>doc.Saldo) throw new InvalidOperationException("El importe supera el saldo pendiente actual. Revisá los medios de pago o actualizá el comprobante.");
+        if(doc is null||aplicada.Importe>doc.Saldo) throw new InvalidOperationException("El importe aplicado supera el saldo pendiente actual de uno de los comprobantes. Revisá los importes o actualizá la selección.");
+        }
         var medios=await Medios(cn,tx,ct);
         foreach(var pago in solicitud.Pagos)
         {
@@ -357,13 +393,18 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
         }
         await Linea(factura.Cliente,total,"H","","");
         foreach(var pago in solicitud.Pagos) await Linea(pago.Cuenta,pago.Importe,"D",pago.Certificado.Trim(),"");
-        var aplicacion=new DynamicParameters(p);aplicacion.Add("OrigenTc",factura.Tc);aplicacion.Add("Origen",factura.Comprobante);
+        foreach(var aplicada in aplicaciones)
+        {
+        var origen=facturas.Single(f=>f.Id==aplicada.FacturaId);
+        var aplicacion=new DynamicParameters(p);aplicacion.Add("OrigenTc",origen.Tc);aplicacion.Add("Origen",origen.Comprobante);
+        aplicacion.Add("ImporteAplicado",aplicada.Importe);
         await cn.ExecuteAsync(Q("""
             INSERT INTO dbo.MV_APLICACION(CUENTA,TC,SUCURSAL,NUMERO,LETRA,IDCOMPROBANTE,TCO_ORIGEN,SUCURSAL_ORIGEN,NUMERO_ORIGEN,
                 LETRA_ORIGEN,IDComprobante_Origen,IDCOMPLEMENTO_ORIGEN,IMPORTE,Transmision,Recepcion,UNegocio,Secuencia,TC_PRINT,IDCOMPROBANTE_PRINT)
             VALUES(@Cliente,@Tc,@Suc,@Numero,'X',@Comprobante,@OrigenTc,SUBSTRING(@Origen,1,4),SUBSTRING(@Origen,5,8),
-                RIGHT(@Origen,1),@Origen,0,@Total,0,0,@Unidad,0,@Tc,@Comprobante);
+                RIGHT(@Origen,1),@Origen,0,@ImporteAplicado,0,0,@Unidad,0,@Tc,@Comprobante);
             """,aplicacion));
+        }
         if(await cn.ExecuteScalarAsync<decimal>(Q("""
             SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS
             WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Sub AND [NUMERO ASIENTO]=@Asiento;
@@ -386,6 +427,7 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
     }
     private sealed class Factura
     {
+        public int Id { get; set; }
         public string Nombre { get; set; }="";
         public string? Vendedor { get; set; }
         public string Tc { get; set; }="";

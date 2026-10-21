@@ -118,7 +118,23 @@ Para revisar o corregir un vínculo, elegí **Historial** en el movimiento del b
 
 Una importación con historial de conciliación no puede eliminarse. Un movimiento conciliado tampoco permite generar otra cobranza rápida. Los asientos faltantes por comisiones, impuestos y otros conceptos se incorporarán en la siguiente etapa.
 
+### Cobrar dos o más facturas con un mismo depósito
+
+En **Cobrar**, la sección **Comprobantes a cobrar** permite marcar varias facturas del mismo cliente y unidad de negocio. Si la conciliación propone **Múltiple**, se precargan los comprobantes que siguen vigentes y con saldo; revisá la selección. Podés agregar o quitar facturas y corregir el importe de cada aplicación. Si la propuesta ya no coincide con los saldos disponibles, elegí manualmente los comprobantes.
+
+El banco conserva el importe del depósito. Podés agregar retenciones; **Total CB** debe coincidir con **Aplicado**, dejando **Diferencia por aplicar** en cero. Al confirmar se emite **un solo recibo CB**, se aplica el importe indicado a cada factura y se registra un solo asiento. Las facturas de distintas unidades requieren recibos separados para respetar sus talonarios. La selección automática no graba nada hasta confirmar.
+
 ### Marcar un cobro ya ingresado en Alfa Gestión
+
+El botón **Marcar como cobrado** está siempre al pie del detalle, junto a **Cerrar**, para los ingresos pendientes clasificados Cobranza. Al pulsarlo se abre Cuenta corriente y el recibo para revisar la confirmación. Si no hay un recibo válido, el aviso explica qué revisar; tener saldo cero no alcanza para confirmar que ese ingreso bancario fue cobrado.
+
+Después de revisar el recibo y marcar **Confirmo que este recibo corresponde al movimiento bancario**, podés completar el reconocimiento desde el mismo botón del pie o desde el recibo. Si los importes difieren, primero completá la observación obligatoria. Hasta ese momento, pulsar el botón abre la revisión y conserva tus datos.
+
+Al abrir **Detalle**, arriba se muestran el cliente, su **saldo al corte** y el importe del banco en bloques separados. La fecha junto al saldo indica hasta cuándo se calcularon los movimientos (inicialmente 15 días después de la fecha bancaria); podés cambiarla en **Cuenta corriente → Hasta la fecha → Consultar**. El saldo incluye los movimientos anteriores a los últimos 30/50/100 mostrados y se presenta separado por moneda.
+
+Las solapas **Cuenta corriente** y **Comprobantes** sirven para revisar el cobro y las facturas. **Clasificación y cliente** reúne las opciones para reclasificar o asignar/cambiar el cliente. El detalle de un recibo comienza plegado; elegí **Ver recibo** o desplegá su encabezado para consultar medios de pago, aplicaciones y confirmación de cobro.
+
+Si existe un recibo del mismo cliente con fecha cercana e importe dentro de la tolerancia configurada, el listado y el detalle muestran **Posible duplicado**, con número de recibo, fecha, importe y diferencia. El aviso se consulta al actualizar el listado, incluso cuando la propuesta original dice Anticipo. Por ejemplo, un ingreso de $1.119.185,00 puede advertir un recibo de $1.119.185,81 cargado una semana después, con tolerancia de $1,00. **Revisar posible duplicado** abre el detalle para compararlo en Cuenta corriente. El aviso no marca el cobro ni concilia automáticamente.
 
 Todo ingreso pendiente clasificado como **Cobranza** ofrece **Marcar como cobrado**, también cuando la propuesta dice **Anticipo** o no quedan facturas pendientes. Abrí esa acción o **Detalle → Cuenta corriente**, revisá el recibo existente, sus cuentas y aplicaciones. Si hay varios candidatos, elegí **Ver recibo** en el que corresponda.
 

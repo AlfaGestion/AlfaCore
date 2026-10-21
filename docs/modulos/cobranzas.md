@@ -36,7 +36,7 @@ Entrada conceptual:
 
 Salida: identidad y número de cobranza, asiento, aplicaciones e identificador para recuperar el resultado ante un reintento.
 
-`CobranzasService` prepara movimientos y valida/graba el recibo; `CobranzaRapidaDialog` contiene el editor compartido. Las reglas del POS se mantienen independientes en esta entrega. La API de grabación admite origen bancario opcional para su futura integración manual; requiere actualmente permiso de Conciliación. La primera versión del DTO aplica a un comprobante por recibo: múltiples aplicaciones se incorporarán al implementar el módulo completo.
+`CobranzasService` prepara movimientos y valida/graba el recibo; `CobranzaRapidaDialog` contiene el editor compartido. Las reglas del POS se mantienen independientes. La API admite origen bancario opcional y requiere actualmente permiso de Conciliación. Admite una o varias aplicaciones del mismo cliente y unidad; las solicitudes anteriores, sin lista de aplicaciones, siguen aplicando el total a `FacturaId`.
 
 ## Flujo de cobranza rápida
 
@@ -48,7 +48,17 @@ Salida: identidad y número de cobranza, asiento, aplicaciones e identificador p
 6. Grabar cabecera, asiento balanceado, aplicaciones, contador y vínculo bancario en una misma transacción, con protección contra doble cobro y reintentos.
 7. Mostrar número de CB, actualizar saldos/estado y conservar filtros al regresar.
 
-Primer alcance: una factura, banco y retenciones adicionales. Para Cobranzas completo: múltiples facturas, anticipos, aplicación de créditos, cheques y tarjetas con sus efectos auxiliares. No habilitar tipos solo por existir en el maestro si faltan sus validaciones o persistencia.
+Alcance actual: una o varias facturas del mismo cliente y unidad, banco y retenciones adicionales. Para Cobranzas completo: anticipos, aplicación de créditos, cheques y tarjetas con sus efectos auxiliares. No habilitar tipos solo por existir en el maestro si faltan sus validaciones o persistencia.
+
+## Cobranza de varios comprobantes (2026-10-21)
+
+La preparación relee la última propuesta de `BK_MovimientoMatch/BK_MovimientoAplicacion` y resuelve los IDs actuales por tipo, sucursal, número, letra y cliente. Precarga la selección únicamente si todos los comprobantes están disponibles, autorizados, con saldo suficiente y dentro de una misma unidad. Una propuesta incompleta o vencida no se precarga parcialmente. El editor permite marcar/quitar comprobantes y corregir el importe aplicado a cada uno. Una selección sugerida cuyo total coincide con los medios conserva su distribución original; el resto se distribuye por orden de los documentos, sin exceder sus saldos. Las retenciones sugeridas utilizan el saldo conjunto de los seleccionados.
+
+`CobranzaSolicitud.Aplicaciones` es opcional (hasta 50 IDs distintos, importes positivos con dos decimales). Su suma debe coincidir exactamente con banco más retenciones. La propiedad nula se omite al serializar, conservando el hash de solicitudes antiguas. `FacturaId` sigue identificando una factura seleccionada, usada como referencia de cabecera, vendedor y unidad; el detalle completo queda en `MV_APLICACION` y en el hash de la solicitud, sin migración de la tabla de operaciones.
+
+Antes de escribir se bloquean y revalidan todas las cabeceras, rangos contables/aplicaciones y saldos actuales. Se exige mismo cliente, unidad autorizada y moneda pesos. Se emite una única CB, con un único asiento (cliente por el total contra banco/retenciones), una aplicación por comprobante y una actualización del contador y estado bancario. Se mantienen `TC_PRINT=CB`, `IDCOMPROBANTE_PRINT`, caja del usuario, detalle/comentarios, idempotencia y atomicidad existentes. No se generan anticipos ni se cancelan diferencias usando tolerancias.
+
+Regresión: `CobranzaMultipleTests` valida el contrato anterior y rechazos de duplicados, importes y sumas; renderiza las dos facturas del ejemplo por 857.903,92 y conserva su distribución. La prueba SQL usa `ALFANET2007_PRUEBAS` con rollback: dos facturas, un banco y una retención, un recibo, dos aplicaciones, saldos individuales, balance, reintento idempotente y rechazo de mezcla de clientes/unidades. La pantalla se verifica a 2048/1440/1024; capturas locales en `artifacts/conciliacion/cobranza-multiple-{ancho}.png`. Conserva el estado AlfaDesign 10/13 y pendientes de homologación integral documentados en conciliación bancaria.
 
 ## Configuración verificada e implementación
 

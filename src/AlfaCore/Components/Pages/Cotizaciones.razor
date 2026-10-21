@@ -885,7 +885,7 @@
             if (_selectedIds.Count > 0)
             {
                 actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedIds.Count} seleccionadas", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
-                actions.Add(new PageHeaderAction { Key = "anular-masiva", Label = "Anular", Icon = "bi-slash-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, OnClick = () => { _showBulkAnularConfirm = true; return Task.CompletedTask; } });
+                actions.Add(new PageHeaderAction { Key = "anular-masiva", Label = "Anular", Icon = "bi-slash-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, OnClick = () => MostrarConfirmacionAnularAsync(seleccionadas: true) });
                 actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
             }
             actions.Add(new PageHeaderAction { Key = "nueva", Label = "Nueva cotización", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = AbrirNuevaAsync });
@@ -909,7 +909,7 @@
                 }
                 actions.Add(new PageHeaderAction { Key = "nueva-version", Label = "Nueva versión", Icon = "bi-file-earmark-plus", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = NuevaVersionAsync });
             }
-            actions.Add(new PageHeaderAction { Key = "anular", Label = "Anular", Icon = "bi-slash-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { _showAnularConfirm = true; return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "anular", Label = "Anular", Icon = "bi-slash-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, OnClick = () => MostrarConfirmacionAnularAsync(seleccionadas: false) });
             actions.Add(new PageHeaderAction { Key = "volver", Label = "Volver al listado", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => { CerrarEditor(); return Task.CompletedTask; } });
         }
 
@@ -961,6 +961,18 @@
 
     // ---- Selección masiva ----
 
+    private Task MostrarConfirmacionAnularAsync(bool seleccionadas)
+        => InvokeAsync(() =>
+        {
+            if (seleccionadas)
+                _showBulkAnularConfirm = _selectedIds.Count > 0;
+            else
+                _showAnularConfirm = _detail is not null;
+
+            // El toolbar vive fuera de esta página: su evento no renderiza nuestros diálogos.
+            StateHasChanged();
+        });
+
     private bool AreAllVisibleSelected
         => _items.Count > 0 && _items.All(i => _selectedIds.Contains(i.IdCotizacion));
 
@@ -994,7 +1006,7 @@
     {
         _selectedIds.Clear();
         UpdatePageHeader();
-        return Task.CompletedTask;
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task ConfirmarAnularSeleccionadasAsync()
@@ -1033,6 +1045,7 @@
             "borradores" => CotizacionEstados.Borrador,
             "enviadas" => CotizacionEstados.Enviada,
             "aceptadas" => CotizacionEstados.Aceptada,
+            "anuladas" => CotizacionEstados.Anulada,
             _ => null
         };
         _filters.PageNumber = 1;
@@ -1075,11 +1088,12 @@
             <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleCotizApplyKeyDownAsync">
                 <div class="smart-search__column smart-search__section smart-search__section--status">
                     <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
-                    <button type="button" class="@GetSmartOptionClass(_listTab == "todas")" @onclick='() => SetListTabAsync("todas")'>Todas</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "todas")" @onclick='() => SetListTabAsync("todas")'>Todas sin anular</button>
                     <button type="button" class="@GetSmartOptionClass(_listTab == "borradores")" @onclick='() => SetListTabAsync("borradores")'>Borradores</button>
                     <button type="button" class="@GetSmartOptionClass(_listTab == "enviadas")" @onclick='() => SetListTabAsync("enviadas")'>Enviadas</button>
                     <button type="button" class="@GetSmartOptionClass(_listTab == "aceptadas")" @onclick='() => SetListTabAsync("aceptadas")'>Aceptadas</button>
                     <button type="button" class="@GetSmartOptionClass(_listTab == "vencidas")" @onclick='() => SetListTabAsync("vencidas")'>Vencidas</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "anuladas")" @onclick='() => SetListTabAsync("anuladas")'>Anuladas</button>
                 </div>
             </div>
         }
@@ -1121,6 +1135,7 @@
             "enviadas" => "Enviadas",
             "aceptadas" => "Aceptadas",
             "vencidas" => "Vencidas",
+            "anuladas" => "Anuladas",
             _ => null
         };
         if (label is not null)

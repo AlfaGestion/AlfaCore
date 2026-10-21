@@ -10,6 +10,12 @@ namespace AlfaCore.ConciliacionBancaria.Infrastructure;
 // Cada ejecución captura una conexión y transacción: nunca cambia de empresa a mitad del proceso.
 public sealed class ConciliacionRepository(SqlConnection cn, SqlTransaction tx, long? movimientoId = null) : IBankStatementRepository
 {
+    internal const string ToleranciaCobroSql = """
+        DECLARE @toleranciaCobro decimal(18,2)=(SELECT TOP(1) TRY_CAST(VALOR AS decimal(18,2))
+            FROM dbo.TA_CONFIGURACION WHERE LTRIM(RTRIM(CLAVE))='CONCILIACION-TOLERANCIA');
+        IF @toleranciaCobro IS NULL OR @toleranciaCobro<0 OR @toleranciaCobro>100 SET @toleranciaCobro=1;
+        """;
+
     private CommandDefinition Cmd(string sql, object? args, CancellationToken ct)
         => new(sql, args, tx, commandTimeout: 120, cancellationToken: ct);
 
@@ -101,10 +107,10 @@ public sealed class ConciliacionRepository(SqlConnection cn, SqlTransaction tx, 
     }
 
     public Task<bool> HasRecentlyRegisteredPaymentAsync(string clientCode, decimal amount, DateTime movementDate, CancellationToken cancellationToken = default)
-        => cn.ExecuteScalarAsync<bool>(Cmd("""
+        => cn.ExecuteScalarAsync<bool>(Cmd(ToleranciaCobroSql + """
             SELECT CONVERT(bit,CASE WHEN EXISTS(
                 SELECT 1 FROM dbo.VE_COBRANZAS_REALIZADAS c
-                WHERE LTRIM(RTRIM(c.CUENTA))=@clientCode AND ABS(ABS(c.IMPORTE)-@amount)<=0.01
+                WHERE LTRIM(RTRIM(c.CUENTA))=@clientCode AND ABS(ABS(c.IMPORTE)-@amount)<=@toleranciaCobro
                   AND c.FECHA>=@desde AND c.FECHA<@hasta
             ) THEN 1 ELSE 0 END);
             """, new { clientCode = clientCode.Trim(), amount, desde = movementDate.Date.AddDays(-15), hasta = movementDate.Date.AddDays(16) }, cancellationToken));

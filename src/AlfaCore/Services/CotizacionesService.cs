@@ -53,7 +53,7 @@ public sealed class CotizacionesService(
                     FROM dbo.COT_COTIZACION c
                     INNER JOIN dbo.COT_VERSION v ON v.IdVersion = c.IdVersionActual
                     WHERE ISNULL(c.Baja, 0) = 0
-                      AND (@Estado IS NULL OR c.Estado = @Estado)
+                      AND ((@Estado IS NULL AND c.Estado <> 'ANULADA') OR c.Estado = @Estado)
                       AND (@Cliente IS NULL OR c.CodigoCliente = @Cliente)
                       AND (@SoloCrm IS NULL OR (@SoloCrm = 1 AND c.IdOportunidad IS NOT NULL) OR (@SoloCrm = 0 AND c.IdOportunidad IS NULL))
                       AND (@FechaDesde IS NULL OR v.Fecha >= @FechaDesde)

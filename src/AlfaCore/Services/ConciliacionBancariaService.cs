@@ -78,7 +78,10 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
         => MovimientosAsync(new ConciliacionMovimientoFiltros { ImportacionId=import, Pagina=page },ct);
 
     public Task<PagedResult<ConciliacionMovimiento>> MovimientosAsync(ConciliacionMovimientoFiltros filtros, CancellationToken ct = default)
-        => Ejecutar("Movimientos", async (cn,token) =>
+        => Ejecutar("Movimientos", (cn,token) => MovimientosCoreAsync(cn,filtros,token),ct);
+
+    internal async Task<PagedResult<ConciliacionMovimiento>> MovimientosCoreAsync(SqlConnection cn,
+        ConciliacionMovimientoFiltros filtros,CancellationToken token,SqlTransaction? tx=null)
         {
             var columna = filtros.OrdenPor switch
             {
@@ -103,7 +106,8 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                         NULLIF(NULLIF(LTRIM(RTRIM(p.ClienteNombre)),''),'.'),
                         NULLIF(NULLIF(LTRIM(RTRIM(c.ClienteProbableNombre)),''),'.'),NULLIF(LTRIM(RTRIM(p.ClienteCodigo)),''),'') Cliente,
                     ISNULL(p.ResumenPropuesta,'') Propuesta,COALESCE(p.Confianza,c.Confianza,0) Confianza,
-                    ISNULL(c.Motivo,'') Observaciones,m.EstadoRevision Estado,v.ConciliacionId,ISNULL(p.TipoMatch,'') TipoMatch
+                    ISNULL(c.Motivo,'') Observaciones,m.EstadoRevision Estado,v.ConciliacionId,ISNULL(p.TipoMatch,'') TipoMatch,
+                    p.ClienteCodigo CodigoCliente,m.MonedaCodigo
                 INTO #Revision
                 FROM dbo.BK_ExtractoMovimiento m
                 LEFT JOIN dbo.BK_ConciliacionBanco v ON v.MovimientoId=m.MovimientoId AND v.Activa=1
@@ -117,12 +121,32 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                   AND (@texto='' OR CONCAT(Descripcion,' ',Referencia,' ',Cliente,' ',Propuesta,' ',Banco,' ',Categoria,' ',Estado,' ',
                       CONVERT(varchar(30),Id),' ',CONVERT(char(10),Fecha,103),' ',CONVERT(varchar(40),Importe),' ',
                       REPLACE(CONVERT(varchar(40),Importe),'.',','),' ',CONVERT(varchar(10),Confianza)) LIKE @patron);
-                SELECT * FROM #Filtrados ORDER BY [{columna}] {(filtros.Descendente ? "DESC" : "ASC")},Id DESC
+                SELECT * INTO #Pagina FROM #Filtrados ORDER BY [{columna}] {(filtros.Descendente ? "DESC" : "ASC")},Id DESC
                 OFFSET @skip ROWS FETCH NEXT 50 ROWS ONLY;
+                {ConciliacionRepository.ToleranciaCobroSql}
+                -- Aviso actual, independiente de la propuesta guardada al importar. Solo se consultan las 50 filas de la página.
+                SELECT pagina.*,cobro.ReciboPosible,cobro.FechaPosibleCobro,cobro.ImportePosibleCobro
+                FROM #Pagina pagina OUTER APPLY (
+                    SELECT TOP(1) CONCAT(LTRIM(RTRIM(a.TC)),' ',a.SUCURSAL,'-',a.NUMERO,' ',a.LETRA) ReciboPosible,
+                        a.FECHA FechaPosibleCobro,CONVERT(decimal(18,2),a.IMPORTE) ImportePosibleCobro
+                    FROM dbo.MV_ASIENTOS a
+                    WHERE pagina.Categoria='Cobranza' AND pagina.Estado<>'Cobrado' AND pagina.Importe>0 AND pagina.MonedaCodigo='ARS'
+                        AND LTRIM(RTRIM(a.CUENTA))=LTRIM(RTRIM(pagina.CodigoCliente)) AND a.EsResumen=0
+                        AND LTRIM(RTRIM(a.TC)) IN ('CB','CBFP','CBCT') AND a.SECUENCIA=1 AND a.[DEBE-HABER]='H'
+                        AND LTRIM(RTRIM(a.MONEDA))='1' AND ABS(a.IMPORTE-pagina.Importe)<=@toleranciaCobro
+                        AND a.FECHA>=DATEADD(day,-15,CONVERT(date,pagina.Fecha)) AND a.FECHA<DATEADD(day,16,CONVERT(date,pagina.Fecha))
+                        AND EXISTS(SELECT 1 FROM dbo.TA_USUARIOS u WHERE UPPER(LTRIM(RTRIM(u.NOMBRE)))=UPPER(@usuario)
+                            AND (ISNULL(u.AdminCentral,0)=1 OR LTRIM(RTRIM(u.UNEGOCIO))=LTRIM(RTRIM(a.UNEGOCIO))))
+                        AND NOT EXISTS(SELECT 1 FROM dbo.V_MV_CPTE f WHERE f.TC=a.TC AND f.SUCURSAL=a.SUCURSAL
+                            AND f.NUMERO=a.NUMERO AND f.LETRA=a.LETRA AND ISNULL(f.ANULADA,0)=1)
+                    ORDER BY ABS(a.IMPORTE-pagina.Importe),ABS(DATEDIFF(day,a.FECHA,pagina.Fecha)),a.FECHA DESC,
+                        a.PERIODO DESC,a.MES_OPERATIVO DESC,a.[NUMERO ASIENTO] DESC,a.TIPO_REG
+                ) cobro
+                ORDER BY pagina.[{columna}] {(filtros.Descendente ? "DESC" : "ASC")},pagina.Id DESC;
                 SELECT COUNT(*) FROM #Filtrados;
-                """,new { import=filtros.ImportacionId,clasificacion,texto,patron,skip=checked((filtros.Pagina-1)*50) }, cancellationToken: token));
+                """,new { import=filtros.ImportacionId,clasificacion,texto,patron,skip=checked((filtros.Pagina-1)*50),usuario=users.GetCurrentUserName() }, transaction:tx,cancellationToken: token));
             return new PagedResult<ConciliacionMovimiento> { Items=(await r.ReadAsync<ConciliacionMovimiento>()).AsList(),Total=await r.ReadSingleAsync<int>(),PageNumber=filtros.Pagina,PageSize=50 };
-        },ct);
+        }
 
     public Task<IReadOnlyList<MatchDetailItem>> DetalleAsync(long id, CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<MatchDetailItem>>("Detalle", async(cn,token) =>
