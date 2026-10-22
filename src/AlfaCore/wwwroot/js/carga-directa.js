@@ -20,13 +20,21 @@ window.cargaDirecta = (function () {
     }
 
     function focus(id) {
-        // Se espera un cuadro para que Blazor termine de pintar (el campo puede recién habilitarse).
-        window.requestAnimationFrame(function () {
+        // Reintenta unos cuadros: el campo puede habilitarse recién en el próximo render, y una ventana
+        // (AlfaDialog) se enfoca a sí misma al abrir y le robaba el foco al buscador (2026-10-22).
+        let intentos = 0, seleccionado = false;
+        function intentar() {
             const el = document.getElementById(id);
-            if (!el || el.disabled) return;
-            el.focus();
-            if (typeof el.select === 'function') el.select();
-        });
+            if (el && !el.disabled && document.activeElement !== el) {
+                el.focus();
+                if (!seleccionado && typeof el.select === 'function') { el.select(); }
+                seleccionado = true;
+            } else if (el && document.activeElement === el) {
+                seleccionado = true;
+            }
+            if (++intentos < 8) window.setTimeout(intentar, 50);
+        }
+        window.requestAnimationFrame(intentar);
     }
 
     function scrollIntoView(id) {

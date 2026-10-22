@@ -152,11 +152,11 @@
 {
     <AlfaDialog Open="true" Title="Buscar artículo" Size="AlfaDialogSize.Lg" OnClose="CerrarBusqueda">
         <div class="directa-busqueda">
+            <p class="directa-muted">Escribí para filtrar · ↑ ↓ para moverte · Enter para elegir · Esc para cerrar</p>
             <input id="cd-buscar" class="directa-busqueda__input" placeholder="Código, descripción o código de barras" autocomplete="off"
                 value="@_busquedaTexto" @oninput="BusquedaInput" @onkeydown="BusquedaKeyDown" />
             <div class="directa-busqueda__lista" role="listbox" aria-label="Artículos encontrados">
                 @if (_busquedaCargando) { <p class="directa-muted">Buscando…</p> }
-                else if (_busquedaTexto.Trim().Length == 0) { <p class="directa-muted">Escribí para buscar. ↑ ↓ para moverte, Enter para elegir, Esc para cerrar.</p> }
                 else if (_busqueda.Count == 0) { <p class="directa-muted">No se encontraron artículos.</p> }
                 else
                 {
@@ -475,8 +475,9 @@
         _busquedaAbierta = true; _busquedaTexto = texto; _busqueda = []; _stock.Clear(); _busquedaActivo = -1;
         StateHasChanged();
         await FocoAsync("cd-buscar");
+        // Como en Alfa: la lista aparece de entrada, sin tener que escribir.
         if (resultados is not null) await MostrarResultadosAsync(resultados, CancellationToken.None);
-        else if (texto.Length > 0) await BuscarEnModalAsync();
+        else await BuscarEnModalAsync();
     }
     private async Task BusquedaInput(ChangeEventArgs e)
     {
@@ -488,7 +489,6 @@
         _busquedaCts?.Cancel();
         var cts = _busquedaCts = new CancellationTokenSource();
         var texto = _busquedaTexto.Trim();
-        if (texto.Length == 0) { _busqueda = []; _busquedaActivo = -1; _busquedaCargando = false; return; }
         _busquedaCargando = true;
         try
         {
