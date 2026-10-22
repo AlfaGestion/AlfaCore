@@ -1,0 +1,24 @@
+<GestionSmartSearch Model="Model" Placeholder="Buscar descripción, referencia o comprobante…" Texto="@Model.Buscar" TextoChanged="v=>Model.Buscar=v ?? string.Empty" OnApply="OnApply" OnClear="Clear">
+        <Columnas>
+            <div class="smart-search__column">
+                <h4>Cuenta y movimientos</h4>
+                <AlfaSelect Label="Cuenta bancaria (pesos)" Value="@Model.Cuenta" ValueChanged="v=>Model.Cuenta=v ?? string.Empty" Options="@Cuentas" Placeholder="Seleccionar cuenta" Disabled="@Busy" />
+                <AlfaSelect Label="Conciliación" Value="@Model.Estado" ValueChanged="v=>Model.Estado=v ?? string.Empty" Options="@Estados" Disabled="@Busy" />
+                <AlfaSelect Label="Movimiento" Value="@Model.Sentido" ValueChanged="v=>Model.Sentido=v ?? string.Empty" Options="@Sentidos" Disabled="@Busy" />
+            </div>
+            <div class="smart-search__column">
+                <h4>Importes</h4>
+                <AlfaInput Label="Importe desde (valor absoluto)" Type="number" Step="any" Value="@Model.Minimo" ValueChanged="v=>Model.Minimo=v ?? string.Empty" Disabled="@Busy" />
+                <AlfaInput Label="Importe hasta (valor absoluto)" Type="number" Step="any" Value="@Model.Maximo" ValueChanged="v=>Model.Maximo=v ?? string.Empty" Disabled="@Busy" />
+            </div>
+        </Columnas>
+    </GestionSmartSearch>
+@code {
+    [Parameter,EditorRequired] public ConciliacionBusqueda Model { get; set; }=default!;
+    [Parameter] public IReadOnlyList<AlfaSelectOption> Cuentas { get; set; }=[];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+    private static readonly IReadOnlyList<AlfaSelectOption> Estados=[new("Pendientes","Pendientes"),new("Conciliados","Conciliados"),new("Todos","Todos")];
+    private static readonly IReadOnlyList<AlfaSelectOption> Sentidos=[new("Todos","Todos"),new("Ingresos","Ingresos"),new("Egresos","Egresos")];
+    private Task Clear() { Model.Buscar="";Model.Estado="Pendientes";Model.Sentido="Todos";Model.Minimo=Model.Maximo="";return Task.CompletedTask; }
+}

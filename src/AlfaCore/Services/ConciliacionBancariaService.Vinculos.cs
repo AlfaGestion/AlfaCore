@@ -81,13 +81,10 @@ public sealed partial class ConciliacionBancariaService
         ConciliacionCompararFiltro filtro,CancellationToken token=default)
         {
             ValidarComparacion(filtro);
-            var valor=await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
-                SELECT COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),ValorAux))
-                FROM dbo.TA_CONFIGURACION WHERE CLAVE='CONCILIACION-DIAS-BANCO';
-                """,transaction:tx,cancellationToken:token));
-            if(!int.TryParse(valor,out var dias)||dias is <0 or >31)
-                throw new InvalidOperationException("Revisá CONCILIACION-DIAS-BANCO (0 a 31).");
-            var parametros=new DynamicParameters(ArgumentosComparacion(filtro));parametros.Add("dias",dias);
+            var criterios=await LeerCriterios(cn,tx,token);
+            var parametros=new DynamicParameters(ArgumentosComparacion(filtro));parametros.Add("dias",criterios.Dias);
+            parametros.Add("tolerancia",criterios.Tolerancia);parametros.Add("compararFecha",criterios.CompararFecha);
+            parametros.Add("compararReferencia",criterios.CompararReferencia);
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(CompararBaseSql+$$"""
                 SELECT * INTO #FB FROM #Banco WHERE (@estado='Todos' OR (@estado='Pendientes' AND ConciliacionId IS NULL)
                     OR (@estado='Conciliados' AND ConciliacionId IS NOT NULL))
@@ -100,25 +97,30 @@ public sealed partial class ConciliacionBancariaService
                     AND (@minimo IS NULL OR ABS(Importe)>=@minimo) AND (@maximo IS NULL OR ABS(Importe)<=@maximo)
                     AND (@texto='' OR CONCAT(Detalle,' ',Referencia,' ',Comprobante,' ',Importe,' ',CONVERT(char(10),Fecha,103)) LIKE @patron);
                 SELECT (SELECT COUNT(*) FROM #FB) Banco,(SELECT COUNT(*) FROM #FA) Alfa,
-                    ISNULL((SELECT SUM(Importe) FROM #Banco),0) TotalBanco,ISNULL((SELECT SUM(Importe) FROM #Alfa WHERE Moneda='1'),0) TotalAlfa,@dias Dias;
+                    ISNULL((SELECT SUM(Importe) FROM #Banco),0) TotalBanco,ISNULL((SELECT SUM(Importe) FROM #Alfa WHERE Moneda='1'),0) TotalAlfa,@dias Dias,@tolerancia Tolerancia,@compararFecha CompararFecha,@compararReferencia CompararReferencia;
                 SELECT * INTO #PaginaBanco FROM #FB ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC OFFSET @skipBanco ROWS FETCH NEXT 50 ROWS ONLY;
                 SELECT * FROM #PaginaBanco ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC;
                 SELECT * FROM #FA ORDER BY {{OrdenesAlfa[filtro.OrdenAlfa]}} {{(filtro.DescAlfa ? "DESC" : "ASC")}},Periodo DESC,Mes DESC,Asiento DESC,TipoRegistro,Secuencia
                     OFFSET @skipAlfa ROWS FETCH NEXT 50 ROWS ONLY;
                 SELECT b.Id MovimientoId,s.* FROM #PaginaBanco b CROSS APPLY(SELECT TOP(1) a.*,COUNT(*) OVER() Candidatos
                     FROM #Alfa a WHERE a.ConciliacionId IS NULL AND a.Legacy=0 AND a.Moneda='1'
-                        AND a.Importe=b.Importe AND b.Importe<>0 AND ABS(DATEDIFF(day,a.Fecha,b.Fecha))<=@dias
+                        AND ABS(a.Importe-b.Importe)<=@tolerancia AND SIGN(a.Importe)=SIGN(b.Importe) AND b.Importe<>0
+                        AND (@compararFecha=0 OR ABS(DATEDIFF(day,a.Fecha,b.Fecha))<=@dias)
+                        AND (@compararReferencia=0 OR (NULLIF(LTRIM(RTRIM(b.Referencia)),'') IS NOT NULL AND LTRIM(RTRIM(a.Referencia))=LTRIM(RTRIM(b.Referencia))))
                     ORDER BY CASE WHEN NULLIF(b.Referencia,'') IS NOT NULL AND a.Referencia=b.Referencia THEN 0 ELSE 1 END,
-                        ABS(DATEDIFF(day,a.Fecha,b.Fecha)),a.Fecha,a.Periodo,a.Mes,a.Asiento,a.TipoRegistro,a.Secuencia)s
+                        ABS(a.Importe-b.Importe),ABS(DATEDIFF(day,a.Fecha,b.Fecha)),a.Fecha,a.Periodo,a.Mes,a.Asiento,a.TipoRegistro,a.Secuencia)s
                     WHERE b.ConciliacionId IS NULL;
-                SELECT b.Id BancoId,a.* INTO #Propuestas FROM #FB b JOIN #FA a ON a.Importe=b.Importe
-                    AND ABS(DATEDIFF(day,a.Fecha,b.Fecha))<=@dias
+                SELECT b.Id BancoId,a.* INTO #Propuestas FROM #FB b JOIN #FA a ON ABS(a.Importe-b.Importe)<=@tolerancia AND SIGN(a.Importe)=SIGN(b.Importe)
+                    AND (@compararFecha=0 OR ABS(DATEDIFF(day,a.Fecha,b.Fecha))<=@dias)
+                    AND (@compararReferencia=0 OR (NULLIF(LTRIM(RTRIM(b.Referencia)),'') IS NOT NULL AND LTRIM(RTRIM(a.Referencia))=LTRIM(RTRIM(b.Referencia))))
                 WHERE b.ConciliacionId IS NULL AND a.ConciliacionId IS NULL AND a.Legacy=0 AND a.Moneda='1'
                     AND b.Importe<>0 AND b.Alterado=0 AND a.Alterado=0
-                    AND (SELECT COUNT(*) FROM #Alfa x WHERE x.Importe=b.Importe AND x.Moneda='1' AND x.Legacy=0
-                        AND x.ConciliacionId IS NULL AND ABS(DATEDIFF(day,x.Fecha,b.Fecha))<=@dias)=1
-                    AND (SELECT COUNT(*) FROM #Banco x WHERE x.Importe=a.Importe AND x.ConciliacionId IS NULL
-                        AND ABS(DATEDIFF(day,x.Fecha,a.Fecha))<=@dias)=1;
+                    AND (SELECT COUNT(*) FROM #Alfa x WHERE ABS(x.Importe-b.Importe)<=@tolerancia AND SIGN(x.Importe)=SIGN(b.Importe) AND x.Moneda='1' AND x.Legacy=0
+                        AND x.ConciliacionId IS NULL AND (@compararFecha=0 OR ABS(DATEDIFF(day,x.Fecha,b.Fecha))<=@dias)
+                        AND (@compararReferencia=0 OR (NULLIF(LTRIM(RTRIM(b.Referencia)),'') IS NOT NULL AND LTRIM(RTRIM(x.Referencia))=LTRIM(RTRIM(b.Referencia)))))=1
+                    AND (SELECT COUNT(*) FROM #Banco x WHERE ABS(x.Importe-a.Importe)<=@tolerancia AND SIGN(x.Importe)=SIGN(a.Importe) AND x.ConciliacionId IS NULL
+                        AND (@compararFecha=0 OR ABS(DATEDIFF(day,x.Fecha,a.Fecha))<=@dias)
+                        AND (@compararReferencia=0 OR (NULLIF(LTRIM(RTRIM(a.Referencia)),'') IS NOT NULL AND LTRIM(RTRIM(x.Referencia))=LTRIM(RTRIM(a.Referencia)))))=1;
                 SELECT b.* FROM #Propuestas p JOIN #FB b ON b.Id=p.BancoId ORDER BY b.Id;
                 SELECT * FROM #Propuestas ORDER BY BancoId;
                 """,parametros,tx,commandTimeout:120,cancellationToken:token));
@@ -168,8 +170,12 @@ public sealed partial class ConciliacionBancariaService
                 || solicitud.Banco.Select(b=>b.Id).Distinct().Count()!=solicitud.Banco.Count
                 || solicitud.Alfa.Select(a=>a.Clave).Distinct().Count()!=solicitud.Alfa.Count)
                 throw new InvalidOperationException("Seleccioná de 1 a 100 movimientos distintos de cada lado.");
-            var huella=Hash(JsonSerializer.Serialize(new { Cuenta=solicitud.Filtro.Cuenta.Trim(),Desde=solicitud.Filtro.Desde.Date,Hasta=solicitud.Filtro.Hasta.Date,
-                Banco=solicitud.Banco.OrderBy(b=>b.Id),Alfa=solicitud.Alfa.OrderBy(a=>JsonSerializer.Serialize(a.Clave),StringComparer.Ordinal) }));
+            var motivo=(solicitud.MotivoDiferencia ?? "").Trim();
+            var datosHuella=new { Cuenta=solicitud.Filtro.Cuenta.Trim(),Desde=solicitud.Filtro.Desde.Date,Hasta=solicitud.Filtro.Hasta.Date,
+                Banco=solicitud.Banco.OrderBy(b=>b.Id),Alfa=solicitud.Alfa.OrderBy(a=>JsonSerializer.Serialize(a.Clave),StringComparer.Ordinal) };
+            var huella=solicitud.AceptarDiferencia||motivo.Length>0
+                ? Hash(JsonSerializer.Serialize(new { Datos=datosHuella,solicitud.AceptarDiferencia,MotivoDiferencia=motivo }))
+                : Hash(JsonSerializer.Serialize(datosHuella));
             var session=sessions.GetActiveSession()!.Id;
             CommandDefinition Q(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:token);
             await BloquearCuenta(cn,tx,solicitud.Filtro.Cuenta.Trim(),token);
@@ -199,13 +205,19 @@ public sealed partial class ConciliacionBancariaService
                 || alfa.Any(a=>a.ConciliacionId.HasValue||a.Legacy||a.Moneda!="1"||a.Huella!=solicitud.Alfa.Single(s=>s.Clave==a.Clave).Huella))
                 throw new InvalidOperationException("Los movimientos cambiaron, están conciliados o no están autorizados. Actualizá antes de conciliar.");
             var total=banco.Sum(b=>b.Importe);
-            if(total==0||alfa.Sum(a=>a.Importe)!=total||banco.Any(b=>Math.Sign(b.Importe)!=Math.Sign(total))||alfa.Any(a=>Math.Sign(a.Importe)!=Math.Sign(total)))
-                throw new InvalidOperationException("Los totales deben coincidir exactamente y todos los movimientos deben tener el mismo sentido. No se generan ajustes automáticos.");
+            var diferencia=total-alfa.Sum(a=>a.Importe);
+            var criterios=await LeerCriterios(cn,tx,token);
+            if(total==0||Math.Abs(diferencia)>criterios.Tolerancia||banco.Any(b=>Math.Sign(b.Importe)!=Math.Sign(total))||alfa.Any(a=>Math.Sign(a.Importe)!=Math.Sign(total)))
+                throw new InvalidOperationException("La diferencia supera la tolerancia o los movimientos tienen distinto sentido. Revisá la selección.");
+            if(diferencia!=0&&(!solicitud.AceptarDiferencia||motivo.Length is <3 or >300))
+                throw new InvalidOperationException("Aceptá expresamente la diferencia e ingresá un motivo de 3 a 300 caracteres.");
+            if(!await cn.ExecuteScalarAsync<bool>(Q("SELECT CONVERT(bit,CASE WHEN COL_LENGTH('dbo.BK_Conciliacion','MotivoDiferencia') IS NULL THEN 0 ELSE 1 END);")))
+                throw new InvalidOperationException("Aplicá la actualización de criterios de conciliación del 22/10/2026 antes de confirmar.");
             var cuenta=solicitud.Filtro.Cuenta.Trim();var usuario=users.GetCurrentUserName();
             var id=await cn.ExecuteScalarAsync<long>(Q("""
-                INSERT dbo.BK_Conciliacion(Operacion,Huella,Cuenta,Moneda,Importe,Usuario)
-                OUTPUT INSERTED.Id VALUES(@Operacion,@huella,@cuenta,'1',@total,@usuario);
-                """,new{solicitud.Operacion,huella,cuenta,total,usuario}));
+                INSERT dbo.BK_Conciliacion(Operacion,Huella,Cuenta,Moneda,Importe,Usuario,DiferenciaImporte,ToleranciaImporte,MotivoDiferencia)
+                OUTPUT INSERTED.Id VALUES(@Operacion,@huella,@cuenta,'1',@total,@usuario,@diferencia,@tolerancia,@motivo);
+                """,new{solicitud.Operacion,huella,cuenta,total,usuario,diferencia,tolerancia=criterios.Tolerancia,motivo=diferencia==0 ? null : motivo}));
             foreach(var b in banco) await cn.ExecuteAsync(Q("""
                 INSERT dbo.BK_ConciliacionBanco(ConciliacionId,MovimientoId,Fecha,Importe,Detalle,Huella)
                 VALUES(@vinculo,@movimiento,@Fecha,@Importe,@Detalle,@Huella);

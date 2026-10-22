@@ -2,6 +2,8 @@
 
 ## Conciliación bancaria inteligente
 
+Desde **Conciliar cuenta → Criterios de propuestas** se guardan en esta base las claves `CONCILIACION-TOLERANCIA-BANCO` (importe absoluto por par, inicial `1.00`, de 0 a 100 con dos decimales), `CONCILIACION-COMPARAR-FECHA` (SI inicial) y `CONCILIACION-COMPARAR-REFERENCIA` (NO inicial). Se utiliza el margen existente `CONCILIACION-DIAS-BANCO`. La cuenta, moneda y sentido siempre deben coincidir. Referencia activada exige un valor no vacío e igual, sin espacios exteriores. Desactivar fecha elimina solo la prueba de cercanía: se conserva el período consultado. Se distinguen estas claves del matching de facturas/cobranzas y su tolerancia existente. La tolerancia no modifica importes ni genera ajustes contables. Confirmar una diferencia dentro del margen exige aceptación explícita y motivo; se auditan diferencia, tolerancia usada y motivo original en BK_Conciliacion.
+
 `CONCILIACION-DIAS-BANCO` (CAJA): margen de fecha para sugerencias banco/Alfa, valor inicial `3`, entero entre 0 y 31. Se conserva el valor existente al actualizar. No confirma vínculos ni habilita diferencias de importe.
 
 `CONCILIACION-TOLERANCIA` (grupo `CAJA`): margen para sugerencias exactas y múltiples, con valor inicial `1.00` y punto decimal. Se conserva el valor existente durante la actualización. No habilita ajustes contables automáticos. Ver [documentación del módulo](modulos/conciliacion-bancaria.md).

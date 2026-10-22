@@ -44,6 +44,9 @@ public sealed class ConciliacionCompararResumen
     public decimal TotalBanco { get; set; }
     public decimal TotalAlfa { get; set; }
     public int Dias { get; set; }
+    public decimal Tolerancia { get; set; }
+    public bool CompararFecha { get; set; }
+    public bool CompararReferencia { get; set; }
 }
 public sealed record ConciliacionPropuesta(ConciliacionFilaBanco Banco,ConciliacionFilaAlfa Alfa);
 public sealed record ConciliacionSugerencia(long MovimientoId,ConciliacionFilaAlfa Asiento,int Candidatos);
@@ -56,7 +59,8 @@ public sealed record ConciliacionComparacion(ConciliacionCompararResumen Resumen
 public sealed record ConciliacionBancoSeleccion(long Id,string Huella);
 public sealed record ConciliacionAlfaSeleccion(ConciliacionAsientoClave Clave,string Huella);
 public sealed record ConciliacionVincularSolicitud(Guid Operacion,ConciliacionCompararFiltro Filtro,
-    IReadOnlyList<ConciliacionBancoSeleccion> Banco,IReadOnlyList<ConciliacionAlfaSeleccion> Alfa);
+    IReadOnlyList<ConciliacionBancoSeleccion> Banco,IReadOnlyList<ConciliacionAlfaSeleccion> Alfa,
+    bool AceptarDiferencia=false,string MotivoDiferencia="");
 public sealed class ConciliacionVinculoCabecera
 {
     public long Id { get; set; }
@@ -66,8 +70,23 @@ public sealed class ConciliacionVinculoCabecera
     public string Usuario { get; set; }="";
     public DateTime FechaUtc { get; set; }
     public string? Motivo { get; set; }
+    public decimal? DiferenciaImporte { get; set; }
+    public decimal? ToleranciaImporte { get; set; }
+    public string? MotivoDiferencia { get; set; }
     public string? UsuarioAnulacion { get; set; }
     public DateTime? FechaAnulacionUtc { get; set; }
 }
 public sealed record ConciliacionVinculoDetalle(ConciliacionVinculoCabecera Cabecera,
     IReadOnlyList<ConciliacionFilaBanco> Banco,IReadOnlyList<ConciliacionFilaAlfa> Alfa);
+
+public sealed record ConciliacionCriterios(int Dias=3,decimal Tolerancia=1,bool CompararFecha=true,bool CompararReferencia=false);
+
+public sealed class ConciliacionBusqueda : GestionDateFilterBase
+{
+    public string Cuenta { get; set; }="";
+    public string Estado { get; set; }="Pendientes";
+    public string Sentido { get; set; }="Todos";
+    public string Buscar { get; set; }="";
+    public string Minimo { get; set; }="";
+    public string Maximo { get; set; }="";
+}

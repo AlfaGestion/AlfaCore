@@ -45,3 +45,7 @@
 .conciliacion-tabla tr.is-selected { background: var(--alfa-state-selected); }
 .conciliacion-tabla--acciones tr.is-selected td:last-child { background: var(--alfa-state-selected); }
 @media(max-width: 1024px) { .conciliacion-campos { grid-template-columns: 1fr; } .conciliacion-filtros { grid-template-columns: minmax(240px, 1fr) minmax(200px, 1fr); } .conciliacion-filtros__acciones { grid-column: 1 / -1; } }
+
+.conciliacion-page--comparar { height:calc(100dvh - var(--alfa-topbar-height,44px) - var(--alfa-context-toolbar-height,44px) - 2 * var(--alfa-space-16)); min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:var(--alfa-space-8); }
+.conciliacion-page--comparar ::deep .conciliacion-comparacion { flex:1; min-height:0; }
+.conciliacion-page--comparar ::deep .alfa-tabs { flex-shrink:0; }

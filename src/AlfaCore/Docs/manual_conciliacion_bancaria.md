@@ -154,3 +154,12 @@ Podés filtrar por pendientes/conciliados, buscar texto, elegir ingresos o egres
 Al pulsar **Confirmar conciliaciones**, cada par queda vinculado por separado y conserva su historial. Se pueden confirmar ingresos y egresos en el mismo lote porque cada par se valida individualmente. Si algún movimiento cambió o ya fue conciliado, el lote completo se revierte y debés actualizar la comparación. La acción vincula lo existente; no genera cobranzas ni asientos.
 
 Los casos con varias contrapartidas posibles requieren revisión individual. Podés usar la sugerencia de la fila o seleccionar manualmente uno o varios movimientos de cada lista y elegir **Conciliar selección**, con igual total y sentido.
+
+
+## Criterios para proponer coincidencias
+
+En **Conciliar cuenta → Criterios de propuestas** podés definir la tolerancia de importe por par (por ejemplo, $1), comparar fechas con un margen de días y exigir la misma referencia bancaria. Cuenta, moneda y sentido siempre deben coincidir. Guardar criterios los aplica a esta base de datos y a los demás usuarios; no cambia los importes originales.
+
+Una transferencia de $1.426.402,00 puede proponerse contra un asiento de $1.426.402,22 con tolerancia $1. La ventana muestra ambos importes y la diferencia. Si la diferencia está dentro de la tolerancia, podés marcar **Acepto conciliar con esta diferencia** e ingresar un motivo para confirmar. En los lotes, la aceptación y el motivo se aplican a los pares seleccionados con diferencia. Los importes originales se conservan y no se genera un asiento de ajuste. El historial muestra la diferencia, la tolerancia utilizada y el motivo original, incluso después de desconciliar.
+
+La lupa y el embudo de la barra superior permiten buscar y cambiar cuenta, período, estado, ingresos/egresos e importes con el mismo filtro estándar del resto de Caja y Bancos. Pulsá Aplicar o Comparar para consultar. Las filas de cada lista se desplazan conservando sus encabezados y controles.

@@ -53,6 +53,11 @@ public sealed class ConciliacionVinculosTests
             """,new{cuenta,sec,fecha,tag,signo,importe,moneda=AlfaCore.Common.CodigoPk.Format(moneda,4),periodo,asiento,legacy},tx);
         try
         {
+            await cn.ExecuteAsync("""
+                IF EXISTS(SELECT 1 FROM TA_CONFIGURACION WHERE CLAVE='CONCILIACION-TOLERANCIA-BANCO')
+                    UPDATE TA_CONFIGURACION SET VALOR='0' WHERE CLAVE='CONCILIACION-TOLERANCIA-BANCO';
+                ELSE INSERT TA_CONFIGURACION(GRUPO,CLAVE,VALOR) VALUES('CAJA','CONCILIACION-TOLERANCIA-BANCO','0');
+                """,transaction:tx);
             var b1=await Banco(50000m);var b2=await Banco(25123.45m);
             await Alfa(1,30000m);await Alfa(2,45123.45m);
             var f=new ConciliacionCompararFiltro(cuenta,fecha,fecha,"Todos",tag);
@@ -117,6 +122,25 @@ public sealed class ConciliacionVinculosTests
             Assert.Equal(orden.Banco.OrderBy(b=>b.Importe).Select(b=>b.Id),orden.Banco.Select(b=>b.Id));
             Assert.Equal(orden.Alfa.OrderBy(a=>a.Importe).Select(a=>a.Clave),orden.Alfa.Select(a=>a.Clave));
             await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.CompararEnConexionAsync(cn,tx,f with{OrdenBanco="Fecha;DROP TABLE x"}));
+            // La tolerancia propone centavos, sin modificar las registraciones.
+            await Alfa(8,777.22m);var centavos=await Banco(777m);
+            Assert.DoesNotContain((await servicio.CompararEnConexionAsync(cn,tx,f)).Propuestas,p=>p.Banco.Id==centavos);
+            await cn.ExecuteAsync("UPDATE TA_CONFIGURACION SET VALOR='0.25' WHERE CLAVE='CONCILIACION-TOLERANCIA-BANCO';",transaction:tx);
+            Assert.Equal(new ConciliacionCriterios(3,0.25m,true,false),await ConciliacionBancariaService.LeerCriterios(cn,tx,default));
+            Assert.Throws<InvalidOperationException>(()=>ConciliacionBancariaService.ValidarCriterios(new(32,0.25m,true,false)));
+            var tolerantes=await servicio.CompararEnConexionAsync(cn,tx,f);
+            Assert.Equal(0.25m,tolerantes.Resumen.Tolerancia);
+            Assert.Equal(777.22m,Assert.Single(tolerantes.Propuestas.Where(p=>p.Banco.Id==centavos)).Alfa.Importe);
+            await cn.ExecuteAsync("""
+                IF EXISTS(SELECT 1 FROM TA_CONFIGURACION WHERE CLAVE='CONCILIACION-COMPARAR-REFERENCIA')
+                    UPDATE TA_CONFIGURACION SET VALOR='SI' WHERE CLAVE='CONCILIACION-COMPARAR-REFERENCIA';
+                ELSE INSERT TA_CONFIGURACION(GRUPO,CLAVE,VALOR) VALUES('CAJA','CONCILIACION-COMPARAR-REFERENCIA','SI');
+                """,transaction:tx);
+            Assert.DoesNotContain((await servicio.CompararEnConexionAsync(cn,tx,f)).Propuestas,p=>p.Banco.Id==centavos);
+            await cn.ExecuteAsync("UPDATE BK_ExtractoMovimiento SET ReferenciaExterna='REF-CENTAVOS' WHERE MovimientoId=@centavos; UPDATE MV_ASIENTOS SET NroComprobanteBancario='REF-CENTAVOS' WHERE PERIODO=@periodo AND [NUMERO ASIENTO]=@asiento AND SECUENCIA=8;",new{centavos,periodo,asiento},tx);
+            Assert.Contains((await servicio.CompararEnConexionAsync(cn,tx,f)).Propuestas,p=>p.Banco.Id==centavos);
+            await cn.ExecuteAsync("UPDATE TA_CONFIGURACION SET VALOR='NO' WHERE CLAVE='CONCILIACION-COMPARAR-REFERENCIA';",transaction:tx);
+            await cn.ExecuteAsync("UPDATE TA_CONFIGURACION SET VALOR='0' WHERE CLAVE='CONCILIACION-TOLERANCIA-BANCO';",transaction:tx);
             var lote=data.Propuestas.Where(p=>p.Banco.Id==bd||p.Banco.Id==positivo).Select(p=>new ConciliacionVincularSolicitud(
                 Guid.NewGuid(),f,[new(p.Banco.Id,p.Banco.Huella)],[new(p.Alfa.Clave,p.Alfa.Huella)])).ToList();
             Assert.Equal(2,lote.Count);
@@ -130,6 +154,21 @@ public sealed class ConciliacionVinculosTests
             Assert.Equal(idsLote,await servicio.ConciliarLoteEnTransaccionAsync(cn,tx,lote));
             var luego=await servicio.CompararEnConexionAsync(cn,tx,f with{Estado="Pendientes"});
             Assert.DoesNotContain(luego.Propuestas,p=>p.Banco.Id==bd||p.Banco.Id==positivo);
+            var conCentavos=(await servicio.CompararEnConexionAsync(cn,tx,f)).Banco.Single(b=>b.Id==centavos);
+            var asientoCentavos=(await servicio.CompararEnConexionAsync(cn,tx,f)).Alfa.Single(a=>a.Secuencia==8);
+            var reqCentavos=new ConciliacionVincularSolicitud(Guid.NewGuid(),f,[new(centavos,conCentavos.Huella)],[new(asientoCentavos.Clave,asientoCentavos.Huella)],true,"Redondeo del extracto");
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarEnTransaccionAsync(cn,tx,reqCentavos)); // Tolerancia cero.
+            await cn.ExecuteAsync("UPDATE TA_CONFIGURACION SET VALOR='0.25' WHERE CLAVE='CONCILIACION-TOLERANCIA-BANCO';",transaction:tx);
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarEnTransaccionAsync(cn,tx,reqCentavos with{AceptarDiferencia=false}));
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarEnTransaccionAsync(cn,tx,reqCentavos with{MotivoDiferencia=""}));
+            var idCentavos=await servicio.ConciliarEnTransaccionAsync(cn,tx,reqCentavos);
+            Assert.Equal(idCentavos,await servicio.ConciliarEnTransaccionAsync(cn,tx,reqCentavos));
+            var auditoria=await cn.QuerySingleAsync<ConciliacionVinculoCabecera>("SELECT * FROM BK_Conciliacion WHERE Id=@id;",new{id=idCentavos},tx);
+            Assert.Equal(-0.22m,auditoria.DiferenciaImporte);Assert.Equal(0.25m,auditoria.ToleranciaImporte);Assert.Equal("Redondeo del extracto",auditoria.MotivoDiferencia);
+            Assert.Equal(777m,await cn.ExecuteScalarAsync<decimal>("SELECT IMPORTE FROM BK_ExtractoMovimiento WHERE MovimientoId=@centavos;",new{centavos},tx));
+            Assert.Equal(777.22m,await cn.ExecuteScalarAsync<decimal>("SELECT IMPORTE FROM MV_ASIENTOS WHERE PERIODO=@periodo AND [NUMERO ASIENTO]=@asiento AND SECUENCIA=8;",new{periodo,asiento},tx));
+            Assert.True(await servicio.DesconciliarEnTransaccionAsync(cn,tx,idCentavos,cuenta,"Revisión de prueba"));
+            Assert.Equal("Redondeo del extracto",await cn.ExecuteScalarAsync<string>("SELECT MotivoDiferencia FROM BK_Conciliacion WHERE Id=@id;",new{id=idCentavos},tx));
             var literal=await servicio.CompararEnConexionAsync(cn,tx,f with { Buscar="__NO_EXISTE_%" });Assert.Empty(literal.Banco);Assert.Empty(literal.Alfa);
             username="USUARIO_NO_EXISTENTE_CONCILIACION";
             await Assert.ThrowsAsync<SqlException>(()=>servicio.CompararEnConexionAsync(cn,tx,f));
@@ -165,25 +204,32 @@ public sealed class ConciliacionVinculosTests
         var activador=new ActivadorComparacion();services.AddSingleton<IComponentActivator>(activador);
         using var provider=services.BuildServiceProvider();
         await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
-        string browseHtml="",propuestasHtml="";
+        string browseHtml="",propuestasHtml="",configuracionHtml="";
         await renderer.Dispatcher.InvokeAsync(async()=>
         {
             var root=await renderer.RenderComponentAsync<AlfaCore.Components.Shared.ConciliacionComparacionPanel>(
                 ParameterView.FromDictionary(new Dictionary<string,object?> { ["CuentaInicial"]=cuenta }));
             var panel=activador.Panel!;
-            void Field(string name,object value)=>panel.GetType().GetField(name,BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(panel,value);
+            void Field(string name,object value) {
+                if(panel.GetType().GetField(name,BindingFlags.NonPublic|BindingFlags.Instance) is { } field)field.SetValue(panel,value);
+                else panel.GetType().GetProperty(name,BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(panel,value);
+            }
             Field("_desde","2026-10-01");Field("_hasta","2026-10-31");Field("_estado","Todos");
             await (Task)panel.GetType().GetMethod("Consultar",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null)!;
             var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
             Assert.Contains("Movimientos del banco",html);Assert.Contains("Movimientos registrados en Alfa",html);
             Assert.Contains("Conciliar selección",html);
-            Assert.Contains("Importe desde",html);Assert.Contains("Ordenar banco por",html);
+            Assert.Contains("Buscar descripción",html);Assert.Contains("Ordenar banco por",html);
             browseHtml=root.ToHtmlString();
             panel.GetType().GetMethod("AbrirPropuestas",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null);
             typeof(ComponentBase).GetMethod("StateHasChanged",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null);
             propuestasHtml=root.ToHtmlString();
             Assert.Contains("Propuestas de conciliación del período",System.Net.WebUtility.HtmlDecode(propuestasHtml));
             Field("_propuestasAbiertas",false);
+            Field("_configurar",true);
+            typeof(ComponentBase).GetMethod("StateHasChanged",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null);
+            configuracionHtml=root.ToHtmlString();
+            Field("_configurar",false);
             if(data.Alfa.FirstOrDefault() is { } primero)Assert.Contains(primero.Comprobante,html);
             GuardarVista("comparacion-banco.html",root.ToHtmlString());
             if(data.Sugerencias.FirstOrDefault() is { } s)
@@ -209,7 +255,10 @@ public sealed class ConciliacionVinculosTests
             var repo=new DirectoryInfo(AppContext.BaseDirectory);
             while(repo is not null&&!File.Exists(Path.Combine(repo.FullName,"src/AlfaCore/AlfaCore.csproj")))repo=repo.Parent;
             Assert.NotNull(repo);
-            var css=await File.ReadAllTextAsync(Path.Combine(repo!.FullName,"src/AlfaCore/wwwroot/css/alfacore-design.css"))+
+            var css=await File.ReadAllTextAsync(Path.Combine(repo!.FullName,"src/AlfaCore/wwwroot/bootstrap/bootstrap.min.css"))+
+                await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/wwwroot/css/gestion-alfadesign.css"))+
+                await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/wwwroot/css/modulos-alfadesign.css"))+
+                await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/wwwroot/css/alfacore-design.css"))+
                 await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/wwwroot/app.css"))+
                 await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/obj/Debug/net8.0/scopedcss/projectbundle/AlfaCore.bundle.scp.css"));
             using var playwright=await Playwright.CreateAsync();
@@ -218,12 +267,23 @@ public sealed class ConciliacionVinculosTests
             foreach(var width in new[]{2048,1440,1024})
             {
                 await page.SetViewportSizeAsync(width,1000);
-                foreach(var view in new[]{browseHtml,propuestasHtml})
+                foreach(var view in new[]{browseHtml,propuestasHtml,configuracionHtml})
                 {
-                    await page.SetContentAsync($"<html><head><meta charset='utf-8'><style>{css}</style><style>body{{margin:0;font-family:Segoe UI,sans-serif}}*{{box-sizing:border-box}}</style></head><body>{view}</body></html>");
+                    await page.SetContentAsync($"<html><head><meta charset='utf-8'><style>{css}</style><style>body{{margin:0;font-family:Segoe UI,sans-serif;height:100dvh}}*{{box-sizing:border-box}}</style></head><body><div class='shell shell--alfa-design' style='height:100dvh;display:block'>{view}</div></body></html>");
                     Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= window.innerWidth"));
-                    if(view==propuestasHtml)Assert.True(await page.GetByRole(AriaRole.Dialog).IsVisibleAsync());
-                    else Assert.True(await page.GetByLabel("Ordenar banco por",new(){Exact=true}).IsVisibleAsync());
+                    if(view==propuestasHtml||view==configuracionHtml)Assert.True(await page.GetByRole(AriaRole.Dialog).IsVisibleAsync());
+                    else {
+                        Assert.True(await page.GetByLabel("Ordenar banco por",new(){Exact=true}).IsVisibleAsync());
+                        var scroll=page.Locator(".conciliacion-comparacion__lista .conciliacion-comparacion__scroll").First;
+                        var before=await scroll.Locator("th").First.BoundingBoxAsync();
+                        await scroll.EvaluateAsync("e=>e.scrollTop=e.scrollHeight");
+                        var after=await scroll.Locator("th").First.BoundingBoxAsync();
+                        Assert.NotNull(before);Assert.NotNull(after);Assert.InRange(Math.Abs(before!.Y-after!.Y),0,1);
+                    }
+                    if(view==configuracionHtml)Assert.True(await page.GetByLabel("Tolerancia de importe ($)",new(){Exact=true}).IsVisibleAsync());
+                    var visual=Path.Combine(repo.FullName,"artifacts/conciliacion-criterios");Directory.CreateDirectory(visual);
+                    var name=view==browseHtml ? "comparacion" : view==configuracionHtml ? "criterios" : "propuestas";
+                    await page.ScreenshotAsync(new(){Path=Path.Combine(visual,$"{name}-{width}.png")});
                 }
             }
         }
