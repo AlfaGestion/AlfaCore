@@ -9138,6 +9138,24 @@ public sealed partial class ConversacionesService(
                     };
                 }
 
+                // Mensaje sin contenido ("a", "?", "...") (2026-10-22): el modelo contestaba "no está claro,
+                // voy a consultar con un compañero" y abría un ticket. Se le pide que cuente su consulta; si
+                // ya se le pidió (nunca dos aclaraciones seguidas), no se contesta ni se deriva.
+                if (EsMensajeSinContenido(texto) && ultimaRespuestaFueAclaracion)
+                    return;
+
+                if (EsMensajeSinContenido(texto)
+                    && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = true,
+                        Respuesta = "No llegué a entender tu mensaje. ¿Me contás en qué te puedo ayudar?"
+                    };
+                }
+
                 // Pide novedades de algo anterior ("¿pudieron ver algo?", "lo que pedimos ayer") (2026-10-15):
                 // si hay un tema pendiente (ticket abierto o ya le respondió alguien del equipo) se le
                 // contesta sin nombrar a nadie, no se abre otro ticket y se avisa adentro. Si no hay nada
@@ -10363,6 +10381,21 @@ public sealed partial class ConversacionesService(
         return palabras.Length is > 0 and <= 5 && palabras.Any(PalabrasDePrueba.Contains);
     }
 
+    /// <summary>
+    /// Mensaje sin contenido: a lo sumo una letra y sin números ni emojis ("a", "?", "...", "k").
+    /// "Sí", "no", "ok" (respuestas válidas), números (cliente, pedido) y emojis no entran (2026-10-22).
+    /// </summary>
+    internal static bool EsMensajeSinContenido(string texto)
+    {
+        var limpio = (texto ?? string.Empty).Trim();
+        if (limpio.Length == 0)
+            return false;
+        if (limpio.Any(char.IsDigit) || limpio.Any(char.IsSurrogate)
+            || limpio.Any(c => char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.OtherSymbol))
+            return false;
+        return limpio.Count(char.IsLetter) <= 1;
+    }
+
     private static readonly string[] FrasesPideNovedades =
     [
         "novedad", "pudieron ver", "pudiste ver", "pudieron revisar", "pudiste revisar", "pudieron mirar",
@@ -10754,7 +10787,7 @@ public sealed partial class ConversacionesService(
 
     /// <summary>Sólo se abre un ticket automático cuando el mensaje es una consulta real.</summary>
     internal static bool EsConsultaParaTicket(string texto)
-        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto);
+        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto) && !EsMensajeSinContenido(texto);
 
     internal static bool EsMensajeSocial(string texto)
     {
