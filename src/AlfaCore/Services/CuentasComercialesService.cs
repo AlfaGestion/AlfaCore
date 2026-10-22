@@ -1971,6 +1971,12 @@ public sealed class CuentasComercialesService(
         {
             return await operation(ct);
         }
+        // Búsqueda cancelada (el usuario siguió escribiendo y se lanzó otra): no es un error. SqlClient la
+        // informa como SqlException "Operation cancelled by user" (2026-10-22, CRM se caía al buscar cliente).
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ct);
+        }
         catch (InvalidOperationException)
         {
             throw;
@@ -1992,6 +1998,12 @@ public sealed class CuentasComercialesService(
         try
         {
             await operation(ct);
+        }
+        // Búsqueda cancelada (el usuario siguió escribiendo y se lanzó otra): no es un error. SqlClient la
+        // informa como SqlException "Operation cancelled by user" (2026-10-22, CRM se caía al buscar cliente).
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ct);
         }
         catch (InvalidOperationException)
         {

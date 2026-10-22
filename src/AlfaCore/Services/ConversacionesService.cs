@@ -6850,7 +6850,10 @@ public sealed partial class ConversacionesService(
         if (supportsDurableContent)
         {
             var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
-            cmd.Parameters.AddWithValue("@ArchivoContenido", content is null ? DBNull.Value : content);
+            // Tipo explícito: con AddWithValue(DBNull) el parámetro sale nvarchar y SQL rechaza guardarlo en
+            // varbinary(max) ("conversión implícita nvarchar a varbinary"): el adjunto quedaba sin archivo
+            // cada vez que el contenido no se guarda en la base (2026-10-22).
+            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null ? DBNull.Value : content;
             cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
         }
         await cmd.ExecuteNonQueryAsync(ct);
@@ -12275,7 +12278,10 @@ public sealed partial class ConversacionesService(
         if (supportsDurableContent)
         {
             var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
-            cmd.Parameters.AddWithValue("@ArchivoContenido", content is null ? DBNull.Value : content);
+            // Tipo explícito: con AddWithValue(DBNull) el parámetro sale nvarchar y SQL rechaza guardarlo en
+            // varbinary(max) ("conversión implícita nvarchar a varbinary"): el adjunto quedaba sin archivo
+            // cada vez que el contenido no se guarda en la base (2026-10-22).
+            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null ? DBNull.Value : content;
             cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
             cmd.Parameters.AddWithValue("@AlmacenamientoEstado", string.IsNullOrWhiteSpace(almacenamientoEstado) ? (content is null ? "RUTA_LOCAL" : "SQL_Y_RUTA") : almacenamientoEstado.Trim().ToUpperInvariant());
         }
