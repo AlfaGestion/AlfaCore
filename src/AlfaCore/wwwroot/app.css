@@ -26918,6 +26918,24 @@ body:has(.cuentas-modal .usuarios-view-settings) {
 .qcm-msg--error { color: #fca5a5; }
 .qcm-msg--hint  { color: var(--color-muted); font-style: italic; }
 
+/* Ventana de cliente con los colores AlfaDesign (2026-10-22): antes usaba la paleta vieja azulada. */
+.qcm-modal { background: var(--alfa-bg-surface, #16181d); border-color: var(--alfa-border-default, #333640); border-radius: var(--alfa-radius-8, 8px); box-shadow: 0 18px 48px rgba(0, 0, 0, .45); }
+.qcm-modal__head { border-bottom: 1px solid var(--alfa-border-default, #333640); }
+.qcm-tab { color: var(--alfa-text-secondary, #a6abb5); }
+.qcm-tab--active { color: var(--alfa-accent, #4f9efa); border-bottom-color: var(--alfa-accent, #4f9efa); }
+.qcm-search__input, .qcm-form-grid input, .qcm-form-grid select {
+    background: var(--alfa-bg-canvas, #0f1115); border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-4, 4px); color: var(--alfa-text-primary, #f5f5f7);
+}
+.qcm-search__input:focus, .qcm-form-grid input:focus, .qcm-form-grid select:focus { outline: 2px solid var(--alfa-accent, #4f9efa); outline-offset: -1px; border-color: transparent; }
+.qcm-result { background: transparent; border: 1px solid var(--alfa-border-default, #333640); border-radius: var(--alfa-radius-4, 4px); }
+.qcm-result:hover, .qcm-result.is-active { background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 16%, transparent); border-color: var(--alfa-accent, #4f9efa); }
+.qcm-msg--hint { font-style: normal; color: var(--alfa-text-secondary, #a6abb5); }
+/* Por encima de la barra superior y la de acciones (que tapaban las solapas), y lista con scroll propio. */
+.qcm-backdrop { z-index: 2400; }
+.qcm-modal { z-index: 2401; }
+.qcm-results { max-height: min(52vh, 460px); overflow-y: auto; padding-right: 2px; }
+
 .qcm-form {
     flex: 1;
     min-height: 0;

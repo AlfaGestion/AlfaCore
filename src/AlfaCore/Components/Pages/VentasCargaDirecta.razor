@@ -51,7 +51,6 @@
                 Disabled="@(Bloqueado || _cliente is null || string.IsNullOrEmpty(_draft.UnidadNegocio))">
                 <ItemTemplate Context="f">@f.Descripcion</ItemTemplate>
             </AlfaLookup>
-            @if (_draft.Tc == "NC") { <p class="directa-help">Cargá los artículos de la factura que querés acreditar. Se conservan sus precios originales y se controlan las devoluciones anteriores.</p> }
         }
 
         @* Grilla como la carga de comprobantes de Alfa: Código → Enter → Cantidad → Enter → Precio → Enter → línea siguiente.
@@ -143,8 +142,6 @@
                 Vencimiento @p.Vencimiento.ToString("dd/MM/yyyy") · Stock: @(p.SignoStock == 1 ? "entrada" : "salida") de artículos</p>
         }
         <AlfaInput Label="Observaciones" Value="@_draft.Observaciones" ValueChanged="v => Cambiar(() => _draft.Observaciones = v ?? string.Empty)" MaxLength="1000" Disabled="@Bloqueado" />
-        <p class="directa-help">El precio editable es sin IVA y antes del descuento. Validar relee la lista, controla el límite de rebaja y descuento, y ensaya la grabación sin solicitar CAE. Si cargás bultos, la cantidad se calcula con las equivalencias del artículo.</p>
-        @if (_draft.Tc == "FP") { <p class="directa-help">La proforma genera asiento y mueve stock según el talonario. No solicita CAE ni afecta el libro de IVA.</p> }
     }
 </div>
 
@@ -728,20 +725,42 @@
         Breadcrumb = ["Ventas", "Carga de Comprobantes", "Carga directa"], ShowHistoryNavigation = false,
         TopNavigationItems = [new() { Key = "carga", Label = "Carga de Comprobantes", Active = true }],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
-        Actions = [new() { Key = "volver", Label = "Volver", Disabled = _busy, OnClick = Volver },
-            new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Disabled = Bloqueado || _contexto is null, OnClick = () => AbrirClientes(false) },
-            new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado || _contexto is null, OnClick = () => AbrirClientes(true) },
-            new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Disabled = NuevaLineaBloqueada, OnClick = AbrirBusquedaAsync },
-            new() { Key = "validar", Label = "Validar carga", Icon = "bi-check2-square", Disabled = Bloqueado || _contexto is null, OnClick = ValidarAsync },
-            new() { Key = "grabar", Label = _draft.Tc == "FP" ? "Grabar proforma" : "Emitir comprobante de prueba", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
-                Disabled = Bloqueado || _plan is null, OnClick = AbrirConfirmacion },
-            new() { Key = "recuperar", Label = "Recuperar operación", Disabled = _busy || !_intento || Terminal, OnClick = RecuperarAsync },
-            new() { Key = "corregir", Label = "Corregir comprobante", Disabled = _busy || _resultado?.Estado != "RECHAZADA", OnClick = CorregirAsync },
-            new() { Key = "pdf", Label = "PDF", Disabled = _busy || _resultado?.Estado != "GRABADA", OnClick = PdfAsync },
-            new() { Key = "nueva", Label = "Nuevo comprobante", Disabled = _busy || !Terminal, OnClick = NuevaAsync },
-            new() { Key = "recargar", Label = "Recargar contexto", Priority = PageHeaderActionPriority.Overflow,
-                Disabled = _busy || _contexto is not null, OnClick = InicializarAsync }]
+        Actions = Acciones()
     });
+    // Sólo los botones que sirven en cada momento (2026-10-22): antes estaban los 10 siempre a la vista.
+    private List<PageHeaderAction> Acciones()
+    {
+        var acciones = new List<PageHeaderAction> { new() { Key = "volver", Label = "Volver", Disabled = _busy, OnClick = Volver } };
+        if (_contexto is null)
+        {
+            acciones.Add(new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Disabled = _busy, OnClick = InicializarAsync });
+            return acciones;
+        }
+        if (_resultado?.Estado == "GRABADA")
+        {
+            acciones.Add(new() { Key = "pdf", Label = "PDF", Icon = "bi-file-earmark-pdf", Disabled = _busy, OnClick = PdfAsync });
+            acciones.Add(new() { Key = "nueva", Label = "Nuevo comprobante", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = NuevaAsync });
+            return acciones;
+        }
+        if (_resultado?.Estado == "RECHAZADA")
+        {
+            acciones.Add(new() { Key = "corregir", Label = "Corregir comprobante", Icon = "bi-pencil", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = CorregirAsync });
+            acciones.Add(new() { Key = "nueva", Label = "Nuevo comprobante", Icon = "bi-plus-lg", Disabled = _busy, OnClick = NuevaAsync });
+            return acciones;
+        }
+        if (_intento)
+        {
+            acciones.Add(new() { Key = "recuperar", Label = "Recuperar operación", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = RecuperarAsync });
+            return acciones;
+        }
+        acciones.Add(new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado, OnClick = () => AbrirClientes(true) });
+        acciones.Add(new() { Key = "validar", Label = "Validar", Icon = "bi-check2-square", Disabled = Bloqueado, OnClick = ValidarAsync });
+        acciones.Add(new() { Key = "grabar", Label = _draft.Tc == "FP" ? "Grabar proforma" : "Emitir", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
+            Disabled = Bloqueado || _plan is null, OnClick = AbrirConfirmacion });
+        acciones.Add(new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Priority = PageHeaderActionPriority.Overflow, Disabled = Bloqueado, OnClick = () => AbrirClientes(false) });
+        acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBusquedaAsync });
+        return acciones;
+    }
     private static string Dinero(decimal x) => x.ToString("C2", Ar);
     public void Dispose()
     {
