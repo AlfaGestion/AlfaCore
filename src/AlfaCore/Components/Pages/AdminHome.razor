@@ -733,7 +733,7 @@
                     </button>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_showSearchPanel) ToggleSearchPanel(); }" type="search"
                    placeholder="Buscar cliente por código, razón social o host..."
                    value="@_clientSearch"
                    @oninput="OnClientSearchInput"

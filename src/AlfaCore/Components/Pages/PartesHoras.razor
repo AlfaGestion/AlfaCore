@@ -778,7 +778,7 @@
                     </button>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_filtersExpanded) ToggleFiltros(); }" type="search"
                    value="@_quickSearch"
                    @oninput="OnQuickSearchChanged"
                    @onkeydown="HandleQuickSearchKeyDownAsync"

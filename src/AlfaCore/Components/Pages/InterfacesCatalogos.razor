@@ -106,7 +106,7 @@
                 <div class="smart-search" @onclick:stopPropagation>
                     <div class="smart-search__bar">
                         <i class="bi bi-search"></i>
-                        <input type="search"
+                        <input @onfocus="() => { if (!_showCatalogosSearchPanel) ToggleCatalogosSearchPanel(); }" type="search"
                                placeholder="Buscar por nombre, grupo, lista o ID..."
                                value="@_catalogosTexto"
                                @oninput="OnCatalogosSearchInput"
@@ -1884,7 +1884,7 @@
                     <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_showCatalogosSearchPanel) ToggleCatalogosSearchPanel(); }" type="search"
                    placeholder="Buscar por nombre, grupo, lista o ID..."
                    value="@_catalogosTexto"
                    @oninput="OnCatalogosSearchInput"

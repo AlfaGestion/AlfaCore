@@ -680,7 +680,7 @@
                     </button>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_showHeaderFilters) ToggleHeaderFilters(); }" type="search"
                    placeholder="Evento, responsable o descripción..."
                    value="@_request.Search"
                    @oninput="OnSearchInput" />

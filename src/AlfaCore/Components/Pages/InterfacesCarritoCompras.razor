@@ -237,7 +237,7 @@
                     </button>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_filtersOpen) ToggleFiltros(); }" type="search"
                    value="@_texto"
                    @oninput="e => _texto = e.Value?.ToString() ?? string.Empty"
                    @onkeydown="HandleSearchKeyDownAsync"

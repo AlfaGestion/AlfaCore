@@ -507,7 +507,7 @@
                 }
                 @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
             </div>
-            <input type="search" aria-label="Buscar cliente o comprobante" placeholder="Cliente, cuenta o comprobante..."
+            <input @onfocus="() => { if (!_filtrosAbiertos) AlternarFiltros(); }" type="search" aria-label="Buscar cliente o comprobante" placeholder="Cliente, cuenta o comprobante..."
                 maxlength="100" value="@_filtro.Busqueda" disabled="@_busy" @oninput="e => _filtro.Busqueda = e.Value?.ToString() ?? string.Empty"
                 @onkeydown="TeclaBusquedaAsync" />
             <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
