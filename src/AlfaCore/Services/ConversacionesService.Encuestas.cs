@@ -20,7 +20,6 @@ public sealed partial class ConversacionesService
     /// <summary>Marca (CONV_MENSAJES.Origen) de los mensajes del cliente que responden la encuesta.</summary>
     internal const string OrigenRespuestaEncuesta = "ENCUESTA";
 
-    private const int DiasEntreEncuestas = 7;
     private const int MinutosParaComentario = 30;
 
     private async Task TryEnviarEncuestaAlCerrarAsync(long idConversacion, string? usuarioCierre, string? idTecnicoAtendio, CancellationToken ct)
@@ -46,9 +45,10 @@ public sealed partial class ConversacionesService
             if (!await IsWhatsAppWindowActiveAsync(idConversacion, ct).ConfigureAwait(false))
                 return;
 
-            var idEncuesta = await CrearEncuestaAsync(idConversacion, conversation.IdNumeroWhatsApp, usuarioCierre, idTecnicoAtendio, ct).ConfigureAwait(false);
+            var idEncuesta = await CrearEncuestaAsync(idConversacion, conversation.IdNumeroWhatsApp, usuarioCierre, idTecnicoAtendio,
+                ConversacionAutomatizacionesConfigDto.NormalizarEncuestaDiasEntre(config.EncuestaDiasEntre), ct).ConfigureAwait(false);
             if (idEncuesta is not long id)
-                return; // tabla todavía no creada o ya se mandó una esta semana
+                return; // tabla todavía no creada o ya se mandó una dentro de los días configurados
 
             var pregunta = string.IsNullOrWhiteSpace(config.EncuestaPregunta) ? ConversacionEncuestaTextos.PreguntaPorDefecto : config.EncuestaPregunta.Trim();
             try
@@ -84,7 +84,7 @@ public sealed partial class ConversacionesService
         }
     }
 
-    private async Task<long?> CrearEncuestaAsync(long idConversacion, int? idNumeroWhatsApp, string? usuarioCierre, string? idTecnicoAtendio, CancellationToken ct)
+    private async Task<long?> CrearEncuestaAsync(long idConversacion, int? idNumeroWhatsApp, string? usuarioCierre, string? idTecnicoAtendio, int diasEntreEncuestas, CancellationToken ct)
     {
         // Atendido por el asistente: en las últimas 48 h salieron respuestas del asistente y ninguna de
         // una persona (para separar en el informe "atendido por el asistente" de "por una persona").
@@ -95,7 +95,8 @@ public sealed partial class ConversacionesService
                 RETURN;
             END;
 
-            IF EXISTS (SELECT 1 FROM dbo.CONV_ENCUESTAS
+            -- @Dias = 0: en cada cierre (configurable por empresa, CONV_ENCUESTA_DIAS_ENTRE).
+            IF @Dias > 0 AND EXISTS (SELECT 1 FROM dbo.CONV_ENCUESTAS
                        WHERE IdConversacion = @IdConversacion
                          AND Estado <> N'ERROR'
                          AND FechaEnvio >= DATEADD(day, -@Dias, GETDATE()))
@@ -126,7 +127,7 @@ public sealed partial class ConversacionesService
         await EnsureMensajeOrigenColumnAsync(cn, ct).ConfigureAwait(false);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
-        cmd.Parameters.AddWithValue("@Dias", DiasEntreEncuestas);
+        cmd.Parameters.AddWithValue("@Dias", diasEntreEncuestas);
         cmd.Parameters.AddWithValue("@IdNumero", (object?)idNumeroWhatsApp ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@Usuario", DbNullable(Truncar((usuarioCierre ?? string.Empty).Trim(), 50)));
         cmd.Parameters.AddWithValue("@Tecnico", DbNullable(NormalizeTechnicianId(idTecnicoAtendio)));

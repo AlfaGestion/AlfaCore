@@ -17,6 +17,9 @@ public sealed class ConversacionesBotTicketConsultaTests
     [InlineData("Esto es una prueba")]
     [InlineData("Hola")]
     [InlineData("Muchas gracias")]
+    [InlineData("a")]
+    [InlineData("?")]
+    [InlineData("...")]
     [InlineData("")]
     public void NoEsConsulta_NoGeneraTicket(string texto)
         => Assert.False(ConversacionesService.EsConsultaParaTicket(texto));
@@ -28,6 +31,36 @@ public sealed class ConversacionesBotTicketConsultaTests
     [InlineData("No anda")]
     public void ConsultaReal_GeneraTicket(string texto)
         => Assert.True(ConversacionesService.EsConsultaParaTicket(texto));
+
+    [Theory]
+    [InlineData("a")]
+    [InlineData("A")]
+    [InlineData("?")]
+    [InlineData("¿?")]
+    [InlineData("...")]
+    [InlineData(" k ")]
+    public void MensajeSinContenido_SeReconoce(string texto)
+        => Assert.True(ConversacionesService.EsMensajeSinContenido(texto));
+
+    [Theory]
+    [InlineData("No")]
+    [InlineData("Sí")]
+    [InlineData("ok")]
+    [InlineData("45")]
+    [InlineData("1")]
+    [InlineData("👍")]
+    [InlineData("Hola")]
+    [InlineData("")]
+    public void RespuestasCortasValidas_NoSonMensajeSinContenido(string texto)
+        => Assert.False(ConversacionesService.EsMensajeSinContenido(texto));
+
+    [Fact]
+    public void ElBotPideQueAclareUnMensajeSinContenidoYNoInsiste()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("if (EsMensajeSinContenido(texto) && ultimaRespuestaFueAclaracion)", source, StringComparison.Ordinal);
+        Assert.Contains("No llegué a entender tu mensaje. ¿Me contás en qué te puedo ayudar?", source, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void ElBotNoDerivaNiAbreTicketAnteUnMensajeDePrueba()

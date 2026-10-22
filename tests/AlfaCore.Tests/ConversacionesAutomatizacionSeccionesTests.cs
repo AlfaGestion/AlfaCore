@@ -29,7 +29,7 @@ public sealed class ConversacionesAutomatizacionSeccionesTests
         "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK",
         CatalogoPrecioConsumidorSetting.Clave,
         "CONV_INFORME_INSTRUCCIONES",
-        "CONV_ENCUESTA_ACTIVA", "CONV_ENCUESTA_PREGUNTA"
+        "CONV_ENCUESTA_ACTIVA", "CONV_ENCUESTA_PREGUNTA", "CONV_ENCUESTA_DIAS_ENTRE"
     ];
 
     private static readonly ConversacionAutomatizacionSeccion[] SeccionesIndividuales =

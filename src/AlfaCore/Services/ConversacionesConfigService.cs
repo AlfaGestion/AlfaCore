@@ -975,6 +975,11 @@ public sealed class ConversacionesConfigService(
                 SlaHorasRecordatorio = ReadIntValue(values, "CONV_SLA_HORAS_RECORDATORIO", 0, 2),
                 EncuestaActiva = ReadValue(values, "CONV_ENCUESTA_ACTIVA", string.Empty) == "1",
                 EncuestaPregunta = ReadValue(values, "CONV_ENCUESTA_PREGUNTA", string.Empty, ConversacionEncuestaTextos.PreguntaPorDefecto),
+                // 0 es válido (encuesta en cada cierre): no usar ReadIntValue, que lo descarta.
+                EncuestaDiasEntre = values.TryGetValue("CONV_ENCUESTA_DIAS_ENTRE", out var encuestaDias)
+                                    && int.TryParse(encuestaDias, NumberStyles.Integer, CultureInfo.InvariantCulture, out var encuestaDiasValor)
+                    ? ConversacionAutomatizacionesConfigDto.NormalizarEncuestaDiasEntre(encuestaDiasValor)
+                    : ConversacionAutomatizacionesConfigDto.EncuestaDiasEntrePorDefecto,
                 SlaHorasReasignar = ReadIntValue(values, "CONV_SLA_HORAS_REASIGNAR", 0, 4),
                 AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
                 AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
@@ -1134,6 +1139,8 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_ENCUESTA_PREGUNTA", string.IsNullOrWhiteSpace(config.EncuestaPregunta)
                 ? ConversacionEncuestaTextos.PreguntaPorDefecto
                 : config.EncuestaPregunta.Trim()));
+            items.Add(("CONV_ENCUESTA_DIAS_ENTRE",
+                ConversacionAutomatizacionesConfigDto.NormalizarEncuestaDiasEntre(config.EncuestaDiasEntre).ToString(inv)));
         }
 
         if (secciones.HasFlag(ConversacionAutomatizacionSeccion.Sla))
