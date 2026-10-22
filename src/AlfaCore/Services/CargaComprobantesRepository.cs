@@ -66,7 +66,8 @@ public sealed class CargaComprobantesRepository
             FROM dbo.VT_CLIENTES WHERE ISNULL(LTRIM(RTRIM(ZONA)),'')<>'' ORDER BY Codigo;
             SELECT LTRIM(RTRIM(Codigo)) Codigo,LTRIM(RTRIM(Descripcion)) Descripcion
             FROM dbo.V_TA_UnidadNegocio WHERE @AdminCentral=1 OR LTRIM(RTRIM(Codigo))=@UnidadNegocio ORDER BY Codigo;
-            SELECT LTRIM(RTRIM(IdDeposito)) Codigo,LTRIM(RTRIM(Descripcion)) Descripcion
+            SELECT LTRIM(RTRIM(IdDeposito)) Codigo,LTRIM(RTRIM(Descripcion)) Descripcion,
+                ISNULL(LTRIM(RTRIM(UnidadNegocio)),'') Grupo
             FROM dbo.V_TA_Deposito WHERE @AdminCentral=1 OR ISNULL(LTRIM(RTRIM(UnidadNegocio)),'') IN ('',@UnidadNegocio)
             ORDER BY IdDeposito;
             """, new { contexto.AdminCentral, contexto.UnidadNegocio }, transaction, cancellationToken: ct));

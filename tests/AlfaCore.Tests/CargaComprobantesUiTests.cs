@@ -137,7 +137,8 @@ public sealed class CargaComprobantesUiTests
                 Assert.True(await page.GetByLabel("Precio neto PAPEL", new() { Exact = true }).IsEnabledAsync());
                 Assert.True(await page.GetByLabel("Descuento PAPEL", new() { Exact = true }).IsEnabledAsync());
                 await page.GetByLabel("Cantidad PAPEL", new() { Exact = true }).FocusAsync();
-                Assert.Equal("number", await page.EvaluateAsync<string>("document.activeElement.type"));
+                // Campo de texto con teclado decimal: acepta coma (1,5) como Alfa Gestión (2026-10-22).
+                Assert.Equal("decimal", await page.EvaluateAsync<string>("document.activeElement.inputMode"));
                 if (width == 1024)
                 {
                     var destino = Path.Combine(repo, "artifacts/ventas/homologacion/carga-directa-1024.png");

@@ -9,6 +9,9 @@ public interface ICargaComprobantesService
     Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(string cliente, string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(CargaComprobantesDirecta directa, string texto, CancellationToken ct = default)
         => BuscarArticulosDirectaAsync(directa.Cliente, texto, ct);
+    /// <summary>Stock actual (V_MV_STOCK, sin anulados) por artículo; del depósito indicado o de todos.</summary>
+    Task<IReadOnlyDictionary<string, decimal>> GetStockArticulosAsync(IReadOnlyList<string> articulos, string? deposito, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyDictionary<string, decimal>>(new Dictionary<string, decimal>());
     Task<CargaComprobantesPlanGrabacion> ValidarDirectaAsync(CargaComprobantesDirecta directa, int talonario, CancellationToken ct = default);
     Task<CargaComprobantesGrabacionResultado?> ConsultarDirectaAsync(Guid borrador, Guid operacion, CancellationToken ct = default);
     Task<CargaComprobantesGrabacionResultado> GrabarDirectaAsync(CargaComprobantesDirecta directa, int talonario,

@@ -159,6 +159,10 @@
 
     private async Task HandleFocusAsync()
     {
+        // Con un ítem ya elegido no se reabre la lista vieja: un Enter o un Tab tomaba el primero de esa
+        // lista y reemplazaba la selección (2026-10-22, carga de comprobantes elegía otro cliente).
+        if (SelectedItem is not null)
+            return;
         Open = true;
         if (_items.Count == 0 && SearchText.Trim().Length >= MinimumCharacters)
             await QueueSearchAsync(immediate: true);
@@ -234,6 +238,8 @@
         if(Disabled || (!Open && IsSelected(item))) return;
         _searchCts?.Cancel();
         SelectedItem = item;
+        _items.Clear();
+        _activeIndex = -1;
         _hasEditSnapshot = false;
         _editSnapshotItem = null;
         _editSnapshotText = string.Empty;
