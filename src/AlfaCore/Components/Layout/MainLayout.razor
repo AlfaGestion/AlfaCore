@@ -1665,8 +1665,27 @@ else
         InvokeAsync(StateHasChanged);
     }
 
+    // Último token de usuario guardado en localStorage. Al loguearse en una base el token se renueva (lleva
+    // la sesión adentro, ver AppUserSessionStore): se vuelve a guardar para que sobreviva a un reinicio.
+    private string? _lastPersistedUserToken;
+
+    private void PersistUserTokenIfChanged()
+    {
+        var token = AppUserSession.CurrentToken;
+        if (string.IsNullOrWhiteSpace(token) || token == _lastPersistedUserToken)
+            return;
+        _lastPersistedUserToken = token;
+        _ = InvokeAsync(async () =>
+        {
+            try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", token); }
+            catch { }
+        });
+    }
+
     private void OnAppUserStateChanged()
     {
+        if (AppUserSession.IsAuthenticated)
+            PersistUserTokenIfChanged();
         ResetMenuSearchCatalog();
         EnsureTasksPanelMatchesAuthorizedSession();
         EnsureLoginDraftPrimedForInternalContext();
