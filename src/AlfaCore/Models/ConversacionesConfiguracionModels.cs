@@ -423,6 +423,15 @@ public sealed class ConversacionAutomatizacionesConfigDto
 
     public string EncuestaPregunta { get; set; } = ConversacionEncuestaTextos.PreguntaPorDefecto;
 
+    /// <summary>Días mínimos antes de volver a mandarle la encuesta al mismo cliente; 0 = en cada cierre (2026-10-22).</summary>
+    public int EncuestaDiasEntre { get; set; } = EncuestaDiasEntrePorDefecto;
+
+    public const int EncuestaDiasEntrePorDefecto = 7;
+    public const int EncuestaDiasEntreMaximo = 365;
+
+    public static int NormalizarEncuestaDiasEntre(int dias)
+        => Math.Clamp(dias, 0, EncuestaDiasEntreMaximo);
+
     // Asistente IA (cerebro del bot). Se persiste en dbo.CONV_ASISTENTE (texto largo).
     /// <summary>Comportamiento / persona / instrucciones del asistente (system prompt).</summary>
     public string AsistenteComportamiento { get; set; } = string.Empty;

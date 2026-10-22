@@ -107,6 +107,28 @@ public sealed class ConversacionesEncuestaSatisfaccionTests
         Assert.Contains("AND ISNULL(m.Origen, N'') <> N'ENCUESTA'", service, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(7, 7)]
+    [InlineData(30, 30)]
+    [InlineData(-5, 0)]
+    [InlineData(5000, 365)]
+    public void LaFrecuenciaSeGuardaNormalizada(int configurado, int esperado)
+    {
+        var items = ConversacionesConfigService.BuildAutomatizacionesItems(
+            new ConversacionAutomatizacionesConfigDto { EncuestaDiasEntre = configurado }, ConversacionAutomatizacionSeccion.Encuesta);
+        Assert.Contains(("CONV_ENCUESTA_DIAS_ENTRE", esperado.ToString(System.Globalization.CultureInfo.InvariantCulture)), items);
+    }
+
+    [Fact]
+    public void PorDefectoEsUnaPorSemanaYCeroEsEnCadaCierre()
+    {
+        Assert.Equal(7, new ConversacionAutomatizacionesConfigDto().EncuestaDiasEntre);
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.Encuestas.cs"));
+        Assert.Contains("IF @Dias > 0 AND EXISTS", source, StringComparison.Ordinal);
+        Assert.Contains("NormalizarEncuestaDiasEntre(config.EncuestaDiasEntre)", source, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ElScriptCreaLaTabla()
     {
