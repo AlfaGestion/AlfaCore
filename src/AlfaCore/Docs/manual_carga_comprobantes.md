@@ -136,7 +136,7 @@ Entrá en **Configuración General → Ventas → Carga de comprobantes**. Allí
 
 Las opciones específicas de **Punto de Venta**, **Facturación electrónica** y **Padrón ARCA** siguen en las pestañas del mismo nombre, accesibles desde la nueva subopción. El inventario de claves del programa original es una referencia: algunas funciones siguen pendientes y así se indican. La opción de proforma del POS es distinta de la opción de proforma de Carga de comprobantes.
 
-En carga directa, escribí al menos dos caracteres en **Cliente**: código, nombre o CUIT, con o sin guiones. También podés usar **Buscar cliente** del menú superior. Para darlo de alta, elegí **Nuevo cliente / CUIT**, ingresá el CUIT y consultá ARCA; revisá los datos y guardá el cliente. Es el mismo circuito de consulta y alta de Punto de Venta. Al seleccionarlo vuelve al comprobante; cualquier cambio de cliente requiere volver a validar la carga.
+En carga directa, escribí desde la primera letra en **Cliente** (con las flechas y Enter elegís el resultado): código, nombre o CUIT, con o sin guiones. También podés usar **Buscar cliente** del menú superior. Para darlo de alta, elegí **Nuevo cliente / CUIT**, ingresá el CUIT y consultá ARCA; revisá los datos y guardá el cliente. Es el mismo circuito de consulta y alta de Punto de Venta. Al seleccionarlo vuelve al comprobante; cualquier cambio de cliente requiere volver a validar la carga.
 
 Los permisos individuales para cambiar precios o descuentos se administran en **Usuarios**. Los límites particulares del vendedor y de la condición de venta se mantienen en sus respectivos maestros; el máximo general de esta pestaña no reemplaza esos límites. Talonarios, depósitos y unidades de negocio conservan sus tablas de referencia.
 
