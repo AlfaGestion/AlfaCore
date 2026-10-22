@@ -7,23 +7,11 @@ namespace AlfaCore.Repositories;
 
 public sealed class AppAuditRepository(
     IConfiguration configuration,
-    IHttpContextAccessor httpContextAccessor) : IAppAuditRepository
+    IHttpContextAccessor httpContextAccessor,
+    IServiceProvider? services = null) : IAppAuditRepository
 {
-    private string ConnectionString
-    {
-        get
-        {
-            if (httpContextAccessor.HttpContext?.Items.TryGetValue("AlfaCore.ConnectionString", out var currentConnection) == true
-                && currentConnection is string itemConnection
-                && !string.IsNullOrWhiteSpace(itemConnection))
-            {
-                return itemConnection;
-            }
-
-            return configuration.GetConnectionString("AlfaGestion")
-                ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
-        }
-    }
+    // Base de la empresa activa (ver TenantLogConnection); antes caía siempre a AlfaGestion.
+    private string ConnectionString => TenantLogConnection.Resolve(services, httpContextAccessor, configuration);
 
     public async Task WriteAsync(
         AppEventRecord auditEvent,
