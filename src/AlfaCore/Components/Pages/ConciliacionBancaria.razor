@@ -432,6 +432,8 @@
 
     protected override void OnInitialized()
     {
+        _baseActual = Sesiones.GetActiveSession()?.BaseId;
+        _usuarioActual = Usuarios.CurrentUser?.UserName ?? "";
         Sesiones.SessionChanged += CambiarSesion;
         Usuarios.StateChanged += CambiarSesion;
         PublicarHeader();
@@ -699,9 +701,17 @@
         return [new PageHeaderTopNavItem { Key="conciliacion",Label="Conciliación bancaria",Active=true,
             Url=url,OnClick=()=> { Nav.NavigateTo(url);return Task.CompletedTask; } }];
     }
+    // Sólo se reinicia si de verdad cambió la base o el usuario: antes cualquier aviso de sesión (por ejemplo,
+    // renovarla) vaciaba la pantalla y se perdía lo que se estaba revisando (2026-10-22).
+    private int? _baseActual;
+    private string _usuarioActual = "";
     private void CambiarSesion() => _ = InvokeAsync(async () =>
     {
         if (_disposed) return;
+        var baseId = Sesiones.GetActiveSession()?.BaseId;
+        var usuario = Usuarios.CurrentUser?.UserName ?? "";
+        if (baseId == _baseActual && string.Equals(usuario, _usuarioActual, StringComparison.OrdinalIgnoreCase)) return;
+        _baseActual = baseId; _usuarioActual = usuario;
         _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
         _tab="importar"; _comparacion=null;
         _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
