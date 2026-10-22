@@ -4,6 +4,14 @@
 
 Relevamiento e implementación inicial del 19/10/2026. Cobranza rápida CB desde Conciliación con servicio y editor compartidos para el futuro módulo Cobranzas. Validación en ALFANET2007_PRUEBAS, servidor 10.8.0.31, mediante la conexión de sesión, sin credenciales en código. Ver resultados de pruebas al final de este documento.
 
+## Compatibilidad de códigos con Alfa Gestión (2026-10-21)
+
+`CobranzasService` y `CargaComprobantesGrabador` graban los tipos de comprobante y las cuentas de movimientos sin relleno. La regla alcanza a las cabeceras, asientos, aplicaciones y tipos de origen/impresión. El formato de códigos de maestros permanece con `CodigoPk.Format`; no debe trasladarse a `TC` ni `CUENTA` en movimientos. El relleno rompe las claves concatenadas que utiliza «Ver asiento» del sistema legacy.
+
+Las regresiones comparan `DATALENGTH` contra el valor recortado, porque la igualdad SQL y `LEN` no detectan espacios finales. Validación: cuatro pruebas aprobadas en el circuito de cobranzas, incluida la grabación real con rollback en ALFANET2007_PRUEBAS. La prueba de Carga de comprobantes requiere sus fixtures de DISTRIWALTERP y quedó omitida al no disponer de esa conexión de pruebas.
+
+La reparación histórica está preparada en [el script manual de CB](../base-datos/sql-referencia/2026-10-21__reparar_cb_relleno_movimientos.sql). Por defecto ensaya con rollback, valida el alcance relevado de 26 cabeceras, 58 renglones de asiento y 27 aplicaciones, y conserva los triggers activos. No forma parte de las actualizaciones automáticas. La corrección histórica fue ejecutada y confirmada por el usuario en ALFANET2007. Verificación posterior desde una conexión independiente el 21/10/2026: 26 cabeceras, 58 renglones de asiento y 27 aplicaciones, sin relleno final en TC, CUENTA ni TC_PRINT (este último en aplicaciones). El bloqueo de la transacción previa ya no impide la consulta. El asistente no ejecutó la reparación histórica; verificó su resultado.
+
 ## Evidencia legacy
 
 Raíz consultada: `Z:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT_DEV\`. Las líneas corresponden a las fuentes consultadas en esta fecha.

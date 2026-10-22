@@ -42,12 +42,12 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         var p = new DynamicParameters(new
         {
             Id = plan.OrigenId, Comprobante = comprobante, Sucursal = sucursal, Numero = nro, plan.Letra,
-            // CUENTA pertenece al plan contable: conserva la excepción de alineación a la izquierda.
-            Fecha = plan.Fecha, plan.Vencimiento, Cuenta = plan.Origen.Cuenta.PadRight(15),
+            // En movimientos, CUENTA se guarda sin relleno, igual que en Alfa Gestión.
+            Fecha = plan.Fecha, plan.Vencimiento, Cuenta = plan.Origen.Cuenta.Trim(),
             CondicionIva = CodigoPk.Format(plan.CondicionIva, 4), CondicionVenta = CodigoPk.Format(plan.CondicionVenta, 4),
             Motivo = CodigoPk.Format(plan.Motivo, 4), Unidad = CodigoPk.Format(plan.UnidadNegocio, 4),
             Usuario = CodigoPk.Format(plan.Usuario, 50), Caja = plan.Caja.Length == 0 ? null : CodigoPk.Format(plan.Caja, 4),
-            Tc = CodigoPk.Format(plan.Tc, 4), TipoDestino = plan.Tc, TcCont = CodigoPk.Format(plan.TcContable, 4),
+            Tc = plan.Tc.Trim(), TipoDestino = plan.Tc.Trim(), TcCont = plan.TcContable.Trim(),
             Subdiario = CodigoPk.Format(plan.Subdiario, 4), Periodo = plan.Periodo,
             Mes = plan.Fecha.Month, Moneda = CodigoPk.Format("1", 4), Neto = neto, Iva = iva, Total = total,
             NetoGravado = fiscal.NetoGravado, NetoNoGravado = fiscal.Exento,
@@ -56,7 +56,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             Alicuota = slots[0].Alicuota, Iva1 = slots[0].Iva,
             Alicuota2 = slots[1].Alicuota, Iva2 = slots[1].Iva, Alicuota3 = slots[2].Alicuota, Iva3 = slots[2].Iva, Cae = plan.EsElectronico ? cae : null,
             VtoCae = plan.EsElectronico ? (DateTime?)vencimientoCae : null,
-            TcOrigen = plan.Asociado is not null ? CodigoPk.Format("FC", 4) : plan.Directa is null && plan.Origenes is null ? CodigoPk.Format(plan.Origen.Tc, 4) : null,
+            TcOrigen = plan.Asociado is not null ? "FC" : plan.Directa is null && plan.Origenes is null ? plan.Origen.Tc.Trim() : null,
             CpteOrigen = plan.AsociadoComprobante ?? (plan.Directa is null && plan.Origenes is null ? plan.Origen.Comprobante : null),
             MotivoStock = CodigoPk.Format(plan.MotivoStock, 4), Operacion = operacion.ToString(),
             TipoAfip = plan.EsElectronico ? (int?)plan.TipoArca : null, Punto = plan.PuntoVenta, NumeroFiscal = numero,
@@ -112,7 +112,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         {
             var original = plan.Origen.Lineas.Single(x => x.Id == linea.LineaId);
             var parteOrigen = plan.Directa is null ? plan.Partes.Single(x => x.Origen.Lineas.Any(l => l.Id == linea.LineaId)) : null;
-            p.Add("TcOrigenLinea", parteOrigen is null ? plan.Asociado is null ? null : CodigoPk.Format("FC",4) : CodigoPk.Format(parteOrigen.Origen.Tc,4));
+            p.Add("TcOrigenLinea", parteOrigen is null ? plan.Asociado is null ? null : "FC" : parteOrigen.Origen.Tc.Trim());
             p.Add("CpteOrigenLinea", parteOrigen?.Origen.Comprobante ?? plan.AsociadoComprobante);
             p.Add("Linea", linea.LineaId); p.Add("Secuencia", ++secuencia); p.Add("Cantidad", linea.Cantidad);
             p.Add("TotalLinea", linea.Total); p.Add("NetoLinea", linea.Neto);
@@ -182,7 +182,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         foreach (var renglon in new[] { (plan.CuentaCliente, debeCliente ? "D" : "H", total),
             (plan.CuentaIva, debeCliente ? "H" : "D", iva), (plan.CuentaVentas, debeCliente ? "H" : "D", neto) }.Where(x => x.Item3 != 0))
         {
-            p.Add("CuentaAsiento", renglon.Item1.PadRight(15));
+            p.Add("CuentaAsiento", renglon.Item1.Trim());
             p.Add("Dh", renglon.Item2); p.Add("ImpAsiento", renglon.Item3); p.Add("SecAsiento", ++asientoSec);
             await cn.ExecuteAsync(new CommandDefinition("""
                 INSERT INTO dbo.MV_ASIENTOS
@@ -222,7 +222,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
                 var ids = parte.Cantidades.Where(x => x.Cantidad > 0).Select(x => x.LineaId).ToHashSet();
                 var importe = indice == plan.Partes.Count - 1 ? neto - aplicado : Red(liquidacion.Lineas.Where(x => ids.Contains(x.LineaId)).Sum(x => x.Neto));
                 aplicado += importe;
-                p.Add("TcAplicado", CodigoPk.Format(parte.Origen.Tc,4)); p.Add("CpteAplicado", parte.Origen.Comprobante); p.Add("ImporteAplicado", importe);
+                p.Add("TcAplicado", parte.Origen.Tc.Trim()); p.Add("CpteAplicado", parte.Origen.Comprobante); p.Add("ImporteAplicado", importe);
                 await cn.ExecuteAsync(new CommandDefinition("""
                     INSERT INTO dbo.MV_APLICACION
                     (CUENTA,TC,SUCURSAL,NUMERO,LETRA,TCO_ORIGEN,SUCURSAL_ORIGEN,NUMERO_ORIGEN,LETRA_ORIGEN,IMPORTE,IDCOMPROBANTE,IDCOMPROBANTE_ORIGEN,IDCOMPLEMENTO_ORIGEN,UNEGOCIO)

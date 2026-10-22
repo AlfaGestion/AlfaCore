@@ -136,6 +136,17 @@ public sealed class CobranzaMultipleTests
                 "Cobro dos facturas",[new(docs[0].Id,12),new(docs[1].Id,8)]);
             var resultado=await service.GrabarEnTransaccionAsync(cn,tx,solicitud,default);
             Assert.Equal(20,resultado.Importe);
+            // SQL '=' y LEN no detectan relleno final: comparar bytes en las tres tablas.
+            Assert.Equal(0,await cn.ExecuteScalarAsync<int>("""
+                SELECT COUNT(*) FROM (
+                    SELECT TC,CUENTA,CAST(NULL AS nvarchar(4)) TC_PRINT FROM V_MV_CPTE WHERE ID=@CobranzaId
+                    UNION ALL SELECT TC,CUENTA,CAST(NULL AS nvarchar(4)) FROM MV_ASIENTOS
+                        WHERE TC='CB' AND SUCURSAL=SUBSTRING(@Comprobante,1,4) AND NUMERO=SUBSTRING(@Comprobante,5,8) AND LETRA='X'
+                    UNION ALL SELECT TC,CUENTA,TC_PRINT FROM MV_APLICACION WHERE TC='CB' AND IDCOMPROBANTE=@Comprobante
+                ) x WHERE DATALENGTH(TC)<>DATALENGTH(LTRIM(RTRIM(TC)))
+                    OR DATALENGTH(CUENTA)<>DATALENGTH(LTRIM(RTRIM(CUENTA)))
+                    OR DATALENGTH(TC_PRINT)<>DATALENGTH(LTRIM(RTRIM(TC_PRINT)));
+                """,resultado,tx));
             var apps=(await cn.QueryAsync<(string Origen,decimal Importe,string PrintTc,string PrintId)>("SELECT IDCOMPROBANTE_ORIGEN,IMPORTE,TC_PRINT,IDCOMPROBANTE_PRINT FROM MV_APLICACION WHERE LTRIM(RTRIM(TC))='CB' AND IDCOMPROBANTE=@Comprobante;",resultado,tx)).AsList();
             Assert.Equal(2,apps.Count);Assert.Equal(20,apps.Sum(a=>a.Importe));
             Assert.All(apps,a=>{Assert.Equal("CB",a.PrintTc.Trim());Assert.Equal(resultado.Comprobante,a.PrintId);});

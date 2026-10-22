@@ -360,8 +360,8 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
             SELECT ISNULL(MAX([NUMERO ASIENTO]),0)+1 FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK)
             WHERE LTRIM(RTRIM(PERIODO))=@periodo AND MES_OPERATIVO=@mes AND LTRIM(RTRIM(TIPO_REG))=@sub;
             """,new{periodo=periodo.ToString(),mes=solicitud.Fecha.Month,sub}));
-        var p=new { Fecha=solicitud.Fecha, Tc=CodigoPk.Format("CB",4), Comprobante=comprobante, Total=total,
-            Cliente=factura.Cliente.PadRight(15),Unidad=CodigoPk.Format(factura.Unidad,4),Moneda=CodigoPk.Format("1",4),
+        var p=new { Fecha=solicitud.Fecha, Tc="CB", Comprobante=comprobante, Total=total,
+            Cliente=factura.Cliente.Trim(),Unidad=CodigoPk.Format(factura.Unidad,4),Moneda=CodigoPk.Format("1",4),
             Usuario=user.Nombre,solicitud.FacturaId,Periodo=periodo.ToString(),Mes=solicitud.Fecha.Month,
             Asiento=asiento,Sub=CodigoPk.Format(sub,4),Caja=CodigoPk.Format(string.IsNullOrWhiteSpace(user.Caja)?"1":user.Caja,4),
             Vendedor=string.IsNullOrWhiteSpace(factura.Vendedor)?null:CodigoPk.Format(factura.Vendedor,4),
@@ -380,7 +380,7 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
         var sec=1;
         async Task Linea(string cuenta,decimal importe,string sentido,string certificado,string referencia)
         {
-            var args=new DynamicParameters(p); args.Add("Cuenta",cuenta.PadRight(15));args.Add("Importe",importe);
+            var args=new DynamicParameters(p); args.Add("Cuenta",cuenta.Trim());args.Add("Importe",importe);
             args.Add("Sentido",sentido);args.Add("Sec",sec++);args.Add("Certificado",certificado);args.Add("Referencia",referencia);
             await cn.ExecuteAsync(Q("""
                 INSERT INTO dbo.MV_ASIENTOS(CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,DETALLE,TC,SUCURSAL,NUMERO,LETRA,
@@ -396,7 +396,7 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
         foreach(var aplicada in aplicaciones)
         {
         var origen=facturas.Single(f=>f.Id==aplicada.FacturaId);
-        var aplicacion=new DynamicParameters(p);aplicacion.Add("OrigenTc",origen.Tc);aplicacion.Add("Origen",origen.Comprobante);
+        var aplicacion=new DynamicParameters(p);aplicacion.Add("OrigenTc",origen.Tc.Trim());aplicacion.Add("Origen",origen.Comprobante);
         aplicacion.Add("ImporteAplicado",aplicada.Importe);
         await cn.ExecuteAsync(Q("""
             INSERT INTO dbo.MV_APLICACION(CUENTA,TC,SUCURSAL,NUMERO,LETRA,IDCOMPROBANTE,TCO_ORIGEN,SUCURSAL_ORIGEN,NUMERO_ORIGEN,

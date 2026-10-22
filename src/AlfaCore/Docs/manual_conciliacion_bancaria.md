@@ -141,3 +141,16 @@ Todo ingreso pendiente clasificado como **Cobranza** ofrece **Marcar como cobrad
 Marcá **Confirmo que este recibo corresponde al movimiento bancario** y pulsá **Marcar como cobrado**. Se verifica nuevamente cliente, importe del recibo que estás viendo, pesos, fecha cercana y autorización. Si el recibo tiene un importe distinto del banco, la pantalla muestra ambos importes y su diferencia; exige una observación de al menos 3 caracteres antes de confirmar. Esa diferencia queda pendiente de revisar y no se ajusta automáticamente. El movimiento queda **Cobrado**, sin generar otro recibo, asiento ni aplicación. La conciliación bancaria conserva su propio estado, incluso si el recibo se cargó en otra cuenta bancaria que debés revisar después.
 
 El reconocimiento guarda recibo, usuario y fecha; impide reconocer el mismo recibo para otro movimiento. Las importaciones con esta confirmación conservan su historial y no se pueden eliminar.
+
+
+## Comparar varias importaciones y conciliar propuestas
+
+En **Conciliar cuenta**, elegí la cuenta y las fechas y pulsá **Comparar**. Se incluyen todos los archivos importados asociados a esa cuenta cuyos movimientos estén dentro del período; Alfa muestra los movimientos contables de la misma cuenta y fechas.
+
+Podés filtrar por pendientes/conciliados, buscar texto, elegir ingresos o egresos y establecer un rango de importe. El rango utiliza el valor absoluto: para buscar un egreso de $5.000, elegí Egresos y el importe 5000 positivo. **Limpiar filtros** conserva la cuenta y el período. Cada lista tiene su propio selector de orden y botón ascendente/descendente; el orden incluye todas sus páginas.
+
+**Revisar propuestas del período** abre las coincidencias únicas de todo el resultado filtrado, aunque estén en otras páginas. Muestra fecha, descripción, referencia bancaria, comprobante e importe para comparar. Podés desmarcar las que no quieras confirmar. Se seleccionan inicialmente hasta 100; para continuar con las restantes, volvé a abrir las propuestas después de confirmar.
+
+Al pulsar **Confirmar conciliaciones**, cada par queda vinculado por separado y conserva su historial. Se pueden confirmar ingresos y egresos en el mismo lote porque cada par se valida individualmente. Si algún movimiento cambió o ya fue conciliado, el lote completo se revierte y debés actualizar la comparación. La acción vincula lo existente; no genera cobranzas ni asientos.
+
+Los casos con varias contrapartidas posibles requieren revisión individual. Podés usar la sugerencia de la fila o seleccionar manualmente uno o varios movimientos de cada lista y elegir **Conciliar selección**, con igual total y sentido.

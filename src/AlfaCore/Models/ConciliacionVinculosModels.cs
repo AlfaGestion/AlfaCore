@@ -1,7 +1,8 @@
 namespace AlfaCore.Models;
 
 public sealed record ConciliacionCompararFiltro(string Cuenta,DateTime Desde,DateTime Hasta,
-    string Estado="Pendientes",string Buscar="",int PaginaBanco=1,int PaginaAlfa=1);
+    string Estado="Pendientes",string Buscar="",int PaginaBanco=1,int PaginaAlfa=1,string Sentido="Todos",decimal? ImporteDesde=null,decimal? ImporteHasta=null,
+    string OrdenBanco="Fecha",bool DescBanco=true,string OrdenAlfa="Fecha",bool DescAlfa=true);
 public sealed class ConciliacionFilaBanco
 {
     public long Id { get; set; }
@@ -44,10 +45,14 @@ public sealed class ConciliacionCompararResumen
     public decimal TotalAlfa { get; set; }
     public int Dias { get; set; }
 }
+public sealed record ConciliacionPropuesta(ConciliacionFilaBanco Banco,ConciliacionFilaAlfa Alfa);
 public sealed record ConciliacionSugerencia(long MovimientoId,ConciliacionFilaAlfa Asiento,int Candidatos);
 public sealed record ConciliacionComparacion(ConciliacionCompararResumen Resumen,
     IReadOnlyList<ConciliacionFilaBanco> Banco,IReadOnlyList<ConciliacionFilaAlfa> Alfa,
-    IReadOnlyList<ConciliacionSugerencia> Sugerencias);
+    IReadOnlyList<ConciliacionSugerencia> Sugerencias)
+{
+    public IReadOnlyList<ConciliacionPropuesta> Propuestas { get; init; }=[];
+}
 public sealed record ConciliacionBancoSeleccion(long Id,string Huella);
 public sealed record ConciliacionAlfaSeleccion(ConciliacionAsientoClave Clave,string Huella);
 public sealed record ConciliacionVincularSolicitud(Guid Operacion,ConciliacionCompararFiltro Filtro,

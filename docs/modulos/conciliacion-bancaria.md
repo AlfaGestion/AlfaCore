@@ -1,5 +1,23 @@
 # Conciliación bancaria inteligente
 
+## Validación ampliada en base de pruebas (2026-10-22)
+
+Se ejecutó la selección de pruebas de Conciliación y CobranzaMultiple con conexión SQL a ALFANET2007_PRUEBAS en 10.8.0.31: **77 aprobadas, 0 fallidas y 1 omitida**, en unos 59 segundos. La selección incluye pruebas unitarias, integración SQL y render visual. Cubre formatos XLS/XLSX/CSV, importaciones superpuestas, clientes/CUIT compartido, cuenta corriente, reconocimiento de cobros, aviso de duplicados, retenciones, cobranzas múltiples, filtros/orden, propuestas fuera de la página y conciliación/desconciliación por lote. Las pruebas de escritura utilizan rollback o limpieza explícita de sus propios registros.
+
+La omitida pertenece a CargaComprobantesAmpliacion (conciliación electrónica de exentos): requiere ALFACORE_TEST_SQL con una base de fixtures específica y no corresponde configurar esa prueba sobre esta base sin relevarla. No representa una omisión de las pruebas de conciliación bancaria. Resultado local: artifacts/conciliacion-validacion/conciliacion-pruebas.trx (ignorado por Git). No se ejecutó la suite completa del repositorio ni se operó sobre producción.
+
+## Comparación práctica por cuenta y período (2026-10-22)
+
+Se conserva el alcance de todas las importaciones de una cuenta bancaria y el mismo período para banco y Alfa. La pantalla lo indica expresamente. Se agregan filtros por ingresos/egresos y rango de importe absoluto, además de estado y búsqueda literal; Limpiar filtros conserva cuenta y fechas. Las dos listas permiten ordenar independientemente por fecha, descripción/detalle, referencia, importe y conciliación; Alfa también por comprobante. El orden se aplica en SQL antes de paginar, con claves de desempate estables y nombres de columna de una lista permitida. Cambiar el orden conserva selecciones; cambiar filtros exige Comparar.
+
+Revisar propuestas del período muestra coincidencias de todo el resultado filtrado, incluidas las páginas no visibles. Solo ofrece pares pendientes en pesos con importe firmado exacto y fecha dentro de CONCILIACION-DIAS-BANCO, sin datos alterados. Se exige unicidad recíproca contra todos los movimientos pendientes de la cuenta/período, antes del filtro de texto o importe: un filtro no puede ocultar una ambigüedad y volverla segura. Las sugerencias individuales anteriores siguen disponibles para revisar casos con varios candidatos.
+
+El diálogo permite quitar propuestas y confirmar hasta 100 pares por lote, precargados inicialmente. Cada par genera su propio vínculo y puede desconciliarse por separado. Todo el lote público se ejecuta en una transacción serializable, reutilizando el bloqueo por cuenta, huellas, permisos, validación de importes, auditoría e idempotencia del circuito existente. Si falla un par, se revierte el lote completo. No genera recibos ni asientos. No cambia los cierres ni las marcas legacy. No requiere migración SQL.
+
+Validación: compilación correcta y dos pruebas dirigidas aprobadas en ALFANET2007_PRUEBAS, sin omisiones. Cubren propuestas fuera de las primeras 50 filas, unicidad recíproca, moneda/signo, filtros de importe, orden en SQL, rechazo de columnas no permitidas, lotes con ingresos y egresos, huellas vencidas e idempotencia; las escrituras se revierten. La prueba de pantalla renderiza los filtros y el diálogo en Chromium a 2048/1440/1024 y verifica ausencia de overflow global. Catálogo y diff correctos. No se modificaron datos de producción.
+
+AlfaDesign — **Cumple: 10/13** dentro del alcance de esta mejora. Se conservan shell y componentes existentes. Excepciones/deuda: (1) shell autenticado completo sin nueva prueba de extremo a extremo; (2) filtros explícitos en la comparación de dos listas, sin migrar al popover Smart Search; (9) render modal verificado, pendiente interacción Blazor real de teclado/foco. Column resize no se incorpora a estas listas divididas; conservan scroll interno y paginación independiente. No se ejecutó la suite completa. No se detectaron regresiones en las pruebas dirigidas; permanecen los circuitos legacy de conciliación y sus cierres.
+
 ## Cobrar una propuesta múltiple (2026-10-21)
 
 Cobranza rápida ahora precarga todos los comprobantes vigentes de una propuesta Múltiple y permite editar selección e importes. Genera una CB para el mismo cliente y unidad, con aplicaciones independientes y validación de saldos dentro de la transacción. Ver [contrato y persistencia de cobranzas](cobranzas.md#cobranza-de-varios-comprobantes-2026-10-21). El importe del banco permanece fijo; las retenciones integran el total a distribuir y la diferencia por aplicar debe quedar en cero.

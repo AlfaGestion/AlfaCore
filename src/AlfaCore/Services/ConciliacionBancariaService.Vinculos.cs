@@ -58,12 +58,20 @@ public sealed partial class ConciliacionBancariaService
         if(string.IsNullOrWhiteSpace(f.Cuenta)||f.Cuenta.Trim().Length>15 || f.Desde.Date>f.Hasta.Date
             || (f.Hasta.Date-f.Desde.Date).TotalDays>366 || f.Hasta.Date>=DateTime.MaxValue.Date)
             throw new InvalidOperationException("Elegí una cuenta y un período de hasta 367 días.");
-        if(f.Estado is not ("Pendientes" or "Conciliados" or "Todos") || f.Buscar.Length>150 || f.PaginaAlfa<1 || f.PaginaBanco<1)
+        if(f.Estado is not ("Pendientes" or "Conciliados" or "Todos") || f.Buscar.Length>150 || f.PaginaAlfa<1 || f.PaginaBanco<1
+            || f.Sentido is not ("Todos" or "Ingresos" or "Egresos")
+            || f.ImporteDesde<0 || f.ImporteHasta<0 || f.ImporteDesde>f.ImporteHasta
+            || !OrdenesBanco.ContainsKey(f.OrdenBanco) || !OrdenesAlfa.ContainsKey(f.OrdenAlfa))
             throw new InvalidOperationException("Revisá los filtros y la página de comparación.");
     }
+    private static readonly IReadOnlyDictionary<string,string> OrdenesBanco=new Dictionary<string,string> {
+        ["Fecha"]="Fecha",["Referencia"]="Referencia",["Detalle"]="Detalle",["Importe"]="Importe",["Estado"]="ConciliacionId" };
+    private static readonly IReadOnlyDictionary<string,string> OrdenesAlfa=new Dictionary<string,string> {
+        ["Fecha"]="Fecha",["Comprobante"]="Comprobante",["Detalle"]="Detalle",["Referencia"]="Referencia",["Importe"]="Importe",["Estado"]="ConciliacionId" };
     private object ArgumentosComparacion(ConciliacionCompararFiltro f) => new {
         cuenta=f.Cuenta.Trim(),desde=f.Desde.Date,hasta=f.Hasta.Date,usuario=users.GetCurrentUserName(),
         estado=f.Estado,texto=f.Buscar.Trim(),patron="%"+f.Buscar.Trim().Replace("[","[[]").Replace("%","[%]").Replace("_","[_]")+"%",
+        sentido=f.Sentido,minimo=f.ImporteDesde,maximo=f.ImporteHasta,
         skipBanco=checked((f.PaginaBanco-1)*50),skipAlfa=checked((f.PaginaAlfa-1)*50) };
 
     public Task<ConciliacionComparacion> CompararAsync(ConciliacionCompararFiltro filtro,CancellationToken ct=default)
@@ -80,18 +88,22 @@ public sealed partial class ConciliacionBancariaService
             if(!int.TryParse(valor,out var dias)||dias is <0 or >31)
                 throw new InvalidOperationException("Revisá CONCILIACION-DIAS-BANCO (0 a 31).");
             var parametros=new DynamicParameters(ArgumentosComparacion(filtro));parametros.Add("dias",dias);
-            using var r=await cn.QueryMultipleAsync(new CommandDefinition(CompararBaseSql+"""
+            using var r=await cn.QueryMultipleAsync(new CommandDefinition(CompararBaseSql+$$"""
                 SELECT * INTO #FB FROM #Banco WHERE (@estado='Todos' OR (@estado='Pendientes' AND ConciliacionId IS NULL)
                     OR (@estado='Conciliados' AND ConciliacionId IS NOT NULL))
+                    AND (@sentido='Todos' OR (@sentido='Ingresos' AND Importe>0) OR (@sentido='Egresos' AND Importe<0))
+                    AND (@minimo IS NULL OR ABS(Importe)>=@minimo) AND (@maximo IS NULL OR ABS(Importe)<=@maximo)
                     AND (@texto='' OR CONCAT(Detalle,' ',Referencia,' ',Importe,' ',CONVERT(char(10),Fecha,103)) LIKE @patron);
                 SELECT * INTO #FA FROM #Alfa WHERE (@estado='Todos' OR (@estado='Pendientes' AND ConciliacionId IS NULL AND Legacy=0)
                     OR (@estado='Conciliados' AND (ConciliacionId IS NOT NULL OR Legacy=1)))
+                    AND (@sentido='Todos' OR (@sentido='Ingresos' AND Importe>0) OR (@sentido='Egresos' AND Importe<0))
+                    AND (@minimo IS NULL OR ABS(Importe)>=@minimo) AND (@maximo IS NULL OR ABS(Importe)<=@maximo)
                     AND (@texto='' OR CONCAT(Detalle,' ',Referencia,' ',Comprobante,' ',Importe,' ',CONVERT(char(10),Fecha,103)) LIKE @patron);
                 SELECT (SELECT COUNT(*) FROM #FB) Banco,(SELECT COUNT(*) FROM #FA) Alfa,
                     ISNULL((SELECT SUM(Importe) FROM #Banco),0) TotalBanco,ISNULL((SELECT SUM(Importe) FROM #Alfa WHERE Moneda='1'),0) TotalAlfa,@dias Dias;
-                SELECT * INTO #PaginaBanco FROM #FB ORDER BY Fecha DESC,Id DESC OFFSET @skipBanco ROWS FETCH NEXT 50 ROWS ONLY;
-                SELECT * FROM #PaginaBanco ORDER BY Fecha DESC,Id DESC;
-                SELECT * FROM #FA ORDER BY Fecha DESC,Periodo DESC,Mes DESC,Asiento DESC,TipoRegistro,Secuencia
+                SELECT * INTO #PaginaBanco FROM #FB ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC OFFSET @skipBanco ROWS FETCH NEXT 50 ROWS ONLY;
+                SELECT * FROM #PaginaBanco ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC;
+                SELECT * FROM #FA ORDER BY {{OrdenesAlfa[filtro.OrdenAlfa]}} {{(filtro.DescAlfa ? "DESC" : "ASC")}},Periodo DESC,Mes DESC,Asiento DESC,TipoRegistro,Secuencia
                     OFFSET @skipAlfa ROWS FETCH NEXT 50 ROWS ONLY;
                 SELECT b.Id MovimientoId,s.* FROM #PaginaBanco b CROSS APPLY(SELECT TOP(1) a.*,COUNT(*) OVER() Candidatos
                     FROM #Alfa a WHERE a.ConciliacionId IS NULL AND a.Legacy=0 AND a.Moneda='1'
@@ -99,11 +111,24 @@ public sealed partial class ConciliacionBancariaService
                     ORDER BY CASE WHEN NULLIF(b.Referencia,'') IS NOT NULL AND a.Referencia=b.Referencia THEN 0 ELSE 1 END,
                         ABS(DATEDIFF(day,a.Fecha,b.Fecha)),a.Fecha,a.Periodo,a.Mes,a.Asiento,a.TipoRegistro,a.Secuencia)s
                     WHERE b.ConciliacionId IS NULL;
+                SELECT b.Id BancoId,a.* INTO #Propuestas FROM #FB b JOIN #FA a ON a.Importe=b.Importe
+                    AND ABS(DATEDIFF(day,a.Fecha,b.Fecha))<=@dias
+                WHERE b.ConciliacionId IS NULL AND a.ConciliacionId IS NULL AND a.Legacy=0 AND a.Moneda='1'
+                    AND b.Importe<>0 AND b.Alterado=0 AND a.Alterado=0
+                    AND (SELECT COUNT(*) FROM #Alfa x WHERE x.Importe=b.Importe AND x.Moneda='1' AND x.Legacy=0
+                        AND x.ConciliacionId IS NULL AND ABS(DATEDIFF(day,x.Fecha,b.Fecha))<=@dias)=1
+                    AND (SELECT COUNT(*) FROM #Banco x WHERE x.Importe=a.Importe AND x.ConciliacionId IS NULL
+                        AND ABS(DATEDIFF(day,x.Fecha,a.Fecha))<=@dias)=1;
+                SELECT b.* FROM #Propuestas p JOIN #FB b ON b.Id=p.BancoId ORDER BY b.Id;
+                SELECT * FROM #Propuestas ORDER BY BancoId;
                 """,parametros,tx,commandTimeout:120,cancellationToken:token));
             var resumen=await r.ReadSingleAsync<ConciliacionCompararResumen>();
             var banco=(await r.ReadAsync<ConciliacionFilaBanco>()).AsList();var alfa=(await r.ReadAsync<ConciliacionFilaAlfa>()).AsList();
             var candidatos=(await r.ReadAsync<ConciliacionFilaAlfa>()).Select(a=>new ConciliacionSugerencia(a.MovimientoId,a,a.Candidatos)).ToList();
-            return new ConciliacionComparacion(resumen,banco,alfa,candidatos);
+            var bancosPropuestos=(await r.ReadAsync<ConciliacionFilaBanco>()).AsList();
+            var asientosPropuestos=(await r.ReadAsync<ConciliacionFilaAlfa>()).AsList();
+            return new ConciliacionComparacion(resumen,banco,alfa,candidatos) {
+                Propuestas=bancosPropuestos.Zip(asientosPropuestos,(b,a)=>new ConciliacionPropuesta(b,a)).ToList() };
         }
 
     public Task<long> ConciliarAsync(ConciliacionVincularSolicitud solicitud,CancellationToken ct=default)
@@ -113,6 +138,27 @@ public sealed partial class ConciliacionBancariaService
             var id=await ConciliarEnTransaccionAsync(cn,tx,solicitud,token);
             tx.Commit();return id;
         },ct);
+
+    public Task<IReadOnlyList<long>> ConciliarLoteAsync(IReadOnlyList<ConciliacionVincularSolicitud> solicitudes,CancellationToken ct=default)
+        => Ejecutar("ConciliarLote",async(cn,token)=>
+        {
+            using var tx=cn.BeginTransaction(IsolationLevel.Serializable);
+            var ids=await ConciliarLoteEnTransaccionAsync(cn,tx,solicitudes,token);
+            tx.Commit();return ids;
+        },ct);
+
+    internal async Task<IReadOnlyList<long>> ConciliarLoteEnTransaccionAsync(SqlConnection cn,SqlTransaction tx,
+        IReadOnlyList<ConciliacionVincularSolicitud> solicitudes,CancellationToken token=default)
+    {
+        if(solicitudes.Count is <1 or >100 || solicitudes.Any(s=>s.Banco.Count!=1||s.Alfa.Count!=1)
+            || solicitudes.Select(s=>s.Filtro.Cuenta.Trim()).Distinct().Count()!=1
+            || solicitudes.Select(s=>s.Banco[0].Id).Distinct().Count()!=solicitudes.Count
+            || solicitudes.Select(s=>s.Alfa[0].Clave).Distinct().Count()!=solicitudes.Count)
+            throw new InvalidOperationException("Elegí hasta 100 pares distintos de una misma cuenta.");
+        var ids=new List<long>();
+        foreach(var solicitud in solicitudes) ids.Add(await ConciliarEnTransaccionAsync(cn,tx,solicitud,token));
+        return ids;
+    }
 
     internal async Task<long> ConciliarEnTransaccionAsync(SqlConnection cn,SqlTransaction tx,
         ConciliacionVincularSolicitud solicitud,CancellationToken token=default)

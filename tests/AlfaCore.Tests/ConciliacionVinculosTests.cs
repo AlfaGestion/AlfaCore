@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Playwright;
 using AlfaCore.Models;
 using AlfaCore.Services;
 using Dapper;
@@ -99,6 +100,36 @@ public sealed class ConciliacionVinculosTests
             var extranjero=data.Alfa.Single(a=>a.Secuencia==6);var bancoExtranjero=data.Banco.Single(b=>b.Id==bx);
             await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarEnTransaccionAsync(cn,tx,new(Guid.NewGuid(),f,
                 [new(bx,bancoExtranjero.Huella)],[new(extranjero.Clave,extranjero.Huella)])));
+            // El filtro de importe usa valor absoluto y el sentido conserva los egresos.
+            var egresos=await servicio.CompararEnConexionAsync(cn,tx,f with{Sentido="Egresos",ImporteDesde=18,ImporteHasta=19});
+            Assert.Equal(bd,Assert.Single(egresos.Banco).Id);Assert.Equal(-18.83m,Assert.Single(egresos.Alfa).Importe);
+            Assert.DoesNotContain(data.Propuestas,p=>p.Banco.Id==b3||p.Banco.Id==bx);
+            Assert.Contains(data.Propuestas,p=>p.Banco.Id==bd);
+            var repetido=await Banco(-18.83m);
+            Assert.DoesNotContain((await servicio.CompararEnConexionAsync(cn,tx,f)).Propuestas,p=>p.Banco.Id==bd||p.Banco.Id==repetido);
+            await cn.ExecuteAsync("DELETE BK_ExtractoMovimiento WHERE MovimientoId=@repetido;",new{repetido},tx);
+            var positivo=await Banco(45.12m);await Alfa(7,45.12m);
+            for(var i=0;i<51;i++)await Banco(72000.1201m+i);
+            data=await servicio.CompararEnConexionAsync(cn,tx,f);
+            Assert.DoesNotContain(data.Banco,b=>b.Id==bd);
+            Assert.Contains(data.Propuestas,p=>p.Banco.Id==bd); // Coincidencias más allá de la página visible.
+            var orden=await servicio.CompararEnConexionAsync(cn,tx,f with{OrdenBanco="Importe",DescBanco=false,OrdenAlfa="Importe",DescAlfa=false});
+            Assert.Equal(orden.Banco.OrderBy(b=>b.Importe).Select(b=>b.Id),orden.Banco.Select(b=>b.Id));
+            Assert.Equal(orden.Alfa.OrderBy(a=>a.Importe).Select(a=>a.Clave),orden.Alfa.Select(a=>a.Clave));
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.CompararEnConexionAsync(cn,tx,f with{OrdenBanco="Fecha;DROP TABLE x"}));
+            var lote=data.Propuestas.Where(p=>p.Banco.Id==bd||p.Banco.Id==positivo).Select(p=>new ConciliacionVincularSolicitud(
+                Guid.NewGuid(),f,[new(p.Banco.Id,p.Banco.Huella)],[new(p.Alfa.Clave,p.Alfa.Huella)])).ToList();
+            Assert.Equal(2,lote.Count);
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarLoteEnTransaccionAsync(cn,tx,[lote[0],lote[0]]));
+            tx.Save("AntesLote");
+            var vencido=lote[1] with{Alfa=[lote[1].Alfa[0] with{Huella="vencida"}]};
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>servicio.ConciliarLoteEnTransaccionAsync(cn,tx,[lote[0],vencido]));
+            tx.Rollback("AntesLote");
+            var idsLote=await servicio.ConciliarLoteEnTransaccionAsync(cn,tx,lote);
+            Assert.Equal(2,idsLote.Distinct().Count());
+            Assert.Equal(idsLote,await servicio.ConciliarLoteEnTransaccionAsync(cn,tx,lote));
+            var luego=await servicio.CompararEnConexionAsync(cn,tx,f with{Estado="Pendientes"});
+            Assert.DoesNotContain(luego.Propuestas,p=>p.Banco.Id==bd||p.Banco.Id==positivo);
             var literal=await servicio.CompararEnConexionAsync(cn,tx,f with { Buscar="__NO_EXISTE_%" });Assert.Empty(literal.Banco);Assert.Empty(literal.Alfa);
             username="USUARIO_NO_EXISTENTE_CONCILIACION";
             await Assert.ThrowsAsync<SqlException>(()=>servicio.CompararEnConexionAsync(cn,tx,f));
@@ -134,6 +165,7 @@ public sealed class ConciliacionVinculosTests
         var activador=new ActivadorComparacion();services.AddSingleton<IComponentActivator>(activador);
         using var provider=services.BuildServiceProvider();
         await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        string browseHtml="",propuestasHtml="";
         await renderer.Dispatcher.InvokeAsync(async()=>
         {
             var root=await renderer.RenderComponentAsync<AlfaCore.Components.Shared.ConciliacionComparacionPanel>(
@@ -145,6 +177,13 @@ public sealed class ConciliacionVinculosTests
             var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
             Assert.Contains("Movimientos del banco",html);Assert.Contains("Movimientos registrados en Alfa",html);
             Assert.Contains("Conciliar selección",html);
+            Assert.Contains("Importe desde",html);Assert.Contains("Ordenar banco por",html);
+            browseHtml=root.ToHtmlString();
+            panel.GetType().GetMethod("AbrirPropuestas",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null);
+            typeof(ComponentBase).GetMethod("StateHasChanged",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null);
+            propuestasHtml=root.ToHtmlString();
+            Assert.Contains("Propuestas de conciliación del período",System.Net.WebUtility.HtmlDecode(propuestasHtml));
+            Field("_propuestasAbiertas",false);
             if(data.Alfa.FirstOrDefault() is { } primero)Assert.Contains(primero.Comprobante,html);
             GuardarVista("comparacion-banco.html",root.ToHtmlString());
             if(data.Sugerencias.FirstOrDefault() is { } s)
@@ -165,6 +204,29 @@ public sealed class ConciliacionVinculosTests
                 GuardarVista("comparacion-historial.html",root.ToHtmlString());
             }
         });
+        if(CargaComprobantesBrowserFactAttribute.BrowserPath is { } browserPath)
+        {
+            var repo=new DirectoryInfo(AppContext.BaseDirectory);
+            while(repo is not null&&!File.Exists(Path.Combine(repo.FullName,"src/AlfaCore/AlfaCore.csproj")))repo=repo.Parent;
+            Assert.NotNull(repo);
+            var css=await File.ReadAllTextAsync(Path.Combine(repo!.FullName,"src/AlfaCore/wwwroot/css/alfacore-design.css"))+
+                await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/wwwroot/app.css"))+
+                await File.ReadAllTextAsync(Path.Combine(repo.FullName,"src/AlfaCore/obj/Debug/net8.0/scopedcss/projectbundle/AlfaCore.bundle.scp.css"));
+            using var playwright=await Playwright.CreateAsync();
+            await using var browser=await playwright.Chromium.LaunchAsync(new(){Headless=true,ExecutablePath=browserPath});
+            var page=await browser.NewPageAsync();
+            foreach(var width in new[]{2048,1440,1024})
+            {
+                await page.SetViewportSizeAsync(width,1000);
+                foreach(var view in new[]{browseHtml,propuestasHtml})
+                {
+                    await page.SetContentAsync($"<html><head><meta charset='utf-8'><style>{css}</style><style>body{{margin:0;font-family:Segoe UI,sans-serif}}*{{box-sizing:border-box}}</style></head><body>{view}</body></html>");
+                    Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= window.innerWidth"));
+                    if(view==propuestasHtml)Assert.True(await page.GetByRole(AriaRole.Dialog).IsVisibleAsync());
+                    else Assert.True(await page.GetByLabel("Ordenar banco por",new(){Exact=true}).IsVisibleAsync());
+                }
+            }
+        }
         permission=false;
         await Assert.ThrowsAsync<AppUserFacingException>(()=>service.CompararAsync(filtro));
     }
