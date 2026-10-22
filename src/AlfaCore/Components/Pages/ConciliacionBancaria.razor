@@ -96,7 +96,7 @@
     }
     else if (_tab=="conciliar")
     {
-        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" />
+        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" AccionesChanged="PublicarAccionesConciliacion" />
     }
     else
     {
@@ -393,6 +393,8 @@
     private CobranzaPreparacion? _cobranza;
     private string? _errorCobranza, _comprobantePreferido;
     private RenderFragment? _busquedaConciliacion;
+    private IReadOnlyList<PageHeaderAction> _accionesConciliacion = [];
+    private Task PublicarAccionesConciliacion(IReadOnlyList<PageHeaderAction> acciones) { if(_disposed)return Task.CompletedTask;_accionesConciliacion=acciones;PublicarHeader();return Task.CompletedTask; }
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
     private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
@@ -684,7 +686,11 @@
             Title = "Conciliación bancaria inteligente", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria inteligente"],
             TopNavigationItems = Navegacion(),
             SearchContent = _tab=="conciliar" ? _busquedaConciliacion : null,
-            Actions = [
+            // En "Conciliar cuenta" no se ofrece "Importar extracto" (no aplica) y van las acciones de la comparación (2026-10-22).
+            Actions = _tab=="conciliar"
+                ? [.. _accionesConciliacion,
+                    new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Priority = PageHeaderActionPriority.Overflow,Disabled = _busy,OnClick = () => Operar(CargarPagina) }]
+                : [
                 new() { Key = "importar",Label = "Importar extracto",Icon = "bi-upload",Style = PageHeaderActionStyle.Primary,
                     Disabled = _tab!="importar" || _busy || !_listo || string.IsNullOrWhiteSpace(_cuenta),Busy = _busy,OnClick = Importar },
                 new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) }
