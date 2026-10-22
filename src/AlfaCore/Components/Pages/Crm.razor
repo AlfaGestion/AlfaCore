@@ -2631,6 +2631,17 @@
             _clienteDropdownOpen = _clienteResultados.Count > 0;
         }
         catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            // Nunca tirar la pantalla por la búsqueda de cliente (2026-10-22): se avisa y se puede seguir.
+            if (cts.Token.IsCancellationRequested)
+                return;
+            _clienteResultados = [];
+            _clienteDropdownOpen = false;
+            _feedback = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? new Feedback("No se pudo buscar el cliente", userFacing.UserMessage, userFacing.ErrorCode)
+                : new Feedback("No se pudo buscar el cliente", ex.Message, null);
+        }
     }
 
     private void SeleccionarCliente(CuentaComercialGridItemDto cli)
