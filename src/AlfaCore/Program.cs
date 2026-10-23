@@ -409,6 +409,7 @@ public class Program
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<ConciliacionExtractoLector>();
         builder.Services.AddScoped<ConciliacionBancariaService>();
+        builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<CobranzasService>();
         builder.Services.AddScoped<CargaComprobantesRepository>();
         builder.Services.AddScoped<CargaComprobantesElectronicaVerificador>();

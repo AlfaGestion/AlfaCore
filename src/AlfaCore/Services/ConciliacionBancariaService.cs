@@ -13,7 +13,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed partial class ConciliacionBancariaService(ISessionService sessions, IAppUserSessionService users,
-    IPermissionService permissions, IAppEventService events, ConciliacionExtractoLector lector)
+    IPermissionService permissions, IAppEventService events, ConciliacionExtractoLector lector,IConciliacionIaModelo? iaModelo=null)
 {
     public const string MenuKey = "D75-CONCILIA-IA";
 

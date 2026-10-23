@@ -1,0 +1,3 @@
+.asiento-config__regla { display:grid; gap:var(--alfa-space-12); padding:var(--alfa-space-16); margin-block:var(--alfa-space-16); border:1px solid var(--alfa-border-default); border-radius:var(--alfa-radius-sm); }
+.asiento-config__campos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--alfa-space-12); }
+@media(max-width:600px) { .asiento-config__campos { grid-template-columns:minmax(0,1fr); } }

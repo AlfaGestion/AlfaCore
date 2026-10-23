@@ -1,0 +1,67 @@
+@using System.Globalization
+<AlfaDialog Open="Open" Title="Asistir con IA · revisar propuestas" Size="AlfaDialogSize.Lg" Loading="Busy" OnClose="OnClose">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="Feedback" />
+        @if(Busy&&Resultado is null) { <p role="status">Analizando los pendientes del período. Podés cancelar sin modificar movimientos.</p> }
+        @if(Resultado is { } r) {
+            <p>@r.BancosAnalizados movimientos bancarios · @r.AsientosAnalizados renglones de Alfa · @r.Propuestas.Count @(r.Propuestas.Count==1 ? "propuesta" : "propuestas")</p>
+            <p>La IA propone; revisá la evidencia y seleccioná lo que querés confirmar. La confianza indicada es orientativa. Las clasificaciones y cuentas sugeridas no se guardan automáticamente.</p>
+            @if(r.Descartadas>0) { <p role="status">Se descartaron @r.Descartadas recomendaciones que no superaron los controles de consistencia o reutilizaban movimientos.</p> }
+            @if(r.Propuestas.Count>0) {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="Busy" OnClick="SeleccionarTodas">Seleccionar hasta 100 propuestas</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="Busy" OnClick="()=>_elegidas.Clear()">Limpiar selección</AlfaButton>
+                @foreach(var p in r.Propuestas) {
+                    <section class="conciliacion-ia__propuesta" @key="p.Id">
+                        <AlfaCheckbox Value="_elegidas.Contains(p.Id)" ValueChanged="v=>Elegir(p.Id,v==true)" Disabled="@(Busy||(!_elegidas.Contains(p.Id)&&_elegidas.Count>=100))">@p.Origen · @p.Confianza · @p.Banco.Count banco / @p.Alfa.Count Alfa</AlfaCheckbox>
+                        <p>Banco <strong>@Dinero(p.Banco.Sum(b=>b.Importe))</strong> · Alfa <strong>@Dinero(p.Alfa.Sum(a=>a.Importe))</strong> · Diferencia <strong>@Dinero(p.Diferencia)</strong></p>
+                        <p>@p.Motivo</p>
+                        <div class="conciliacion-ia__movimientos">
+                            <div><strong>Extracto</strong>@foreach(var b in p.Banco) { <p>@b.Fecha.ToString("dd/MM/yyyy") · @Dinero(b.Importe)<br />@b.Detalle<br />Referencia: @b.Referencia</p> }</div>
+                            <div><strong>Alfa</strong>@foreach(var a in p.Alfa) { <p>@a.Fecha.ToString("dd/MM/yyyy") · @Dinero(a.Importe)<br />@a.Comprobante · @a.Detalle<br />Referencia: @a.Referencia</p> }</div>
+                        </div>
+                    </section>
+                }
+                @if(ConDiferencia) {
+                    <AlfaCheckbox Value="_aceptar" ValueChanged="v=>_aceptar=v==true" Disabled="Busy">Acepto las diferencias seleccionadas, sin modificar importes ni generar ajustes</AlfaCheckbox>
+                    <AlfaInput Label="Motivo de las diferencias" Value="@_motivo" ValueChanged="v=>_motivo=v ?? string.Empty" MaxLength="300" Disabled="Busy" />
+                }
+            } else { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin vínculos propuestos" Message="No se encontraron contrapartidas suficientemente claras para estos pendientes. Revisá los consejos y los movimientos manualmente." /> }
+            <h3>Pendientes de revisión: @(r.BancosAnalizados-r.Propuestas.Sum(p=>p.Banco.Count))</h3>
+            @foreach(var o in r.Orientaciones) {
+                <section class="conciliacion-ia__propuesta">
+                    <p><strong>@o.Banco.Fecha.ToString("dd/MM/yyyy") · @Dinero(o.Banco.Importe)</strong> · @o.Banco.Detalle</p>
+                    <p>Clasificación sugerida: @o.Categoria @if(o.Cuenta.Length>0) { <span> · Cuenta sugerida: @o.Cuenta</span> }</p>
+                    <p>@o.Motivo</p>
+                    @if(OnGenerarAsiento.HasDelegate&&o.Cuenta.Length>0&&o.Banco.Registracion is not ("Cobrado" or "Registrado")&&o.Banco.Categoria is not ("Cobranza" or "TransferenciaInterna")) {
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="Busy" OnClick="()=>OnGenerarAsiento.InvokeAsync(o)">Revisar asiento sugerido</AlfaButton>
+                    }
+                </section>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="OnClose" Disabled="@(Busy&&!CanCancel)">@(Busy ? CanCancel ? "Cancelar análisis" : "Confirmando…" : "Cerrar")</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(!PuedeConfirmar)" OnClick="Confirmar">Confirmar @_elegidas.Count propuestas</AlfaButton>
+    </Footer>
+</AlfaDialog>
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool CanCancel { get; set; }
+    [Parameter] public ConciliacionIaResultado? Resultado { get; set; }
+    [Parameter] public AppUiMessage? Feedback { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<(IReadOnlyList<Guid> Elegidas,bool Aceptar,string Motivo)> OnConfirm { get; set; }
+    [Parameter] public EventCallback<ConciliacionIaOrientacion> OnGenerarAsiento { get; set; }
+    private Guid? _anterior;
+    private readonly HashSet<Guid> _elegidas=[];
+    private bool _aceptar;
+    private string _motivo="";
+    private bool ConDiferencia=>Resultado?.Propuestas.Any(p=>_elegidas.Contains(p.Id)&&p.Diferencia!=0)==true;
+    private bool PuedeConfirmar=>!Busy&&Resultado is not null&&_elegidas.Count>0&&(!ConDiferencia||(_aceptar&&_motivo.Trim().Length>=3));
+    protected override void OnParametersSet() { if(_anterior==Resultado?.Id)return;_anterior=Resultado?.Id;_elegidas.Clear();_aceptar=false;_motivo=""; }
+    private void Elegir(Guid id,bool value) { if(value)_elegidas.Add(id);else _elegidas.Remove(id); }
+    private void SeleccionarTodas() { _elegidas.Clear();foreach(var p in Resultado?.Propuestas.Take(100) ?? [])_elegidas.Add(p.Id); }
+    private Task Confirmar()=>PuedeConfirmar ? OnConfirm.InvokeAsync((_elegidas.ToList(),_aceptar,_motivo)) : Task.CompletedTask;
+    private static string Dinero(decimal valor)=>valor.ToString("N2",CultureInfo.GetCultureInfo("es-AR"));
+}

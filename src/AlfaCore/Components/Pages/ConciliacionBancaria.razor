@@ -96,7 +96,7 @@
     }
     else if (_tab=="conciliar")
     {
-        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" />
+        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" OnGenerarAsiento="AbrirAsiento" OnAsientoIa="AbrirAsientoIa" />
     }
     else
     {
@@ -152,6 +152,9 @@
                                     <td>@item.Confianza.ToString("N0")%</td><td>@item.Estado</td><td>@(item.ConciliacionId.HasValue ? $"Conciliado #{item.ConciliacionId}" : "Pendiente")</td>
                                     <td>
                                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => SeleccionarMovimiento(item)">Detalle</AlfaButton>
+                                        @if(PuedeGenerarAsiento(item)) {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirAsiento(item.Id)">Generar asiento</AlfaButton>
+                                        }
                                         @if (item.Categoria=="Cobranza" && item.Importe>0 && item.Estado!="Cobrado")
                                         {
                                             <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>SeleccionarMovimiento(item)">Marcar como cobrado</AlfaButton>
@@ -340,11 +343,16 @@
                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_seleccion.Cliente) || (_comprobanteInfo is { } elegido && (elegido.Anulada || elegido.SaldoActual is not >0)))"
                             OnClick="() => AbrirCobranza(_seleccion,_comprobanteInfo?.Clave)">Cobrar</AlfaButton>
                     }
+                    @if(PuedeGenerarAsiento(_seleccion)) {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_busy" OnClick="()=>AbrirAsiento(_seleccion.Id)">Generar asiento</AlfaButton>
+                    }
                     <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="CerrarDetalle">Cerrar</AlfaButton>
                 </Footer>
             </AlfaDialog>
         }
     }
+    <ConciliacionAsientoDialog Preparacion="@_asientoPreparacion" OnClose="()=>_asientoPreparacion=null" OnSaved="AsientoGuardado" />
+    <ConciliacionAsientoConfigDialog Catalogo="@_asientoCatalogo" OnClose="()=>_asientoCatalogo=null" OnSaved="ConfiguracionAsientoGuardada" />
     <CobranzaRapidaDialog Preparacion="@_cobranza" Busy="@_busy" Error="@_errorCobranza" ComprobantePreferido="@_comprobantePreferido"
         OnClose="CerrarCobranza" OnConfirm="ConfirmarCobranza" />
     <AlfaConfirmDialog Open="@(_eliminar is not null)" Title="Eliminar importación"
@@ -392,6 +400,25 @@
     private ConciliacionMovimiento? _seleccion;
     private CobranzaPreparacion? _cobranza;
     private string? _errorCobranza, _comprobantePreferido;
+    private ConciliacionAsientoPreparacion? _asientoPreparacion;
+    private ConciliacionAsientoCatalogo? _asientoCatalogo;
+    private static bool PuedeGenerarAsiento(ConciliacionMovimiento? m)=>m is not null&&m.Importe!=0&&!m.ConciliacionId.HasValue&&m.Estado is not ("Cobrado" or "Registrado")&&m.Categoria is not ("Cobranza" or "TransferenciaInterna");
+    private Task AbrirAsiento(long id)=>Operar(async ct=>{_asientoPreparacion=await Servicio.PrepararAsientoAsync(id,ct);_seleccion=null;});
+    private Task AbrirAsientoIa(ConciliacionIaOrientacion orientacion)=>Operar(async ct=>{
+        var prep=await Servicio.PrepararAsientoAsync(orientacion.Banco.Id,ct);
+        if(prep.Movimiento.Huella!=orientacion.Banco.Huella)throw new InvalidOperationException("El movimiento cambió después del análisis. Volvé a analizar antes de usar la sugerencia.");
+        if(!prep.Catalogo.Cuentas.Any(c=>c.Codigo==orientacion.Cuenta))throw new InvalidOperationException("La cuenta sugerida ya no está disponible. Revisá el movimiento.");
+        var regla=new ConciliacionAsientoRegla{Nombre="Sugerencia IA · revisar cuenta",Categoria=prep.Categoria,Contrapartida=orientacion.Cuenta};
+        var config=new ConciliacionAsientoConfig{TipoRegistro=prep.Catalogo.Config.TipoRegistro,Reglas=[..prep.Catalogo.Config.Reglas,regla]};
+        _asientoPreparacion=prep with{Catalogo=prep.Catalogo with{Config=config},ReglaSugerida=regla.Id};_seleccion=null;
+    });
+    private Task ConfigurarAsientos()=>Operar(async ct=>{_asientoCatalogo=await Servicio.AsientoCatalogoAsync(ct);});
+    private Task ConfiguracionAsientoGuardada() { _asientoCatalogo=null;_feedback=AppUiMessage.Success("Cuentas guardadas","Los conceptos se usarán en las próximas propuestas de asiento.");return Task.CompletedTask; }
+    private Task AsientoGuardado(ConciliacionAsientoResultado resultado)=>Operar(async ct=>{
+        _asientoPreparacion=null;
+        _feedback=AppUiMessage.Success("Asiento generado y conciliado",$"CC {resultado.Comprobante} · Asiento {resultado.NumeroAsiento} · Conciliación #{resultado.ConciliacionId}.");
+        await CargarPagina(ct);
+    });
     private RenderFragment? _busquedaConciliacion;
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
@@ -685,7 +712,8 @@
             Actions = [
                 new() { Key = "importar",Label = "Importar extracto",Icon = "bi-upload",Style = PageHeaderActionStyle.Primary,
                     Disabled = _tab!="importar" || _busy || !_listo || string.IsNullOrWhiteSpace(_cuenta),Busy = _busy,OnClick = Importar },
-                new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) }
+                new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) },
+                new() { Key="cuentas-asientos",Label="Cuentas para asientos",Icon="bi-journal-text",Disabled=_busy,OnClick=ConfigurarAsientos }
             ],
             Pagination = _tab=="conciliar" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
                 HasPrevious = pagina>1,HasNext = pagina*50<total,Disabled = _busy,OnPrevious = () => Paginar(-1),OnNext = () => Paginar(1) }
@@ -703,7 +731,7 @@
     {
         if (_disposed) return;
         _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
-        _tab="importar"; _comparacion=null;
+        _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;
         _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
         _seleccion = null; _eliminar = null; _detalle = []; _feedback = null; _filtro = null;
         _contexto=new([],[]);_comprobanteDetalleId=0;_categoriaRevision=_motivoRevision="";

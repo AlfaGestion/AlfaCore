@@ -356,10 +356,7 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
             SELECT LTRIM(RTRIM(s.CODIGO)) FROM dbo.MA_SUBDIARIOSCOMPROBANTES c JOIN dbo.MA_SUBDIARIOS s ON s.CODIGO=c.Subdiario WHERE LTRIM(RTRIM(c.TC))=@eq;
             """,new{eq}));
         if(string.IsNullOrWhiteSpace(sub)) throw new InvalidOperationException("Falta configurar la equivalencia contable o el subdiario de CB.");
-        var asiento=await cn.ExecuteScalarAsync<int>(Q("""
-            SELECT ISNULL(MAX([NUMERO ASIENTO]),0)+1 FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK)
-            WHERE LTRIM(RTRIM(PERIODO))=@periodo AND MES_OPERATIVO=@mes AND LTRIM(RTRIM(TIPO_REG))=@sub;
-            """,new{periodo=periodo.ToString(),mes=solicitud.Fecha.Month,sub}));
+        var asiento=await NumeracionAsiento.SiguienteAsync(cn,tx,periodo.ToString(),solicitud.Fecha.Month,sub,ct);
         var p=new { Fecha=solicitud.Fecha, Tc="CB", Comprobante=comprobante, Total=total,
             Cliente=factura.Cliente.Trim(),Unidad=CodigoPk.Format(factura.Unidad,4),Moneda=CodigoPk.Format("1",4),
             Usuario=user.Nombre,solicitud.FacturaId,Periodo=periodo.ToString(),Mes=solicitud.Fecha.Month,

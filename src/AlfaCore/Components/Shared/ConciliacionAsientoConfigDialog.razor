@@ -1,0 +1,61 @@
+@using System.Text.Json
+@using AlfaCore.Services
+@using AlfaCore.ConciliacionBancaria.Domain.Enums
+@implements IDisposable
+@inject ConciliacionBancariaService Servicio
+@inject IAppUiOperationService UiOps
+<AlfaDialog Open="@(Catalogo is not null)" Title="Cuentas y conceptos para asientos" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
+    <ChildContent>
+    @if(Catalogo is { } cat) {
+        <AlfaFeedbackPanel Message="@_feedback" />
+        @if(cat.Config.Reglas.Count==0) {
+            <p role="status">@(cat.SugerenciasIniciales.Count>0
+                ? "Propuesta inicial según el plan de cuentas de esta base. Revisá las cuentas y guardá para activar estos conceptos."
+                : "No se encontraron cuentas específicas con una coincidencia única. Podés agregar los conceptos manualmente.")</p>
+        }
+        <p>Configuración compartida por esta base. La cuenta bancaria se toma del extracto; las reglas proponen contrapartidas para revisar antes de grabar un CC.</p>
+        <AlfaSelect Label="Subdiario contable" Value="@_config.TipoRegistro" ValueChanged="v=>_config.TipoRegistro=v ?? string.Empty" Options="@Subdiarios" Placeholder="Sin subdiario (CC legacy)" Disabled="@_busy" />
+        @foreach(var regla in _config.Reglas) {
+            <section class="asiento-config__regla" @key="regla.Id">
+                <div class="asiento-config__campos">
+                    <AlfaInput Label="Concepto" Value="@regla.Nombre" ValueChanged="v=>regla.Nombre=v ?? string.Empty" MaxLength="60" Disabled="@_busy" />
+                    <AlfaSelect Label="Clasificación" Value="@regla.Categoria" ValueChanged="v=>regla.Categoria=v ?? string.Empty" Options="@Categorias" Disabled="@_busy" />
+                    <AlfaSelect Label="Cuenta bancaria" Value="@regla.CuentaBanco" ValueChanged="v=>regla.CuentaBanco=v ?? string.Empty" Options="@Bancos" Placeholder="Todas las cuentas bancarias" Disabled="@_busy" />
+                    <AlfaInput Label="Texto a reconocer (opcional)" Value="@regla.Texto" ValueChanged="v=>regla.Texto=v ?? string.Empty" MaxLength="150" Disabled="@_busy" />
+                </div>
+                <ConciliacionCuentaLookup Cuenta="@regla.Contrapartida" CuentaChanged="v=>regla.Contrapartida=v" Cuentas="cat.Cuentas" Disabled="@_busy" />
+                <AlfaInput Label="Detalle predeterminado (opcional)" Value="@regla.Detalle" ValueChanged="v=>regla.Detalle=v ?? string.Empty" MaxLength="200" Disabled="@_busy" />
+                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" OnClick="()=>_config.Reglas.Remove(regla)" Disabled="@_busy">Quitar concepto</AlfaButton>
+            </section>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>_config.Reglas.Add(new())" Disabled="@(_busy||_config.Reglas.Count>=100)">Agregar concepto</AlfaButton>
+        <p>El texto se busca dentro de la descripción bancaria. Las reglas específicas por banco/texto tienen prioridad; si hay empate, se pide elegir el concepto.</p>
+    }
+    </ChildContent>
+    <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Cerrar" Disabled="@_busy">Cancelar</AlfaButton><AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="Guardar" Disabled="@_busy">Guardar cuentas y conceptos</AlfaButton></Footer>
+</AlfaDialog>
+@code {
+    [Parameter] public ConciliacionAsientoCatalogo? Catalogo { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    private ConciliacionAsientoCatalogo? _anterior;
+    private ConciliacionAsientoConfig _config=new();
+    private bool _busy;
+    private AppUiMessage? _feedback;
+    private readonly CancellationTokenSource _cts=new();
+    private IReadOnlyList<AlfaSelectOption> Bancos=>Catalogo?.Bancos.Select(b=>new AlfaSelectOption(b.Codigo,$"{b.Codigo} — {b.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> Subdiarios=>Catalogo?.Subdiarios.Select(b=>new AlfaSelectOption(b.Codigo,$"{b.Codigo} — {b.Descripcion}")).ToList() ?? [];
+    private static readonly IReadOnlyList<AlfaSelectOption> Categorias=Enum.GetValues<MovementCategory>().Where(c=>c is not (MovementCategory.Cobranza or MovementCategory.TransferenciaInterna)).Select(c=>new AlfaSelectOption(c.ToString(),c.ToString())).ToList();
+    protected override void OnParametersSet() { if(ReferenceEquals(Catalogo,_anterior))return;_anterior=Catalogo;_feedback=null;
+        _config=Catalogo is null ? new() : JsonSerializer.Deserialize<ConciliacionAsientoConfig>(JsonSerializer.Serialize(
+            new ConciliacionAsientoConfig { TipoRegistro=Catalogo.Config.TipoRegistro,
+                Reglas=Catalogo.Config.Reglas.Count>0 ? Catalogo.Config.Reglas : Catalogo.SugerenciasIniciales.ToList() }))!; }
+    private Task Cerrar()=>_busy ? Task.CompletedTask : OnClose.InvokeAsync();
+    private async Task Guardar() { if(_busy)return;_busy=true;_feedback=null;
+        try { await Servicio.GuardarAsientoConfigAsync(_config,_cts.Token);await OnSaved.InvokeAsync(); }
+        catch(OperationCanceledException) { }
+        catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Cuentas para asientos"); }
+        finally { _busy=false; }
+    }
+    public void Dispose() { _cts.Cancel();_cts.Dispose(); }
+}

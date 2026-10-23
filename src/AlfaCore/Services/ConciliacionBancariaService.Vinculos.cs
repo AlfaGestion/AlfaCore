@@ -20,6 +20,7 @@ public sealed partial class ConciliacionBancariaService
             THROW 50001,'Seleccioná una cuenta bancaria activa en pesos.',1;
         SELECT m.MovimientoId Id,m.FechaMovimiento Fecha,m.DescripcionOriginal Detalle,
             ISNULL(m.ReferenciaExterna,'') Referencia,m.Importe,m.EstadoRevision Registracion,
+            ISNULL((SELECT TOP(1) c.TipoMovimiento FROM dbo.BK_MovimientoClasificado c WHERE c.MovimientoId=m.MovimientoId ORDER BY c.ClasificacionId DESC),'NoIdentificado') Categoria,
             CONVERT(varchar(64),HASHBYTES('SHA2_256',CONCAT(CONVERT(char(10),m.FechaMovimiento,126),'|',
                 m.Importe,'|',m.MonedaCodigo,'|',i.CuentaBanco,'|',m.DescripcionOriginal,'|',m.ReferenciaExterna)),2) Huella,
             r.ConciliacionId,r.Huella HuellaAnterior
@@ -61,18 +62,20 @@ public sealed partial class ConciliacionBancariaService
         if(f.Estado is not ("Pendientes" or "Conciliados" or "Todos") || f.Buscar.Length>150 || f.PaginaAlfa<1 || f.PaginaBanco<1
             || f.Sentido is not ("Todos" or "Ingresos" or "Egresos")
             || f.ImporteDesde<0 || f.ImporteHasta<0 || f.ImporteDesde>f.ImporteHasta
+            || (f.Categoria.Length>0 && (!Enum.TryParse<ConciliacionBancaria.Domain.Enums.MovementCategory>(f.Categoria,out var categoria)||!Enum.IsDefined(categoria)))
+            || f.TamanoPagina is not (50 or 100)
             || !OrdenesBanco.ContainsKey(f.OrdenBanco) || !OrdenesAlfa.ContainsKey(f.OrdenAlfa))
             throw new InvalidOperationException("Revisá los filtros y la página de comparación.");
     }
     private static readonly IReadOnlyDictionary<string,string> OrdenesBanco=new Dictionary<string,string> {
-        ["Fecha"]="Fecha",["Referencia"]="Referencia",["Detalle"]="Detalle",["Importe"]="Importe",["Estado"]="ConciliacionId" };
+        ["Fecha"]="Fecha",["Referencia"]="Referencia",["Detalle"]="Detalle",["Categoria"]="Categoria",["Importe"]="Importe",["Estado"]="ConciliacionId" };
     private static readonly IReadOnlyDictionary<string,string> OrdenesAlfa=new Dictionary<string,string> {
         ["Fecha"]="Fecha",["Comprobante"]="Comprobante",["Detalle"]="Detalle",["Referencia"]="Referencia",["Importe"]="Importe",["Estado"]="ConciliacionId" };
     private object ArgumentosComparacion(ConciliacionCompararFiltro f) => new {
         cuenta=f.Cuenta.Trim(),desde=f.Desde.Date,hasta=f.Hasta.Date,usuario=users.GetCurrentUserName(),
         estado=f.Estado,texto=f.Buscar.Trim(),patron="%"+f.Buscar.Trim().Replace("[","[[]").Replace("%","[%]").Replace("_","[_]")+"%",
-        sentido=f.Sentido,minimo=f.ImporteDesde,maximo=f.ImporteHasta,
-        skipBanco=checked((f.PaginaBanco-1)*50),skipAlfa=checked((f.PaginaAlfa-1)*50) };
+        sentido=f.Sentido,minimo=f.ImporteDesde,maximo=f.ImporteHasta,categoria=f.Categoria,tamano=f.TamanoPagina,
+        skipBanco=checked((f.PaginaBanco-1)*f.TamanoPagina),skipAlfa=checked((f.PaginaAlfa-1)*f.TamanoPagina) };
 
     public Task<ConciliacionComparacion> CompararAsync(ConciliacionCompararFiltro filtro,CancellationToken ct=default)
         => Ejecutar("CompararBanco",(cn,token)=>CompararEnConexionAsync(cn,null,filtro,token),ct);
@@ -88,6 +91,7 @@ public sealed partial class ConciliacionBancariaService
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(CompararBaseSql+$$"""
                 SELECT * INTO #FB FROM #Banco WHERE (@estado='Todos' OR (@estado='Pendientes' AND ConciliacionId IS NULL)
                     OR (@estado='Conciliados' AND ConciliacionId IS NOT NULL))
+                    AND (@categoria='' OR Categoria=@categoria)
                     AND (@sentido='Todos' OR (@sentido='Ingresos' AND Importe>0) OR (@sentido='Egresos' AND Importe<0))
                     AND (@minimo IS NULL OR ABS(Importe)>=@minimo) AND (@maximo IS NULL OR ABS(Importe)<=@maximo)
                     AND (@texto='' OR CONCAT(Detalle,' ',Referencia,' ',Importe,' ',CONVERT(char(10),Fecha,103)) LIKE @patron);
@@ -98,10 +102,10 @@ public sealed partial class ConciliacionBancariaService
                     AND (@texto='' OR CONCAT(Detalle,' ',Referencia,' ',Comprobante,' ',Importe,' ',CONVERT(char(10),Fecha,103)) LIKE @patron);
                 SELECT (SELECT COUNT(*) FROM #FB) Banco,(SELECT COUNT(*) FROM #FA) Alfa,
                     ISNULL((SELECT SUM(Importe) FROM #Banco),0) TotalBanco,ISNULL((SELECT SUM(Importe) FROM #Alfa WHERE Moneda='1'),0) TotalAlfa,@dias Dias,@tolerancia Tolerancia,@compararFecha CompararFecha,@compararReferencia CompararReferencia;
-                SELECT * INTO #PaginaBanco FROM #FB ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC OFFSET @skipBanco ROWS FETCH NEXT 50 ROWS ONLY;
+                SELECT * INTO #PaginaBanco FROM #FB ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC OFFSET @skipBanco ROWS FETCH NEXT @tamano ROWS ONLY;
                 SELECT * FROM #PaginaBanco ORDER BY {{OrdenesBanco[filtro.OrdenBanco]}} {{(filtro.DescBanco ? "DESC" : "ASC")}},Id DESC;
                 SELECT * FROM #FA ORDER BY {{OrdenesAlfa[filtro.OrdenAlfa]}} {{(filtro.DescAlfa ? "DESC" : "ASC")}},Periodo DESC,Mes DESC,Asiento DESC,TipoRegistro,Secuencia
-                    OFFSET @skipAlfa ROWS FETCH NEXT 50 ROWS ONLY;
+                    OFFSET @skipAlfa ROWS FETCH NEXT @tamano ROWS ONLY;
                 SELECT b.Id MovimientoId,s.* FROM #PaginaBanco b CROSS APPLY(SELECT TOP(1) a.*,COUNT(*) OVER() Candidatos
                     FROM #Alfa a WHERE a.ConciliacionId IS NULL AND a.Legacy=0 AND a.Moneda='1'
                         AND ABS(a.Importe-b.Importe)<=@tolerancia AND SIGN(a.Importe)=SIGN(b.Importe) AND b.Importe<>0

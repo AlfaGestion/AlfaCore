@@ -2,6 +2,16 @@
 
 Ingresá a **Caja y Bancos → Conciliación bancaria inteligente** con la empresa y base donde querés trabajar.
 
+## Asistir con IA
+
+En **Conciliar cuenta**, elegí cuenta y período, aplicá los filtros y pulsá **Asistir con IA** (estrellas). Analiza los pendientes del resultado completo, incluidas otras páginas. Reutiliza primero las coincidencias únicas por reglas y consulta IA para los restantes. Puede proponer uno o varios movimientos de cada lado y explicar la relación. No modifica movimientos durante el análisis.
+
+Revisá fechas, conceptos, comprobantes, totales y diferencias. Seleccioná las propuestas que correspondan; inicialmente ninguna queda marcada. Podés seleccionar hasta 100 y confirmarlas juntas. Si tienen diferencias dentro de la tolerancia, debés aceptarlas e ingresar un motivo. Si algún movimiento cambió o ya se concilió, se rechaza la confirmación del lote completo para revisarlo. El análisis, su modelo, motivos y las propuestas quedan registrados.
+
+La confianza Alta/Media/Baja es una orientación del asistente. Los controles del sistema descartan importes, monedas, fechas o referencias incompatibles, índices inexistentes y propuestas que reutilicen movimientos. También puede recomendar clasificación y cuenta para pendientes sin contrapartida. **Revisar asiento sugerido** abre el editor con la cuenta propuesta cuando el movimiento admite generar un CC; revisalo y confirmalo por el circuito de asientos habitual. La clasificación y los conceptos guardados no cambian automáticamente.
+
+El análisis admite inicialmente hasta 300 pendientes por lista. Si se supera el límite, acotá el período o la clasificación; no se envía una muestra parcial. Durante la consulta podés pulsar **Cancelar análisis**. La conexión y modelo se toman de la IA configurada en el servidor de AlfaCore. Se envían al proveedor las descripciones, fechas, referencias e importes de los pendientes autorizados y las cuentas contables elegibles; el consumo queda identificado como conciliación bancaria.
+
 1. Elegí el archivo descargado del banco en **Archivo Excel o CSV**. Se admiten `.xlsx`, `.xls` y `.csv`, de hasta 20 MB.
 2. El sistema detecta Provincia, Santander o Mercado Pago por el contenido. El selector **Formato del extracto** aparece solo si no se reconoce el formato y se oculta al procesarlo correctamente; el archivo permanece seleccionado.
 3. El sistema propone la cuenta bancaria cuando hay una coincidencia clara con el banco detectado. Si hay varias cuentas posibles, seleccioná la que corresponde al extracto. Podés corregir la cuenta sugerida; se muestran las cuentas activas del plan de cuentas con medio de pago `DB`.
@@ -163,3 +173,24 @@ En **Conciliar cuenta → Criterios de propuestas** podés definir la tolerancia
 Una transferencia de $1.426.402,00 puede proponerse contra un asiento de $1.426.402,22 con tolerancia $1. La ventana muestra ambos importes y la diferencia. Si la diferencia está dentro de la tolerancia, podés marcar **Acepto conciliar con esta diferencia** e ingresar un motivo para confirmar. En los lotes, la aceptación y el motivo se aplican a los pares seleccionados con diferencia. Los importes originales se conservan y no se genera un asiento de ajuste. El historial muestra la diferencia, la tolerancia utilizada y el motivo original, incluso después de desconciliar.
 
 La lupa y el embudo de la barra superior permiten buscar y cambiar cuenta, período, estado, ingresos/egresos e importes con el mismo filtro estándar del resto de Caja y Bancos. Pulsá Aplicar o Comparar para consultar. Las filas de cada lista se desplazan conservando sus encabezados y controles.
+
+En ese filtro también podés elegir **Clasificación del extracto** y **50 o 100 registros por página** para cada lista. La clasificación filtra únicamente el banco: Alfa conserva sus movimientos para que puedas encontrar la contrapartida. Ordená haciendo clic en el título de cada columna; otro clic invierte el sentido, indicado por la flecha. Fecha/referencia y fecha/comprobante tienen títulos independientes para ordenar por cada dato. El orden se aplica a todo el resultado, no solo a las filas de la página actual.
+
+Los títulos Banco/Alfa, los encabezados de columnas y los pies de página permanecen visibles al desplazar las filas. **Criterios y alcance** despliega la información secundaria del período. Para generar un asiento, seleccioná un único movimiento bancario pendiente y usá **Generar asiento** en la barra de selección; también aparece en las filas aptas. Si ya está registrado o corresponde a Cobranza/TransferenciaInterna, se utiliza su circuito específico.
+
+Las acciones de cada fila del banco se muestran como iconos compactos: vínculo para revisar una propuesta, asiento para generar un CC e historial. Al apoyar el mouse aparece el nombre de la acción. La barra de selección mantiene **Generar asiento** con texto.
+
+
+## Generar asientos desde los movimientos del banco
+
+Primero abrí **Cuentas para asientos** en la barra superior. Agregá un concepto, elegí su clasificación y cuenta de contrapartida; opcionalmente indicá banco, texto a reconocer y detalle predeterminado. Guardá la configuración. Los cambios se comparten con los usuarios de esta base.
+
+Si todavía no hay conceptos, se precarga una **propuesta inicial según el plan de cuentas**: gastos bancarios, intereses y retenciones bancarias de IIBB cuando existen cuentas específicas sin ambigüedad. Podés corregir, quitar o agregar conceptos antes de guardar. Se activan al pulsar **Guardar cuentas y conceptos**; cancelar no modifica nada. Si ya tenés conceptos guardados, se conservan. Los impuestos sin una cuenta específica y los gastos sin concepto reconocido requieren imputación manual.
+
+En **Revisión de movimientos**, en su detalle o en **Conciliar cuenta**, elegí **Generar asiento** para un movimiento pendiente. Revisá concepto, fecha, unidad de negocio y talonario CC. La cuenta bancaria y su importe provienen del extracto. Podés cambiar la contrapartida, editar el detalle y agregar renglones para distribuir el importe. La vista previa muestra Debe y Haber; la diferencia por distribuir debe quedar en cero.
+
+Si aparecen registraciones parecidas, revisalas antes de marcar que corresponde generar un asiento nuevo. Al confirmar se genera el comprobante contable CC y se concilia el movimiento en la misma operación. Se informa el número de CC, el asiento y el vínculo de conciliación. La caja corresponde al usuario que graba.
+
+Este editor registra gastos, comisiones, impuestos, ajustes e ingresos contables. Cobranzas y transferencias entre bancos mantienen sus circuitos específicos. Distribuir entre cuentas no crea un comprobante fiscal ni registra IVA automáticamente.
+
+Desconciliar conserva el asiento. Para volver a vincularlo, usá la comparación: el sistema impide generar un segundo asiento para el mismo movimiento. Si todavía no hay conceptos configurados, podés imputar manualmente seleccionando las cuentas en el editor.

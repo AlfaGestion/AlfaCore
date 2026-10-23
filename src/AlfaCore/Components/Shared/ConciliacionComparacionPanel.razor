@@ -10,14 +10,17 @@
         <div><h2>Conciliar cuenta bancaria</h2><small>Todas las importaciones · Movimientos de la cuenta contable en Alfa</small></div>
         <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>_configurar=true" Disabled="@_busy">Criterios de propuestas</AlfaButton>
         <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="AplicarBusqueda" Disabled="@_busy">Comparar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-stars" OnClick="AnalizarConIa" Disabled="@(_busy||_aplicado is null||FiltrosModificados)">Asistir con IA</AlfaButton>
     </div>
     <AlfaFeedbackPanel Message="@_feedback" />
     @if (_busy) { <p role="status">Procesando conciliación…</p> }
     @if (_datos is { } datos && _aplicado is { } filtro)
     {
-        <p>Cuenta <strong>@filtro.Cuenta</strong> · @filtro.Desde.ToString("dd/MM/yyyy") al @filtro.Hasta.ToString("dd/MM/yyyy") · Pesos · Todas las importaciones de esta cuenta</p>
-        <p>Movimientos del período: banco <strong>@Dinero(datos.Resumen.TotalBanco)</strong> · Alfa <strong>@Dinero(datos.Resumen.TotalAlfa)</strong> · Diferencia <strong>@Dinero(datos.Resumen.TotalBanco-datos.Resumen.TotalAlfa)</strong>.</p>
-        <small class="conciliacion-comparacion__criterios">Tolerancia: @Dinero(datos.Resumen.Tolerancia) · Fechas: @(datos.Resumen.CompararFecha ? $"±{datos.Resumen.Dias} días" : "todo el período") · Referencia: @(datos.Resumen.CompararReferencia ? "debe coincidir" : "opcional"). Totales sin saldo inicial; las propuestas requieren revisión.</small>
+        <div class="conciliacion-comparacion__resumen">
+            <span>Cuenta <strong>@filtro.Cuenta</strong> · @filtro.Desde.ToString("dd/MM/yyyy") al @filtro.Hasta.ToString("dd/MM/yyyy")</span>
+            <span>Banco <strong>@Dinero(datos.Resumen.TotalBanco)</strong> · Alfa <strong>@Dinero(datos.Resumen.TotalAlfa)</strong> · Diferencia <strong>@Dinero(datos.Resumen.TotalBanco-datos.Resumen.TotalAlfa)</strong></span>
+            <details><summary>Criterios y alcance</summary><small>Todas las importaciones de la cuenta · Pesos · Totales del período sin saldo inicial, anteriores a los filtros. Clasificación: @(filtro.Categoria.Length==0 ? "Todas" : filtro.Categoria) (solo extracto). Tolerancia: @Dinero(datos.Resumen.Tolerancia) · Fechas: @(datos.Resumen.CompararFecha ? $"±{datos.Resumen.Dias} días" : "todo el período") · Referencia: @(datos.Resumen.CompararReferencia ? "debe coincidir" : "opcional"). Las propuestas requieren revisión.</small></details>
+        </div>
         @if (FiltrosModificados) { <p role="status">Hay filtros modificados. Pulsá Comparar para aplicarlos antes de seleccionar movimientos.</p> }
         <div class="conciliacion-comparacion__seleccion">
             <span><strong>@datos.Propuestas.Count coincidencias únicas</strong> en todo el resultado filtrado, incluidas otras páginas.</span>
@@ -29,50 +32,49 @@
             <span>Diferencia: <strong>@Dinero(TotalBanco-TotalAlfa)</strong></span>
             <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(!PuedePrepararConciliacion)" OnClick="()=>_confirmar=true">Conciliar selección</AlfaButton>
             <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="LimpiarSeleccion">Limpiar selección</AlfaButton>
+            @if(OnGenerarAsiento.HasDelegate) {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-journal-plus" Disabled="@(_busy||FiltrosModificados||_banco.Count!=1||!EsGenerable(_banco.Values.FirstOrDefault()))" OnClick="()=>OnGenerarAsiento.InvokeAsync(_banco.Values.Single().Id)">Generar asiento</AlfaButton>
+                @if(_banco.Count==1&&!EsGenerable(_banco.Values.First())) { <small>Generar asiento requiere un movimiento pendiente de registración, de gasto, impuesto u otro concepto contable. Cobranzas y transferencias usan su circuito.</small> }
+            }
         </div>
         <div class="conciliacion-comparacion__listas">
             <section class="conciliacion-comparacion__lista" aria-label="Movimientos del banco">
-                <h3>Banco · extractos importados</h3>
-                <div class="conciliacion-comparacion__orden">
-                    <AlfaSelect Label="Ordenar banco por" Value="@filtro.OrdenBanco" ValueChanged="v=>Ordenar(true,v ?? string.Empty)" Options="@OrdenBanco" Disabled="@(_busy||FiltrosModificados)" />
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="()=>InvertirOrden(true)" Disabled="@(_busy||FiltrosModificados)">@(filtro.DescBanco ? "Descendente ↓" : "Ascendente ↑")</AlfaButton>
-                </div>
+                <h3>Banco · extractos importados <small>@datos.Resumen.Banco registros · @filtro.TamanoPagina por página</small></h3>
                 <div class="conciliacion-comparacion__scroll"><table>
-                    <thead><tr><th>Elegir</th><th>Fecha / referencia</th><th>Descripción</th><th>Importe</th><th>Estado / acciones</th></tr></thead>
+                    <thead><tr><th>Elegir</th><th><div class="conciliacion-comparacion__titulos">@TituloOrden(true,"Fecha","Fecha")@TituloOrden(true,"Referencia","Referencia")</div></th><th>@TituloOrden(true,"Detalle","Descripción")</th><th>@TituloOrden(true,"Categoria","Clasificación")</th><th>@TituloOrden(true,"Importe","Importe")</th><th>@TituloOrden(true,"Estado","Estado")</th></tr></thead>
                     <tbody>@foreach(var b in datos.Banco)
                     {
                         <tr class="@(_banco.ContainsKey(b.Id) ? "is-selected" : null)">
                             <td><AlfaCheckbox Value="@_banco.ContainsKey(b.Id)" ValueChanged="v=>ElegirBanco(b,v==true)" Disabled="@(_busy||FiltrosModificados||b.ConciliacionId.HasValue)"><span class="visually-hidden">Seleccionar #@b.Id</span></AlfaCheckbox></td>
-                            <td>@b.Fecha.ToString("dd/MM/yyyy")<br />@b.Referencia</td><td>@b.Detalle</td><td class="numero">@Dinero(b.Importe)</td>
+                            <td>@b.Fecha.ToString("dd/MM/yyyy")<br />@b.Referencia</td><td>@b.Detalle</td><td>@b.Categoria</td><td class="numero">@Dinero(b.Importe)</td>
                             <td>@(b.ConciliacionId.HasValue ? $"Conciliado #{b.ConciliacionId}" : "Pendiente")
                                 @if(b.Alterado) { <strong>Datos modificados: revisar</strong> }
                                 <small>Registración: @b.Registracion</small>
+                                <div class="conciliacion-comparacion__acciones">
                                 @if(datos.Sugerencias.FirstOrDefault(s=>s.MovimientoId==b.Id) is { } s)
                                 {
-                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>UsarSugerencia(b,s)">
-                                        Proponer @s.Asiento.Comprobante · @s.Candidatos candidato(s)
-                                    </AlfaButton>
+                                    <AlfaIconButton Icon="bi bi-link-45deg" Label="@($"Proponer {s.Asiento.Comprobante} · {s.Candidatos} candidato(s)")" Size="AlfaSize.Sm" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>UsarSugerencia(b,s)" />
                                 }
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>Historial(b.Id)">Historial</AlfaButton>
+                                @if(OnGenerarAsiento.HasDelegate&&EsGenerable(b)) {
+                                    <AlfaIconButton Icon="bi bi-journal-plus" Label="Generar asiento" Size="AlfaSize.Sm" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>OnGenerarAsiento.InvokeAsync(b.Id)" />
+                                }
+                                <AlfaIconButton Icon="bi bi-clock-history" Label="Historial de conciliación" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>Historial(b.Id)" />
+                                </div>
                             </td>
                         </tr>
                     }</tbody>
                 </table></div>
                 @if(datos.Banco.Count==0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos del banco" Message="Revisá la cuenta, las fechas, los filtros o importá el extracto correspondiente." /> }
                 <footer class="alfa-data-view-footer">
-                    <span>@datos.Resumen.Banco registros · Página @filtro.PaginaBanco · 50 por página</span>
+                    <span>@datos.Resumen.Banco registros · Página @filtro.PaginaBanco · @filtro.TamanoPagina por página</span>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaBanco==1)" OnClick="()=>Paginar(true,-1)">Anterior banco</AlfaButton>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaBanco*50>=datos.Resumen.Banco)" OnClick="()=>Paginar(true,1)">Siguiente banco</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||(long)filtro.PaginaBanco*filtro.TamanoPagina>=datos.Resumen.Banco)" OnClick="()=>Paginar(true,1)">Siguiente banco</AlfaButton>
                 </footer>
             </section>
             <section class="conciliacion-comparacion__lista" aria-label="Movimientos registrados en Alfa">
-                <h3>Alfa · cuenta bancaria contable</h3>
-                <div class="conciliacion-comparacion__orden">
-                    <AlfaSelect Label="Ordenar Alfa por" Value="@filtro.OrdenAlfa" ValueChanged="v=>Ordenar(false,v ?? string.Empty)" Options="@OrdenAlfa" Disabled="@(_busy||FiltrosModificados)" />
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="()=>InvertirOrden(false)" Disabled="@(_busy||FiltrosModificados)">@(filtro.DescAlfa ? "Descendente ↓" : "Ascendente ↑")</AlfaButton>
-                </div>
+                <h3>Alfa · cuenta bancaria contable <small>@datos.Resumen.Alfa registros · @filtro.TamanoPagina por página</small></h3>
                 <div class="conciliacion-comparacion__scroll"><table>
-                    <thead><tr><th>Elegir</th><th>Fecha / comprobante</th><th>Detalle</th><th>Importe</th><th>Conciliación</th></tr></thead>
+                    <thead><tr><th>Elegir</th><th><div class="conciliacion-comparacion__titulos">@TituloOrden(false,"Fecha","Fecha")@TituloOrden(false,"Comprobante","Comprobante")</div></th><th><div class="conciliacion-comparacion__titulos">@TituloOrden(false,"Detalle","Detalle")@TituloOrden(false,"Referencia","Referencia")</div></th><th>@TituloOrden(false,"Importe","Importe")</th><th>@TituloOrden(false,"Estado","Conciliación")</th></tr></thead>
                     <tbody>@foreach(var a in datos.Alfa)
                     {
                         <tr class="@(_alfa.ContainsKey(a.Clave) ? "is-selected" : null)">
@@ -88,15 +90,17 @@
                 </table></div>
                 @if(datos.Alfa.Count==0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos de Alfa" Message="No hay registros para estos filtros y las unidades autorizadas." /> }
                 <footer class="alfa-data-view-footer">
-                    <span>@datos.Resumen.Alfa registros · Página @filtro.PaginaAlfa · 50 por página</span>
+                    <span>@datos.Resumen.Alfa registros · Página @filtro.PaginaAlfa · @filtro.TamanoPagina por página</span>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaAlfa==1)" OnClick="()=>Paginar(false,-1)">Anterior Alfa</AlfaButton>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||filtro.PaginaAlfa*50>=datos.Resumen.Alfa)" OnClick="()=>Paginar(false,1)">Siguiente Alfa</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||FiltrosModificados||(long)filtro.PaginaAlfa*filtro.TamanoPagina>=datos.Resumen.Alfa)" OnClick="()=>Paginar(false,1)">Siguiente Alfa</AlfaButton>
                 </footer>
             </section>
         </div>
     }
     else if(!_busy) { <AlfaEmptyState Title="Comparar banco y Alfa" Message="Elegí la cuenta bancaria y el período. Podés vincular uno o varios movimientos de cada lado por el mismo total." /> }
 </section>
+
+<ConciliacionIaDialog Open="_iaAbierta" Busy="_busy" CanCancel="_iaAnalizando" Resultado="_iaResultado" Feedback="_feedback" OnClose="CerrarIa" OnConfirm="ConfirmarIa" OnGenerarAsiento="RevisarAsientoIa" />
 
 <AlfaDialog Open="@_configurar" Title="Criterios de propuestas de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_configurar=false">
     <ChildContent>
@@ -187,6 +191,8 @@
 
 @code {
     [Parameter] public string? CuentaInicial { get; set; }
+    [Parameter] public EventCallback<long> OnGenerarAsiento { get; set; }
+    [Parameter] public EventCallback<ConciliacionIaOrientacion> OnAsientoIa { get; set; }
     [Parameter] public EventCallback<RenderFragment> SearchChanged { get; set; }
     private readonly ConciliacionBusqueda _fechas=new();
     private ConciliacionCriterios _criterios=new();
@@ -206,14 +212,35 @@
         _feedback=AppUiMessage.Success("Criterios guardados","Se aplicarán a las propuestas de esta base de datos.");
     });
     private readonly CancellationTokenSource _lifetime=new();
+    private CancellationTokenSource? _iaCancel;
+    private bool _iaAbierta;
+    private bool _iaAnalizando;
+    private ConciliacionIaResultado? _iaResultado;
+    private Task AnalizarConIa()=>Ejecutar(async()=>{
+        if(_aplicado is not { } f||FiltrosModificados)return;
+        _iaCancel?.Dispose();_iaCancel=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _iaResultado=null;_iaAbierta=true;_iaAnalizando=true;await InvokeAsync(StateHasChanged);
+        try { _iaResultado=await Servicio.AnalizarIaAsync(f,_iaCancel.Token); }
+        finally { _iaAnalizando=false; }
+    });
+    private void CerrarIa() { if(_busy&&!_iaAnalizando)return;_iaCancel?.Cancel();_iaAbierta=false; }
+    private Task ConfirmarIa((IReadOnlyList<Guid> Elegidas,bool Aceptar,string Motivo) seleccion)=>Ejecutar(async()=>{
+        if(_iaResultado is not { } r||_aplicado is not { } f||FiltrosModificados)return;
+        var ids=await Servicio.ConfirmarIaAsync(r.Id,seleccion.Elegidas,seleccion.Aceptar,seleccion.Motivo,_lifetime.Token);
+        _iaAbierta=false;LimpiarSeleccion();await Cargar(f);
+        _feedback=AppUiMessage.Success("Conciliaciones confirmadas",$"Se confirmaron {ids.Count} propuestas. El análisis y sus motivos quedan registrados.");
+    });
+    private async Task RevisarAsientoIa(ConciliacionIaOrientacion orientacion) {
+        _iaAbierta=false;
+        if(OnAsientoIa.HasDelegate)await OnAsientoIa.InvokeAsync(orientacion);
+        else if(OnGenerarAsiento.HasDelegate)await OnGenerarAsiento.InvokeAsync(orientacion.Banco.Id);
+    }
     private bool _busy,_disposed,_confirmar,_verHistorial,_propuestasAbiertas;
     private string _sentido { get=>_fechas.Sentido;set=>_fechas.Sentido=value; }
     private string _minimo { get=>_fechas.Minimo;set=>_fechas.Minimo=value; }
     private string _maximo { get=>_fechas.Maximo;set=>_fechas.Maximo=value; }
     private readonly Dictionary<long,ConciliacionVincularSolicitud> _pares=[];
     private static readonly IReadOnlyList<AlfaSelectOption> Sentidos=[new("Todos","Todos"),new("Ingresos","Ingresos"),new("Egresos","Egresos")];
-    private static readonly IReadOnlyList<AlfaSelectOption> OrdenBanco=[new("Fecha","Fecha"),new("Referencia","Referencia"),new("Detalle","Descripción"),new("Importe","Importe"),new("Estado","Conciliación")];
-    private static readonly IReadOnlyList<AlfaSelectOption> OrdenAlfa=[new("Fecha","Fecha"),new("Comprobante","Comprobante"),new("Detalle","Detalle"),new("Referencia","Referencia"),new("Importe","Importe"),new("Estado","Conciliación")];
     private string _cuenta { get=>_fechas.Cuenta;set=>_fechas.Cuenta=value; }
     private string _estado { get=>_fechas.Estado;set=>_fechas.Estado=value; }
     private string _buscar { get=>_fechas.Buscar;set=>_fechas.Buscar=value; }
@@ -230,9 +257,10 @@
     private ConciliacionVinculoDetalle? _vinculo;
     private long? _historialMovimiento;
     private Guid _operacion=Guid.NewGuid();
+    private static bool EsGenerable(ConciliacionFilaBanco? b)=>b is not null&&!b.ConciliacionId.HasValue&&b.Importe!=0&&b.Registracion is not ("Cobrado" or "Registrado")&&b.Categoria is not ("Cobranza" or "TransferenciaInterna");
     private decimal TotalBanco=>_banco.Values.Sum(b=>b.Importe);
     private decimal TotalAlfa=>_alfa.Values.Sum(a=>a.Importe);
-    private bool FiltrosModificados=>_aplicado is { } f && (f.Cuenta!=_cuenta||f.Desde.ToString("yyyy-MM-dd")!=_desde||f.Hasta.ToString("yyyy-MM-dd")!=_hasta||f.Estado!=_estado||f.Buscar!=_buscar||f.Desde.Date!=_fechas.FechaDesde?.Date||f.Hasta.Date!=_fechas.FechaHasta?.Date||f.Sentido!=_sentido||f.ImporteDesde!=Numero(_minimo)||f.ImporteHasta!=Numero(_maximo));
+    private bool FiltrosModificados=>_aplicado is { } f && (f.Cuenta!=_cuenta||f.Desde.ToString("yyyy-MM-dd")!=_desde||f.Hasta.ToString("yyyy-MM-dd")!=_hasta||f.Estado!=_estado||f.Buscar!=_buscar||f.Desde.Date!=_fechas.FechaDesde?.Date||f.Hasta.Date!=_fechas.FechaHasta?.Date||f.Sentido!=_sentido||f.ImporteDesde!=Numero(_minimo)||f.ImporteHasta!=Numero(_maximo)||f.Categoria!=_fechas.Categoria||f.TamanoPagina!=_fechas.TamanoPagina);
     private bool PuedePrepararConciliacion=>!_busy&&!FiltrosModificados&&_banco.Count is >0 and <=100&&_alfa.Count is >0 and <=100&&TotalBanco!=0&&Math.Abs(TotalBanco-TotalAlfa)<=(_datos?.Resumen.Tolerancia ?? 0)
         &&_banco.Values.All(b=>Math.Sign(b.Importe)==Math.Sign(TotalBanco))&&_alfa.Values.All(a=>Math.Sign(a.Importe)==Math.Sign(TotalBanco));
     private bool PuedeConciliar=>PuedePrepararConciliacion&&(TotalBanco==TotalAlfa||(_aceptarDiferencia&&_motivoDiferencia.Trim().Length is >=3 and <=300));
@@ -252,18 +280,20 @@
         { _feedback=AppUiMessage.Error("Fechas inválidas","Ingresá las fechas desde y hasta.");return; }
         if((!string.IsNullOrWhiteSpace(_minimo)&&Numero(_minimo) is null)||(!string.IsNullOrWhiteSpace(_maximo)&&Numero(_maximo) is null))
         { _feedback=AppUiMessage.Error("Importes inválidos","Ingresá importes numéricos.");return; }
-        await Cargar(new(_cuenta,desde,hasta,_estado,_buscar,Sentido:_sentido,ImporteDesde:Numero(_minimo),ImporteHasta:Numero(_maximo)));LimpiarSeleccion();
+        await Cargar(new(_cuenta,desde,hasta,_estado,_buscar,Sentido:_sentido,ImporteDesde:Numero(_minimo),ImporteHasta:Numero(_maximo),Categoria:_fechas.Categoria,TamanoPagina:_fechas.TamanoPagina));LimpiarSeleccion();
     });
     private static decimal? Numero(string valor)=>decimal.TryParse(valor,NumberStyles.AllowDecimalPoint|NumberStyles.AllowLeadingSign,CultureInfo.InvariantCulture,out var n) ? n : null;
     private Task LimpiarFiltros() { _buscar="";_sentido="Todos";_minimo=_maximo="";_estado="Pendientes";return Consultar(); }
     private Task Ordenar(bool banco,string columna)=>Ejecutar(async()=>{
-        if(_aplicado is not { } f)return;
-        await Cargar(banco ? f with{OrdenBanco=columna,PaginaBanco=1} : f with{OrdenAlfa=columna,PaginaAlfa=1});
+        if(_aplicado is not { } f||FiltrosModificados)return;
+        await Cargar(banco ? f with{OrdenBanco=columna,DescBanco=f.OrdenBanco==columna ? !f.DescBanco : false,PaginaBanco=1}
+            : f with{OrdenAlfa=columna,DescAlfa=f.OrdenAlfa==columna ? !f.DescAlfa : false,PaginaAlfa=1});
     });
-    private Task InvertirOrden(bool banco)=>Ejecutar(async()=>{
-        if(_aplicado is not { } f)return;
-        await Cargar(banco ? f with{DescBanco=!f.DescBanco,PaginaBanco=1} : f with{DescAlfa=!f.DescAlfa,PaginaAlfa=1});
-    });
+    private RenderFragment TituloOrden(bool banco,string columna,string titulo)=>@<AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Class="conciliacion-orden-titulo" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>Ordenar(banco,columna)"><span class="visually-hidden">Ordenar @(banco ? "banco" : "Alfa") por </span>@titulo @FlechaOrden(banco,columna)</AlfaButton>;
+    private string FlechaOrden(bool banco,string columna) {
+        if(_aplicado is not { } f)return "↕";
+        return (banco ? f.OrdenBanco : f.OrdenAlfa)==columna ? ((banco ? f.DescBanco : f.DescAlfa) ? "↓" : "↑") : "↕";
+    }
     private void AbrirPropuestas()
     {
         _pares.Clear();_aceptarLote=false;_motivoLote="";
@@ -334,5 +364,5 @@
         finally { _busy=false;if(!_disposed) { if(SearchChanged.HasDelegate)await SearchChanged.InvokeAsync(RenderSearch());await InvokeAsync(StateHasChanged); } }
     }
     private static string Dinero(decimal valor)=>valor.ToString(valor==decimal.Round(valor,2) ? "N2" : "N4",CultureInfo.GetCultureInfo("es-AR"));
-    public void Dispose() { _disposed=true;_lifetime.Cancel();_lifetime.Dispose(); }
+    public void Dispose() { _disposed=true;_iaCancel?.Cancel();_iaCancel?.Dispose();_lifetime.Cancel();_lifetime.Dispose(); }
 }
