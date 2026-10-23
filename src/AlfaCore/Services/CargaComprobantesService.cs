@@ -33,7 +33,7 @@ public sealed class CargaComprobantesService(
         => ExecuteAsync<IReadOnlyList<CargaComprobantesOpcionFiltro>>("ClientesDirecta", async (cn, ctx, token) =>
         {
             var busqueda = texto.Trim();
-            if (busqueda.Length < 2) return [];
+            if (busqueda.Length < 1) return []; // como en Alfa, con una letra ya busca (2026-10-22)
             static string Literal(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
             var documento = new string(busqueda.Where(char.IsAsciiDigit).ToArray());
             return (await cn.QueryAsync<CargaComprobantesOpcionFiltro>(new CommandDefinition("""
@@ -43,9 +43,10 @@ public sealed class CargaComprobantesService(
                      OR NUMERO_DOCUMENTO LIKE @Texto ESCAPE '\'
                      OR (@EsDocumento=1 AND REPLACE(REPLACE(REPLACE(NUMERO_DOCUMENTO,'-',''),'.',''),' ','') LIKE @Documento))
                 ORDER BY CASE WHEN LTRIM(RTRIM(CODIGO))=@Exacto OR
-                    (@EsDocumento=1 AND REPLACE(REPLACE(REPLACE(NUMERO_DOCUMENTO,'-',''),'.',''),' ','')=@DocumentoExacto) THEN 0 ELSE 1 END,
+                    (@EsDocumento=1 AND REPLACE(REPLACE(REPLACE(NUMERO_DOCUMENTO,'-',''),'.',''),' ','')=@DocumentoExacto) THEN 0
+                    WHEN RAZON_SOCIAL LIKE @Inicio ESCAPE '\' OR LTRIM(RTRIM(CODIGO)) LIKE @Inicio ESCAPE '\' THEN 1 ELSE 2 END,
                     RAZON_SOCIAL,CODIGO;
-                """, new { Texto = "%" + Literal(busqueda) + "%", Exacto = busqueda,
+                """, new { Texto = "%" + Literal(busqueda) + "%", Inicio = Literal(busqueda) + "%", Exacto = busqueda,
                     EsDocumento = documento.Length >= 2 && busqueda.All(c => char.IsAsciiDigit(c) || c is '-' or '.' or ' '),
                     Documento = "%" + documento + "%", DocumentoExacto = documento }, cancellationToken: token))).ToList();
         }, ct);
@@ -60,6 +61,21 @@ public sealed class CargaComprobantesService(
             var precios = new ArticuloPrecioResolverService();
             var pricing = await new CargaComprobantesSeleccionPrecios().ResolverAsync(cn, ctx.Usuario, directa, token);
             return await precios.SearchArticulosAsync(cn, pricing, texto, 30, token);
+        }, ct);
+
+    public Task<IReadOnlyDictionary<string, decimal>> GetStockArticulosAsync(IReadOnlyList<string> articulos, string? deposito, CancellationToken ct = default)
+        => ExecuteAsync<IReadOnlyDictionary<string, decimal>>("StockArticulosDirecta", async (cn, _, token) =>
+        {
+            var ids = articulos.Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(100).ToArray();
+            if (ids.Length == 0) return new Dictionary<string, decimal>();
+            var filas = await cn.QueryAsync<(string Articulo, decimal Stock)>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(s.IDArticulo)) Articulo, SUM(ISNULL(s.Cantidad,0)) Stock
+                FROM dbo.V_MV_STOCK s
+                WHERE LTRIM(RTRIM(s.IDArticulo)) IN @Ids AND ISNULL(s.Anulado,0)=0
+                    AND (@Deposito IS NULL OR LTRIM(RTRIM(s.IdDeposito))=@Deposito)
+                GROUP BY LTRIM(RTRIM(s.IDArticulo));
+                """, new { Ids = ids, Deposito = string.IsNullOrWhiteSpace(deposito) ? null : deposito.Trim() }, cancellationToken: token));
+            return filas.ToDictionary(x => x.Articulo, x => x.Stock, StringComparer.OrdinalIgnoreCase);
         }, ct);
 
     public Task<CargaComprobantesPlanGrabacion> ValidarDirectaAsync(CargaComprobantesDirecta directa, int talonario, CancellationToken ct = default)

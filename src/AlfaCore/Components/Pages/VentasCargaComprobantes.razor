@@ -58,12 +58,10 @@
     }
     else if (_origen is null)
     {
-        <section class="cc-intro">
-            <div><span class="cc-eyebrow">VENTAS · DOCUMENTOS DE ORIGEN</span><h2>Prepará tu próxima factura</h2>
-                <p>Elegí uno o varios pedidos o remitos compatibles y revisá las cantidades que quedan por facturar.</p></div>
+        @* Menos texto (2026-10-22): el título ya está en la barra y la nota de fechas en el panel de filtros. *@
+        <section class="cc-intro cc-intro--compacto">
             <span class="cc-status">Facturación de prueba · Homologación</span>
         </section>
-        <p class="cc-filter-note">Solo pedidos o remitos con saldo pendiente. Sin fechas, se consulta todo el historial. La zona corresponde a la asignación actual del cliente.</p>
         @if (_result?.Items.Count > 0)
         {
             <section class="cc-data-view" aria-label="Documentos pendientes" aria-busy="@_busy">
@@ -463,12 +461,15 @@
         Search = _origen is null && _contexto is not null ? new() : null,
         SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,
         Actions = _origen is null
-            ? [new() { Key = "cargar-seleccion", Label = $"Cargar selección ({_seleccionados.Count})", Icon = "bi-check2-square", Disabled = _busy || _seleccionados.Count == 0, OnClick = CargarSeleccionAsync },
-                new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary,
+            // Menos botones a la vista (2026-10-22): "Cargar selección" aparece al elegir pedidos/remitos y el resto va al menú "…".
+            ? [.. (_seleccionados.Count > 0
+                    ? new PageHeaderAction[] { new() { Key = "cargar-seleccion", Label = $"Cargar selección ({_seleccionados.Count})", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = CargarSeleccionAsync } }
+                    : []),
+                new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = _seleccionados.Count > 0 ? PageHeaderActionStyle.Secondary : PageHeaderActionStyle.Primary,
                     Disabled = _busy || _contexto is null, OnClick = () => { Navigation.NavigateTo(Navigation.Uri.Split('?')[0].TrimEnd('/') + "/nuevo" + new Uri(Navigation.Uri).Query); return Task.CompletedTask; } },
-                new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Disabled = _busy, OnClick = _contexto is null ? InicializarAsync : () => BuscarAsync(false) },
-                new() { Key = "historial", Label = "Comprobantes de prueba", Icon = "bi-clock-history", Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
-                new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Disabled = _busy || _contexto is null, OnClick = VerificarElectronicaAsync }]
+                new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = _contexto is null ? InicializarAsync : () => BuscarAsync(false) },
+                new() { Key = "historial", Label = "Comprobantes de prueba", Icon = "bi-clock-history", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
+                new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = VerificarElectronicaAsync }]
             : [new() { Key = "volver", Label = "Cambiar origen", Disabled = _busy, OnClick = VolverAsync },
                 new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Disabled = _busy, OnClick = VerificarElectronicaAsync },
                 new() { Key = "validar-grabacion", Label = "Validar grabación", Icon = "bi-check2-square", Disabled = _busy || _simulacion?.Liquidacion is null || _grabacion is not null || _intentoComercial, OnClick = ValidarGrabacionAsync },
@@ -506,7 +507,7 @@
                 }
                 @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
             </div>
-            <input type="search" aria-label="Buscar cliente o comprobante" placeholder="Cliente, cuenta o comprobante..."
+            <input @onfocus="() => { if (!_filtrosAbiertos) AlternarFiltros(); }" type="search" aria-label="Buscar cliente o comprobante" placeholder="Cliente, cuenta o comprobante..."
                 maxlength="100" value="@_filtro.Busqueda" disabled="@_busy" @oninput="e => _filtro.Busqueda = e.Value?.ToString() ?? string.Empty"
                 @onkeydown="TeclaBusquedaAsync" />
             <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"

@@ -40,9 +40,6 @@
                            @onkeydown="HandleBusquedaKeyAsync"
                            placeholder="Código, CUIT, nombre o teléfono..."
                            autocomplete="off" />
-                    <button class="qcm-search__btn" type="button" @onclick="() => BuscarAsync()" disabled="@_buscando">
-                        @(_buscando ? "Buscando..." : "Buscar")
-                    </button>
                 </div>
 
                 @if (!string.IsNullOrEmpty(_busquedaError))
@@ -63,9 +60,11 @@
                     else
                     {
                         <div class="qcm-results">
-                            @foreach (var r in _resultados)
+                            @for (var i = 0; i < _resultados.Count; i++)
                             {
-                                <button class="qcm-result" type="button" @onclick="() => SeleccionarAsync(r)">
+                                var r = _resultados[i]; var idx = i;
+                                <button class="qcm-result @(idx == _activo ? "is-active" : null)" type="button"
+                                        @onmouseenter="() => _activo = idx" @onclick="() => SeleccionarAsync(r)">
                                     <span class="qcm-result__code">@r.Codigo</span>
                                     <span class="qcm-result__name">@r.RazonSocial</span>
                                     @if (!string.IsNullOrWhiteSpace(r.Telefono))
@@ -79,7 +78,7 @@
                 }
                 else
                 {
-                    <p class="qcm-msg qcm-msg--hint">Escribí al menos 2 caracteres para buscar.</p>
+                    <p class="qcm-msg qcm-msg--hint">Escribí para buscar · ↑ ↓ para moverte · Enter para elegir.</p>
                 }
             </div>
         }
@@ -146,13 +145,9 @@
                     <div class="field qcm-col-2">
                         <div class="qcm-cuit-label-row">
                             <label>CUIT / DNI @RequiredMark(!_eventual)</label>
-                            <button type="button"
-                                    class="btn btn--ghost btn--sm qcm-cuit-search"
-                                    @onclick="ConsultarArcaAsync"
-                                    disabled="@(_arcaBuscando || StripNonNumeric(_nuevo.NumeroDocumento).Length != 11)">
-                                <i class="bi bi-cloud-search"></i>
-                                @(_arcaBuscando ? "Consultando..." : "Consultar ARCA")
-                            </button>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-cloud-search" Class="qcm-cuit-search"
+                                        Loading="@_arcaBuscando" Disabled="@(_arcaBuscando || StripNonNumeric(_nuevo.NumeroDocumento).Length != 11)"
+                                        OnClick="ConsultarArcaAsync">@(_arcaBuscando ? "Consultando..." : "Consultar ARCA")</AlfaButton>
                         </div>
                         <input @bind="_nuevo.NumeroDocumento"
                                @bind:event="oninput"
@@ -268,14 +263,9 @@
                 </div>
 
                 <div class="qcm-form__actions">
-                    <button class="btn btn--ghost" type="button" @onclick='() => CambiarVista("buscar")'>Cancelar</button>
-                    <button class="btn btn--primary" type="button" @onclick="GuardarAsync" disabled="@(_guardando || _cuitBuscando)">
-                        @if (_guardando)
-                        {
-                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                        }
-                        <span>@(_guardando ? "Guardando..." : (_eventual ? "Usar consumidor final" : "Guardar cliente"))</span>
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick='() => CambiarVista("buscar")'>Cancelar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Loading="@_guardando" Disabled="@(_guardando || _cuitBuscando)"
+                                OnClick="GuardarAsync">@(_guardando ? "Guardando..." : (_eventual ? "Usar consumidor final" : "Guardar cliente"))</AlfaButton>
                 </div>
             </div>
         }
@@ -296,6 +286,7 @@
     private bool _buscando;
     private CancellationTokenSource? _busquedaCts;
     private IReadOnlyList<CuentaComercialGridItemDto>? _resultados;
+    private int _activo;
     private CuentaComercialSaveRequest _nuevo = new();
     private CuentaComercialLookupDataDto? _lookupData;
     private bool _guardando;
@@ -548,7 +539,8 @@
         _busquedaCts = new CancellationTokenSource();
         var token = _busquedaCts.Token;
 
-        if (_busqueda.Trim().Length < 2)
+        // Busca desde la primera letra, mientras se escribe (2026-10-22).
+        if (_busqueda.Trim().Length < 1)
             return;
 
         try
@@ -578,7 +570,7 @@
                 CuentaComercialTipo.Cliente,
                 new CuentaComercialFilters { Texto = texto, Activo = null, PageSize = 30, PageNumber = 1 },
                 cancellationToken);
-            _resultados = result.Items;
+            _resultados = result.Items; _activo = 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -596,8 +588,17 @@
 
     private async Task HandleBusquedaKeyAsync(KeyboardEventArgs e)
     {
+        var cantidad = _resultados?.Count ?? 0;
+        if (e.Key == "ArrowDown" && cantidad > 0) { _activo = Math.Min(_activo + 1, cantidad - 1); return; }
+        if (e.Key == "ArrowUp" && cantidad > 0) { _activo = Math.Max(_activo - 1, 0); return; }
         if (e.Key == "Enter")
         {
+            // Con resultados en pantalla, Enter elige el marcado (sin mouse); si no, busca.
+            if (cantidad > 0 && !_buscando)
+            {
+                await SeleccionarAsync(_resultados![Math.Clamp(_activo, 0, cantidad - 1)]);
+                return;
+            }
             _busquedaCts?.Cancel();
             await BuscarAsync();
         }

@@ -242,6 +242,9 @@ public sealed class ConciliacionVinculosTests
             Assert.Contains("Movimientos del banco",html);Assert.Contains("Movimientos registrados en Alfa",html);
             Assert.Contains("Conciliar selección",html);
             Assert.Contains("Generar asiento",html);
+            var acciones=(IReadOnlyList<PageHeaderAction>)panel.GetType().GetMethod("Acciones",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(panel,null)!;
+            Assert.Contains(acciones,a=>a.Key=="asistir-ia"&&a.Label=="Asistir con IA");
+            Assert.Contains(acciones,a=>a.Key=="generar-asiento");
             Assert.Contains("Buscar descripción",html);Assert.Contains("Ordenar banco por",html);
             var search=activador.Search!;
             search.GetType().GetMethod("Toggle",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(search,null);

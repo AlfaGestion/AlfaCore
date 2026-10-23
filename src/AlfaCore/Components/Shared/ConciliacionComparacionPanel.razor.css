@@ -50,3 +50,44 @@
 .conciliacion-comparacion__lista td:last-child { min-width:104px; }
 @media(min-width:901px) { .conciliacion-comparacion__listas { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:900px) { .conciliacion-comparacion__listas { grid-template-rows:repeat(2,minmax(0,1fr)); } }
+
+.conciliacion-comparacion__elegir-cuenta { display:grid; gap:var(--alfa-space-8); max-width:460px; margin:var(--alfa-space-24) auto; padding:var(--alfa-space-24); border:1px dashed var(--alfa-border-default); border-radius:var(--alfa-radius-sm); }
+.conciliacion-comparacion__elegir-cuenta small { color:var(--alfa-text-secondary); }
+
+/* ---- Limpieza AlfaDesign v1 (2026-10-22) ---- */
+.conc-kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:var(--alfa-space-8); flex-shrink:0; }
+.conc-kpi { display:flex; flex-direction:column; gap:2px; min-width:0; padding:10px 12px; border:1px solid var(--alfa-border-default); border-radius:var(--alfa-radius-sm); background:var(--alfa-bg-surface); }
+.conc-kpi__label { color:var(--alfa-text-secondary); font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; }
+.conc-kpi strong { font-size:18px; font-weight:600; font-variant-numeric:tabular-nums; margin:0; display:block; }
+.conc-kpi small { margin:0; color:var(--alfa-text-secondary); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.conc-kpi.is-ok strong { color:var(--alfa-success, #3fb950); }
+.conc-kpi.is-alert strong { color:var(--alfa-warning, #d29922); }
+.conc-kpi.is-active { border-color:var(--alfa-accent); }
+.conc-meta { margin:0; color:var(--alfa-text-secondary); font-size:12px; flex-shrink:0; }
+.conc-meta__aviso { color:var(--alfa-warning, #d29922); }
+.conc-acciones { display:flex; flex-wrap:wrap; gap:var(--alfa-space-8); flex-shrink:0; }
+
+.conciliacion-comparacion__lista { padding:0; }
+.conc-lista__head { display:flex; align-items:center; gap:var(--alfa-space-8); padding:8px 12px; border-bottom:1px solid var(--alfa-border-default); flex-shrink:0; }
+.conciliacion-comparacion .conc-lista__head h3 { margin:0; font-size:13px; font-weight:600; }
+.conciliacion-comparacion .conc-lista__head h3 small { display:inline; margin:0 0 0 4px; font-weight:400; }
+.conc-lista__count { padding:1px 8px; border-radius:999px; background:var(--alfa-bg-input, #252830); color:var(--alfa-text-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
+.conc-orden { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.conc-orden__select { height:28px; padding:0 8px; border:1px solid var(--alfa-border-default); border-radius:var(--alfa-radius-sm); background:var(--alfa-bg-input, #252830); color:var(--alfa-text-primary); font:inherit; font-size:12px; }
+
+.conciliacion-comparacion th, .conciliacion-comparacion td { padding:6px 10px; vertical-align:middle; }
+.conciliacion-comparacion th { color:var(--alfa-text-secondary); font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; }
+.conciliacion-comparacion td ::deep button { margin-top:0; }
+.conc-col-check { width:34px; }
+.conc-col-fecha { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.conc-col-acc { width:36px; text-align:right; }
+.conc-sub { display:block; margin-top:2px; color:var(--alfa-text-secondary); font-size:11px; }
+.conciliacion-comparacion td ::deep .alfa-tag + .alfa-tag { margin-left:4px; }
+.conciliacion-comparacion .numero.is-egreso { color:var(--alfa-text-primary); }
+.conciliacion-comparacion .numero.is-ingreso { color:var(--alfa-success, #3fb950); }
+.conc-sugerencia { display:inline-flex; align-items:center; gap:4px; margin-top:4px; padding:2px 8px; border:1px solid var(--alfa-accent); border-radius:999px; background:transparent; color:var(--alfa-accent); font:inherit; font-size:11px; cursor:pointer; }
+.conc-sugerencia:disabled { opacity:.5; cursor:not-allowed; }
+.conc-lista__pie { display:flex; align-items:center; justify-content:flex-end; gap:4px; padding:6px 12px; border-top:1px solid var(--alfa-border-default); color:var(--alfa-text-secondary); font-size:12px; flex-shrink:0; }
+.conc-lista__pie span { margin-right:auto; }
+@media(max-width:1200px) { .conc-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:700px) { .conc-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }

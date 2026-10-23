@@ -87,7 +87,7 @@ public sealed class CargaComprobantesUiTests
             await header.Current.Actions.Single(x => x.Key == "validar").OnClick!();
             fake.FallarGrabacionDirecta = true;
             await InvokeAsync(page, "GrabarAsync");
-            Assert.True(header.Current.Actions.Single(x => x.Key == "grabar").Disabled);
+            Assert.True(header.Current.Actions.SingleOrDefault(x => x.Key == "grabar")?.Disabled ?? true); // tras emitir, "Emitir" ya no se ofrece
             await header.Current.Actions.Single(x => x.Key == "recuperar").OnClick!();
             Assert.Equal(2m, Assert.Single(draft.Lineas).Cantidad);
             Assert.False(header.Current.Actions.Single(x => x.Key == "validar").Disabled);
@@ -109,7 +109,7 @@ public sealed class CargaComprobantesUiTests
             directHtml = root.ToHtmlString();
             await InvokeAsync(page, "GrabarAsync");
             Assert.Equal(1, fake.DirectasGrabadas); Assert.Contains("Comprobante grabado", root.ToHtmlString());
-            Assert.True(header.Current.Actions.Single(x => x.Key == "grabar").Disabled);
+            Assert.True(header.Current.Actions.SingleOrDefault(x => x.Key == "grabar")?.Disabled ?? true); // tras emitir, "Emitir" ya no se ofrece
             await header.Current.Actions.Single(x => x.Key == "nueva").OnClick!();
             Invoke(page, "TipoChanged", "FP");
             Assert.Equal("Grabar proforma", header.Current.Actions.Single(x => x.Key == "grabar").Label);
@@ -137,7 +137,8 @@ public sealed class CargaComprobantesUiTests
                 Assert.True(await page.GetByLabel("Precio neto PAPEL", new() { Exact = true }).IsEnabledAsync());
                 Assert.True(await page.GetByLabel("Descuento PAPEL", new() { Exact = true }).IsEnabledAsync());
                 await page.GetByLabel("Cantidad PAPEL", new() { Exact = true }).FocusAsync();
-                Assert.Equal("number", await page.EvaluateAsync<string>("document.activeElement.type"));
+                // Campo de texto con teclado decimal: acepta coma (1,5) como Alfa Gestión (2026-10-22).
+                Assert.Equal("decimal", await page.EvaluateAsync<string>("document.activeElement.inputMode"));
                 if (width == 1024)
                 {
                     var destino = Path.Combine(repo, "artifacts/ventas/homologacion/carga-directa-1024.png");

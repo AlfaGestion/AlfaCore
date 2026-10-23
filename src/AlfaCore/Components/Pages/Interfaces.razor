@@ -863,7 +863,7 @@
                     <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_showSearchPanel) _showSearchPanel = true; }" type="search"
                    placeholder="Buscar por observación, proveedor, usuario o número interno..."
                    @bind="_filters.Texto"
                    @bind:event="oninput"

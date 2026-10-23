@@ -176,9 +176,9 @@ La lupa y el embudo de la barra superior permiten buscar y cambiar cuenta, perí
 
 En ese filtro también podés elegir **Clasificación del extracto** y **50 o 100 registros por página** para cada lista. La clasificación filtra únicamente el banco: Alfa conserva sus movimientos para que puedas encontrar la contrapartida. Ordená haciendo clic en el título de cada columna; otro clic invierte el sentido, indicado por la flecha. Fecha/referencia y fecha/comprobante tienen títulos independientes para ordenar por cada dato. El orden se aplica a todo el resultado, no solo a las filas de la página actual.
 
-Los títulos Banco/Alfa, los encabezados de columnas y los pies de página permanecen visibles al desplazar las filas. **Criterios y alcance** despliega la información secundaria del período. Para generar un asiento, seleccioná un único movimiento bancario pendiente y usá **Generar asiento** en la barra de selección; también aparece en las filas aptas. Si ya está registrado o corresponde a Cobranza/TransferenciaInterna, se utiliza su circuito específico.
+Los títulos Banco/Alfa, los encabezados de columnas y los pies de página permanecen visibles al desplazar las filas. Los indicadores resumen banco, Alfa, diferencias, selección y coincidencias. Para generar un asiento, seleccioná un único movimiento bancario pendiente y usá **Generar asiento** en la barra superior; también aparece en las filas aptas. Si ya está registrado o corresponde a Cobranza/TransferenciaInterna, se utiliza su circuito específico.
 
-Las acciones de cada fila del banco se muestran como iconos compactos: vínculo para revisar una propuesta, asiento para generar un CC e historial. Al apoyar el mouse aparece el nombre de la acción. La barra de selección mantiene **Generar asiento** con texto.
+Las acciones de cada fila del banco se muestran como iconos compactos: vínculo para revisar una propuesta, asiento para generar un CC e historial. Al apoyar el mouse aparece el nombre de la acción. La barra superior mantiene **Generar asiento** y **Asistir con IA** con texto. **Cuentas para asientos** también está disponible entre sus acciones adicionales.
 
 
 ## Generar asientos desde los movimientos del banco

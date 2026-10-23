@@ -52,6 +52,8 @@ public sealed class CargaComprobantesOpcionFiltro
 {
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
+    /// <summary>Dato asociado opcional (ej. unidad de negocio de un depósito).</summary>
+    public string Grupo { get; set; } = string.Empty;
 }
 
 public sealed class CargaComprobantesElectronicaEstado

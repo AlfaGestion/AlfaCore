@@ -37,6 +37,14 @@ public static class NovedadesSistemaCatalogo
     /// <summary>La más nueva primero. Para una versión nueva: agregar la entrada y su archivo HTML.</summary>
     public static readonly IReadOnlyList<NovedadSistemaInfo> Todas =
     [
+        new("alfacore-1.1",
+            "AlfaCore 1.1",
+            "AlfaCore 1.1: conciliación bancaria, reportes y carga de comprobantes",
+            "Cómo usar lo nuevo de Caja y Bancos, Compras, Ventas y Conversaciones.",
+            new DateTime(2026, 10, 22),
+            "bi-bank",
+            NovedadAcentos.Verde,
+            "2026-10-22__alfacore-1-1.html"),
         new("alfacore-1.0",
             "AlfaCore 1.0",
             "AlfaCore 1.0: nueva imagen y un menú más ordenado",

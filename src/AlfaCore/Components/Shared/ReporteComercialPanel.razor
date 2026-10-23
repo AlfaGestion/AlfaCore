@@ -368,7 +368,7 @@
                     <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(c => c.Label))">+@(chips.Count - 2)</span>
                 }
             </div>
-            <input type="search" placeholder="@($"Buscar por {Tercero.ToLowerInvariant()} o cuenta...")" value="@_filtros.Proveedor" @oninput="OnProveedorInput" @onkeydown="HandleSearchKeyDownAsync" />
+            <input @onfocus="() => { if (!_panelAbierto) TogglePanel(); }" type="search" placeholder="@($"Buscar por {Tercero.ToLowerInvariant()} o cuenta...")" value="@_filtros.Proveedor" @oninput="OnProveedorInput" @onkeydown="HandleSearchKeyDownAsync" />
             <button type="button" class="smart-search__toggle" @onclick="TogglePanel" aria-label="Mostrar filtros" aria-expanded="@_panelAbierto">
                 <i class="bi @(_panelAbierto ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
             </button>

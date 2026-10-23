@@ -113,7 +113,7 @@
             <span class="smart-search__search-icon"><i class="bi bi-search"></i></span>
             <button type="button" class="smart-search__filter-button" aria-label="Filtrar configuraciones" aria-expanded="@_filtrosAbiertos" @onclick="AlternarFiltros"><i class="bi bi-funnel-fill"></i></button>
             @if (!string.IsNullOrEmpty(_area)) { <button type="button" class="smart-search__active-filter" @onclick='() => CambiarArea("")'>@_area ×</button> }
-            <input type="search" aria-label="Buscar configuración" placeholder="Buscar opción, módulo o palabra clave…" value="@_texto" @oninput="e => OnTextoChanged(e.Value?.ToString())" />
+            <input @onfocus="() => { if (!_filtrosAbiertos) AlternarFiltros(); }" type="search" aria-label="Buscar configuración" placeholder="Buscar opción, módulo o palabra clave…" value="@_texto" @oninput="e => OnTextoChanged(e.Value?.ToString())" />
             <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros de configuración" @onclick="AlternarFiltros"><i class="bi bi-caret-down-fill"></i></button>
         </div>
         @if (_filtrosAbiertos)

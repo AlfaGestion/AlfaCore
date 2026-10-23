@@ -45,7 +45,7 @@
         </div>
         @if (TextoChanged.HasDelegate)
         {
-            <input type="search"
+            <input @onfocus="() => { if (!_open) Toggle(); }" type="search"
                    placeholder="@Placeholder"
                    value="@Texto"
                    @oninput="e => TextoChanged.InvokeAsync(NullIfEmpty(e.Value?.ToString()))"

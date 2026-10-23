@@ -46,6 +46,7 @@
 .conciliacion-tabla--acciones tr.is-selected td:last-child { background: var(--alfa-state-selected); }
 @media(max-width: 1024px) { .conciliacion-campos { grid-template-columns: 1fr; } .conciliacion-filtros { grid-template-columns: minmax(240px, 1fr) minmax(200px, 1fr); } .conciliacion-filtros__acciones { grid-column: 1 / -1; } }
 
-.conciliacion-page--comparar { height:calc(100dvh - var(--alfa-topbar-height,44px) - var(--alfa-context-toolbar-height,44px) - 2 * var(--alfa-space-16)); min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:var(--alfa-space-8); }
+/* Ocupa justo el alto disponible del shell (sin el padding inferior de gd-page): las listas scrollean por dentro y no queda espacio vacío abajo. */
+.conciliacion-page--comparar { flex:1 1 0; height:auto; max-height:100%; min-height:0; padding-bottom:var(--alfa-space-8); overflow:hidden; contain:layout paint; display:flex; flex-direction:column; gap:var(--alfa-space-8); }
 .conciliacion-page--comparar ::deep .conciliacion-comparacion { flex:1; min-height:0; }
 .conciliacion-page--comparar ::deep .alfa-tabs { flex-shrink:0; }

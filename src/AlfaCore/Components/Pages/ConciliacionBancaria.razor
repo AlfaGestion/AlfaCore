@@ -96,7 +96,7 @@
     }
     else if (_tab=="conciliar")
     {
-        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" OnGenerarAsiento="AbrirAsiento" OnAsientoIa="AbrirAsientoIa" />
+        <ConciliacionComparacionPanel @ref="_comparacion" CuentaInicial="@_cuenta" SearchChanged="PublicarBusquedaConciliacion" AccionesChanged="PublicarAccionesConciliacion" OnGenerarAsiento="AbrirAsiento" OnAsientoIa="AbrirAsientoIa" />
     }
     else
     {
@@ -420,6 +420,8 @@
         await CargarPagina(ct);
     });
     private RenderFragment? _busquedaConciliacion;
+    private IReadOnlyList<PageHeaderAction> _accionesConciliacion = [];
+    private Task PublicarAccionesConciliacion(IReadOnlyList<PageHeaderAction> acciones) { if(_disposed)return Task.CompletedTask;_accionesConciliacion=acciones;PublicarHeader();return Task.CompletedTask; }
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
     private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
@@ -459,6 +461,8 @@
 
     protected override void OnInitialized()
     {
+        _baseActual = Sesiones.GetActiveSession()?.BaseId;
+        _usuarioActual = Usuarios.CurrentUser?.UserName ?? "";
         Sesiones.SessionChanged += CambiarSesion;
         Usuarios.StateChanged += CambiarSesion;
         PublicarHeader();
@@ -709,7 +713,12 @@
             Title = "Conciliación bancaria inteligente", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria inteligente"],
             TopNavigationItems = Navegacion(),
             SearchContent = _tab=="conciliar" ? _busquedaConciliacion : null,
-            Actions = [
+            // En "Conciliar cuenta" no se ofrece "Importar extracto" (no aplica) y van las acciones de la comparación (2026-10-22).
+            Actions = _tab=="conciliar"
+                ? [.. _accionesConciliacion,
+                    new() { Key="cuentas-asientos",Label="Cuentas para asientos",Icon="bi-journal-text",Priority=PageHeaderActionPriority.Overflow,Disabled=_busy,OnClick=ConfigurarAsientos },
+                    new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Priority = PageHeaderActionPriority.Overflow,Disabled = _busy,OnClick = () => Operar(CargarPagina) }]
+                : [
                 new() { Key = "importar",Label = "Importar extracto",Icon = "bi-upload",Style = PageHeaderActionStyle.Primary,
                     Disabled = _tab!="importar" || _busy || !_listo || string.IsNullOrWhiteSpace(_cuenta),Busy = _busy,OnClick = Importar },
                 new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) },
@@ -727,9 +736,17 @@
         return [new PageHeaderTopNavItem { Key="conciliacion",Label="Conciliación bancaria",Active=true,
             Url=url,OnClick=()=> { Nav.NavigateTo(url);return Task.CompletedTask; } }];
     }
+    // Sólo se reinicia si de verdad cambió la base o el usuario: antes cualquier aviso de sesión (por ejemplo,
+    // renovarla) vaciaba la pantalla y se perdía lo que se estaba revisando (2026-10-22).
+    private int? _baseActual;
+    private string _usuarioActual = "";
     private void CambiarSesion() => _ = InvokeAsync(async () =>
     {
         if (_disposed) return;
+        var baseId = Sesiones.GetActiveSession()?.BaseId;
+        var usuario = Usuarios.CurrentUser?.UserName ?? "";
+        if (baseId == _baseActual && string.Equals(usuario, _usuarioActual, StringComparison.OrdinalIgnoreCase)) return;
+        _baseActual = baseId; _usuarioActual = usuario;
         _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
         _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;
         _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
