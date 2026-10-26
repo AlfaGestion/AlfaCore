@@ -2020,9 +2020,11 @@ public class Program
             if (string.IsNullOrWhiteSpace(licencia))
                 return Results.BadRequest("Falta licenciaPrincipal.");
 
+            // 404 con texto propio: el VB6 solo da la licencia por inválida con esta respuesta, no con
+            // un 404 genérico (ej. un AlfaCore que todavía no tiene publicado este endpoint).
             var datos = await clientesSvc.GetLicenciaLegacyAsync(licencia, ct);
             if (datos is null)
-                return Results.NotFound();
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
 
             var texto = string.Join("\r\n", datos.IdCliente, datos.FtpServer, datos.FtpUsuario, datos.FtpClave);
             return Results.Text(texto, "text/plain; charset=utf-8");
