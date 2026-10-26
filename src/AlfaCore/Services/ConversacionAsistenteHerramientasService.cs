@@ -122,6 +122,20 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string ResultadoSinPedidos =
         "No tiene Notas de Pedido registradas. Ojo: \"pedido\" también puede ser un pedido de soporte. Si en esta conversación hay un tema de soporte o reclamo pendiente al que el cliente pueda estar refiriéndose, respondé tipo SEGUIMIENTO; si no, informale (tipo RESUELVE) que no tiene pedidos registrados.";
 
+    /// <summary>
+    /// El modelo arrastraba el número de un mensaje anterior: tras "¿Llegó mi pedido NP-999?",
+    /// "¿Cómo están mis pedidos?" volvía a buscar NP-999 (Base4264, 2026-10-26). Sólo se usa el número
+    /// si sus dígitos están en el mensaje actual; sin mensaje (otros llamadores) se respeta tal cual.
+    /// </summary>
+    internal static string? NumeroPedidoDelMensaje(string? numeroPedido, string? mensajeCliente)
+    {
+        if (string.IsNullOrWhiteSpace(numeroPedido) || mensajeCliente is null)
+            return numeroPedido;
+
+        var digitos = new string(numeroPedido.Where(char.IsDigit).ToArray());
+        return digitos.Length > 0 && mensajeCliente.Contains(digitos, StringComparison.Ordinal) ? numeroPedido : null;
+    }
+
     // Con número de pedido no hay ambigüedad venta/soporte: sin esta instrucción el modelo lo tomó como
     // seguimiento de un tema viejo y avisó al operador (Base4264, 2026-10-26, "¿Llegó mi pedido NP-999?").
     internal const string ResultadoPedidoNoEncontrado =
@@ -369,6 +383,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         string nombre,
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
+        string? mensajeCliente = null,
         CancellationToken ct = default)
     {
         if (cuenta?.EsAmbigua == true && ToolsPrivadasDeCuenta.Contains(nombre))
@@ -381,7 +396,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                 ToolConsultarPrecio => await EjecutarConsultarPrecioAsync(argumentosJson, cuenta, ct),
                 ToolConsultarSaldoTotal => await EjecutarConsultarSaldoTotalAsync(cuenta, ct),
                 ToolConsultarSaldoDetalle => await EjecutarConsultarSaldoDetalleAsync(cuenta, ct),
-                ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, ct),
+                ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, mensajeCliente, ct),
                 ToolGenerarLinkPortal => await EjecutarGenerarLinkPortalAsync(cuenta, ct),
                 ToolGenerarLinkCatalogoPublico => await EjecutarGenerarLinkCatalogoPublicoAsync(cuenta, ct),
                 _ => "Herramienta desconocida."
@@ -542,12 +557,12 @@ public sealed class ConversacionAsistenteHerramientasService(
         return sb.ToString().Trim();
     }
 
-    private async Task<string> EjecutarConsultarPedidosAsync(string argumentosJson, ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
+    private async Task<string> EjecutarConsultarPedidosAsync(string argumentosJson, ConversacionCuentaVinculadaDto? cuenta, string? mensajeCliente, CancellationToken ct)
     {
         if (cuenta is null || cuenta.Tipo != CuentaComercialTipo.Cliente)
             return "No se pudo identificar al cliente para consultar sus pedidos.";
 
-        var numeroPedido = LeerArgumentoString(argumentosJson, "numero_pedido");
+        var numeroPedido = NumeroPedidoDelMensaje(LeerArgumentoString(argumentosJson, "numero_pedido"), mensajeCliente);
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);

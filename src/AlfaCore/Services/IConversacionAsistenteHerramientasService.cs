@@ -31,10 +31,13 @@ public interface IConversacionAsistenteHerramientasService
     /// <paramref name="argumentosJson"/> es lo que mandó OpenAI, pero ninguna herramienta sensible
     /// acepta de ahí un identificador de cuenta -- ver guardrail en ObtenerHerramientasDisponibles.
     /// Devuelve texto plano/compacto listo para pasarle de vuelta al modelo como resultado de la tool.
+    /// <paramref name="mensajeCliente"/> es el mensaje actual: valida los datos que el modelo arrastra
+    /// del historial (ej. un número de pedido que el cliente no escribió en este mensaje).
     /// </summary>
     Task<string> EjecutarAsync(
         string nombre,
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
+        string? mensajeCliente = null,
         CancellationToken ct = default);
 }

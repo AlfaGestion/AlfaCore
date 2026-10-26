@@ -8989,7 +8989,7 @@ public sealed partial class ConversacionesService(
                             && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
+                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, ctHerramienta)
                     : null;
 
                 // Un saludo o un cierre/agradecimiento suelto no tiene nada que buscar -- consultarlo
@@ -10280,7 +10280,7 @@ public sealed partial class ConversacionesService(
         if (!herramientas.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)))
             return null;
 
-        var resultado = (await asistenteHerramientasService.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta, ct).ConfigureAwait(false)).Trim();
+        var resultado = (await asistenteHerramientasService.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta, ct: ct).ConfigureAwait(false)).Trim();
         return Uri.TryCreate(resultado, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? resultado : null;
     }
 

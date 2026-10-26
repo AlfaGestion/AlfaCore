@@ -1127,7 +1127,7 @@ public sealed class ConversacionesAutomationPipelineTests
                 herramientas: herramientas,
                 ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
                 {
-                    var r = await toolsService.EjecutarAsync(nombre, argumentos, cliente, ct);
+                    var r = await toolsService.EjecutarAsync(nombre, argumentos, cliente, ct: ct);
                     toolResults.Add(r);
                     return r;
                 });
@@ -1252,6 +1252,17 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("¿novedades?", false)]
     public void MensajeConsultaPedidos_DistingueVentaDeSoporte(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    // Caso real Base4264 (2026-10-26): tras "¿Llegó mi pedido NP-999?", "¿Cómo están mis pedidos?"
+    // volvía a buscar NP-999 porque el modelo arrastraba el número del mensaje anterior.
+    [Theory]
+    [InlineData("NP-999", "¿Llegó mi pedido NP-999?", "NP-999")]
+    [InlineData("999", "estado del pedido 999", "999")]
+    [InlineData("NP-999", "¿Cómo están mis pedidos?", null)]
+    [InlineData("NP-999", null, "NP-999")]
+    [InlineData(null, "¿Cómo están mis pedidos?", null)]
+    public void NumeroPedidoDelMensaje_IgnoraNumerosArrastradosDelHistorial(string? numero, string? mensaje, string? esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.NumeroPedidoDelMensaje(numero, mensaje));
 
     [Fact]
     public void ResultadoSinPedidos_DerivaAlSeguimientoSiHayTemaPendiente()
@@ -2210,7 +2221,7 @@ public sealed class ConversacionesAutomationPipelineTests
                 ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
                 {
                     executedTools.Add(nombre);
-                    var toolResult = await toolsService.EjecutarAsync(nombre, argumentos, cuenta, ct);
+                    var toolResult = await toolsService.EjecutarAsync(nombre, argumentos, cuenta, ct: ct);
                     toolResults.Add(toolResult);
                     return toolResult;
                 });
