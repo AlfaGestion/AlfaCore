@@ -1213,6 +1213,67 @@ public sealed class ConversacionesAutomationPipelineTests
     public void MensajePidePrecioArticulo_ExcluyePreguntasGenerales(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensaje));
 
+    // Caso real Base4264 (2026-10-26): "Quiero 10 pilas duracell AA" no habilitaba herramientas y el
+    // modelo contestó "No vendemos pilas Duracell" con el artículo cargado.
+    [Theory]
+    [InlineData("Quiero 10 pilas duracell AA", true)]
+    [InlineData("necesito dos cables usb", true)]
+    [InlineData("¿Venden cargadores?", true)]
+    [InlineData("hay stock de pilas AAA?", true)]
+    [InlineData("necesito una mano con el sistema", false)]
+    [InlineData("quiero hablar con alguien", false)]
+    [InlineData("hola", false)]
+    public void MensajePideArticulo_DetectaCompraSinPalabraPrecio(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideArticulo(mensaje));
+
+    // Caso real Base4264 (2026-10-26): "Pasame la lista de precios" / "Quiero hacer un pedido" de un
+    // Cliente identificado terminaban en "contactá a un asesor" en vez del link al Portal Cliente.
+    [Theory]
+    [InlineData("Pasame la lista de precios", true)]
+    [InlineData("Quiero hacer un pedido", true)]
+    [InlineData("¿Cómo pido?", true)]
+    [InlineData("quiero pedir pilas", true)]
+    [InlineData("¿Cómo están mis pedidos?", false)]
+    [InlineData("cuánto sale la pila AA?", false)]
+    public void MensajePidePortal_DetectaListaDePreciosOHacerPedido(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePortal(mensaje));
+
+    // Caso real Base4264 (2026-10-26): con tickets abiertos, "¿Cómo están mis pedidos?" se contestó
+    // como seguimiento sin consultar las Notas de Pedido. El verbo ("lo que les pedí") y el pedido de
+    // soporte siguen siendo seguimiento; "hacer un pedido" es portal, no consulta.
+    [Theory]
+    [InlineData("¿Cómo están mis pedidos?", true)]
+    [InlineData("¿Llegó mi pedido?", true)]
+    [InlineData("estado del pedido NP-123", true)]
+    [InlineData("cómo viene mi pedido", true)]
+    [InlineData("¿pudieron ver lo que les pedí?", false)]
+    [InlineData("¿cómo va mi pedido de soporte?", false)]
+    [InlineData("Quiero hacer un pedido", false)]
+    [InlineData("¿novedades?", false)]
+    public void MensajeConsultaPedidos_DistingueVentaDeSoporte(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    [Fact]
+    public void ResultadoSinPedidos_DerivaAlSeguimientoSiHayTemaPendiente()
+    {
+        Assert.Contains("SEGUIMIENTO", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
+        Assert.Contains("RESUELVE", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
+    }
+
+    [Fact]
+    public void Tools_IdentifiedClient_BuyingWithoutPriceKeyword_GetsPriceAndPortalTools()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "Quiero 10 pilas duracell AA");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
+    }
+
     [Theory]
     [InlineData("AA", true)]
     [InlineData("Duracell", true)]

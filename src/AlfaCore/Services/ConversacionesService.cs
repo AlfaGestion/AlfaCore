@@ -8983,6 +8983,7 @@ public sealed partial class ConversacionesService(
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
                 var forzarConsultarPrecio = !precioRequiereIdentificacion
                     && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
+                        || ConversacionAsistenteHerramientasService.MensajePideArticulo(texto)
                         || (ultimaRespuestaFueAclaracion
                             && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
                             && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));

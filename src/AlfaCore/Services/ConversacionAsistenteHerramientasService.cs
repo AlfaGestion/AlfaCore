@@ -73,7 +73,66 @@ public sealed class ConversacionAsistenteHerramientasService(
     private static bool MensajeNecesitaHerramientas(string mensajeCliente)
     {
         var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
-        return texto.Length > 0 && PalabrasClaveHerramientas.Any(texto.Contains);
+        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente));
+    }
+
+    /// <summary>
+    /// Quiere artículos puntuales sin decir "precio" ni "pedido" ("Quiero 10 pilas AA", "necesito dos
+    /// cables", "venden cargadores?"). Sin esto el mensaje no habilitaba herramientas y el modelo
+    /// contestaba de memoria: caso real Base4264 (2026-10-26), "No vendemos pilas Duracell" con el
+    /// artículo cargado. Pide cantidad (no "un/una") para no tomar "necesito una mano con el sistema".
+    /// </summary>
+    internal static bool MensajePideArticulo(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return Regex.IsMatch(texto,
+            @"\b(quiero|quisiera|necesito|busco|mandame|pasame|encargo|me\s+llevo)\s+"
+            + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b"
+            + @"|\b(venden|vendes|hay\s+stock|tienen\s+stock|stock\s+de)\b");
+    }
+
+    /// <summary>
+    /// Cliente que quiere ver su lista de precios o hacer un pedido: se resuelve con su link al Portal
+    /// Cliente (precios de su cuenta y carga de pedidos). Caso real Base4264 (2026-10-26): con la tool
+    /// ofrecida, el modelo contestaba "contactá a un asesor".
+    /// </summary>
+    /// <summary>
+    /// Pregunta por sus Notas de Pedido ("¿cómo están mis pedidos?", "¿llegó mi pedido?", "NP-123").
+    /// "Pedido" también se usa para un pedido de soporte: sólo se detecta el sustantivo con posesivo o
+    /// palabra de estado, nunca el verbo ("lo que les pedí" sigue siendo seguimiento), y si no tiene
+    /// pedidos la tool deriva al seguimiento del tema pendiente. Caso real Base4264 (2026-10-26): con
+    /// tickets abiertos, "¿Cómo están mis pedidos?" se contestó como seguimiento sin consultar pedidos.
+    /// </summary>
+    internal static bool MensajeConsultaPedidos(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0 || MensajePidePortal(mensajeCliente))
+            return false;
+        if (Regex.IsMatch(texto, @"\bpedidos?\s+de\s+(soporte|ayuda|asistencia|servicio|visita|presupuesto)\b"))
+            return false;
+
+        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+\b|\bnota\s+de\s+pedido\b")
+            || (Regex.IsMatch(texto, @"\bpedidos?\b")
+                && Regex.IsMatch(texto, @"\b(mi|mis|estado|como|donde|cuando|llego|llegaron|llega|llegan|sale|salen|salio|salieron|novedad|novedades|ultimo|numero)\b"));
+    }
+
+    internal const string ResultadoSinPedidos =
+        "No tiene Notas de Pedido registradas. Ojo: \"pedido\" también puede ser un pedido de soporte. Si en esta conversación hay un tema de soporte o reclamo pendiente al que el cliente pueda estar refiriéndose, respondé tipo SEGUIMIENTO; si no, informale (tipo RESUELVE) que no tiene pedidos registrados.";
+
+    internal static bool MensajePidePortal(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return Regex.IsMatch(texto,
+            @"\blista\s+de\s+precios?\b"
+            + @"|\b(hacer|hago|cargar|cargo|armar|armo|realizar|pasar|paso|mandar|mando)\s+(un|el|mi|otro)?\s*pedido\b"
+            + @"|\bquiero\s+(pedir|encargar)\b"
+            + @"|\bcomo\s+(pido|compro|encargo)\b");
     }
 
     /// <summary>
@@ -512,7 +571,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             // Nunca se distingue "no existe" de "es de otro cliente" -- mismo criterio que el resto
             // de las consultas del Portal Cliente.
             return string.IsNullOrWhiteSpace(numeroPedido)
-                ? "No tiene pedidos registrados."
+                ? ResultadoSinPedidos
                 : "No encontré ningún pedido con ese número asociado a su cuenta.";
         }
 

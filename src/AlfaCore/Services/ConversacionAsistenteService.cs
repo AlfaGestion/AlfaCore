@@ -45,7 +45,22 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // La intención de precio la decide el llamador (incluye el seguimiento de una aclaración);
         // acá sólo se verifica que la tool realmente se ofreció.
         var debeForzarPrecio = forzarConsultarPrecio && hayPrecioEntreHerramientas;
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead);
+        var hayPortalEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_portal", StringComparison.Ordinal)) ?? false;
+        var debeForzarPortal = hayPortalEntreHerramientas && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente);
+        // Con la tool de pedidos ofrecida (la empresa usa Notas de Pedido) "¿cómo están mis pedidos?"
+        // se consulta siempre; si no tiene pedidos, el resultado lo deriva al seguimiento del tema pendiente.
+        var hayPedidosEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_pedidos", StringComparison.Ordinal)) ?? false;
+        var debeForzarPedidos = hayPedidosEntreHerramientas && ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensajeCliente);
+        var herramientasForzadas = new List<string>();
+        if (debeForzarPedidos)
+            herramientasForzadas.Add("consultar_pedidos");
+        if (debeForzarCatalogo)
+            herramientasForzadas.Add("generar_link_catalogo_publico");
+        if (debeForzarPrecio)
+            herramientasForzadas.Add("consultar_precio");
+        if (debeForzarPortal)
+            herramientasForzadas.Add("generar_link_portal");
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -96,13 +111,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                // Ronda 0: catálogo y/o precio explícitos → se fuerza la tool (o cualquiera si piden
-                // ambas). Desde la ronda 1, auto: el modelo decide con el resultado en mano.
-                object? toolChoice = ronda != 0 ? null
-                    : debeForzarCatalogo && debeForzarPrecio ? "required"
-                    : debeForzarCatalogo ? new { type = "function", function = new { name = "generar_link_catalogo_publico" } }
-                    : debeForzarPrecio ? new { type = "function", function = new { name = "consultar_precio" } }
-                    : null;
+                // Ronda 0: catálogo, precio, portal y/o pedidos explícitos → se fuerza la tool (o cualquiera si
+                // piden más de una). Desde la ronda 1, auto: el modelo decide con el resultado en mano.
+                object? toolChoice = ronda != 0 || herramientasForzadas.Count == 0 ? null
+                    : herramientasForzadas.Count > 1 ? "required"
+                    : new { type = "function", function = new { name = herramientasForzadas[0] } };
                 var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools, toolChoice);
 
                 using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -283,7 +296,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
-        bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null)
+        bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
+        bool hayPortalEntreHerramientas = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -330,6 +344,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
+        sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
+        sb.AppendLine("- Escribí los links como la URL completa en texto plano, sin formato Markdown (nada de [texto](link)): en WhatsApp ese formato no se ve como link.");
+        if (hayPortalEntreHerramientas)
+            sb.AppendLine("- PORTAL CLIENTE: si el cliente pide su lista de precios o quiere hacer un pedido, usá generar_link_portal y pasale el link: ahí ve los precios de su cuenta y carga el pedido. Si quiere comprar artículos puntuales, informale el precio y ofrecele ese link para cargar el pedido (por chat todavía no se toman pedidos). No lo derives a un asesor por esto.");
         if (hayCatalogoEntreHerramientas)
             sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
         if (hayPrecioEntreHerramientas)
