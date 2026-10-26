@@ -1,5 +1,5 @@
 @using System.Globalization
-<AlfaDialog Open="Open" Title="Asistir con IA · revisar propuestas" Size="AlfaDialogSize.Lg" Loading="Busy" OnClose="OnClose">
+<AlfaDialog CloseOnBackdrop="false" Open="Open" Title="Asistir con IA · revisar propuestas" Size="AlfaDialogSize.Lg" Loading="Busy" OnClose="OnClose">
     <ChildContent>
         <AlfaFeedbackPanel Message="Feedback" />
         @if(Busy&&Resultado is null) { <p role="status">Analizando los pendientes del período. Podés cancelar sin modificar movimientos.</p> }

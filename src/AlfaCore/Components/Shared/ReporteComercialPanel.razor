@@ -1,3 +1,4 @@
+@using AlfaCore.Services
 @inject AlfaCore.Services.ReporteComercialService ReporteService
 @inject AlfaCore.Services.ReporteComprasExcelExporter Exporter
 @inject AlfaCore.Services.ISessionService Sessions
@@ -15,7 +16,7 @@
     <header class="gd-header">
         <div>
             <h2>@Titulo</h2>
-            <p>Resumen, comprobantes y movimientos de cuenta corriente. Incluye proformas; el IVA mostrado es el registrado fiscalmente.</p>
+            <p>Resumen, comprobantes y movimientos de cuenta corriente. El IVA mostrado es el registrado fiscalmente.</p>
         </div>
     </header>
 
@@ -24,6 +25,15 @@
     @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
     {
         <p class="gd-hint">Agrupado por código de cuenta, en orden cronológico. Incluye saldo inicial y acumulado por línea. Los importes son contables; el tipo de comprobante solo limita las líneas visibles y no recalcula el saldo.</p>
+    }
+
+    @if (_mostrarResultados)
+    {
+        <p class="gd-hint" role="status">Filtros aplicados: @ReporteComprasExcelExporter.DescribirFiltros(_aplicados,Ventas)@(EsSaldos ? $" · Incluir saldos cero: {(_aplicados.IncluirSaldosCero ? "Sí" : "No")}" : "")</p>
+        @if (Ventas && !_aplicados.IncluirProforma && (_tipoReporte == TipoReporteCompras.CuentaCorriente || EsSaldos))
+        {
+            <p class="gd-hint">Los saldos excluyen los movimientos FP, NCFP y CBFP.</p>
+        }
     }
 
     @* ── Estado inicial / carga / error ─────────────────────────────── *@
@@ -208,7 +218,7 @@
     private bool EsDirecto => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo",out var v) && v.ToString() == "1";
     private string Tercero => Ventas ? "Cliente" : "Proveedor";
     private FiltrosReporteCompras _aplicados = new();
-    private static FiltrosReporteCompras Copiar(FiltrosReporteCompras f) => new() { FechaDesde=f.FechaDesde,FechaHasta=f.FechaHasta,Proveedor=f.Proveedor,TipoComprobante=f.TipoComprobante,Pagina=f.Pagina,TamanioPagina=f.TamanioPagina, Vendedor=f.Vendedor,SinVendedor=f.SinVendedor,Zona=f.Zona,SinZona=f.SinZona,UnidadesNegocio=[..f.UnidadesNegocio],IncluirSaldosCero=f.IncluirSaldosCero };
+    private static FiltrosReporteCompras Copiar(FiltrosReporteCompras f) => new() { FechaDesde=f.FechaDesde,FechaHasta=f.FechaHasta,Proveedor=f.Proveedor,CuentaExacta=f.CuentaExacta,Provincia=f.Provincia,IncluirProforma=f.IncluirProforma,TipoComprobante=f.TipoComprobante,Pagina=f.Pagina,TamanioPagina=f.TamanioPagina, Vendedor=f.Vendedor,SinVendedor=f.SinVendedor,Zona=f.Zona,SinZona=f.SinZona,UnidadesNegocio=[..f.UnidadesNegocio],IncluirSaldosCero=f.IncluirSaldosCero };
 
     // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
     // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
@@ -217,6 +227,8 @@
 
     private readonly FiltrosReporteCompras _filtros = new();
     private ReporteComprasOptionsDto _options = new();
+    private string _clienteBusqueda = string.Empty;
+    private ReporteFiltroOpcion? _clienteSeleccionado;
     private TipoReporteCompras _tipoReporte = TipoReporteCompras.ResumenDeCompras;
     private bool _panelAbierto;
 
@@ -249,8 +261,8 @@
     private void ContextoChanged()
     {
         _contextCts.Cancel(); _contextCts.Dispose(); _contextCts = new();
-        _ = InvokeAsync(() => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _saldos=null; _documentosCC=null; _options=new(); _mostrarResultados=false;
-            _error=AppUiMessage.Warning("Cambió la sesión", "Volvé a generar el reporte en la base activa."); UpdatePageHeader(); StateHasChanged(); });
+        _ = InvokeAsync(async () => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _saldos=null; _documentosCC=null; _options=new(); LimpiarCliente(); _filtros.IncluirProforma=false; _mostrarResultados=false;
+            _error=AppUiMessage.Warning("Cambió la sesión", "Volvé a generar el reporte en la base activa."); UpdatePageHeader(); StateHasChanged(); await CargarOpcionesAsync(); StateHasChanged(); });
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -405,18 +417,20 @@
                         <label>Tipo (TC)</label>
                         <select value="@(_filtros.TipoComprobante ?? string.Empty)" @onchange="OnTcChanged">
                             <option value="">Todos</option>
-                            @foreach (var tc in _options.TiposComprobante)
+                            @foreach (var tc in _options.TiposComprobante.Where(x => !Ventas || _filtros.IncluirProforma || !ReporteComercialService.EsProforma(x)))
                             {
                                 <option value="@tc">@tc</option>
                             }
                         </select>
                     </div>
+                    @RenderFiltroProforma()
                 </div>
                 }
                 @if (EsSaldos)
                 {
                     <div class="smart-search__column">
                         <h4><i class="bi bi-list-check"></i> Cuentas</h4>
+                        @RenderFiltroProforma()
                         <AlfaCheckbox Value="_filtros.IncluirSaldosCero" ValueChanged="CambiarIncluirCero">Incluir saldos cero</AlfaCheckbox>
                         <p class="gd-hint">@(Ventas ? "Control de crédito también incluye cuentas con límite asignado, aunque su saldo sea cero." : "Incluye proveedores sin movimientos, con saldo cero.")</p>
                     </div>
@@ -425,6 +439,19 @@
                 {
                     <div class="smart-search__column">
                         <h4><i class="bi bi-person-badge"></i> Cartera del cliente</h4>
+                        <p class="gd-hint">Estos filtros usan los datos actuales del maestro del cliente. Tipo (TC) filtra el comprobante.</p>
+                        <div @onkeydown:stopPropagation>
+                            <AlfaLookup TItem="ReporteFiltroOpcion" Label="Código exacto del cliente" Placeholder="Buscar por código o nombre"
+                                SearchText="@_clienteBusqueda" SearchTextChanged="CambiarBusquedaCliente"
+                                SelectedItem="@_clienteSeleccionado" SelectedItemChanged="SeleccionarCliente"
+                                SearchFunc="BuscarClientesAsync" ItemKey="c => c.Codigo" Disabled="_isLoading">
+                                <ItemTemplate Context="cliente">@cliente.Codigo · @cliente.Nombre</ItemTemplate>
+                            </AlfaLookup>
+                        </div>
+                        <p class="gd-hint">Buscá por nombre o código y seleccioná el cliente. Se filtra su código exacto.</p>
+                        <AlfaSelect Label="Provincia del cliente" Value="@(_filtros.Provincia ?? string.Empty)" Placeholder="Todas"
+                            Options="@_options.Provincias.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
+                            ValueChanged="CambiarProvincia" />
                         <AlfaSelect Label="Vendedor del cliente" Value="@(_filtros.Vendedor ?? string.Empty)" Placeholder="Todos" Disabled="_filtros.SinVendedor"
                             Options="@_options.Vendedores.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
                             ValueChanged="v => CambiarCartera(v, true)" />
@@ -451,6 +478,51 @@
             </div>
         }
     </div>;
+
+    private RenderFragment RenderFiltroProforma() => @<text>
+        @if (Ventas && _options.PuedeIncluirProforma)
+        {
+            <AlfaCheckbox Value="_filtros.IncluirProforma" ValueChanged="CambiarProforma">Incluir proforma</AlfaCheckbox>
+            <p class="gd-hint">Incluye FP, NCFP y CBFP. Sin marcar, se excluyen de este reporte.</p>
+        }
+    </text>;
+
+    private void CambiarBusquedaCliente(string value)
+    {
+        _clienteBusqueda=value; UpdatePageHeader();
+    }
+
+    private void SeleccionarCliente(ReporteFiltroOpcion? cliente)
+    {
+        _clienteSeleccionado=cliente;
+        _filtros.CuentaExacta=cliente?.Codigo.Trim();
+        if (cliente is not null) _clienteBusqueda=$"{cliente.Codigo} · {cliente.Nombre}";
+        UpdatePageHeader();
+    }
+
+    private void LimpiarCliente()
+    {
+        _clienteSeleccionado=null; _clienteBusqueda=string.Empty; _filtros.CuentaExacta=null;
+    }
+
+    private async Task<IReadOnlyList<ReporteFiltroOpcion>> BuscarClientesAsync(string texto,CancellationToken ct)
+    {
+        using var linked=CancellationTokenSource.CreateLinkedTokenSource(ct,_contextCts.Token);
+        return await ReporteService.BuscarClientesAsync(texto,linked.Token);
+    }
+
+    private void CambiarProvincia(string? value)
+    {
+        _filtros.Provincia=string.IsNullOrWhiteSpace(value)?null:value.Trim(); UpdatePageHeader();
+    }
+
+    private void CambiarProforma(bool? value)
+    {
+        _filtros.IncluirProforma=_options.PuedeIncluirProforma && value==true;
+        if (!_filtros.IncluirProforma && ReporteComercialService.EsProforma(_filtros.TipoComprobante??""))
+            _filtros.TipoComprobante=null;
+        UpdatePageHeader();
+    }
 
     private void CambiarIncluirCero(bool? valor)
     {
@@ -529,7 +601,9 @@
         => string.Join(" ", new[] { error.HasSuggestion ? error.Suggestion : null, error.HasCode ? $"Código: {error.Code}." : null }
             .Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => CargarOpcionesAsync();
+
+    private async Task CargarOpcionesAsync()
     {
         var ct = _contextCts.Token;
         var result = await UiOps.RunAsync(
@@ -537,14 +611,26 @@
             "No se pudieron cargar las opciones del reporte.");
         if (_disposed || ct.IsCancellationRequested) return;
         if (result.Success && result.Value is not null)
-            _options = result.Value;
+            AplicarOpciones(result.Value);
         else _error = result.Feedback;
         UpdatePageHeader();
+    }
+
+    private void AplicarOpciones(ReporteComprasOptionsDto opciones)
+    {
+        _options=opciones;
+        _filtros.IncluirProforma=Ventas && opciones.PuedeIncluirProforma;
     }
 
     private async Task GenerarAsync()
     {
         if (_isLoading || _disposed) return;
+        if (Ventas && _clienteSeleccionado is null && !string.IsNullOrWhiteSpace(_clienteBusqueda))
+        {
+            _error=AppUiMessage.Warning("Seleccioná un cliente", "Elegí un cliente de la búsqueda por nombre o código, o limpiá ese campo.");
+            UpdatePageHeader();
+            return;
+        }
         // Generar desde cero siempre arranca en la página 1; la paginación llama a CargarAsync.
         _filtros.Pagina = 1;
         _aplicados = Copiar(_filtros);
@@ -624,6 +710,7 @@
         if (_isLoading) return Task.CompletedTask;
         (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular("mes");
         _filtros.IncluirSaldosCero=false;
+        LimpiarCliente(); _filtros.Provincia=null; _filtros.IncluirProforma=Ventas && _options.PuedeIncluirProforma;
         _filtros.Vendedor=null; _filtros.SinVendedor=false; _filtros.Zona=null; _filtros.SinZona=false; _filtros.UnidadesNegocio=[];
         _filtros.Proveedor       = null;
         _filtros.TipoComprobante = null;
@@ -655,6 +742,9 @@
             chips.Add(new("proveedor", $"{Tercero}: {_filtros.Proveedor}"));
         if (Ventas)
         {
+            if (_filtros.CuentaExacta is not null) chips.Add(new("cuenta", $"Código exacto: {_filtros.CuentaExacta}"));
+            if (_filtros.Provincia is not null) chips.Add(new("provincia", $"Provincia: {_filtros.Provincia}"));
+            if (_filtros.IncluirProforma) chips.Add(new("proforma", "Incluye proformas"));
             if (_filtros.Vendedor is not null) chips.Add(new("vendedor", $"Vendedor: {_filtros.Vendedor}"));
             if (_filtros.SinVendedor) chips.Add(new("vendedor", "Sin vendedor"));
             if (_filtros.Zona is not null) chips.Add(new("zona", $"Zona: {_filtros.Zona}"));
@@ -669,6 +759,9 @@
     {
         switch (key)
         {
+            case "cuenta": LimpiarCliente(); break;
+            case "provincia": _filtros.Provincia=null; break;
+            case "proforma": CambiarProforma(false); break;
             case "cero": _filtros.IncluirSaldosCero=false; break;
             case "unidades": _filtros.UnidadesNegocio=[]; break;
             case "vendedor": _filtros.Vendedor=null; _filtros.SinVendedor=false; break;
@@ -696,6 +789,7 @@
         try
         {
             var f=Copiar(_aplicados); f.Pagina=1; f.TamanioPagina=500;
+            await ReporteService.ValidarFiltrosAsync(Ventas,f,ct);
             byte[] bytes;
             if (EsDocumentosCC)
             {

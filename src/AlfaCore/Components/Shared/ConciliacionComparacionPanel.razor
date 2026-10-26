@@ -65,6 +65,7 @@
                                 @if(b.Alterado) { <strong>Datos modificados: revisar</strong> }
                                 <small>Registración: @b.Registracion</small>
                                 <div class="conciliacion-comparacion__acciones">
+                                <AlfaIconButton Icon="bi bi-person-lines-fill" Label="Cuenta corriente del cliente" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>_consultaCuenta=b" />
                                 @if(datos.Sugerencias.FirstOrDefault(s=>s.MovimientoId==b.Id) is { } s)
                                 {
                                     <AlfaIconButton Icon="bi bi-link-45deg" Label="@($"Proponer {s.Asiento.Comprobante} · {s.Candidatos} candidato(s)")" Size="AlfaSize.Sm" Disabled="@(_busy||FiltrosModificados)" OnClick="()=>UsarSugerencia(b,s)" />
@@ -123,7 +124,12 @@
 
 <ConciliacionIaDialog Open="_iaAbierta" Busy="_busy" CanCancel="_iaAnalizando" Resultado="_iaResultado" Feedback="_feedback" OnClose="CerrarIa" OnConfirm="ConfirmarIa" OnGenerarAsiento="RevisarAsientoIa" />
 
-<AlfaDialog Open="@_configurar" Title="Criterios de propuestas de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_configurar=false">
+@if (_consultaCuenta is { } consulta)
+{
+    <ConciliacionCuentaCorrienteDialog @key="consulta.Id" MovimientoId="consulta.Id" Fecha="consulta.Fecha" Importe="consulta.Importe" Descripcion="@consulta.Detalle" OnClose="()=>_consultaCuenta=null" />
+}
+
+<AlfaDialog CloseOnBackdrop="false" Open="@_configurar" Title="Criterios de propuestas de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_configurar=false">
     <ChildContent>
         <AlfaFeedbackPanel Message="@_feedback" />
         <p>Se guardan para esta base de datos y se comparten entre usuarios. Siempre se compara la misma cuenta, moneda y sentido del movimiento.</p>
@@ -136,7 +142,7 @@
     <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>_configurar=false" Disabled="@_busy">Cancelar</AlfaButton><AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="GuardarCriterios" Disabled="@_busy">Guardar criterios</AlfaButton></Footer>
 </AlfaDialog>
 
-<AlfaDialog Open="@_propuestasAbiertas" Title="Propuestas de conciliación del período" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_propuestasAbiertas=false">
+<AlfaDialog CloseOnBackdrop="false" Open="@_propuestasAbiertas" Title="Propuestas de conciliación del período" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_propuestasAbiertas=false">
     <ChildContent>
         <AlfaFeedbackPanel Message="@_feedback" />
         <p>Misma cuenta y sentido, con una única contraparte según los criterios configurados. Cada par tendrá su propio vínculo. Revisá antes de confirmar.</p>
@@ -161,7 +167,7 @@
     </Footer>
 </AlfaDialog>
 
-<AlfaDialog Open="@_confirmar" Title="Confirmar conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_confirmar=false">
+<AlfaDialog CloseOnBackdrop="false" Open="@_confirmar" Title="Confirmar conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="()=>_confirmar=false">
     <ChildContent>
         <AlfaFeedbackPanel Message="@_feedback" />
         <p>Cuenta @_aplicado?.Cuenta · Total banco @Dinero(TotalBanco) · Total Alfa @Dinero(TotalAlfa)</p>
@@ -179,7 +185,7 @@
         <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(!PuedeConciliar)" OnClick="Confirmar">Confirmar conciliación</AlfaButton>
     </Footer>
 </AlfaDialog>
-<AlfaDialog Open="@_verHistorial" Title="Historial de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="CerrarHistorial">
+<AlfaDialog CloseOnBackdrop="false" Open="@_verHistorial" Title="Historial de conciliación" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="CerrarHistorial">
     <ChildContent>
         <AlfaFeedbackPanel Message="@_feedback" />
         @if(_historial.Count==0 && _vinculo is null) { <p>Sin conciliaciones registradas en AlfaCore para este movimiento.</p> }
@@ -211,6 +217,7 @@
 </AlfaDialog>
 
 @code {
+    private ConciliacionFilaBanco? _consultaCuenta;
     [Parameter] public string? CuentaInicial { get; set; }
     [Parameter] public EventCallback<long> OnGenerarAsiento { get; set; }
     [Parameter] public EventCallback<ConciliacionIaOrientacion> OnAsientoIa { get; set; }
@@ -224,12 +231,12 @@
         [
             new() { Key = "conciliar-seleccion", Label = seleccion == 0 ? "Conciliar selección" : $"Conciliar selección ({_banco.Count} + {_alfa.Count})",
                 Icon = "bi-link-45deg", Style = PageHeaderActionStyle.Primary, Disabled = !PuedePrepararConciliacion, OnClick = () => { _confirmar = true; return RefrescarAsync(); } },
-            new() { Key = "propuestas", Label = _datos is { Propuestas.Count: > 0 } d ? $"Revisar propuestas ({d.Propuestas.Count})" : "Revisar propuestas",
+            new() { Key = "propuestas", CollapseOnNarrow = true, Label = _datos is { Propuestas.Count: > 0 } d ? $"Revisar propuestas ({d.Propuestas.Count})" : "Revisar propuestas",
                 Icon = "bi-stars", Disabled = _busy || FiltrosModificados || _datos is not { Propuestas.Count: > 0 }, OnClick = () => { AbrirPropuestas(); return RefrescarAsync(); } },
             new() { Key = "comparar", Label = "Comparar", Icon = "bi-arrow-left-right", Style = PageHeaderActionStyle.Secondary,
                 Disabled = _busy || string.IsNullOrWhiteSpace(_cuenta), OnClick = AplicarBusqueda },
             new() { Key = "asistir-ia", Label = "Asistir con IA", Icon = "bi-stars", Disabled = _busy || _aplicado is null || FiltrosModificados, OnClick = AnalizarConIa },
-            new() { Key = "generar-asiento", Label = "Generar asiento", Icon = "bi-journal-plus", Disabled = _busy || FiltrosModificados || !OnGenerarAsiento.HasDelegate || _banco.Count != 1 || !EsGenerable(_banco.Values.FirstOrDefault()), OnClick = () => OnGenerarAsiento.InvokeAsync(_banco.Values.Single().Id) },
+            new() { Key = "generar-asiento", CollapseOnNarrow = true, Label = "Generar asiento", Icon = "bi-journal-plus", Disabled = _busy || FiltrosModificados || !OnGenerarAsiento.HasDelegate || _banco.Count != 1 || !EsGenerable(_banco.Values.FirstOrDefault()), OnClick = () => OnGenerarAsiento.InvokeAsync(_banco.Values.Single().Id) },
             new() { Key = "criterios", Label = "Criterios de propuestas", Icon = "bi-sliders", Priority = PageHeaderActionPriority.Overflow,
                 Disabled = _busy, OnClick = () => { _configurar = true; return RefrescarAsync(); } },
             new() { Key = "limpiar-seleccion", Label = "Limpiar selección", Icon = "bi-x-circle", Priority = PageHeaderActionPriority.Overflow,

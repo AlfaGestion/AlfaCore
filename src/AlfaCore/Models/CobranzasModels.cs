@@ -36,6 +36,8 @@ public sealed class CobranzaTalonario
 
 public sealed class CobranzaPreparacion
 {
+    public DateTime? SaldoAl { get; set; }
+    public IReadOnlyList<CobranzaSaldoCliente> SaldosCliente { get; set; } = [];
     public long? MovimientoId { get; set; }
     public DateTime Fecha { get; set; }
     public string CuentaBanco { get; set; } = "";
@@ -45,6 +47,13 @@ public sealed class CobranzaPreparacion
     public IReadOnlyList<CobranzaTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CobranzaRetencionSugerida> RetencionesSugeridas { get; set; } = [];
     public IReadOnlyList<CobranzaAplicacion> AplicacionesSugeridas { get; set; } = [];
+}
+
+public sealed class CobranzaSaldoCliente
+{
+    public string Cliente { get; set; } = "";
+    public string Moneda { get; set; } = "";
+    public decimal Saldo { get; set; }
 }
 
 public sealed class CobranzaRetencionSugerida

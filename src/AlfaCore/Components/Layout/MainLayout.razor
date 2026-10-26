@@ -703,10 +703,10 @@ else
                         <span>Tareas</span>
                     </button>
                 }
-                <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
+                <button type="button" class="menu__link menu__button menu__link--help" @onclick="AbrirAyudaGlobal">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
-                </NavLink>
+                </button>
                 <div class="menu__build" title="Fecha de compilación del binario que está corriendo — si esperabas un cambio reciente y no lo ves, comparalo con la hora en que compilaste." style="padding: 4px 12px; font-size: 11px; opacity: 0.5; white-space: nowrap;">
                     build @BuildStamp
                 </div>
@@ -770,9 +770,9 @@ else
                         <span class="shell__dot"></span>
                         <span>Actualizado en tiempo real</span>
                         <span class="shell__date">@DateTime.Now.ToString("dd/MM/yyyy")</span>
-                        <a class="help-btn no-print" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")" title="Manual de usuario">
+                        <button type="button" class="help-btn no-print" @onclick="AbrirAyudaGlobal" title="Ayuda y chat con IA" aria-label="Ayuda y chat con IA">
                             <i class="bi bi-question-circle"></i>
-                        </a>
+                        </button>
                     </div>
                 </div>
             }
@@ -853,6 +853,15 @@ else
                     @if (AppUserSession.IsAuthenticated && !IsDirectMode)
                     {
                         <TopbarAvisosMenu OnConfigurarPush="TogglePushPanelAsync" />
+                    }
+                    @if (AppUserSession.IsAuthenticated)
+                    {
+                        <button type="button" class="alfa-app-topbar__global-icon no-print" @onclick="AbrirAyudaGlobal" title="Ayuda y chat con IA" aria-label="Ayuda y chat con IA">
+                            <i class="bi bi-question-circle" aria-hidden="true"></i>
+                        </button>
+                    }
+                    @if (AppUserSession.IsAuthenticated && !IsDirectMode)
+                    {
                         <TopbarConfiguracionMenu ModuloActual="@_currentModule" OnConfigurarPush="TogglePushPanelAsync" />
                     }
                     <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
@@ -871,6 +880,7 @@ else
                                            AyudaUrl="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")"
                                            BuildStamp="@BuildStamp"
                                            OnCambiarUsuario="OpenLoginOverlayAsync"
+                                           OnAyuda="AbrirAyudaGlobal"
                                            OnTareas="ToggleTasksPanelAsync"
                                            OnInstalar="InstallFromUserMenuAsync" />
                     }
@@ -955,6 +965,11 @@ else
         </span>
         <span class="global-message-notice__count">@_globalConversationUnreadCount</span>
     </button>
+}
+
+@if (AppUserSession.IsAuthenticated && !_isInitializing)
+{
+    <AyudaContextualDialog Open="_ayudaGlobalAbierta" Tema="@AlfaCore.Services.AyudaManuales.TemaParaRuta(Nav.Uri)" OnClose="()=>_ayudaGlobalAbierta=false" @key="(SessionSvc.GetActiveSession()?.Id, AppUserSession.CurrentUser?.UserName)" />
 }
 
 <SessionDrawer Open="_drawerOpen"
@@ -1757,8 +1772,12 @@ else
         });
     }
 
+    private bool _ayudaGlobalAbierta;
+    private void AbrirAyudaGlobal() => _ayudaGlobalAbierta=true;
+
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
+        _ayudaGlobalAbierta=false;
         HeaderNavigation.Record(args.Location);
         _mobileSidebarOpen = false;
         if (!TryGetRouteBaseId(out _))

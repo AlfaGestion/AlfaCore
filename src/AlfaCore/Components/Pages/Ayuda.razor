@@ -214,7 +214,16 @@
         _search = string.Empty;
         _html = null;
 
-        if (topic == "consultas")
+        if (topic is "conciliacion" or "cobranzas")
+        {
+            var tema=AlfaCore.Services.AyudaManuales.Temas.Single(t=>t.Clave==topic);
+            _pageTitle=tema.Nombre;
+            _pageSubtitle=$"Manual de usuario de {tema.Nombre}.";
+            _heroTitle=$"Ayuda de {tema.Nombre}";
+            _heroText="Buscá por tarea o concepto y consultá los procedimientos del sistema.";
+            LoadMarkdown(tema.Recurso);
+        }
+        else if (topic == "consultas")
         {
             _pageTitle = "Diseñador de Consultas";
             _pageSubtitle = "Manual del módulo de consultas SQL: árbol jerárquico, ejecución, parámetros, constructor visual y exportación.";

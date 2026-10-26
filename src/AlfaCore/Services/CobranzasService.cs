@@ -198,8 +198,22 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
             var propuestaVigente=propuestas.Count is >0 and <=50 && propuestas.Select(a=>a.FacturaId).Distinct().Count()==propuestas.Count
                 && propuestas.All(a=>a.Importe>0 && docs.Any(d=>d.Id==a.FacturaId && d.Saldo>=a.Importe))
                 && docs.Where(d=>propuestas.Any(a=>a.FacturaId==d.Id)).Select(d=>d.Unidad).Distinct().Count()==1;
+            var saldoAl=DateTime.Today;
+            var saldos=(await cn.QueryAsync<CobranzaSaldoCliente>(Cmd("""
+                SELECT LTRIM(RTRIM(a.CUENTA)) Cliente,
+                    COALESCE(NULLIF(MAX(LTRIM(RTRIM(mon.DESCRIPCION))),''),NULLIF(LTRIM(RTRIM(a.MONEDA)),''),'Sin informar') Moneda,
+                    CONVERT(decimal(19,4),SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE
+                        WHEN a.[DEBE-HABER]='H' THEN -a.IMPORTE ELSE 0 END)) Saldo
+                FROM dbo.MV_ASIENTOS a
+                LEFT JOIN dbo.TA_MONEDAS mon ON LTRIM(RTRIM(mon.CODIGO))=LTRIM(RTRIM(a.MONEDA))
+                WHERE LTRIM(RTRIM(a.CUENTA))=@cliente AND a.EsResumen=0 AND a.FECHA<@hasta
+                    AND (@admin=1 OR LTRIM(RTRIM(a.UNEGOCIO))=@unidad)
+                GROUP BY LTRIM(RTRIM(a.CUENTA)),LTRIM(RTRIM(a.MONEDA))
+                ORDER BY LTRIM(RTRIM(a.MONEDA));
+                """,new { cliente=mov.Cliente,hasta=saldoAl.AddDays(1),admin=user.Admin,unidad=user.Unidad },null,token))).AsList();
             VerificarSesion(session);
             return new CobranzaPreparacion { MovimientoId=mov.Id,Fecha=mov.Fecha,CuentaBanco=mov.Cuenta,ImporteBanco=mov.Importe,
+                SaldoAl=saldoAl,SaldosCliente=saldos,
                 Documentos=docs,Medios=medios,Talonarios=talonarios.DistinctBy(t=>(t.Talonario,t.Unidad)).ToList(),
                 RetencionesSugeridas=retenciones,AplicacionesSugeridas=propuestaVigente ? propuestas : [] };
         },ct);

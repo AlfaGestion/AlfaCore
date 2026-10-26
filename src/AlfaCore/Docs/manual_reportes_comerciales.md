@@ -40,7 +40,11 @@ El control presenta saldo de la selección, deuda global del cliente, límite ac
 
 Este control mide deuda contable: no agrega exposición adicional por cheques pendientes de acreditación ni remitos sin facturar. No cambia límites ni bloquea la emisión. Excel exporta todas las cuentas del filtro con total general; PDF imprime la página visible.
 
-Los informes incluyen proformas según las vistas del sistema. El IVA corresponde a importes registrados fiscalmente; una proforma no genera libro IVA. Los totales pueden incluir impuestos distintos del IVA. Los importes son los registrados en la fuente; este informe no convierte monedas.
+En **Ventas**, el campo **Código exacto del cliente** del embudo permite buscar por nombre o código y seleccionar un cliente. El reporte filtra únicamente el código exacto seleccionado. Si escribís sin seleccionar, debés elegir un cliente o limpiar el campo antes de generar. Se combina con el texto de búsqueda general; vaciá ese texto si solo querés filtrar por código. **Provincia del cliente**, vendedor y zona consultan los datos actuales del maestro, mientras **Tipo (TC)** corresponde al comprobante. Estos filtros se conservan en todas las pestañas, la paginación y Excel.
+
+La opción **Incluir proforma** aparece únicamente si la configuración general **UsaFacturaProforma** vale **SI** y el usuario tiene habilitado **VerProforma**. Por defecto está marcada al abrir el reporte, cambiar de sesión o limpiar los filtros, siempre que la configuración y el permiso lo permitan. Si la desmarcás, excluye **FP, NCFP y CBFP**, también de la apertura y los saldos contables. Al marcarla se incluyen. En la analítica, sin proformas se omiten también sus referencias en las aplicaciones; los importes original, aplicado y pendiente siguen siendo los de la vista oficial actual. El resultado y el archivo Excel muestran los filtros efectivamente aplicados; editar el buscador no cambia ese resumen hasta generar nuevamente.
+
+En **Compras** se conserva la inclusión de proformas según las vistas del sistema. El IVA corresponde a importes registrados fiscalmente; una proforma no genera libro IVA. Los totales pueden incluir impuestos distintos del IVA. Los importes son los registrados en la fuente; este informe no convierte monedas.
 
 ## Páginas y archivos
 

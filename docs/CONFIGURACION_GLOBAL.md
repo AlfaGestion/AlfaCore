@@ -1,5 +1,9 @@
 # Modelo de Configuración Central - TA_CONFIGURACION
 
+## Ayuda global con IA
+
+El chat del icono **?** reutiliza `OPENAI_API_KEY` y `OPENAI_MODEL` del servidor, cargados por el mecanismo `.env` existente, con el mismo fallback general que las otras funciones de IA. No agrega parámetros propios ni guarda credenciales en `TA_CONFIGURACION`. El consumo se identifica como `AYUDA`. Sin clave configurada, las guías siguen disponibles. Ver [arquitectura de ayuda](arquitectura/ayuda-contextual.md).
+
 ## Conciliación bancaria inteligente
 
 `CONCILIACION-IA-MAX-FILAS` (CAJA): máximo de pendientes por lista en un análisis, inicial 300, permitido 50 a 1000. Si se excede se requiere acotar filtros; no se envía una muestra parcial. `CONCILIACION-IA-MODELO` (CAJA): modelo opcional para esta función; vacío reutiliza OPENAI_MODEL del servidor y su fallback vigente. La clave proviene de OPENAI_API_KEY, cargada por el mecanismo .env existente, y no se guarda en la base del cliente. El consumo se registra con función CONCILIACION. La IA utiliza tolerancia, margen de días y referencia del circuito banco/Alfa; no cambia esos criterios ni confirma automáticamente. Requiere actualización 2026-10-23-001__caja_conciliacion_ia.sql.

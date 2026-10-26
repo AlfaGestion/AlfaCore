@@ -21,8 +21,6 @@
 .conciliacion-page .panel-card { padding: var(--alfa-space-16); min-width: 0; }
 .conciliacion-campos { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); gap: 16px; max-width: 1000px; }
 .conciliacion-campos--cuenta { grid-template-columns: minmax(260px, 1fr); }
-.conciliacion-filtros { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(220px, 1fr) auto; align-items: end; gap: var(--alfa-space-16); padding-bottom: var(--alfa-space-16); border-bottom: 1px solid var(--alfa-border-default); }
-.conciliacion-filtros__acciones { display: flex; gap: var(--alfa-space-8); align-items: center; }
 .conciliacion-tabla th ::deep .alfa-button { padding-inline: 0; font-weight: 600; }
 .conciliacion-archivo { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px dashed var(--alfa-border-default); border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-surface); }
 .conciliacion-archivo ::deep input[type=file] { color: var(--alfa-text-secondary); max-width: 100%; font-size: var(--alfa-font-body); }
@@ -44,7 +42,7 @@
 .conciliacion-egreso { color: var(--alfa-danger); }
 .conciliacion-tabla tr.is-selected { background: var(--alfa-state-selected); }
 .conciliacion-tabla--acciones tr.is-selected td:last-child { background: var(--alfa-state-selected); }
-@media(max-width: 1024px) { .conciliacion-campos { grid-template-columns: 1fr; } .conciliacion-filtros { grid-template-columns: minmax(240px, 1fr) minmax(200px, 1fr); } .conciliacion-filtros__acciones { grid-column: 1 / -1; } }
+@media(max-width: 1024px) { .conciliacion-campos { grid-template-columns: 1fr; } }
 
 /* Ocupa justo el alto disponible del shell (sin el padding inferior de gd-page): las listas scrollean por dentro y no queda espacio vacío abajo. */
 .conciliacion-page--comparar { flex:1 1 0; height:auto; max-height:100%; min-height:0; padding-bottom:var(--alfa-space-8); overflow:hidden; contain:layout paint; display:flex; flex-direction:column; gap:var(--alfa-space-8); }

@@ -413,6 +413,11 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
         {
             var prep=await service.PrepararConciliacionAsync(real.Value);
             Assert.NotEmpty(prep.Documentos);Assert.NotEmpty(prep.Talonarios);Assert.NotEmpty(prep.CuentaBanco);
+            Assert.Equal(DateTime.Today,prep.SaldoAl);
+            var consulta=new ConciliacionBancariaService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,new());
+            var cuentaActual=await consulta.CuentaCorrienteAsync(real.Value,30,prep.SaldoAl);
+            Assert.Equal(cuentaActual.Saldos.Select(s=>(s.Moneda,s.Saldo)),prep.SaldosCliente.Select(s=>(s.Moneda,s.Saldo)));
+            Assert.All(prep.SaldosCliente,s=>Assert.Equal(prep.Documentos[0].Cliente,s.Cliente));
         }
         using(var tx=cn.BeginTransaction(System.Data.IsolationLevel.Serializable))
         {
@@ -727,6 +732,8 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
                 var caja=ModuleTopNavPresets.BuildCajaBancos(provider.GetRequiredService<IRouteContextService>(),provider.GetRequiredService<NavigationManager>(),"resumen");
                 Assert.DoesNotContain(caja,i=>i.Key=="conciliacion");
                 Assert.True(header.Current.Actions.Single(a=>a.Key=="importar").Disabled);
+                Assert.NotNull(header.Current.Search);
+                Assert.Contains("Todos los bancos",header.Current.Search!.Placeholder);
                 var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
                 Assert.Contains("Archivo Excel",html);Assert.DoesNotContain("Formato del extracto",html);
                 var file=Excel("descarga.xlsx",["Número Secuencia","Fecha","Importe","Descripción"],
@@ -758,7 +765,29 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
                 html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
                 Assert.Contains("PRUEBA PANTALLA",html);Assert.Contains("35,17",html);Assert.Contains("Detalle",html);Assert.Contains("Marcar como cobrado",html);
                 GuardarVista("revision.html",root.ToHtmlString());
-                Assert.Contains("Filtros de movimientos",html);Assert.Contains("Buscar movimientos",html);
+                // La búsqueda del encabezado sale de una importación restringida y limpia filtros anteriores.
+                page.GetType().GetField("_filtro",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(page,(long?)-1);
+                page.GetType().GetField("_clienteAplicado",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(page,"NO_COINCIDE");
+                await header.Current.Search!.OnTextChanged!("35,17");
+                await header.Current.Search!.OnSearch!();
+                Assert.Null(page.GetType().GetField("_filtro",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(page));
+                Assert.Equal("",page.GetType().GetField("_clienteAplicado",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(page));
+                Assert.Contains("Todas las importaciones",root.ToHtmlString());
+                Assert.Contains("PRUEBA PANTALLA",root.ToHtmlString());
+                await (Task)page.GetType().GetMethod("AbrirImportacion",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,[import!.Value])!;
+                Assert.DoesNotContain("class=\"conciliacion-filtros\"",html);
+                Assert.NotNull(header.Current.SearchContent);
+                var busqueda=await renderer.RenderComponentAsync<CascadingValue<bool>>(ParameterView.FromDictionary(new Dictionary<string,object?> {
+                    ["Value"]=false,["ChildContent"]=header.Current.SearchContent }));
+                Assert.Contains("Filtros de movimientos",busqueda.ToHtmlString());
+                Assert.Contains("Buscar movimientos",busqueda.ToHtmlString());
+                page.GetType().GetMethod("AlternarFiltrosRevision",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,null);
+                var filtros=await renderer.RenderComponentAsync<CascadingValue<bool>>(ParameterView.FromDictionary(new Dictionary<string,object?> {
+                    ["Value"]=false,["ChildContent"]=header.Current.SearchContent }));
+                var filtrosTexto=System.Net.WebUtility.HtmlDecode(filtros.ToHtmlString());
+                Assert.Contains("Cliente probable",filtrosTexto);Assert.Contains("Registración",filtrosTexto);
+                Assert.Contains("Conciliación",filtrosTexto);Assert.Contains("Aplicar",filtrosTexto);
+                page.GetType().GetMethod("AlternarFiltrosRevision",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,null);
                 await (Task)page.GetType().GetMethod("Ordenar",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,["importe"])!;
                 Assert.Contains("aria-sort=\"ascending\"",root.ToHtmlString());
                 page.GetType().GetField("_buscar",BindingFlags.NonPublic|BindingFlags.Instance)!.SetValue(page,"__NO_COINCIDE__");
@@ -812,6 +841,11 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
                 await (Task)page.GetType().GetMethod("GuardarClasificacion",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,null)!;
                 Assert.DoesNotContain("role=\"dialog\"",root.ToHtmlString());
                 Assert.Contains("Clasificaci",System.Net.WebUtility.HtmlDecode(root.ToHtmlString()));
+                await (Task)page.GetType().GetMethod("CambiarTab",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,["importar"])!;
+                await header.Current.Search!.OnTextChanged!("PRUEBA PANTALLA");
+                await header.Current.Search!.OnSearch!();
+                Assert.Equal("revisar",page.GetType().GetField("_tab",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(page));
+                Assert.Contains("PRUEBA PANTALLA",root.ToHtmlString());
                 await (Task)page.GetType().GetMethod("CambiarTab",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(page,["importar"])!;
                 var mp=Excel("mercadopago 102026.xlsx",["Fecha","Descripción","Tipo","Medio de pago","Monto"],
                     ["Hoy","CLIENTE","Transferencia recibida","Dinero disponible",100m]);
@@ -879,6 +913,44 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
             foreach(var key in new[]{"fecha","banco","descripcion","referencia","importe","clasificacion","cliente","propuesta","confianza","estado"})
                 Assert.Equal(62,(await service.MovimientosAsync(new ConciliacionMovimientoFiltros { ImportacionId=r.ImportacionId,OrdenPor=key })).Total);
             await Assert.ThrowsAsync<AppUserFacingException>(()=>service.MovimientosAsync(new ConciliacionMovimientoFiltros { OrdenPor="importe; SELECT 1" }));
+            await Assert.ThrowsAsync<AppUserFacingException>(()=>service.MovimientosAsync(new() { Registracion="Estado inexistente" }));
+            await Assert.ThrowsAsync<AppUserFacingException>(()=>service.MovimientosAsync(new() { Conciliacion="Estado inexistente" }));
+            await using var cn = new SqlConnection(connection);
+            await cn.OpenAsync();
+            using var tx = cn.BeginTransaction();
+            try
+            {
+                // Solo datos sintéticos de esta importación; se revierten antes de limpiarla.
+                await cn.ExecuteAsync("""
+                    UPDATE dbo.BK_ExtractoMovimiento SET EstadoRevision=CASE WHEN Importe=60 THEN 'Cobrado'
+                        WHEN Importe=59 THEN 'Registrado' ELSE 'Pendiente' END WHERE ImportacionId=@id;
+                    UPDATE p SET ClienteCodigo='112010762' FROM dbo.BK_MovimientoMatch p
+                    JOIN dbo.BK_ExtractoMovimiento m ON m.MovimientoId=p.MovimientoId
+                    WHERE m.ImportacionId=@id AND m.Importe=60;
+                    """, new { id=r.ImportacionId }, tx);
+                var cobrado = await service.MovimientosCoreAsync(cn, new() { ImportacionId=r.ImportacionId,
+                    Clasificacion="Cobranza",Cliente="112010762",Registracion="Cobrado",Conciliacion="Pendiente" },default,tx);
+                Assert.Equal(1,cobrado.Total);
+                Assert.Equal(60m,Assert.Single(cobrado.Items).Importe);
+                var nombre = await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,
+                    Cliente=cobrado.Items.Single().Cliente,Registracion="Cobrado" },default,tx);
+                Assert.Equal(1,nombre.Total);
+                var pendientes = await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,
+                    Registracion="Pendiente",Conciliacion="Pendiente",Pagina=2 },default,tx);
+                Assert.Equal(60,pendientes.Total);Assert.Equal(10,pendientes.Items.Count);
+                Assert.All(pendientes.Items,m=>Assert.Equal("Pendiente",m.Estado));
+                Assert.Equal(1,(await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,Registracion="Registrado" },default,tx)).Total);
+                Assert.Equal(0,(await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,Conciliacion="Conciliado" },default,tx)).Total);
+                Assert.Equal(0,(await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,Cliente="112010762%" },default,tx)).Total);
+                await cn.ExecuteAsync("UPDATE dbo.BK_ExtractoMovimiento SET Importe=1234567.89 WHERE ImportacionId=@id AND Importe=60;",new { id=r.ImportacionId },tx);
+                foreach (var texto in new[] { "1.234.567,89", "$ 1.234.567,89", "1234567.89" })
+                {
+                    var porImporte=await service.MovimientosCoreAsync(cn,new() { ImportacionId=r.ImportacionId,Buscar=texto },default,tx);
+                    Assert.Equal(1,porImporte.Total);
+                    Assert.Equal(1234567.89m,Assert.Single(porImporte.Items).Importe);
+                }
+            }
+            finally { tx.Rollback(); }
         }
         finally { await service.EliminarAsync(r.ImportacionId); }
     }

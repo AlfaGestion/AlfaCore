@@ -106,3 +106,5 @@ Reportes comerciales: [documentación técnica](./modulos/reportes-comerciales.m
 Cuenta corriente de Compras: [fuentes, comportamiento y validación](./modulos/reportes-compras-cuenta-corriente.md).
 
 Conciliación bancaria inteligente: [integración y alcance](modulos/conciliacion-bancaria.md), [manual de uso](../src/AlfaCore/Docs/manual_conciliacion_bancaria.md).
+
+Ayuda contextual: [modelo y mantenimiento](arquitectura/ayuda-contextual.md). Primeros manuales: [Conciliación](../src/AlfaCore/Docs/manual_conciliacion_bancaria.md) y [Cobranzas](../src/AlfaCore/Docs/manual_cobranzas.md).

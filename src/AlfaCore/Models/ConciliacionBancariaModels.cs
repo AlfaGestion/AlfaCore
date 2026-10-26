@@ -15,6 +15,9 @@ public sealed class ConciliacionMovimientoFiltros
     public long? ImportacionId { get; init; }
     public string Clasificacion { get; init; } = "";
     public string Buscar { get; init; } = "";
+    public string Cliente { get; init; } = "";
+    public string Registracion { get; init; } = "";
+    public string Conciliacion { get; init; } = "";
     public string OrdenPor { get; init; } = "fecha";
     public bool Descendente { get; init; } = true;
     public int Pagina { get; init; } = 1;

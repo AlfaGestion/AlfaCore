@@ -11,6 +11,7 @@ public static class IaUsoFunciones
     public const string Oportunidad = "OPORTUNIDAD";
     public const string Reescritura = "REESCRITURA";
     public const string InformesIa = "INFORMES_IA";
+    public const string Ayuda = "AYUDA";
     public const string Conciliacion = "CONCILIACION";
     public const string Cotizacion = "COTIZACION";
     public const string Proxy = "PROXY";
@@ -25,6 +26,7 @@ public static class IaUsoFunciones
         Oportunidad => "Detección de oportunidades",
         Reescritura => "Reescritura de mensajes",
         InformesIa => "Informes con IA",
+        Ayuda => "Ayuda del sistema",
         Conciliacion => "Conciliación bancaria asistida",
         Cotizacion => "Cotizaciones del CRM",
         Proxy => "Integraciones por licencia",

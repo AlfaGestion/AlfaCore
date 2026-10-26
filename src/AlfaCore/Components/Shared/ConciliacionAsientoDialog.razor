@@ -3,7 +3,7 @@
 @implements IDisposable
 @inject ConciliacionBancariaService Servicio
 @inject IAppUiOperationService UiOps
-<AlfaDialog Open="@(Preparacion is not null)" Title="Generar asiento y conciliar" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
+<AlfaDialog CloseOnBackdrop="false" Open="@(Preparacion is not null)" Title="Generar asiento y conciliar" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
     <ChildContent>
     @if(Preparacion is { } prep) {
         <AlfaFeedbackPanel Message="@_feedback" />

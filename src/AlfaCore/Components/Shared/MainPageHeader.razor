@@ -137,7 +137,7 @@
             @foreach (var action in VisibleActions)
             {
                 <button type="button"
-                        class="@GetActionClass(action)"
+                        class="@(GetActionClass(action) + (action.CollapseOnNarrow ? " main-page-header__action--collapse" : ""))"
                         title="@DisplayTitle(action.Title, action.Label)"
                         disabled="@(action.Disabled || action.Busy)"
                         @onclick="() => RunAsync(action.OnClick)">
@@ -149,7 +149,19 @@
                 </button>
             }
 
-            @if (OverflowActions.Count > 0)
+            @if (Config.ResponsiveToolbar && Config.Actions.Any(a=>a.CollapseOnNarrow))
+            {
+                <span class="main-page-header__overflow-wide">
+                    @if (OverflowActions.Count > 0)
+                    {
+                        <AlfaActionMenu Items="@OverflowMenuItems" TriggerLabel="Más acciones" MenuLabel="Acciones secundarias" Align="AlfaActionMenuAlign.End" />
+                    }
+                </span>
+                <span class="main-page-header__overflow-narrow">
+                    <AlfaActionMenu Items="@NarrowMenuItems" TriggerLabel="Más acciones" MenuLabel="Acciones secundarias" Align="AlfaActionMenuAlign.End" />
+                </span>
+            }
+            else if (OverflowActions.Count > 0)
             {
                 <AlfaActionMenu Items="@OverflowMenuItems"
                                 TriggerLabel="Más acciones"
@@ -172,8 +184,12 @@
     [CascadingParameter(Name = "SuppressPageHeader")] public bool SuppressPageHeader { get; set; }
 
     private PageHeaderConfig Config => PageHeader.Current;
-    private string HeaderClass => $"main-page-header no-print {(HasSearch ? string.Empty : "main-page-header--no-search")} {(Config.InlineViewButtons ? "main-page-header--inline-views" : string.Empty)} {(Config.ActionsBelowViewButtons ? "main-page-header--actions-below" : string.Empty)} {(Config.RecordToolbar ? "main-page-header--record" : string.Empty)} {(Config.CompactContextToolbar ? "main-page-header--compact-context" : string.Empty)} {(AlfaDesignShellActive ? "main-page-header--alfa-design" : string.Empty)} {(Config.Pagination is not null ? "main-page-header--with-pagination" : string.Empty)}";
+    private string HeaderClass => $"main-page-header no-print {(Config.ResponsiveToolbar ? "main-page-header--responsive" : string.Empty)} {(HasSearch ? string.Empty : "main-page-header--no-search")} {(Config.InlineViewButtons ? "main-page-header--inline-views" : string.Empty)} {(Config.ActionsBelowViewButtons ? "main-page-header--actions-below" : string.Empty)} {(Config.RecordToolbar ? "main-page-header--record" : string.Empty)} {(Config.CompactContextToolbar ? "main-page-header--compact-context" : string.Empty)} {(AlfaDesignShellActive ? "main-page-header--alfa-design" : string.Empty)} {(Config.Pagination is not null ? "main-page-header--with-pagination" : string.Empty)}";
     private bool HasSearch => Config.Search is not null || Config.SearchContent is not null;
+    private IReadOnlyList<AlfaActionMenuItem> NarrowMenuItems => Config.Actions
+        .Where(a=>a.Priority==PageHeaderActionPriority.Overflow || a.CollapseOnNarrow)
+        .Select(a=>new AlfaActionMenuItem { Key=a.Key,Label=a.Label,Icon=a.Icon,Disabled=a.Disabled||a.Busy,
+            Danger=a.Style==PageHeaderActionStyle.Danger,OnClick=a.OnClick }).ToList();
     private bool HasHeader => !SuppressPageHeader && (AlfaDesignShellActive
         // En el shell AlfaDesign el título va en la barra superior: el Context Toolbar solo se
         // muestra si tiene algo propio (acciones, búsqueda, paginador, vistas o breadcrumb).

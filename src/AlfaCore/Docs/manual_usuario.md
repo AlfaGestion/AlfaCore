@@ -323,35 +323,23 @@ Usá `Excel` para:
 
 ## 10. Ayuda y manuales por módulo
 
-AlfaCore tiene dos niveles de documentación:
+Pulsá el icono **?**, junto a las notificaciones de la barra superior. La ayuda se abre sobre la pantalla y podés volver a tu operación sin cambiar sus datos ni selecciones. En las pantallas con menú lateral, utilizá el acceso **Ayuda** del menú.
 
-### Manual general
+### Consultar las guías
 
-Este archivo.
+La ayuda abre el tema correspondiente a la pantalla cuando está disponible; en otros módulos muestra la guía general. Elegí **General**, **Consultas**, **Conciliación** o **Cobranzas**, buscá una palabra y seleccioná la tarea. **Ver manual completo** permite consultar todo el tema.
 
-Sirve para entender:
+### Preguntar a IA
 
-- qué es AlfaCore
-- cómo se navega
-- cómo funciona la base activa
-- cómo leer las pantallas
+Elegí **Preguntar a IA**, escribí tu consulta y pulsá **Preguntar** o Enter. Por ejemplo: «¿Cómo verifico si una cobranza ya está registrada?» o «¿Cómo pago dos facturas juntas?».
 
-### Manuales por módulo
+El chat consulta los manuales publicados y muestra debajo de cada respuesta las secciones utilizadas. Pulsá una fuente para leerla en **Guías**; al volver al chat se conserva la conversación. Podés hacer repreguntas, **Cancelar consulta** mientras responde o empezar una **Nueva conversación**.
 
-Cada módulo importante puede tener su propio manual.
+Si el tema no está documentado, la ayuda lo indica. El chat explica procedimientos: no consulta saldos ni comprueba por sí mismo si una cobranza está registrada. Para esos casos, seguí los pasos de cuenta corriente y comprobantes del manual.
 
-Ejemplos:
+Se envían al servicio de IA tu pregunta, la conversación reciente y fragmentos de las guías. La conexión de IA debe estar configurada en el servidor; si no lo está, podés seguir consultando las guías. La conversación se conserva mientras la ayuda está abierta; al cerrar o cambiar de pantalla, base o usuario se inicia una nueva.
 
-- Auditoría de usuarios
-- Consultas
-- [AlfaKnowledge en Conversaciones](manual_alfaknowledge_conversaciones.md)
-- otros módulos específicos
-
-### Cuándo usar cada uno
-
-Usá el **manual general** cuando quieras entender el sistema.
-
-Usá el **manual del módulo** cuando necesites trabajar en profundidad una pantalla concreta.
+Cerrá con la **X**, **Volver a la operación** o Esc. Hacer clic fuera del panel no lo cierra.
 
 ---
 

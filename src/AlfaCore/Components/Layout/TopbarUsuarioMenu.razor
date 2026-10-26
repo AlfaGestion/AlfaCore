@@ -64,10 +64,20 @@
                         <span>@InstalarLabel</span>
                     </button>
                 }
-                <a class="tb-usr__item" role="menuitem" href="@AyudaUrl" @onclick="Close">
-                    <i class="bi bi-question-circle" aria-hidden="true"></i>
-                    <span>Ayuda</span>
-                </a>
+                @if (OnAyuda.HasDelegate)
+                {
+                    <button type="button" class="tb-usr__item" role="menuitem" @onclick="() => RunAsync(OnAyuda)">
+                        <i class="bi bi-question-circle" aria-hidden="true"></i>
+                        <span>Ayuda</span>
+                    </button>
+                }
+                else
+                {
+                    <a class="tb-usr__item" role="menuitem" href="@AyudaUrl" @onclick="Close">
+                        <i class="bi bi-question-circle" aria-hidden="true"></i>
+                        <span>Ayuda</span>
+                    </a>
+                }
             </div>
 
             @if (!string.IsNullOrWhiteSpace(BuildStamp))
@@ -88,6 +98,7 @@
     [Parameter] public string AyudaUrl { get; set; } = "/ayuda";
     [Parameter] public string? BuildStamp { get; set; }
     [Parameter] public EventCallback OnCambiarUsuario { get; set; }
+    [Parameter] public EventCallback OnAyuda { get; set; }
     [Parameter] public EventCallback OnTareas { get; set; }
     [Parameter] public EventCallback OnInstalar { get; set; }
 

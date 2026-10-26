@@ -28,7 +28,7 @@ Compras: [cuenta corriente con apertura, Saldos, Resumida y Analítica](reportes
 
 Ampliación de cartera: [cuenta corriente, saldos y cobranzas — relevamiento VB6/RPT y plan](reportes-ventas-cuenta-corriente.md). Implementadas cuenta corriente con apertura/acumulados, Saldos, Control de Crédito contable, Cuenta Corriente Resumida (solo deuda positiva) y Analítica con aplicaciones. Resumida/analítica usan VE_CPTES_SALDOS_UNEG y aplicaciones actuales; las fechas filtran emisión. El disponible de crédito usa deuda global al corte y límite actual; la exposición adicional por cheques/remitos sigue pendiente. Las restantes opciones del plan siguen pendientes.
 
-Ver [registro de esta pasada](../gestion/configuracion-reportes-comerciales-avances.md). La comparación automatizada usa las fuentes actuales de DISTRIWALTERP; no certifica la calidad de todos los datos históricos ni corrige las vistas legacy. Se conserva su cobertura histórica y la inclusión de proformas. No hay conversión monetaria ni certificación multimoneda en esta entrega. Ninguna prueba emite comprobantes.
+Ver [registro de esta pasada](../gestion/configuracion-reportes-comerciales-avances.md). La comparación automatizada usa las fuentes actuales de DISTRIWALTERP; no certifica la calidad de todos los datos históricos ni corrige las vistas legacy. Se conserva su cobertura histórica; en Ventas, la inclusión de proformas depende del filtro y la autorización descritos a continuación. No hay conversión monetaria ni certificación multimoneda en esta entrega. Ninguna prueba emite comprobantes.
 
 [Manual de usuario](../../src/AlfaCore/Docs/manual_reportes_comerciales.md).
 
@@ -38,3 +38,13 @@ Ver [registro de esta pasada](../gestion/configuracion-reportes-comerciales-avan
 Reporte de Ventas comparte navegación con el dashboard gerencial. La pestaña Inicio apunta a `/ventas-dashboard`, conservando el prefijo de la base; `/ventas` redirige históricamente al POS. Punto de Venta mantiene su navegación independiente y no aparece entre las pestañas del dashboard/reporte.
 
 El instalador declara `ALFACORE_MENU_WEB.PadreClave = D60`, además del padre legacy en TA_MENU. Las instalaciones anteriores se reparan con `2026-10-16-001__ventas_reporte_ventas_padre_menu_web.sql`. [Incidencia confirmada y reparación en las bases 106/153](../gestion/reporte-ventas-menu-2026-10-16.md).
+
+## Filtros de Ventas (25/10/2026)
+
+`CuentaExacta` compara por igualdad tras `LTRIM(RTRIM(...))`; no usa LIKE ni razón social. `Provincia` usa `VT_CLIENTES.PROVINCIA`, confirmado en el relevamiento `ventas-carga-comprobantes/sql-distriwalterp-metadatos.json`, y opciones de `TA_ESTADOS`. Se aplican mediante EXISTS para no multiplicar movimientos y también a cuentas sin movimientos de Saldos.
+
+`IncluirProforma` se activa por defecto en el panel al cargar opciones o limpiar filtros si configuración/usuario lo permiten; desmarcarlo excluye FP, NCFP y CBFP en libros, movimientos, saldos y documentos. También se excluyen referencias a estos tipos en las aplicaciones analíticas, sin recalcular los importes de la vista oficial. La apertura y el disponible se calculan sobre los movimientos incluidos. Compras conserva su comportamiento anterior.
+
+El servicio ofrece la opción únicamente con `UsaFacturaProforma=SI` (VALOR o VALORAUX cuando VALOR está vacío) y `TA_USUARIOS.VerProforma=1` para el usuario/sistema activo. Si falta la columna, no habilita la opción. Revalida en cada consulta y antes de exportar, incluido el resumen ya cargado. No requiere migración ni modifica configuración/permisos. El panel recarga opciones al cambiar de sesión y muestra el resumen de filtros aplicados en resultados, impresión y Excel.
+
+El selector de cliente reutiliza `AlfaLookup`: búsqueda diferida por código/razón social sobre `VT_CLIENTES`, hasta 25 sugerencias con parámetros y escape de comodines. Elegir una sugerencia aplica `CuentaExacta`; editar la búsqueda invalida la selección anterior y generar exige seleccionar o limpiar. Enter/Escape del lookup no se propagan al panel de filtros.

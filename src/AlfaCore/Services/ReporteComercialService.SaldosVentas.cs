@@ -8,7 +8,7 @@ public sealed partial class ReporteComercialService
 {
     public Task<SaldosVentasResultDto> GetSaldosVentasAsync(FiltrosReporteCompras f, bool controlCredito, CancellationToken ct=default)
         => EjecutarAsync(true,controlCredito?"ControlCredito":"Saldos",
-            cn=>LeerSaldosVentasAsync(cn,f,controlCredito,ct),ct);
+            cn=>LeerSaldosVentasAsync(cn,f,controlCredito,ct),ct,f);
 
     public Task<SaldosVentasResultDto> GetSaldosComprasAsync(FiltrosReporteCompras f,CancellationToken ct=default)
         => EjecutarAsync(false,"Saldos",cn=>LeerSaldosVentasAsync(cn,f,false,ct,ventas:false),ct);
@@ -19,6 +19,7 @@ public sealed partial class ReporteComercialService
         bool controlCredito, CancellationToken ct=default, SqlTransaction? transaction=null,bool ventas=true)
     {
         var corte=new FiltrosReporteCompras { FechaDesde=null,FechaHasta=f.FechaHasta??DateTime.Today,
+            CuentaExacta=f.CuentaExacta,Provincia=f.Provincia,IncluirProforma=f.IncluirProforma,
             Proveedor=f.Proveedor,Vendedor=ventas?f.Vendedor:null,SinVendedor=ventas&&f.SinVendedor,Zona=ventas?f.Zona:null,SinZona=ventas&&f.SinZona,
             UnidadesNegocio=[..f.UnidadesNegocio],Pagina=f.Pagina,TamanioPagina=f.TamanioPagina };
         var parametros=new DynamicParameters(Parametros(corte));
@@ -31,6 +32,7 @@ public sealed partial class ReporteComercialService
                 CASE WHEN @SinFiltroUnidad=1 OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) IN @Unidades THEN 1 ELSE 0 END Seleccionado
             INTO #BaseSaldo FROM dbo.MV_ASIENTOS a
             {FiltroCarteraComercial(ventas,"a.CUENTA","a.UNEGOCIO",filtrarUnidad:false)}
+            {FiltroProformas(ventas,"a.TC")}
             AND a.EsResumen=0 AND a.FECHA<DATEADD(day,1,@FechaHasta);
             SELECT Cuenta,SUM(Signado) SaldoGlobal,SUM(CASE WHEN Seleccionado=1 THEN Signado ELSE 0 END) Saldo
             INTO #SaldoMovimientos FROM #BaseSaldo GROUP BY Cuenta;
@@ -45,7 +47,9 @@ public sealed partial class ReporteComercialService
                 SELECT LTRIM(RTRIM(CTACODIGO)) Cuenta,MAX(RAZON_SOCIAL) RazonSocial,
                     {(ventas ? "MAX(CONVERT(decimal(19,4),ISNULL(Limite_Credito,0)))" : "CONVERT(decimal(19,4),0)")} LimiteCredito
                 FROM {Terceros(ventas)} p
-                WHERE (@Vendedor IS NULL OR LTRIM(RTRIM(p.IdVendedor))=@Vendedor)
+                WHERE (@CuentaExacta IS NULL OR LTRIM(RTRIM(p.CTACODIGO))=@CuentaExacta)
+                    {(ventas ? "AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)" : "")}
+                    AND (@Vendedor IS NULL OR LTRIM(RTRIM(p.IdVendedor))=@Vendedor)
                     AND (@SinVendedor=0 OR NULLIF(LTRIM(RTRIM(p.IdVendedor)),'') IS NULL)
                     AND (@Zona IS NULL OR LTRIM(RTRIM(p.ZONA))=@Zona)
                     AND (@SinZona=0 OR NULLIF(LTRIM(RTRIM(p.ZONA)),'') IS NULL)

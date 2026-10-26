@@ -19,7 +19,7 @@ public sealed class ReporteComprasExcelExporter
         SetTitulo(ws, ventas ? "Resumen de Ventas" : "Resumen de Compras", 7);
 
         // Fila 2: período y fecha de exportación
-        SetSubtitulo(ws, BuildPeriodo(filtros), 7);
+        SetSubtitulo(ws, DescribirFiltros(filtros,ventas), 7);
 
         // Fila 3: KPIs
         ws.Cell(3, 1).Value = ventas ? "Total vendido" : "Total comprado";
@@ -73,7 +73,7 @@ public sealed class ReporteComprasExcelExporter
         var ws = wb.Worksheets.Add(ventas ? "Detalle de Ventas" : "Detalle de Compras");
 
         SetTitulo(ws, ventas ? "Detalle de Ventas" : "Detalle de Compras", 10);
-        SetSubtitulo(ws, $"{BuildPeriodo(filtros)} — {total} comprobantes", 10);
+        SetSubtitulo(ws, $"{DescribirFiltros(filtros,ventas)} — {total} comprobantes", 10);
 
         var headers = new[] { "Fecha", "TC", "Comprobante", "Cuenta", ventas ? "Cliente" : "Proveedor", "Motivo", "Neto", "IVA", "Total", "Usuario" };
         SetHeaders(ws, 3, headers);
@@ -113,7 +113,7 @@ public sealed class ReporteComprasExcelExporter
         using var wb=new XLWorkbook(); var ws=wb.Worksheets.Add("Cuenta corriente");
         var cuentas=items.GroupBy(x=>x.Cuenta).ToList();
         SetTitulo(ws,ventas ? "Cuenta corriente de clientes" : "Cuenta corriente de proveedores",10);
-        SetSubtitulo(ws,$"{BuildPeriodo(filtros)} · Inicial: {cuentas.Sum(x=>x.First().SaldoInicial):N2} · Movimiento neto del período: {movimiento:N2} · Cierre: {cuentas.Sum(x=>x.First().SaldoFinalCuenta):N2}",10);
+        SetSubtitulo(ws,$"{DescribirFiltros(filtros,ventas)} · Inicial: {cuentas.Sum(x=>x.First().SaldoInicial):N2} · Movimiento neto del período: {movimiento:N2} · Cierre: {cuentas.Sum(x=>x.First().SaldoFinalCuenta):N2}",10);
         SetHeaders(ws,3,["Cuenta",ventas?"Cliente":"Proveedor","Fecha","TC","Comprobante","Debe","Haber","Saldo parcial","Tipo de línea","Saldo inicial"]);
         var row=4;
         foreach(var cuenta in cuentas)
@@ -145,7 +145,7 @@ public sealed class ReporteComprasExcelExporter
         using var wb=new XLWorkbook();var ws=wb.Worksheets.Add(controlCredito?"Control de crédito":"Saldos");
         var columns=controlCredito?7:3;
         SetTitulo(ws,controlCredito?"Saldos Control de Crédito":ventas?"Saldos por cliente":"Saldos por proveedor",columns);
-        SetSubtitulo(ws,$"Corte: {(filtros.FechaHasta??DateTime.Today):dd/MM/yyyy} · {BuildPeriodo(filtros)} · Incluye saldo cero: {(filtros.IncluirSaldosCero?"Sí":"No")}",columns);
+        SetSubtitulo(ws,$"Corte: {(filtros.FechaHasta??DateTime.Today):dd/MM/yyyy} · {DescribirFiltros(filtros,ventas)} · Incluye saldo cero: {(filtros.IncluirSaldosCero?"Sí":"No")}",columns);
         SetHeaders(ws,3,controlCredito ? ["Cuenta","Cliente","Saldo de la selección","Deuda global","Límite actual","Disponible global","Exceso"]
             : ["Cuenta",ventas?"Cliente":"Proveedor","Saldo de la selección"]);
         var row=4;
@@ -169,7 +169,7 @@ public sealed class ReporteComprasExcelExporter
     {
         using var wb=new XLWorkbook();var ws=wb.Worksheets.Add("Comprobantes");
         SetTitulo(ws,(analitico?"Cuenta corriente analítica":"Cuenta corriente resumida")+(ventas?" de clientes":" de proveedores"),9);
-        SetSubtitulo(ws,$"{BuildPeriodo(filtros)} · Fechas de emisión; aplicaciones actuales",9);
+        SetSubtitulo(ws,$"{DescribirFiltros(filtros,ventas)} · Fechas de emisión; aplicaciones actuales",9);
         SetHeaders(ws,3,["Cuenta",ventas?"Cliente":"Proveedor","Emisión","TC","Comprobante","Vencimiento","Original","Aplicado","Pendiente"]);
         var row=4;
         foreach(var d in items)
@@ -270,7 +270,7 @@ public sealed class ReporteComprasExcelExporter
             ws.Cell(row, c).Style.Fill.BackgroundColor = XLColor.FromHtml("#f8fafc");
     }
 
-    private static string BuildPeriodo(FiltrosReporteCompras f)
+    public static string DescribirFiltros(FiltrosReporteCompras f,bool ventas)
     {
         var desde = f.FechaDesde?.ToString("dd/MM/yyyy") ?? "—";
         var hasta = f.FechaHasta?.ToString("dd/MM/yyyy") ?? "—";
@@ -279,6 +279,9 @@ public sealed class ReporteComprasExcelExporter
         var cartera = f.SinVendedor ? " · Sin vendedor" : string.IsNullOrWhiteSpace(f.Vendedor) ? "" : $" · Vendedor del cliente: {f.Vendedor}";
         cartera += f.SinZona ? " · Sin zona" : string.IsNullOrWhiteSpace(f.Zona) ? "" : $" · Zona del cliente: {f.Zona}";
         if(f.UnidadesNegocio.Length>0) cartera += " · Unidades: " + string.Join(", ",f.UnidadesNegocio.Select(x=>string.IsNullOrEmpty(x)?"Sin unidad":x));
+        if (!string.IsNullOrWhiteSpace(f.CuentaExacta)) cartera += $" · Código exacto: {f.CuentaExacta}";
+        if (ventas && !string.IsNullOrWhiteSpace(f.Provincia)) cartera += $" · Provincia del cliente: {f.Provincia}";
+        if (ventas) cartera += f.IncluirProforma ? " · Incluye proformas (FP, NCFP, CBFP)" : " · Sin proformas (excluye FP, NCFP, CBFP)";
         return $"Período: {desde} al {hasta}{extra}{tc}{cartera}";
     }
 }

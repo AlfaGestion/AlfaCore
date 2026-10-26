@@ -1,0 +1,20 @@
+@using System.Globalization
+
+<AlfaDialog Open="true" Title="Cuenta corriente del cliente" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="OnClose">
+    <ChildContent>
+        <p><strong>Movimiento bancario #@MovimientoId · @Fecha.ToString("dd/MM/yyyy") · @Importe.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))</strong></p>
+        <p>@Descripcion</p>
+        <ConciliacionCuentaCorrientePanel MovimientoId="MovimientoId" FechaMovimiento="Fecha" MostrarCliente="true" />
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="OnClose">Cerrar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public long MovimientoId { get; set; }
+    [Parameter] public DateTime Fecha { get; set; }
+    [Parameter] public decimal Importe { get; set; }
+    [Parameter] public string Descripcion { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+}

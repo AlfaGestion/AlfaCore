@@ -1,0 +1,78 @@
+@using AlfaCore.Services
+@inject IAyudaIaService AyudaIa
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="ayuda-chat">
+    <p class="ayuda-chat__nota">Preguntá cómo usar AlfaCore. La IA consulta los manuales publicados; podés abrir sus fuentes para revisar los pasos.</p>
+    @if (!AyudaIa.Disponible)
+    {
+        <p role="status">El chat con IA no está configurado en este servidor. Las guías siguen disponibles.</p>
+    }
+    <div class="ayuda-chat__mensajes" role="log" aria-label="Conversación de ayuda" aria-live="polite" aria-busy="@_ocupado.ToString().ToLowerInvariant()" @ref="_mensajes">
+        @if (_turnos.Count==0)
+        {
+            <p>Por ejemplo: «¿Cómo verifico si una cobranza ya está registrada?» o «¿Cómo pago dos facturas juntas?».</p>
+        }
+        @foreach (var turno in _turnos)
+        {
+            <section class="ayuda-chat__turno">
+                <strong>Vos</strong><p class="ayuda-chat__texto">@turno.Pregunta</p>
+                <strong>Ayuda IA</strong><p class="ayuda-chat__texto">@turno.Respuesta.Texto</p>
+                @foreach (var fuente in turno.Respuesta.Fuentes)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-book" OnClick="()=>OnFuente.InvokeAsync(fuente)">@fuente.Titulo</AlfaButton>
+                }
+            </section>
+        }
+        @if (_ocupado) { <p role="status">Consultando los manuales…</p> }
+    </div>
+    @if (_error is not null) { <p role="alert" class="ayuda-chat__error">@_error</p> }
+    <form class="ayuda-chat__consulta" @onsubmit="Enviar" @onsubmit:preventDefault>
+        <AlfaInput Label="Tu pregunta" Value="@_pregunta" ValueChanged="v=>_pregunta=v ?? string.Empty" MaxLength="2000" Disabled="@(_ocupado || !AyudaIa.Disponible)" Placeholder="¿Cómo puedo…?" />
+        <div class="ayuda-chat__acciones">
+            <AlfaButton Type="submit" Variant="AlfaButtonVariant.Primary" Disabled="@(_ocupado || !AyudaIa.Disponible || string.IsNullOrWhiteSpace(_pregunta))">Preguntar</AlfaButton>
+            @if (_ocupado) { <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Cancelar">Cancelar consulta</AlfaButton> }
+            else if (_turnos.Count>0) { <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="Limpiar">Nueva conversación</AlfaButton> }
+        </div>
+    </form>
+    <small>Se envían tu pregunta, la conversación reciente y fragmentos de las guías al servicio de IA. No se consultan saldos ni movimientos.</small>
+</div>
+
+@code {
+    [Parameter] public string Tema {get;set;}="general";
+    [Parameter] public EventCallback<AyudaFuente> OnFuente {get;set;}
+    private readonly List<(string Pregunta,AyudaRespuesta Respuesta)> _turnos=[];
+    private string _pregunta="";
+    private string? _error;
+    private bool _ocupado,_disposed,_scrollPendiente;
+    private ElementReference _mensajes;
+    private CancellationTokenSource? _consulta;
+    private async Task Enviar()
+    {
+        if(_ocupado || string.IsNullOrWhiteSpace(_pregunta) || !AyudaIa.Disponible)return;
+        _ocupado=true;_error=null;_scrollPendiente=true;
+        var pregunta=_pregunta.Trim();
+        using var consulta=new CancellationTokenSource();_consulta=consulta;
+        try
+        {
+            var respuesta=await AyudaIa.PreguntarAsync(pregunta,Tema,_turnos.Select(t=>new AyudaTurno(t.Pregunta,t.Respuesta.Texto)).ToArray(),consulta.Token);
+            if(_disposed || consulta.IsCancellationRequested)return;
+            _scrollPendiente=true;_turnos.Add((pregunta,respuesta));if(_turnos.Count>12)_turnos.RemoveAt(0);_pregunta="";
+        }
+        catch(OperationCanceledException) { if(!_disposed)_error="Consulta cancelada. Podés volver a preguntar."; }
+        catch(AppUserFacingException ex) { if(!_disposed)_error=ex.Message; }
+        catch(InvalidOperationException ex) { if(!_disposed)_error=ex.Message; }
+        finally { _ocupado=false;if(ReferenceEquals(_consulta,consulta))_consulta=null; }
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(!_scrollPendiente)return;
+        _scrollPendiente=false;
+        try { await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom",_mensajes); }
+        catch(JSDisconnectedException) { }
+    }
+    private void Cancelar()=>_consulta?.Cancel();
+    private void Limpiar() { _turnos.Clear();_error=null;_pregunta=""; }
+    public void Dispose() { _disposed=true;Cancelar(); }
+}

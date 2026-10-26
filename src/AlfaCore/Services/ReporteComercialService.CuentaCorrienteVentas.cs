@@ -11,12 +11,14 @@ public sealed partial class ReporteComercialService
 
     private static string FiltroCarteraComercial(bool ventas,string cuenta,string unidad,bool requiereCliente=true,bool filtrarUnidad=true) => $"""
         WHERE {(filtrarUnidad ? $"(@SinFiltroUnidad=1 OR LTRIM(RTRIM(ISNULL({unidad},''))) IN @Unidades)" : "1=1")}
-        AND ({(requiereCliente ? "" : "(@Vendedor IS NULL AND @SinVendedor=0 AND @Zona IS NULL AND @SinZona=0) OR ")}
+        AND (@CuentaExacta IS NULL OR LTRIM(RTRIM({cuenta}))=@CuentaExacta)
+        AND ({(requiereCliente ? "" : "(@Vendedor IS NULL AND @SinVendedor=0 AND @Zona IS NULL AND @SinZona=0 AND @Provincia IS NULL) OR ")}
             EXISTS (SELECT 1 FROM {Terceros(ventas)} p
             WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM({cuenta}))
             {(ventas ? """
               AND (@Vendedor IS NULL OR LTRIM(RTRIM(p.IdVendedor))=@Vendedor)
               AND (@SinVendedor=0 OR NULLIF(LTRIM(RTRIM(p.IdVendedor)),'') IS NULL)
+              AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)
               AND (@Zona IS NULL OR LTRIM(RTRIM(p.ZONA))=@Zona)
               AND (@SinZona=0 OR NULLIF(LTRIM(RTRIM(p.ZONA)),'') IS NULL)
               """ : "")}))
@@ -36,6 +38,7 @@ public sealed partial class ReporteComercialService
                     CONVERT(decimal(19,4),CASE WHEN a.[DEBE-HABER]='{(ventas ? "D" : "H")}' THEN a.IMPORTE ELSE -a.IMPORTE END) Signado
                 INTO #MovimientosVentas FROM dbo.MV_ASIENTOS a
                 {FiltroCarteraComercial(ventas,"a.CUENTA", "a.UNEGOCIO")}
+                {FiltroProformas(ventas,"a.TC")}
                 AND a.EsResumen=0 AND a.FECHA IS NOT NULL
                 AND (@FechaHasta IS NULL OR a.FECHA<DATEADD(day,1,@FechaHasta));
 
@@ -91,5 +94,5 @@ public sealed partial class ReporteComercialService
             return new CuentaCorrienteResultDto { TotalRegistros=count, SaldoTotal=totals.SaldoTotal,
                 SaldoInicialTotal=totals.SaldoInicialTotal,SaldoFinalTotal=totals.SaldoFinalTotal,
                 Items=(await r.ReadAsync<CuentaCorrienteFilaDto>()).ToList(),PaginaActual=f.Pagina,TamanioPagina=f.TamanioPagina };
-        },ct);
+        },ct,f);
 }

@@ -6,7 +6,7 @@
    (PageHeaderConfig.SearchContent). Ventas y Compras tienen su versión propia porque comparten
    modelo de filtros entre varias pantallas. *@
 
-<div class="smart-search" @onclick:stopPropagation>
+<div class="smart-search @Class" @onclick:stopPropagation>
     @{ var chips = BuildChips(); }
     <div class="smart-search__bar @(_open ? "is-open" : string.Empty)">
         <span class="smart-search__search-icon" aria-hidden="true">
@@ -92,6 +92,7 @@
 </div>
 
 @code {
+    [Parameter] public string? Class { get; set; }
     [Parameter, EditorRequired] public GestionDateFilterBase Model { get; set; } = default!;
     [Parameter] public string Placeholder { get; set; } = "Período...";
     [Parameter] public string? Texto { get; set; }

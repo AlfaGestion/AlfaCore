@@ -4,7 +4,7 @@
 @implements IDisposable
 @inject ConciliacionBancariaService Servicio
 @inject IAppUiOperationService UiOps
-<AlfaDialog Open="@(Catalogo is not null)" Title="Cuentas y conceptos para asientos" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
+<AlfaDialog CloseOnBackdrop="false" Open="@(Catalogo is not null)" Title="Cuentas y conceptos para asientos" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
     <ChildContent>
     @if(Catalogo is { } cat) {
         <AlfaFeedbackPanel Message="@_feedback" />

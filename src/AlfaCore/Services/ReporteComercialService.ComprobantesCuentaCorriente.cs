@@ -9,7 +9,7 @@ public sealed partial class ReporteComercialService
     public Task<ComprobantesCuentaCorrienteResultDto> GetComprobantesCuentaCorrienteAsync(
         FiltrosReporteCompras f,bool analitico,CancellationToken ct=default)
         => EjecutarAsync(true,analitico?"CuentaCorrienteAnalitica":"CuentaCorrienteResumida",
-            cn=>LeerComprobantesCuentaCorrienteAsync(cn,f,analitico,ct),ct);
+            cn=>LeerComprobantesCuentaCorrienteAsync(cn,f,analitico,ct),ct,f);
 
     public Task<ComprobantesCuentaCorrienteResultDto> GetComprobantesCuentaCorrienteComprasAsync(
         FiltrosReporteCompras f,bool analitico,CancellationToken ct=default)
@@ -32,6 +32,7 @@ public sealed partial class ReporteComercialService
                 CONVERT(decimal(19,4),v.SALDO) Pendiente
             INTO #DocumentosCC FROM {(ventas ? "dbo.VE_CPTES_SALDOS_UNEG" : "dbo.CO_CPTES_SALDOS_UNEG")} v
             {FiltroCarteraComercial(ventas,"v.CUENTA","v.UNEGOCIO")}
+                {FiltroProformas(ventas,"v.TC")}
                 AND (@FechaDesde IS NULL OR v.FECHA>=@FechaDesde)
                 AND (@FechaHasta IS NULL OR v.FECHA<DATEADD(day,1,@FechaHasta))
                 AND (@TipoComprobante IS NULL OR LTRIM(RTRIM(v.TC))=@TipoComprobante)
@@ -69,7 +70,9 @@ public sealed partial class ReporteComercialService
                 AND ((d.Tc=LTRIM(RTRIM(a.TCO_ORIGEN)) AND d.SUCURSAL=a.SUCURSAL_ORIGEN AND d.NUMERO=a.NUMERO_ORIGEN AND d.LETRA=a.LETRA_ORIGEN)
                     OR (d.Tc=LTRIM(RTRIM(a.TC)) AND d.SUCURSAL=a.SUCURSAL AND d.NUMERO=a.NUMERO AND d.LETRA=a.LETRA
                         AND LTRIM(RTRIM(a.TCO_ORIGEN)) NOT IN ('OT','PR','RM','RMC','NP','OC')))
-            WHERE @Analitico=1 AND LTRIM(RTRIM(a.TC))<>'VJ';
+            WHERE @Analitico=1 AND LTRIM(RTRIM(a.TC))<>'VJ'
+                {FiltroProformas(ventas,"a.TC")}
+                {FiltroProformas(ventas,"a.TCO_ORIGEN")};
 
             SELECT e.OrdenDocumento,e.IdAplicacion,LTRIM(RTRIM(CASE WHEN e.EsOrigen=1 THEN e.TC ELSE e.TCO_ORIGEN END)) Tc,
                 CASE WHEN e.EsOrigen=1 THEN e.SUCURSAL+e.NUMERO+e.LETRA

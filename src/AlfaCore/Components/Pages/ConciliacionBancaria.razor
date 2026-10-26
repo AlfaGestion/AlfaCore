@@ -101,16 +101,6 @@
     else
     {
         <section class="panel-card">
-            <form class="conciliacion-filtros" @onsubmit="AplicarFiltros" @onsubmit:preventDefault aria-label="Filtros de movimientos">
-                <AlfaInput Label="Buscar movimientos" Value="@_buscar" ValueChanged="v => _buscar = v ?? string.Empty"
-                    Placeholder="Descripción, referencia, cliente, importe…" MaxLength="200" Disabled="@_busy" />
-                <AlfaSelect Label="Clasificación" Value="@_clasificacion" ValueChanged="CambiarClasificacion"
-                    Options="@Clasificaciones" Placeholder="Todas las clasificaciones" Disabled="@_busy" />
-                <div class="conciliacion-filtros__acciones">
-                    <AlfaButton Type="submit" Icon="bi bi-search" Disabled="@_busy">Buscar</AlfaButton>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="LimpiarFiltros">Limpiar</AlfaButton>
-                </div>
-            </form>
             <div class="conciliacion-alcance">
                 <span>@(_filtro.HasValue ? $"Importación #{_filtro}" : "Todas las importaciones")</span>
                 @if (_filtro.HasValue)
@@ -120,7 +110,7 @@
             </div>
             @if (_movimientos.Total == 0)
             {
-                <AlfaEmptyState Title="Sin movimientos" Message="@(_buscarAplicado.Length > 0 || _clasificacionAplicada.Length > 0 ? "No hay coincidencias. Cambiá o limpiá los filtros." : "Importá un extracto o seleccioná otra importación.")" />
+                <AlfaEmptyState Title="Sin movimientos" Message="@(_buscarAplicado.Length > 0 || _clasificacionAplicada.Length > 0 || _clienteAplicado.Length > 0 || _registracionAplicada.Length > 0 || _conciliacionAplicada.Length > 0 ? "No hay coincidencias. Cambiá o limpiá los filtros." : "Importá un extracto o seleccioná otra importación.")" />
             }
             else
             {
@@ -152,6 +142,7 @@
                                     <td>@item.Confianza.ToString("N0")%</td><td>@item.Estado</td><td>@(item.ConciliacionId.HasValue ? $"Conciliado #{item.ConciliacionId}" : "Pendiente")</td>
                                     <td>
                                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => SeleccionarMovimiento(item)">Detalle</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>_consultaCuentaRevision=item">Cuenta corriente</AlfaButton>
                                         @if(PuedeGenerarAsiento(item)) {
                                             <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirAsiento(item.Id)">Generar asiento</AlfaButton>
                                         }
@@ -175,7 +166,7 @@
         </section>
         @if (_seleccion is not null)
         {
-            <AlfaDialog Open="true" Title="@($"Detalle del movimiento #{_seleccion.Id}")"
+            <AlfaDialog CloseOnBackdrop="false" Open="true" Title="@($"Detalle del movimiento #{_seleccion.Id}")"
                 Size="AlfaDialogSize.Xl" Loading="@_busy" OnClose="CerrarDetalle">
                 <ChildContent>
                 <div class="conciliacion-detalle-resumen">
@@ -352,6 +343,10 @@
         }
     }
     <ConciliacionAsientoDialog Preparacion="@_asientoPreparacion" OnClose="()=>_asientoPreparacion=null" OnSaved="AsientoGuardado" />
+    @if (_consultaCuentaRevision is { } consulta)
+    {
+        <ConciliacionCuentaCorrienteDialog @key="consulta.Id" MovimientoId="consulta.Id" Fecha="consulta.Fecha" Importe="consulta.Importe" Descripcion="@consulta.Descripcion" OnClose="()=>_consultaCuentaRevision=null" />
+    }
     <ConciliacionAsientoConfigDialog Catalogo="@_asientoCatalogo" OnClose="()=>_asientoCatalogo=null" OnSaved="ConfiguracionAsientoGuardada" />
     <CobranzaRapidaDialog Preparacion="@_cobranza" Busy="@_busy" Error="@_errorCobranza" ComprobantePreferido="@_comprobantePreferido"
         OnClose="CerrarCobranza" OnConfirm="ConfirmarCobranza" />
@@ -362,6 +357,63 @@
 </div>
 
 @code {
+    private bool _filtrosRevisionAbiertos;
+    private void CambiarFiltroRevision(Action cambiar) { cambiar(); PublicarHeader(); }
+    private void AlternarFiltrosRevision() { _filtrosRevisionAbiertos=!_filtrosRevisionAbiertos;PublicarHeader(); }
+    private Task AplicarBusquedaRevision() { _filtrosRevisionAbiertos=false;return AplicarFiltros(); }
+    private Task LimpiarBusquedaRevision() { _filtrosRevisionAbiertos=false;return LimpiarFiltros(); }
+    private Task TeclaBusquedaRevision(KeyboardEventArgs e)
+    {
+        if(e.Key=="Enter")return AplicarBusquedaRevision();
+        if(e.Key=="Escape") { _filtrosRevisionAbiertos=false;PublicarHeader(); }
+        return Task.CompletedTask;
+    }
+    private int CantidadFiltrosRevision => new[]{_clasificacionAplicada,_clienteAplicado,_registracionAplicada,_conciliacionAplicada}.Count(s=>s.Length>0);
+    private RenderFragment RenderBusquedaRevision() => @<div class="smart-search conciliacion-busqueda conciliacion-busqueda--revision" @onclick:stopPropagation>
+        <div class="smart-search__bar @(_filtrosRevisionAbiertos ? "is-open" : "")">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button" aria-label="Filtros de movimientos" title="Filtros de movimientos" aria-expanded="@_filtrosRevisionAbiertos" disabled="@_busy" @onclick="AlternarFiltrosRevision"><i class="bi bi-funnel-fill"></i></button>
+            <button type="button" class="smart-search__active-filter" title="@(_filtro.HasValue ? "Buscar en todas las importaciones" : "Todas las importaciones")" disabled="@_busy" @onclick="VerTodas">@(_filtro.HasValue ? $"Importación #{_filtro}" : "Todos los bancos")</button>
+            @if(CantidadFiltrosRevision>0) { <span class="smart-search__more-filters" title="@string.Join(" · ",new[]{_clasificacionAplicada,_clienteAplicado,_registracionAplicada,_conciliacionAplicada}.Where(s=>s.Length>0))">@CantidadFiltrosRevision filtros</span> }
+            <input type="search" aria-label="Buscar movimientos" placeholder="Importe, descripción, referencia…" maxlength="200" value="@_buscar" disabled="@_busy"
+                @oninput="e=>CambiarFiltroRevision(()=>_buscar=e.Value?.ToString() ?? string.Empty)" @onkeydown="TeclaBusquedaRevision" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros de movimientos" aria-expanded="@_filtrosRevisionAbiertos" disabled="@_busy" @onclick="AlternarFiltrosRevision"><i class="bi bi-caret-down-fill"></i></button>
+        </div>
+        @if(_filtrosRevisionAbiertos)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros de movimientos" @onclick="AlternarFiltrosRevision"></button>
+            <form class="smart-search__panel" aria-label="Filtros de movimientos" @onsubmit="AplicarBusquedaRevision" @onsubmit:preventDefault @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4>Clasificación y cliente</h4>
+                    <AlfaSelect Label="Clasificación" Value="@_clasificacion" ValueChanged="v=>CambiarFiltroRevision(()=>_clasificacion=v ?? string.Empty)" Options="@Clasificaciones" Placeholder="Todas las clasificaciones" Disabled="@_busy" />
+                    <AlfaInput Label="Cliente probable" Value="@_clienteFiltro" ValueChanged="v=>CambiarFiltroRevision(()=>_clienteFiltro=v ?? string.Empty)" Placeholder="Nombre o código del cliente" MaxLength="200" Disabled="@_busy" />
+                </div>
+                <div class="smart-search__column">
+                    <h4>Estados</h4>
+                    <AlfaSelect Label="Registración" Value="@_registracionFiltro" ValueChanged="v=>CambiarFiltroRevision(()=>_registracionFiltro=v ?? string.Empty)" Options="@EstadosRegistracion" Placeholder="Todas las registraciones" Disabled="@_busy" />
+                    <AlfaSelect Label="Conciliación" Value="@_conciliacionFiltro" ValueChanged="v=>CambiarFiltroRevision(()=>_conciliacionFiltro=v ?? string.Empty)" Options="@EstadosConciliacion" Placeholder="Todos los estados" Disabled="@_busy" />
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="LimpiarBusquedaRevision">Limpiar</AlfaButton>
+                    <AlfaButton Type="submit" Icon="bi bi-search" Disabled="@_busy">Aplicar</AlfaButton>
+                </div>
+            </form>
+        }
+    </div>;
+    private string _buscarGlobal="";
+    private Task BuscarEnTodosLosBancos() => Operar(async ct =>
+    {
+        _filtro=null; _paginaMov=1; _tab="revisar";
+        _buscar=_buscarAplicado=_buscarGlobal.Trim();
+        _clasificacion=_clasificacionAplicada="";
+        ReiniciarFiltrosAdicionales();
+        _seleccion=null; _detalle=[];
+        _movimientos=await Servicio.MovimientosAsync(FiltrosMovimientos(1,todas:true),ct);
+    });
+    private string _clienteFiltro="", _clienteAplicado="", _registracionFiltro="", _registracionAplicada="", _conciliacionFiltro="", _conciliacionAplicada="";
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadosRegistracion = [new("Pendiente","Pendiente"),new("Cobrado","Cobrado"),new("Registrado","Registrado"),new("Revisado","Revisado")];
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadosConciliacion = [new("Pendiente","Pendiente"),new("Conciliado","Conciliado")];
+    private ConciliacionMovimiento? _consultaCuentaRevision;
     private PageHeaderConfig? _header;
     private CancellationTokenSource _lifetime = new();
     private bool _disposed, _busy, _listo, _requiereBanco, _requiereFecha;
@@ -435,12 +487,15 @@
         ("confianza","Confianza"),("estado","Registración"),("conciliacion","Conciliación")];
     private ConciliacionMovimientoFiltros FiltrosMovimientos(int pagina,long? importacion=null,bool todas=false) => new() {
         ImportacionId=todas ? null : importacion ?? _filtro, Pagina=pagina, Buscar=_buscarAplicado,
-        Clasificacion=_clasificacionAplicada, OrdenPor=_orden, Descendente=_descendente };
+        Clasificacion=_clasificacionAplicada, Cliente=_clienteAplicado, Registracion=_registracionAplicada,
+        Conciliacion=_conciliacionAplicada, OrdenPor=_orden, Descendente=_descendente };
     private string AriaOrden(string key) => _orden!=key ? "none" : _descendente ? "descending" : "ascending";
     private string IndicadorOrden(string key) => _orden!=key ? "↕" : _descendente ? "↓" : "↑";
     private Task AplicarFiltros() => Operar(async ct =>
     {
         _buscarAplicado=_buscar.Trim(); _clasificacionAplicada=_clasificacion; _paginaMov=1;
+        _buscarGlobal=_buscarAplicado;
+        _clienteAplicado=_clienteFiltro.Trim(); _registracionAplicada=_registracionFiltro; _conciliacionAplicada=_conciliacionFiltro;
         await CargarPagina(ct);
     });
     private async Task CambiarClasificacion(string? value)
@@ -451,8 +506,11 @@
     private Task LimpiarFiltros()
     {
         _buscar=""; _clasificacion="";
+        _clienteFiltro=_registracionFiltro=_conciliacionFiltro="";
         return AplicarFiltros();
     }
+    private void ReiniciarFiltrosAdicionales()
+        => _clienteFiltro=_clienteAplicado=_registracionFiltro=_registracionAplicada=_conciliacionFiltro=_conciliacionAplicada="";
     private Task Ordenar(string key) => Operar(async ct =>
     {
         _descendente=_orden==key ? !_descendente : false; _orden=key; _paginaMov=1;
@@ -564,6 +622,8 @@
         _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success,Title = "Extracto importado",
             Message = $"Importación #{result.ImportacionId}: {result.Movimientos} movimientos · Total: {Dinero(result.Total)} · Duplicados omitidos: {result.Duplicados}." };
         _buscar = _buscarAplicado = _clasificacion = _clasificacionAplicada = "";
+        _buscarGlobal="";
+        ReiniciarFiltrosAdicionales();
         _filtro = result.ImportacionId; _paginaMov = 1; _paginaImport = 1; _tab = "revisar";
         _listo = false;
         _importaciones = await Servicio.ImportacionesAsync(1,ct);
@@ -709,10 +769,17 @@
         var total = _tab == "importar" ? _importaciones.Total : _movimientos.Total;
         var pagina = _tab == "importar" ? _paginaImport : _paginaMov;
         PageHeader.Set(_header = new PageHeaderConfig {
+            ResponsiveToolbar = true,
             ModuleKey = "caja-bancos", ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             Title = "Conciliación bancaria inteligente", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria inteligente"],
             TopNavigationItems = Navegacion(),
-            SearchContent = _tab=="conciliar" ? _busquedaConciliacion : null,
+            SearchContent = _tab=="conciliar" ? _busquedaConciliacion : _tab=="revisar" ? RenderBusquedaRevision() : null,
+            Search = _tab=="conciliar" ? null : new PageHeaderSearchConfig
+            {
+                Text=_buscarGlobal,Placeholder="Todos los bancos: importe, detalle o referencia…",Disabled=_busy,
+                OnTextChanged=value=> { _buscarGlobal=value; PublicarHeader(); return Task.CompletedTask; },
+                OnSearch=BuscarEnTodosLosBancos
+            },
             // En "Conciliar cuenta" no se ofrece "Importar extracto" (no aplica) y van las acciones de la comparación (2026-10-22).
             Actions = _tab=="conciliar"
                 ? [.. _accionesConciliacion,
@@ -756,6 +823,8 @@
         _cobranza=null; _errorCobranza=null; _comprobantePreferido=null;
         _banco = ""; _cuenta = ""; _paginaImport = _paginaMov = 1;
         _requiereBanco = false; _requiereFecha=false;_fechaReferencia=""; _buscar = _buscarAplicado = _clasificacion = _clasificacionAplicada = "";
+        _buscarGlobal="";
+        ReiniciarFiltrosAdicionales();
         _orden = "fecha"; _descendente = true;
         if (TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))
             await Operar(async ct => { _cuentas = await Servicio.CuentasAsync(ct); await CargarPagina(ct); });

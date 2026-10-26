@@ -19,7 +19,7 @@ public sealed partial class CuentaCorrienteVentasTests
         var cc=await service.GetCuentaCorrienteAsync(true,f);Assert.Equal(cc.SaldoFinalTotal,saldo.SaldoTotal);
         var esperado=await cn.ExecuteScalarAsync<decimal>("""
             SELECT ISNULL(SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE ELSE -a.IMPORTE END),0)
-            FROM dbo.MV_ASIENTOS a WHERE a.EsResumen=0 AND a.FECHA<DATEADD(day,1,@Hasta)
+            FROM dbo.MV_ASIENTOS a WHERE UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP') AND a.EsResumen=0 AND a.FECHA<DATEADD(day,1,@Hasta)
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA)))
             """,new { Hasta=f.FechaHasta });
         Assert.Equal(esperado,saldo.SaldoTotal);
@@ -45,7 +45,7 @@ public sealed partial class CuentaCorrienteVentasTests
         await using var cn=ConexionPruebas();await cn.OpenAsync();
         var cuenta=await cn.QuerySingleAsync<(string Cuenta,decimal Saldo)>("""
             SELECT TOP 1 LTRIM(RTRIM(a.CUENTA)),SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE ELSE -a.IMPORTE END)
-            FROM dbo.MV_ASIENTOS a WHERE a.EsResumen=0 AND a.FECHA<DATEADD(day,1,@Hasta)
+            FROM dbo.MV_ASIENTOS a WHERE UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP') AND a.EsResumen=0 AND a.FECHA<DATEADD(day,1,@Hasta)
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA)))
             GROUP BY a.CUENTA HAVING SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE ELSE -a.IMPORTE END)>100
             ORDER BY 2 DESC

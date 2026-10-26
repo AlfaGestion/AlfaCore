@@ -83,6 +83,7 @@ public sealed class ReportesComercialesTests
             var esperado=await cn.QuerySingleAsync<(int Cantidad,decimal Importe,decimal Iva)>($"""
                 SELECT COUNT(*),SUM(IMPORTE),SUM(ISNULL(LIVA_ImpIVA,0)+ISNULL(LIVA_ImpIVARec,0)+ISNULL(LIVA_ImpIva2,0)+ISNULL(LIVA_ImpIVA3,0)+ISNULL(LIVA_ImpIVA4,0))
                 FROM dbo.{fuente} WHERE FECHA>=@Desde AND FECHA<DATEADD(day,1,@Desde)
+                {(ventas ? "AND UPPER(LTRIM(RTRIM(TC))) NOT IN ('FP','NCFP','CBFP')" : "")}
                 """,new { Desde=fecha.Date });
             Assert.Equal(esperado.Cantidad,resumen.CantidadComprobantes);
             Assert.Equal(esperado.Importe,resumen.TotalComprado);Assert.Equal(esperado.Iva,resumen.IvaTotal);
@@ -103,6 +104,7 @@ public sealed class ReportesComercialesTests
             var saldo=await cn.ExecuteScalarAsync<decimal>($"""
                 SELECT ISNULL(SUM(CASE WHEN a.[DEBE-HABER]=@Signo THEN ISNULL(a.IMPORTE,0) ELSE -ISNULL(a.IMPORTE,0) END),0)
                 FROM dbo.MV_ASIENTOS a WHERE FECHA>=@Desde AND FECHA<DATEADD(day,1,@Desde)
+                {(ventas ? "AND UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP')" : "")}
                 AND EXISTS(SELECT 1 FROM dbo.{maestro} p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA)))
                 """,new { Desde=fecha.Date,Signo=signo });
             Assert.Equal(saldo,cc.SaldoTotal);
@@ -155,7 +157,13 @@ public sealed class ReportesComercialesTests
                 var search=await renderer.RenderComponentAsync<CargaComprobantesUiTests.FragmentHost>(ParameterView.FromDictionary(
                     new Dictionary<string,object?> { [nameof(CargaComprobantesUiTests.FragmentHost.Content)]=header.Current.SearchContent }));
                 var searchHtml=System.Net.WebUtility.HtmlDecode(search.ToHtmlString());
-                if(ventas) { Assert.Contains("Vendedor del cliente",searchHtml);Assert.Contains("Zona del cliente",searchHtml); }
+                if(ventas) {
+                    Assert.Contains("Vendedor del cliente",searchHtml);Assert.Contains("Zona del cliente",searchHtml);
+                    Assert.Contains("Código exacto del cliente",searchHtml);Assert.Contains("Provincia del cliente",searchHtml);
+                    var opciones=(ReporteComprasOptionsDto)typeof(ReporteComercialPanel).GetField("_options",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(panel)!;
+                    Assert.Equal(opciones.PuedeIncluirProforma,searchHtml.Contains("Incluir proforma"));
+                    Assert.Contains("Filtros aplicados:",html);
+                }
                 else { Assert.DoesNotContain("Vendedor del cliente",searchHtml);Assert.Contains("haber suma deuda",html); }
                 Assert.Contains("Sin unidad asignada",searchHtml);
                 // Cambiar borradores y arrays no altera filtros ya aplicados al reporte/exportación.

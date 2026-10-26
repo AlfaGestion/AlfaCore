@@ -93,9 +93,20 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
             var clasificacion=filtros.Clasificacion.Trim();
             if (clasificacion.Length>0 && !Enum.GetNames<MovementCategory>().Contains(clasificacion))
                 throw new InvalidOperationException("La clasificación seleccionada no está disponible.");
-            if (filtros.Pagina<1 || filtros.Buscar.Length>200)
+            if (filtros.Pagina<1 || filtros.Buscar.Length>200 || filtros.Cliente.Length>200)
                 throw new InvalidOperationException("Revisá la página y el texto de búsqueda (hasta 200 caracteres).");
+            var registracion=filtros.Registracion.Trim();
+            var conciliacion=filtros.Conciliacion.Trim();
+            if (registracion is not ("" or "Pendiente" or "Cobrado" or "Registrado" or "Revisado") ||
+                conciliacion is not ("" or "Pendiente" or "Conciliado"))
+                throw new InvalidOperationException("El estado de registración o conciliación seleccionado no está disponible.");
+            var clienteTexto=filtros.Cliente.Trim();
+            var clientePatron="%"+clienteTexto.Replace("[","[[]").Replace("%","[%]").Replace("_","[_]")+"%";
             var texto=filtros.Buscar.Trim();
+            var numero=texto.Replace("$","").Replace(" ","").Replace("\u00a0","");
+            var culturaImporte=numero.Contains(',') || System.Text.RegularExpressions.Regex.IsMatch(numero,@"^-?\d{1,3}(\.\d{3})+$")
+                ? CultureInfo.GetCultureInfo("es-AR") : CultureInfo.InvariantCulture;
+            decimal? importeBuscado=decimal.TryParse(numero,NumberStyles.Number,culturaImporte,out var importe) ? importe : null;
             var patron="%"+texto.Replace("[","[[]").Replace("%","[%]").Replace("_","[_]")+"%";
             // El nombre de columna y la dirección provienen exclusivamente de la lista compilada.
             using var r = await cn.QueryMultipleAsync(new CommandDefinition($"""
@@ -118,9 +129,13 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 WHERE (@import IS NULL OR m.ImportacionId=@import);
                 SELECT * INTO #Filtrados FROM #Revision
                 WHERE (@clasificacion='' OR Categoria=@clasificacion)
+                  AND (@clienteTexto='' OR Cliente LIKE @clientePatron OR CodigoCliente LIKE @clientePatron)
+                  AND (@registracion='' OR Estado=@registracion)
+                  AND (@conciliacion='' OR (@conciliacion='Pendiente' AND ConciliacionId IS NULL)
+                      OR (@conciliacion='Conciliado' AND ConciliacionId IS NOT NULL))
                   AND (@texto='' OR CONCAT(Descripcion,' ',Referencia,' ',Cliente,' ',Propuesta,' ',Banco,' ',Categoria,' ',Estado,' ',
                       CONVERT(varchar(30),Id),' ',CONVERT(char(10),Fecha,103),' ',CONVERT(varchar(40),Importe),' ',
-                      REPLACE(CONVERT(varchar(40),Importe),'.',','),' ',CONVERT(varchar(10),Confianza)) LIKE @patron);
+                      REPLACE(CONVERT(varchar(40),Importe),'.',','),' ',CONVERT(varchar(10),Confianza)) LIKE @patron OR Importe=@importeBuscado);
                 SELECT * INTO #Pagina FROM #Filtrados ORDER BY [{columna}] {(filtros.Descendente ? "DESC" : "ASC")},Id DESC
                 OFFSET @skip ROWS FETCH NEXT 50 ROWS ONLY;
                 {ConciliacionRepository.ToleranciaCobroSql}
@@ -144,7 +159,8 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 ) cobro
                 ORDER BY pagina.[{columna}] {(filtros.Descendente ? "DESC" : "ASC")},pagina.Id DESC;
                 SELECT COUNT(*) FROM #Filtrados;
-                """,new { import=filtros.ImportacionId,clasificacion,texto,patron,skip=checked((filtros.Pagina-1)*50),usuario=users.GetCurrentUserName() }, transaction:tx,cancellationToken: token));
+                """,new { import=filtros.ImportacionId,clasificacion,texto,patron,importeBuscado,clienteTexto,clientePatron,registracion,conciliacion,
+                    skip=checked((filtros.Pagina-1)*50),usuario=users.GetCurrentUserName() }, transaction:tx,cancellationToken: token));
             return new PagedResult<ConciliacionMovimiento> { Items=(await r.ReadAsync<ConciliacionMovimiento>()).AsList(),Total=await r.ReadSingleAsync<int>(),PageNumber=filtros.Pagina,PageSize=50 };
         }
 

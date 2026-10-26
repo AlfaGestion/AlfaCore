@@ -2,8 +2,8 @@
 @using AlfaCore.Services
 @using AlfaCore.Components.Shared.AlfaDesign
 
-<AlfaDialog Open="@(Preparacion is not null)" Title="Cobranza rápida" Eyebrow="Caja y Bancos"
-    Size="AlfaDialogSize.Lg" Loading="@Busy" ErrorMessage="@(_error ?? Error)" OnClose="OnClose">
+<AlfaDialog CloseOnBackdrop="false" Open="@(Preparacion is not null)" Title="Cobranza rápida" Eyebrow="Caja y Bancos"
+    Size="AlfaDialogSize.Xl" Loading="@Busy" ErrorMessage="@(_error ?? Error)" OnClose="OnClose">
     <ChildContent>
         @if (Preparacion is not null)
         {
@@ -16,17 +16,34 @@
                 }
                 @if (Documento is { } doc)
                 {
-                    <p><strong>@doc.Nombre</strong> · @doc.Cliente · Unidad de negocio @doc.Unidad</p>
-                    <div class="cobranza-editor__cabecera">
-                        <AlfaInput Label="Fecha de cobranza" Type="date" Value="@_fecha" ValueChanged="v => _fecha=v ?? string.Empty" Disabled="@Busy" />
-                        <AlfaSelect Label="Talonario del recibo" Value="@_talonario" ValueChanged="v => _talonario=v ?? string.Empty"
-                            Options="@OpcionesTalonarios" Placeholder="Seleccionar talonario CB" Disabled="@Busy" />
-                    </div>
-                    <h3>Comprobantes a cobrar</h3>
-                    <p>Marcá las facturas que cancela este pago. El importe se distribuye entre las seleccionadas y podés corregirlo.</p>
-                    @if (_seleccionSugerida) { <p class="cobranza-editor__sugerencia">Selección precargada desde la propuesta de conciliación. Revisala antes de confirmar.</p> }
+                    <section class="cobranza-editor__resumen" aria-label="Cliente, saldo actual e ingreso bancario">
+                        <div class="cobranza-editor__cliente">
+                            <strong>@doc.Nombre</strong>
+                            <small>Cliente @doc.Cliente · Unidad @doc.Unidad</small>
+                            <span>Saldo actual del cliente</span>
+                            @if (Preparacion.SaldoAl is { } corte)
+                            {
+                                @foreach (var saldo in Preparacion.SaldosCliente.Where(s=>s.Cliente==doc.Cliente))
+                                {
+                                    <strong class="cobranza-editor__importe">@saldo.Moneda @Dinero(saldo.Saldo)</strong>
+                                }
+                                @if (!Preparacion.SaldosCliente.Any(s=>s.Cliente==doc.Cliente)) { <strong class="cobranza-editor__importe">$ 0,00</strong> }
+                                <small>Al @corte.ToString("dd/MM/yyyy") · unidades autorizadas · antes de esta cobranza</small>
+                            }
+                            else { <small>Saldo no consultado</small> }
+                        </div>
+                        <div class="cobranza-editor__ingreso">
+                            <span>Recibido en el banco</span>
+                            <strong class="cobranza-editor__importe">$ @Dinero(Preparacion.ImporteBanco)</strong>
+                            <small>@Preparacion.Fecha.ToString("dd/MM/yyyy")</small>
+                            <span>@Preparacion.Medios.FirstOrDefault(m=>m.Cuenta==Preparacion.CuentaBanco)?.Descripcion</span>
+                        </div>
+                    </section>
+                    <h3>1. Facturas a cancelar</h3>
+                    <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
+                    @if (_seleccionSugerida) { <p class="cobranza-editor__sugerencia">Selección precargada desde la propuesta. Revisala antes de confirmar.</p> }
                     <div class="cobranza-editor__documentos"><table>
-                        <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Saldo actual</th><th>Aplicar</th></tr></thead>
+                        <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Pendiente de factura</th><th>Aplicar</th></tr></thead>
                         <tbody>@foreach(var d in DocumentosUnidad)
                         {
                             var importe=AplicacionesActuales.FirstOrDefault(a=>a.FacturaId==d.Id)?.Importe ?? 0;
@@ -39,19 +56,25 @@
                             </tr>
                         }</tbody>
                     </table></div>
-                    <p>@_seleccionadas.Count comprobante(s) · Saldo seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>. El número de CB se asignará al confirmar.</p>
+                    <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
                 }
-                <AlfaInput Label="Detalle de la cobranza" Value="@_detalle" ValueChanged="v => _detalle=v ?? string.Empty"
-                    MaxLength="100" Disabled="@Busy" />
-                <h3>Medios de pago</h3>
+                <h3>2. Banco y retenciones</h3>
                 @foreach (var linea in _lineas)
                 {
                     <div class="cobranza-editor__medio" @key="linea">
-                        <AlfaSelect Label="@(linea.Banco ? "Cuenta bancaria" : "Retención")" Value="@linea.Cuenta"
-                            ValueChanged="v => { linea.Cuenta=v ?? string.Empty; linea.Sugerida=false; }" Options="@(linea.Banco ? OpcionesBanco : OpcionesRetenciones)"
-                            Placeholder="Seleccionar medio" Disabled="@(Busy || linea.Banco)" />
-                        <AlfaInput Label="Importe" Type="number" Step="0.01" Value="@linea.Importe"
-                            ValueChanged="v => { linea.Importe=v ?? string.Empty; linea.Sugerida=false; }" Disabled="@(Busy || linea.Banco)" />
+                        @if (linea.Banco)
+                        {
+                            <div><small>Cuenta bancaria</small><p>@Preparacion.Medios.FirstOrDefault(m=>m.Cuenta==linea.Cuenta)?.Descripcion</p></div>
+                            <strong class="cobranza-editor__importe-banco">$ @Dinero(Preparacion.ImporteBanco)</strong>
+                        }
+                        else
+                        {
+                            <AlfaSelect Label="Retención" Value="@linea.Cuenta"
+                                ValueChanged="v => { linea.Cuenta=v ?? string.Empty; linea.Sugerida=false; }" Options="@OpcionesRetenciones"
+                                Placeholder="Seleccionar retención" Disabled="@Busy" />
+                            <AlfaInput Label="Importe" Type="number" Step="0.01" Value="@linea.Importe"
+                                ValueChanged="v => { linea.Importe=v ?? string.Empty; linea.Sugerida=false; }" Disabled="@Busy" />
+                        }
                         @if (!linea.Banco)
                         {
                             @if (linea.Sugerida && UltimaRetencion is { } anterior)
@@ -65,6 +88,16 @@
                     </div>
                 }
                 <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _lineas.Count>=20)" OnClick="AgregarRetencion">Agregar retención</AlfaButton>
+                <details class="cobranza-editor__opciones" open="@string.IsNullOrWhiteSpace(_talonario)">
+                    <summary>3. Datos del recibo y comentario · @FechaResumen</summary>
+                    <div class="cobranza-editor__cabecera">
+                        <AlfaInput Label="Fecha de cobranza" Type="date" Value="@_fecha" ValueChanged="v => _fecha=v ?? string.Empty" Disabled="@Busy" />
+                        <AlfaSelect Label="Talonario del recibo" Value="@_talonario" ValueChanged="v => _talonario=v ?? string.Empty"
+                            Options="@OpcionesTalonarios" Placeholder="Seleccionar talonario CB" Disabled="@Busy" />
+                    </div>
+                    <AlfaInput Label="Detalle de la cobranza" Value="@_detalle" ValueChanged="v => _detalle=v ?? string.Empty" MaxLength="100" Disabled="@Busy" />
+                    <p class="cobranza-editor__sugerencia">El número definitivo de CB se asignará al confirmar.</p>
+                </details>
             </div>
         }
     </ChildContent>
@@ -72,7 +105,7 @@
         <div class="cobranza-editor__totales">
             <span>Total CB: <strong>@Dinero(Total)</strong></span>
             <span>Aplicado: <strong>@Dinero(TotalAplicado)</strong> · Diferencia por aplicar: <strong>@Dinero(Total-TotalAplicado)</strong></span>
-            <span>Saldo restante de los seleccionados: <strong>@Dinero(SaldoSeleccionado-TotalAplicado)</strong></span>
+            <span>Pendiente en facturas seleccionadas: <strong>@Dinero(SaldoSeleccionado-TotalAplicado)</strong></span>
         </div>
         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@Busy" OnClick="() => OnClose.InvokeAsync()">Cancelar</AlfaButton>
         <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || Documento is null || string.IsNullOrEmpty(_talonario) || _seleccionadas.Count==0 || Total!=TotalAplicado || AplicacionesActuales.Any(a=>a.Importe<=0))"
@@ -90,6 +123,8 @@
     private CobranzaPreparacion? _anterior;
     private Guid _operacion;
     private string _factura="",_talonario="",_fecha="";
+    private string FechaResumen => DateTime.TryParseExact(_fecha,"yyyy-MM-dd",Invariante,System.Globalization.DateTimeStyles.None,out var fecha)
+        ? fecha.ToString("dd/MM/yyyy") : _fecha;
     private string _detalle="",_detalleSugerido="";
     private string? _error;
     private readonly List<Linea> _lineas=[];

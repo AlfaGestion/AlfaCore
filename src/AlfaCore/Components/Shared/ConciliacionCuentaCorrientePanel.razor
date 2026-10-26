@@ -5,6 +5,18 @@
 @inject IAppUiOperationService UiOps
 
 <section class="conciliacion-cta" aria-label="Cuenta corriente del cliente" aria-busy="@_busy">
+    @if (MostrarCliente && !_busy && _error is null)
+    {
+        @if (!string.IsNullOrWhiteSpace(_clienteCodigo))
+        {
+            <h3>@_clienteNombre · @_clienteCodigo</h3>
+        }
+        else
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Falta identificar el cliente"
+                Message="Abrí el detalle del movimiento y asigná el cliente en Clasificación y cliente. Luego volvé a consultar su cuenta corriente." />
+        }
+    }
     <div class="conciliacion-cta__filtros">
         <AlfaSelect Label="Últimos movimientos" Value="@_cantidad" ValueChanged="CambiarCantidad" Options="@Cantidades" Disabled="@_busy" />
         <AlfaInput Label="Hasta la fecha" Type="date" Value="@_hasta" ValueChanged="v => _hasta=v ?? string.Empty" Disabled="@_busy" />
@@ -47,6 +59,7 @@
                 <summary>Recibo / comprobante seleccionado · @detalle.Movimiento.Tc @detalle.Movimiento.Comprobante · @detalle.Movimiento.Fecha.ToString("dd/MM/yyyy")</summary>
                 <p>Importe: @detalle.Movimiento.Moneda @Dinero(detalle.Movimiento.Debe+detalle.Movimiento.Haber)</p>
                 <p>@detalle.Movimiento.Detalle</p>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>AbrirComprobante(detalle.Movimiento.Tc,detalle.Movimiento.Comprobante)">Ver comprobante completo</AlfaButton>
                 <p>Usuario: @detalle.Movimiento.Usuario · Caja: @detalle.Movimiento.Caja · Unidad: @detalle.Movimiento.Unidad</p>
                 @if (!string.IsNullOrWhiteSpace(detalle.Comentarios)) { <p>Comentarios: @detalle.Comentarios</p> }
                 @if (PuedeReconocer && !_reconocido && detalle.Movimiento.ReciboCercano && detalle.Movimiento.CodigoMoneda=="1" && detalle.Movimiento.Haber>0)
@@ -79,7 +92,7 @@
                         <thead><tr><th>Comprobante</th><th>Fecha</th><th>Importe aplicado</th><th>Comentarios</th></tr></thead>
                         <tbody>@foreach (var a in detalle.Aplicaciones)
                         {
-                            <tr><td>@a.Tc @a.Comprobante</td><td>@a.Fecha?.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(a.Importe)</td><td>@a.Comentarios</td></tr>
+                            <tr><td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="()=>AbrirComprobante(a.Tc,a.Comprobante)">@a.Tc @a.Comprobante</AlfaButton></td><td>@a.Fecha?.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(a.Importe)</td><td>@a.Comentarios</td></tr>
                         }</tbody>
                     </table></div>
                 }
@@ -101,7 +114,8 @@
                     <tr class="@(m.PosibleCoincidencia ? "posible-coincidencia" : null)">
                         <td>@m.Fecha.ToString("dd/MM/yyyy")</td><td>@m.Tc @m.Comprobante @if(m.PosibleCoincidencia) { <strong>Posible coincidencia</strong> }</td>
                         <td>@m.Detalle</td><td>@m.Moneda</td><td class="numero">@Dinero(m.Debe)</td><td class="numero">@Dinero(m.Haber)</td><td class="numero">@Dinero(m.Saldo)</td>
-                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => Ver(m)">Ver</AlfaButton></td>
+                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => VerAsientoCompleto(m)">Ver asiento</AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirComprobante(m.Tc,m.Comprobante)">Ver comprobante</AlfaButton></td>
                     </tr>
                 }</tbody>
             </table></div>
@@ -109,14 +123,37 @@
     }
 </section>
 
+@if (_comprobante is { } comprobante)
+{
+    <AlfaDialog Open="true" Title="@($"{(_asientoDirecto ? "Asiento" : "Comprobante")} {comprobante.Tc} {comprobante.Numero}")" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="()=>_comprobante=null">
+        <ChildContent>
+            <ComprobanteViewer @key="(comprobante,_asientoDirecto)" Tc="@comprobante.Tc" IdComprobante="@comprobante.Numero" ModoDetalleCompleto="true"
+                AbrirAsientoInicial="_asientoDirecto" AsientoCerrado="()=> { if (_asientoDirecto) _comprobante=null; }" />
+        </ChildContent>
+        <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>_comprobante=null">Volver a cuenta corriente</AlfaButton></Footer>
+    </AlfaDialog>
+}
+
 @code {
     [Parameter] public long MovimientoId { get; set; }
+    [Parameter] public bool MostrarCliente { get; set; }
     [Parameter] public DateTime FechaMovimiento { get; set; }
     [Parameter] public bool PuedeReconocer { get; set; }
     [Parameter] public EventCallback CobroReconocido { get; set; }
     [Parameter] public bool SaldoEnCabecera { get; set; }
     [Parameter] public EventCallback<ConciliacionSaldoResumen> SaldoConsultado { get; set; }
     private readonly CancellationTokenSource _lifetime = new();
+    private string _clienteCodigo = "", _clienteNombre = "";
+    private (string Tc, string Numero)? _comprobante;
+    private bool _asientoDirecto;
+    private void AbrirComprobante(string tc, string numero, bool asientoDirecto=false)
+    {
+        if (!string.IsNullOrWhiteSpace(tc) && !string.IsNullOrWhiteSpace(numero))
+        {
+            _asientoDirecto=asientoDirecto;
+            _comprobante = (tc.Trim(), numero.Trim());
+        }
+    }
     private static readonly IReadOnlyList<AlfaSelectOption> Cantidades = [new("30","30"),new("50","50"),new("100","100")];
     private string _observacionCobro="";
     private string _cantidad="30", _hasta="", _corteConsultado="", _cantidadConsultada="";
@@ -165,6 +202,14 @@
         {
             _error=AppUiMessage.Error("Fecha inválida","Ingresá una fecha de corte válida."); return;
         }
+        if (MostrarCliente)
+        {
+            var cliente = (await Servicio.DetalleAsync(MovimientoId, _lifetime.Token)).FirstOrDefault();
+            _lifetime.Token.ThrowIfCancellationRequested();
+            _clienteCodigo = cliente?.ClientCode?.Trim() ?? "";
+            _clienteNombre = cliente?.ClientName?.Trim() ?? "";
+            if (_clienteCodigo.Length == 0) { _datos = null; return; }
+        }
         var datos=await Servicio.CuentaCorrienteAsync(MovimientoId,int.Parse(_cantidad,CultureInfo.InvariantCulture),fecha,_lifetime.Token);
         _lifetime.Token.ThrowIfCancellationRequested();
         _datos=datos;_asiento=null;_versionAsiento=0;_confirmoRecibo=false;_observacionCobro="";
@@ -180,6 +225,12 @@
         var detalle=await Servicio.DetalleAsientoAsync(MovimientoId,m.Clave,_lifetime.Token);
         _lifetime.Token.ThrowIfCancellationRequested();_asiento=detalle;_versionAsiento++;_confirmoRecibo=false;_observacionCobro="";
     });
+    private async Task VerAsientoCompleto(ConciliacionCtaMovimiento m)
+    {
+        await Ver(m);
+        if (!_disposed && _error is null && _asiento?.Movimiento.Clave==m.Clave)
+            AbrirComprobante(m.Tc,m.Comprobante,asientoDirecto:true);
+    }
     private Task ReconocerCobro()=>Ejecutar(async()=>
     {
         if(!PuedeReconocer||!_confirmoRecibo||_asiento is not { } d)return;

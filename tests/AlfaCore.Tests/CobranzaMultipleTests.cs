@@ -48,6 +48,7 @@ public sealed class CobranzaMultipleTests
         {
             CobranzaSolicitud? enviada=null;
             var prep=new CobranzaPreparacion {MovimientoId=24,Fecha=new(2026,9,26),CuentaBanco="111",ImporteBanco=857903.92m,
+                SaldoAl=new(2026,10,25),SaldosCliente=[new(){Cliente="123",Moneda="$",Saldo=2000000},new(){Cliente="123",Moneda="U$S",Saldo=100}],
                 Documentos=[new(){Id=1,Cliente="123",Nombre="EMPRESA WAM",Unidad="2",Tc="FC",Comprobante="000200003794A",Moneda="1",Saldo=424704.91m},
                     new(){Id=2,Cliente="123",Nombre="EMPRESA WAM",Unidad="2",Tc="FC",Comprobante="000200003814A",Moneda="1",Saldo=433199.01m}],
                 AplicacionesSugeridas=[new(1,424704.91m),new(2,433199.01m)],
@@ -57,6 +58,9 @@ public sealed class CobranzaMultipleTests
                 ["Preparacion"]=prep,["OnConfirm"]=EventCallback.Factory.Create<CobranzaSolicitud>(new object(),(CobranzaSolicitud s)=>enviada=s)}));
             Assert.Null(enviada);html=root.ToHtmlString();
             Assert.Contains("Selección precargada",System.Net.WebUtility.HtmlDecode(html));
+            Assert.Contains("Saldo actual del cliente",System.Net.WebUtility.HtmlDecode(html));
+            Assert.Contains("2.000.000,00",System.Net.WebUtility.HtmlDecode(html));
+            Assert.Contains("U$S 100,00",System.Net.WebUtility.HtmlDecode(html));
             var dialog=activator.Dialog!;
             await (Task)typeof(CobranzaRapidaDialog).GetMethod("Confirmar",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(dialog,null)!;
             Assert.NotNull(enviada);Assert.Equal(2,enviada.Aplicaciones!.Count);
@@ -88,6 +92,11 @@ public sealed class CobranzaMultipleTests
             Assert.True(await page.GetByRole(AriaRole.Button,new(){Name="Confirmar cobranza CB",Exact=true}).IsEnabledAsync());
             Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth<=window.innerWidth"));
             Assert.True(await page.GetByRole(AriaRole.Dialog).EvaluateAsync<bool>("e=>e.scrollWidth<=e.clientWidth"));
+            var resumen=page.GetByLabel("Cliente, saldo actual e ingreso bancario",new(){Exact=true});
+            Assert.True(await resumen.IsVisibleAsync());
+            await page.Locator(".alfa-dialog__body").EvaluateAsync("e=>e.scrollTop=e.scrollHeight");
+            Assert.True(await resumen.EvaluateAsync<bool>("e=>{const r=e.getBoundingClientRect(),p=e.closest('.alfa-dialog__body').getBoundingClientRect();return r.top>=p.top&&r.bottom<=p.bottom;}"));
+            await page.Locator(".alfa-dialog__body").EvaluateAsync("e=>e.scrollTop=0");
             var path=Path.Combine(repo,"artifacts/conciliacion/cobranza-multiple-"+width+".png");
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);await page.ScreenshotAsync(new(){Path=path});
         }

@@ -303,6 +303,7 @@ public sealed class ActualizacionesService(
         // Solo se omite el alias viejo si la copia nueva tiene exactamente el mismo SQL.
         var aliases = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["2026-10-22-002__caja_conciliacion_asientos.sql"] = "2026-10-25-001__caja_conciliacion_asientos.sql",
             ["2026-10-19-001__conversaciones_encuestas_satisfaccion.sql"] = "2026-10-20-004__conversaciones_encuestas_satisfaccion.sql",
             ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
             ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",

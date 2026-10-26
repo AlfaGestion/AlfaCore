@@ -19,11 +19,11 @@ public sealed partial class CuentaCorrienteVentasTests
         await using var cn=ConexionPruebas(); await cn.OpenAsync();
         var cuenta=await cn.QuerySingleAsync<(string Cuenta,DateTime Fecha)>("""
             SELECT TOP 1 LTRIM(RTRIM(a.CUENTA)) Cuenta,MAX(a.FECHA) Fecha
-            FROM dbo.MV_ASIENTOS a WHERE a.EsResumen=0 AND a.FECHA IS NOT NULL
+            FROM dbo.MV_ASIENTOS a WHERE UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP') AND a.EsResumen=0 AND a.FECHA IS NOT NULL
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA)))
             GROUP BY a.CUENTA HAVING COUNT(*)>5 ORDER BY COUNT(*) DESC;
             """);
-        var fechas=(await cn.QueryAsync<DateTime>("SELECT DISTINCT FECHA FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(CUENTA))=@Cuenta AND EsResumen=0 AND FECHA IS NOT NULL ORDER BY FECHA",new { cuenta.Cuenta })).ToList();
+        var fechas=(await cn.QueryAsync<DateTime>("SELECT DISTINCT FECHA FROM dbo.MV_ASIENTOS WHERE UPPER(LTRIM(RTRIM(TC))) NOT IN ('FP','NCFP','CBFP') AND LTRIM(RTRIM(CUENTA))=@Cuenta AND EsResumen=0 AND FECHA IS NOT NULL ORDER BY FECHA",new { cuenta.Cuenta })).ToList();
         var desde=fechas[fechas.Count/2].Date;
         var f=new FiltrosReporteCompras { Proveedor=cuenta.Cuenta,FechaDesde=desde,FechaHasta=cuenta.Fecha.Date,TamanioPagina=1 };
         var primera=await service.GetCuentaCorrienteAsync(true,f);
@@ -32,7 +32,7 @@ public sealed partial class CuentaCorrienteVentasTests
             SELECT ISNULL(SUM(CASE WHEN FECHA<@Desde THEN CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END ELSE 0 END),0),
                 ISNULL(SUM(CASE WHEN FECHA>=@Desde THEN CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END ELSE 0 END),0),
                 ISNULL(SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END),0)
-            FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(CUENTA))=@Cuenta AND EsResumen=0 AND FECHA<DATEADD(day,1,@Hasta)
+            FROM dbo.MV_ASIENTOS WHERE UPPER(LTRIM(RTRIM(TC))) NOT IN ('FP','NCFP','CBFP') AND LTRIM(RTRIM(CUENTA))=@Cuenta AND EsResumen=0 AND FECHA<DATEADD(day,1,@Hasta)
             """,new { cuenta.Cuenta,Desde=desde,Hasta=cuenta.Fecha.Date });
         Assert.Equal(esperado.Apertura,primera.SaldoInicialTotal);
         Assert.Equal(esperado.Movimiento,primera.SaldoTotal);Assert.Equal(esperado.Cierre,primera.SaldoFinalTotal);
@@ -85,14 +85,14 @@ public sealed partial class CuentaCorrienteVentasTests
         var cc=await service.GetCuentaCorrienteAsync(true,f);Assert.NotEmpty(cc.Items);
         var esperado=await cn.ExecuteScalarAsync<decimal>("""
             SELECT ISNULL(SUM(CASE WHEN a.[DEBE-HABER]='D' THEN a.IMPORTE ELSE -a.IMPORTE END),0)
-            FROM dbo.MV_ASIENTOS a WHERE a.EsResumen=0 AND a.FECHA IS NOT NULL AND ISNULL(LTRIM(RTRIM(a.UNEGOCIO)),'')=@Unidad
+            FROM dbo.MV_ASIENTOS a WHERE UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP') AND a.EsResumen=0 AND a.FECHA IS NOT NULL AND ISNULL(LTRIM(RTRIM(a.UNEGOCIO)),'')=@Unidad
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA))
                 AND ISNULL(LTRIM(RTRIM(p.IdVendedor)),'')=@Vendedor AND ISNULL(LTRIM(RTRIM(p.ZONA)),'')=@Zona)
             """,new { cartera.Unidad,cartera.Vendedor,cartera.Zona });
         Assert.Equal(esperado,cc.SaldoFinalTotal);Assert.Equal(0,cc.SaldoInicialTotal);
         var detalle=await service.GetDetalleAsync(true,f);
         var cantidad=await cn.ExecuteScalarAsync<int>("""
-            SELECT COUNT(*) FROM dbo.Libro_VentasConFP a WHERE ISNULL(LTRIM(RTRIM(a.UNEGOCIO)),'')=@Unidad
+            SELECT COUNT(*) FROM dbo.Libro_VentasConFP a WHERE UPPER(LTRIM(RTRIM(a.TC))) NOT IN ('FP','NCFP','CBFP') AND ISNULL(LTRIM(RTRIM(a.UNEGOCIO)),'')=@Unidad
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(a.CUENTA))
                 AND ISNULL(LTRIM(RTRIM(p.IdVendedor)),'')=@Vendedor AND ISNULL(LTRIM(RTRIM(p.ZONA)),'')=@Zona)
             """,new { cartera.Unidad,cartera.Vendedor,cartera.Zona });
@@ -114,14 +114,14 @@ public sealed partial class CuentaCorrienteVentasTests
         return new SqlConnection(cs);
     }
 
-    private static ReporteComercialService CrearServicio(CargaComprobantesArcaRuntime runtime)
+    private static ReporteComercialService CrearServicio(CargaComprobantesArcaRuntime runtime,string usuario="Administrador")
     {
         var sesion=new SessionDto();
         ((CargaComprobantesUiTests.EventOnlyProxy)(object)runtime.Sessions).Handler=(m,_)=>m.Name switch
         { "GetActiveSession"=>sesion,"GetConnectionString"=>Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL"),_=>null };
         var users=DispatchProxy.Create<IAppUserSessionService,CargaComprobantesUiTests.EventOnlyProxy>();
         ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler=(m,_)=>m.Name switch
-        { "get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>"Administrador",_=>null };
+        { "get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>usuario,_=>null };
         var permisos=DispatchProxy.Create<IPermissionService,CargaComprobantesUiTests.EventOnlyProxy>();
         ((CargaComprobantesUiTests.EventOnlyProxy)(object)permisos).Handler=(_,_)=>Task.FromResult(true);
         return new ReporteComercialService(runtime.Sessions,users,permisos,runtime.Events);

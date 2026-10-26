@@ -78,6 +78,21 @@ public sealed class ConciliacionDetalleVisualTests
             sinReciboHtml=root.ToHtmlString();
             Assert.Contains("Falta seleccionar un recibo válido",System.Net.WebUtility.HtmlDecode(sinReciboHtml));
             Assert.Contains("El saldo cero no demuestra",System.Net.WebUtility.HtmlDecode(sinReciboHtml));
+            // El acceso directo reutiliza la consulta autorizada, identifica al cliente y muestra el saldo.
+            var consulta = await renderer.RenderComponentAsync<AlfaCore.Components.Shared.ConciliacionCuentaCorrienteDialog>(
+                ParameterView.FromDictionary(new Dictionary<string, object?>
+                {
+                    ["MovimientoId"] = row.Id, ["Fecha"] = row.Fecha,
+                    ["Importe"] = row.Importe, ["Descripcion"] = row.Descripcion
+                }));
+            var consultaTexto = System.Net.WebUtility.HtmlDecode(consulta.ToHtmlString());
+            Assert.Contains("Cuenta corriente del cliente", consultaTexto);
+            Assert.Contains("112010762", consultaTexto);
+            Assert.Contains(row.Descripcion, consultaTexto);
+            Assert.Contains("Saldo del cliente", consultaTexto);
+            Assert.Contains("Ver asiento", consultaTexto);
+            Assert.Contains("Ver comprobante", consultaTexto);
+            Assert.True(activator.Panel!.MostrarCliente);
         });
         if(CargaComprobantesBrowserFactAttribute.BrowserPath is null) return;
         var repo=FindRoot();

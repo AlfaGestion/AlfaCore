@@ -1,0 +1,93 @@
+@using AlfaCore.Services
+
+<div class="ayuda-contextual-host">
+    <AlfaDialog Open="Open" Title="Ayuda de AlfaCore" Eyebrow="Ayuda del sistema" Class="ayuda-contextual-dialog" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="OnClose">
+        <ChildContent>
+            @if (_manual is { } manual)
+            {
+                <AlfaTabs Items="@Temas" ActiveKey="@manual.Tema.Clave" ActiveKeyChanged="CambiarTema" AriaLabel="Manuales de ayuda" />
+                <div class="ayuda-contextual__modos">
+                    <AlfaButton Variant="@(!_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>_chat=false">Guías</AlfaButton>
+                    <AlfaButton Variant="@(_chat ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" Icon="bi bi-stars" OnClick="AbrirChat">Preguntar a IA</AlfaButton>
+                </div>
+                @if (Open && _chatIniciado)
+                {
+                    <div class="ayuda-contextual__chat" hidden="@(!_chat)">
+                        <AyudaChatPanel Tema="@manual.Tema.Clave" OnFuente="AbrirFuente" />
+                    </div>
+                }
+                @if (!_chat)
+                {
+                <AlfaInput Label="Buscar en esta ayuda" Placeholder="Importar, duplicados, saldo, retenciones…" Value="@_buscar" ValueChanged="Buscar" MaxLength="200" />
+                <div class="ayuda-contextual__layout">
+                    <nav class="ayuda-contextual__indice" aria-label="Tareas del manual">
+                        <small>@Articulos.Count tarea(s)</small>
+                        @foreach (var articulo in Articulos)
+                        {
+                            <AlfaButton Variant="@(Articulo?.Id==articulo.Id && !_completo ? AlfaButtonVariant.Secondary : AlfaButtonVariant.Ghost)" OnClick="()=>Elegir(articulo.Id)">@articulo.Titulo</AlfaButton>
+                        }
+                    </nav>
+                    <article class="ayuda-contextual__contenido" aria-label="Contenido de la ayuda" @key="(_manual.Tema.Clave,_completo,Articulo?.Id)">
+                        @if (_completo)
+                        {
+                            @((MarkupString)AyudaManuales.Html(manual.Contenido))
+                        }
+                        else if (Articulo is { } elegido)
+                        {
+                            <h2>@elegido.Titulo</h2>
+                            @((MarkupString)AyudaManuales.Html(elegido.Contenido))
+                        }
+                        else
+                        {
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No encontramos esa explicación" Message="Probá otra palabra o abrí el manual completo. Esta ayuda muestra los procedimientos documentados del sistema." />
+                        }
+                    </article>
+                </div>
+                }
+                @if (!_chat)
+                {
+                    <small class="ayuda-contextual__fuente">Fuente: manual de @manual.Tema.Nombre. La ayuda no registra ni modifica operaciones.</small>
+                }
+            }
+        </ChildContent>
+        <Footer>
+            @if (!_chat)
+            {
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="()=>_completo=!_completo">@(_completo ? "Volver a las tareas" : "Ver manual completo")</AlfaButton>
+            }
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="OnClose">Volver a la operación</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+</div>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Tema { get; set; }="conciliacion";
+    [Parameter] public string? SeccionInicial { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private static readonly IReadOnlyList<AlfaTabItem> Temas=AyudaManuales.Temas.Select(t=>new AlfaTabItem(t.Clave,t.Nombre)).ToArray();
+    private AyudaManual? _manual;
+    private string? _parametroAnterior;
+    private string _buscar="",_seleccion="";
+    private bool _completo,_estabaAbierto,_chat,_chatIniciado;
+    private IReadOnlyList<AyudaArticulo> Articulos=>_manual is null ? [] : AyudaManuales.Buscar(_manual,_buscar);
+    private AyudaArticulo? Articulo=>Articulos.FirstOrDefault(a=>a.Id==_seleccion) ?? Articulos.FirstOrDefault();
+    protected override void OnParametersSet()
+    {
+        if(Open && (!_estabaAbierto || Tema!=_parametroAnterior))
+        {
+            CambiarTema(Tema);_seleccion=SeccionInicial ?? "";
+        }
+        if(!Open) { _chat=false;_chatIniciado=false; }
+        _estabaAbierto=Open;_parametroAnterior=Tema;
+    }
+    private void CambiarTema(string? tema)
+    {
+        _manual=AyudaManuales.Obtener(AyudaManuales.Temas.Any(t=>t.Clave==tema) ? tema! : "conciliacion");
+        _buscar="";_seleccion="";_completo=false;
+    }
+    private void AbrirChat() { _chatIniciado=true;_chat=true; }
+    private void AbrirFuente(AyudaFuente fuente) { CambiarTema(fuente.Tema);Elegir(fuente.Articulo);_chat=false; }
+    private void Buscar(string? texto) { _buscar=texto ?? "";_completo=false; }
+    private void Elegir(string id) { _seleccion=id;_completo=false; }
+}

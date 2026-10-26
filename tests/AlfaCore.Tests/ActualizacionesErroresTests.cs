@@ -13,6 +13,38 @@ namespace AlfaCore.Tests;
 public sealed class ActualizacionesErroresTests
 {
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AsientosRenumeradoConviveConComprasYSoloOmiteCopiaIdentica(bool mismoSql)
+    {
+        using var folder = new ScriptsFolder();
+        folder.Add("2026-10-22-002__compras_libro_compras_con_fp_unidad.sql", "SELECT 2;");
+        folder.Add("2026-10-22-002__caja_conciliacion_asientos.sql", "SELECT 1;\r\n");
+        folder.Add("2026-10-25-001__caja_conciliacion_asientos.sql", mismoSql ? "SELECT 1;\n" : "SELECT 3;");
+
+        if (!mismoSql)
+        {
+            var ex = Assert.Throws<TargetInvocationException>(() => GetScripts(folder.Path));
+            Assert.Contains("2026-10-22-002", ex.InnerException!.Message);
+            return;
+        }
+
+        var scripts = GetScripts(folder.Path);
+        Assert.Equal(new[] { "2026-10-22-002", "2026-10-25-001" }, scripts.Select(x => x.VersionKey));
+        Assert.Contains("compras", scripts[0].Archivo);
+        Assert.Contains("caja_conciliacion_asientos", scripts[1].Archivo);
+    }
+
+    [Fact]
+    public void AliasDeAsientosSinCopiaNuevaNoOcultaLaColision()
+    {
+        using var folder = new ScriptsFolder();
+        folder.Add("2026-10-22-002__compras_libro_compras_con_fp_unidad.sql", "SELECT 2;");
+        folder.Add("2026-10-22-002__caja_conciliacion_asientos.sql", "SELECT 1;");
+        Assert.Throws<TargetInvocationException>(() => GetScripts(folder.Path));
+    }
+
+    [Theory]
     [InlineData(true,"001")]
     [InlineData(false,"001")]
     [InlineData(true,"004")]

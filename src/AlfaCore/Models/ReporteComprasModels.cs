@@ -23,6 +23,9 @@ public class FiltrosReporteCompras
     public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
     public string? Proveedor { get; set; }
+    public string? CuentaExacta { get; set; }
+    public string? Provincia { get; set; }
+    public bool IncluirProforma { get; set; }
     public string? TipoComprobante { get; set; }
     public string? Vendedor { get; set; }
     public bool SinVendedor { get; set; }
@@ -39,6 +42,8 @@ public sealed class ReporteComprasOptionsDto
     public IReadOnlyList<string> TiposComprobante { get; init; } = [];
     public IReadOnlyList<ReporteFiltroOpcion> Vendedores { get; init; } = [];
     public IReadOnlyList<ReporteFiltroOpcion> UnidadesNegocio { get; init; } = [];
+    public bool PuedeIncluirProforma { get; init; }
+    public IReadOnlyList<ReporteFiltroOpcion> Provincias { get; init; } = [];
     public IReadOnlyList<string> Zonas { get; init; } = [];
 }
 

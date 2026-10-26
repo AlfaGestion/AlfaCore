@@ -1,5 +1,9 @@
 # Conciliación bancaria inteligente
 
+## Ayuda y preguntas sobre el módulo
+
+Abrí el icono **?** junto a las notificaciones. En **Guías** podés buscar una tarea; en **Preguntar a IA**, consultar cómo realizarla y abrir las secciones del manual que respaldan la respuesta. El chat explica los procedimientos documentados y no consulta ni modifica movimientos. Al cerrar la ayuda volvés a la operación con sus datos y selecciones.
+
 Ingresá a **Caja y Bancos → Conciliación bancaria inteligente** con la empresa y base donde querés trabajar.
 
 ## Asistir con IA
@@ -12,6 +16,8 @@ La confianza Alta/Media/Baja es una orientación del asistente. Los controles de
 
 El análisis admite inicialmente hasta 300 pendientes por lista. Si se supera el límite, acotá el período o la clasificación; no se envía una muestra parcial. Durante la consulta podés pulsar **Cancelar análisis**. La conexión y modelo se toman de la IA configurada en el servidor de AlfaCore. Se envían al proveedor las descripciones, fechas, referencias e importes de los pendientes autorizados y las cuentas contables elegibles; el consumo queda identificado como conciliación bancaria.
 
+## Importar extractos
+
 1. Elegí el archivo descargado del banco en **Archivo Excel o CSV**. Se admiten `.xlsx`, `.xls` y `.csv`, de hasta 20 MB.
 2. El sistema detecta Provincia, Santander o Mercado Pago por el contenido. El selector **Formato del extracto** aparece solo si no se reconoce el formato y se oculta al procesarlo correctamente; el archivo permanece seleccionado.
 3. El sistema propone la cuenta bancaria cuando hay una coincidencia clara con el banco detectado. Si hay varias cuentas posibles, seleccioná la que corresponde al extracto. Podés corregir la cuenta sugerida; se muestran las cuentas activas del plan de cuentas con medio de pago `DB`.
@@ -20,9 +26,13 @@ El análisis admite inicialmente hasta 300 pendientes por lista. Si se supera el
 
 Al terminar se abre **Revisión de movimientos** con la importación recién procesada. Se muestran fecha, descripción original, referencia, importe, clasificación, cliente probable, propuesta, confianza y estado.
 
-Usá la fila superior para **buscar movimientos** y **filtrar por clasificación**. La búsqueda se aplica con **Buscar** o Enter; al elegir una clasificación se actualiza el resultado. **Limpiar** quita ambos filtros. Buscá por descripción, referencia, cliente, propuesta, fecha o importe.
+En **Revisión de movimientos**, la búsqueda ocupa una sola barra en el encabezado, sin el bloque de filtros sobre la tabla. Escribí un importe, descripción o referencia y pulsá **Enter**. Abrí el **embudo** para combinar **Clasificación**, **Cliente probable** (nombre o código), **Registración** (Pendiente, Cobrado, Registrado o Revisado) y **Conciliación** (Pendiente o Conciliado), y pulsá **Aplicar**. **Limpiar** quita todos los filtros. La barra indica la importación y la cantidad de filtros activos; al pulsar el indicador de importación podés ampliar a todos los bancos conservando los filtros aplicados. Por ejemplo, elegí Cobranza + Cobrado + conciliación Pendiente para revisar ingresos ya cobrados que todavía falta conciliar.
 
-Hacé clic en el encabezado de cualquier columna de datos para ordenar; otro clic invierte el sentido. Las flechas indican el orden activo. La búsqueda, clasificación y orden abarcan todos los movimientos del alcance seleccionado y se conservan al pasar de página, abrir otra importación o usar **Ver todas**. Al importar un archivo nuevo, la revisión comienza sin filtros de búsqueda ni clasificación.
+Si no sabés en qué banco está un movimiento, usá **Todos los bancos: importe, detalle o referencia…** en la barra superior y pulsá **Enter**, incluso desde **Importación**. Se abre **Revisión de movimientos** con todas las importaciones, sin limitarse al banco ni a los filtros anteriores. La búsqueda por importe reconoce formatos como `1.234.567,89`, `$ 1.234.567,89` y `1234567.89`.
+
+En ventanas de hasta 1440 píxeles, **Generar asiento** y **Revisar propuestas** se encuentran en **…**. Hasta 1280 píxeles, la barra superior usa dos filas y la búsqueda ocupa la segunda. El panel de filtros se ajusta al ancho y alto disponibles; si necesitás desplazarte dentro del panel, **Limpiar** y **Aplicar** permanecen visibles al pie.
+
+Hacé clic en el encabezado de cualquier columna de datos para ordenar; otro clic invierte el sentido. Las flechas indican el orden activo. Todos los filtros y el orden abarcan los movimientos del alcance seleccionado y se conservan al pasar de página, abrir otra importación o usar **Ver todas**. Al importar un archivo nuevo, la revisión comienza sin filtros.
 
 Usá **Detalle** para ver los comprobantes sugeridos y los importes de aplicación en una ventana flotante sobre la grilla. Cerrala con la cruz, **Cerrar** o **Esc** para continuar revisando con los mismos filtros, orden y página. La confianza ayuda a priorizar la revisión; no garantiza que el cliente ni la aplicación sean correctos. La indicación “Ya registrada” requiere comprobar la cobranza existente en Alfa.
 
@@ -64,11 +74,15 @@ La corrección corresponde a ese movimiento; no configura reglas para futuras im
 
 **Detalle** abre primero la pestaña **Cuenta corriente**. Muestra los últimos **30 movimientos** del cliente; podés elegir **50 o 100**, cambiar **Hasta la fecha** y pulsar **Consultar**. El corte inicial es 15 días después del movimiento bancario, para incluir recibos cargados unos días más tarde. Los saldos incluyen toda la historia anterior al corte, separados por moneda.
 
-Si hay recibos con el mismo cliente e importe dentro de los 15 días anteriores o posteriores, aparecen en **Posibles cobranzas ya registradas**, aunque queden fuera del límite o corte de la grilla. Se abre la información del primero: fecha y número, detalle, usuario, caja, unidad, cuentas de banco/retenciones y comprobantes aplicados. **Ver recibo** permite comparar los demás; **Ver** en la cuenta corriente consulta cualquier otro asiento. Incluye las cobranzas ingresadas desde Alfa Gestión.
+Si hay recibos con el mismo cliente e importe dentro de los 15 días anteriores o posteriores, aparecen en **Posibles cobranzas ya registradas**, aunque queden fuera del límite o corte de la grilla. Se abre la información del primero: fecha y número, detalle, usuario, caja, unidad, cuentas de banco/retenciones y comprobantes aplicados. **Ver recibo** permite comparar los demás; **Ver asiento** en la cuenta corriente consulta cualquier otro asiento. Incluye las cobranzas ingresadas desde Alfa Gestión.
 
 Una coincidencia de importe no confirma que sea la misma transferencia: compará moneda, banco y aplicaciones. La consulta no registra cobranzas ni marca el movimiento como conciliado. Si no hay cliente identificado o movimientos en las unidades autorizadas, no se muestra una cuenta corriente ajena.
 
 La pestaña **Comprobantes** conserva la comparación de facturas y su botón **Cobrar**. La cuenta corriente sirve para consultar y verificar.
+
+También podés abrir **Cuenta corriente** directamente desde cada fila de **Revisión de movimientos**, o desde el icono **Cuenta corriente del cliente** en las acciones del extracto de **Conciliar cuenta**. La consulta se abre en una ventana flotante, con el cliente, saldo por moneda, últimos 30/50/100 movimientos y posibles recibos ya registrados. Si falta identificar al cliente, asignalo desde el detalle del movimiento antes de consultar.
+
+**Ver asiento** abre directamente el mismo visor contable completo de **Ver comprobante → Ver asientos**: incluye la cuenta del cliente, todas las contrapartidas, débitos y créditos, totales e historial de acciones. Al cerrar el asiento volvés a la cuenta corriente. **Ver recibo** conserva la revisión de aplicaciones y la opción de reconocer el cobro existente. **Ver comprobante** abre el visor completo en otra ventana flotante; desde las aplicaciones también podés abrir la factura correspondiente. **Volver a cuenta corriente** cierra solo el comprobante y conserva la consulta. Cerrar la cuenta corriente conserva los movimientos tildados para conciliar. El clic fuera de estas ventanas no las cierra.
 
 ### Comparar la factura propuesta
 
@@ -80,25 +94,15 @@ Al pulsar **Cobrar** desde ese detalle, se propone el comprobante que estás vie
 
 ### Registrar la cobranza rápida
 
-En un ingreso clasificado como **Cobranza**, pulsá **Cobrar** desde la fila o el detalle. Se necesita un cliente identificado y una cuenta bancaria asociada a la importación.
+Pulsá **Cobrar** en un ingreso clasificado como Cobranza con cliente identificado. Revisá su saldo actual, las facturas a cancelar y las retenciones antes de confirmar. La ayuda **Cobranzas** reúne los pasos completos, pagos parciales y recibos con varias facturas. **Cobrado** indica la registración del recibo; la conciliación bancaria se confirma por separado.
 
-1. Elegí el comprobante pendiente del cliente. La ventana muestra su saldo y unidad de negocio.
-2. Revisá fecha y talonario **CB X**. Se propone el de la unidad de la factura o uno general si no hay uno específico. El número se asigna al confirmar.
-   En **Detalle de la cobranza** se propone **Cob. [nombre del cliente]**. Podés cambiarlo por un comentario de hasta 100 caracteres; se guarda como detalle del asiento y comentario del recibo.
-3. La cuenta y el importe bancario se completan con el movimiento importado. Si queda una diferencia, se propone la última cuenta de retención usada en una cobranza del mismo cliente y unidad de negocio, por el importe que falta cubrir. Se indica el recibo de referencia. Revisá la propuesta: podés corregir cuenta e importe o **Quitar** la retención si corresponde dejar un pago parcial. Si no hay antecedentes, usá **Agregar retención** y elegí la cuenta. Podés agregar también el número de certificado; no se copia el de la cobranza anterior.
-4. Revisá el total y el saldo restante, y pulsá **Confirmar cobranza CB**. Banco más retenciones no puede superar el saldo pendiente. Si es menor, queda un pago parcial.
-
-La cuenta de retención que efectivamente confirmes queda como referencia para la próxima cobranza de ese cliente y unidad, incluso al volver a ingresar al sistema. Cancelar no cambia esa referencia. Si una cobranza posterior no tiene retenciones, se conserva la última conocida. También se consideran los recibos de Alfa Gestión; se excluyen los anulados y las cuentas inactivas.
-
-Ejemplo: transferencia de $97.000 y retención de $3.000 generan una CB por $100.000 aplicada al comprobante. El asiento debita banco y retenciones, y acredita al cliente.
-
-Al confirmar, se muestra el número de CB y el movimiento queda **Cobrado**. No vuelvas a registrar la misma transferencia por otro circuito. Una importación con cobranzas generadas no puede eliminarse desde esta pantalla. Ante error, conservá los datos y reintentá; el sistema controla operaciones repetidas.
-
-Este circuito admite facturas, proformas y notas de débito en pesos, con una aplicación por recibo. Si no hay cliente identificado, saldo autorizado o talonario válido, se informa el motivo. Anticipos, varias facturas por recibo y otros medios como cheques/tarjetas quedan para el módulo de Cobranzas.
+### Importaciones superpuestas y movimientos duplicados
 
 En **Importación**, el listado de importaciones recientes permite abrir cualquier archivo ya procesado mediante **Revisar**. En revisión, **Ver todas** reúne los movimientos de todas las importaciones. La barra superior permite cambiar de página y actualizar.
 
 El mismo archivo no vuelve a importarse por cambiarle el nombre. Los movimientos identificados como repetidos en otros extractos de la misma cuenta se omiten y se informa su cantidad.
+
+Por ejemplo, si importaste el mes completo y después la última semana, se omiten las operaciones de esa semana que ya existían; solo se incorporan las nuevas. Si todas estaban cargadas, se avisa sin crear otra importación. La comparación utiliza cuenta, banco, fecha, importe y referencia bancaria; sin referencia considera la descripción y la cantidad de operaciones idénticas. Elegí siempre la misma cuenta contable. Si el banco cambia la fecha, referencia o la descripción usada para identificarlo, un movimiento podría reconocerse como nuevo: revisá esos casos. Las cobranzas y conciliaciones existentes se conservan.
 
 **Eliminar** pide confirmación y quita los movimientos, clasificaciones y propuestas de la importación. No elimina cobranzas ni asientos de Alfa. Si el archivo ya dio origen a registraciones, la eliminación se bloquea.
 
@@ -126,13 +130,11 @@ Los totales superiores corresponden a movimientos del período, sin saldos inici
 
 Para revisar o corregir un vínculo, elegí **Historial** en el movimiento del banco o **Ver vínculo** en Alfa. Podés **Desconciliar este vínculo** con un motivo: se libera todo el grupo y se conserva quién lo confirmó y quién lo deshizo. La cobranza o el asiento permanecen registrados. Si los registros cambiaron o tienen una conciliación legacy, se informa el impedimento para evitar liberar una marca incorrecta.
 
-Una importación con historial de conciliación no puede eliminarse. Un movimiento conciliado tampoco permite generar otra cobranza rápida. Los asientos faltantes por comisiones, impuestos y otros conceptos se incorporarán en la siguiente etapa.
+Una importación con historial de conciliación no puede eliminarse. Un movimiento conciliado tampoco permite generar otra cobranza rápida. Para registrar comisiones, impuestos y otros conceptos sin registración previa, usá **Generar asiento** y revisá las cuentas configuradas antes de confirmar.
 
 ### Cobrar dos o más facturas con un mismo depósito
 
-En **Cobrar**, la sección **Comprobantes a cobrar** permite marcar varias facturas del mismo cliente y unidad de negocio. Si la conciliación propone **Múltiple**, se precargan los comprobantes que siguen vigentes y con saldo; revisá la selección. Podés agregar o quitar facturas y corregir el importe de cada aplicación. Si la propuesta ya no coincide con los saldos disponibles, elegí manualmente los comprobantes.
-
-El banco conserva el importe del depósito. Podés agregar retenciones; **Total CB** debe coincidir con **Aplicado**, dejando **Diferencia por aplicar** en cero. Al confirmar se emite **un solo recibo CB**, se aplica el importe indicado a cada factura y se registra un solo asiento. Las facturas de distintas unidades requieren recibos separados para respetar sus talonarios. La selección automática no graba nada hasta confirmar.
+En **Cobrar**, marcá las facturas del mismo cliente y unidad. Revisá la distribución y confirmá un único recibo. Consultá **Cobranzas → Pagar varias facturas con un depósito** para ver los controles y el tratamiento de retenciones.
 
 ### Marcar un cobro ya ingresado en Alfa Gestión
 
@@ -157,7 +159,7 @@ El reconocimiento guarda recibo, usuario y fecha; impide reconocer el mismo reci
 
 En **Conciliar cuenta**, elegí la cuenta y las fechas y pulsá **Comparar**. Se incluyen todos los archivos importados asociados a esa cuenta cuyos movimientos estén dentro del período; Alfa muestra los movimientos contables de la misma cuenta y fechas.
 
-Podés filtrar por pendientes/conciliados, buscar texto, elegir ingresos o egresos y establecer un rango de importe. El rango utiliza el valor absoluto: para buscar un egreso de $5.000, elegí Egresos y el importe 5000 positivo. **Limpiar filtros** conserva la cuenta y el período. Cada lista tiene su propio selector de orden y botón ascendente/descendente; el orden incluye todas sus páginas.
+Podés filtrar por pendientes/conciliados, buscar texto, elegir ingresos o egresos y establecer un rango de importe. El rango utiliza el valor absoluto: para buscar un egreso de $5.000, elegí Egresos y el importe 5000 positivo. **Limpiar filtros** conserva la cuenta y el período. Ordená haciendo clic en los títulos de las columnas de cada lista; el orden incluye todas sus páginas.
 
 **Revisar propuestas del período** abre las coincidencias únicas de todo el resultado filtrado, aunque estén en otras páginas. Muestra fecha, descripción, referencia bancaria, comprobante e importe para comparar. Podés desmarcar las que no quieras confirmar. Se seleccionan inicialmente hasta 100; para continuar con las restantes, volvé a abrir las propuestas después de confirmar.
 

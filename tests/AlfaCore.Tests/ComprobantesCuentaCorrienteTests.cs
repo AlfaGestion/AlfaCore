@@ -17,7 +17,7 @@ public sealed partial class CuentaCorrienteVentasTests
         var f=new FiltrosReporteCompras { FechaDesde=null,FechaHasta=null,TamanioPagina=1 };
         var r=await service.GetComprobantesCuentaCorrienteAsync(f,false);
         var totals=await cn.QuerySingleAsync<(int Cantidad,decimal Importe,decimal Aplicado,decimal Pendiente)>("""
-            SELECT COUNT(*),SUM(v.IMPORTE),SUM(v.PAGO),SUM(v.SALDO) FROM dbo.VE_CPTES_SALDOS_UNEG v WHERE v.SALDO>0
+            SELECT COUNT(*),SUM(v.IMPORTE),SUM(v.PAGO),SUM(v.SALDO) FROM dbo.VE_CPTES_SALDOS_UNEG v WHERE UPPER(LTRIM(RTRIM(v.TC))) NOT IN ('FP','NCFP','CBFP') AND v.SALDO>0
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM(v.CUENTA)))
             """);
         Assert.Equal(totals.Cantidad,r.TotalRegistros);Assert.Equal(totals.Importe,r.ImporteTotal);
@@ -27,10 +27,13 @@ public sealed partial class CuentaCorrienteVentasTests
 
         var cancelado=await cn.QuerySingleAsync<(string Cuenta,string Tc,string Id,DateTime Fecha)>("""
             SELECT TOP 1 LTRIM(RTRIM(v.CUENTA)),LTRIM(RTRIM(v.TC)),v.SUCURSAL+v.NUMERO+v.LETRA,v.FECHA
-            FROM dbo.VE_CPTES_SALDOS_UNEG v WHERE v.SALDO=0 AND v.IMPORTE>0
+            FROM dbo.VE_CPTES_SALDOS_UNEG v WHERE v.TC='FC' AND v.SALDO=0 AND v.IMPORTE>0
             AND EXISTS(SELECT 1 FROM dbo.VT_CLIENTES p WHERE p.CTACODIGO=v.CUENTA)
             AND EXISTS(SELECT 1 FROM dbo.MV_APLICACION a WHERE a.CUENTA=v.CUENTA AND a.TCO_ORIGEN=v.TC
-                AND a.SUCURSAL_ORIGEN=v.SUCURSAL AND a.NUMERO_ORIGEN=v.NUMERO AND a.LETRA_ORIGEN=v.LETRA AND a.TC IN ('NC','NCFP'))
+                AND a.SUCURSAL_ORIGEN=v.SUCURSAL AND a.NUMERO_ORIGEN=v.NUMERO AND a.LETRA_ORIGEN=v.LETRA AND a.TC='NC')
+            AND NOT EXISTS(SELECT 1 FROM dbo.MV_APLICACION a WHERE a.CUENTA=v.CUENTA AND a.TCO_ORIGEN=v.TC
+                AND a.SUCURSAL_ORIGEN=v.SUCURSAL AND a.NUMERO_ORIGEN=v.NUMERO AND a.LETRA_ORIGEN=v.LETRA
+                AND a.TC IN ('FP','NCFP','CBFP'))
             ORDER BY v.FECHA DESC;
             """);
         f=new() { Proveedor=cancelado.Cuenta,TipoComprobante=cancelado.Tc,FechaDesde=cancelado.Fecha.Date,FechaHasta=cancelado.Fecha.Date,TamanioPagina=500 };
