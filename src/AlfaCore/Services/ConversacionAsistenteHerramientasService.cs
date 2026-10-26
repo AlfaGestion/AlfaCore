@@ -80,7 +80,8 @@ public sealed class ConversacionAsistenteHerramientasService(
     /// Quiere artículos puntuales sin decir "precio" ni "pedido" ("Quiero 10 pilas AA", "necesito dos
     /// cables", "venden cargadores?"). Sin esto el mensaje no habilitaba herramientas y el modelo
     /// contestaba de memoria: caso real Base4264 (2026-10-26), "No vendemos pilas Duracell" con el
-    /// artículo cargado. Pide cantidad (no "un/una") para no tomar "necesito una mano con el sistema".
+    /// artículo cargado. Con "un/una" ("quiero una pila AAA") excluye lo que no es un artículo
+    /// ("necesito una mano con el sistema", "quiero un técnico").
     /// </summary>
     internal static bool MensajePideArticulo(string? mensajeCliente)
     {
@@ -88,11 +89,25 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (texto.Length == 0)
             return false;
 
-        return Regex.IsMatch(texto,
+        if (Regex.IsMatch(texto,
             @"\b(quiero|quisiera|necesito|busco|mandame|pasame|encargo|me\s+llevo)\s+"
             + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b"
-            + @"|\b(venden|vendes|hay\s+stock|tienen\s+stock|stock\s+de)\b");
+            + @"|\b(venden|vendes|hay\s+stock|tienen\s+stock|stock\s+de)\b"))
+            return true;
+
+        var unArticulo = Regex.Match(texto, @"\b(quiero|quisiera|necesito|busco|me\s+llevo)\s+(un|una|unos|unas)\s+([a-z]+)");
+        return unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value);
     }
+
+    // Lo que sigue a "necesito un/una ..." en consultas de soporte o atención, no de compra.
+    private static readonly HashSet<string> NoSonArticulos = new(StringComparer.Ordinal)
+    {
+        "mano", "ayuda", "consulta", "pregunta", "duda", "tecnico", "persona", "asesor", "operador", "vendedor",
+        "turno", "visita", "respuesta", "solucion", "informacion", "factura", "nota", "copia", "comprobante",
+        "presupuesto", "cotizacion", "reclamo", "devolucion", "cambio", "favor", "link", "usuario", "clave",
+        "contrasena", "acceso", "cuenta", "reunion", "llamada", "capacitacion", "demo", "licencia", "actualizacion",
+        "pedido", "envio", "descuento", "rato", "minuto", "momento", "dato", "numero"
+    };
 
     /// <summary>
     /// Cliente que quiere ver su lista de precios o hacer un pedido: se resuelve con su link al Portal

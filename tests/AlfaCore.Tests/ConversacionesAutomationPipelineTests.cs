@@ -1221,6 +1221,11 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("¿Venden cargadores?", true)]
     [InlineData("hay stock de pilas AAA?", true)]
     [InlineData("necesito una mano con el sistema", false)]
+    [InlineData("Hola, quiero una pila AAA", true)]
+    [InlineData("busco un cargador", true)]
+    [InlineData("necesito un técnico", false)]
+    [InlineData("quiero una factura del mes pasado", false)]
+    [InlineData("necesito una copia de la factura", false)]
     [InlineData("quiero hablar con alguien", false)]
     [InlineData("hola", false)]
     public void MensajePideArticulo_DetectaCompraSinPalabraPrecio(string mensaje, bool esperado)
