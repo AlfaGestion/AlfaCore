@@ -133,6 +133,10 @@
                                     {
                                         <span> · Sin host web</span>
                                     }
+                                    @if (!string.IsNullOrWhiteSpace(SelectedClientLicencia))
+                                    {
+                                        <span> · Licencia <code>@SelectedClientLicencia</code></span>
+                                    }
                                 </p>
                             }
                             else
@@ -517,7 +521,7 @@
             <div class="adm-grid">
                 <AlfaInput Label="Cuenta" Required="true" Value="@_clientForm.IdCliente" ValueChanged="v => _clientForm.IdCliente = v ?? string.Empty" />
                 <AlfaInput Label="Nombre" Required="true" Value="@_clientForm.RazonSocial" ValueChanged="v => _clientForm.RazonSocial = v ?? string.Empty" />
-                <AlfaInput Label="Host web" Required="true" Value="@_clientForm.IdWeb" ValueChanged="v => _clientForm.IdWeb = v ?? string.Empty" Placeholder="cliente-web" />
+                <AlfaInput Label="Host web" Required="@_newClientDraft" Value="@_clientForm.IdWeb" ValueChanged="v => _clientForm.IdWeb = v ?? string.Empty" Placeholder="cliente-web" />
                 <div class="adm-password-field">
                     <AlfaInput Label="Contraseña inicial"
                                Value="@_clientForm.PasswordInicial"
@@ -529,6 +533,24 @@
                 <div class="adm-flags adm-span-all">
                     <AlfaCheckbox Value="@_clientForm.SuperAdmin" ValueChanged="v => _clientForm.SuperAdmin = v == true">SuperAdmin</AlfaCheckbox>
                 </div>
+            </div>
+        </div>
+        <div class="adm-section">
+            <h4>Licencia del sistema de escritorio</h4>
+            <div class="adm-grid">
+                <AlfaInput Label="Licencia"
+                           Value="@_clientForm.LicenciaPrincipal"
+                           ValueChanged="v => _clientForm.LicenciaPrincipal = v ?? string.Empty"
+                           MaxLength="20"
+                           Placeholder="@(string.IsNullOrWhiteSpace(_clientForm.IdCliente) ? "Igual a la cuenta" : _clientForm.IdCliente)"
+                           HelpText="Se carga en Propiedades de consola → Registro. Vacía = igual a la cuenta." />
+                <AlfaInput Label="Servidor FTP" Value="@_clientForm.FtpServer" ValueChanged="v => _clientForm.FtpServer = v ?? string.Empty" />
+                <AlfaInput Label="Usuario FTP" Value="@_clientForm.FtpUsuario" ValueChanged="v => _clientForm.FtpUsuario = v ?? string.Empty" />
+                <AlfaInput Label="Clave FTP"
+                           Type="password"
+                           Value="@_clientForm.FtpClave"
+                           ValueChanged="v => _clientForm.FtpClave = v"
+                           Placeholder="@(_clientFtpClaveCargada ? "Sin cambios" : string.Empty)" />
             </div>
         </div>
     </ChildContent>
@@ -571,6 +593,12 @@
             <AlfaInput Label="Base" Required="true" Value="@_baseForm.DbName" ValueChanged="v => _baseForm.DbName = v ?? string.Empty" />
             <AlfaInput Label="Usuario" Value="@_baseForm.DbUser" ValueChanged="v => _baseForm.DbUser = v ?? string.Empty" />
             <AlfaInput Label="Contraseña" Value="@_baseForm.DbPassword" ValueChanged="v => _baseForm.DbPassword = v ?? string.Empty" />
+            <AlfaInput Label="Licencia del cliente"
+                       Value="@_baseLicencia"
+                       ValueChanged="v => _baseLicencia = v ?? string.Empty"
+                       MaxLength="20"
+                       Placeholder="@_baseForm.IdCliente"
+                       HelpText="Es la misma para todas las bases del cliente. Se carga en Propiedades de consola → Registro del sistema de escritorio." />
         </div>
     </ChildContent>
     <Footer>
@@ -979,6 +1007,13 @@
     private readonly List<AlfaCore.Models.PlanDto> _planModalOpciones = [];
     private readonly CrearClienteRequest _clientForm = new();
     private readonly CrearBaseRequest _baseForm = new();
+    private string _baseLicencia = string.Empty;
+    private bool _clientFtpClaveCargada;
+
+    private AlfaCore.Models.AdminClienteDto? SelectedClient
+        => _clients.FirstOrDefault(c => string.Equals(c.IdCliente, _selectedClientId, StringComparison.OrdinalIgnoreCase));
+
+    private string SelectedClientLicencia => SelectedClient?.LicenciaPrincipal ?? string.Empty;
     private readonly CrearUserRequest _userForm = new();
     private readonly List<ClienteAlfaLookupDto> _lookupResults = [];
 
@@ -1460,6 +1495,11 @@
         _clientForm.IdWeb = string.Empty;
         _clientForm.SuperAdmin = false;
         _clientForm.PasswordInicial = string.Empty;
+        _clientForm.LicenciaPrincipal = string.Empty;
+        _clientForm.FtpServer = string.Empty;
+        _clientForm.FtpUsuario = string.Empty;
+        _clientForm.FtpClave = null;
+        _clientFtpClaveCargada = false;
     }
 
     private async Task SearchLookupAsync()
@@ -1667,6 +1707,7 @@
         _baseForm.DbName = string.Empty;
         _baseForm.DbUser = string.Empty;
         _baseForm.DbPassword = string.Empty;
+        _baseLicencia = SelectedClientLicencia;
         _error = string.Empty;
         _message = string.Empty;
     }
@@ -1698,6 +1739,7 @@
         _baseForm.DbName = item.DbName;
         _baseForm.DbUser = item.DbUser;
         _baseForm.DbPassword = item.DbPassword;
+        _baseLicencia = SelectedClientLicencia;
         await Task.CompletedTask;
     }
 
@@ -1719,6 +1761,12 @@
                 await AdminSvc.UpdateBaseAsync(_baseForm);
             else
                 await AdminSvc.CreateBaseAsync(_baseForm);
+
+            // Licencia del cliente: se crea (= la cuenta) si no tenía, o se cambia si la editaron.
+            var licenciaActual = SelectedClientLicencia;
+            var licenciaNueva = string.IsNullOrWhiteSpace(_baseLicencia) ? _baseForm.IdCliente : _baseLicencia.Trim();
+            if (!string.Equals(licenciaActual, licenciaNueva, StringComparison.OrdinalIgnoreCase))
+                await AdminSvc.UpdateLicenciaClienteAsync(_baseForm.IdCliente, licenciaNueva);
 
             var savedClientId = _baseForm.IdCliente;
             await ReloadAsync(savedClientId);
@@ -1879,6 +1927,11 @@
         _clientForm.IdWeb = client.IdWeb;
         _clientForm.SuperAdmin = client.SuperAdmin;
         _clientForm.PasswordInicial = string.Empty;
+        _clientForm.LicenciaPrincipal = client.LicenciaPrincipal;
+        _clientForm.FtpServer = client.FtpServer;
+        _clientForm.FtpUsuario = client.FtpUsuario;
+        _clientForm.FtpClave = null;
+        _clientFtpClaveCargada = client.TieneFtpClave;
     }
 
     // Confirmación con AlfaConfirmDialog que se puede esperar (await) como el confirm() de JS:

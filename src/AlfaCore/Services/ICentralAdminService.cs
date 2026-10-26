@@ -13,6 +13,8 @@ public interface ICentralAdminService
     Task<IReadOnlyList<ClienteAlfaLookupDto>> SearchVtClientesAsync(string term, int take = 25, CancellationToken ct = default);
     Task CreateClienteAsync(CrearClienteRequest request, CancellationToken ct = default);
     Task UpdateClienteAsync(CrearClienteRequest request, CancellationToken ct = default);
+    /// <summary>Cambia solo la licencia del legacy del cliente (vacía = el IdCliente). Valida que no la use otro cliente.</summary>
+    Task UpdateLicenciaClienteAsync(string idCliente, string licenciaPrincipal, CancellationToken ct = default);
     Task<string?> TryResolveInitialPasswordAsync(string idCliente, CancellationToken ct = default);
 
     Task<IReadOnlyList<AdminBaseDto>> GetBasesAsync(CancellationToken ct = default);

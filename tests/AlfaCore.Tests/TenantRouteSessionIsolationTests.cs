@@ -409,6 +409,8 @@ public sealed class TenantRouteSessionIsolationTests
         public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default)
             => Task.FromResult(_clientes.Values.FirstOrDefault(c => string.Equals(c.IdWeb, idWeb, StringComparison.OrdinalIgnoreCase)));
 
+        public Task<LicenciaLegacyDto?> GetLicenciaLegacyAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult<LicenciaLegacyDto?>(null);
+        public Task<bool> ActivarLicenciaAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult(false);
         public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default)
             => Task.FromResult<ClienteCentralDto?>(null);
 

@@ -256,6 +256,8 @@ public sealed class WhatsAppWebhookSessionResolutionTests
     {
         public Task<ClienteCentralDto?> GetByIdClienteAsync(string idCliente, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
         public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
+        public Task<LicenciaLegacyDto?> GetLicenciaLegacyAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult<LicenciaLegacyDto?>(null);
+        public Task<bool> ActivarLicenciaAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult(false);
         public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default) => Task.FromResult<ClienteCentralDto?>(null);
         public Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ClienteCentralDto>>([]);
         public Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default) => Task.FromResult(string.Empty);

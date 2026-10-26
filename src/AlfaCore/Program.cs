@@ -1999,6 +1999,56 @@ public class Program
             return Results.Text(cliente.IdCliente, "text/plain; charset=utf-8");
         });
 
+        // Licencia del legacy (VB6): reemplaza la lectura directa de ESTADISTICAS.dbo.clientes /
+        // sp_ObtenerDatosLicencia. Respuesta en texto, una línea por dato, para leerla fácil desde VB6:
+        // IdCliente, FTP server, FTP usuario, FTP clave. 404 = licencia inexistente.
+        app.MapGet("/api/vb6/licencia", async (
+            HttpRequest request,
+            ICentralClientesService clientesSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var licencia = request.Query["licenciaPrincipal"].ToString();
+            if (string.IsNullOrWhiteSpace(licencia))
+                return Results.BadRequest("Falta licenciaPrincipal.");
+
+            var datos = await clientesSvc.GetLicenciaLegacyAsync(licencia, ct);
+            if (datos is null)
+                return Results.NotFound();
+
+            var texto = string.Join("\r\n", datos.IdCliente, datos.FtpServer, datos.FtpUsuario, datos.FtpClave);
+            return Results.Text(texto, "text/plain; charset=utf-8");
+        });
+
+        // Antes sp_ActivaLicencia en ESTADISTICAS: graba la fecha de activación si todavía no la tiene.
+        app.MapPost("/api/vb6/activar-licencia", async (
+            HttpRequest request,
+            ICentralClientesService clientesSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var form = request.HasFormContentType ? await request.ReadFormAsync(ct) : null;
+            var licencia = form?["licenciaPrincipal"].ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(licencia))
+                return Results.BadRequest("Falta licenciaPrincipal.");
+
+            return await clientesSvc.ActivarLicenciaAsync(licencia, ct) ? Results.NoContent() : Results.NotFound();
+        });
+
         app.MapGet("/vb6/consume", async (
             HttpRequest request,
             IVb6BridgeService vb6BridgeSvc,

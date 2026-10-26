@@ -25,12 +25,13 @@ public sealed class CentralAdminService(
 
     public async Task<IReadOnlyList<AdminClienteDto>> GetClientesAsync(CancellationToken ct = default)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
                 idcliente AS IdCliente,
                 ISNULL(nombre, '') AS RazonSocial,
                 ISNULL(idweb, '') AS IdWeb,
-                ISNULL(superadmin, 0) AS SuperAdmin
+                ISNULL(superadmin, 0) AS SuperAdmin,
+                {ClienteLicenciaColumnsSql}
             FROM dbo.Clientes
             ORDER BY ISNULL(nombre, ''), idcliente;
             """;
@@ -120,6 +121,12 @@ public sealed class CentralAdminService(
         if (await ExistsClienteByWebAsync(cn, idWeb, ct).ConfigureAwait(false))
             throw new AppUserFacingException("Ya existe un cliente con ese id web.", "ADMIN_CLIENTE_WEB_DUPLICADO");
 
+        // Por defecto la licencia del legacy es el código de cliente (no el NEWID() de la columna).
+        var licencia = NormalizeLicencia(request.LicenciaPrincipal);
+        if (string.IsNullOrWhiteSpace(licencia))
+            licencia = normalizedIdCliente;
+        await EnsureLicenciaDisponibleAsync(cn, null, licencia, normalizedIdCliente, ct).ConfigureAwait(false);
+
         var initialPassword = NormalizeText(request.PasswordInicial);
         if (string.IsNullOrWhiteSpace(initialPassword))
             initialPassword = await TryResolveInitialPasswordAsync(normalizedIdCliente, ct).ConfigureAwait(false);
@@ -131,8 +138,8 @@ public sealed class CentralAdminService(
         try
         {
             const string insertClienteSql = """
-                INSERT INTO dbo.Clientes (idcliente, nombre, idweb, superadmin)
-                VALUES (@IdCliente, @RazonSocial, @IdWeb, @SuperAdmin);
+                INSERT INTO dbo.Clientes (idcliente, nombre, idweb, superadmin, LicenciaPrincipal, FTP_Server, FTP_Usuario, FTP_Clave)
+                VALUES (@IdCliente, @RazonSocial, @IdWeb, @SuperAdmin, @Licencia, @FtpServer, @FtpUsuario, @FtpClave);
                 """;
 
             await cn.ExecuteAsync(new CommandDefinition(insertClienteSql, new
@@ -140,7 +147,11 @@ public sealed class CentralAdminService(
                 IdCliente = normalizedIdCliente,
                 RazonSocial = razonSocial,
                 IdWeb = idWeb,
-                SuperAdmin = request.SuperAdmin ? 1 : 0
+                SuperAdmin = request.SuperAdmin ? 1 : 0,
+                Licencia = licencia,
+                FtpServer = NullIfBlank(request.FtpServer),
+                FtpUsuario = NullIfBlank(request.FtpUsuario),
+                FtpClave = NullIfBlank(request.FtpClave)
             }, tx, cancellationToken: ct)).ConfigureAwait(false);
 
             await UpsertInitialUserAsync(cn, tx, normalizedIdCliente, normalizedIdCliente, initialPassword, ct).ConfigureAwait(false);
@@ -162,8 +173,8 @@ public sealed class CentralAdminService(
             throw new AppUserFacingException("El ID del cliente es obligatorio.", "ADMIN_CLIENTE_ID");
         if (string.IsNullOrWhiteSpace(razonSocial))
             throw new AppUserFacingException("La razón social es obligatoria.", "ADMIN_CLIENTE_RAZON");
-        if (string.IsNullOrWhiteSpace(idWeb))
-            throw new AppUserFacingException("El id web es obligatorio.", "ADMIN_CLIENTE_WEB");
+        // Al editar, el host web puede quedar vacío: los clientes legacy migrados desde ESTADISTICAS
+        // (solo licencia y FTP) no tienen acceso web.
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
@@ -171,14 +182,24 @@ public sealed class CentralAdminService(
         if (!await ExistsClienteAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false))
             throw new AppUserFacingException("El cliente no existe.", "ADMIN_CLIENTE_NO_EXISTE");
 
-        if (await ExistsClienteByWebAsync(cn, idWeb, ct, normalizedIdCliente).ConfigureAwait(false))
+        if (!string.IsNullOrWhiteSpace(idWeb)
+            && await ExistsClienteByWebAsync(cn, idWeb, ct, normalizedIdCliente).ConfigureAwait(false))
             throw new AppUserFacingException("Ya existe otro cliente con ese id web.", "ADMIN_CLIENTE_WEB_DUPLICADO");
 
+        var licencia = NormalizeLicencia(request.LicenciaPrincipal);
+        if (!string.IsNullOrWhiteSpace(licencia))
+            await EnsureLicenciaDisponibleAsync(cn, null, licencia, normalizedIdCliente, ct).ConfigureAwait(false);
+
+        // Licencia o clave FTP vacías = se conservan las actuales.
         const string sql = """
             UPDATE dbo.Clientes
             SET nombre = @RazonSocial,
                 idweb = @IdWeb,
-                superadmin = @SuperAdmin
+                superadmin = @SuperAdmin,
+                LicenciaPrincipal = ISNULL(@Licencia, LicenciaPrincipal),
+                FTP_Server = @FtpServer,
+                FTP_Usuario = @FtpUsuario,
+                FTP_Clave = ISNULL(@FtpClave, FTP_Clave)
             WHERE idcliente = @IdCliente;
             """;
 
@@ -190,8 +211,12 @@ public sealed class CentralAdminService(
             {
                 IdCliente = normalizedIdCliente,
                 RazonSocial = razonSocial,
-                IdWeb = idWeb,
-                SuperAdmin = request.SuperAdmin ? 1 : 0
+                IdWeb = NullIfBlank(idWeb),
+                SuperAdmin = request.SuperAdmin ? 1 : 0,
+                Licencia = NullIfBlank(licencia),
+                FtpServer = NullIfBlank(request.FtpServer),
+                FtpUsuario = NullIfBlank(request.FtpUsuario),
+                FtpClave = NullIfBlank(request.FtpClave)
             }, tx, cancellationToken: ct)).ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(initialPassword))
@@ -206,6 +231,26 @@ public sealed class CentralAdminService(
             tx.Rollback();
             throw;
         }
+    }
+
+    public async Task UpdateLicenciaClienteAsync(string idCliente, string licenciaPrincipal, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        var licencia = NormalizeLicencia(licenciaPrincipal);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            throw new AppUserFacingException("El ID del cliente es obligatorio.", "ADMIN_CLIENTE_ID");
+        if (string.IsNullOrWhiteSpace(licencia))
+            licencia = normalizedIdCliente;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        if (!await ExistsClienteAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente no existe.", "ADMIN_CLIENTE_NO_EXISTE");
+        await EnsureLicenciaDisponibleAsync(cn, null, licencia, normalizedIdCliente, ct).ConfigureAwait(false);
+
+        const string sql = "UPDATE dbo.Clientes SET LicenciaPrincipal = @Licencia WHERE idcliente = @IdCliente;";
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = normalizedIdCliente, Licencia = licencia }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<string?> TryResolveInitialPasswordAsync(string idCliente, CancellationToken ct = default)
@@ -1957,7 +2002,8 @@ public sealed class CentralAdminService(
                 idcliente AS IdCliente,
                 ISNULL(nombre, '') AS RazonSocial,
                 ISNULL(idweb, '') AS IdWeb,
-                ISNULL(superadmin, 0) AS SuperAdmin
+                ISNULL(superadmin, 0) AS SuperAdmin,
+                {ClienteLicenciaColumnsSql}
             FROM dbo.Clientes
             {filterSql};
             """;
@@ -2102,6 +2148,39 @@ public sealed class CentralAdminService(
             IdCliente = idCliente
         }, tx, cancellationToken: ct)).ConfigureAwait(false);
     }
+
+    /// <summary>Licencia del legacy y datos FTP (2026-10-26-001__alfa_central_licencias_ftp_tpv.sql).
+    /// La clave FTP no se devuelve a la pantalla: solo si está cargada.</summary>
+    private const string ClienteLicenciaColumnsSql = """
+        ISNULL(LTRIM(RTRIM(LicenciaPrincipal)), '') AS LicenciaPrincipal,
+                ISNULL(LTRIM(RTRIM(FTP_Server)), '') AS FtpServer,
+                ISNULL(LTRIM(RTRIM(FTP_Usuario)), '') AS FtpUsuario,
+                CAST(CASE WHEN LTRIM(RTRIM(ISNULL(FTP_Clave, ''))) <> '' THEN 1 ELSE 0 END AS bit) AS TieneFtpClave,
+                FechaActivacion
+        """;
+
+    /// <summary>LicenciaPrincipal es nchar(20) con índice único (UX_clientes_LicenciaPrincipal).</summary>
+    private static async Task EnsureLicenciaDisponibleAsync(SqlConnection cn, SqlTransaction? tx, string licencia, string idCliente, CancellationToken ct)
+    {
+        if (licencia.Length > 20)
+            throw new AppUserFacingException("La licencia no puede tener más de 20 caracteres.", "ADMIN_CLIENTE_LICENCIA_LARGO");
+
+        const string sql = """
+            SELECT TOP (1) LTRIM(RTRIM(idcliente))
+            FROM dbo.Clientes
+            WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(@Licencia)
+              AND UPPER(LTRIM(RTRIM(idcliente))) <> UPPER(@IdCliente);
+            """;
+        var otro = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { Licencia = licencia, IdCliente = idCliente }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(otro))
+            throw new AppUserFacingException($"La licencia {licencia} ya la usa el cliente {otro}.", "ADMIN_CLIENTE_LICENCIA_DUPLICADA");
+    }
+
+    private static string NormalizeLicencia(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string? NullIfBlank(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string NormalizeKey(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();

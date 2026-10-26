@@ -2484,6 +2484,8 @@ public sealed class ConversacionesAutomationPipelineTests
             => Task.FromResult<ClienteCentralDto?>(new ClienteCentralDto { IdCliente = idCliente, IdWeb = IdWeb, RazonSocial = "Empresa A" });
 
         public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<LicenciaLegacyDto?> GetLicenciaLegacyAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> ActivarLicenciaAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default) => throw new NotSupportedException();

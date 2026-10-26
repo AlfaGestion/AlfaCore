@@ -634,6 +634,17 @@ public sealed class CentralRegistrationService(
             values.Add("@Created");
         }
 
+        // Licencia del legacy: por defecto el código de cliente. Si otro cliente ya la usa (índice
+        // único), se deja el valor por defecto de la columna para no frenar el alta.
+        if (columns.Contains("licenciaprincipal")
+            && !await central.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Clientes WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(@IdCliente)) THEN 1 ELSE 0 END AS bit);",
+                new { IdCliente = idCliente }, tx, cancellationToken: ct)))
+        {
+            names.Add("LicenciaPrincipal");
+            values.Add("@IdCliente");
+        }
+
         var sql = $"""
             INSERT INTO dbo.Clientes ({string.Join(", ", names)})
             VALUES ({string.Join(", ", values)});
