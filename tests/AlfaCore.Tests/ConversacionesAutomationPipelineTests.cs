@@ -1258,6 +1258,9 @@ public sealed class ConversacionesAutomationPipelineTests
     {
         Assert.Contains("SEGUIMIENTO", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
         Assert.Contains("RESUELVE", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
+        // Con número puntual es una compra: nunca seguimiento.
+        Assert.Contains("RESUELVE", ConversacionAsistenteHerramientasService.ResultadoPedidoNoEncontrado);
+        Assert.Contains("No es un seguimiento", ConversacionAsistenteHerramientasService.ResultadoPedidoNoEncontrado);
     }
 
     [Fact]

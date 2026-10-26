@@ -122,6 +122,11 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string ResultadoSinPedidos =
         "No tiene Notas de Pedido registradas. Ojo: \"pedido\" también puede ser un pedido de soporte. Si en esta conversación hay un tema de soporte o reclamo pendiente al que el cliente pueda estar refiriéndose, respondé tipo SEGUIMIENTO; si no, informale (tipo RESUELVE) que no tiene pedidos registrados.";
 
+    // Con número de pedido no hay ambigüedad venta/soporte: sin esta instrucción el modelo lo tomó como
+    // seguimiento de un tema viejo y avisó al operador (Base4264, 2026-10-26, "¿Llegó mi pedido NP-999?").
+    internal const string ResultadoPedidoNoEncontrado =
+        "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";
+
     internal static bool MensajePidePortal(string? mensajeCliente)
     {
         var texto = NormalizarTexto(mensajeCliente);
@@ -572,7 +577,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             // de las consultas del Portal Cliente.
             return string.IsNullOrWhiteSpace(numeroPedido)
                 ? ResultadoSinPedidos
-                : "No encontré ningún pedido con ese número asociado a su cuenta.";
+                : ResultadoPedidoNoEncontrado;
         }
 
         var cultura = CultureInfo.GetCultureInfo("es-AR");
