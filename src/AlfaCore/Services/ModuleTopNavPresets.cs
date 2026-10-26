@@ -35,7 +35,9 @@ public static class ModuleTopNavPresets
             ("rubros", "Rubros", "/ventas/rubros"),
             ("familias", "Familias", "/ventas/familias"),
             ("articulos", "Artículos", "/ventas/articulos"),
-            ("comparativo", "Comparativo", "/ventas/comparativo")
+            ("comparativo", "Comparativo", "/ventas/comparativo"),
+            ("vendedores", "Vendedores", "/ventas/vendedores"),
+            ("unidades-negocio", "U. de negocio", "/ventas/unidades-negocio")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildPuntoVenta(IRouteContextService routeContext, NavigationManager nav, string activeKey)
@@ -250,6 +252,10 @@ public static class ModuleTopNavPresets
         => items.Select(item =>
         {
             var url = routeContext.BuildRoute(item.Route);
+            if (item.Route.StartsWith("/ventas", StringComparison.OrdinalIgnoreCase)
+                && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query)
+                    .TryGetValue("directo", out var directo) && directo == "1")
+                url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(url, "directo", "1");
             return new PageHeaderTopNavItem
             {
                 Key = item.Key,

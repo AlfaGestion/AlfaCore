@@ -6,6 +6,21 @@ namespace AlfaCore.Tests;
 public sealed class VentasTopNavigationTests
 {
     [Theory]
+    [InlineData("vendedores", "/ventas/vendedores")]
+    [InlineData("unidades-negocio", "/ventas/unidades-negocio")]
+    public async Task AnalisisConservaBaseYModoDirecto(string clave, string ruta)
+    {
+        var nav = new CargaComprobantesUiTests.TestNavigation();
+        nav.NavigateTo("/ALFANET/115/ventas/comparativo?directo=1");
+        var items = ModuleTopNavPresets.BuildVentas(new Routes("/ALFANET/115"), nav, clave);
+        var opcion = Assert.Single(items, x => x.Key == clave);
+        Assert.True(opcion.Active);
+        Assert.All(items, x => Assert.EndsWith("?directo=1", x.Url));
+        await opcion.OnClick!();
+        Assert.EndsWith("/ALFANET/115" + ruta + "?directo=1", nav.Uri);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("/ALFANET/106")]
     [InlineData("/ALFANET/153")]

@@ -20,16 +20,20 @@
 }
 else
 {
-    var max = Math.Max(Data.Max(x => x.Total), 1);
+    var max = Math.Max(Data.Max(x => Math.Abs(x.Total)), 1);
 
     <div class="bar-chart">
         @foreach (var item in Data)
         {
-            var percentage = Math.Clamp((double)(item.Total / max) * 100d, 4d, 100d);
+            var percentage = item.Total == 0 ? 0 : Math.Clamp((double)(Math.Abs(item.Total) / max) * 100d, 1d, 100d);
             <div class="bar-chart__row">
                 <div class="bar-chart__header">
                     <div class="bar-chart__meta">
                         <span class="bar-chart__label">@item.Categoria</span>
+                        @if (OnSelect.HasDelegate)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="@(() => OnSelect.InvokeAsync(item))">Ver detalle</AlfaButton>
+                        }
                         @if (LinkSelector is not null && !string.IsNullOrWhiteSpace(LinkSelector(item)))
                         {
                             <a class="action-link" href="@LinkSelector(item)">@LinkLabel</a>
@@ -38,7 +42,7 @@ else
                     <strong>@FormatearValor(item.Total)</strong>
                 </div>
                 <div class="bar-chart__track">
-                    <div class="bar-chart__fill" style="width:@percentage.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+                    <div class="bar-chart__fill" style="width:@percentage.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;@(item.Total < 0 ? "background:var(--alfa-text-danger, #c24141)" : "")"></div>
                 </div>
             </div>
         }
@@ -52,6 +56,7 @@ else
     [Parameter] public string Formato { get; set; } = "moneda";
     [Parameter] public Func<CategoryTotalDto, string?>? LinkSelector { get; set; }
     [Parameter] public string LinkLabel { get; set; } = "Abrir";
+    [Parameter] public EventCallback<CategoryTotalDto> OnSelect { get; set; }
 
     private string FormatearValor(decimal valor)
         => Formato switch

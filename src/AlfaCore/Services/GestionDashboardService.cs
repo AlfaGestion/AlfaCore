@@ -4,7 +4,7 @@ using System.Globalization;
 
 namespace AlfaCore.Services;
 
-public sealed class GestionDashboardService(
+public sealed partial class GestionDashboardService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents) : IGestionDashboardService

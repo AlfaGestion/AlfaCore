@@ -27,6 +27,26 @@
     color: var(--alfa-danger);
 }
 
+.alfa-empty-state__spinner {
+    width: 24px;
+    height: 24px;
+    box-sizing: border-box;
+    border: 3px solid var(--alfa-border-default);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: alfa-empty-state-spin .85s linear infinite;
+}
+
+@keyframes alfa-empty-state-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .alfa-empty-state__spinner {
+        animation: none;
+    }
+}
+
 .alfa-empty-state__body {
     display: grid;
     gap: var(--alfa-space-4);
