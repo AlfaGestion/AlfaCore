@@ -4,8 +4,10 @@
 @page "/{idweb}/{idbase:int}/carga-viajes/{Vista}"
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.WebUtilities
 @inject ICargaViajesService CargaViajesSvc
+@inject ICargaViajesTarifaIaService CargaViajesTarifaIaSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUiDialogService AppDialogs
 @inject IAppUserSessionService AppUserSession
@@ -264,7 +266,7 @@
                                             else
                                             {
                                                 <div class="carga-viajes-tarifas__importe-display" @onclick="() => ActivarEdicionRapidaTarifaAsync(item.row, item.index)">
-                                                    @item.row.Importe.ToString("N2")
+                                                    @FormatMoneyInput(item.row.Importe)
                                                 </div>
                                             }
                                         </td>
@@ -411,9 +413,9 @@
                                                     <td>@GetTarifaEntidadDisplay(row)</td>
                                                     <td>@ExtractVisibleText(row.Destino)</td>
                                                     <td>@ExtractVisibleText(row.TipoVehiculo)</td>
-                                                    <td class="tarifa-aumento-table-v2__money-cell">@row.Importe.ToString("N2")</td>
-                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? simulated.ToString("N2") : "-")</td>
-                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? diff.ToString("+N2;-N2;0.00") : "-")</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@FormatMoneyInput(row.Importe)</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? FormatMoneyInput(simulated) : "-")</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? FormatMoneyInput(diff) : "-")</td>
                                                     <td>@FormatTarifaUltimaModificacion(row)</td>
                                                 </tr>
                                             }
@@ -485,6 +487,102 @@
                         <button type="button" class="btn btn--ghost" @onclick="CerrarTarifasBulkEditAsync">Cancelar</button>
                         <button type="button" class="btn btn--primary" @onclick="AplicarTarifasBulkEditAsync" disabled="@(!_tarifasAumentoSimulada || _tarifasAumentoSeleccionadas.Count == 0)">Guardar aumento</button>
                     </footer>
+                </section>
+            </div>
+        }
+
+        @if (_showTarifasIaImportModal)
+        {
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarTarifasIaImportAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide carga-viajes-tarifas-ia-modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifas-ia-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header carga-viajes-tarifas-ia__header"><div><span class="cuentas-modal__eyebrow">Tarifas</span><h3 id="carga-viajes-tarifas-ia-title">Actualizar tarifas con IA</h3></div><div class="carga-viajes-tarifas-ia__header-actions">@if (_tarifasIaAnalizado) { <button type="button" class="btn btn--secondary btn--sm" @onclick="VolverTarifasIaImagenesAsync"><i class="bi bi-arrow-left"></i> Volver a imágenes</button><button type="button" class="btn btn--primary btn--sm" @onclick="GrabarTarifasIaAsync" disabled="@(_tarifasIaRows.Count == 0 || _tarifasIaSaving)"><i class="bi bi-database-check"></i> @(_tarifasIaSaving ? "Grabando..." : "Grabar tarifas")</button> }<button type="button" class="cuentas-modal__close" @onclick="CerrarTarifasIaImportAsync" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button></div></header>
+                    <div class="cuentas-modal__body">
+                        @if (!_tarifasIaAnalizado)
+                        {
+                            <div class="carga-viajes-tarifas-ia__intro"><i class="bi bi-stars"></i><div><strong>Importá las planillas o imágenes de tarifas</strong><span>La IA las interpreta y te muestra una propuesta editable. Nada se guarda automáticamente.</span></div></div>
+                        }
+                        @if (_tarifasIaLoading)
+                        {
+                            <div class="carga-viajes-tarifas-ia__processing" role="status" aria-live="polite">
+                                <div class="carga-viajes-tarifas-ia__processing-icon"><span class="spinner-border" aria-hidden="true"></span></div>
+                                <div><strong>Analizando tarifas...</strong><span>Estamos leyendo @_tarifasIaImages.Count imagen(es) y preparando la propuesta editable. No cierres esta ventana.</span></div>
+                            </div>
+                        }
+                        @if (!_tarifasIaAnalizado)
+                        {
+                            <div class="carga-viajes-tarifas-ia__upload">
+                                <label id="carga-viajes-tarifas-ia-dropzone" class="carga-viajes-tarifas-ia__dropzone" tabindex="0"><i class="bi bi-cloud-arrow-up"></i><span>Agregar imágenes</span><small>PNG, JPG o WEBP · podés agregar varias</small><InputFile id="carga-viajes-tarifas-ia-input" OnChange="AgregarTarifasIaImagenesAsync" multiple accept="image/png,image/jpeg,image/webp" /></label>
+                                <button type="button" class="btn btn--secondary" disabled="@_tarifasIaLoading" @onclick="PegarTarifasIaAsync"><i class="bi bi-clipboard-image"></i> Pegar imagen</button>
+                            </div>
+                            @if (_tarifasIaImages.Count > 0)
+                            {
+                                <div class="carga-viajes-tarifas-ia__files"><strong>@_tarifasIaImages.Count imagen(es) preparadas</strong>@foreach (var image in _tarifasIaImages) { <span><i class="bi bi-image"></i> @image.FileName</span> }</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_tarifasIaFeedback)) { <div class="carga-viajes-tarifas-ia__feedback">@_tarifasIaFeedback</div> }
+                            <div class="carga-viajes-tarifas-ia__analyze"><button type="button" class="btn btn--primary" @onclick="AnalizarTarifasIaAsync" disabled="@(_tarifasIaImages.Count == 0 || _tarifasIaLoading)"><i class="bi bi-stars"></i> @(_tarifasIaLoading ? "Analizando..." : "Analizar imágenes")</button></div>
+                        }
+                        else if (_tarifasIaRows.Count > 0)
+                        {
+                            <div class="carga-viajes-tarifas-ia__source-images">
+                                <button type="button" class="carga-viajes-tarifas-ia__source-images-toggle" @onclick="ToggleTarifasIaImagenes" aria-expanded="@_tarifasIaMostrarImagenes">
+                                    <span class="carga-viajes-tarifas-ia__source-images-title"><i class="bi bi-images"></i> Imágenes analizadas</span>
+                                    <span class="carga-viajes-tarifas-ia__source-images-count">@_tarifasIaImages.Count imagen(es) <i class="bi @(_tarifasIaMostrarImagenes ? "bi-chevron-up" : "bi-chevron-down")"></i></span>
+                                </button>
+                                @if (_tarifasIaMostrarImagenes)
+                                {
+                                    <div class="carga-viajes-tarifas-ia__source-images-grid">
+                                        @foreach (var image in _tarifasIaImages)
+                                        {
+                                            <figure class="carga-viajes-tarifas-ia__source-image">
+                                                <img src="@GetTarifasIaImageDataUrl(image)" alt="@image.FileName" loading="lazy" />
+                                                <figcaption title="@image.FileName">@image.FileName</figcaption>
+                                            </figure>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="carga-viajes-tarifas-ia__selection-toolbar">
+                                <span><strong>@_tarifasIaRows.Count(x => x.Seleccionada)</strong> seleccionadas · <strong>@_tarifasIaRows.Count(x => x.TarifaExistente)</strong> actualizadas · <strong>@_tarifasIaRows.Count(x => !x.TarifaExistente)</strong> altas</span>
+                                <div class="carga-viajes-tarifas-ia__selection-actions">
+                                    <button type="button" class="btn btn--secondary btn--sm" @onclick="() => SeleccionarTarifasIa(TarifasIaSeleccionMode.Todas)">Tildar todo</button>
+                                    <button type="button" class="btn btn--secondary btn--sm" @onclick="() => SeleccionarTarifasIa(TarifasIaSeleccionMode.Ninguna)">Destildar todo</button>
+                                    <button type="button" class="btn btn--secondary btn--sm" @onclick="() => SeleccionarTarifasIa(TarifasIaSeleccionMode.Actualizadas)">Solo actualizadas</button>
+                                    <button type="button" class="btn btn--secondary btn--sm" @onclick="() => SeleccionarTarifasIa(TarifasIaSeleccionMode.Altas)">Solo altas</button>
+                                </div>
+                            </div>
+                            <div class="carga-viajes-tarifas-ia__table-wrap"><table class="carga-viajes-tarifas-ia__table"><thead><tr><th>Alta</th><th>Estado</th><th>Lista</th><th>Cliente</th><th>Tipo vehículo</th><th>Destino / concepto</th><th>Importe nuevo</th><th>Fletero</th><th>Acción</th></tr></thead><tbody>
+                            @foreach (var row in _tarifasIaRows)
+                            { <tr class="@(row.TarifaExistente ? string.Empty : "carga-viajes-tarifas-ia__row--missing")"><td><input type="checkbox" @bind="row.Seleccionada" aria-label="Seleccionar tarifa" /></td><td><span class="carga-viajes-tarifas-ia__match @GetTarifaIaMatchClass(row)"><i class="bi @(row.TarifaExistente ? "bi-check-circle" : "bi-exclamation-circle")"></i> @row.EstadoCoincidencia</span></td><td><input @bind="row.NombreLista" /></td><td><div class="carga-viajes-tarifas-ia__lookup"><LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@row.Cliente" TextChanged="text => OnTarifaIaClienteChangedAsync(row, text)" SelectedChanged="item => OnTarifaIaClienteSelectedAsync(row, item)" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" /></div></td><td><div class="carga-viajes-tarifas-ia__lookup"><LookupAutocomplete Label="" Placeholder="Buscar vehículo..." Text="@row.TipoVehiculo" TextChanged="text => OnTarifaIaTipoVehiculoChangedAsync(row, text)" SelectedChanged="item => OnTarifaIaTipoVehiculoSelectedAsync(row, item)" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" /></div></td><td><div class="carga-viajes-tarifas-ia__lookup"><LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@row.Destino" TextChanged="text => OnTarifaIaDestinoChangedAsync(row, text)" SelectedChanged="item => OnTarifaIaDestinoSelectedAsync(row, item)" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" /></div></td><td><input class="carga-viajes-tarifas-ia__importe-input" inputmode="decimal" value="@FormatMoneyInput(row.Importe)" @onchange="args => OnTarifaIaImporteChangedAsync(row, args)" /></td><td><input type="checkbox" @bind="row.TarifaFletero" /></td><td><button type="button" class="btn btn--secondary btn--sm" @onclick="() => AbrirSelectorTarifaIaAsync(row)">Cambiar</button></td></tr> }
+                            </tbody></table></div>
+                            @if (_showTarifaIaSelector && _tarifaIaCambioRow is not null)
+                            {
+                                <div class="carga-viajes-tarifas-ia__selector">
+                                    <div class="carga-viajes-tarifas-ia__selector-header"><strong>Elegir tarifa existente</strong><button type="button" class="btn btn--secondary btn--sm" @onclick="CerrarSelectorTarifaIa">Cerrar</button></div>
+                                    @if (_tarifaIaSelectorLoading)
+                                    {
+                                        <div class="carga-viajes-tarifas-ia__selector-loading"><span class="spinner-border"></span> Buscando tarifas...</div>
+                                    }
+                                    else if (_tarifaIaAlternativas.Count == 0)
+                                    {
+                                        <div class="carga-viajes-tarifas-ia__selector-empty">No se encontraron tarifas para esta lista.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="carga-viajes-tarifas-ia__selector-list">
+                                            @foreach (var alternativa in _tarifaIaAlternativas)
+                                            {
+                                                <button type="button" class="carga-viajes-tarifas-ia__selector-option" @onclick="() => SeleccionarTarifaIa(alternativa)">
+                                                    <strong>@alternativa.Nombre</strong><span>@GetTarifaIaDisplayName(alternativa.Cliente) · @GetTarifaIaDisplayName(alternativa.TipoVehiculo) · @GetTarifaIaDisplayName(alternativa.Destino)</span><em>@FormatMoney(alternativa.Importe)</em>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="carga-viajes-tarifas-ia__notice"><span><i class="bi bi-info-circle"></i> Revisá y corregí los datos antes de grabar. La base de datos todavía no fue modificada.</span><strong>@_tarifasIaRows.Count tarifas detectadas · ordenadas por nombre de lista</strong></div>
+                        }
+                        else if (_tarifasIaAnalizado) { <div class="carga-viajes-tarifas-ia__feedback">No se detectaron tarifas en las imágenes seleccionadas.</div> }
+                    </div>
                 </section>
             </div>
         }
@@ -2621,6 +2719,18 @@
     private decimal _tarifasQuickImportValue;
     private string _tarifasQuickImportOriginal = string.Empty;
     private bool _showTarifasBulkEditModal;
+    private bool _showTarifasIaImportModal;
+    private bool _tarifasIaLoading;
+    private bool _tarifasIaSaving;
+    private bool _tarifasIaAnalizado;
+    private bool _tarifasIaMostrarImagenes;
+    private bool _showTarifaIaSelector;
+    private bool _tarifaIaSelectorLoading;
+    private CargaViajesTarifaImportRow? _tarifaIaCambioRow;
+    private IReadOnlyList<CargaViajeTarifaGridItemDto> _tarifaIaAlternativas = [];
+    private string? _tarifasIaFeedback;
+    private readonly List<CargaViajesTarifaIaImage> _tarifasIaImages = [];
+    private readonly List<CargaViajesTarifaImportRow> _tarifasIaRows = [];
     private bool _tarifasAumentoLoading;
     private CargaViajesFilters _tarifasAumentoFilters = new() { PageNumber = 1, PageSize = 100 };
     private readonly List<CargaViajeTarifaGridItemDto> _tarifasAumento = [];
@@ -2820,7 +2930,8 @@
     }
 
     private bool IsAnyEditingOverlayOpen()
-        => _showViajeEditor
+        => _showTarifasIaImportModal
+           || _showViajeEditor
            || _showTarifaEditor
            || _showChoferEditor
            || _showDestinoEditor
@@ -2909,6 +3020,7 @@
                 actions.Add(new PageHeaderAction { Key = "recargar-tarifas", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _tarifasLoading, OnClick = () => RunHeaderActionAsync(RecargarTarifasAsync) });
                 actions.Add(new PageHeaderAction { Key = "exportar-tarifas", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _tarifasLoading, OnClick = () => RunHeaderActionAsync(ExportarTarifasExcelAsync) });
                 actions.Add(new PageHeaderAction { Key = "aumento-tarifas", Label = "Aumento de tarifa", Icon = "bi-percent", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(AbrirTarifasBulkEditAsync) });
+                actions.Add(new PageHeaderAction { Key = "ia-tarifas", Label = "Actualizar con IA", Icon = "bi-stars", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(AbrirTarifasIaImportAsync) });
                 break;
             case SectionChoferes:
                 actions.Add(new PageHeaderAction { Key = "nuevo-chofer", Label = "Nuevo chofer", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoChoferAsync) });
@@ -3243,6 +3355,14 @@
                     <div id="carga-viajes-tarifas-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tarifas" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
             <div class="smart-search__column">
                 <h4><i class="bi bi-tags"></i> Tipo y estado</h4>
+                <div class="smart-search__inline">
+                    <label>Nombre de lista / tarifa</label>
+                    <input type="search"
+                           class="carga-viajes-tarifas-filter-input"
+                           placeholder="Buscar por nombre..."
+                           @bind="_tarifasFilters.NombreLista"
+                           @bind:event="oninput" />
+                </div>
                 <div class="carga-viajes-tarifas__type-filter" role="group" aria-label="Tipo tarifa">
                     <button type="button"
                             class="carga-viajes-filter-pill @(!HasTarifaFleteroFilter() ? "carga-viajes-filter-pill--active" : string.Empty)"
@@ -3995,6 +4115,12 @@
         {
             _viajeTarifasPanelPositionPending = false;
             await PositionViajeTarifasPanelAsync();
+        }
+
+        if (_showTarifasIaImportModal)
+        {
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#carga-viajes-tarifas-ia-dropzone", "#carga-viajes-tarifas-ia-input");
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindImageCompression", "#carga-viajes-tarifas-ia-input", 2400, 0.82);
         }
     }
 
@@ -5627,6 +5753,701 @@
         _tarifasAumentoSimulada = false;
         return Task.CompletedTask;
     }
+
+    private async Task AbrirTarifasIaImportAsync()
+    {
+        _showTarifasIaImportModal = true;
+        _tarifasIaFeedback = null;
+        _tarifasIaAnalizado = false;
+        _tarifasIaMostrarImagenes = false;
+        _tarifasIaImages.Clear();
+        _tarifasIaRows.Clear();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CerrarTarifasIaImportAsync()
+    {
+        CerrarSelectorTarifaIa();
+        _showTarifasIaImportModal = false;
+        _tarifasIaLoading = false;
+        _tarifasIaSaving = false;
+        _tarifasIaAnalizado = false;
+        _tarifasIaMostrarImagenes = false;
+        _tarifasIaFeedback = null;
+        _tarifasIaImages.Clear();
+        _tarifasIaRows.Clear();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AgregarTarifasIaImagenesAsync(InputFileChangeEventArgs args)
+    {
+        _tarifasIaFeedback = null;
+        try
+        {
+            foreach (var file in args.GetMultipleFiles(20))
+            {
+                await using var stream = file.OpenReadStream(15 * 1024 * 1024);
+                await using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                _tarifasIaImages.Add(new CargaViajesTarifaIaImage(file.Name, file.ContentType, buffer.ToArray()));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudieron procesar imágenes de tarifas con IA.");
+            _tarifasIaFeedback = ex is InvalidOperationException ? ex.Message : "No se pudieron cargar las imágenes.";
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AnalizarTarifasIaAsync()
+    {
+        if (_tarifasIaImages.Count == 0) return;
+        _tarifasIaLoading = true;
+        _tarifasIaFeedback = null;
+        _tarifasIaRows.Clear();
+        try
+        {
+            _tarifasIaRows.AddRange(await CargaViajesTarifaIaSvc.ExtraerAsync(_tarifasIaImages));
+            await NormalizarTarifasIaLookupsAsync();
+            await VincularTarifasIaExistentesAsync();
+            _tarifasIaMostrarImagenes = false;
+            _tarifasIaAnalizado = true;
+            if (_tarifasIaRows.Count == 0) _tarifasIaFeedback = "No se detectaron tarifas en las imágenes seleccionadas.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudieron analizar imágenes de tarifas con IA.");
+            _tarifasIaFeedback = ex is InvalidOperationException ? ex.Message : "No se pudieron analizar las imágenes. Revisá la configuración de IA e intentá nuevamente.";
+        }
+        finally
+        {
+            _tarifasIaLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task VolverTarifasIaImagenesAsync()
+    {
+        _tarifasIaAnalizado = false;
+        _tarifasIaFeedback = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetTarifasIaImageDataUrl(CargaViajesTarifaIaImage image)
+        => $"data:{image.MimeType};base64,{Convert.ToBase64String(image.Bytes)}";
+
+    private Task OnTarifaIaClienteChangedAsync(CargaViajesTarifaImportRow row, string text)
+    {
+        row.Cliente = text;
+        row.ClienteCodigo = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaClienteSelectedAsync(CargaViajesTarifaImportRow row, CargaViajeLookupOptionDto item)
+    {
+        row.Cliente = item.Titulo;
+        row.ClienteCodigo = item.Codigo;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaTipoVehiculoChangedAsync(CargaViajesTarifaImportRow row, string text)
+    {
+        row.TipoVehiculo = text;
+        row.TipoVehiculoCodigo = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaTipoVehiculoSelectedAsync(CargaViajesTarifaImportRow row, CargaViajeLookupOptionDto item)
+    {
+        row.TipoVehiculo = item.Titulo;
+        row.TipoVehiculoCodigo = item.Codigo;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaDestinoChangedAsync(CargaViajesTarifaImportRow row, string text)
+    {
+        row.Destino = text;
+        row.DestinoCodigo = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaDestinoSelectedAsync(CargaViajesTarifaImportRow row, CargaViajeLookupOptionDto item)
+    {
+        row.Destino = item.Titulo;
+        row.DestinoCodigo = item.Codigo;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTarifaIaImporteChangedAsync(CargaViajesTarifaImportRow row, ChangeEventArgs args)
+    {
+        if (TryParseMoneyInput(args.Value?.ToString(), out var importe))
+            row.Importe = Math.Max(0m, importe);
+
+        return Task.CompletedTask;
+    }
+
+    private enum TarifasIaSeleccionMode
+    {
+        Todas,
+        Ninguna,
+        Actualizadas,
+        Altas
+    }
+
+    private void SeleccionarTarifasIa(TarifasIaSeleccionMode mode)
+    {
+        foreach (var row in _tarifasIaRows)
+            row.Seleccionada = mode switch
+            {
+                TarifasIaSeleccionMode.Todas => true,
+                TarifasIaSeleccionMode.Actualizadas => row.TarifaExistente,
+                TarifasIaSeleccionMode.Altas => !row.TarifaExistente,
+                _ => false
+            };
+    }
+
+    private async Task AbrirSelectorTarifaIaAsync(CargaViajesTarifaImportRow row)
+    {
+        _tarifaIaCambioRow = row;
+        _showTarifaIaSelector = true;
+        _tarifaIaSelectorLoading = true;
+        _tarifaIaAlternativas = [];
+        try
+        {
+            var candidates = await CargarTarifasIaCandidatasAsync(row.TarifaFletero);
+            var byList = candidates.Where(x => ImportTarifaNombreEquals(x.Nombre, row.NombreLista)).ToList();
+            _tarifaIaAlternativas = (byList.Count > 0
+                    ? byList
+                    : candidates.Where(x => ImportTextEquals(x.TipoVehiculo, row.TipoVehiculo)
+                        || ImportTextEquals(x.Destino, row.Destino)).ToList())
+                .Take(50)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudieron cargar alternativas de tarifa para la importación con IA.");
+        }
+        finally
+        {
+            _tarifaIaSelectorLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void SeleccionarTarifaIa(CargaViajeTarifaGridItemDto alternativa)
+    {
+        if (_tarifaIaCambioRow is null) return;
+
+        var row = _tarifaIaCambioRow;
+        row.TarifaExistente = true;
+        row.Seleccionada = true;
+        row.EstadoCoincidencia = "Encontrada manualmente";
+        row.TarifaExistenteId = alternativa.Id;
+        row.TarifaExistenteIdLista = alternativa.IdLista;
+        row.NombreLista = alternativa.Nombre;
+        row.Cliente = GetTarifaIaDisplayName(alternativa.Cliente);
+        row.ClienteCodigo = ExtractCodeFromDisplay(alternativa.Cliente);
+        row.Chofer = GetTarifaIaDisplayName(alternativa.Chofer);
+        row.ChoferCodigo = ExtractCodeFromDisplay(alternativa.Chofer);
+        row.TipoVehiculo = GetTarifaIaDisplayName(alternativa.TipoVehiculo);
+        row.TipoVehiculoCodigo = ExtractCodeFromDisplay(alternativa.TipoVehiculo);
+        row.Destino = GetTarifaIaDisplayName(alternativa.Destino);
+        row.DestinoCodigo = ExtractCodeFromDisplay(alternativa.Destino);
+        row.TarifaFletero = alternativa.TarifaFletero;
+        CerrarSelectorTarifaIa();
+    }
+
+    private void CerrarSelectorTarifaIa()
+    {
+        _showTarifaIaSelector = false;
+        _tarifaIaSelectorLoading = false;
+        _tarifaIaCambioRow = null;
+        _tarifaIaAlternativas = [];
+    }
+
+    private async Task<IReadOnlyList<CargaViajeTarifaGridItemDto>> CargarTarifasIaCandidatasAsync(bool fletero)
+    {
+        var candidates = new List<CargaViajeTarifaGridItemDto>();
+        var page = 1;
+        while (true)
+        {
+            var result = await CargaViajesSvc.SearchTarifasAsync(new CargaViajesFilters
+            {
+                TarifaFletero = fletero ? "1" : "0",
+                PageNumber = page,
+                PageSize = 200
+            });
+            candidates.AddRange(result.Items);
+            if (!result.HasNext || result.Items.Count == 0) break;
+            page++;
+        }
+
+        return candidates;
+    }
+
+    private async Task GrabarTarifasIaAsync()
+    {
+        if (_tarifasIaRows.Count == 0 || _tarifasIaSaving) return;
+        var seleccionadas = _tarifasIaRows.Where(x => x.Seleccionada).ToList();
+        if (seleccionadas.Count == 0)
+        {
+            _tarifasIaFeedback = "Seleccioná al menos una tarifa para actualizar o dar de alta.";
+            return;
+        }
+
+        var actualizadas = seleccionadas.Count(x => x.TarifaExistente);
+        var altas = seleccionadas.Count(x => !x.TarifaExistente);
+        var confirmar = await AppDialogs.ShowConfirmAsync("Grabar tarifas", $"Se van a procesar {seleccionadas.Count} tarifas: {actualizadas} actualizadas y {altas} altas. ¿Confirmás la operación?", "Grabar", "Cancelar", iconClass: "bi bi-database-check");
+        if (!confirmar) return;
+
+        _tarifasIaSaving = true;
+        _tarifasIaFeedback = null;
+        var grabadas = 0;
+        var omitidas = 0;
+        try
+        {
+            foreach (var row in _tarifasIaRows)
+            {
+                if (!row.Seleccionada)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(row.NombreLista) || row.Importe <= 0)
+                {
+                    omitidas++;
+                    continue;
+                }
+
+                var existentes = await CargarTarifasIaCandidatasAsync(row.TarifaFletero);
+                var tarifa = BuscarTarifaIaCoincidencia(existentes, row);
+
+                if (tarifa is null && (row.TarifaFletero
+                    ? string.IsNullOrWhiteSpace(row.ChoferCodigo) && string.IsNullOrWhiteSpace(row.Chofer)
+                    : string.IsNullOrWhiteSpace(row.ClienteCodigo) && string.IsNullOrWhiteSpace(row.Cliente)))
+                {
+                    omitidas++;
+                    continue;
+                }
+
+                var tipoVehiculoNuevo = tarifa is null
+                    ? await ResolverOCrearTarifaIaTipoVehiculoAsync(row)
+                    : ExtractCodeFromDisplay(tarifa.TipoVehiculo);
+                var destinoNuevo = tarifa is null
+                    ? await ResolverOCrearTarifaIaDestinoAsync(row)
+                    : ExtractCodeFromDisplay(tarifa.Destino);
+
+                await CargaViajesSvc.SaveTarifaAsync(new CargaViajeTarifaSaveRequest
+                {
+                    Id = tarifa?.Id ?? 0,
+                    IdLista = tarifa?.IdLista ?? string.Empty,
+                    OriginalIdLista = tarifa?.IdLista ?? string.Empty,
+                    Nombre = tarifa?.Nombre ?? row.NombreLista.Trim(),
+                    Cliente = tarifa is null ? ExtractCodeFromDisplay(row.Cliente) : ExtractCodeFromDisplay(tarifa.Cliente),
+                    Chofer = tarifa is null ? ExtractCodeFromDisplay(row.Chofer) : ExtractCodeFromDisplay(tarifa.Chofer),
+                    TipoVehiculo = tipoVehiculoNuevo,
+                    Destino = destinoNuevo,
+                    Importe = row.Importe,
+                    TarifaFletero = tarifa?.TarifaFletero ?? row.TarifaFletero,
+                    PorcentajeAdic = tarifa?.PorcentajeAdic ?? 0m,
+                    PorcentajeAdic1 = tarifa?.PorcentajeAdic1 ?? 0m,
+                    PorcentajeAdic2 = tarifa?.PorcentajeAdic2 ?? 0m,
+                    PorcentajeAdic3 = tarifa?.PorcentajeAdic3 ?? 0m,
+                    PorcentajeAdic4 = tarifa?.PorcentajeAdic4 ?? 0m,
+                    AdicionalFijo1Descripcion = tarifa?.AdicionalFijo1Descripcion ?? string.Empty,
+                    AdicionalFijo1Importe = tarifa?.AdicionalFijo1Importe ?? 0m,
+                    AdicionalFijo1PideCantidad = tarifa?.AdicionalFijo1PideCantidad ?? false,
+                    AdicionalFijo2Descripcion = tarifa?.AdicionalFijo2Descripcion ?? string.Empty,
+                    AdicionalFijo2Importe = tarifa?.AdicionalFijo2Importe ?? 0m,
+                    AdicionalFijo2PideCantidad = tarifa?.AdicionalFijo2PideCantidad ?? false,
+                    AdicionalFijo3Descripcion = tarifa?.AdicionalFijo3Descripcion ?? string.Empty,
+                    AdicionalFijo3Importe = tarifa?.AdicionalFijo3Importe ?? 0m,
+                    AdicionalFijo3PideCantidad = tarifa?.AdicionalFijo3PideCantidad ?? false,
+                    Activo = true
+                });
+                grabadas++;
+            }
+
+            await RecargarTarifasAsync();
+            await AppDialogs.ShowSuccessAsync("Tarifas procesadas", $"Se procesaron {grabadas} tarifas. {omitidas} filas no se grabaron porque faltaban datos o no se pudieron vincular.");
+            await CerrarTarifasIaImportAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudieron grabar las tarifas importadas con IA.");
+            _tarifasIaFeedback = "La grabación se interrumpió. Revisá los datos y volvé a intentar.";
+        }
+        finally
+        {
+            _tarifasIaSaving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<string> ResolverOCrearTarifaIaTipoVehiculoAsync(CargaViajesTarifaImportRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.TipoVehiculoCodigo))
+            return row.TipoVehiculoCodigo.Trim();
+
+        var texto = row.TipoVehiculo.Trim();
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        var lookup = await ResolverTarifaIaLookupAsync(
+            texto,
+            _lookups.TipoVehiculos,
+            CargaViajesSvc.SearchTipoVehiculosLookupAsync);
+        lookup ??= await CargaViajesSvc.CreateTipoVehiculoRapidoAsync(texto);
+        row.TipoVehiculo = lookup.Titulo;
+        row.TipoVehiculoCodigo = lookup.Codigo;
+        return lookup.Codigo;
+    }
+
+    private async Task<string> ResolverOCrearTarifaIaDestinoAsync(CargaViajesTarifaImportRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.DestinoCodigo))
+            return row.DestinoCodigo.Trim();
+
+        var texto = row.Destino.Trim();
+        if (string.IsNullOrWhiteSpace(texto) || string.Equals(NormalizeImportText(texto), "GENERAL", StringComparison.Ordinal))
+        {
+            row.Destino = string.Empty;
+            row.DestinoCodigo = string.Empty;
+            return string.Empty;
+        }
+
+        var lookup = await ResolverTarifaIaLookupAsync(
+            texto,
+            _lookups.Destinos,
+            CargaViajesSvc.SearchDestinosLookupAsync);
+        lookup ??= await CargaViajesSvc.CreateDestinoRapidoAsync(texto);
+        row.Destino = lookup.Titulo;
+        row.DestinoCodigo = lookup.Codigo;
+        return lookup.Codigo;
+    }
+
+    private static bool ImportTextEquals(string? actual, string? imported)
+    {
+        var left = NormalizeImportText(actual);
+        var right = NormalizeImportText(imported);
+        if (left.Length == 0 || right.Length == 0) return left.Length == right.Length;
+        if (left == right) return true;
+        var leftParts = left.Split('-', 2, StringSplitOptions.TrimEntries);
+        var rightParts = right.Split('-', 2, StringSplitOptions.TrimEntries);
+        if (leftParts.Any(x => x.Length > 0 && rightParts.Any(y => y.Length > 0 && (x == y || x.Contains(y) || y.Contains(x)))))
+            return true;
+
+        var leftWords = GetImportMatchWords(left);
+        var rightWords = GetImportMatchWords(right);
+        return leftWords.Any(x => rightWords.Any(y => ImportWordsApproximatelyEqual(x, y)));
+    }
+
+    private static string[] GetImportMatchWords(string value)
+        => new string(value.Select(character => char.IsLetterOrDigit(character) ? character : ' ').ToArray())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(word => !word.All(char.IsDigit) && word.Length >= 3)
+            .ToArray();
+
+    private static bool ImportWordsApproximatelyEqual(string left, string right)
+    {
+        if (left == right) return true;
+        var leftComparable = NormalizarLookupSingular(left);
+        var rightComparable = NormalizarLookupSingular(right);
+        return leftComparable == rightComparable
+            || (leftComparable.Length >= 4 && rightComparable.Contains(leftComparable, StringComparison.Ordinal))
+            || (rightComparable.Length >= 4 && leftComparable.Contains(rightComparable, StringComparison.Ordinal));
+    }
+
+    private static bool ImportTarifaNombreEquals(string? actual, string? imported)
+    {
+        if (ImportTextEquals(actual, imported)) return true;
+
+        var left = NormalizarNombreListaImportado(actual);
+        var right = NormalizarNombreListaImportado(imported);
+        return left.Length > 0 && right.Length > 0
+            && (left == right || left.Contains(right, StringComparison.Ordinal) || right.Contains(left, StringComparison.Ordinal));
+    }
+
+    private static string NormalizarNombreListaImportado(string? value)
+    {
+        var words = NormalizeImportText(value)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(word => word is not "TARIFA" and not "TARIFAS" and not "LISTA")
+            .Where(word => word.Length != 4 || !word.All(char.IsDigit));
+        return string.Join(' ', words);
+    }
+
+    private static string NormalizeImportText(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant();
+
+    private async Task NormalizarTarifasIaLookupsAsync()
+    {
+        foreach (var row in _tarifasIaRows)
+        {
+            NormalizarTarifaIaContexto(row);
+            NormalizarTarifaIaAbreviaturas(row);
+
+            // El cliente no se toma del encabezado. Primero se encuentra la
+            // tarifa por nombre de lista, vehículo y destino; después se
+            // conserva el cliente que ya tiene guardado esa tarifa.
+            row.Cliente = string.Empty;
+            row.ClienteCodigo = string.Empty;
+
+            var tipoTextoOriginal = row.TipoVehiculo;
+            var tipo = await ResolverTarifaIaLookupAsync(tipoTextoOriginal, _lookups.TipoVehiculos, CargaViajesSvc.SearchTipoVehiculosLookupAsync);
+            if (tipo is not null)
+            {
+                row.TipoVehiculo = string.IsNullOrWhiteSpace(tipo.Titulo) ? tipo.Codigo : tipo.Titulo;
+                row.TipoVehiculoCodigo = tipo.Codigo;
+
+                // Algunas planillas escriben "Chasis Tortuguita" en una sola celda.
+                // El primer dato es el vehículo y el resto corresponde al destino.
+                if (string.IsNullOrWhiteSpace(row.Destino))
+                {
+                    var destinoPegado = ObtenerTextoPosteriorLookup(tipoTextoOriginal, tipo);
+                    if (!string.IsNullOrWhiteSpace(destinoPegado))
+                        row.Destino = destinoPegado;
+                }
+            }
+
+            var destino = await ResolverTarifaIaLookupAsync(row.Destino, _lookups.Destinos, CargaViajesSvc.SearchDestinosLookupAsync);
+            if (destino is not null) { row.Destino = string.IsNullOrWhiteSpace(destino.Titulo) ? destino.Codigo : destino.Titulo; row.DestinoCodigo = destino.Codigo; }
+        }
+    }
+
+    private static void NormalizarTarifaIaAbreviaturas(CargaViajesTarifaImportRow row)
+    {
+        row.TipoVehiculo = ExpandirTarifaIaAbreviatura(row.TipoVehiculo, esVehiculo: true);
+        row.Destino = ExpandirTarifaIaAbreviatura(row.Destino, esVehiculo: false);
+    }
+
+    private static string ExpandirTarifaIaAbreviatura(string? value, bool esVehiculo)
+    {
+        var normalized = NormalizeImportText(value).Replace(".", string.Empty, StringComparison.Ordinal);
+        if (normalized.Length == 0) return string.Empty;
+
+        if (esVehiculo)
+        {
+            return normalized switch
+            {
+                "CTA" or "CAM" or "CAMION" => "CAMIONETA",
+                "CH" => "CHASIS",
+                "BAL" => "BALANCIN",
+                "CONT" or "CONTENED" => "CONTENEDOR",
+                "SEM" or "SEMI" => "SEMI SIDER",
+                _ => value!.Trim()
+            };
+        }
+
+        return normalized switch
+        {
+            "WMRT" or "WALM" => "WALMART",
+            "PZA" => "PLAZA",
+            _ => value!.Trim()
+        };
+    }
+
+    private async Task VincularTarifasIaExistentesAsync()
+    {
+        var cache = new Dictionary<string, IReadOnlyList<CargaViajeTarifaGridItemDto>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in _tarifasIaRows)
+        {
+            var cacheKey = row.TarifaFletero ? "fletero" : "cliente";
+            if (!cache.TryGetValue(cacheKey, out var candidates))
+            {
+                candidates = await CargarTarifasIaCandidatasAsync(row.TarifaFletero);
+                cache[cacheKey] = candidates;
+            }
+
+            var existing = BuscarTarifaIaCoincidencia(candidates, row);
+            if (existing is null)
+            {
+                row.TarifaExistente = false;
+                row.Seleccionada = false;
+                row.EstadoCoincidencia = "Tarifa inexistente";
+                continue;
+            }
+
+            row.TarifaExistente = true;
+            row.Seleccionada = true;
+            row.TarifaExistenteId = existing.Id;
+            row.TarifaExistenteIdLista = existing.IdLista;
+            row.EstadoCoincidencia = "Encontrada";
+            row.NombreLista = existing.Nombre;
+            row.Cliente = GetTarifaIaDisplayName(existing.Cliente);
+            row.ClienteCodigo = ExtractCodeFromDisplay(existing.Cliente);
+            row.Chofer = GetTarifaIaDisplayName(existing.Chofer);
+            row.TipoVehiculo = GetTarifaIaDisplayName(existing.TipoVehiculo);
+            row.TipoVehiculoCodigo = ExtractCodeFromDisplay(existing.TipoVehiculo);
+            row.Destino = GetTarifaIaDisplayName(existing.Destino);
+            row.DestinoCodigo = ExtractCodeFromDisplay(existing.Destino);
+            row.TarifaFletero = existing.TarifaFletero;
+        }
+    }
+
+    private static CargaViajeTarifaGridItemDto? BuscarTarifaIaCoincidencia(
+        IReadOnlyList<CargaViajeTarifaGridItemDto> candidates,
+        CargaViajesTarifaImportRow row)
+    {
+        var ranked = candidates
+            .Select(candidate =>
+            {
+                var nombre = ImportTarifaNombreEquals(candidate.Nombre, row.NombreLista);
+                var cliente = ImportTarifaClienteEquals(candidate.Cliente, row.Cliente, candidate.Nombre, row.NombreLista);
+                var destino = ImportTextEquals(candidate.Destino, row.Destino);
+                var vehiculo = ImportTextEquals(candidate.TipoVehiculo, row.TipoVehiculo);
+                var score = (nombre ? 50 : 0) + (cliente ? 25 : 0) + (destino ? 15 : 0) + (vehiculo ? 15 : 0);
+                return (candidate, nombre, cliente, destino, vehiculo, score);
+            })
+            .Where(x => (x.nombre && (x.destino || x.vehiculo)) || (x.cliente && x.destino && x.vehiculo))
+            .OrderByDescending(x => x.score)
+            .ThenBy(x => x.candidate.Id)
+            .ToList();
+
+        return ranked.Count == 0 ? null : ranked[0].candidate;
+    }
+
+    private static string GetTarifaIaDisplayName(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        var separator = text.IndexOf(" - ", StringComparison.Ordinal);
+        return separator >= 0 ? text[(separator + 3)..].Trim() : text;
+    }
+
+    private static string GetTarifaIaMatchClass(CargaViajesTarifaImportRow row)
+        => row.TarifaExistente ? "carga-viajes-tarifas-ia__match--ok" : "carga-viajes-tarifas-ia__match--missing";
+
+    private async Task<CargaViajeLookupOptionDto?> ResolverTarifaIaClientePorListaAsync(string nombreLista)
+    {
+        var normalized = NormalizeImportText(nombreLista);
+        var item = _lookups.Clientes.FirstOrDefault(x => LookupTitleMatchesList(x, normalized));
+        if (item is not null) return item;
+
+        var results = await CargaViajesSvc.SearchClientesAsync(nombreLista, CancellationToken.None);
+        return results.FirstOrDefault(x => LookupTitleMatchesList(x, normalized));
+    }
+
+    private static bool LookupTitleMatchesList(CargaViajeLookupOptionDto item, string normalizedList)
+    {
+        var title = NormalizeImportText(item.Titulo);
+        if (title.Length < 4) return false;
+        if (normalizedList.Contains(title, StringComparison.Ordinal) || title.Contains(normalizedList, StringComparison.Ordinal)) return true;
+
+        var titleWords = title.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(word => word.Length >= 4 && word is not "SOCIEDAD" and not "ANONIMA")
+            .ToList();
+        return titleWords.Any(word => normalizedList.Contains(word, StringComparison.Ordinal));
+    }
+
+    private static void NormalizarTarifaIaContexto(CargaViajesTarifaImportRow row)
+    {
+        if (string.Equals(NormalizeImportText(row.Cliente), "GENERAL", StringComparison.OrdinalIgnoreCase))
+        {
+            row.Cliente = string.Empty;
+            row.ClienteCodigo = string.Empty;
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.Destino) || string.IsNullOrWhiteSpace(row.TipoVehiculo))
+            return;
+
+        var vehicle = row.TipoVehiculo.Trim();
+        var destination = string.Empty;
+        var openParen = vehicle.IndexOf('(');
+        var closeParen = vehicle.LastIndexOf(')');
+        if (openParen > 0 && closeParen > openParen)
+        {
+            destination = vehicle[(openParen + 1)..closeParen].Trim();
+            vehicle = vehicle[..openParen].Trim();
+        }
+        else
+        {
+            var separator = vehicle.IndexOf('/');
+            if (separator < 0) separator = vehicle.IndexOf('-');
+            if (separator > 0)
+            {
+                destination = vehicle[(separator + 1)..].Trim();
+                vehicle = vehicle[..separator].Trim();
+            }
+        }
+
+        if (destination.Length > 0)
+        {
+            row.TipoVehiculo = vehicle;
+            row.Destino = destination;
+            row.TipoVehiculoCodigo = string.Empty;
+            row.DestinoCodigo = string.Empty;
+        }
+    }
+
+    private static async Task<CargaViajeLookupOptionDto?> ResolverTarifaIaLookupAsync(
+        string value,
+        IReadOnlyList<CargaViajeLookupOptionDto> cached,
+        Func<string, CancellationToken, Task<IReadOnlyList<CargaViajeLookupOptionDto>>> search)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = NormalizeImportText(value);
+        var item = cached.FirstOrDefault(x => LookupValueMatches(x, normalized));
+        if (item is not null) return item;
+
+        var results = await search(value, CancellationToken.None);
+        return results.FirstOrDefault(x => LookupValueMatches(x, normalized));
+    }
+
+    private static bool LookupValueMatches(CargaViajeLookupOptionDto item, string normalized)
+    {
+        var code = NormalizeImportText(item.Codigo);
+        var title = NormalizeImportText(item.Titulo);
+        var normalizedComparable = NormalizarLookupSingular(normalized);
+        var codeComparable = NormalizarLookupSingular(code);
+        var titleComparable = NormalizarLookupSingular(title);
+        return code == normalized || title == normalized
+            || codeComparable == normalizedComparable || titleComparable == normalizedComparable
+            || (code.Length > 0 && normalized.Contains(code, StringComparison.Ordinal))
+            || (title.Length > 0 && normalized.Contains(title, StringComparison.Ordinal));
+    }
+
+    private static string ObtenerTextoPosteriorLookup(string? value, CargaViajeLookupOptionDto lookup)
+    {
+        var text = NormalizeImportText(value);
+        var candidates = new[] { NormalizeImportText(lookup.Titulo), NormalizeImportText(lookup.Codigo) }
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .OrderByDescending(x => x.Length);
+        foreach (var candidate in candidates)
+        {
+            if (!text.StartsWith(candidate, StringComparison.Ordinal)) continue;
+            var remainder = text[candidate.Length..].Trim(' ', '-', '/', ':', '(', ')');
+            if (remainder.Length > 0) return remainder;
+        }
+
+        return string.Empty;
+    }
+
+    private static string NormalizarLookupSingular(string value)
+        => value.Length > 5 && value.EndsWith("AS", StringComparison.Ordinal)
+            ? value[..^1]
+            : value;
+
+    private static bool ImportTarifaClienteEquals(string? actual, string? imported, string? nombreActual, string? nombreImportado)
+    {
+        if (ImportTextEquals(actual, imported)) return true;
+        if (!string.IsNullOrWhiteSpace(imported)) return false;
+
+        var nombre = NormalizeImportText(nombreImportado);
+        if (nombre.Contains("GENERAL", StringComparison.Ordinal)) return string.IsNullOrWhiteSpace(actual);
+        return ImportTarifaNombreEquals(nombreActual, nombreImportado);
+    }
+
+    private async Task PegarTarifasIaAsync()
+    {
+        var result = await Js.InvokeAsync<ClipboardPasteResult>("alfaCoreInterfacesUpload.pasteImageFromClipboard", "#carga-viajes-tarifas-ia-input");
+        if (!result.Ok)
+            _tarifasIaFeedback = string.IsNullOrWhiteSpace(result.Message) ? "No se detectó una imagen en el portapapeles." : result.Message;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleTarifasIaImagenes()
+        => _tarifasIaMostrarImagenes = !_tarifasIaMostrarImagenes;
 
     private Task SetTarifasBulkModeAsync(string mode)
     {
@@ -8935,6 +9756,7 @@
     private IReadOnlyList<FilterChipItem> BuildTarifasFilterChips()
     {
         var chips = new List<FilterChipItem>();
+        AddChipIfPresent(chips, "tarifas-nombre-lista", "Nombre de lista", _tarifasFilters.NombreLista);
         AddChipIfPresent(chips, "tarifas-cliente", "Cliente", _tarifasFilters.Cliente);
         AddChipIfPresent(chips, "tarifas-chofer", "Chofer", _tarifasFilters.Chofer);
         AddChipIfPresent(chips, "tarifas-destino", "Destino", _tarifasFilters.Destino);
@@ -8956,6 +9778,9 @@
     {
         switch ((key ?? string.Empty).Trim().ToLowerInvariant())
         {
+            case "tarifas-nombre-lista":
+                _tarifasFilters.NombreLista = string.Empty;
+                break;
             case "tarifas-cliente":
                 _tarifasFilters.Cliente = string.Empty;
                 break;
@@ -9022,6 +9847,7 @@
         {
             ["agruparPor"] = NormalizeTarifasAgruparPor(_tarifasFilters.AgruparPor),
             ["texto"] = _tarifasFilters.Texto,
+            ["nombreLista"] = _tarifasFilters.NombreLista,
             ["cliente"] = _tarifasFilters.Cliente,
             ["chofer"] = _tarifasFilters.Chofer,
             ["destino"] = _tarifasFilters.Destino,
@@ -10957,7 +11783,8 @@
         => SetFeedback(AppUiMessage.Success(title, message));
 
     private bool IsAnyOverlayOpen()
-        => _showViewSettings
+        => _showTarifasIaImportModal
+           || _showViewSettings
            || _showTarifaEditor
            || _showChoferEditor
            || _showDestinoEditor
@@ -11010,6 +11837,12 @@
         public int FirstIndex { get; init; }
         public decimal TotalImporte { get; init; }
         public List<CargaViajeTarifaGridItemDto> Items { get; init; } = [];
+    }
+
+    private sealed class ClipboardPasteResult
+    {
+        public bool Ok { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 
     private void OnViajeClienteTextoChanged(string text) { _viajeClienteTexto = text; _viajeForm.Cliente = text; }

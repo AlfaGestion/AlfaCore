@@ -454,6 +454,7 @@ public class Program
         builder.Services.AddSingleton<VentasRubrosExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
+        builder.Services.AddScoped<ICargaViajesTarifaIaService, CargaViajesTarifaIaService>();
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
         builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<ConversacionesInformeExcelExporter>();
@@ -2564,6 +2565,7 @@ public class Program
             {
                 AgruparPor = TrimOrEmpty(request.Query["agruparPor"]),
                 Texto = TrimOrEmpty(request.Query["texto"]),
+                NombreLista = TrimOrEmpty(request.Query["nombreLista"]),
                 Cliente = TrimOrEmpty(request.Query["cliente"]),
                 Chofer = TrimOrEmpty(request.Query["chofer"]),
                 Destino = TrimOrEmpty(request.Query["destino"]),
