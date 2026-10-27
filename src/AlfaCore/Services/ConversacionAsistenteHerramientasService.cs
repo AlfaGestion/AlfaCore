@@ -150,6 +150,9 @@ public sealed class ConversacionAsistenteHerramientasService(
             return false;
         if (Regex.IsMatch(texto, @"\bpedidos?\s+de\s+(soporte|ayuda|asistencia|servicio|visita|presupuesto)\b"))
             return false;
+        // "el pedido del ticket 3", "mi pedido por el problema del sistema": habla del tema de soporte.
+        if (Regex.IsMatch(texto, @"\b(ticket|tickets|reclamo|reclamos|soporte|problema|error|falla)\b"))
+            return false;
 
         // "NP 999900000001X": el número de comprobante puede terminar en letra.
         return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+[a-z]?\b|\bnota\s+de\s+pedido\b")
@@ -180,6 +183,18 @@ public sealed class ConversacionAsistenteHerramientasService(
     // (Base4271, 2026-10-27: "¿hay novedades sobre mi pedido?" con un ticket abierto respondía "ya pedí novedades").
     internal const string InstruccionPedidosEncontrados =
         "(Respondé tipo RESUELVE con el estado de estos pedidos. No es un seguimiento de soporte.)";
+
+    internal static bool MensajeTraeNumeroDePedido(string? mensajeCliente)
+        => Regex.IsMatch(NormalizarTexto(mensajeCliente), @"\bnp\s*-?\s*\d+[a-z]?\b");
+
+    /// <summary>Primer pedido pendiente o en preparación del resultado de consultar_pedidos; null si todos
+    /// están finalizados o anulados (un pedido viejo no compite con un ticket abierto).</summary>
+    internal static string? PrimerPedidoEnCurso(string? resultadoPedidos)
+    {
+        var m = Regex.Match(resultadoPedidos ?? string.Empty,
+            @"^- Pedido (.+?) del \d{2}/\d{2}/\d{4}: (Pendiente|Aprobado \(en preparación\)) —", RegexOptions.Multiline);
+        return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
 
     internal const string ResultadoPedidoNoEncontrado =
         "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";

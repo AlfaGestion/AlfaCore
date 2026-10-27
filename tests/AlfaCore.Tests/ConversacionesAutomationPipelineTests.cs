@@ -899,6 +899,27 @@ public sealed class ConversacionesAutomationPipelineTests
     public void MensajeConsultaPedidos_AceptaNumeroConLetraFinal(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
 
+    [Theory]
+    [InlineData("que paso con el pedido del ticket 3?", false)]
+    [InlineData("mi pedido por el problema del sistema", false)]
+    [InlineData("como viene mi pedido?", true)]
+    public void MensajeConsultaPedidos_ExcluyeTemasDeSoporte(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    [Fact]
+    public void PedidoOTicket_SoloLosPedidosEnCursoCompitenConElTicket()
+    {
+        const string terminados = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0002X del 02/10/2026: Anulado — $ 500,00";
+        const string enCurso = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0003X del 27/10/2026: Aprobado (en preparación) — $ 7.000,00";
+
+        Assert.Null(ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(terminados));
+        Assert.Equal("0003X", ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(enCurso));
+        Assert.True(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("NP 999900000001X"));
+        Assert.False(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("como viene mi pedido?"));
+        Assert.Equal("¿Me preguntás por tu pedido 0003X o por tu consulta en curso (ticket #1)?",
+            ConversacionesService.PreguntaPedidoOTicket("0003X", 1));
+    }
+
     [Fact]
     public void Prompt_LineaFechaActualLlevaDiaYHora()
     {

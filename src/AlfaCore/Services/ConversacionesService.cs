@@ -9008,6 +9008,11 @@ public sealed partial class ConversacionesService(
 
     internal static bool EsHerramientaConDatosPrivados(string nombreHerramienta) => HerramientasConDatosPrivados.Contains(nombreHerramienta);
 
+    internal const string PrefijoPreguntaPedidoOTicket = "¿Me preguntás por tu pedido ";
+
+    internal static string PreguntaPedidoOTicket(string pedido, int numeroTicket)
+        => $"{PrefijoPreguntaPedidoOTicket}{pedido} o por tu consulta en curso (ticket #{numeroTicket})?";
+
     private static string CuentaParaNota(ConversacionCuentaVinculadaDto cuenta)
         => $"{cuenta.RazonSocial.Trim()} ({cuenta.Codigo.Trim()})";
 
@@ -9395,6 +9400,22 @@ public sealed partial class ConversacionesService(
                     }
                 }
 
+                // Respuesta a "¿Me preguntás por tu pedido ... o por tu consulta en curso (ticket #N)?".
+                var eligioPedido = false;
+                var eligioTicket = false;
+                var ultimaSaliente = mensajes.Where(m => string.Equals(m.Direction, "SALIENTE", StringComparison.Ordinal))
+                    .OrderByDescending(m => m.FechaHora).FirstOrDefault();
+                if (ultimaSaliente?.Texto?.StartsWith(PrefijoPreguntaPedidoOTicket, StringComparison.Ordinal) == true)
+                {
+                    var eleccion = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+                    eligioTicket = Regex.IsMatch(eleccion, @"\b(ticket|consulta|soporte|reclamo|problema|lo otro|la otra|lo segundo|la segunda)\b");
+                    eligioPedido = !eligioTicket && Regex.IsMatch(eleccion, @"\b(pedido|np|compra|nota|lo primero|el primero)\b");
+                    if (eligioPedido)
+                        texto = "¿Cómo está mi pedido?";
+                    else if (eligioTicket)
+                        texto = "¿Hay novedades de mi consulta?";
+                }
+
                 if (cuentaVinculada is { EsAmbigua: false } cuentaParaSaludo)
                     contextoCliente = $"{contextoCliente} Quien escribe está vinculado a la cuenta «{cuentaParaSaludo.RazonSocial.Trim()}». Si todavía no lo saludaste en esta charla, saludalo por ese nombre; si es una empresa, no supongas el nombre de la persona.".Trim();
 
@@ -9656,11 +9677,42 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
-                // Si el modelo igual lo tomó como seguimiento de un ticket, se responde con los pedidos encontrados.
-                if (pedidosEncontrados is not null && result is not null
-                    && !string.Equals(result.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                // "Mi pedido" puede ser una compra o un tema de soporte. Con número de NP (o si ya eligió
+                // "el pedido") es la compra; si sólo tiene pedidos terminados y un ticket abierto, es el ticket;
+                // si tiene pedidos en curso y ticket abierto, se le pregunta cuál.
+                if (eligioTicket && result is not null)
+                    result.Tipo = "SEGUIMIENTO";
+                if (pedidosEncontrados is not null && result is not null)
                 {
-                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = $"Estos son tus pedidos:\n{pedidosEncontrados.Replace("- Pedido", "• Pedido")}" };
+                    TemaPendiente? temaAbierto = null;
+                    if (!eligioPedido && !ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido(texto))
+                    {
+                        try
+                        {
+                            temaAbierto = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            await _appEvents.LogErrorAsync("Conversaciones", "BotPedidoOTicket", ex,
+                                "No se pudo buscar el ticket abierto; se respondió con los pedidos.",
+                                new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                        }
+                    }
+
+                    var pedidoEnCurso = ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(pedidosEncontrados);
+                    if (temaAbierto?.NumeroTicket is not int numeroTicket)
+                    {
+                        if (!string.Equals(result.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                            result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = $"Estos son tus pedidos:\n{pedidosEncontrados.Replace("- Pedido", "• Pedido")}" };
+                    }
+                    else if (pedidoEnCurso is not null)
+                    {
+                        result = new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = PreguntaPedidoOTicket(pedidoEnCurso, numeroTicket) };
+                    }
+                    else
+                    {
+                        result.Tipo = "SEGUIMIENTO";
+                    }
                 }
 
                 var omitirTicket = false;
