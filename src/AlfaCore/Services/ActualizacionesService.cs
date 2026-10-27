@@ -145,6 +145,12 @@ public sealed class ActualizacionesService(
                 var actor = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
                 var pc = NormalizeActor(request.PcAccion, Environment.MachineName, 100);
 
+                // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script:
+                // al terminar la tanda (bien o mal) se dejan como estaban (ver LegacyTablesUpdateGuard).
+                // No se restaura script por script porque algunos leen filas que creo uno anterior.
+                var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(cn, token);
+                try
+                {
                 foreach (var script in pending)
                 {
                     try
@@ -219,6 +225,12 @@ public sealed class ActualizacionesService(
                             incidentId,
                             ex);
                     }
+                }
+
+                }
+                finally
+                {
+                    await RestoreLegacyTablesAsync(legacyGuard, applied);
                 }
 
                 var completed = new ActualizacionesRunResultDto
@@ -418,6 +430,51 @@ public sealed class ActualizacionesService(
     {
         var source = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         return source.Length <= maxLength ? source : source[..maxLength];
+    }
+
+    /// <summary>
+    /// Deja TA_MENU / TA_TAREAS como estaban antes de la tanda de scripts. Corre aunque la tanda
+    /// haya fallado o se haya cancelado (por eso no usa el token del pedido).
+    /// </summary>
+    private async Task RestoreLegacyTablesAsync(LegacyTablesUpdateGuard guard, IReadOnlyList<string> applied)
+    {
+        try
+        {
+            var resumen = await guard.RestoreAsync(CancellationToken.None);
+            if (!string.IsNullOrEmpty(resumen))
+            {
+                try
+                {
+                    await appEvents.LogAuditAsync(
+                        "Actualizaciones",
+                        "ProtegerLegacy",
+                        "TA_MENU",
+                        string.Join(",", applied),
+                        resumen,
+                        new { Scripts = applied },
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    // informativo
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Actualizaciones",
+                "ProtegerLegacy",
+                ex,
+                "No se pudo dejar TA_MENU / TA_TAREAS como estaban despues de las actualizaciones.",
+                new { Scripts = applied },
+                AppEventSeverity.Error,
+                CancellationToken.None);
+        }
+        finally
+        {
+            await guard.EndAsync(CancellationToken.None);
+        }
     }
 
     private async Task<string> AcquireLockAsync(SqlConnection cn, CancellationToken ct)

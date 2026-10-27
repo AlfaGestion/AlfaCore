@@ -817,7 +817,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ActualizacionesService.cs`
 - Propósito: descubrir scripts, validar versiones y coordinar panel, historial y ejecución de actualizaciones de la base activa.
 - Datos que usa: `TA_CONFIGURACION` (TABLE), `AUX_ACTUALIZACION_HIST` (TABLE creada/verificada por el servicio), archivos SQL, `IAppEventService`, motor SQL y estado de ejecución.
-- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`.
+- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`. Corre cada script bajo `LegacyTablesUpdateGuard`.
+
+### LegacyTablesUpdateGuard
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/LegacyTablesUpdateGuard.cs`
+- Propósito: mientras corren los scripts de `App_Data/updates`, deja `TA_MENU` y `TA_TAREAS` (menú y permisos del legacy VB6) exactamente como estaban: quita filas agregadas, restaura las modificadas y repone las borradas. Los permisos que un script quiera dar en `TA_TAREAS` los pasa a `ALFACORE_TAREAS_WEB`, solo a usuarios con permisos web explícitos.
+- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_TAREAS_WEB`; tablas temporales de la misma sesión de los scripts.
+- Observaciones: helper interno que usan `ActualizacionesService` y `CentralProvisioningService`. Restaura al terminar la tanda de scripts; el resumen queda en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Regla en AGENTS.md ("Menú y permisos web independientes del legacy").
 
 ## Stored Procedures usados
 
@@ -827,8 +835,8 @@ No se identificaron stored procedures invocados directamente desde el código ac
 
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/MenuService.cs`
-- Propósito: construye el árbol dinámico de navegación web reutilizando `TA_MENU`, permisos y mapeos de `ALFACORE_MENU_WEB`.
-- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService`
+- Propósito: construye el árbol dinámico de navegación web desde `ALFACORE_MENU_WEB` (padre, nombre, ruta, orden) y los permisos de `ALFACORE_TAREAS_WEB`; no lee `TA_MENU`.
+- Datos que usa: `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService` (`ALFACORE_TAREAS_WEB`)
 - Observaciones: intenta auto-reparar el shell web ejecutando actualizaciones pendientes si faltan tablas o mapeos; centraliza módulos, secciones, nodos y búsqueda del menú.
 
 ### CierreCajaService
