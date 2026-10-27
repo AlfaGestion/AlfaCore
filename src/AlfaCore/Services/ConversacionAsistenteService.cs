@@ -218,6 +218,60 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
     }
 
+    // OpenAI admite hasta 25 MB; una nota de voz de WhatsApp de varios minutos pesa bastante menos.
+    internal const int TamanoMaximoAudioBytes = 20 * 1024 * 1024;
+
+    public async Task<string?> TranscribirAudioAsync(byte[] audio, string nombreArchivo, string mimeType, CancellationToken ct = default)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || audio.Length == 0 || audio.Length > TamanoMaximoAudioBytes)
+            return null;
+
+        var model = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIBE_MODEL");
+        if (string.IsNullOrWhiteSpace(model))
+            model = "gpt-4o-mini-transcribe";
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            using var form = new MultipartFormDataContent();
+            var archivo = new ByteArrayContent(audio);
+            archivo.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "audio/ogg" : mimeType.Split(';')[0].Trim());
+            form.Add(archivo, "file", string.IsNullOrWhiteSpace(nombreArchivo) ? "audio.ogg" : nombreArchivo);
+            form.Add(new StringContent(model), "model");
+            form.Add(new StringContent("es"), "language");
+            form.Add(new StringContent("json"), "response_format");
+
+            using var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", form, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                await appEvents.LogErrorAsync(
+                    "Conversaciones", "AsistenteTranscripcionError",
+                    new InvalidOperationException($"OpenAI respondió {(int)response.StatusCode}"),
+                    "No se pudo transcribir un audio entrante.",
+                    new { model, bytes = audio.Length, statusCode = (int)response.StatusCode, body = Truncar(body, 800) },
+                    AppEventSeverity.Warning, ct);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(body);
+            iaUso?.Registrar(IaUsoFunciones.Transcripcion, document.RootElement, model);
+            return document.RootElement.TryGetProperty("text", out var texto) ? texto.GetString()?.Trim() : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");

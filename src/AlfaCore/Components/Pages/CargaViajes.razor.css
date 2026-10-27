@@ -195,9 +195,16 @@
 .carga-viajes-tarifas-ia__selector-option em { color:var(--alfa-text-primary); font-size:.78rem; font-style:normal; white-space:nowrap; }
 .carga-viajes-tarifas-ia__selector-loading, .carga-viajes-tarifas-ia__selector-empty { padding:.7rem; color:var(--alfa-text-secondary); font-size:.8rem; }
 .carga-viajes-tarifas-ia__table-wrap { max-height:45vh; overflow:auto; border:1px solid var(--alfa-border-default); border-radius:8px; }
-.carga-viajes-tarifas-ia__table { width:100%; border-collapse:collapse; font-size:.8rem; }
-.carga-viajes-tarifas-ia__table th { position:sticky; top:0; z-index:1; background:var(--alfa-bg-surface-raised); color:var(--alfa-text-secondary); text-align:left; }
+.carga-viajes-tarifas-ia__table { width:100%; min-width:76rem; border-collapse:separate; border-spacing:0; table-layout:fixed; font-size:.8rem; }
+.carga-viajes-tarifas-ia__table th { position:sticky; top:0; z-index:10; background:var(--alfa-bg-surface-raised) !important; color:var(--alfa-text-secondary); text-align:left; box-shadow:0 1px 0 var(--alfa-border-default); }
 .carga-viajes-tarifas-ia__table th, .carga-viajes-tarifas-ia__table td { padding:.45rem; border-bottom:1px solid var(--alfa-border-default); }
+.carga-viajes-tarifas-ia__table tbody td { position:relative; z-index:0; background:var(--alfa-bg-surface); }
+.carga-viajes-tarifas-ia__table th:nth-child(2), .carga-viajes-tarifas-ia__table td:nth-child(2) { width:8.5rem; }
+.carga-viajes-tarifas-ia__table th:nth-child(3), .carga-viajes-tarifas-ia__table td:nth-child(3) { width:12rem; }
+.carga-viajes-tarifas-ia__table th:nth-child(4), .carga-viajes-tarifas-ia__table td:nth-child(4) { width:16rem; }
+.carga-viajes-tarifas-ia__table th:nth-child(5), .carga-viajes-tarifas-ia__table td:nth-child(5) { width:13rem; }
+.carga-viajes-tarifas-ia__table th:nth-child(6), .carga-viajes-tarifas-ia__table td:nth-child(6) { width:15rem; }
+.carga-viajes-tarifas-ia__table th:nth-child(7), .carga-viajes-tarifas-ia__table td:nth-child(7) { width:9rem; }
 .carga-viajes-tarifas-ia__table input:not([type=checkbox]) { width:100%; min-width:7rem; padding:.35rem .45rem; border:1px solid var(--alfa-border-default); border-radius:5px; background:var(--alfa-bg-surface); color:var(--alfa-text-primary); }
 .carga-viajes-tarifas-ia__importe-input { text-align:right; }
 .carga-viajes-tarifas-ia__row--missing { background:rgba(248,113,113,.06); }
@@ -1775,7 +1782,25 @@
 }
 
 .carga-viajes-tarifas-table {
+    min-width: 68rem;
     table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.carga-viajes-tarifas-table thead th,
+.carga-viajes-tarifas-table tbody td {
+    box-sizing: border-box;
+}
+
+.carga-viajes-tarifas-table thead th {
+    background: var(--alfa-bg-surface-raised) !important;
+}
+
+.carga-viajes-tarifas-table tbody td {
+    position: relative;
+    z-index: 0;
+    background: var(--alfa-bg-surface);
 }
 
 .carga-viajes-tarifas-table .carga-viajes-tarifas__importe-col {
@@ -3702,6 +3727,24 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
 
 .carga-viajes-viaje-tarifas__search {
     margin: 0;
+}
+
+.carga-viajes-viaje-tarifas__zero-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin-top: .45rem;
+    color: var(--color-text-muted);
+    font-size: .76rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.carga-viajes-viaje-tarifas__zero-toggle input {
+    width: .95rem;
+    height: .95rem;
+    margin: 0;
+    accent-color: var(--alfa-accent);
 }
 
 .carga-viajes-viaje-tarifas__meta {

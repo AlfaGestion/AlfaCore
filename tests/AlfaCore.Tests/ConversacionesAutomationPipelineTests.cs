@@ -1258,6 +1258,17 @@ public sealed class ConversacionesAutomationPipelineTests
     public void MensajeConsultaPedidos_DistingueVentaDeSoporte(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
 
+    // F08 (2026-10-27): sólo se transcribe la nota de voz sin texto propio; un mensaje que menciona
+    // "audio" o un adjunto de otro tipo sigue el flujo normal.
+    [Theory]
+    [InlineData("[audio]", true)]
+    [InlineData("[AUDIO] nota.ogg", true)]
+    [InlineData("[image]", false)]
+    [InlineData("te mandé un [audio] recién", false)]
+    [InlineData("hola", false)]
+    public void EsAudioSinTexto_DetectaSoloNotasDeVoz(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.EsAudioSinTexto(texto));
+
     // Caso real Base4264 (2026-10-26): tras "¿Llegó mi pedido NP-999?", "¿Cómo están mis pedidos?"
     // volvía a buscar NP-999 porque el modelo arrastraba el número del mensaje anterior.
     [Theory]

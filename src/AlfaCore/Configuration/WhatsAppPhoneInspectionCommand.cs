@@ -140,12 +140,25 @@ internal static class WhatsAppPhoneInspectionCommand
 
         if (!response.IsSuccessStatusCode)
         {
+            WriteGraphError(output, "GRAPH", body);
             WriteFields(output, null);
+            await WriteAccessDiagnosticsAsync(httpClient, baseUrl, version, credential, output, ct);
             return 1;
         }
 
         using var document = JsonDocument.Parse(body);
         WriteFields(output, document.RootElement);
+
+        // Campos de estado/bloqueo pedidos aparte: si Meta no reconoce alguno en esta versión de Graph
+        // (400), no debe tapar los datos básicos de arriba ni los demás campos.
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, phoneNumberId, credential.AccessToken, "status,messaging_limit_tier", output, ct,
+            root =>
+            {
+                output.WriteLine($"status = {GetField(root, "status")}");
+                output.WriteLine($"messaging_limit_tier = {GetField(root, "messaging_limit_tier")}");
+            });
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, phoneNumberId, credential.AccessToken, "health_status", output, ct,
+            root => WriteHealthStatus(output, root));
 
         var numberFields = Uri.EscapeDataString("id,display_phone_number,name_status,new_name_status,certificate,new_certificate");
         var numbersUri = $"{baseUrl}/{version}/{Uri.EscapeDataString(credential.WabaId)}/phone_numbers?fields={numberFields}";
@@ -158,6 +171,7 @@ internal static class WhatsAppPhoneInspectionCommand
 
         if (!numbersResponse.IsSuccessStatusCode)
         {
+            WriteGraphError(output, "PHONE_NUMBERS GRAPH", numbersBody);
             WriteNameStatusFields(output, null);
             return 1;
         }
@@ -186,6 +200,189 @@ internal static class WhatsAppPhoneInspectionCommand
         output.WriteLine($"display_phone_number = {GetField(root, "display_phone_number")}");
         output.WriteLine($"verified_name = {GetField(root, "verified_name")}");
         output.WriteLine($"quality_rating = {GetField(root, "quality_rating")}");
+    }
+
+    /// <summary>
+    /// Cuando Graph no deja leer el número (típicamente 100/33): distingue entre WABA caída/restringida,
+    /// número quitado de la WABA y permiso revocado al token (debug_token → granular_scopes). Sólo GET.
+    /// </summary>
+    private static async Task WriteAccessDiagnosticsAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string version,
+        WhatsAppRuntimeCredential credential,
+        TextWriter output,
+        CancellationToken ct)
+    {
+        output.WriteLine($"WABA_ID = {credential.WabaId}");
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, credential.WabaId, credential.AccessToken, "id,name,account_review_status", output, ct,
+            root =>
+            {
+                output.WriteLine($"waba_name = {GetField(root, "name")}");
+                output.WriteLine($"waba_account_review_status = {GetField(root, "account_review_status")}");
+            });
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, credential.WabaId, credential.AccessToken, "health_status", output, ct,
+            root => WriteHealthStatus(output, root));
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, $"{credential.WabaId}/phone_numbers", credential.AccessToken, "id,display_phone_number,status", output, ct,
+            root =>
+            {
+                if (root is not { } element || !element.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                {
+                    output.WriteLine("WABA_PHONE_NUMBERS = NO DISPONIBLE");
+                    return;
+                }
+                output.WriteLine($"WABA_PHONE_NUMBERS = {data.GetArrayLength()}");
+                foreach (var item in data.EnumerateArray())
+                    output.WriteLine($"  {GetField(item, "id")} {GetField(item, "display_phone_number")} status={GetField(item, "status")}");
+            });
+
+        // debug_token sobre el mismo token: el token viaja sólo a Meta (query + header) y nunca se imprime;
+        // de la respuesta sólo se muestran validez, vencimientos y los ids a los que da acceso.
+        var debugUri = $"{baseUrl}/{version}/debug_token?input_token={Uri.EscapeDataString(credential.AccessToken)}";
+        using var debugRequest = new HttpRequestMessage(HttpMethod.Get, debugUri);
+        debugRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        using var debugResponse = await httpClient.SendAsync(debugRequest, ct);
+        var debugBody = await debugResponse.Content.ReadAsStringAsync(ct);
+        if (!debugResponse.IsSuccessStatusCode)
+        {
+            output.WriteLine($"TOKEN_DEBUG HTTP = {(int)debugResponse.StatusCode}");
+            WriteGraphError(output, "TOKEN_DEBUG", debugBody);
+            return;
+        }
+
+        using var debugDocument = JsonDocument.Parse(debugBody);
+        if (!debugDocument.RootElement.TryGetProperty("data", out var tokenData) || tokenData.ValueKind != JsonValueKind.Object)
+        {
+            output.WriteLine("TOKEN_DEBUG = NO DISPONIBLE");
+            return;
+        }
+
+        output.WriteLine($"TOKEN_IS_VALID = {GetBoolField(tokenData, "is_valid")}");
+        output.WriteLine($"TOKEN_TYPE = {GetField(tokenData, "type")}");
+        output.WriteLine($"TOKEN_EXPIRES_AT = {(tokenData.TryGetProperty("expires_at", out var exp) ? exp.ToString() : "NO DISPONIBLE")}");
+        if (tokenData.TryGetProperty("error", out var tokenError) && tokenError.ValueKind == JsonValueKind.Object)
+            output.WriteLine($"TOKEN_ERROR = {GetField(tokenError, "message")}");
+        if (!tokenData.TryGetProperty("granular_scopes", out var scopes) || scopes.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var scope in scopes.EnumerateArray())
+        {
+            var targets = scope.TryGetProperty("target_ids", out var ids) && ids.ValueKind == JsonValueKind.Array
+                ? string.Join(",", ids.EnumerateArray().Select(i => i.ToString()))
+                : "(todos)";
+            output.WriteLine($"TOKEN_SCOPE {GetField(scope, "scope")} -> {targets}");
+        }
+    }
+
+    private static async Task WriteOptionalFieldsAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string version,
+        string objectPath,
+        string accessToken,
+        string fields,
+        TextWriter output,
+        CancellationToken ct,
+        Action<JsonElement?> write)
+    {
+        var uri = $"{baseUrl}/{version}/{objectPath}?fields={Uri.EscapeDataString(fields)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            output.WriteLine($"GRAPH ({fields}) HTTP = {(int)response.StatusCode}");
+            WriteGraphError(output, $"GRAPH ({fields})", body);
+            write(null);
+            return;
+        }
+
+        using var document = JsonDocument.Parse(body);
+        write(document.RootElement);
+    }
+
+    /// <summary>
+    /// Imprime el objeto "error" de Graph (mensaje, código, subcódigo, fbtrace_id). Meta no incluye el
+    /// token en estas respuestas; si el cuerpo no es JSON se informa sin volcarlo.
+    /// </summary>
+    private static void WriteGraphError(TextWriter output, string label, string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object)
+            {
+                output.WriteLine($"{label} ERROR = respuesta sin objeto error");
+                return;
+            }
+
+            var code = error.TryGetProperty("code", out var c) ? c.ToString() : "NO DISPONIBLE";
+            var subcode = error.TryGetProperty("error_subcode", out var s) ? s.ToString() : "NO DISPONIBLE";
+            output.WriteLine($"{label} ERROR = ({code}/{subcode}) {GetField(error, "message")}");
+            var userMessage = GetField(error, "error_user_msg");
+            if (userMessage != "NO DISPONIBLE")
+                output.WriteLine($"{label} ERROR_USUARIO = {userMessage}");
+            output.WriteLine($"{label} FBTRACE_ID = {GetField(error, "fbtrace_id")}");
+        }
+        catch (JsonException)
+        {
+            output.WriteLine($"{label} ERROR = respuesta no JSON");
+        }
+    }
+
+    /// <summary>
+    /// health_status de Meta: dice si el número puede enviar (AVAILABLE / LIMITED / BLOCKED) y, por cada
+    /// entidad (app, negocio, WABA, número), los errores con su motivo y posible solución. Es la única
+    /// fuente que explica un bloqueo o restricción del número.
+    /// </summary>
+    private static void WriteHealthStatus(TextWriter output, JsonElement? root)
+    {
+        if (root is not { } element
+            || !element.TryGetProperty("health_status", out var health)
+            || health.ValueKind != JsonValueKind.Object)
+        {
+            output.WriteLine("HEALTH_CAN_SEND_MESSAGE = NO DISPONIBLE");
+            return;
+        }
+
+        output.WriteLine($"HEALTH_CAN_SEND_MESSAGE = {GetField(health, "can_send_message")}");
+        if (!health.TryGetProperty("entities", out var entities) || entities.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var entity in entities.EnumerateArray())
+        {
+            if (entity.ValueKind != JsonValueKind.Object)
+                continue;
+
+            output.WriteLine($"HEALTH {GetField(entity, "entity_type")} = {GetField(entity, "can_send_message")}");
+            WriteHealthList(output, entity, "errors", "ERROR");
+            WriteHealthList(output, entity, "additional_info", "INFO");
+        }
+    }
+
+    private static void WriteHealthList(TextWriter output, JsonElement entity, string propertyName, string label)
+    {
+        if (!entity.TryGetProperty(propertyName, out var items) || items.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                output.WriteLine($"  {label}: {item.GetString()}");
+                continue;
+            }
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var code = item.TryGetProperty("error_code", out var c) ? c.ToString() : "NO DISPONIBLE";
+            output.WriteLine($"  {label} {code}: {GetField(item, "error_description")}");
+            var solution = GetField(item, "possible_solution");
+            if (solution != "NO DISPONIBLE")
+                output.WriteLine($"    SOLUCION: {solution}");
+        }
     }
 
     private static void WriteNameStatusFields(TextWriter output, JsonElement? phoneNumber)

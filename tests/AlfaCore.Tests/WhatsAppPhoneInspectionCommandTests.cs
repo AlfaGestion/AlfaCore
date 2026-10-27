@@ -186,6 +186,149 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     }
 
     [Fact]
+    public async Task HealthStatus_Blocked_PrintsReasonAndSolutionPerEntity()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+            request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") }
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"id":"1362965780228889","quality_rating":"RED","status":"RESTRICTED","messaging_limit_tier":"TIER_250",
+                         "health_status":{"can_send_message":"BLOCKED","entities":[
+                           {"entity_type":"WABA","id":"2597305014055622","can_send_message":"AVAILABLE"},
+                           {"entity_type":"PHONE_NUMBER","id":"1362965780228889","can_send_message":"BLOCKED",
+                            "errors":[{"error_code":141006,"error_description":"Número restringido por calidad.","possible_solution":"Solicitar revisión."}],
+                            "additional_info":["Restricción hasta 2026-10-30"]}]}}
+                        """)
+                });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("status = RESTRICTED", text, StringComparison.Ordinal);
+        Assert.Contains("messaging_limit_tier = TIER_250", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH_CAN_SEND_MESSAGE = BLOCKED", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH WABA = AVAILABLE", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH PHONE_NUMBER = BLOCKED", text, StringComparison.Ordinal);
+        Assert.Contains("ERROR 141006: Número restringido por calidad.", text, StringComparison.Ordinal);
+        Assert.Contains("SOLUCION: Solicitar revisión.", text, StringComparison.Ordinal);
+        Assert.Contains("INFO: Restricción hasta 2026-10-30", text, StringComparison.Ordinal);
+        Assert.Contains(handler.Requests, r => r.RequestUri?.Query.Contains("health_status", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task OptionalFieldRejected_PrintsMetaErrorAndKeepsOtherFields()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+        {
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? string.Empty);
+            if (request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true)
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") };
+            if (query.Contains("messaging_limit_tier", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""{"error":{"message":"(#100) Tried accessing nonexisting field (messaging_limit_tier)","code":100,"fbtrace_id":"AbC123"}}""")
+                };
+            if (query.Contains("health_status", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"health_status":{"can_send_message":"LIMITED"}}""") };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"quality_rating":"YELLOW"}""") };
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("quality_rating = YELLOW", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH (status,messaging_limit_tier) HTTP = 400", text, StringComparison.Ordinal);
+        Assert.Contains("ERROR = (100/NO DISPONIBLE) (#100) Tried accessing nonexisting field (messaging_limit_tier)", text, StringComparison.Ordinal);
+        Assert.Contains("FBTRACE_ID = AbC123", text, StringComparison.Ordinal);
+        Assert.Contains("status = NO DISPONIBLE", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH_CAN_SEND_MESSAGE = LIMITED", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BasicRequestRejected_PrintsMetaErrorWithoutToken()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":{"message":"Error validating access token","code":190,"error_subcode":460,"error_user_msg":"Sesión inválida","fbtrace_id":"Xyz"}}""")
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("GRAPH ERROR = (190/460) Error validating access token", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH ERROR_USUARIO = Sesión inválida", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretToken, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PhoneNotAccessible_DiagnosesWabaAndTokenScopes_WithoutPrintingToken()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? string.Empty);
+            if (path.EndsWith("/debug_token", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"data":{"is_valid":true,"type":"SYSTEM_USER","expires_at":0,"granular_scopes":[
+                          {"scope":"whatsapp_business_messaging","target_ids":["999"]},{"scope":"business_management"}]}}
+                        """)
+                };
+            if (path.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") };
+            if (path.EndsWith($"/{Waba}", StringComparison.Ordinal) && query.Contains("account_review_status", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"id":"2597305014055622","name":"Prueba","account_review_status":"APPROVED"}""") };
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("""{"error":{"message":"Unsupported get request.","code":100,"error_subcode":33,"fbtrace_id":"T1"}}""")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("GRAPH ERROR = (100/33) Unsupported get request.", text, StringComparison.Ordinal);
+        Assert.Contains($"WABA_ID = {Waba}", text, StringComparison.Ordinal);
+        Assert.Contains("waba_account_review_status = APPROVED", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH (health_status) HTTP = 400", text, StringComparison.Ordinal);
+        Assert.Contains("WABA_PHONE_NUMBERS = 0", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_IS_VALID = True", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_SCOPE whatsapp_business_messaging -> 999", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_SCOPE business_management -> (todos)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretToken, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NameStatus_AvailableWithoutReview_IsSuccessAndDoesNotInferRegistration()
     {
         var text = await ExecuteWithNameStatusesAsync("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW");

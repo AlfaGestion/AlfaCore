@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace AlfaCore.Services;
 
-public sealed class CargaViajesService(
+public sealed partial class CargaViajesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -1095,6 +1095,7 @@ public sealed class CargaViajesService(
             if (!await TableExistsAsync(cn, "TA_TARIFA", token))
                 return null;
 
+            var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, token));
             var columns = await LoadColumnsAsync(cn, "TA_TARIFA", token);
             var idColumn = columns.Contains("id") ? "ID"
                 : columns.Contains("idtarifa") ? "IDTARIFA"
@@ -1182,6 +1183,7 @@ public sealed class CargaViajesService(
                 var affectedById = await cn.ExecuteAsync(new CommandDefinition(sqlById, new { Id = id, Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedById <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, [id], token);
                 return;
             }
 
@@ -1201,6 +1203,8 @@ public sealed class CargaViajesService(
                 var affectedByLista = await cn.ExecuteAsync(new CommandDefinition(sqlByLista, new { IdLista = idLista.Trim().ToUpperInvariant(), Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedByLista <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
+                if (!string.IsNullOrWhiteSpace(idColumn))
+                    await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, idLista, token), token);
                 return;
             }
 
@@ -1413,7 +1417,24 @@ public sealed class CargaViajesService(
             if (!string.IsNullOrWhiteSpace(adicionalFijo3PideCantidadColumn)) parameters.Add("@AdicionalFijo3PideCantidad", request.AdicionalFijo3PideCantidad);
             parameters.Add("@Activo", request.Activo);
 
-            await cn.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: token));
+            if (isNew && !string.IsNullOrWhiteSpace(idColumn))
+            {
+                var newId = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql + Environment.NewLine + "SELECT CAST(SCOPE_IDENTITY() AS int);", parameters, cancellationToken: token));
+                if (newId is > 0)
+                    tarifaId = newId.Value;
+            }
+            else
+            {
+                await cn.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: token));
+            }
+
+            if (!request.TarifaFletero && !string.IsNullOrWhiteSpace(cliente) && !string.IsNullOrWhiteSpace(idColumn))
+            {
+                var savedIds = tarifaId > 0
+                    ? new[] { tarifaId }
+                    : await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, originalIdLista, token);
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, savedIds, token);
+            }
 
             return idLista;
         }, "No se pudo guardar la tarifa.", ct);
@@ -1515,6 +1536,17 @@ public sealed class CargaViajesService(
                 tx.Rollback();
                 throw;
             }
+
+            if (columns.Contains("id"))
+            {
+                var ids = (await cn.QueryAsync<int>(new CommandDefinition($"""
+                    SELECT ID
+                    FROM dbo.TA_TARIFA
+                    WHERE UPPER(LTRIM(RTRIM({clienteColumn}))) = @Cliente
+                      AND UPPER(LTRIM(RTRIM({idListaColumn}))) IN @Listas;
+                    """, new { Cliente = cliente.ToUpperInvariant(), Listas = listas.Select(lista => lista.ToUpperInvariant()).ToList() }, cancellationToken: token))).ToList();
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, ids, token);
+            }
         }, "No se pudieron actualizar los adicionales de las tarifas.", ct);
 
     public Task BajaTarifaAsync(string idLista, CancellationToken ct = default)
@@ -1537,6 +1569,8 @@ public sealed class CargaViajesService(
             var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { IdLista = idLista.Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affected == 0)
                 throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+            if (columns.Contains("id"))
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, "ID", idListaColumn, idLista, token), token);
         }, "No se pudo dar de baja la tarifa.", ct);
 
     public Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default)
@@ -1557,6 +1591,7 @@ public sealed class CargaViajesService(
                 var affectedById = await cn.ExecuteAsync(new CommandDefinition($"UPDATE dbo.TA_TARIFA SET Activo = 0 WHERE {idColumn} = @Id;", new { Id = id }, cancellationToken: token));
                 if (affectedById == 0)
                     throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, [id], token);
                 return;
             }
 
@@ -1568,6 +1603,8 @@ public sealed class CargaViajesService(
                 """, new { IdLista = (idLista ?? string.Empty).Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affectedByLista == 0)
                 throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+            if (!string.IsNullOrWhiteSpace(idColumn))
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, idLista ?? string.Empty, token), token);
         }, "No se pudo dar de baja la tarifa.", ct);
 
     public Task<PagedResult<CargaViajeChoferGridItemDto>> SearchChoferesAsync(CargaViajesFilters filters, CancellationToken ct = default)
@@ -2426,7 +2463,11 @@ public sealed class CargaViajesService(
             if (!string.IsNullOrWhiteSpace(codigoTarifaGeneral))
             {
                 var generalRows = (await cn.QueryAsync<TarifaClienteLookupRow>(new CommandDefinition(BuildTarifaSql($"""
-                    WHERE UPPER(LTRIM(RTRIM(ISNULL(t.{idListaColumn}, '')))) = @CodigoTarifaGeneral
+                    WHERE (
+                            UPPER(LTRIM(RTRIM(ISNULL(t.{idListaColumn}, '')))) = @CodigoTarifaGeneral
+                            OR UPPER(LTRIM(RTRIM(ISNULL(t.Nombre, '')))) = @CodigoTarifaGeneral
+                            OR UPPER(LTRIM(RTRIM(ISNULL(t.Nombre, '')))) LIKE @NombreTarifaGeneralLike
+                        )
                       AND (
                             @SearchLike = ''
                             OR LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) LIKE @SearchLike
@@ -2438,18 +2479,42 @@ public sealed class CargaViajesService(
                     """), new
                 {
                     CodigoTarifaGeneral = codigoTarifaGeneral.ToUpperInvariant(),
+                    NombreTarifaGeneralLike = SearchTextHelper.LikeContains(codigoTarifaGeneral),
                     SearchLike = searchLike
                 }, cancellationToken: token))).ToList();
 
                 foreach (var row in generalRows)
                     row.EsTarifaGeneral = true;
 
-                var destinosVehiculosConTarifaCliente = rawRows
-                    .Select(row => (Destino: TrimUpper(row.DestinoCodigo), TipoVehiculo: TrimUpper(row.TipoVehiculoCodigo)))
-                    .ToHashSet();
+                // La tarifa general se muestra siempre como alternativa debajo de
+                // las tarifas específicas del cliente, aunque comparta destino y vehículo.
+                rawRows.AddRange(generalRows);
+            }
 
-                rawRows.AddRange(generalRows.Where(row =>
-                    !destinosVehiculosConTarifaCliente.Contains((TrimUpper(row.DestinoCodigo), TrimUpper(row.TipoVehiculoCodigo)))));
+            // Si la tarifa general no está configurada o el código configurado ya no
+            // coincide con la lista vigente, igualmente deben aparecer las tarifas
+            // generales (cliente vacío) como respaldo para el nuevo viaje.
+            if (!rawRows.Any(row => row.EsTarifaGeneral))
+            {
+                var generalFallbackRows = (await cn.QueryAsync<TarifaClienteLookupRow>(new CommandDefinition(BuildTarifaSql($"""
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(t.{clienteColumn}, '')))) = ''
+                      AND (
+                            @SearchLike = ''
+                            OR LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) LIKE @SearchLike
+                            OR t.Nombre COLLATE Latin1_General_CI_AI LIKE @SearchLike
+                            OR ISNULL(d.DESCRIPCION, '') COLLATE Latin1_General_CI_AI LIKE @SearchLike
+                            OR ISNULL(tv.DESCRIPCION, '') COLLATE Latin1_General_CI_AI LIKE @SearchLike
+                            OR ISNULL(ch.NOMBRES, '') COLLATE Latin1_General_CI_AI LIKE @SearchLike
+                        )
+                    """), new
+                {
+                    SearchLike = searchLike
+                }, cancellationToken: token))).ToList();
+
+                foreach (var row in generalFallbackRows)
+                    row.EsTarifaGeneral = true;
+
+                rawRows.AddRange(generalFallbackRows);
             }
 
             if (rawRows.Count == 0)
@@ -2469,7 +2534,7 @@ public sealed class CargaViajesService(
                 fleteroCandidates ??= [];
                 var fleteroCoincidencias = fleteroCandidates.Count;
                 var importeCliente = row.TarifaFletero
-                    ? await ResolveTarifaImporteAsync(cn, clienteColumn, row.ClienteCodigo, destinoColumn, row.DestinoCodigo, tipoVehiculoColumn, row.TipoVehiculoCodigo, 0, config.ChoferGeneral, token)
+                    ? await ResolveTarifaImporteAsync(cn, clienteColumn, row.ClienteCodigo, destinoColumn, row.DestinoCodigo, tipoVehiculoColumn, row.TipoVehiculoCodigo, 0, config.ChoferGeneral, config.CodigoTarifaGeneral, token)
                     : row.ImporteBase;
                 var importeFletero = row.TarifaFletero
                     ? row.ImporteBase
@@ -2665,6 +2730,7 @@ public sealed class CargaViajesService(
             if (!await TableExistsAsync(cn, "TA_TARIFA", token))
                 return null;
 
+            var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, token));
             var columns = await LoadColumnsAsync(cn, "TA_TARIFA", token);
             var result = await ResolveTarifaDetalleAsync(
                 cn,
@@ -2676,6 +2742,7 @@ public sealed class CargaViajesService(
                 tipoVehiculoColumnCandidates: ["IDTIPOVEHICULO", "TIPOVEHICULO"],
                 tipoVehiculoValue: tipoVehiculo,
                 tarifaFletero: 0,
+                codigoTarifaGeneral: config.CodigoTarifaGeneral,
                 token);
 
             return result;
@@ -2697,7 +2764,7 @@ public sealed class CargaViajesService(
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
-            return await ResolveTarifaImporteAsync(cn, choferColumn, chofer, destinoColumn, destino, tipoVehiculoColumn, tipoVehiculo, 1, config.ChoferGeneral, token);
+            return await ResolveTarifaImporteAsync(cn, choferColumn, chofer, destinoColumn, destino, tipoVehiculoColumn, tipoVehiculo, 1, config.ChoferGeneral, config.CodigoTarifaGeneral, token);
         }, "No se pudo calcular la tarifa del fletero.", ct);
 
     public Task<CargaViajeTarifaGridItemDto?> GetTarifaFleteroDetalleAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default)
@@ -2712,6 +2779,7 @@ public sealed class CargaViajesService(
                 return null;
 
             var columns = await LoadColumnsAsync(cn, "TA_TARIFA", token);
+            var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, token));
             var result = await ResolveTarifaDetalleAsync(
                 cn,
                 columns,
@@ -2722,6 +2790,7 @@ public sealed class CargaViajesService(
                 tipoVehiculoColumnCandidates: ["IDTIPOVEHICULO", "TIPOVEHICULO"],
                 tipoVehiculoValue: tipoVehiculo,
                 tarifaFletero: 1,
+                codigoTarifaGeneral: config.CodigoTarifaGeneral,
                 token);
 
             return result;
@@ -3742,6 +3811,7 @@ public sealed class CargaViajesService(
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3Descripcion", "nvarchar(100) NULL", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3Importe", "money NOT NULL CONSTRAINT DF_TA_TARIFA_AdicionalFijo3Importe DEFAULT (0) WITH VALUES", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3PideCantidad", "bit NOT NULL CONSTRAINT DF_TA_TARIFA_AdicionalFijo3PideCantidad DEFAULT (0) WITH VALUES", createdColumns, token);
+                await EnsureTarifasVinculadasSchemaAsync(cn, token, (SqlTransaction)tx);
 
                 await tx.CommitAsync(token);
             }
@@ -4364,6 +4434,7 @@ public sealed class CargaViajesService(
         string tipoVehiculo,
         int tarifaFletero,
         string? choferGeneral,
+        string? codigoTarifaGeneral,
         CancellationToken ct)
     {
         // Las tarifas sin chofer se consideran generales y pueden aplicar como fallback.
@@ -4375,11 +4446,20 @@ public sealed class CargaViajesService(
                 SELECT
                     Importe,
                     IdLista,
+                    Nombre,
                     CASE
                         WHEN UPPER(LTRIM(RTRIM(ISNULL({campoPrincipal}, '')))) = @Codigo THEN 0
                         WHEN @AllowGeneralFallback = 1 AND LTRIM(RTRIM(ISNULL({campoPrincipal}, ''))) = '' THEN 1
                         ELSE 2
-                    END AS MatchOrder
+                    END AS MatchOrder,
+                    CASE
+                        WHEN @CodigoTarifaGeneral <> ''
+                         AND (
+                                UPPER(LTRIM(RTRIM(ISNULL(IdLista, '')))) = @CodigoTarifaGeneral
+                                OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @NombreTarifaGeneralLike
+                             ) THEN 0
+                        ELSE 1
+                    END AS GeneralListOrder
                 FROM dbo.TA_TARIFA
                 WHERE ISNULL(Activo, 1) = 1
                   AND ISNULL(TarifaFletero, 0) = @TarifaFletero
@@ -4390,7 +4470,7 @@ public sealed class CargaViajesService(
                   AND UPPER(LTRIM(RTRIM(ISNULL({campoDestino}, '')))) = @Destino
                   AND UPPER(LTRIM(RTRIM(ISNULL({campoTipoVehiculo}, '')))) = @TipoVehiculo
             ) t
-            ORDER BY t.MatchOrder, t.IdLista;
+            ORDER BY t.MatchOrder, t.GeneralListOrder, t.IdLista;
             """;
 
         var result = await cn.ExecuteScalarAsync<decimal?>(new CommandDefinition(sql, new
@@ -4399,7 +4479,9 @@ public sealed class CargaViajesService(
             Codigo = codigo,
             Destino = TrimUpper(destino),
             TipoVehiculo = TrimUpper(tipoVehiculo),
-            AllowGeneralFallback = allowGeneralFallback
+            AllowGeneralFallback = allowGeneralFallback,
+            CodigoTarifaGeneral = TrimUpper(codigoTarifaGeneral),
+            NombreTarifaGeneralLike = SearchTextHelper.LikeContains(codigoTarifaGeneral)
         }, cancellationToken: ct));
 
         return result ?? 0m;
@@ -4415,6 +4497,7 @@ public sealed class CargaViajesService(
         IReadOnlyList<string> tipoVehiculoColumnCandidates,
         string tipoVehiculoValue,
         int tarifaFletero,
+        string? codigoTarifaGeneral,
         CancellationToken ct)
     {
         var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
@@ -4476,7 +4559,18 @@ public sealed class CargaViajesService(
             }
 
             sql += $"""
-                ORDER BY Nombre, {idListaColumn};
+                ORDER BY
+                    CASE
+                        WHEN LTRIM(RTRIM(ISNULL({principalColumn}, ''))) = ''
+                         AND @CodigoTarifaGeneral <> ''
+                         AND (
+                                UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) = @CodigoTarifaGeneral
+                                OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @NombreTarifaGeneralLike
+                             ) THEN 0
+                        ELSE 1
+                    END,
+                    Nombre,
+                    {idListaColumn};
                 """;
             return sql;
         }
@@ -4492,7 +4586,9 @@ public sealed class CargaViajesService(
                     TarifaFletero = tarifaFletero,
                     Principal = principal,
                     Destino = destino,
-                    TipoVehiculo = tipoVehiculo
+                    TipoVehiculo = tipoVehiculo,
+                    CodigoTarifaGeneral = TrimUpper(codigoTarifaGeneral),
+                    NombreTarifaGeneralLike = SearchTextHelper.LikeContains(codigoTarifaGeneral)
                 }));
         }
 
@@ -4504,7 +4600,9 @@ public sealed class CargaViajesService(
             {
                 TarifaFletero = tarifaFletero,
                 Destino = destino,
-                TipoVehiculo = tipoVehiculo
+                TipoVehiculo = tipoVehiculo,
+                CodigoTarifaGeneral = TrimUpper(codigoTarifaGeneral),
+                NombreTarifaGeneralLike = SearchTextHelper.LikeContains(codigoTarifaGeneral)
             }));
 
         queries.Add((
@@ -4536,6 +4634,15 @@ public sealed class CargaViajesService(
                   AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino
                   AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo
                 ORDER BY
+                    CASE
+                        WHEN LTRIM(RTRIM(ISNULL({principalColumn}, ''))) = ''
+                         AND @CodigoTarifaGeneral <> ''
+                         AND (
+                                UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) = @CodigoTarifaGeneral
+                                OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @NombreTarifaGeneralLike
+                             ) THEN 0
+                        ELSE 1
+                    END,
                     CASE WHEN LTRIM(RTRIM(ISNULL({principalColumn}, ''))) = '' THEN 0 ELSE 1 END,
                     Nombre,
                     {idListaColumn};
@@ -4544,7 +4651,9 @@ public sealed class CargaViajesService(
             {
                 TarifaFletero = tarifaFletero,
                 Destino = destino,
-                TipoVehiculo = tipoVehiculo
+                TipoVehiculo = tipoVehiculo,
+                CodigoTarifaGeneral = TrimUpper(codigoTarifaGeneral),
+                NombreTarifaGeneralLike = SearchTextHelper.LikeContains(codigoTarifaGeneral)
             }));
 
         foreach (var query in queries)

@@ -320,7 +320,10 @@
             c => c.AsistenteHerramientaPedidos, (c, v) => c.AsistenteHerramientaPedidos = v),
         new("bi-box-arrow-up-right", "Portal de autogestión",
             "Ofrece el link para ver la cuenta corriente online. Hoy disponible para clientes.",
-            c => c.AsistenteHerramientaPortalLink, (c, v) => c.AsistenteHerramientaPortalLink = v)
+            c => c.AsistenteHerramientaPortalLink, (c, v) => c.AsistenteHerramientaPortalLink = v),
+        new("bi-mic", "Escuchar audios",
+            "Transcribe los audios que manda el cliente y los responde como si fueran texto. La transcripción queda como nota interna. Tiene un costo de IA por minuto de audio.",
+            c => c.AsistenteTranscribeAudios, (c, v) => c.AsistenteTranscribeAudios = v)
     ];
 
     private string GetTitulo() => Seccion switch
