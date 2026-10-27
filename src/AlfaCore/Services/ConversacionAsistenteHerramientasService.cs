@@ -691,11 +691,10 @@ public sealed class ConversacionAsistenteHerramientasService(
             return urlPortal;
 
         // Acceso directo: mismo token que usa Conversaciones → "Invitar al portal" (un solo uso, 60
-        // minutos). La identidad sale de VT_CLIENTES de la cuenta ya vinculada, nunca del chat.
+        // minutos). La identidad sale de la cuenta ya vinculada al contacto, nunca del chat. El email
+        // sólo completa el formulario de ingreso: sin email cargado el link igual entra directo (antes
+        // mandaba el portal pelado y le pedía usuario y clave, Base4271 2026-10-27).
         var email = await LeerEmailClienteAsync(cuenta.Codigo, ct);
-        if (string.IsNullOrWhiteSpace(email))
-            return $"{urlPortal}\n(El cliente no tiene email cargado, así que el link pide ingresar con usuario y clave. Si no los tiene, ofrecele que un asesor le habilita el acceso.)";
-
         var urlAutoLogin = await portalAutoLoginService.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
         {
             CodigoCliente = cuenta.Codigo,
@@ -703,10 +702,12 @@ public sealed class ConversacionAsistenteHerramientasService(
             Email = email,
             IdWeb = idWeb,
             IdBase = idBase,
-            UrlBasePortal = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(urlPortal, "email", email)
+            UrlBasePortal = string.IsNullOrWhiteSpace(email)
+                ? urlPortal
+                : Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(urlPortal, "email", email)
         }, ct);
 
-        return $"{urlAutoLogin}\n(Link de acceso directo a su cuenta: pasáselo tal cual y aclarale que es personal, sirve una sola vez y vence en 60 minutos.)";
+        return $"{urlAutoLogin}\n(Link de acceso directo a su cuenta, entra sin usuario ni clave: pasáselo tal cual, solo en su línea y sin signos pegados, y aclarale que es personal, que no lo comparta, que sirve una sola vez y vence en 60 minutos; si se le vence, que te pida otro.)";
     }
 
     private async Task<string> LeerEmailClienteAsync(string codigoCliente, CancellationToken ct)
