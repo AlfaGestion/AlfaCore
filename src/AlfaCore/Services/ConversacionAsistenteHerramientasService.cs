@@ -151,7 +151,8 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (Regex.IsMatch(texto, @"\bpedidos?\s+de\s+(soporte|ayuda|asistencia|servicio|visita|presupuesto)\b"))
             return false;
 
-        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+\b|\bnota\s+de\s+pedido\b")
+        // "NP 999900000001X": el número de comprobante puede terminar en letra.
+        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+[a-z]?\b|\bnota\s+de\s+pedido\b")
             || (Regex.IsMatch(texto, @"\bpedidos?\b")
                 && Regex.IsMatch(texto, @"\b(mi|mis|estado|como|donde|cuando|llego|llegaron|llega|llegan|sale|salen|salio|salieron|novedad|novedades|ultimo|numero)\b"));
     }
@@ -175,6 +176,11 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     // Con número de pedido no hay ambigüedad venta/soporte: sin esta instrucción el modelo lo tomó como
     // seguimiento de un tema viejo y avisó al operador (Base4264, 2026-10-26, "¿Llegó mi pedido NP-999?").
+    // Con pedidos encontrados la consulta es de venta, no el seguimiento de un ticket de soporte abierto
+    // (Base4271, 2026-10-27: "¿hay novedades sobre mi pedido?" con un ticket abierto respondía "ya pedí novedades").
+    internal const string InstruccionPedidosEncontrados =
+        "(Respondé tipo RESUELVE con el estado de estos pedidos. No es un seguimiento de soporte.)";
+
     internal const string ResultadoPedidoNoEncontrado =
         "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";
 
@@ -662,6 +668,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             var estado = p.Anulada ? "Anulado" : p.Finalizada ? "Finalizado" : p.Aprobado ? "Aprobado (en preparación)" : "Pendiente";
             sb.AppendLine($"- Pedido {p.IdComprobanteTexto} del {p.Fecha:dd/MM/yyyy}: {estado} — $ {p.Total.ToString("N2", cultura)}");
         }
+        sb.Append(InstruccionPedidosEncontrados);
         return sb.ToString().Trim();
     }
 

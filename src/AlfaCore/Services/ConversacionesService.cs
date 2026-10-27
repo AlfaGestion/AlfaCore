@@ -9429,6 +9429,7 @@ public sealed partial class ConversacionesService(
                             && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
                             && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 var identidadPreguntadaAhora = false;
+                string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
                     {
@@ -9439,7 +9440,11 @@ public sealed partial class ConversacionesService(
                             identidadPreguntadaAhora = true;
                             return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
                         }
-                        return await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                        var resultadoHerramienta = await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolConsultarPedidos
+                            && resultadoHerramienta.Contains(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, StringComparison.Ordinal))
+                            pedidosEncontrados = resultadoHerramienta.Replace(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, string.Empty).Trim();
+                        return resultadoHerramienta;
                     }
                     : null;
 
@@ -9649,6 +9654,13 @@ public sealed partial class ConversacionesService(
 
                     await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, texto, token).ConfigureAwait(false);
                     return;
+                }
+
+                // Si el modelo igual lo tomó como seguimiento de un ticket, se responde con los pedidos encontrados.
+                if (pedidosEncontrados is not null && result is not null
+                    && !string.Equals(result.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = $"Estos son tus pedidos:\n{pedidosEncontrados.Replace("- Pedido", "• Pedido")}" };
                 }
 
                 var omitirTicket = false;

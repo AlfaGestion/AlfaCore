@@ -892,6 +892,13 @@ public sealed class ConversacionesAutomationPipelineTests
             ConversacionesService.PreguntaIdentidad(new ConversacionCuentaVinculadaDto("C001 ", CuentaComercialTipo.Cliente, " Fernández SRL ")));
     }
 
+    [Theory]
+    [InlineData("NP 999900000001X", true)]
+    [InlineData("hay novedades sobre mi pedido?", true)]
+    [InlineData("pedido de soporte", false)]
+    public void MensajeConsultaPedidos_AceptaNumeroConLetraFinal(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
     [Fact]
     public void Prompt_LineaFechaActualLlevaDiaYHora()
     {
