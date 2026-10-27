@@ -39,5 +39,6 @@ public interface IConversacionAsistenteHerramientasService
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
         string? mensajeCliente = null,
+        long idConversacion = 0,
         CancellationToken ct = default);
 }

@@ -461,7 +461,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ConversacionAsistenteService.cs`
 - Propósito: llamadas a OpenAI del asistente de Conversaciones: respuesta del bot con tool-calling (`ResponderAsync`), resumen en texto plano (`ResumirAsync`) y transcripción de audios a texto en español (`TranscribirAudioAsync`).
 - Datos que usa: variables de entorno `OPENAI_API_KEY`, `OPENAI_MODEL` y `OPENAI_TRANSCRIBE_MODEL` (por defecto `gpt-4o-mini-transcribe`); consumo vía `IIaUsoRecorder` (funciones `BOT`, `RESUMEN`, `TRANSCRIPCION`).
-- Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
+- Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. `ResponderAsync` acepta imágenes (data URI) cuando `CONV_ASISTENTE_LEE_IMAGENES` = 1; lo que ve vuelve en `ImagenDescripcion`. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
+
+### ConversacionBotPedidosService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionBotPedidosService.cs`
+- Propósito: pedidos desde el chat del asistente: arma un borrador con artículos del catálogo web (`PrepararAsync`, tool `preparar_pedido`) y lo graba como Nota de Pedido solo cuando el cliente confirma (`ConfirmarAsync`) o lo descarta (`CancelarAsync`).
+- Datos que usa: `CONV_BOT_PEDIDOS` (script `2026-10-27-005__conversaciones_bot_pedidos.sql`), `IInterfacesCatalogosService.GetCatalogoPublicoAsync` y `ConfirmarPedidoCarritoAsync` (mismo circuito y validaciones que el carrito web).
+- Observaciones: solo Cliente identificado y no ambiguo; la IA nunca confirma: `ConversacionesService` confirma/cancela con la respuesta literal del cliente (`EsConfirmacion`/`EsCancelacion`) contra el borrador vigente (12 h). Se activa con `CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS`.
 
 ## Gestión operativa y financiera
 

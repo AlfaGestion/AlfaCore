@@ -28,6 +28,7 @@ public interface IConversacionAsistenteService
         bool precioRequiereIdentificacion = false,
         bool forzarConsultarPrecio = false,
         string? linkCatalogoParaLead = null,
+        IReadOnlyList<string>? imagenesDataUri = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -56,4 +57,7 @@ public sealed class ConversacionAsistenteRespuesta
     /// pasa a un humano).
     /// </summary>
     public string Tipo { get; set; } = "RESUELVE";
+
+    /// <summary>Qué vio el asistente en la imagen del cliente (datos útiles para el operador); vacío si no hubo imagen.</summary>
+    public string ImagenDescripcion { get; set; } = string.Empty;
 }

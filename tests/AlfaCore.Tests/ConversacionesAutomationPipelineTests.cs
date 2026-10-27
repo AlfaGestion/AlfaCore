@@ -795,7 +795,9 @@ public sealed class ConversacionesAutomationPipelineTests
         ICentralBasesService? centralBases = null,
         ICentralClientesService? centralClientes = null,
         ISessionService? session = null,
-        ICatalogoClienteLinkService? clienteLinks = null)
+        ICatalogoClienteLinkService? clienteLinks = null,
+        IPortalClienteAutoLoginService? autoLogin = null,
+        IConversacionBotPedidosService? botPedidos = null)
         => new(
             new FakeConfiguration(),
             session ?? new FakeSessionService(),
@@ -807,7 +809,33 @@ public sealed class ConversacionesAutomationPipelineTests
             portal ?? new ThrowingPortalClienteService(),
             proveedor ?? new ThrowingProveedorSaldoService(),
             config ?? new FakeConversacionesConfigService(),
-            clienteLinks ?? new FakeCatalogoClienteLinkService());
+            clienteLinks ?? new FakeCatalogoClienteLinkService(),
+            autoLogin ?? new FakePortalClienteAutoLoginService(),
+            botPedidos ?? new FakeBotPedidosService());
+
+    private sealed class FakeBotPedidosService : IConversacionBotPedidosService
+    {
+        public List<string> Preparados { get; } = [];
+
+        public Task<string> PrepararAsync(long idConversacion, ConversacionCuentaVinculadaDto cuenta, string argumentosJson, CancellationToken ct = default)
+        {
+            Preparados.Add(argumentosJson);
+            return Task.FromResult("Pedido armado (todavía SIN registrar)");
+        }
+
+        public Task<bool> HayPendienteAsync(long idConversacion, string codigoCliente, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<string> ConfirmarAsync(long idConversacion, ConversacionCuentaVinculadaDto cuenta, CancellationToken ct = default) => Task.FromResult(string.Empty);
+        public Task<string> CancelarAsync(long idConversacion, string codigoCliente, CancellationToken ct = default) => Task.FromResult(string.Empty);
+    }
+
+    private sealed class FakePortalClienteAutoLoginService : IPortalClienteAutoLoginService
+    {
+        public Task<string> GenerarEnlaceAsync(PortalClienteGenerarAutoLoginRequestDto request, CancellationToken ct = default)
+            => Task.FromResult($"{request.UrlBasePortal}&token=FAKE-{request.CodigoCliente}");
+
+        public Task<PortalClienteAutoLoginResultDto> ConsumirAsync(string token, string idWeb, int idBase, CancellationToken ct = default)
+            => Task.FromResult(new PortalClienteAutoLoginResultDto());
+    }
 
     /// <summary>Credencial reconocible ("CRED-{base}-{catálogo}-{cliente}") para afirmar que la tool
     /// pidió el link personal con el alcance correcto. La criptografía real se prueba en
@@ -1257,6 +1285,87 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("¿novedades?", false)]
     public void MensajeConsultaPedidos_DistingueVentaDeSoporte(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    // F05 (2026-10-27): pedidos por chat. La confirmación la decide el texto literal del cliente.
+    [Theory]
+    [InlineData("Sí", true)]
+    [InlineData("si, confirmo", true)]
+    [InlineData("Dale!", true)]
+    [InlineData("ok", true)]
+    [InlineData("no", false)]
+    [InlineData("si pero cancelalo", false)]
+    [InlineData("sí, ¿cuánto tarda en llegar el pedido que les hice la semana pasada a la sucursal?", false)]
+    [InlineData("quiero 10 pilas", false)]
+    public void EsConfirmacion_SoloRespuestasCortasAfirmativas(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionBotPedidosService.EsConfirmacion(texto));
+
+    [Theory]
+    [InlineData("No", true)]
+    [InlineData("mejor no", true)]
+    [InlineData("cancelalo", true)]
+    [InlineData("sí", false)]
+    [InlineData("noviembre", false)]
+    public void EsCancelacion_SoloRespuestasCortasNegativas(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionBotPedidosService.EsCancelacion(texto));
+
+    [Theory]
+    [InlineData("Quiero 10 pilas duracell AA", true)]
+    [InlineData("mandame dos cables", true)]
+    [InlineData("anotame 3 resmas", true)]
+    [InlineData("¿Venden cargadores?", false)]
+    [InlineData("quiero una pila AAA", false)]
+    public void MensajePideCantidadDeArticulo_DetectaPedidosConCantidad(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensaje));
+
+    [Fact]
+    public void BuscarEnCatalogo_DistingueAADeAAAYAceptaCodigoExacto()
+    {
+        var articulos = new List<CatalogosCatalogoItemDto>
+        {
+            new() { IdArticulo = "01", DescripcionArticulo = "PILA DURACELL - AA", Precio = 2500m },
+            new() { IdArticulo = "02", DescripcionArticulo = "PILA DURACELL - AAA", Precio = 2000m },
+        };
+
+        Assert.Equal("01", Assert.Single(ConversacionBotPedidosService.BuscarEnCatalogo(articulos, "pila duracell AA")).IdArticulo);
+        Assert.Equal("02", Assert.Single(ConversacionBotPedidosService.BuscarEnCatalogo(articulos, "pilas triple A")).IdArticulo);
+        Assert.Equal("02", Assert.Single(ConversacionBotPedidosService.BuscarEnCatalogo(articulos, "02")).IdArticulo);
+        Assert.Equal(2, ConversacionBotPedidosService.BuscarEnCatalogo(articulos, "pila duracell").Count);
+        Assert.Empty(ConversacionBotPedidosService.BuscarEnCatalogo(articulos, "birome"));
+    }
+
+    [Fact]
+    public void LeerItems_YResumen_NuncaDicenQueEstaRegistrado()
+    {
+        var items = ConversacionBotPedidosService.LeerItems("""{"items":[{"articulo":"pila AA","cantidad":10},{"articulo":"","cantidad":2}]}""");
+        var item = Assert.Single(items);
+        Assert.Equal(("pila AA", 10m), item);
+
+        var resumen = ConversacionBotPedidosService.FormatearResumen(
+            [new ConversacionBotPedidosService.LineaBorrador("01", "PILA DURACELL - AA", 10m, 2500m)], 25000m);
+        Assert.Contains("SIN registrar", resumen);
+        Assert.Contains("25.000,00", resumen);
+    }
+
+    [Fact]
+    public void Tools_TomarPedidos_SoloParaClienteIdentificadoConLaOpcionPrendida()
+    {
+        var service = CreateToolsService();
+        var config = ToolsConfig();
+        config.AsistenteHerramientaTomarPedidos = true;
+        var cliente = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        Assert.Contains(service.ObtenerHerramientasDisponibles(config, cliente, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, null, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(ToolsConfig(), cliente, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
+    }
+
+    [Theory]
+    [InlineData("[image]", true)]
+    [InlineData("[IMAGE] foto.jpg", true)]
+    [InlineData("[audio]", false)]
+    [InlineData("mirá esta foto", false)]
+    public void EsImagenSinTexto_DetectaSoloImagenesSinCaption(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.EsImagenSinTexto(texto));
 
     // F08 (2026-10-27): sólo se transcribe la nota de voz sin texto propio; un mensaje que menciona
     // "audio" o un adjunto de otro tipo sigue el flujo normal.
