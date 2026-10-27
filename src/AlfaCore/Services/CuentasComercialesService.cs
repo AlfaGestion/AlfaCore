@@ -396,11 +396,11 @@ public sealed class CuentasComercialesService(
                 throw new AppValidationException($"Revisá los datos del {GetSingularLabel(tipo).ToLowerInvariant()} antes de guardar.", validation);
 
             var tipoVista = await ResolveTipoVistaAsync(cn, (SqlTransaction)tx, normalized.Codigo, descriptor, token);
-            var defaultDocumentoTipo = await ReadConfigurableDefaultAsync(cn, (SqlTransaction)tx, normalized.DocumentoTipoCodigo, "1", token);
-            var defaultIva = await ReadConfigurableDefaultAsync(cn, (SqlTransaction)tx, normalized.IvaCodigo, "1", token);
-            var defaultPais = await ReadConfigurableDefaultAsync(cn, (SqlTransaction)tx, normalized.PaisCodigo, "1", token);
-            var defaultProvincia = await ReadConfigurableDefaultAsync(cn, (SqlTransaction)tx, normalized.ProvinciaCodigo, "1", token);
-            var defaultCond = await ReadConfigurableDefaultAsync(cn, (SqlTransaction)tx, normalized.CondicionComercialCodigo, "1", token);
+            var defaultDocumentoTipo = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_TIPODOCUMENTO", "CODIGO", normalized.DocumentoTipoCodigo, "1", token);
+            var defaultIva = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_CONDIVA", "CODIGO", normalized.IvaCodigo, "1", token);
+            var defaultPais = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_PAISES", "CODIGO", normalized.PaisCodigo, "1", token);
+            var defaultProvincia = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_ESTADOS", "CODIGO", normalized.ProvinciaCodigo, "1", token);
+            var defaultCond = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "V_TA_Cpra_Vta", "IDCond_Cpra_Vta", normalized.CondicionComercialCodigo, "1", token);
             var defaultClase = normalized.Clase ?? (tipo == CuentaComercialTipo.Cliente ? (short)1 : (short)0);
             var defaultMotivo = "1";
 
@@ -1936,10 +1936,19 @@ public sealed class CuentasComercialesService(
         return Convert.ToInt32(result) > 0;
     }
 
-    private static async Task<string> ReadConfigurableDefaultAsync(SqlConnection cn, SqlTransaction? tx, string requestedValue, string fallbackValue, CancellationToken ct)
+    /// <summary>
+    /// Devuelve el código tal como está guardado en su tabla, con el relleno legacy ("   1"). Antes se grababa
+    /// recortado ("1") y rompía FK_V_MV_Cpte_TA_CONDIVA al grabar comprobantes del cliente (pedidos web/bot):
+    /// relevado 2026-10-27, 483 clientes en G3, 24 en LANUEVA, 23 en ALFA NET. Tabla y columna son constantes
+    /// del código (nunca del usuario). Si el valor no está en la tabla se graba recortado, como antes.
+    /// </summary>
+    private static async Task<string> ResolverCodigoTablaAsync(SqlConnection cn, SqlTransaction? tx, string tabla, string columna, string requestedValue, string fallbackValue, CancellationToken ct)
     {
-        await Task.CompletedTask;
-        return string.IsNullOrWhiteSpace(requestedValue) ? fallbackValue : requestedValue.Trim();
+        var valor = string.IsNullOrWhiteSpace(requestedValue) ? fallbackValue : requestedValue.Trim();
+        var existente = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            $"SELECT TOP (1) {columna} FROM dbo.{tabla} WHERE LTRIM(RTRIM({columna})) = @Valor;",
+            new { Valor = valor }, tx, cancellationToken: ct));
+        return existente ?? valor;
     }
 
     private static string GetString(SqlDataReader rd, int index)
