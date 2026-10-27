@@ -8709,8 +8709,26 @@ public sealed partial class ConversacionesService(
                 return;
             }
 
-
+            // Un mensaje que entra mientras el bot responde el anterior choca con el lock de la
+            // conversación (sp_getapplock con espera 0) y se descartaba sin respuesta: caso real
+            // Base4264 (2026-10-27), un audio llegado 1 s antes de terminar la respuesta a una foto.
+            // Al terminar, si entró uno nuevo se responde el último (con todo el historial), como el
+            // job de espera; el lock y los chequeos de "ya respondido" siguen evitando duplicados.
+            var ultimoAtendido = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+            for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
+            {
+                var ultimo = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
+                if (ultimo <= ultimoAtendido)
+                    break;
+
+                ultimoAtendido = ultimo;
+                var textoNuevo = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
+                if (textoNuevo.Length == 0)
+                    break;
+
+                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -8799,6 +8817,23 @@ public sealed partial class ConversacionesService(
         }
 
         return procesados;
+    }
+
+    private const int MaxRespuestasBotEncadenadas = 3;
+
+    private async Task<long> GetLastIncomingIdAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT ISNULL(MAX(IdMensaje), 0)
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE';
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result is null or DBNull ? 0 : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private async Task<string> GetLastIncomingTextAsync(long idConversacion, CancellationToken ct)
