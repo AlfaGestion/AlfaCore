@@ -472,6 +472,12 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool AsistenteHerramientaPortalLink { get; set; }
     /// <summary>Transcribe los audios entrantes con IA y responde como si fueran texto (tiene costo por minuto).</summary>
     public bool AsistenteTranscribeAudios { get; set; }
+    /// <summary>Mira las imágenes que manda el cliente (fotos, capturas de errores) y responde con lo que ve.</summary>
+    public bool AsistenteLeeImagenes { get; set; }
+    /// <summary>El link al Portal Cliente entra directo a la cuenta (un solo uso, vence en 60 minutos).</summary>
+    public bool AsistentePortalAccesoDirecto { get; set; }
+    /// <summary>Arma Notas de Pedido desde el chat con artículos del catálogo web; se graban solo si el cliente confirma.</summary>
+    public bool AsistenteHerramientaTomarPedidos { get; set; }
     /// <summary>
     /// Permite que el bot informe precios a consumidores finales/leads usando la fuente real de
     /// AlfaCore (CUENTACONSUMIDORFINAL/lista/clase). Default seguro: false.

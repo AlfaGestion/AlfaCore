@@ -1321,7 +1321,9 @@ public sealed class InterfacesCatalogosService(
                 throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. Volvé a iniciar sesión e intentá nuevamente.");
 
             var letra = await ResolveLetraPedidoWebAsync(cn, ct);
-            var observaciones = $"Pedido web - Catálogo #{request.IdInsert}";
+            var observaciones = string.IsNullOrWhiteSpace(request.Observaciones)
+                ? $"Pedido web - Catálogo #{request.IdInsert}"
+                : request.Observaciones.Trim();
             if (observaciones.Length > 250)
                 observaciones = observaciones[..250];
 

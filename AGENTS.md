@@ -175,40 +175,62 @@ AAAA-MM-DD-NNN__<area>_<modulo>_menu_web.sql
 
 Ejemplo: `2026-06-08-001__compras_reporte_compras_menu_web.sql`
 
-### Estructura obligatoria del script (6 pasos, en este orden)
+### Menú y permisos web independientes del legacy (obligatorio)
+
+El menú y los permisos de AlfaCore viven en **sus propias tablas**: `ALFACORE_MENU_WEB` (opciones,
+padre, nombre, ruta, orden) y `ALFACORE_TAREAS_WEB` (permisos). El menú y los permisos del sistema
+legacy (Alfa Gestión VB6) son `TA_MENU` y `TA_TAREAS`, y **AlfaCore no los modifica nunca**: ni
+INSERT, ni UPDATE (tampoco `DESCRIPCION`), ni DELETE.
+
+Motivo: los scripts viejos insertaban cada opción web también en `TA_MENU` y se la daban a todos en
+`TA_TAREAS`; aparecían en el menú y en la Autorización de Tareas del legacy sin que nadie las pidiera.
+Las opciones de AlfaCore que se quieran usar desde el legacy las agrega a mano el responsable del
+legacy, con su propia clave y el sufijo " (web)".
+
+Protección automática: `LegacyTablesUpdateGuard` (lo usan `ActualizacionesService` y
+`CentralProvisioningService`) saca una foto de `TA_MENU` y `TA_TAREAS` antes de correr los scripts y,
+al terminar la tanda (aunque falle), las deja como estaban. Los permisos que un script intente dar en `TA_TAREAS` los
+pasa a `ALFACORE_TAREAS_WEB` (solo a usuarios que ya tienen permisos web explícitos) y lo deja anotado
+en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Esa protección es una red de seguridad: los scripts nuevos igual tienen
+que respetar esta regla.
+
+### Estructura obligatoria del script (5 pasos, en este orden)
 
 1. **Guardia** — si no existe `ALFACORE_MENU_WEB`, hacer `RETURN`
-2. **Columna NombreWeb** — agregar si no existe en bases antiguas
-3. **INSERT en `ALFACORE_MENU_WEB`** — idempotente, solo si la clave no existe aún
+2. **Columnas nuevas de `ALFACORE_MENU_WEB`** — agregar si no existen en bases antiguas (`NombreWeb`, etc.)
+3. **INSERT en `ALFACORE_MENU_WEB`** — idempotente, solo si la clave no existe aún. Con `VALUES`
+   (`Menu = N'ALFA'`, `PadreClave` del módulo web): **no** leer la fila de `TA_MENU` (`SELECT ... FROM dbo.TA_MENU`)
 4. **UPDATE en `ALFACORE_MENU_WEB`** — actualiza ruta, icono y nombre si la fila ya existía
-5. **Descripción en `TA_MENU`** — actualizar solo si la columna existe y el campo está vacío
-6. **Permisos en `TA_TAREAS`** — `INSERT` para usuarios con filas explícitas (usuarios con restricciones activas); los usuarios sin filas ya tienen acceso irrestricto por política del sistema
+5. **Permisos en `ALFACORE_TAREAS_WEB`** — `INSERT` solo para usuarios que ya tienen filas explícitas
+   ahí (usuarios con restricciones web); los usuarios sin filas ya ven todo el menú web
 
 ### Reglas del script
 
 - Debe ser **idempotente**: puede ejecutarse varias veces sin romper datos
-- **No tocar `TA_MENU`** si la clave ya existe en el árbol legacy (confirmar con el usuario primero)
-- Si la clave **no existe** en `TA_MENU`, agregarla dentro del mismo script con guardia de existencia
-- El paso 6 usa el patrón:
+- **Nunca** escribir en `TA_MENU` ni en `TA_TAREAS` (ver arriba)
+- Para una clave web nueva usar un prefijo propio que no exista en el legacy (por ejemplo
+  `D75-CONCILIA-IA`, `D60RPTWEB`): las claves numéricas del legacy pueden estar usadas por otro
+  programa en alguna base de cliente
+- El paso 5 usa el patrón:
 
 ```sql
-INSERT INTO dbo.TA_TAREAS (USUARIO, SISTEMA, TAREA)
-SELECT DISTINCT t.USUARIO, t.SISTEMA, N'<CLAVE>'
-FROM dbo.TA_TAREAS t
-WHERE ISNULL(t.TAREA, N'') <> N''
+INSERT INTO dbo.ALFACORE_TAREAS_WEB (Usuario, Sistema, Clave, FechaHoraGrabacion, UsuarioGrabacion)
+SELECT DISTINCT LTRIM(RTRIM(t.Usuario)), LTRIM(RTRIM(t.Sistema)), N'<CLAVE>', GETDATE(), N'SYSTEM'
+FROM dbo.ALFACORE_TAREAS_WEB t
+WHERE ISNULL(t.Clave, N'') <> N''
   AND NOT EXISTS (
-      SELECT 1 FROM dbo.TA_TAREAS x
-      WHERE UPPER(LTRIM(RTRIM(x.USUARIO))) = UPPER(LTRIM(RTRIM(t.USUARIO)))
-        AND UPPER(LTRIM(RTRIM(x.SISTEMA))) = UPPER(LTRIM(RTRIM(t.SISTEMA)))
-        AND UPPER(LTRIM(RTRIM(x.TAREA)))   = N'<CLAVE>'
+      SELECT 1 FROM dbo.ALFACORE_TAREAS_WEB x
+      WHERE UPPER(LTRIM(RTRIM(x.Usuario))) = UPPER(LTRIM(RTRIM(t.Usuario)))
+        AND UPPER(LTRIM(RTRIM(x.Sistema))) = UPPER(LTRIM(RTRIM(t.Sistema)))
+        AND UPPER(LTRIM(RTRIM(x.Clave)))   = N'<CLAVE>'
   );
 ```
 
 ### Referencia
 
-Ver ejemplos reales en:
-- `2026-05-26-002__tecnicos_menu_web_y_permisos.sql` (clave legacy existente, sin tocar `TA_MENU`)
-- `2026-05-30-001__ventas_punto_venta_menu_web.sql` (clave nueva, incluye `INSERT` en `TA_MENU`)
+Los scripts anteriores al 27/10/2026 (por ejemplo `2026-05-30-001__ventas_punto_venta_menu_web.sql`)
+todavía escriben en `TA_MENU` / `TA_TAREAS`: **no copiarlos como modelo** en esa parte. Sus cambios
+sobre el legacy los revierte `LegacyTablesUpdateGuard`.
 
 ---
 

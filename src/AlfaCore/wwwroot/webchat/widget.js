@@ -4,6 +4,11 @@
  * Uso (lo genera Configuración de Conversaciones > Canales > Chat del sitio web):
  *   <script src="https://<alfacore>/webchat/widget.js" data-site="AC-..." data-contexto="opcional" defer></script>
  *
+ * Atributos opcionales:
+ *   data-modo="ventana"  el chat ocupa toda la ventana y arranca abierto, sin burbuja ni boton de
+ *                        cerrar (lo usa /webchat/soporte, que abre Alfa Gestion desde su menu).
+ *   data-nombre="..."    nombre precargado del visitante (si no escribio otro antes).
+ *
  * Vanilla JS sin dependencias y encapsulado en Shadow DOM para no chocar con el tema/plugins del
  * sitio (WordPress u otro). Todo el texto se pinta con textContent: nunca se inyecta HTML.
  */
@@ -18,6 +23,8 @@
     if (!/^AC-[a-f0-9]{32}$/.test(siteKey)) return;
 
     var contexto = (script.getAttribute("data-contexto") || "").trim().slice(0, 200);
+    var modoVentana = (script.getAttribute("data-modo") || "").trim().toLowerCase() === "ventana";
+    var nombreInicial = (script.getAttribute("data-nombre") || "").trim().slice(0, 80);
     var apiBase = new URL(script.src, location.href).origin + "/api/webchat/" + encodeURIComponent(siteKey);
 
     var POLL_ACTIVE_MS = 3500;
@@ -74,11 +81,13 @@
 
         var host = document.createElement("div");
         host.setAttribute("data-alfacore-webchat", "");
-        host.style.cssText = "position:fixed;z-index:2147483000;right:0;bottom:0;width:0;height:0;";
+        host.style.cssText = modoVentana
+            ? "position:fixed;z-index:2147483000;inset:0;"
+            : "position:fixed;z-index:2147483000;right:0;bottom:0;width:0;height:0;";
         var root = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
 
         var style = document.createElement("style");
-        style.textContent = buildCss(color);
+        style.textContent = buildCss(color) + (modoVentana ? buildCssVentana() : "");
         root.appendChild(style);
 
         var bubble = el("button", "ac-bubble");
@@ -108,7 +117,7 @@
         restart.addEventListener("click", nuevaConversacion);
         var actions = el("div", "ac-actions");
         actions.appendChild(restart);
-        actions.appendChild(close);
+        if (!modoVentana) actions.appendChild(close);
         header.appendChild(title);
         header.appendChild(actions);
 
@@ -122,7 +131,7 @@
         nameInput.type = "text";
         nameInput.maxLength = 80;
         nameInput.placeholder = "Tu nombre (opcional)";
-        nameInput.value = storageGet(STORAGE_NAME) || "";
+        nameInput.value = storageGet(STORAGE_NAME) || nombreInicial;
         nameInput.addEventListener("change", function () { storageSet(STORAGE_NAME, nameInput.value.trim()); });
         nameRow.appendChild(nameInput);
 
@@ -152,13 +161,14 @@
         panel.appendChild(nameRow);
         panel.appendChild(form);
         root.appendChild(panel);
-        root.appendChild(bubble);
+        if (!modoVentana) root.appendChild(bubble);
         document.body.appendChild(host);
 
         ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status, bienvenida: config.mensajeBienvenida || "" };
 
-        panel.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(); });
+        if (!modoVentana) panel.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(); });
         document.addEventListener("visibilitychange", schedulePoll);
+        if (modoVentana) toggle();
     }
 
     // Empieza una charla de cero: visitorId nuevo (en la bandeja queda como otra conversación; la
@@ -190,7 +200,7 @@
             poll();
         } else {
             stopPoll();
-            ui.bubble.focus();
+            if (!modoVentana) ui.bubble.focus();
         }
     }
 
@@ -338,6 +348,14 @@
         p.setAttribute("fill", "currentColor");
         svg.appendChild(p);
         return svg;
+    }
+
+    // Modo ventana: el panel ocupa toda la ventana (sin bordes redondeados ni sombra).
+    function buildCssVentana() {
+        return [
+            ".ac-panel{position:fixed;inset:0;right:0;bottom:0;width:100%;max-width:none;height:100%;max-height:none;border-radius:0;box-shadow:none}",
+            "@media (max-width:480px){.ac-panel{left:0;right:0;bottom:0;height:100%}}"
+        ].join("");
     }
 
     function buildCss(color) {

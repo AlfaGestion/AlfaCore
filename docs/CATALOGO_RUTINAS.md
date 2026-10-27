@@ -461,7 +461,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ConversacionAsistenteService.cs`
 - Propósito: llamadas a OpenAI del asistente de Conversaciones: respuesta del bot con tool-calling (`ResponderAsync`), resumen en texto plano (`ResumirAsync`) y transcripción de audios a texto en español (`TranscribirAudioAsync`).
 - Datos que usa: variables de entorno `OPENAI_API_KEY`, `OPENAI_MODEL` y `OPENAI_TRANSCRIBE_MODEL` (por defecto `gpt-4o-mini-transcribe`); consumo vía `IIaUsoRecorder` (funciones `BOT`, `RESUMEN`, `TRANSCRIPCION`).
-- Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
+- Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. `ResponderAsync` acepta imágenes (data URI) cuando `CONV_ASISTENTE_LEE_IMAGENES` = 1; lo que ve vuelve en `ImagenDescripcion`. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
+
+### ConversacionBotPedidosService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionBotPedidosService.cs`
+- Propósito: pedidos desde el chat del asistente: arma un borrador con artículos del catálogo web (`PrepararAsync`, tool `preparar_pedido`) y lo graba como Nota de Pedido solo cuando el cliente confirma (`ConfirmarAsync`) o lo descarta (`CancelarAsync`).
+- Datos que usa: `CONV_BOT_PEDIDOS` (script `2026-10-27-005__conversaciones_bot_pedidos.sql`), `IInterfacesCatalogosService.GetCatalogoPublicoAsync` y `ConfirmarPedidoCarritoAsync` (mismo circuito y validaciones que el carrito web).
+- Observaciones: solo Cliente identificado y no ambiguo; la IA nunca confirma: `ConversacionesService` confirma/cancela con la respuesta literal del cliente (`EsConfirmacion`/`EsCancelacion`) contra el borrador vigente (12 h). Se activa con `CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS`.
 
 ## Gestión operativa y financiera
 
@@ -825,7 +833,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ActualizacionesService.cs`
 - Propósito: descubrir scripts, validar versiones y coordinar panel, historial y ejecución de actualizaciones de la base activa.
 - Datos que usa: `TA_CONFIGURACION` (TABLE), `AUX_ACTUALIZACION_HIST` (TABLE creada/verificada por el servicio), archivos SQL, `IAppEventService`, motor SQL y estado de ejecución.
-- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`.
+- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`. Corre cada script bajo `LegacyTablesUpdateGuard`.
+
+### LegacyTablesUpdateGuard
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/LegacyTablesUpdateGuard.cs`
+- Propósito: mientras corren los scripts de `App_Data/updates`, deja `TA_MENU` y `TA_TAREAS` (menú y permisos del legacy VB6) exactamente como estaban: quita filas agregadas, restaura las modificadas y repone las borradas. Los permisos que un script quiera dar en `TA_TAREAS` los pasa a `ALFACORE_TAREAS_WEB`, solo a usuarios con permisos web explícitos.
+- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_TAREAS_WEB`; tablas temporales de la misma sesión de los scripts.
+- Observaciones: helper interno que usan `ActualizacionesService` y `CentralProvisioningService`. Restaura al terminar la tanda de scripts; el resumen queda en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Regla en AGENTS.md ("Menú y permisos web independientes del legacy").
 
 ## Stored Procedures usados
 
@@ -859,8 +875,8 @@ No se identificaron stored procedures invocados directamente desde el código ac
 
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/MenuService.cs`
-- Propósito: construye el árbol dinámico de navegación web reutilizando `TA_MENU`, permisos y mapeos de `ALFACORE_MENU_WEB`.
-- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService`
+- Propósito: construye el árbol dinámico de navegación web desde `ALFACORE_MENU_WEB` (padre, nombre, ruta, orden) y los permisos de `ALFACORE_TAREAS_WEB`; no lee `TA_MENU`.
+- Datos que usa: `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService` (`ALFACORE_TAREAS_WEB`)
 - Observaciones: intenta auto-reparar el shell web ejecutando actualizaciones pendientes si faltan tablas o mapeos; centraliza módulos, secciones, nodos y búsqueda del menú.
 
 ### CierreCajaService

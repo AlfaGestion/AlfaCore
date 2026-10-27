@@ -511,18 +511,35 @@ public sealed class CentralProvisioningService(
             ? scripts.Where(x => CompareScriptToVersion(x, currentVersion) > 0).ToList()
             : scripts;
 
-        foreach (var script in pending)
+        // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script: al
+        // terminar la tanda se dejan como estaban (ver LegacyTablesUpdateGuard).
+        var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(target, ct);
+        try
         {
-            var sql = await File.ReadAllTextAsync(script.FullPath, ct);
-            foreach (var batch in SplitSqlBatches(sql))
+            foreach (var script in pending)
             {
-                if (string.IsNullOrWhiteSpace(batch))
-                    continue;
+                var sql = await File.ReadAllTextAsync(script.FullPath, ct);
+                foreach (var batch in SplitSqlBatches(sql))
+                {
+                    if (string.IsNullOrWhiteSpace(batch))
+                        continue;
 
-                await target.ExecuteAsync(new CommandDefinition(batch, cancellationToken: ct, commandTimeout: 1200));
+                    await target.ExecuteAsync(new CommandDefinition(batch, cancellationToken: ct, commandTimeout: 1200));
+                }
+
+                await SaveConfigValueAsync(target, detailColumn, FechaUpdateKey, script.VersionKey, ct);
             }
-
-            await SaveConfigValueAsync(target, detailColumn, FechaUpdateKey, script.VersionKey, ct);
+        }
+        finally
+        {
+            try
+            {
+                await legacyGuard.RestoreAsync(CancellationToken.None);
+            }
+            finally
+            {
+                await legacyGuard.EndAsync(CancellationToken.None);
+            }
         }
     }
 

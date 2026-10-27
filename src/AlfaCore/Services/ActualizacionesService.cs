@@ -76,6 +76,12 @@ public sealed class ActualizacionesService(
             var fechaUpdate = await GetConfigValueAsync(cn, detailColumn, FechaUpdateKey, token);
             var currentVersion = ParseVersionToken(fechaUpdate);
             var historial = await GetHistoryAsync(cn, token);
+            var (aplicadosOk, primeraVersion) = await GetAplicadosOkAsync(cn, token);
+            var salteados = CalcularSalteados(
+                scripts,
+                currentVersion is { } cv ? $"{cv.Date:yyyy-MM-dd}-{cv.Sequence:000}" : null,
+                aplicadosOk,
+                primeraVersion);
             var motorSql = await sqlEngineCheck.GetActiveEngineInfoAsync(token);
 
             return new ActualizacionesDashboardDto
@@ -95,6 +101,7 @@ public sealed class ActualizacionesService(
                 Pendientes = currentVersion.HasValue
                     ? scripts.Where(x => CompareScriptToVersion(x, currentVersion.Value) > 0).ToArray()
                     : scripts,
+                Salteados = salteados,
                 Historial = historial
             };
         }, "No se pudo cargar el panel de actualizaciones.", ct);
@@ -145,6 +152,12 @@ public sealed class ActualizacionesService(
                 var actor = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
                 var pc = NormalizeActor(request.PcAccion, Environment.MachineName, 100);
 
+                // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script:
+                // al terminar la tanda (bien o mal) se dejan como estaban (ver LegacyTablesUpdateGuard).
+                // No se restaura script por script porque algunos leen filas que creo uno anterior.
+                var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(cn, token);
+                try
+                {
                 foreach (var script in pending)
                 {
                     try
@@ -221,6 +234,12 @@ public sealed class ActualizacionesService(
                     }
                 }
 
+                }
+                finally
+                {
+                    await RestoreLegacyTablesAsync(legacyGuard, applied);
+                }
+
                 var completed = new ActualizacionesRunResultDto
                 {
                     CantidadAplicada = applied.Count,
@@ -279,6 +298,61 @@ public sealed class ActualizacionesService(
         };
     }
 
+    /// <summary>
+    /// Scripts renombrados (nombre viejo → nombre nuevo, mismo SQL). Lo usan GetScripts, la detección de
+    /// salteados y ActualizacionesScriptsTests (un número de versión no se reusa salvo por estos renombres).
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> ScriptsRenombrados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["2026-10-22-002__caja_conciliacion_asientos.sql"] = "2026-10-25-001__caja_conciliacion_asientos.sql",
+        ["2026-10-19-001__conversaciones_encuestas_satisfaccion.sql"] = "2026-10-20-004__conversaciones_encuestas_satisfaccion.sql",
+        ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
+        ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
+        ["2026-10-15-003__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
+        ["2026-10-15-004__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
+        ["2026-10-15-005__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
+        ["2026-10-15-006__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
+    };
+
+    /// <summary>
+    /// Scripts "salteados" (2026-10-27): el motor sólo corre versiones MAYORES a FECHAUPDATE_CORE, así que un
+    /// script con versión menor o igual que nunca se aplicó OK en esta base no corre nunca, sin aviso. Pasa
+    /// cuando se reusa un número de versión que la base ya aplicó con otro archivo, o cuando se sube un script
+    /// con fecha atrasada. Sólo se miran versiones desde la primera registrada en el historial (antes no hay
+    /// datos para saber) y un renombre cuenta como aplicado si se aplicó con el nombre viejo.
+    /// </summary>
+    internal static IReadOnlyList<ActualizacionScriptDto> CalcularSalteados(
+        IReadOnlyList<ActualizacionScriptDto> scripts, string? versionActual, IReadOnlyCollection<string> aplicadosOk, string? primeraVersionHistorial)
+    {
+        if (string.IsNullOrWhiteSpace(versionActual) || string.IsNullOrWhiteSpace(primeraVersionHistorial))
+            return [];
+
+        var aplicados = new HashSet<string>(aplicadosOk, StringComparer.OrdinalIgnoreCase);
+        foreach (var (viejo, nuevo) in ScriptsRenombrados)
+            if (aplicados.Contains(viejo))
+                aplicados.Add(nuevo);
+
+        return scripts
+            .Where(s => string.CompareOrdinal(s.VersionKey, versionActual.Trim()) <= 0
+                        && string.CompareOrdinal(s.VersionKey, primeraVersionHistorial.Trim()) >= 0
+                        && !aplicados.Contains(s.Archivo))
+            .ToArray();
+    }
+
+    private static async Task<(IReadOnlyCollection<string> Aplicados, string? PrimeraVersion)> GetAplicadosOkAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var aplicados = new List<string>();
+        await using (var cmd = new SqlCommand("SELECT DISTINCT ISNULL(ScriptArchivo, '') FROM dbo.AUX_ACTUALIZACION_HIST WHERE Resultado = 'OK';", cn))
+        await using (var rd = await cmd.ExecuteReaderAsync(ct))
+            while (await rd.ReadAsync(ct))
+                aplicados.Add(rd.GetString(0));
+
+        await using var cmdMin = new SqlCommand(
+            "SELECT MIN(VersionNueva) FROM dbo.AUX_ACTUALIZACION_HIST WHERE Resultado = 'OK' AND VersionNueva LIKE '[12][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]-[0-9][0-9][0-9]';", cn);
+        var primera = await cmdMin.ExecuteScalarAsync(ct) as string;
+        return (aplicados, primera);
+    }
+
     private static IReadOnlyList<ActualizacionScriptDto> GetScripts(UpdateSource source, bool requireAvailability)
     {
         var basePath = source.RutaOrigenActiva;
@@ -301,17 +375,7 @@ public sealed class ActualizacionesService(
 
         // Publicaciones incrementales pueden conservar el nombre anterior de estos scripts.
         // Solo se omite el alias viejo si la copia nueva tiene exactamente el mismo SQL.
-        var aliases = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["2026-10-22-002__caja_conciliacion_asientos.sql"] = "2026-10-25-001__caja_conciliacion_asientos.sql",
-            ["2026-10-19-001__conversaciones_encuestas_satisfaccion.sql"] = "2026-10-20-004__conversaciones_encuestas_satisfaccion.sql",
-            ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
-            ["2026-10-15-002__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
-            ["2026-10-15-003__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
-            ["2026-10-15-004__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
-            ["2026-10-15-005__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
-            ["2026-10-15-006__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
-        };
+        var aliases = ScriptsRenombrados;
         files = files.Where(file => !aliases.TryGetValue(file.Archivo,out var nuevo) ||
             !files.Any(other => other.Archivo.Equals(nuevo,StringComparison.OrdinalIgnoreCase) &&
                 File.ReadAllText(file.RutaCompleta).Replace("\r\n","\n").Trim() == File.ReadAllText(other.RutaCompleta).Replace("\r\n","\n").Trim())).ToArray();
@@ -418,6 +482,51 @@ public sealed class ActualizacionesService(
     {
         var source = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         return source.Length <= maxLength ? source : source[..maxLength];
+    }
+
+    /// <summary>
+    /// Deja TA_MENU / TA_TAREAS como estaban antes de la tanda de scripts. Corre aunque la tanda
+    /// haya fallado o se haya cancelado (por eso no usa el token del pedido).
+    /// </summary>
+    private async Task RestoreLegacyTablesAsync(LegacyTablesUpdateGuard guard, IReadOnlyList<string> applied)
+    {
+        try
+        {
+            var resumen = await guard.RestoreAsync(CancellationToken.None);
+            if (!string.IsNullOrEmpty(resumen))
+            {
+                try
+                {
+                    await appEvents.LogAuditAsync(
+                        "Actualizaciones",
+                        "ProtegerLegacy",
+                        "TA_MENU",
+                        string.Join(",", applied),
+                        resumen,
+                        new { Scripts = applied },
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    // informativo
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Actualizaciones",
+                "ProtegerLegacy",
+                ex,
+                "No se pudo dejar TA_MENU / TA_TAREAS como estaban despues de las actualizaciones.",
+                new { Scripts = applied },
+                AppEventSeverity.Error,
+                CancellationToken.None);
+        }
+        finally
+        {
+            await guard.EndAsync(CancellationToken.None);
+        }
     }
 
     private async Task<string> AcquireLockAsync(SqlConnection cn, CancellationToken ct)

@@ -51,6 +51,29 @@
             </section>
         }
 
+        @if (_dashboard.Salteados.Count > 0)
+        {
+            <section class="panel-card">
+                <div class="editor-msg editor-msg--warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div>
+                        <strong>@_dashboard.Salteados.Count script(s) quedaron salteados en esta base y no se van a aplicar solos.</strong>
+                        <p>
+                            Tienen una versión igual o anterior a la actual (@_dashboard.FechaUpdateActual) pero nunca se aplicaron:
+                            pasa cuando se reusa un número de versión o se sube un script con fecha atrasada. Revisá cada uno y,
+                            si corresponde, aplicalo a mano en esta base (los scripts son idempotentes).
+                        </p>
+                        <ul>
+                            @foreach (var s in _dashboard.Salteados)
+                            {
+                                <li><code>@s.Archivo</code></li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        }
+
         <section class="updates-overview">
             <article class="panel-card updates-stat">
                 <span class="panel-card__tag">VERSIÓN</span>
@@ -191,12 +214,13 @@
                         @foreach (var item in _dashboard.Scripts)
                         {
                             var pendiente = _dashboard.Pendientes.Any(x => x.Archivo == item.Archivo);
+                            var salteado = _dashboard.Salteados.Any(x => x.Archivo == item.Archivo);
                             <article class="updates-script-item">
                                 <div>
                                     <div class="updates-script-item__top">
                                         <strong>@item.VersionKey</strong>
-                                        <span class="interfaces-status-pill @(pendiente ? "interfaces-status-pill--warning" : "interfaces-status-pill--success")">
-                                            @(pendiente ? "Pendiente" : "Aplicado")
+                                        <span class="interfaces-status-pill @(pendiente || salteado ? "interfaces-status-pill--warning" : "interfaces-status-pill--success")">
+                                            @(pendiente ? "Pendiente" : salteado ? "Salteado" : "Aplicado")
                                         </span>
                                     </div>
                                     <p>@item.Descripcion</p>
