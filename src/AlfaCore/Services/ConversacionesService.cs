@@ -37,7 +37,8 @@ public sealed partial class ConversacionesService(
     ILogger<ConversacionesService> logger,
     IConversacionAsistenteConocimientoService? asistenteConocimiento = null,
     IIaConsumoService? iaConsumo = null,
-    IServiceProvider? serviceProvider = null) : IConversacionesService
+    IServiceProvider? serviceProvider = null,
+    IConversacionBotPedidosService? botPedidosService = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -8821,6 +8822,105 @@ public sealed partial class ConversacionesService(
 
     private const int MaxRespuestasBotEncadenadas = 3;
 
+    internal const string TextoImagenSinTexto = "(El cliente mandó esta imagen sin escribir nada.)";
+
+    /// <summary>Mensaje que es sólo una imagen, sin texto propio ("[image]").</summary>
+    internal static bool EsImagenSinTexto(string? texto)
+        => Regex.IsMatch((texto ?? string.Empty).Trim(), @"^\[image\](\s.*)?$", RegexOptions.IgnoreCase);
+
+    // OpenAI admite imágenes de hasta 20 MB; una foto de WhatsApp pesa bastante menos.
+    private const int TamanoMaximoImagenBot = 8 * 1024 * 1024;
+
+    /// <summary>
+    /// Imagen (jpg/png/webp/gif) adjunta al último mensaje entrante, como data URI para el modelo.
+    /// Null si no hay, si es muy grande o si no se puede leer.
+    /// </summary>
+    private async Task<string?> CargarImagenUltimoEntranteAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            var adjunto = await LeerUltimoAdjuntoEntranteAsync(idConversacion, "IMAGE", "image/", ct).ConfigureAwait(false);
+            if (adjunto is not { } a || a.Bytes.Length > TamanoMaximoImagenBot)
+                return null;
+
+            var mime = a.MimeType.Split(';')[0].Trim().ToLowerInvariant();
+            if (mime is not ("image/jpeg" or "image/png" or "image/webp" or "image/gif"))
+                return null;
+
+            return $"data:{mime};base64,{Convert.ToBase64String(a.Bytes)}";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "BotImagen", ex,
+                "No se pudo leer la imagen entrante; el asistente siguió sin verla.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Último adjunto del tipo pedido del último mensaje entrante (ya descargado por
+    /// StoreIncomingAttachmentsAsync): archivo local o, si no está, el contenido durable de CONV_ADJUNTOS.
+    /// </summary>
+    private async Task<(string Nombre, string MimeType, byte[] Bytes)?> LeerUltimoAdjuntoEntranteAsync(
+        long idConversacion, string tipoArchivo, string prefijoMime, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var conContenido = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct).ConfigureAwait(false);
+        var sql = $"""
+            SELECT TOP (1) ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''),
+                   {(conContenido ? "a.ArchivoContenido" : "CAST(NULL AS varbinary(max))")}
+            FROM dbo.CONV_ADJUNTOS a
+            WHERE a.IdMensaje = (SELECT MAX(m.IdMensaje) FROM dbo.CONV_MENSAJES m
+                                 WHERE m.IdConversacion = @Id AND m.Direction = N'ENTRANTE')
+              AND (UPPER(ISNULL(a.TipoArchivo, N'')) = @Tipo OR LOWER(ISNULL(a.MimeType, N'')) LIKE @Mime)
+            ORDER BY a.IdAdjunto DESC;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        cmd.Parameters.AddWithValue("@Tipo", tipoArchivo);
+        cmd.Parameters.AddWithValue("@Mime", prefijoMime + "%");
+        await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await rd.ReadAsync(ct).ConfigureAwait(false))
+            return null;
+
+        var nombre = rd.GetString(0);
+        var mime = rd.GetString(1);
+        var ruta = rd.GetString(2);
+        var bytes = !string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta)
+            ? await File.ReadAllBytesAsync(ruta, ct).ConfigureAwait(false)
+            : rd.IsDBNull(3) ? null : (byte[])rd.GetValue(3);
+        return bytes is { Length: > 0 } ? (nombre, mime, bytes) : null;
+    }
+
+    /// <summary>Mensaje que es sólo una nota de voz/audio, sin texto propio ("[audio]").</summary>
+    internal static bool EsAudioSinTexto(string? texto)
+        => Regex.IsMatch((texto ?? string.Empty).Trim(), @"^\[audio\](\s.*)?$", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Transcribe el audio adjunto al último mensaje entrante (ya descargado por StoreIncomingAttachmentsAsync).
+    /// Lee el archivo local o, si no está, el contenido durable de CONV_ADJUNTOS. Null si no hay audio o falla.
+    /// </summary>
+    private async Task<string?> TranscribirUltimoAudioEntranteAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            var adjunto = await LeerUltimoAdjuntoEntranteAsync(idConversacion, "AUDIO", "audio/", ct).ConfigureAwait(false);
+            if (adjunto is not { } a)
+                return null;
+
+            return await asistenteService.TranscribirAudioAsync(a.Bytes, a.Nombre, a.MimeType, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "BotTranscripcionAudio", ex,
+                "No se pudo transcribir el audio entrante; el asistente siguió con la repregunta.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
     private async Task<long> GetLastIncomingIdAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
@@ -8960,6 +9060,44 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
+                // Audio (F08, 2026-10-27): se transcribe y el bot sigue como si el cliente lo hubiera
+                // escrito. Va después de los cortes (ya respondido, humano, tope de créditos) para no
+                // pagar transcripciones que no se van a usar; si falla o está apagado queda la
+                // repregunta de ConstruirAclaracionMediaSinTexto ("no puedo escucharlo").
+                if (config.AsistenteTranscribeAudios && EsAudioSinTexto(texto))
+                {
+                    var transcripcion = await TranscribirUltimoAudioEntranteAsync(idConversacion, token).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(transcripcion))
+                    {
+                        texto = transcripcion;
+                        await AddInternalEventCoreAsync(idConversacion, $"🎙️ Transcripción del audio: «{Truncar(transcripcion, 1500)}»", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+
+                        if (!esUrgente && ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras))
+                        {
+                            esUrgente = true;
+                            await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                            await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token).ConfigureAwait(false);
+                        }
+                        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                            return;
+                    }
+                }
+
+                // Imagen (F07, 2026-10-27): se le pasa al modelo la imagen del último mensaje (foto,
+                // captura de error). Sin texto propio se reemplaza "[image]" para que no corte la
+                // repregunta fija y lo que vio queda como nota interna (ej. un ID de AnyDesk).
+                IReadOnlyList<string>? imagenesBot = null;
+                if (config.AsistenteLeeImagenes)
+                {
+                    var imagen = await CargarImagenUltimoEntranteAsync(idConversacion, token).ConfigureAwait(false);
+                    if (imagen is not null)
+                    {
+                        imagenesBot = [imagen];
+                        if (EsImagenSinTexto(texto))
+                            texto = TextoImagenSinTexto;
+                    }
+                }
+
                 // Chat web (visitante anónimo): el asistente pide una vez el WhatsApp y la razón social.
                 // Si ya los pidió y este mensaje los trae, se guardan en la conversación y se agradece.
                 var pedirDatosWeb = string.Equals(canalBot, "WEBCHAT", StringComparison.OrdinalIgnoreCase)
@@ -9006,6 +9144,21 @@ public sealed partial class ConversacionesService(
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+
+                // Pedido por chat (F05): confirmar o cancelar lo decide el texto literal del cliente
+                // contra el borrador guardado, nunca el modelo -- la IA sólo puede armar el borrador.
+                string? respuestaPedidoChat = null;
+                if (config.AsistenteHerramientaTomarPedidos && botPedidosService is not null
+                    && cuentaVinculada is { Tipo: CuentaComercialTipo.Cliente, EsAmbigua: false }
+                    && (ConversacionBotPedidosService.EsConfirmacion(texto) || ConversacionBotPedidosService.EsCancelacion(texto))
+                    && await botPedidosService.HayPendienteAsync(idConversacion, cuentaVinculada.Codigo, token).ConfigureAwait(false))
+                {
+                    respuestaPedidoChat = ConversacionBotPedidosService.EsConfirmacion(texto)
+                        ? await botPedidosService.ConfirmarAsync(idConversacion, cuentaVinculada, token).ConfigureAwait(false)
+                        : await botPedidosService.CancelarAsync(idConversacion, cuentaVinculada.Codigo, token).ConfigureAwait(false);
+                    await AddInternalEventCoreAsync(idConversacion, $"🛒 Pedido por chat: {respuestaPedidoChat}", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                }
+
                 // Un saludo/cierre no hereda las herramientas del mensaje anterior: con tools ofrecidas
                 // gpt-4o-mini tiende a derivar en vez de responder lo social.
                 var mensajePrevioCliente = EsMensajeSocial(texto)
@@ -9024,7 +9177,7 @@ public sealed partial class ConversacionesService(
                             && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, ctHerramienta)
+                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta)
                     : null;
 
                 // Un saludo o un cierre/agradecimiento suelto no tiene nada que buscar -- consultarlo
@@ -9035,7 +9188,8 @@ public sealed partial class ConversacionesService(
                 // recibiría "[image]" y respondía "hay un problema con las imágenes" + DERIVA aunque el
                 // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
                 var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
-                var usaKnowledge = aclaracionMediaSinTexto is null && !EsMensajeSocial(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                var usaKnowledge = aclaracionMediaSinTexto is null && respuestaPedidoChat is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
+                    && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
                     : new AsistenteKnowledgeContext();
@@ -9065,7 +9219,11 @@ public sealed partial class ConversacionesService(
                     resueltoSoloPorKnowledge = false;
 
                 ConversacionAsistenteRespuesta? result;
-                if (correccionDirecta is not null)
+                if (respuestaPedidoChat is not null)
+                {
+                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = respuestaPedidoChat };
+                }
+                else if (correccionDirecta is not null)
                 {
                     result = correccionDirecta.Correccion.Accion == AsistenteCorreccionAcciones.Derivar
                         ? new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty }
@@ -9118,7 +9276,14 @@ public sealed partial class ConversacionesService(
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
                         forzarConsultarPrecio: forzarConsultarPrecio,
                         linkCatalogoParaLead: linkCatalogoParaLead,
+                        imagenesDataUri: imagenesBot,
                         ct: token).ConfigureAwait(false);
+
+                    if (imagenesBot is not null && !string.IsNullOrWhiteSpace(result?.ImagenDescripcion))
+                    {
+                        await AddInternalEventCoreAsync(idConversacion, $"🖼️ El asistente vio en la imagen: {Truncar(result!.ImagenDescripcion, 1500)}",
+                            null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                    }
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
                         && knowledgeContext.NeedsClarification

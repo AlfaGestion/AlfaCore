@@ -1,5 +1,17 @@
 # Conciliación bancaria inteligente
 
+## Importar un extracto PDF
+
+En **Importación**, seleccioná el PDF igual que un Excel o CSV. Por ahora se reconocen los resúmenes de cuenta corriente en pesos de **Nación e Hipotecario** con texto seleccionable. El sistema detecta el banco; confirmá la cuenta contable y revisá la cantidad de movimientos antes de importar. Después se revisan y concilian con las mismas herramientas habituales.
+
+La lectura verifica importes y saldos del resumen; los saldos iniciales, finales y transportes no se crean como movimientos. Si faltan filas o los saldos no cierran, se rechaza el archivo completo para revisarlo. Los PDF escaneados, liquidaciones de tarjetas y otros diseños no se interpretan como extractos: utilizá el módulo o formato que corresponda.
+
+Se reutiliza el Python configurado en Recepción documental, con `pypdf` instalado en el servidor. La lectura es local, sin enviar el PDF a IA.
+
+## Archivo original como testigo
+
+Las nuevas importaciones conservan el Excel, CSV o PDF original, sin modificarlo, junto con los movimientos y su huella de integridad. En **Importación → Importaciones recientes → Original** podés descargarlo. El respaldo de la base incluye el archivo. Las importaciones anteriores muestran **Sin original**: sus movimientos no permiten reconstruir el documento recibido. El administrador debe aplicar la actualización de originales antes de realizar nuevas importaciones.
+
 ## Ayuda y preguntas sobre el módulo
 
 Abrí el icono **?** junto a las notificaciones. En **Guías** podés buscar una tarea; en **Preguntar a IA**, consultar cómo realizarla y abrir las secciones del manual que respaldan la respuesta. El chat explica los procedimientos documentados y no consulta ni modifica movimientos. Al cerrar la ayuda volvés a la operación con sus datos y selecciones.
@@ -185,13 +197,15 @@ Las acciones de cada fila del banco se muestran como iconos compactos: vínculo 
 
 ## Generar asientos desde los movimientos del banco
 
-Primero abrí **Cuentas para asientos** en la barra superior. Agregá un concepto, elegí su clasificación y cuenta de contrapartida; opcionalmente indicá banco, texto a reconocer y detalle predeterminado. Guardá la configuración. Los cambios se comparten con los usuarios de esta base.
+Primero abrí **Cuentas para asientos** en la barra superior, o **Cuentas y conceptos** desde el editor de un asiento. Al cerrar la configuración se conserva el asiento que estabas preparando. Si guardás conceptos nuevos y todavía no elegiste una contrapartida, se propone la regla que coincida de forma única; una distribución manual ya ingresada se conserva. Agregá un concepto, elegí su clasificación y cuenta de contrapartida; opcionalmente indicá banco, texto a reconocer y detalle predeterminado. Guardá la configuración. Los cambios se comparten con los usuarios de esta base.
 
-Si todavía no hay conceptos, se precarga una **propuesta inicial según el plan de cuentas**: gastos bancarios, intereses y retenciones bancarias de IIBB cuando existen cuentas específicas sin ambigüedad. Podés corregir, quitar o agregar conceptos antes de guardar. Se activan al pulsar **Guardar cuentas y conceptos**; cancelar no modifica nada. Si ya tenés conceptos guardados, se conservan. Los impuestos sin una cuenta específica y los gastos sin concepto reconocido requieren imputación manual.
+Si todavía no hay conceptos, se precarga una **propuesta inicial según el plan de cuentas**: gastos bancarios, intereses, retenciones bancarias de IIBB, IVA bancario y Ley 25.413 cuando existen cuentas específicas sin ambigüedad. Podés corregir, quitar o agregar conceptos antes de guardar. Se activan al pulsar **Guardar cuentas y conceptos**; cancelar no modifica nada. Si ya tenés conceptos guardados, se conservan. Los impuestos sin una cuenta específica y los gastos sin concepto reconocido requieren imputación manual.
 
 En **Revisión de movimientos**, en su detalle o en **Conciliar cuenta**, elegí **Generar asiento** para un movimiento pendiente. Revisá concepto, fecha, unidad de negocio y talonario CC. La cuenta bancaria y su importe provienen del extracto. Podés cambiar la contrapartida, editar el detalle y agregar renglones para distribuir el importe. La vista previa muestra Debe y Haber; la diferencia por distribuir debe quedar en cero.
 
 Si aparecen registraciones parecidas, revisalas antes de marcar que corresponde generar un asiento nuevo. Al confirmar se genera el comprobante contable CC y se concilia el movimiento en la misma operación. Se informa el número de CC, el asiento y el vínculo de conciliación. La caja corresponde al usuario que graba.
+
+Las sugerencias de IVA bancario y Ley 25.413 reconocen textos concretos del resumen. No eligen cuentas genéricas de IVA ni débito fiscal de ventas. El IVA se imputa contablemente; no se genera un registro fiscal en el libro de IVA.
 
 Este editor registra gastos, comisiones, impuestos, ajustes e ingresos contables. Cobranzas y transferencias entre bancos mantienen sus circuitos específicos. Distribuir entre cuentas no crea un comprobante fiscal ni registra IVA automáticamente.
 

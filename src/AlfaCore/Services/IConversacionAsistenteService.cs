@@ -28,6 +28,7 @@ public interface IConversacionAsistenteService
         bool precioRequiereIdentificacion = false,
         bool forzarConsultarPrecio = false,
         string? linkCatalogoParaLead = null,
+        IReadOnlyList<string>? imagenesDataUri = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -35,6 +36,12 @@ public interface IConversacionAsistenteService
     /// contenido a resumir (user). Devuelve null si no hay API key o si falla la llamada.
     /// </summary>
     Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default);
+
+    /// <summary>
+    /// Transcribe un audio (nota de voz de WhatsApp, etc.) a texto en español. Devuelve null si no hay
+    /// API key, si el audio supera el tamaño admitido o si falla la llamada; el consumo queda en IA_USO.
+    /// </summary>
+    Task<string?> TranscribirAudioAsync(byte[] audio, string nombreArchivo, string mimeType, CancellationToken ct = default);
 }
 
 public sealed class ConversacionAsistenteRespuesta
@@ -50,4 +57,7 @@ public sealed class ConversacionAsistenteRespuesta
     /// pasa a un humano).
     /// </summary>
     public string Tipo { get; set; } = "RESUELVE";
+
+    /// <summary>Qué vio el asistente en la imagen del cliente (datos útiles para el operador); vacío si no hubo imagen.</summary>
+    public string ImagenDescripcion { get; set; } = string.Empty;
 }

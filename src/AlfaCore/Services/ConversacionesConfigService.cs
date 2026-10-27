@@ -991,6 +991,10 @@ public sealed class ConversacionesConfigService(
                 AsistenteHerramientaSaldoProveedor = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", string.Empty) == "1",
                 AsistenteHerramientaPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", string.Empty) == "1",
                 AsistenteHerramientaPortalLink = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", string.Empty) == "1",
+                AsistenteTranscribeAudios = ReadValue(values, "CONV_ASISTENTE_TRANSCRIBE_AUDIOS", string.Empty) == "1",
+                AsistenteLeeImagenes = ReadValue(values, "CONV_ASISTENTE_LEE_IMAGENES", string.Empty) == "1",
+                AsistentePortalAccesoDirecto = ReadValue(values, "CONV_ASISTENTE_PORTAL_ACCESO_DIRECTO", string.Empty) == "1",
+                AsistenteHerramientaTomarPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS", string.Empty) == "1",
                 CatalogoMuestraPrecioConsumidor = CatalogoPrecioConsumidorSetting.EstaActivo(ReadValue(values, CatalogoPrecioConsumidorSetting.Clave, string.Empty)),
                 InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
@@ -1121,6 +1125,10 @@ public sealed class ConversacionesConfigService(
             items.Add(("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"));
             items.Add(("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_TRANSCRIBE_AUDIOS", config.AsistenteTranscribeAudios ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_LEE_IMAGENES", config.AsistenteLeeImagenes ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_PORTAL_ACCESO_DIRECTO", config.AsistentePortalAccesoDirecto ? "1" : "0"));
+            items.Add(("CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS", config.AsistenteHerramientaTomarPedidos ? "1" : "0"));
             items.Add((CatalogoPrecioConsumidorSetting.Clave, CatalogoPrecioConsumidorSetting.Serializar(config.CatalogoMuestraPrecioConsumidor)));
         }
 

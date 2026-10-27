@@ -421,6 +421,8 @@ public class Program
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<ConciliacionExtractoLector>();
         builder.Services.AddScoped<ConciliacionBancariaService>();
+        builder.Services.AddScoped<TarjetasPdfLector>();
+        builder.Services.AddScoped<ConciliacionTarjetasService>();
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();
@@ -505,6 +507,7 @@ public class Program
         builder.Services.AddScoped<IConversacionAsistenteService, ConversacionAsistenteService>();
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
+        builder.Services.AddScoped<IConversacionBotPedidosService, ConversacionBotPedidosService>();
         builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
         builder.Services.AddScoped<IConversacionAsistenteCorreccionesService, ConversacionAsistenteCorreccionesService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();

@@ -33,6 +33,7 @@ public sealed class ConciliacionImportacion
     public long Id { get; set; }
     public string Banco { get; set; } = "";
     public string Archivo { get; set; } = "";
+    public bool TieneOriginal { get; set; }
     public string Cuenta { get; set; } = "";
     public DateTime FechaUtc { get; set; }
     public string Usuario { get; set; } = "";

@@ -5,6 +5,9 @@
 .asiento-editor__scroll th { position:sticky; top:0; background:var(--alfa-bg-surface); z-index:1; }
 .asiento-editor__scroll td:first-child { min-width:260px; }
 .asiento-editor__aviso { padding:var(--alfa-space-12); margin-block:var(--alfa-space-12); border:1px solid var(--alfa-warning); }
+.asiento-editor__conceptos { display:flex; align-items:center; gap:var(--alfa-space-12); margin-block:var(--alfa-space-12); }
+.asiento-editor__conceptos p { flex:1; margin:0; }
+@media(max-width:700px) { .asiento-editor__conceptos { flex-direction:column; align-items:stretch; } }
 @media(max-width:700px) { .asiento-editor__cabecera { grid-template-columns:minmax(0,1fr); } }
 
 @media(max-width:700px) { .asiento-editor__scroll table,.asiento-editor__scroll tbody,.asiento-editor__scroll tr,.asiento-editor__scroll td { display:block; min-width:0; } .asiento-editor__scroll thead { display:none; } }

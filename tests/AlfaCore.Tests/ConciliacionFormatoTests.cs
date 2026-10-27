@@ -136,7 +136,7 @@ public sealed class ConciliacionFormatoTests
 
     [Fact]
     public async Task ArchivoDeExtensionNoAdmitidaSeRechaza()
-        => await Assert.ThrowsAsync<InvalidOperationException>(()=>new ConciliacionExtractoLector().LeerAsync(new("extracto.pdf",[1,2,3])));
+        => await Assert.ThrowsAsync<InvalidOperationException>(()=>new ConciliacionExtractoLector().LeerAsync(new("extracto.exe",[1,2,3])));
 }
 
 public sealed class ProvinciaRealFactAttribute:FactAttribute

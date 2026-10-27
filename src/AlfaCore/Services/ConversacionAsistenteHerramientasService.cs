@@ -30,7 +30,9 @@ public sealed class ConversacionAsistenteHerramientasService(
     IPortalClienteService portalClienteService,
     IProveedorSaldoService proveedorSaldoService,
     IConversacionesConfigService conversacionesConfigService,
-    ICatalogoClienteLinkService catalogoClienteLinkService) : IConversacionAsistenteHerramientasService
+    ICatalogoClienteLinkService catalogoClienteLinkService,
+    IPortalClienteAutoLoginService portalAutoLoginService,
+    IConversacionBotPedidosService botPedidosService) : IConversacionAsistenteHerramientasService
 {
     private const string ToolConsultarPrecio = "consultar_precio";
     private const string ToolConsultarSaldoTotal = "consultar_saldo_total";
@@ -38,13 +40,14 @@ public sealed class ConversacionAsistenteHerramientasService(
     private const string ToolConsultarPedidos = "consultar_pedidos";
     private const string ToolGenerarLinkPortal = "generar_link_portal";
     private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
+    internal const string ToolPrepararPedido = "preparar_pedido";
 
     // Defensa en profundidad para identidad ambigua: aunque ObtenerHerramientasDisponibles ya no
     // ofrece estas tools cuando EsAmbigua, este set corta también acá -- por si el modelo alucina un
     // nombre de tool no ofrecido, no depende únicamente del filtro de la lista.
     private static readonly HashSet<string> ToolsPrivadasDeCuenta = new(StringComparer.Ordinal)
     {
-        ToolConsultarPrecio, ToolConsultarSaldoTotal, ToolConsultarSaldoDetalle, ToolConsultarPedidos, ToolGenerarLinkPortal
+        ToolConsultarPrecio, ToolConsultarSaldoTotal, ToolConsultarSaldoDetalle, ToolConsultarPedidos, ToolGenerarLinkPortal, ToolPrepararPedido
     };
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -97,6 +100,18 @@ public sealed class ConversacionAsistenteHerramientasService(
 
         var unArticulo = Regex.Match(texto, @"\b(quiero|quisiera|necesito|busco|me\s+llevo)\s+(un|una|unos|unas)\s+([a-z]+)");
         return unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value);
+    }
+
+    /// <summary>
+    /// Pide una cantidad de un artículo ("quiero 10 pilas AA", "mandame dos cables"): con la toma de
+    /// pedidos activa es un pedido, no sólo una consulta de precio. "Venden X?" no cuenta (pregunta).
+    /// </summary>
+    internal static bool MensajePideCantidadDeArticulo(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        return texto.Length > 0 && Regex.IsMatch(texto,
+            @"\b(quiero|quisiera|necesito|mandame|pasame|encargo|me\s+llevo|anotame|agregame|sumame)\s+"
+            + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b");
     }
 
     // Lo que sigue a "necesito un/una ..." en consultas de soporte o atención, no de compra.
@@ -369,6 +384,18 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
+        if (esCliente && config.AsistenteHerramientaTomarPedidos)
+        {
+            herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
+            {
+                Nombre = ToolPrepararPedido,
+                Descripcion = "Arma un pedido (Nota de Pedido) con los artículos y cantidades que pide el cliente identificado y le muestra el resumen con precios. NO lo registra: se graba solo si después el cliente responde que confirma. Si pide cambiar algo, volvé a llamarla con el pedido completo.",
+                ParametrosJsonSchema = """
+                    {"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila duracell AA'."},"cantidad":{"type":"number","description":"Cantidad pedida."}},"required":["articulo","cantidad"]}}},"required":["items"]}
+                    """
+            });
+        }
+
         if (config.AsistenteHerramientaPortalLink && esCliente)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
@@ -399,6 +426,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
         string? mensajeCliente = null,
+        long idConversacion = 0,
         CancellationToken ct = default)
     {
         if (cuenta?.EsAmbigua == true && ToolsPrivadasDeCuenta.Contains(nombre))
@@ -414,6 +442,9 @@ public sealed class ConversacionAsistenteHerramientasService(
                 ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, mensajeCliente, ct),
                 ToolGenerarLinkPortal => await EjecutarGenerarLinkPortalAsync(cuenta, ct),
                 ToolGenerarLinkCatalogoPublico => await EjecutarGenerarLinkCatalogoPublicoAsync(cuenta, ct),
+                ToolPrepararPedido => cuenta is null
+                    ? "No se pudo identificar al cliente para tomar el pedido."
+                    : await botPedidosService.PrepararAsync(idConversacion, cuenta, argumentosJson, ct),
                 _ => "Herramienta desconocida."
             };
         }
@@ -633,7 +664,50 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (string.IsNullOrWhiteSpace(baseUrl))
             return "El portal está disponible pero todavía no se configuró la URL pública del sistema; avisale que un asesor le manda el link.";
 
-        return $"{baseUrl}/portal-cliente";
+        // Sin /{idweb}/{idbase} el portal no sabe de qué empresa es y pide todo (Base4264, 2026-10-27).
+        var contexto = await ResolverContextoCatalogoPublicoAsync(ct);
+        if (contexto is null)
+            return $"{baseUrl}/portal-cliente";
+
+        var (idWeb, idBase) = contexto.Value;
+        var urlPortal = $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/{idBase}/portal-cliente";
+
+        var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct);
+        if (!config.AsistentePortalAccesoDirecto)
+            return urlPortal;
+
+        // Acceso directo: mismo token que usa Conversaciones → "Invitar al portal" (un solo uso, 60
+        // minutos). La identidad sale de VT_CLIENTES de la cuenta ya vinculada, nunca del chat.
+        var email = await LeerEmailClienteAsync(cuenta.Codigo, ct);
+        if (string.IsNullOrWhiteSpace(email))
+            return $"{urlPortal}\n(El cliente no tiene email cargado, así que el link pide ingresar con usuario y clave. Si no los tiene, ofrecele que un asesor le habilita el acceso.)";
+
+        var urlAutoLogin = await portalAutoLoginService.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
+        {
+            CodigoCliente = cuenta.Codigo,
+            RazonSocial = cuenta.RazonSocial,
+            Email = email,
+            IdWeb = idWeb,
+            IdBase = idBase,
+            UrlBasePortal = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(urlPortal, "email", email)
+        }, ct);
+
+        return $"{urlAutoLogin}\n(Link de acceso directo a su cuenta: pasáselo tal cual y aclarale que es personal, sirve una sola vez y vence en 60 minutos.)";
+    }
+
+    private async Task<string> LeerEmailClienteAsync(string codigoCliente, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        return await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            """
+            SELECT TOP (1) ISNULL(LTRIM(RTRIM(MAIL)), '')
+            FROM dbo.VT_CLIENTES
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)))
+              AND ISNULL(Dada_De_Baja, 0) = 0;
+            """,
+            new { Codigo = codigoCliente },
+            cancellationToken: ct)) ?? string.Empty;
     }
 
     private async Task<string> EjecutarGenerarLinkCatalogoPublicoAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)

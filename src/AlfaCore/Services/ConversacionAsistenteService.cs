@@ -28,6 +28,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool precioRequiereIdentificacion = false,
         bool forzarConsultarPrecio = false,
         string? linkCatalogoParaLead = null,
+        IReadOnlyList<string>? imagenesDataUri = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -46,7 +47,13 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // acá sólo se verifica que la tool realmente se ofreció.
         var debeForzarPrecio = forzarConsultarPrecio && hayPrecioEntreHerramientas;
         var hayPortalEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_portal", StringComparison.Ordinal)) ?? false;
-        var debeForzarPortal = hayPortalEntreHerramientas && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente);
+        // Toma de pedidos por chat activa: "quiero 10 pilas" se arma como pedido (preparar_pedido) en vez
+        // de forzar sólo el precio, y "quiero hacer un pedido" no se manda directo al portal (se pregunta qué).
+        var hayPrepararPedido = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolPrepararPedido, StringComparison.Ordinal)) ?? false;
+        var debeForzarPrepararPedido = hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensajeCliente);
+        if (debeForzarPrepararPedido)
+            debeForzarPrecio = false;
+        var debeForzarPortal = hayPortalEntreHerramientas && !hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente);
         // Con la tool de pedidos ofrecida (la empresa usa Notas de Pedido) "¿cómo están mis pedidos?"
         // se consulta siempre; si no tiene pedidos, el resultado lo deriva al seguimiento del tema pendiente.
         var hayPedidosEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_pedidos", StringComparison.Ordinal)) ?? false;
@@ -60,7 +67,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             herramientasForzadas.Add("consultar_precio");
         if (debeForzarPortal)
             herramientasForzadas.Add("generar_link_portal");
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas);
+        if (debeForzarPrepararPedido)
+            herramientasForzadas.Add(ConversacionAsistenteHerramientasService.ToolPrepararPedido);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
@@ -88,7 +97,19 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 content = texto
             });
         }
-        messages.Add(new { role = "user", content = mensajeCliente.Trim() });
+        // Imágenes del cliente (F07): van en el mismo mensaje, como partes image_url (gpt-4o-mini ve imágenes).
+        var conImagenes = imagenesDataUri is { Count: > 0 };
+        if (conImagenes)
+        {
+            var partes = new List<object> { new { type = "text", text = mensajeCliente.Trim() } };
+            partes.AddRange(imagenesDataUri!.Select(uri => (object)new { type = "image_url", image_url = new { url = uri, detail = "high" } }));
+            messages.Add(new { role = "user", content = partes });
+            messages[0] = new { role = "system", content = systemPrompt + "\n\n" + InstruccionesImagen };
+        }
+        else
+        {
+            messages.Add(new { role = "user", content = mensajeCliente.Trim() });
+        }
 
         object? tools = herramientas is { Count: > 0 }
             ? herramientas.Select(h => new
@@ -218,6 +239,60 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
     }
 
+    // OpenAI admite hasta 25 MB; una nota de voz de WhatsApp de varios minutos pesa bastante menos.
+    internal const int TamanoMaximoAudioBytes = 20 * 1024 * 1024;
+
+    public async Task<string?> TranscribirAudioAsync(byte[] audio, string nombreArchivo, string mimeType, CancellationToken ct = default)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || audio.Length == 0 || audio.Length > TamanoMaximoAudioBytes)
+            return null;
+
+        var model = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIBE_MODEL");
+        if (string.IsNullOrWhiteSpace(model))
+            model = "gpt-4o-mini-transcribe";
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            using var form = new MultipartFormDataContent();
+            var archivo = new ByteArrayContent(audio);
+            archivo.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "audio/ogg" : mimeType.Split(';')[0].Trim());
+            form.Add(archivo, "file", string.IsNullOrWhiteSpace(nombreArchivo) ? "audio.ogg" : nombreArchivo);
+            form.Add(new StringContent(model), "model");
+            form.Add(new StringContent("es"), "language");
+            form.Add(new StringContent("json"), "response_format");
+
+            using var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", form, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                await appEvents.LogErrorAsync(
+                    "Conversaciones", "AsistenteTranscripcionError",
+                    new InvalidOperationException($"OpenAI respondió {(int)response.StatusCode}"),
+                    "No se pudo transcribir un audio entrante.",
+                    new { model, bytes = audio.Length, statusCode = (int)response.StatusCode, body = Truncar(body, 800) },
+                    AppEventSeverity.Warning, ct);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(body);
+            iaUso?.Registrar(IaUsoFunciones.Transcripcion, document.RootElement, model);
+            return document.RootElement.TryGetProperty("text", out var texto) ? texto.GetString()?.Trim() : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -297,7 +372,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
         bool precioRequiereIdentificacion = false, bool hayPrecioEntreHerramientas = false, string? linkCatalogoParaLead = null,
-        bool hayPortalEntreHerramientas = false)
+        bool hayPortalEntreHerramientas = false, bool hayPrepararPedido = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -346,8 +421,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
         sb.AppendLine("- Escribí los links como la URL completa en texto plano, sin formato Markdown (nada de [texto](link)): en WhatsApp ese formato no se ve como link.");
+        if (hayPrepararPedido)
+            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo.");
         if (hayPortalEntreHerramientas)
-            sb.AppendLine("- PORTAL CLIENTE: si el cliente pide su lista de precios o quiere hacer un pedido, usá generar_link_portal y pasale el link: ahí ve los precios de su cuenta y carga el pedido. Si quiere comprar artículos puntuales, informale el precio y ofrecele ese link para cargar el pedido (por chat todavía no se toman pedidos). No lo derives a un asesor por esto.");
+            sb.AppendLine(hayPrepararPedido
+                ? "- PORTAL CLIENTE: si el cliente pide su lista de precios, usá generar_link_portal y pasale el link (ahí ve los precios de su cuenta). También podés ofrecerlo como alternativa para cargar pedidos. No lo derives a un asesor por esto."
+                : "- PORTAL CLIENTE: si el cliente pide su lista de precios o quiere hacer un pedido, usá generar_link_portal y pasale el link: ahí ve los precios de su cuenta y carga el pedido. Si quiere comprar artículos puntuales, informale el precio y ofrecele ese link para cargar el pedido (por chat todavía no se toman pedidos). No lo derives a un asesor por esto.");
         if (hayCatalogoEntreHerramientas)
             sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
         if (hayPrecioEntreHerramientas)
@@ -541,6 +620,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         return sb.Length == 0 ? string.Empty : sb.ToString()[..Math.Min(sb.Length, 80)];
     }
 
+    internal const string InstruccionesImagen =
+        "IMAGEN: el cliente mandó una imagen (foto, captura de pantalla, comprobante). Miralo y usalo para responder: " +
+        "si es un error en pantalla, leé el mensaje y resolvé con la información del negocio o derivá; si es un producto, " +
+        "consultá el artículo con la herramienta de precios si está disponible. No inventes lo que no se lee bien: preguntá. " +
+        "Nunca ofrezcas conectarte por AnyDesk aunque veas un ID. Agregá al JSON el campo \"imagen\" con una descripción " +
+        "breve para el operador, incluyendo textualmente los datos útiles que se lean (códigos de error, IDs de AnyDesk, " +
+        "números de comprobante, montos).";
+
     private static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -564,7 +651,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             if (puede && respuesta.Length == 0)
                 return null;
 
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo };
+            var imagen = root.TryGetProperty("imagen", out var img) && img.ValueKind == JsonValueKind.String
+                ? (img.GetString() ?? string.Empty).Trim()
+                : string.Empty;
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen };
         }
         catch (JsonException)
         {

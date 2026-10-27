@@ -14,6 +14,7 @@
 @inject IAppUserSessionService Usuarios
 @inject IAppEventService Eventos
 @inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Conciliación bancaria inteligente | Alfa Gestión</PageTitle>
@@ -28,8 +29,9 @@
             <h3 class="panel-card__title">Importar extracto</h3>
             <p>Elegí el extracto descargado del banco. Detectaremos su formato y prepararemos la revisión.</p>
             <label class="conciliacion-archivo">
-                <span>Archivo Excel o CSV (.xlsx, .xls, .csv, hasta 20 MB)</span>
-                <InputFile OnChange="SeleccionarArchivo" accept=".xlsx,.xls,.csv" disabled="@_busy" />
+                <span>Archivo Excel, CSV o PDF (.xlsx, .xls, .csv, .pdf, hasta 20 MB)</span>
+                <InputFile OnChange="SeleccionarArchivo" accept=".xlsx,.xls,.csv,.pdf" disabled="@_busy" />
+                <small>PDF de texto: resúmenes de cuenta en pesos de Nación e Hipotecario. Se conserva el original.</small>
             </label>
             @if (_archivo is not null)
             {
@@ -83,6 +85,14 @@
                                     <td class="conciliacion-numero">@Dinero(item.Total)</td><td>@Estado(item.Estado)</td>
                                     <td class="conciliacion-acciones">
                                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => AbrirImportacion(item.Id)">Revisar</AlfaButton>
+                                        @if(item.TieneOriginal)
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => DescargarOriginal(item.Id)">Original</AlfaButton>
+                                        }
+                                        else
+                                        {
+                                            <span title="Importación anterior a la conservación de archivos">Sin original</span>
+                                        }
                                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _eliminar = item">Eliminar</AlfaButton>
                                     </td>
                                 </tr>
@@ -477,7 +487,7 @@
     private Task PublicarBusquedaConciliacion(RenderFragment contenido) { if(_disposed)return Task.CompletedTask;_busquedaConciliacion=contenido;PublicarHeader();return Task.CompletedTask; }
     private ConciliacionComparacionPanel? _comparacion;
     private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("importar", "Importación"), new("revisar", "Revisión de movimientos"), new("conciliar","Conciliar cuenta")];
-    private static readonly IReadOnlyList<AlfaSelectOption> Bancos = Enum.GetValues<BankSource>().Select(b => new AlfaSelectOption(b.ToString(), b == BankSource.MercadoPago ? "Mercado Pago" : b.ToString())).ToList();
+    private static readonly IReadOnlyList<AlfaSelectOption> Bancos = Enum.GetValues<BankSource>().Select(b => new AlfaSelectOption(b.ToString(), b switch {BankSource.MercadoPago=>"Mercado Pago",BankSource.Nacion=>"Nación",_=>b.ToString()})).ToList();
     private IReadOnlyList<AlfaSelectOption> OpcionesCuentas => _cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} — {c.Descripcion}")).ToList();
     private static readonly IReadOnlyList<AlfaSelectOption> Clasificaciones = Enum.GetValues<MovementCategory>()
         .Select(c=>new AlfaSelectOption(c.ToString(),Separar(c.ToString()))).OrderBy(c=>c.Label).ToList();
@@ -630,6 +640,12 @@
         _movimientos = await Servicio.MovimientosAsync(FiltrosMovimientos(1),ct);
         _seleccion = null; _detalle = [];
     });
+    private Task DescargarOriginal(long id) => Operar(async ct =>
+    {
+        var original=await Servicio.OriginalAsync(id,ct);
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob",Convert.ToBase64String(original.Contenido),"application/octet-stream",original.Nombre);
+    });
+
     private Task AbrirImportacion(long id) => Operar(async ct =>
     {
         var rows = await Servicio.MovimientosAsync(FiltrosMovimientos(1,id),ct);

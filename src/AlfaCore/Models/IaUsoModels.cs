@@ -17,6 +17,7 @@ public static class IaUsoFunciones
     public const string Proxy = "PROXY";
     public const string ArchivosBusqueda = "ARCHIVOS_BUSQUEDA";
     public const string ArchivosAlmacenamiento = "ARCHIVOS_ALMACENAMIENTO";
+    public const string Transcripcion = "TRANSCRIPCION";
 
     public static string Nombre(string? funcion) => (funcion ?? string.Empty).Trim().ToUpperInvariant() switch
     {
@@ -32,6 +33,7 @@ public static class IaUsoFunciones
         Proxy => "Integraciones por licencia",
         ArchivosBusqueda => "Búsquedas en archivos",
         ArchivosAlmacenamiento => "Almacenamiento de archivos",
+        Transcripcion => "Transcripción de audios",
         _ => funcion ?? string.Empty
     };
 }

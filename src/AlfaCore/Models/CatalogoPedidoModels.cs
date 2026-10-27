@@ -7,6 +7,8 @@ public sealed class CatalogoPedidoConfirmarRequestDto
     public string? IdWeb { get; set; }
     public int? IdBase { get; set; }
     public IReadOnlyList<CatalogoPedidoLineaSolicitudDto> Lineas { get; set; } = [];
+    /// <summary>Observación de la NP; vacía = "Pedido web - Catálogo #N" (ej. el asistente indica que vino del chat).</summary>
+    public string? Observaciones { get; set; }
 }
 
 public sealed class CatalogoPedidoLineaSolicitudDto

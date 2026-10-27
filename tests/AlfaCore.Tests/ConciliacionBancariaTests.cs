@@ -226,6 +226,10 @@ public sealed class ConciliacionBancariaTests(ITestOutputHelper output)
         {
             var result=await service.ImportarAsync(file,BankSource.Provincia,cuenta);ids.Add(result.ImportacionId);
             Assert.Equal(1,result.Movimientos);Assert.Equal(137.23m,result.Total);
+            var original=await service.OriginalAsync(result.ImportacionId);
+            Assert.Equal(file.Nombre,original.Nombre);
+            Assert.Equal(file.Contenido,original.Contenido);
+            Assert.True((await service.ImportacionesAsync(1)).Items.Single(x=>x.Id==result.ImportacionId).TieneOriginal);
             Assert.Single((await service.MovimientosAsync(result.ImportacionId,1)).Items);
             var duplicate=await Assert.ThrowsAsync<AppUserFacingException>(()=>service.ImportarAsync(file with { Nombre="otro_nombre.xlsx" },BankSource.Provincia,cuenta));
             Assert.Contains("ya fue importado",duplicate.UserMessage);

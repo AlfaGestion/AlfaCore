@@ -14,7 +14,10 @@ public sealed record ConciliacionIaResultado(Guid Id,string Modelo,int BancosAna
 }
 public sealed record ConciliacionIaContexto(ConciliacionCompararFiltro Filtro,ConciliacionCriterios Criterios,
     IReadOnlyList<ConciliacionFilaBanco> Banco,IReadOnlyList<ConciliacionFilaAlfa> Alfa,
-    IReadOnlyList<ConciliacionAsientoCuenta> Cuentas);
+    IReadOnlyList<ConciliacionAsientoCuenta> Cuentas)
+{
+    public bool EsTarjetas { get; init; }
+}
 public sealed record ConciliacionIaRespuesta(string Modelo,string Json);
 
 // Los índices de la respuesta se resuelven exclusivamente contra el contexto autorizado.

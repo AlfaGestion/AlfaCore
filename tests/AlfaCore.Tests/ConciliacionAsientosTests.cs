@@ -17,6 +17,7 @@ namespace AlfaCore.Tests;
 [Collection("Conciliacion SQL")]
 public sealed class ConciliacionAsientosTests
 {
+    private static string UsuarioPruebas=>Environment.GetEnvironmentVariable("CONCILIACION_ASIENTOS_TEST_USUARIO")??"Alberto";
     private static T Proxy<T>(Func<MethodInfo,object?[]?,object?> handler) where T:class
     {
         var proxy=DispatchProxy.Create<T,CargaComprobantesUiTests.EventOnlyProxy>();
@@ -26,7 +27,7 @@ public sealed class ConciliacionAsientosTests
     {
         var session=new SessionDto();
         return new(Proxy<ISessionService>((m,_)=>m.Name switch{"GetConnectionString"=>connection,"GetActiveSession"=>session,_=>null}),
-            Proxy<IAppUserSessionService>((m,_)=>m.Name switch{"get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>"Alberto",_=>null}),
+            Proxy<IAppUserSessionService>((m,_)=>m.Name switch{"get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>UsuarioPruebas,_=>null}),
             Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,new());
     }
     [Fact]
@@ -54,6 +55,77 @@ public sealed class ConciliacionAsientosTests
     }
 
     [Fact]
+    public async Task ConfigurarCuentasDesdeEditorConservaLaImputacionAlCancelar()
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var cat=new ConciliacionAsientoCatalogo(new(),[new("G","Gastos bancarios")],[new(){Codigo="B",Descripcion="Banco",Moneda="1"}],
+            [new("1","Unidad")],[],[new(){Talonario=0,Unidad="1",Sucursal=1}],"1")
+            {SugerenciasIniciales=ConciliacionAsientoDefaults.Proponer([new("G","Gastos bancarios")])};
+        var prep=new ConciliacionAsientoPreparacion(new(){Id=1,Importe=-100,Fecha=new(2026,10,18),Detalle="Comisión bancaria",Huella="prueba"},"B","Comision",cat,null,[]);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(Service("sin conexión para esta prueba",runtime));
+        services.AddSingleton(runtime.Events);services.AddSingleton<IAppUiOperationService,AppUiOperationService>();
+        services.AddSingleton(Proxy<Microsoft.JSInterop.IJSRuntime>((_,_)=>null));
+        var capture=new CapturaAsiento();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            var root=await renderer.RenderComponentAsync<AlfaCore.Components.Shared.ConciliacionAsientoDialog>(ParameterView.FromDictionary(new Dictionary<string,object?>{{"Preparacion",prep}}));
+            var editor=capture.Editor!;var flags=BindingFlags.Instance|BindingFlags.NonPublic;
+            var tipo=editor.GetType();tipo.GetField("_detalle",flags)!.SetValue(editor,"Detalle que no debe perderse");
+            tipo.GetField("_fecha",flags)!.SetValue(editor,"2026-10-19");
+            var lineas=(System.Collections.IList)tipo.GetField("_lineas",flags)!.GetValue(editor)!;
+            lineas[0]!.GetType().GetProperty("Cuenta")!.SetValue(lineas[0],"G");
+            tipo.GetMethod("ConfigurarCuentas",flags)!.Invoke(editor,null);
+            typeof(ComponentBase).GetMethod("StateHasChanged",flags)!.Invoke(editor,null);
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.Contains("Cuentas y conceptos",html);Assert.Contains("Propuesta inicial según el plan de cuentas",html);
+            Assert.NotNull(capture.Configuracion);
+            await capture.Configuracion!.OnClose.InvokeAsync();
+            Assert.Null(tipo.GetField("_configurando",flags)!.GetValue(editor));
+            Assert.Equal("Detalle que no debe perderse",tipo.GetField("_detalle",flags)!.GetValue(editor));
+            Assert.Equal("2026-10-19",tipo.GetField("_fecha",flags)!.GetValue(editor));
+            Assert.Equal("G",lineas[0]!.GetType().GetProperty("Cuenta")!.GetValue(lineas[0]));
+            Assert.Empty(cat.Config.Reglas);
+            var regla=new ConciliacionAsientoRegla{Nombre="Nueva regla",Categoria="Comision",Contrapartida="G",Detalle="Detalle de configuración"};
+            lineas[0]!.GetType().GetProperty("Cuenta")!.SetValue(lineas[0],"");
+            lineas[0]!.GetType().GetProperty("Importe")!.SetValue(lineas[0],"50.00");
+            editor.AplicarCatalogoGuardado(cat with{Config=new(){Reglas=[regla]}});
+            Assert.Equal("G",lineas[0]!.GetType().GetProperty("Cuenta")!.GetValue(lineas[0]));
+            Assert.Equal("50.00",lineas[0]!.GetType().GetProperty("Importe")!.GetValue(lineas[0]));
+            Assert.Equal("Detalle que no debe perderse",tipo.GetField("_detalle",flags)!.GetValue(editor));
+        });
+    }
+    private sealed class CapturaAsiento:IComponentActivator
+    {
+        public AlfaCore.Components.Shared.ConciliacionAsientoDialog? Editor {get;private set;}
+        public AlfaCore.Components.Shared.ConciliacionAsientoConfigDialog? Configuracion {get;private set;}
+        public IComponent CreateInstance(Type type)
+        {
+            var component=(IComponent)Activator.CreateInstance(type)!;
+            if(component is AlfaCore.Components.Shared.ConciliacionAsientoDialog editor)Editor=editor;
+            if(component is AlfaCore.Components.Shared.ConciliacionAsientoConfigDialog config)Configuracion=config;
+            return component;
+        }
+    }
+
+    [Fact]
+    public void PropuestasDistinguenIvaBancarioLey25413YDebitoFiscalDeVentas()
+    {
+        var reglas=ConciliacionAsientoDefaults.Proponer([new("G","COMISIONES Y GASTOS BANCARIOS"),new("IB","I.V.A. DEBITOS/COMISIONES BANCOS"),
+            new("LEY","R. LEY 25.413"),new("VENTAS","I.V.A. DEBITO FISCAL"),new("GEN","IVA")]);
+        var config=new ConciliacionAsientoConfig{Reglas=reglas.ToList()};
+        string? Cuenta(string categoria,string texto)=>reglas.FirstOrDefault(r=>r.Id==ConciliacionBancariaService.SugerirReglaAsiento(config,categoria,"BANCO",texto))?.Contrapartida;
+        Assert.Equal("IB",Cuenta("Gasto","I.V.A. BASE"));
+        Assert.Equal("IB",Cuenta("Impuesto","DEBITO FISCAL IVA BASICO"));
+        Assert.Equal("LEY",Cuenta("Gasto","GRAVAMEN LEY 25413 S/CRED"));
+        Assert.Equal("LEY",Cuenta("Impuesto","IMPUESTO LEY 25.413"));
+        Assert.Equal("G",Cuenta("Comision","Comisión bancaria"));
+        Assert.Null(Cuenta("Gasto","I.V.A. RG.3337"));
+        Assert.DoesNotContain(reglas,r=>r.Contrapartida is "VENTAS" or "GEN");
+        Assert.Empty(ConciliacionAsientoDefaults.Proponer([new("A","R. LEY 25.413"),new("B","Impuesto Ley 25.413")]));
+    }
+
+    [Fact]
     public void ReglasPriorizanBancoTextoYNoEligenCuandoHayEmpate()
     {
         var a=new ConciliacionAsientoRegla{Nombre="General",Categoria="Comision",Contrapartida="G"};
@@ -77,7 +149,7 @@ public sealed class ConciliacionAsientosTests
     public async Task GeneraCcBalanceadoConCajaUsuarioConciliacionAtomicaYProteccionContraDuplicadosConRollback()
     {
         var connection=Environment.GetEnvironmentVariable("CONCILIACION_TEST_SQL")!;
-        Assert.Equal("ALFANET2007_PRUEBAS",new SqlConnectionStringBuilder(connection).InitialCatalog);
+        Assert.Contains(new SqlConnectionStringBuilder(connection).InitialCatalog,new[]{"ALFANET2007_PRUEBAS","ELBOLSON2011_PRUEBAS"});
         using var runtime=new CargaComprobantesArcaRuntime();var service=Service(connection,runtime);
         await using var cn=new SqlConnection(connection);await cn.OpenAsync();using var tx=cn.BeginTransaction(System.Data.IsolationLevel.Serializable);
         var tag="ENSAYO_ASIENTO_"+Guid.NewGuid().ToString("N");long import=0;
@@ -120,7 +192,7 @@ public sealed class ConciliacionAsientosTests
             Assert.Equal(3,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo;",argumentos,tx));
             Assert.Equal(0,await cn.ExecuteScalarAsync<decimal>("SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo;",argumentos,tx));
             Assert.Equal(0,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo AND (DATALENGTH(TC)<>4 OR DATALENGTH(CUENTA)<>DATALENGTH(RTRIM(CUENTA)) OR CABCUENTA IS NOT NULL OR CABNOMBRE IS NOT NULL);",argumentos,tx));
-            var caja=await cn.ExecuteScalarAsync<string>("SELECT LTRIM(RTRIM(ISNULL(IdCaja,''))) FROM TA_USUARIOS WHERE NOMBRE='Alberto';",transaction:tx);
+            var caja=await cn.ExecuteScalarAsync<string>("SELECT LTRIM(RTRIM(ISNULL(IdCaja,''))) FROM TA_USUARIOS WHERE NOMBRE=@usuario;",new{usuario=UsuarioPruebas},tx);
             Assert.Equal(3,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo AND IDCajas=@caja;",new{result.Periodo,mes=result.Mes,asiento=result.NumeroAsiento,tipo=result.TipoRegistro,caja=CodigoPk.Format(string.IsNullOrWhiteSpace(caja)?"1":caja,4)},tx));
             Assert.Equal(1,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM BK_ConciliacionBanco WHERE MovimientoId=@id AND Activa=1;",new{id},tx));
             Assert.Equal(1,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS WHERE PERIODO=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND TIPO_REG=@tipo AND Conciliado=1;",argumentos,tx));

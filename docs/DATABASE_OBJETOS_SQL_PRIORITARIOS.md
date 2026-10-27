@@ -1,5 +1,9 @@
 # OBJETOS_SQL_PRIORITARIOS.md
 
+## Conciliación de tarjetas y documentos originales (2026-10-27)
+
+MV_ASIENTOS continúa como fuente contable oficial de tarjetas presentadas. Los nuevos auxiliares TJ_Importacion, TJ_Detalle, TJ_Vinculo, TJ_VinculoDetalle y TJ_VinculoAlfa conservan PDF, detalle y auditoría; no reemplazan ni escriben contabilidad o marcas legacy. Se crean mediante `2026-10-27-002`; contrato en [Conciliación de tarjetas](modulos/conciliacion-tarjetas.md). `BK_ImportacionExtracto.ArchivoOriginal` se incorpora por `2026-10-27-001` para testigos bancarios transaccionales; históricos NULL.
+
 ## Objetivo
 
 Este archivo define objetos SQL importantes de Alfa Gestión y aclara su **tipo real o uso recomendado**.

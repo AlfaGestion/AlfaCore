@@ -84,6 +84,59 @@ public sealed class ConciliacionIaTests
         Assert.Equal(2,consumos);
     }
 
+    [Fact]
+    public async Task TransporteDeTarjetasUsaBrutosSinGenerarLtNiEnviarOriginal()
+    {
+        var handler=new Handler();var sesion=new SessionDto();
+        var modelo=new ConciliacionIaModelo(Proxy<IHttpClientFactory>((_,_)=>new HttpClient(handler,false)),
+            Proxy<IIaUsoRecorder>((_,_)=>null),Proxy<ISessionService>((_,_)=>sesion));
+        await modelo.AnalizarConClaveAsync(Contexto() with{EsTarjetas=true},"modelo-ensayo","clave-de-ensayo",default);
+        using var payload=JsonDocument.Parse(handler.Payload!);
+        var instrucciones=payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()!;
+        Assert.Contains("BRUTOS",instrucciones);Assert.Contains("No generes LT",instrucciones);
+        Assert.Contains("no reemplaza la fecha de operación",instrucciones);
+        Assert.False(payload.RootElement.GetProperty("store").GetBoolean());
+        using var datos=JsonDocument.Parse(payload.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
+        Assert.Equal(JsonValueKind.Object,datos.RootElement.ValueKind);
+        Assert.Equal("indice",datos.RootElement.GetProperty("columnasBanco")[0].GetString());
+        Assert.Equal(0,datos.RootElement.GetProperty("banco")[0][0].GetInt32());
+        Assert.Equal(100,datos.RootElement.GetProperty("banco")[0][2].GetDecimal());
+    }
+
+    [Fact]
+    public void ConsultaGrandeConservaTodosLosRegistrosConMenosContexto()
+    {
+        var c=Contexto() with{
+            Banco=Enumerable.Range(0,845).Select(i=>new ConciliacionFilaBanco{Id=i+1,Fecha=new(2025,9,1),Importe=i+100,Detalle="Cupón; cantidad 1; pago 2025-09-05",Referencia=$"Cupón {i+10}; lote 422; liquidación 507788",Categoria="Tarjetas"}).ToList(),
+            Alfa=Enumerable.Range(0,1354).Select(i=>new ConciliacionFilaAlfa{Secuencia=i,Fecha=new(2025,9,1),Importe=i+10000,Detalle="Cob.Factura CLIENTE SINTÉTICO DEMOSTRACIÓN",Referencia="Cupón 1; presentación 1424; sucursal 0003",Comprobante="CBCT 0003-00000001 X"}).ToList()};
+        var compacto=ConciliacionIaModelo.DatosCompactos(c);
+        var anterior=JsonSerializer.Serialize(new{
+            banco=c.Banco.Select((b,i)=>new{indice=i,fecha=b.Fecha.ToString("yyyy-MM-dd"),b.Importe,detalle=b.Detalle,referencia=b.Referencia,b.Categoria}),
+            alfa=c.Alfa.Select((a,i)=>new{indice=i,fecha=a.Fecha.ToString("yyyy-MM-dd"),a.Importe,detalle=a.Detalle,referencia=a.Referencia,a.Comprobante})});
+        Assert.True(compacto.Length<anterior.Length*0.75);
+        using var datos=JsonDocument.Parse(compacto);
+        Assert.Equal(845,datos.RootElement.GetProperty("banco").GetArrayLength());
+        Assert.Equal(1354,datos.RootElement.GetProperty("alfa").GetArrayLength());
+        Assert.Equal(1353,datos.RootElement.GetProperty("alfa")[1353][0].GetInt32());
+        Assert.Contains("SINTÉTICO",compacto);
+    }
+
+    [Fact]
+    public void ErrorDelProveedorConservaDiagnosticoEnAuxErrSinExponerCredencialesEnPantalla()
+    {
+        var error=ConciliacionIaModelo.ErrorApi(HttpStatusCode.BadRequest,
+            """{"error":{"code":"context_length_exceeded","param":"messages","type":"invalid_request_error","message":"maximum context length exceeded sk-secreto"}}""",
+            "modelo-ensayo",845,1354,"sk-secreto");
+        Assert.Contains("supera la capacidad",error.Message);
+        Assert.DoesNotContain("sk-secreto",error.ToString());
+        Assert.Contains("code=context_length_exceeded",error.InnerException!.Message);
+        Assert.Contains("modelo=modelo-ensayo",error.InnerException.Message);
+        Assert.Contains("param=messages",error.InnerException.Message);
+        var invalido=ConciliacionIaModelo.ErrorApi(HttpStatusCode.BadRequest,"HTML ilegible", "ensayo",1,1,"");
+        Assert.Contains("HTTP 400",invalido.Message);
+        Assert.DoesNotContain("HTML ilegible",invalido.Message);
+    }
+
     private sealed class IaLiveFactAttribute : FactAttribute
     {
         public IaLiveFactAttribute() { if(Environment.GetEnvironmentVariable("CONCILIACION_IA_LIVE")!="1")Skip="La prueba real de OpenAI se habilita explícitamente con CONCILIACION_IA_LIVE=1."; }
@@ -100,6 +153,20 @@ public sealed class ConciliacionIaTests
         var validas=ConciliacionBancariaService.ValidarRespuestaIa(c,respuesta.Json);
         Assert.Contains(validas.Propuestas,p=>p.Banco.Count==1&&p.Banco[0].Id==1&&p.Alfa.Count==2);
         Assert.Equal(1,consumos);
+    }
+
+    [IaLiveFact]
+    public async Task OpenAiRealAcepta845LiquidacionesY1354MovimientosSinteticosSinCoincidencias()
+    {
+        AlfaCore.Configuration.DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
+        var contexto=Contexto() with{EsTarjetas=true,
+            Banco=Enumerable.Range(0,845).Select(i=>new ConciliacionFilaBanco{Id=i+1,Fecha=new(2025,9,1),Importe=i+100,Detalle="Cupón; cantidad 1; pago 2025-09-05",Referencia=$"Cupón {i+10}; lote 422; liquidación 507788",Categoria="Tarjetas"}).ToList(),
+            Alfa=Enumerable.Range(0,1354).Select(i=>new ConciliacionFilaAlfa{Secuencia=i,Fecha=new(2026,9,1),Importe=i+10000,Detalle="Cob.Factura CLIENTE SINTÉTICO DEMOSTRACIÓN",Referencia="Cupón 1; presentación 1424; sucursal 0003",Comprobante="CBCT 0003-00000001 X"}).ToList()};
+        var sesion=new SessionDto();var consumos=0;
+        var modelo=new ConciliacionIaModelo(Proxy<IHttpClientFactory>((_,_)=>new HttpClient()),Proxy<IIaUsoRecorder>((_,_)=>{consumos++;return null;}),Proxy<ISessionService>((_,_)=>sesion));
+        var respuesta=await modelo.AnalizarAsync(contexto,"",default);
+        var resultado=ConciliacionBancariaService.ValidarRespuestaIa(contexto,respuesta.Json);
+        Assert.Empty(resultado.Propuestas);Assert.Equal(1,consumos);
     }
 
     private sealed class ModeloFalso : IConciliacionIaModelo
