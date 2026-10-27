@@ -20,6 +20,9 @@ public interface ICargaViajesService
     Task ActualizarAdicionalesTarifasClienteAsync(string clienteCodigo, IReadOnlyCollection<string> listasSeleccionadas, CargaViajeTarifaSaveRequest source, CancellationToken ct = default);
     Task BajaTarifaAsync(string idLista, CancellationToken ct = default);
     Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeLookupOptionDto>> GetClientesVinculadosTarifaAsync(string clientePrincipal, CancellationToken ct = default);
+    Task<CargaViajeLookupOptionDto?> GetClientePrincipalTarifaAsync(string clienteVinculado, CancellationToken ct = default);
+    Task<int> GuardarClientesVinculadosTarifaAsync(string clientePrincipal, IReadOnlyCollection<string> clientesVinculados, CancellationToken ct = default);
 
     Task<PagedResult<CargaViajeChoferGridItemDto>> SearchChoferesAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeChoferGridItemDto?> GetChoferByIdAsync(string codigo, CancellationToken ct = default);

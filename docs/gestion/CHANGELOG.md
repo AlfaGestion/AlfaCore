@@ -4,6 +4,18 @@ Formato: `[versión] — fecha — descripción`
 
 ---
 
+## [Sin versión] — 2026-10-26
+
+### Carga de viajes — tarifas compartidas entre clientes
+
+- En el editor de tarifas de cliente se agregó **Clientes que comparten estas tarifas**. Al guardar, todas las tarifas del cliente principal se duplican en los clientes agregados.
+- Desde ese momento, cada alta, edición, cambio de importe (incluidos la edición rápida y el aumento masivo), cambio de adicionales o baja de una tarifa del principal se copia automáticamente a los vinculados (`CargaViajesService.TarifasVinculadas.cs`).
+  - El cálculo de viajes no cambia: sigue resolviendo por `IDCLIENTE`.
+- Botón **Duplicar** en la grilla de tarifas: abre una tarifa nueva con los mismos datos, para cambiar cliente, destino o tipo de vehículo.
+- Script `2026-10-26-001__carga_viajes_tarifas_clientes_vinculados.sql`: crea `TA_TARIFA_CLIENTES_VINCULADOS` (principal → vinculado, un vinculado sólo puede tener un principal) y agrega `TA_TARIFA.IdTarifaOrigen`. El mismo esquema se asegura en `EnsureViajesSchemaAsync`.
+
+---
+
 ## [1.7.0] — 2026-07-02
 
 ### Menú Web — independencia total de tablas legacy y reestructuración
