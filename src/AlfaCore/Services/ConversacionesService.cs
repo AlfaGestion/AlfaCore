@@ -5152,6 +5152,7 @@ public sealed partial class ConversacionesService(
                 """;
 
             var imagenesPorMensaje = new Dictionary<long, List<long>>();
+            var nombresPorMensaje = new Dictionary<long, HashSet<string>>();
 
             var mensajes = new List<WebChatMensajeDto>();
             await using (var cn = new SqlConnection(ConnectionString))
@@ -5176,7 +5177,7 @@ public sealed partial class ConversacionesService(
                     // hay bases con compatibility level viejo).
                     var nombres = filas.Select((_, i) => "@m" + i.ToString(CultureInfo.InvariantCulture)).ToList();
                     await using var cmdImg = new SqlCommand($"""
-                        SELECT a.IdMensaje, a.IdAdjunto
+                        SELECT a.IdMensaje, a.IdAdjunto, ISNULL(a.NombreArchivo, N'')
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje IN ({string.Join(",", nombres)})
                           AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%'
@@ -5191,6 +5192,9 @@ public sealed partial class ConversacionesService(
                         if (!imagenesPorMensaje.TryGetValue(idMensaje, out var lista))
                             imagenesPorMensaje[idMensaje] = lista = [];
                         lista.Add(rdImg.GetInt64(1));
+                        if (!nombresPorMensaje.TryGetValue(idMensaje, out var nombresAdj))
+                            nombresPorMensaje[idMensaje] = nombresAdj = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        nombresAdj.Add(rdImg.GetString(2).Trim());
                     }
                 }
 
@@ -5200,8 +5204,13 @@ public sealed partial class ConversacionesService(
                     mensajes.Add(new WebChatMensajeDto
                     {
                         Id = f.Id,
-                        // "[image]" es el marcador interno de imagen sin texto: el visitante ve solo la imagen.
-                        Texto = imagenes.Count > 0 && EsImagenSinTexto(f.Texto) ? string.Empty : f.Texto,
+                        // "[image]" (imagen del visitante sin texto) o el nombre del archivo (imagen que mandó
+                        // el agente desde la bandeja): el visitante ve solo la imagen.
+                        Texto = imagenes.Count > 0
+                                && (EsImagenSinTexto(f.Texto)
+                                    || (nombresPorMensaje.TryGetValue(f.Id, out var nombresMsg) && nombresMsg.Contains(f.Texto.Trim())))
+                            ? string.Empty
+                            : f.Texto,
                         FechaHora = f.FechaHora,
                         EsVisitante = f.EsVisitante,
                         Imagenes = imagenes
@@ -5654,8 +5663,13 @@ public sealed partial class ConversacionesService(
             EnsureRequestedWhatsAppNumeroMatchesConversation(request.IdNumeroWhatsApp, conversation);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
-            if (!isInternal && !isWhatsApp)
+            // Chat del sitio web: solo imágenes (es lo que el widget sabe mostrar). No hay envío
+            // externo: queda ENVIADO y el widget la levanta por polling, igual que un texto.
+            var isWebChat = string.Equals(conversation.Canal, "WEBCHAT", StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp && !isWebChat)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío de adjuntos habilitado.");
+            if (isWebChat && request.TamanoBytes > WebChatImagenes.MaxBytes)
+                throw new InvalidOperationException("En el chat del sitio web las imágenes pueden pesar hasta 5 MB.");
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
             var nombreArchivo = request.NombreArchivo.Trim();
@@ -5663,7 +5677,7 @@ public sealed partial class ConversacionesService(
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
 
-            if (isInternal)
+            if (isInternal || isWebChat)
             {
                 initialState = "ENVIADO";
             }
@@ -5714,7 +5728,24 @@ public sealed partial class ConversacionesService(
             await using (var fs = File.Create(rutaLocal))
                 await request.Contenido.CopyToAsync(fs, token);
 
-            if (!isInternal && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))
+            if (isWebChat)
+            {
+                // el tipo se decide por el contenido, como con las imágenes del visitante
+                var bytesImagen = await File.ReadAllBytesAsync(rutaLocal, token);
+                if (bytesImagen.Length > WebChatImagenes.MaxBytes
+                    || !WebChatImagenes.TryDetectar(bytesImagen, out var mimeImagen, out var extImagen))
+                {
+                    TryDeleteFile(rutaLocal);
+                    throw new InvalidOperationException(
+                        "En el chat del sitio web solo se pueden enviar imágenes (JPG, PNG, GIF o WEBP de hasta 5 MB).");
+                }
+
+                mimeType = mimeImagen;
+                messageType = "IMAGE";
+                nombreArchivo = Path.ChangeExtension(nombreArchivo, extImagen);
+            }
+
+            if (isWhatsApp && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))
             {
                 var oggBytes = ConvertWebmOpusFileToOgg(rutaLocal);
                 var oggPath = Path.ChangeExtension(rutaLocal, ".ogg");

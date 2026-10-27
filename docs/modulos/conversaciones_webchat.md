@@ -108,7 +108,9 @@ el login ni los demás webhooks.
 
 `SendMessageAsync` trata `WEBCHAT` como `INTERNO`: el mensaje queda en estado `ENVIADO` y el widget lo
 levanta por polling. Las respuestas del asistente IA, reglas y bienvenida usan el mismo camino. No hay
-ventana de 24 h. Adjuntos: no soportados (mismo mensaje que Instagram/Facebook).
+ventana de 24 h. Adjuntos: solo imágenes (JPG, PNG, GIF o WEBP de hasta 5 MB, validadas por contenido);
+otro tipo de archivo o un audio se rechaza con un mensaje para el agente. La imagen queda `ENVIADO` y el
+widget la muestra sin el nombre del archivo (el texto del mensaje es el nombre, para la bandeja).
 
 ## Widget (`wwwroot/webchat/widget.js`)
 
@@ -147,8 +149,8 @@ no es `0`; `/config` devuelve `permiteImagenes`).
   `/adjuntos/{id}?visitorId=` con `fetch` (mismo control de dominios) y las muestra como object URL.
   El servidor solo entrega adjuntos de una conversación WEBCHAT de ese `visitorId`, de mensajes
   visibles, y vuelve a validar que el contenido sea imagen (`nosniff`, `inline`).
-- Pendiente: que el agente mande imágenes desde la bandeja (hoy `UploadAttachmentAsync` lo rechaza
-  para WEBCHAT; el widget ya sabe mostrarlas) y audios del visitante.
+- El agente también puede mandar imágenes desde la bandeja (ver "Envío desde la bandeja").
+- Pendiente: audios del visitante.
 
 ## Chat con soporte desde Alfa Gestión (VB6)
 
