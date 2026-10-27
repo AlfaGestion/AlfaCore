@@ -1309,6 +1309,14 @@ public sealed class ConversacionesAutomationPipelineTests
         => Assert.Equal(esperado, ConversacionBotPedidosService.EsCancelacion(texto));
 
     [Theory]
+    [InlineData("Pasame la lista de precios", true)]
+    [InlineData("Me pasás lista de precios?", true)]
+    [InlineData("Quiero hacer un pedido", false)]
+    [InlineData("cuánto sale la pila AA?", false)]
+    public void MensajePideListaDePrecios_SiempreVaAlPortal(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideListaDePrecios(mensaje));
+
+    [Theory]
     [InlineData("Quiero 10 pilas duracell AA", true)]
     [InlineData("mandame dos cables", true)]
     [InlineData("anotame 3 resmas", true)]

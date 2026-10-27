@@ -53,7 +53,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var debeForzarPrepararPedido = hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensajeCliente);
         if (debeForzarPrepararPedido)
             debeForzarPrecio = false;
-        var debeForzarPortal = hayPortalEntreHerramientas && !hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente);
+        var debeForzarPortal = hayPortalEntreHerramientas
+            && (ConversacionAsistenteHerramientasService.MensajePideListaDePrecios(mensajeCliente)
+                || (!hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente)));
         // Con la tool de pedidos ofrecida (la empresa usa Notas de Pedido) "¿cómo están mis pedidos?"
         // se consulta siempre; si no tiene pedidos, el resultado lo deriva al seguimiento del tema pendiente.
         var hayPedidosEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_pedidos", StringComparison.Ordinal)) ?? false;

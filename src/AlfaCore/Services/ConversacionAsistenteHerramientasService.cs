@@ -171,6 +171,13 @@ public sealed class ConversacionAsistenteHerramientasService(
     internal const string ResultadoPedidoNoEncontrado =
         "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";
 
+    /// <summary>
+    /// "Pasame la lista de precios": siempre se resuelve con el link del portal, aunque esté la toma de
+    /// pedidos por chat (sin forzar la tool el modelo copiaba un link viejo del historial, 2026-10-27).
+    /// </summary>
+    internal static bool MensajePideListaDePrecios(string? mensajeCliente)
+        => Regex.IsMatch(NormalizarTexto(mensajeCliente), @"\blista\s+de\s+precios?\b");
+
     internal static bool MensajePidePortal(string? mensajeCliente)
     {
         var texto = NormalizarTexto(mensajeCliente);

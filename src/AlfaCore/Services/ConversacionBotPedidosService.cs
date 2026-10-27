@@ -33,6 +33,22 @@ public sealed class ConversacionBotPedidosService(
 
     public async Task<string> PrepararAsync(long idConversacion, ConversacionCuentaVinculadaDto cuenta, string argumentosJson, CancellationToken ct = default)
     {
+        try
+        {
+            return await PrepararCoreAsync(idConversacion, cuenta, argumentosJson, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Sin esto el despachador de tools se tragaba el motivo (catálogo, tabla sin crear...).
+            await appEvents.LogErrorAsync(ModuleName, "BotPedidoPreparar", ex,
+                "No se pudo armar el pedido pedido por chat.",
+                new { idConversacion, cliente = cuenta.Codigo }, AppEventSeverity.Warning, ct);
+            return "No se pudo armar el pedido por un error del sistema. Respondé tipo DERIVA: avisale que un asesor le toma el pedido; también podés ofrecerle el link del portal.";
+        }
+    }
+
+    private async Task<string> PrepararCoreAsync(long idConversacion, ConversacionCuentaVinculadaDto cuenta, string argumentosJson, CancellationToken ct)
+    {
         if (idConversacion <= 0 || cuenta.Tipo != CuentaComercialTipo.Cliente || cuenta.EsAmbigua)
             return "No se pudo identificar al cliente para tomar el pedido. Respondé tipo DERIVA.";
 
