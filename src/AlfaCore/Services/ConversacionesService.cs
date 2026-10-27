@@ -8821,6 +8821,56 @@ public sealed partial class ConversacionesService(
 
     private const int MaxRespuestasBotEncadenadas = 3;
 
+    /// <summary>Mensaje que es sólo una nota de voz/audio, sin texto propio ("[audio]").</summary>
+    internal static bool EsAudioSinTexto(string? texto)
+        => Regex.IsMatch((texto ?? string.Empty).Trim(), @"^\[audio\](\s.*)?$", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Transcribe el audio adjunto al último mensaje entrante (ya descargado por StoreIncomingAttachmentsAsync).
+    /// Lee el archivo local o, si no está, el contenido durable de CONV_ADJUNTOS. Null si no hay audio o falla.
+    /// </summary>
+    private async Task<string?> TranscribirUltimoAudioEntranteAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            var conContenido = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct).ConfigureAwait(false);
+            var sql = $"""
+                SELECT TOP (1) ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''),
+                       {(conContenido ? "a.ArchivoContenido" : "CAST(NULL AS varbinary(max))")}
+                FROM dbo.CONV_ADJUNTOS a
+                WHERE a.IdMensaje = (SELECT MAX(m.IdMensaje) FROM dbo.CONV_MENSAJES m
+                                     WHERE m.IdConversacion = @Id AND m.Direction = N'ENTRANTE')
+                  AND (UPPER(ISNULL(a.TipoArchivo, N'')) = N'AUDIO' OR LOWER(ISNULL(a.MimeType, N'')) LIKE N'audio/%')
+                ORDER BY a.IdAdjunto DESC;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", idConversacion);
+            await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            if (!await rd.ReadAsync(ct).ConfigureAwait(false))
+                return null;
+
+            var nombre = rd.GetString(0);
+            var mime = rd.GetString(1);
+            var ruta = rd.GetString(2);
+            var bytes = !string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta)
+                ? await File.ReadAllBytesAsync(ruta, ct).ConfigureAwait(false)
+                : rd.IsDBNull(3) ? null : (byte[])rd.GetValue(3);
+            if (bytes is not { Length: > 0 })
+                return null;
+
+            return await asistenteService.TranscribirAudioAsync(bytes, nombre, mime, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "BotTranscripcionAudio", ex,
+                "No se pudo transcribir el audio entrante; el asistente siguió con la repregunta.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
     private async Task<long> GetLastIncomingIdAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
@@ -8958,6 +9008,29 @@ public sealed partial class ConversacionesService(
                             await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
                     }
                     return;
+                }
+
+                // Audio (F08, 2026-10-27): se transcribe y el bot sigue como si el cliente lo hubiera
+                // escrito. Va después de los cortes (ya respondido, humano, tope de créditos) para no
+                // pagar transcripciones que no se van a usar; si falla o está apagado queda la
+                // repregunta de ConstruirAclaracionMediaSinTexto ("no puedo escucharlo").
+                if (config.AsistenteTranscribeAudios && EsAudioSinTexto(texto))
+                {
+                    var transcripcion = await TranscribirUltimoAudioEntranteAsync(idConversacion, token).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(transcripcion))
+                    {
+                        texto = transcripcion;
+                        await AddInternalEventCoreAsync(idConversacion, $"🎙️ Transcripción del audio: «{Truncar(transcripcion, 1500)}»", null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+
+                        if (!esUrgente && ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras))
+                        {
+                            esUrgente = true;
+                            await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                            await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token).ConfigureAwait(false);
+                        }
+                        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                            return;
+                    }
                 }
 
                 // Chat web (visitante anónimo): el asistente pide una vez el WhatsApp y la razón social.

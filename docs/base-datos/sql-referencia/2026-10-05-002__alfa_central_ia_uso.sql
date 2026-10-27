@@ -48,6 +48,11 @@ IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
     VALUES (N'gpt-4o-mini', '2024-07-18', 0.15, 0.075, 0.60, N'Precio de lista OpenAI. Modelo por defecto si no hay OPENAI_MODEL.');
 
+-- Sin esta fila, el prefijo "gpt-4o-mini" lo cobraría con la tarifa de texto (los tokens de entrada son de audio).
+IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'gpt-4o-mini-transcribe')
+    INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorMillonEntrada, UsdPorMillonEntradaCacheada, UsdPorMillonSalida, Observacion)
+    VALUES (N'gpt-4o-mini-transcribe', '2025-03-20', 3.00, 3.00, 5.00, N'Transcripción de audios del bot (entrada = tokens de audio). Unos USD 0,003 por minuto.');
+
 IF NOT EXISTS (SELECT 1 FROM dbo.IA_PRECIO_MODELO WHERE Modelo = N'file_search')
     INSERT INTO dbo.IA_PRECIO_MODELO (Modelo, VigenteDesde, UsdPorBusqueda, Observacion)
     VALUES (N'file_search', '2025-01-01', 0.0025, N'USD 2,50 cada 1.000 búsquedas en archivos.');

@@ -455,6 +455,14 @@ Criterio aplicado:
 - Datos que usa: `IGestionDashboardService`
 - Observaciones: puede abrir ítems de comprobante por `TC` e `IdComprobante`.
 
+### ConversacionAsistenteService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionAsistenteService.cs`
+- Propósito: llamadas a OpenAI del asistente de Conversaciones: respuesta del bot con tool-calling (`ResponderAsync`), resumen en texto plano (`ResumirAsync`) y transcripción de audios a texto en español (`TranscribirAudioAsync`).
+- Datos que usa: variables de entorno `OPENAI_API_KEY`, `OPENAI_MODEL` y `OPENAI_TRANSCRIBE_MODEL` (por defecto `gpt-4o-mini-transcribe`); consumo vía `IIaUsoRecorder` (funciones `BOT`, `RESUMEN`, `TRANSCRIPCION`).
+- Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
+
 ## Gestión operativa y financiera
 
 ### Stock

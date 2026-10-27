@@ -470,6 +470,8 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool AsistenteHerramientaPedidos { get; set; }
     /// <summary>Puede ofrecer el link al portal de autogestión (hoy solo existe para Cliente).</summary>
     public bool AsistenteHerramientaPortalLink { get; set; }
+    /// <summary>Transcribe los audios entrantes con IA y responde como si fueran texto (tiene costo por minuto).</summary>
+    public bool AsistenteTranscribeAudios { get; set; }
     /// <summary>
     /// Permite que el bot informe precios a consumidores finales/leads usando la fuente real de
     /// AlfaCore (CUENTACONSUMIDORFINAL/lista/clase). Default seguro: false.

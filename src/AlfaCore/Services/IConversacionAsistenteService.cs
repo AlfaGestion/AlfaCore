@@ -35,6 +35,12 @@ public interface IConversacionAsistenteService
     /// contenido a resumir (user). Devuelve null si no hay API key o si falla la llamada.
     /// </summary>
     Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default);
+
+    /// <summary>
+    /// Transcribe un audio (nota de voz de WhatsApp, etc.) a texto en español. Devuelve null si no hay
+    /// API key, si el audio supera el tamaño admitido o si falla la llamada; el consumo queda en IA_USO.
+    /// </summary>
+    Task<string?> TranscribirAudioAsync(byte[] audio, string nombreArchivo, string mimeType, CancellationToken ct = default);
 }
 
 public sealed class ConversacionAsistenteRespuesta
