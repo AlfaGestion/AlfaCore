@@ -153,6 +153,9 @@ public sealed class CatalogosCatalogoItemDto
 
     /// <summary>Moneda de V_MA_ARTICULOS ('1'=pesos, '2'..'5'=otras monedas de TA_COTIZACION). Solo para uso interno del servicio (ver ApplyModificaPrecioAsync); no es de interés para la UI.</summary>
     public string Moneda { get; set; } = string.Empty;
+
+    /// <summary>Copia superficial, para ajustar el precio de un cliente sin tocar el catálogo compartido.</summary>
+    public CatalogosCatalogoItemDto Copiar() => (CatalogosCatalogoItemDto)MemberwiseClone();
 }
 
 public sealed class CatalogosCatalogoResumenDto

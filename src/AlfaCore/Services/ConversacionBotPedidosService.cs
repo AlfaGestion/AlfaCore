@@ -61,6 +61,9 @@ public sealed class ConversacionBotPedidosService(
         if (catalogo is null || !catalogo.HabilitarCarrito)
             return "Por chat no se pueden tomar pedidos porque el catálogo web no tiene habilitada la toma de pedidos. Ofrecele hacerlo desde el link del portal (generar_link_portal) o que un asesor lo toma.";
 
+        // Precio del cliente (el que informa consultar_precio y el que graba ConfirmarPedidoCarritoAsync).
+        var articulosCliente = await catalogosService.AplicarPrecioClienteAsync(catalogo.Articulos, cuenta.Codigo, idBase, ct);
+
         var lineas = new List<LineaBorrador>();
         var problemas = new StringBuilder();
         foreach (var (articulo, cantidad) in pedidos)
@@ -71,7 +74,7 @@ public sealed class ConversacionBotPedidosService(
                 continue;
             }
 
-            var candidatos = BuscarEnCatalogo(catalogo.Articulos, articulo);
+            var candidatos = BuscarEnCatalogo(articulosCliente, articulo);
             if (candidatos.Count == 0)
                 problemas.AppendLine($"- \"{articulo}\": no está en el catálogo web.");
             else if (candidatos.Count > 1)
@@ -204,7 +207,7 @@ public sealed class ConversacionBotPedidosService(
         var sb = new StringBuilder("Pedido armado (todavía SIN registrar):\n");
         foreach (var l in lineas)
             sb.AppendLine($"- {l.Cantidad.ToString("0.##", cultura)} x {l.Descripcion} (código {l.IdArticulo}) a $ {l.Precio.ToString("N2", cultura)} = $ {(l.Cantidad * l.Precio).ToString("N2", cultura)}");
-        sb.Append($"Total: $ {total.ToString("N2", cultura)} (precios del catálogo web).");
+        sb.Append($"Total: $ {total.ToString("N2", cultura)} (precios de su cuenta).");
         return sb.ToString();
     }
 

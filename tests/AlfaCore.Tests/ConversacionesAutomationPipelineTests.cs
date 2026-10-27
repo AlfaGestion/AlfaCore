@@ -2747,6 +2747,9 @@ public sealed class ConversacionesAutomationPipelineTests
     private class FakeInterfacesCatalogosService : IInterfacesCatalogosService
     {
         public CatalogosCatalogoDetalleDto? Catalogo { get; set; } = new() { IdInsert = 123, Nombre = "Catálogo público" };
+
+        public Task<IReadOnlyList<CatalogosCatalogoItemDto>> AplicarPrecioClienteAsync(IReadOnlyList<CatalogosCatalogoItemDto> articulos, string? codigoCliente, int? expectedBaseId = null, CancellationToken ct = default)
+            => Task.FromResult(articulos);
         public int? LastPublicExpectedBaseId { get; private set; }
 
         public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)

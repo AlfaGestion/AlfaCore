@@ -1382,7 +1382,15 @@
         if (ClienteIdentificadoParaCatalogo)
         {
             await AsegurarCredencialPdfClienteAsync();
-            return catalogo;
+            // Precio del cliente (el mismo que se graba al confirmar el pedido); sobre una copia, el
+            // catálogo cacheado lo comparten anónimos y otros clientes.
+            var codigoCliente = IsAuthenticatedForCurrentCatalog
+                ? CatalogoClienteSession.CurrentClient?.CodigoCliente
+                : _clientePorLink?.CodigoCliente;
+            var articulos = await CatalogosSvc.AplicarPrecioClienteAsync(catalogo.Articulos, codigoCliente, GetEffectiveIdBase());
+            return ReferenceEquals(articulos, catalogo.Articulos)
+                ? catalogo
+                : AlfaCore.Services.CatalogosPublicPriceVisibility.ConArticulos(catalogo, articulos);
         }
 
         bool muestraPrecios;

@@ -22,7 +22,8 @@ public sealed class InterfacesCatalogosService(
     IPuntoVentaService puntoVentaService,
     IHttpClientFactory httpClientFactory,
     CatalogoPedidoProcessingGuard pedidoProcessingGuard,
-    ICompanyBrandingService companyBrandingService) : IInterfacesCatalogosService
+    ICompanyBrandingService companyBrandingService,
+    IArticuloPrecioResolverService? precioResolver = null) : IInterfacesCatalogosService
 {
     private const string ModuleName = "Interfaces";
     private const string ConfigGroup = "CATALOGOS";
@@ -56,6 +57,41 @@ public sealed class InterfacesCatalogosService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+    /// <summary>
+    /// Precio del cliente identificado sobre los artículos de un catálogo (2026-10-27): paga el MENOR entre su
+    /// precio (lista/clase, mismo motor que cotiza el asistente) y el publicado en el catálogo (incluida la oferta).
+    /// Antes el catálogo cobraba siempre el precio publicado aunque el cliente tuviera precio especial, y el bot
+    /// informaba un precio y grababa otro. Lo usan la vista del catálogo/carrito, la confirmación del pedido y el
+    /// bot, así se ve y se graba lo mismo. Devuelve copias: el catálogo puede venir de una caché compartida.
+    /// Sin cliente devuelve la lista tal cual.
+    /// </summary>
+    public async Task<IReadOnlyList<CatalogosCatalogoItemDto>> AplicarPrecioClienteAsync(
+        IReadOnlyList<CatalogosCatalogoItemDto> articulos, string? codigoCliente, int? expectedBaseId = null, CancellationToken ct = default)
+    {
+        var codigo = (codigoCliente ?? string.Empty).Trim();
+        if (codigo.Length == 0 || articulos.Count == 0 || precioResolver is null)
+            return articulos;
+
+        await using var cn = new SqlConnection(ResolveConnectionString(expectedBaseId, "Catalogos.AplicarPrecioCliente"));
+        await cn.OpenAsync(ct);
+        var pricing = await precioResolver.ResolveContextAsync(cn, codigo, ct);
+        var precios = await precioResolver.GetPreciosConIvaAsync(cn, pricing, articulos.Select(a => a.IdArticulo).ToList(), ct);
+
+        return articulos.Select(articulo =>
+        {
+            var publicado = CatalogosPriceDisplayHelper.GetPrecioAplicado(articulo);
+            if (!precios.TryGetValue(articulo.IdArticulo.Trim(), out var precioCliente)
+                || precioCliente <= 0m
+                || (publicado > 0m && precioCliente >= publicado))
+                return articulo;
+
+            var copia = articulo.Copiar();
+            copia.Precio = precioCliente;
+            copia.PrecioOferta = null;
+            return copia;
+        }).ToList();
+    }
 
     private string ResolveConnectionString(int? expectedBaseId, string operationName)
         => expectedBaseId is > 0
@@ -1287,7 +1323,9 @@ public sealed class InterfacesCatalogosService(
             // 2) Cada línea debe corresponder a un artículo real de ESTE catálogo, con el precio
             //    exactamente como está publicado ahí (nunca se vuelve a calcular ni se reemplaza
             //    por el precio vigente del maestro).
-            var articulosPorCodigo = catalogo.Articulos.ToDictionary(a => a.IdArticulo.Trim(), a => a, StringComparer.OrdinalIgnoreCase);
+            //    Con el precio del cliente: el mismo que vio en el catálogo/carrito y que informa el asistente.
+            var articulosCliente = await AplicarPrecioClienteAsync(catalogo.Articulos, codigoClienteSesion, request.IdBase, ct);
+            var articulosPorCodigo = articulosCliente.ToDictionary(a => a.IdArticulo.Trim(), a => a, StringComparer.OrdinalIgnoreCase);
             var lineasResueltas = new List<(CatalogosCatalogoItemDto Articulo, decimal Cantidad)>();
             foreach (var linea in lineasSolicitadas)
             {
