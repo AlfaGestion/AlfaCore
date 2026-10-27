@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace AlfaCore.Services;
 
-public sealed class CargaViajesService(
+public sealed partial class CargaViajesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -1183,6 +1183,7 @@ public sealed class CargaViajesService(
                 var affectedById = await cn.ExecuteAsync(new CommandDefinition(sqlById, new { Id = id, Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedById <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, [id], token);
                 return;
             }
 
@@ -1202,6 +1203,8 @@ public sealed class CargaViajesService(
                 var affectedByLista = await cn.ExecuteAsync(new CommandDefinition(sqlByLista, new { IdLista = idLista.Trim().ToUpperInvariant(), Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedByLista <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
+                if (!string.IsNullOrWhiteSpace(idColumn))
+                    await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, idLista, token), token);
                 return;
             }
 
@@ -1414,7 +1417,24 @@ public sealed class CargaViajesService(
             if (!string.IsNullOrWhiteSpace(adicionalFijo3PideCantidadColumn)) parameters.Add("@AdicionalFijo3PideCantidad", request.AdicionalFijo3PideCantidad);
             parameters.Add("@Activo", request.Activo);
 
-            await cn.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: token));
+            if (isNew && !string.IsNullOrWhiteSpace(idColumn))
+            {
+                var newId = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql + Environment.NewLine + "SELECT CAST(SCOPE_IDENTITY() AS int);", parameters, cancellationToken: token));
+                if (newId is > 0)
+                    tarifaId = newId.Value;
+            }
+            else
+            {
+                await cn.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: token));
+            }
+
+            if (!request.TarifaFletero && !string.IsNullOrWhiteSpace(cliente) && !string.IsNullOrWhiteSpace(idColumn))
+            {
+                var savedIds = tarifaId > 0
+                    ? new[] { tarifaId }
+                    : await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, originalIdLista, token);
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, savedIds, token);
+            }
 
             return idLista;
         }, "No se pudo guardar la tarifa.", ct);
@@ -1516,6 +1536,17 @@ public sealed class CargaViajesService(
                 tx.Rollback();
                 throw;
             }
+
+            if (columns.Contains("id"))
+            {
+                var ids = (await cn.QueryAsync<int>(new CommandDefinition($"""
+                    SELECT ID
+                    FROM dbo.TA_TARIFA
+                    WHERE UPPER(LTRIM(RTRIM({clienteColumn}))) = @Cliente
+                      AND UPPER(LTRIM(RTRIM({idListaColumn}))) IN @Listas;
+                    """, new { Cliente = cliente.ToUpperInvariant(), Listas = listas.Select(lista => lista.ToUpperInvariant()).ToList() }, cancellationToken: token))).ToList();
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, ids, token);
+            }
         }, "No se pudieron actualizar los adicionales de las tarifas.", ct);
 
     public Task BajaTarifaAsync(string idLista, CancellationToken ct = default)
@@ -1538,6 +1569,8 @@ public sealed class CargaViajesService(
             var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { IdLista = idLista.Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affected == 0)
                 throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+            if (columns.Contains("id"))
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, "ID", idListaColumn, idLista, token), token);
         }, "No se pudo dar de baja la tarifa.", ct);
 
     public Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default)
@@ -1558,6 +1591,7 @@ public sealed class CargaViajesService(
                 var affectedById = await cn.ExecuteAsync(new CommandDefinition($"UPDATE dbo.TA_TARIFA SET Activo = 0 WHERE {idColumn} = @Id;", new { Id = id }, cancellationToken: token));
                 if (affectedById == 0)
                     throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, [id], token);
                 return;
             }
 
@@ -1569,6 +1603,8 @@ public sealed class CargaViajesService(
                 """, new { IdLista = (idLista ?? string.Empty).Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affectedByLista == 0)
                 throw new InvalidOperationException("La tarifa seleccionada ya no existe en la base activa.");
+            if (!string.IsNullOrWhiteSpace(idColumn))
+                await PropagarTarifasVinculadasDespuesDeGrabarAsync(cn, await LoadTarifaIdsByListaAsync(cn, idColumn, idListaColumn, idLista ?? string.Empty, token), token);
         }, "No se pudo dar de baja la tarifa.", ct);
 
     public Task<PagedResult<CargaViajeChoferGridItemDto>> SearchChoferesAsync(CargaViajesFilters filters, CancellationToken ct = default)
@@ -3775,6 +3811,7 @@ public sealed class CargaViajesService(
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3Descripcion", "nvarchar(100) NULL", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3Importe", "money NOT NULL CONSTRAINT DF_TA_TARIFA_AdicionalFijo3Importe DEFAULT (0) WITH VALUES", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo3PideCantidad", "bit NOT NULL CONSTRAINT DF_TA_TARIFA_AdicionalFijo3PideCantidad DEFAULT (0) WITH VALUES", createdColumns, token);
+                await EnsureTarifasVinculadasSchemaAsync(cn, token, (SqlTransaction)tx);
 
                 await tx.CommitAsync(token);
             }

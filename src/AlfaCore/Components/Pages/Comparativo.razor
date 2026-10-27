@@ -19,7 +19,7 @@
 
     @if (_loading)
     {
-        <AlfaEmptyState Title="Cargando" Message="Buscando datos del período." />
+        <AlfaEmptyState Loading="true" Title="Cargando" Message="Buscando datos del período." />
     }
     else if (!string.IsNullOrWhiteSpace(_error))
     {

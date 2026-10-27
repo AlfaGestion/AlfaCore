@@ -1,6 +1,13 @@
-<section class="@CssClass" role="status" aria-live="polite">
+<section class="@CssClass" role="status" aria-live="polite" aria-busy="@Loading.ToString().ToLowerInvariant()">
     <div class="alfa-empty-state__icon" aria-hidden="true">
-        <i class="@IconClass"></i>
+        @if (Loading)
+        {
+            <span class="alfa-empty-state__spinner"></span>
+        }
+        else
+        {
+            <i class="@IconClass"></i>
+        }
     </div>
     <div class="alfa-empty-state__body">
         <h2>@Title</h2>
@@ -17,6 +24,7 @@
 
 @code {
     [Parameter] public AlfaEmptyStateKind Kind { get; set; } = AlfaEmptyStateKind.NoData;
+    [Parameter] public bool Loading { get; set; }
     [Parameter] public string Title { get; set; } = "Sin datos";
     [Parameter] public string? Message { get; set; }
     [Parameter] public string? ActionLabel { get; set; }

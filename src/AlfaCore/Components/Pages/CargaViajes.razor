@@ -275,6 +275,7 @@
                                         <td>
                                             <div class="actions">
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTarifaAsync(item.row)">Editar</button>
+                                                <button type="button" class="btn btn--ghost btn--sm" title="Crear una tarifa nueva con los mismos datos" @onclick="() => DuplicarTarifaAsync(item.row)">Duplicar</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaTarifaAsync(item.row)">Baja</button>
                                             </div>
                                         </td>
@@ -676,6 +677,48 @@
                                                         MinimumCharacters="0" />
                                 }
                             </div>
+
+                            @if (!_tarifaForm.TarifaFletero)
+                            {
+                                <div class="field field--wide">
+                                    <label>Clientes que comparten estas tarifas</label>
+                                    @if (_tarifaClientePrincipal is not null)
+                                    {
+                                        <div class="carga-viajes-tarifa-editor__fixed-hint">
+                                            Este cliente usa las tarifas de <strong>@BuildLookupDisplayText(_tarifaClientePrincipal)</strong>.
+                                            Los cambios que se hagan en las tarifas de ese cliente se copian acá y reemplazan los de este cliente.
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @if (_tarifaClientesVinculados.Count > 0)
+                                        {
+                                            <div class="carga-viajes-tarifa-editor__vinculados">
+                                                @foreach (var vinculado in _tarifaClientesVinculados)
+                                                {
+                                                    <span class="carga-viajes-tarifa-editor__vinculado">
+                                                        <span>@BuildLookupDisplayText(vinculado)</span>
+                                                        <button type="button" aria-label="Quitar cliente" title="Quitar cliente" @onclick="() => QuitarTarifaClienteVinculado(vinculado)">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    </span>
+                                                }
+                                            </div>
+                                        }
+                                        <LookupAutocomplete Label=""
+                                                            Placeholder="@(string.IsNullOrWhiteSpace(_tarifaForm.Cliente) ? "Primero elegí el cliente de la tarifa" : "Agregar otro cliente...")"
+                                                            Text="@_tarifaVinculadoTexto"
+                                                            TextChanged="(string text) => _tarifaVinculadoTexto = text"
+                                                            SelectedChanged="AgregarTarifaClienteVinculadoAsync"
+                                                            SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                                            Disabled="@string.IsNullOrWhiteSpace(_tarifaForm.Cliente)"
+                                                            MinimumCharacters="0" />
+                                        <div class="carga-viajes-tarifa-editor__fixed-hint">
+                                            Al guardar, todas las tarifas de este cliente se duplican en los clientes agregados, y cada cambio posterior (importe, aumento, adicionales o baja) se actualiza también en ellos.
+                                        </div>
+                                    }
+                                </div>
+                            }
 
                             <div class="field field--wide">
                                 <label>Nombre de lista</label>
@@ -2777,6 +2820,10 @@
     private CargaViajeTarifaSaveRequest _tarifaForm = new();
     private string _tarifaOriginalIdLista = string.Empty;
     private AppUiMessage? _tarifaEditorFeedback;
+    private List<CargaViajeLookupOptionDto> _tarifaClientesVinculados = new();
+    private string _tarifaClientesVinculadosOriginal = string.Empty;
+    private CargaViajeLookupOptionDto? _tarifaClientePrincipal;
+    private string _tarifaVinculadoTexto = string.Empty;
     private bool _showTarifaAdicionalesPropagateModal;
     private bool _tarifaAdicionalesPropagateLoading;
     private CargaViajesFilters _tarifaAdicionalesPropagateFilters = new() { PageNumber = 1, PageSize = 200 };
@@ -6894,7 +6941,7 @@
         _tarifaClienteTexto = BuildLookupDisplayText(item);
         _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
         await ActualizarTarifaIdListaAsync();
-        await Task.CompletedTask;
+        await CargarTarifaClientesVinculadosAsync(item.Codigo);
     }
 
     private async Task OnTarifaChoferSeleccionadoAsync(CargaViajeLookupOptionDto item)
@@ -10019,6 +10066,7 @@
         _tarifaForm.AdicionalFijo2Importe = 0m;
         _tarifaForm.AdicionalFijo3Descripcion = string.Empty;
         _tarifaForm.AdicionalFijo3Importe = 0m;
+        await CargarTarifaClientesVinculadosAsync(null);
         _showTarifaEditor = true;
         _isNewTarifa = true;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -10071,6 +10119,7 @@
             _tarifaDestinoTexto = item.Destino;
             _tarifaTipoVehiculoTexto = item.TipoVehiculo;
             _tarifaOriginalIdLista = item.IdLista;
+            await CargarTarifaClientesVinculadosAsync(clienteCodigo);
             _showTarifaEditor = true;
             _isNewTarifa = false;
             _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -10111,6 +10160,7 @@
         _tarifaDestinoTexto = ExtractVisibleText(row.Destino);
         _tarifaTipoVehiculoTexto = ExtractVisibleText(row.TipoVehiculo);
         _tarifaOriginalIdLista = row.IdLista;
+        await CargarTarifaClientesVinculadosAsync(_tarifaForm.Cliente);
         _showTarifaEditor = true;
         _isNewTarifa = false;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -10136,12 +10186,118 @@
             return;
         }
 
+        var mensajeVinculados = string.Empty;
+        if (TarifaClientesVinculadosCambiaron())
+        {
+            try
+            {
+                var copiadas = await CargaViajesSvc.GuardarClientesVinculadosTarifaAsync(
+                    _tarifaForm.Cliente,
+                    _tarifaClientesVinculados.Select(cliente => cliente.Codigo).ToList());
+                mensajeVinculados = _tarifaClientesVinculados.Count == 0
+                    ? " Se quitaron los clientes que compartían estas tarifas."
+                    : $" Se copiaron/actualizaron {copiadas} tarifa(s) en los clientes que las comparten.";
+            }
+            catch (Exception ex)
+            {
+                // La tarifa ya quedó grabada: se sigue en edición para poder corregir los clientes vinculados.
+                if (_isNewTarifa)
+                {
+                    _isNewTarifa = false;
+                    _tarifaOriginalIdLista = _tarifaForm.IdLista;
+                }
+                _tarifaEditorFeedback = UiOps.BuildMessage(ex, "La tarifa se guardó, pero no se pudieron guardar los clientes que la comparten.");
+                await RecargarTarifasAsync();
+                return;
+            }
+        }
+
         _tarifaEditorFeedback = null;
-        SetSuccessFeedback("Tarifa guardada", "La tarifa quedó actualizada.");
+        SetSuccessFeedback("Tarifa guardada", "La tarifa quedó actualizada." + mensajeVinculados);
         _showTarifaEditor = false;
         _tarifaSnapshot = string.Empty;
         await RecargarTarifasAsync();
     }
+
+    private async Task DuplicarTarifaAsync(CargaViajeTarifaGridItemDto row)
+    {
+        await EditarTarifaAsync(row);
+        if (!_showTarifaEditor)
+            return;
+
+        // Misma tarifa como alta nueva: se puede cambiar cliente, destino o tipo de vehículo antes de guardar.
+        _isNewTarifa = true;
+        _tarifaForm.Id = 0;
+        _tarifaForm.OriginalIdLista = string.Empty;
+        _tarifaOriginalIdLista = string.Empty;
+        await ActualizarTarifaIdListaAsync();
+        _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
+        _tarifaEditorFeedback = AppUiMessage.Info(
+            "Duplicar tarifa",
+            "Se copiaron los datos de la tarifa. Cambiá el cliente, el destino o el tipo de vehículo y guardá para crear la nueva.");
+    }
+
+    private async Task CargarTarifaClientesVinculadosAsync(string? cliente)
+    {
+        _tarifaClientesVinculados = new();
+        _tarifaClientesVinculadosOriginal = string.Empty;
+        _tarifaClientePrincipal = null;
+        _tarifaVinculadoTexto = string.Empty;
+
+        var codigo = (cliente ?? string.Empty).Trim();
+        if (_tarifaForm.TarifaFletero || string.IsNullOrWhiteSpace(codigo))
+            return;
+
+        var principal = await UiOps.RunAsync(
+            () => CargaViajesSvc.GetClientePrincipalTarifaAsync(codigo),
+            "No se pudo verificar si el cliente comparte tarifas con otro.");
+        if (principal.Success && principal.Value is not null)
+        {
+            _tarifaClientePrincipal = principal.Value;
+            return;
+        }
+
+        var vinculados = await UiOps.RunAsync(
+            () => CargaViajesSvc.GetClientesVinculadosTarifaAsync(codigo),
+            "No se pudieron cargar los clientes que comparten la tarifa.");
+        if (vinculados.Success && vinculados.Value is not null)
+            _tarifaClientesVinculados = vinculados.Value.ToList();
+
+        _tarifaClientesVinculadosOriginal = BuildTarifaClientesVinculadosKey();
+    }
+
+    private Task AgregarTarifaClienteVinculadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifaVinculadoTexto = string.Empty;
+        var codigo = (item.Codigo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigo))
+            return Task.CompletedTask;
+
+        if (string.Equals(codigo, (_tarifaForm.Cliente ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            _tarifaEditorFeedback = AppUiMessage.Warning("Clientes que comparten tarifas", "El cliente de la tarifa no puede agregarse a sí mismo.");
+            return Task.CompletedTask;
+        }
+
+        if (_tarifaClientesVinculados.All(vinculado => !string.Equals(vinculado.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase)))
+            _tarifaClientesVinculados.Add(item);
+
+        return Task.CompletedTask;
+    }
+
+    private void QuitarTarifaClienteVinculado(CargaViajeLookupOptionDto item)
+        => _tarifaClientesVinculados.Remove(item);
+
+    private string BuildTarifaClientesVinculadosKey()
+        => string.Join('|', _tarifaClientesVinculados
+            .Select(vinculado => (vinculado.Codigo ?? string.Empty).Trim().ToUpperInvariant())
+            .OrderBy(codigo => codigo, StringComparer.Ordinal));
+
+    private bool TarifaClientesVinculadosCambiaron()
+        => !_tarifaForm.TarifaFletero
+           && _tarifaClientePrincipal is null
+           && !string.IsNullOrWhiteSpace(_tarifaForm.Cliente)
+           && !string.Equals(BuildTarifaClientesVinculadosKey(), _tarifaClientesVinculadosOriginal, StringComparison.Ordinal);
 
     private string GetTarifaRowClass(CargaViajeTarifaGridItemDto row, int index)
     {

@@ -381,7 +381,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/GestionDashboardService.cs`
 - Propósito: resuelve dashboards y listados de ventas, stock, caja y bancos, contabilidad, posición de IVA y balance de saldos.
 - Datos que usa: `V_MV_Cpte`, `Libro_VentasConFP`, `V_MV_CpteInsumos`, `VT_DETALLEIVAPROFORMA`, `VT_DETALLEIVAPROFORMA_COMPLETO`, `V_MA_ARTICULOS`, `V_MV_STOCK`, `VT_CONSOLIDADO_CAJA`, `V_EstadoBancario`, `MV_ASIENTOS`, `VE_CPTES_IMPAGOS`, `CO_CPTES_IMPAGOS`, `LibroIvaVentas_Contadores`, `LibroIvaCompras_Contadores`, `TA_CONFIGURACION`, `vw_familias_jerarquia`
-- Observaciones: centraliza varios submódulos de gestión; registra errores con `IAppEventService` y usa `TA_CONFIGURACION` para no hardcodear la estructura del plan de cuentas.
+- Observaciones: centraliza varios submódulos de gestión; registra errores con `IAppEventService` y usa `TA_CONFIGURACION` para no hardcodear la estructura del plan de cuentas. El parcial `src/AlfaCore/Services/GestionDashboardService.AnalisisVentas.cs` agrega comparación por vendedor histórico/unidad de negocio, evolución y comprobantes paginados con Dapper sobre el libro oficial; ver `docs/modulos/dashboard-ventas-analisis.md`.
 
 ### GestionDashboardModels
 

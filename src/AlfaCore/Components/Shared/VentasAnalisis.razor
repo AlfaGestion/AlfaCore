@@ -1,0 +1,163 @@
+@inject AlfaCore.Services.IGestionDashboardService GestionSvc
+@inject AlfaCore.Services.GestionFilterStateService FilterState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="gd-page gd">
+    <header class="gd-header">
+        <div>
+            <h2>Ventas por @(PorVendedor ? "vendedor" : "unidad de negocio")</h2>
+            <p>Compará las ventas del período y abrí el detalle para consultar su evolución y comprobantes. Los importes incluyen notas de crédito con su signo.</p>
+        </div>
+    </header>
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar el análisis" Message="@_error" />
+        <AlfaButton OnClick="@(() => LoadAsync())" Disabled="_loading">Reintentar</AlfaButton>
+    }
+    @if (_loading)
+    {
+        <AlfaEmptyState Loading="true" Title="Cargando ventas" Message="Buscando datos del período." />
+    }
+    else if (_data is not null && _error is null)
+    {
+        var total = _data.Filas.Sum(x => x.Total);
+        <div class="kpi-grid">
+            <KpiCard Titulo="Total vendido" Valor="@Moneda(total)" Icono="$" />
+            <KpiCard Titulo="@(PorVendedor ? "Vendedores con movimientos" : "Unidades con movimientos")" Valor="@_data.Filas.Count.ToString("N0")" Icono="C" />
+        </div>
+        @if (_data.Filas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin ventas para los filtros seleccionados" Message="Probá otro período o revisá los filtros." />
+        }
+        else
+        {
+            <section class="panel-card">
+                <HorizontalBarChart Data="@Grafico" Titulo="Comparación de ventas" Subtitulo="Hasta 15 participantes. El listado incluye todos los resultados; rojo indica un total negativo." OnSelect="SeleccionarGraficoAsync" />
+            </section>
+            <DataTable Titulo="Participación en las ventas" Subtitulo="Abrí una fila para ver su detalle.">
+                <Header><tr><th>@(PorVendedor ? "Vendedor" : "Unidad de negocio")</th><th>Total vendido</th><th>Participación</th><th>Comprobantes</th><th>Clientes</th><th>Ticket promedio</th><th></th></tr></Header>
+                <Rows>
+                    @foreach (var fila in _data.Filas)
+                    {
+                        <tr>
+                            <td>@Etiqueta(fila)</td><td>@Moneda(fila.Total)</td>
+                            <td>@(total == 0 ? "—" : (fila.Total / total).ToString("P1", Cultura))</td>
+                            <td>@fila.Comprobantes</td><td>@fila.Clientes</td>
+                            <td>@Moneda(fila.Comprobantes == 0 ? 0 : fila.Total / fila.Comprobantes)</td>
+                            <td><AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="@(() => SeleccionarAsync(fila.Codigo))">Ver detalle</AlfaButton></td>
+                        </tr>
+                    }
+                </Rows>
+            </DataTable>
+            @if (_codigo is not null)
+            {
+                var seleccion = _data.Filas.FirstOrDefault(x => x.Codigo == _codigo);
+                <section class="panel-card" id="ventas-analisis-detalle" aria-live="polite">
+                    <div class="panel-card__header">
+                        <div><h3 class="panel-card__title">Detalle: @(seleccion is null ? _codigo : Etiqueta(seleccion))</h3>
+                        <p class="panel-card__subtitle">@Moneda(seleccion?.Total ?? 0) · @_data.CantidadComprobantes comprobantes</p></div>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="CerrarDetalleAsync">Cerrar detalle</AlfaButton>
+                    </div>
+                    <LineChart Data="_data.Evolucion" Titulo="Evolución mensual de la selección" />
+                </section>
+                <DataTable Titulo="Comprobantes de la selección" Subtitulo="Importes del mismo período y filtros que la comparación.">
+                    <Header><tr><th>Fecha</th><th>Tipo</th><th>Comprobante</th><th>Cuenta</th><th>Cliente</th><th>Total</th><th></th></tr></Header>
+                    <Rows>
+                        @foreach (var c in _data.Comprobantes)
+                        {
+                            <tr><td>@c.Fecha.ToString("dd/MM/yyyy")</td><td>@c.Tc</td><td>@c.IdComprobante</td><td>@c.Cuenta</td><td>@c.Cliente</td><td>@Moneda(c.Total)</td>
+                                <td><a class="action-link" href="@ViewerUrl(c)">Ver comprobante</a></td></tr>
+                        }
+                    </Rows>
+                </DataTable>
+                <div class="alfa-data-view-footer">
+                    <span>Página @_pagina de @Math.Max(1, (_data.CantidadComprobantes + 49) / 50) · @_data.CantidadComprobantes comprobantes</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_pagina <= 1)" OnClick="@(() => CambiarPaginaAsync(-1))">Anterior</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_pagina * 50 >= _data.CantidadComprobantes)" OnClick="@(() => CambiarPaginaAsync(1))">Siguiente</AlfaButton>
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public bool PorVendedor { get; set; }
+    private static readonly System.Globalization.CultureInfo Cultura = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private PageHeaderConfig? _header;
+    private VentasFilterOptionsDto _options = new();
+    private VentasAnalisisDto? _data;
+    private bool _loading;
+    private bool _optionsLoaded;
+    private string? _error;
+    private string? _codigo;
+    private int _pagina = 1;
+    private readonly CancellationTokenSource _lifetime = new();
+    private VentasDashboardFilters Filters => FilterState.Ventas;
+    private string Ruta => PorVendedor ? "/ventas/vendedores" : "/ventas/unidades-negocio";
+    private IReadOnlyList<CategoryTotalDto> Grafico => _data!.Filas.Take(15).Select(x => new CategoryTotalDto
+        { Codigo = x.Codigo, Categoria = Etiqueta(x), Total = x.Total }).ToList();
+    private static string Etiqueta(VentasAnalisisFilaDto fila) => string.IsNullOrEmpty(fila.Codigo) ? fila.Nombre : $"{fila.Codigo} · {fila.Nombre}";
+    private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", Cultura);
+
+    protected override void OnInitialized() => UpdateHeader();
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+    protected override async Task OnInitializedAsync()
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (query.TryGetValue("codigo", out var codigo)) _codigo = codigo.ToString();
+        if (query.TryGetValue("pagina", out var pagina) && int.TryParse(pagina, out var valor) && valor > 0) _pagina = valor;
+        await LoadAsync();
+    }
+    private RenderFragment Search() => @<VentasSmartSearch Model="Filters" Options="_options" OnApply="AplicarAsync" />;
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas",
+        Search = new PageHeaderSearchConfig(), SearchContent = Search(),
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildVentas(RouteContext, Nav, PorVendedor ? "vendedores" : "unidades-negocio")
+    });
+    private Task AplicarAsync() { _pagina = 1; return LoadAsync(); }
+    private Task SeleccionarGraficoAsync(CategoryTotalDto item) => SeleccionarAsync(item.Codigo ?? "");
+    private async Task SeleccionarAsync(string codigo)
+    {
+        _codigo = codigo; _pagina = 1;
+        await LoadAsync();
+        if (_error is null && !_lifetime.IsCancellationRequested)
+            Nav.NavigateTo(Nav.Uri.Split('#')[0] + "#ventas-analisis-detalle");
+    }
+    private Task CerrarDetalleAsync() { _codigo = null; _pagina = 1; return LoadAsync(); }
+    private Task CambiarPaginaAsync(int delta) { _pagina += delta; return LoadAsync(); }
+    private async Task LoadAsync()
+    {
+        if (_loading) return;
+        _loading = true; _error = null;
+        try
+        {
+            if (!_optionsLoaded)
+            {
+                _options = await GestionSvc.GetVentasFilterOptionsAsync(_lifetime.Token);
+                _optionsLoaded = true;
+                UpdateHeader();
+            }
+            _data = await GestionSvc.GetVentasAnalisisAsync(Filters, PorVendedor, _codigo, _pagina, _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.Message; }
+        catch (Exception) { _error = "No se pudo cargar el análisis de ventas. Reintentá la consulta."; }
+        finally { _loading = false; }
+    }
+    private string ViewerUrl(VentasAnalisisComprobanteDto c) => RouteContext.BuildRoute(
+        $"/comprobantes/viewer/{Uri.EscapeDataString(c.Tc)}/{Uri.EscapeDataString(c.IdComprobante)}?returnUrl={Uri.EscapeDataString(ReturnUrl())}"
+        + (Nav.Uri.Contains("directo=1") ? "&directo=1" : ""));
+    private string ReturnUrl() => RouteContext.BuildRoute(Ruta)
+        + $"?codigo={Uri.EscapeDataString(_codigo ?? "")}&pagina={_pagina}"
+        + (Nav.Uri.Contains("directo=1") ? "&directo=1" : "");
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

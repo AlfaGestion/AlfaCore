@@ -1392,6 +1392,49 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-tarifas__importe-cell 
     color: var(--alfa-text-secondary);
 }
 
+.carga-viajes-tarifa-editor__vinculados {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-bottom: .45rem;
+}
+
+.carga-viajes-tarifa-editor__vinculado {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    max-width: 100%;
+    padding: .25rem .35rem .25rem .7rem;
+    border: 1px solid rgba(56, 189, 248, .35);
+    border-radius: 999px;
+    background: rgba(56, 189, 248, .12);
+    font-size: .8rem;
+}
+
+.carga-viajes-tarifa-editor__vinculado span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.carga-viajes-tarifa-editor__vinculado button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.carga-viajes-tarifa-editor__vinculado button:hover {
+    background: rgba(148, 163, 184, .22);
+}
+
 @media (max-width: 1120px) {
     .carga-viajes-tarifa-editor__percentages-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
