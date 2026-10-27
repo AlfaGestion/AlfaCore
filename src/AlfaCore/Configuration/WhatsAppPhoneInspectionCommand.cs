@@ -126,7 +126,7 @@ internal static class WhatsAppPhoneInspectionCommand
 
         var baseUrl = graphBaseUrl.TrimEnd('/');
         var version = credential.GraphVersion.Trim('/');
-        var fields = Uri.EscapeDataString("id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app");
+        var fields = Uri.EscapeDataString("id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app,status,messaging_limit_tier,health_status");
         var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(phoneNumberId)}?fields={fields}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -186,6 +186,62 @@ internal static class WhatsAppPhoneInspectionCommand
         output.WriteLine($"display_phone_number = {GetField(root, "display_phone_number")}");
         output.WriteLine($"verified_name = {GetField(root, "verified_name")}");
         output.WriteLine($"quality_rating = {GetField(root, "quality_rating")}");
+        output.WriteLine($"status = {GetField(root, "status")}");
+        output.WriteLine($"messaging_limit_tier = {GetField(root, "messaging_limit_tier")}");
+        WriteHealthStatus(output, root);
+    }
+
+    /// <summary>
+    /// health_status de Meta: dice si el número puede enviar (AVAILABLE / LIMITED / BLOCKED) y, por cada
+    /// entidad (app, negocio, WABA, número), los errores con su motivo y posible solución. Es la única
+    /// fuente que explica un bloqueo o restricción del número.
+    /// </summary>
+    private static void WriteHealthStatus(TextWriter output, JsonElement? root)
+    {
+        if (root is not { } element
+            || !element.TryGetProperty("health_status", out var health)
+            || health.ValueKind != JsonValueKind.Object)
+        {
+            output.WriteLine("HEALTH_CAN_SEND_MESSAGE = NO DISPONIBLE");
+            return;
+        }
+
+        output.WriteLine($"HEALTH_CAN_SEND_MESSAGE = {GetField(health, "can_send_message")}");
+        if (!health.TryGetProperty("entities", out var entities) || entities.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var entity in entities.EnumerateArray())
+        {
+            if (entity.ValueKind != JsonValueKind.Object)
+                continue;
+
+            output.WriteLine($"HEALTH {GetField(entity, "entity_type")} = {GetField(entity, "can_send_message")}");
+            WriteHealthList(output, entity, "errors", "ERROR");
+            WriteHealthList(output, entity, "additional_info", "INFO");
+        }
+    }
+
+    private static void WriteHealthList(TextWriter output, JsonElement entity, string propertyName, string label)
+    {
+        if (!entity.TryGetProperty(propertyName, out var items) || items.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                output.WriteLine($"  {label}: {item.GetString()}");
+                continue;
+            }
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var code = item.TryGetProperty("error_code", out var c) ? c.ToString() : "NO DISPONIBLE";
+            output.WriteLine($"  {label} {code}: {GetField(item, "error_description")}");
+            var solution = GetField(item, "possible_solution");
+            if (solution != "NO DISPONIBLE")
+                output.WriteLine($"    SOLUCION: {solution}");
+        }
     }
 
     private static void WriteNameStatusFields(TextWriter output, JsonElement? phoneNumber)

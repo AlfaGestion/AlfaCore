@@ -186,6 +186,44 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     }
 
     [Fact]
+    public async Task HealthStatus_Blocked_PrintsReasonAndSolutionPerEntity()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+            request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") }
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"id":"1362965780228889","quality_rating":"RED","status":"RESTRICTED","messaging_limit_tier":"TIER_250",
+                         "health_status":{"can_send_message":"BLOCKED","entities":[
+                           {"entity_type":"WABA","id":"2597305014055622","can_send_message":"AVAILABLE"},
+                           {"entity_type":"PHONE_NUMBER","id":"1362965780228889","can_send_message":"BLOCKED",
+                            "errors":[{"error_code":141006,"error_description":"Número restringido por calidad.","possible_solution":"Solicitar revisión."}],
+                            "additional_info":["Restricción hasta 2026-10-30"]}]}}
+                        """)
+                });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("status = RESTRICTED", text, StringComparison.Ordinal);
+        Assert.Contains("messaging_limit_tier = TIER_250", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH_CAN_SEND_MESSAGE = BLOCKED", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH WABA = AVAILABLE", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH PHONE_NUMBER = BLOCKED", text, StringComparison.Ordinal);
+        Assert.Contains("ERROR 141006: Número restringido por calidad.", text, StringComparison.Ordinal);
+        Assert.Contains("SOLUCION: Solicitar revisión.", text, StringComparison.Ordinal);
+        Assert.Contains("INFO: Restricción hasta 2026-10-30", text, StringComparison.Ordinal);
+        Assert.Contains(handler.Requests, r => r.RequestUri?.Query.Contains("health_status", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task NameStatus_AvailableWithoutReview_IsSuccessAndDoesNotInferRegistration()
     {
         var text = await ExecuteWithNameStatusesAsync("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW");
