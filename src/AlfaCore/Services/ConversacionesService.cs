@@ -8877,6 +8877,13 @@ public sealed partial class ConversacionesService(
             // Al terminar, si entró uno nuevo se responde el último (con todo el historial), como el
             // job de espera; el lock y los chequeos de "ya respondido" siguen evitando duplicados.
             var ultimoAtendido = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
+            // "hola" y "cuánto sale el mouse?" con 1 s de diferencia (Base4271, 2026-10-27): cuando este
+            // llamado arranca, el segundo ya está grabado y su propio llamado choca con el lock. Se
+            // respondía el "hola" (sin herramientas) y la respuesta, posterior a los dos, hacía que el
+            // mouse figurara como respondido. Se responde el último entrante, con todo el historial.
+            var textoUltimoEntrante = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
+            if (textoUltimoEntrante.Length > 0)
+                texto = textoUltimoEntrante;
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {

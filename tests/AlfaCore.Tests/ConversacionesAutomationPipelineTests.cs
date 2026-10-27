@@ -866,6 +866,18 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Tools_UnaImagenSinTextoOfreceHerramientas()
+    {
+        // Foto de una birome sin texto (Base4271, 2026-10-27): sin herramientas el bot derivaba.
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"), ConversacionesService.TextoImagenSinTexto);
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+    }
+
+    [Fact]
     public void Tools_SaldoTools_AreOnlyOfferedForTheAccountTypeTheyApplyTo()
     {
         var service = CreateToolsService();
@@ -1322,6 +1334,10 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("anotame 3 resmas", true)]
     [InlineData("¿Venden cargadores?", false)]
     [InlineData("quiero una pila AAA", false)]
+    [InlineData("Hola, buen día. Te quiero encargar diez biromes negras.", true)]
+    [InlineData("Mejor agregale 2 resaltadores", true)]
+    [InlineData("necesito comprar 5 cuadernos", true)]
+    [InlineData("quiero comprar una impresora", false)]
     public void MensajePideCantidadDeArticulo_DetectaPedidosConCantidad(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensaje));
 

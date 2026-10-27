@@ -422,9 +422,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
-        sb.AppendLine("- Escribí los links como la URL completa en texto plano, sin formato Markdown (nada de [texto](link)): en WhatsApp ese formato no se ve como link.");
+        sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
-            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo.");
+            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
         if (hayPortalEntreHerramientas)
             sb.AppendLine(hayPrepararPedido
                 ? "- PORTAL CLIENTE: si el cliente pide su lista de precios, usá generar_link_portal y pasale el link (ahí ve los precios de su cuenta). También podés ofrecerlo como alternativa para cargar pedidos. No lo derives a un asesor por esto."
@@ -434,6 +434,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (hayPrecioEntreHerramientas)
         {
             sb.AppendLine("- PRECIOS: ante una consulta de precio usá consultar_precio con términos cortos del artículo (si el mensaje actual completa una aclaración anterior, combiná ambos: \"pila\" + \"AA\" → \"pila AA\"). El resultado de la herramienta trae la instrucción de qué tipo responder (RESUELVE o ACLARA): seguila. No derives una consulta de precio porque falte un dato que el cliente puede darte: preguntá.");
+            sb.AppendLine("- CANTIDADES: los precios de las herramientas son por unidad. Nunca supongas que un artículo viene por paquete, caja o docena ni cuántas unidades trae: si el cliente pide \"un paquete\" o \"una caja\", decile el precio unitario y preguntale cuántas unidades quiere.");
             sb.AppendLine("- Nunca repitas una pregunta de aclaración que ya le hiciste en esta conversación (mirá tus mensajes anteriores).");
         }
         if (precioRequiereIdentificacion)

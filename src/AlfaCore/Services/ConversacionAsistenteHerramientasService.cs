@@ -76,7 +76,11 @@ public sealed class ConversacionAsistenteHerramientasService(
     private static bool MensajeNecesitaHerramientas(string mensajeCliente)
     {
         var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
-        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente));
+        // Una imagen sin texto (ej. foto de una birome) suele ser "¿tienen esto?": sin herramientas el bot derivaba.
+        if (string.Equals(mensajeCliente, ConversacionesService.TextoImagenSinTexto, StringComparison.Ordinal))
+            return true;
+        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente)
+                                    || MensajePideCantidadDeArticulo(mensajeCliente));
     }
 
     /// <summary>
@@ -108,9 +112,12 @@ public sealed class ConversacionAsistenteHerramientasService(
     /// </summary>
     internal static bool MensajePideCantidadDeArticulo(string? mensajeCliente)
     {
+        // "te quiero encargar diez biromes" (audio transcripto, 2026-10-27) y "agregale 2 resaltadores": el verbo
+        // de compra puede venir entre el "quiero" y la cantidad, y "agregale/sumale" también es pedir.
         var texto = NormalizarTexto(mensajeCliente);
         return texto.Length > 0 && Regex.IsMatch(texto,
-            @"\b(quiero|quisiera|necesito|mandame|pasame|encargo|me\s+llevo|anotame|agregame|sumame)\s+"
+            @"\b(quiero|quisiera|necesito|mandame|pasame|encargo|me\s+llevo|anotame|agregame|agregale|agrega|sumame|sumale|suma|poneme|ponele)\s+"
+            + @"(?:(?:encargar|encargarte|pedir|pedirte|comprar|comprarte|llevar|llevarme|ordenar|agregar|sumar)\s+)?"
             + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b");
     }
 
