@@ -142,6 +142,7 @@ internal static class WhatsAppPhoneInspectionCommand
         {
             WriteGraphError(output, "GRAPH", body);
             WriteFields(output, null);
+            await WriteAccessDiagnosticsAsync(httpClient, baseUrl, version, credential, output, ct);
             return 1;
         }
 
@@ -201,18 +202,90 @@ internal static class WhatsAppPhoneInspectionCommand
         output.WriteLine($"quality_rating = {GetField(root, "quality_rating")}");
     }
 
+    /// <summary>
+    /// Cuando Graph no deja leer el número (típicamente 100/33): distingue entre WABA caída/restringida,
+    /// número quitado de la WABA y permiso revocado al token (debug_token → granular_scopes). Sólo GET.
+    /// </summary>
+    private static async Task WriteAccessDiagnosticsAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string version,
+        WhatsAppRuntimeCredential credential,
+        TextWriter output,
+        CancellationToken ct)
+    {
+        output.WriteLine($"WABA_ID = {credential.WabaId}");
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, credential.WabaId, credential.AccessToken, "id,name,account_review_status", output, ct,
+            root =>
+            {
+                output.WriteLine($"waba_name = {GetField(root, "name")}");
+                output.WriteLine($"waba_account_review_status = {GetField(root, "account_review_status")}");
+            });
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, credential.WabaId, credential.AccessToken, "health_status", output, ct,
+            root => WriteHealthStatus(output, root));
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, $"{credential.WabaId}/phone_numbers", credential.AccessToken, "id,display_phone_number,status", output, ct,
+            root =>
+            {
+                if (root is not { } element || !element.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                {
+                    output.WriteLine("WABA_PHONE_NUMBERS = NO DISPONIBLE");
+                    return;
+                }
+                output.WriteLine($"WABA_PHONE_NUMBERS = {data.GetArrayLength()}");
+                foreach (var item in data.EnumerateArray())
+                    output.WriteLine($"  {GetField(item, "id")} {GetField(item, "display_phone_number")} status={GetField(item, "status")}");
+            });
+
+        // debug_token sobre el mismo token: el token viaja sólo a Meta (query + header) y nunca se imprime;
+        // de la respuesta sólo se muestran validez, vencimientos y los ids a los que da acceso.
+        var debugUri = $"{baseUrl}/{version}/debug_token?input_token={Uri.EscapeDataString(credential.AccessToken)}";
+        using var debugRequest = new HttpRequestMessage(HttpMethod.Get, debugUri);
+        debugRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        using var debugResponse = await httpClient.SendAsync(debugRequest, ct);
+        var debugBody = await debugResponse.Content.ReadAsStringAsync(ct);
+        if (!debugResponse.IsSuccessStatusCode)
+        {
+            output.WriteLine($"TOKEN_DEBUG HTTP = {(int)debugResponse.StatusCode}");
+            WriteGraphError(output, "TOKEN_DEBUG", debugBody);
+            return;
+        }
+
+        using var debugDocument = JsonDocument.Parse(debugBody);
+        if (!debugDocument.RootElement.TryGetProperty("data", out var tokenData) || tokenData.ValueKind != JsonValueKind.Object)
+        {
+            output.WriteLine("TOKEN_DEBUG = NO DISPONIBLE");
+            return;
+        }
+
+        output.WriteLine($"TOKEN_IS_VALID = {GetBoolField(tokenData, "is_valid")}");
+        output.WriteLine($"TOKEN_TYPE = {GetField(tokenData, "type")}");
+        output.WriteLine($"TOKEN_EXPIRES_AT = {(tokenData.TryGetProperty("expires_at", out var exp) ? exp.ToString() : "NO DISPONIBLE")}");
+        if (tokenData.TryGetProperty("error", out var tokenError) && tokenError.ValueKind == JsonValueKind.Object)
+            output.WriteLine($"TOKEN_ERROR = {GetField(tokenError, "message")}");
+        if (!tokenData.TryGetProperty("granular_scopes", out var scopes) || scopes.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var scope in scopes.EnumerateArray())
+        {
+            var targets = scope.TryGetProperty("target_ids", out var ids) && ids.ValueKind == JsonValueKind.Array
+                ? string.Join(",", ids.EnumerateArray().Select(i => i.ToString()))
+                : "(todos)";
+            output.WriteLine($"TOKEN_SCOPE {GetField(scope, "scope")} -> {targets}");
+        }
+    }
+
     private static async Task WriteOptionalFieldsAsync(
         HttpClient httpClient,
         string baseUrl,
         string version,
-        string phoneNumberId,
+        string objectPath,
         string accessToken,
         string fields,
         TextWriter output,
         CancellationToken ct,
         Action<JsonElement?> write)
     {
-        var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(phoneNumberId)}?fields={Uri.EscapeDataString(fields)}";
+        var uri = $"{baseUrl}/{version}/{objectPath}?fields={Uri.EscapeDataString(fields)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 

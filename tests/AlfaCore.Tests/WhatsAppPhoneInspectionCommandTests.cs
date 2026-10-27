@@ -283,6 +283,52 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     }
 
     [Fact]
+    public async Task PhoneNotAccessible_DiagnosesWabaAndTokenScopes_WithoutPrintingToken()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? string.Empty);
+            if (path.EndsWith("/debug_token", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"data":{"is_valid":true,"type":"SYSTEM_USER","expires_at":0,"granular_scopes":[
+                          {"scope":"whatsapp_business_messaging","target_ids":["999"]},{"scope":"business_management"}]}}
+                        """)
+                };
+            if (path.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") };
+            if (path.EndsWith($"/{Waba}", StringComparison.Ordinal) && query.Contains("account_review_status", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"id":"2597305014055622","name":"Prueba","account_review_status":"APPROVED"}""") };
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("""{"error":{"message":"Unsupported get request.","code":100,"error_subcode":33,"fbtrace_id":"T1"}}""")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("GRAPH ERROR = (100/33) Unsupported get request.", text, StringComparison.Ordinal);
+        Assert.Contains($"WABA_ID = {Waba}", text, StringComparison.Ordinal);
+        Assert.Contains("waba_account_review_status = APPROVED", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH (health_status) HTTP = 400", text, StringComparison.Ordinal);
+        Assert.Contains("WABA_PHONE_NUMBERS = 0", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_IS_VALID = True", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_SCOPE whatsapp_business_messaging -> 999", text, StringComparison.Ordinal);
+        Assert.Contains("TOKEN_SCOPE business_management -> (todos)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretToken, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NameStatus_AvailableWithoutReview_IsSuccessAndDoesNotInferRegistration()
     {
         var text = await ExecuteWithNameStatusesAsync("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW");
