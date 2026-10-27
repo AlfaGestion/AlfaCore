@@ -17149,7 +17149,7 @@ public sealed partial class ConversacionesService(
         return DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
     }
 
-    private static DateTime BusinessNow()
+    internal static DateTime BusinessNow()
         => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ResolveBusinessTimeZone());
 
     private static string ConversationMessageVisibleDateSql(string alias)

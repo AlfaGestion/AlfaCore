@@ -866,6 +866,14 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Prompt_LineaFechaActualLlevaDiaYHora()
+    {
+        var linea = ConversacionAsistenteService.LineaFechaActual(new DateTime(2026, 11, 1, 9, 5, 0));
+
+        Assert.Contains("domingo 1 de noviembre de 2026, 09:05", linea);
+    }
+
+    [Fact]
     public void Tools_UnaImagenSinTextoOfreceHerramientas()
     {
         // Foto de una birome sin texto (Base4271, 2026-10-27): sin herramientas el bot derivaba.

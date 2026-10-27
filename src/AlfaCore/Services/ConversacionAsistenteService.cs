@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -370,6 +371,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         => string.IsNullOrWhiteSpace(model)
            || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
+    internal static string LineaFechaActual(DateTime ahora)
+        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h. "
+           + "Usala para fechas y plazos: no ofrezcas una promoción que ya venció o que todavía no empezó, y calculá horarios de corte y entregas desde ahora.";
+
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
         string? contextoCliente, bool haySaldoEntreHerramientas = false, bool hayCatalogoEntreHerramientas = false,
@@ -381,6 +386,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine(comp.Length > 0
             ? comp
             : "Sos un asistente de atención al cliente. Respondés de forma cordial, breve y clara, en español rioplatense.");
+
+        // Sin la fecha el modelo no puede saber si una promoción "hasta el domingo 2/11" sigue vigente
+        // ni si un pedido llega a salir hoy (corte de las 14 h).
+        sb.AppendLine();
+        sb.AppendLine(LineaFechaActual(ConversacionesService.BusinessNow()));
 
         var cliente = (contextoCliente ?? string.Empty).Trim();
         if (cliente.Length > 0)
