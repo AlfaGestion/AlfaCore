@@ -123,6 +123,9 @@ public sealed class WebChatMensajeDto
 
     /// <summary>Ids de las imágenes del mensaje: el widget las pide a /api/webchat/{clave}/adjuntos/{id}.</summary>
     public IReadOnlyList<long> Imagenes { get; init; } = [];
+
+    /// <summary>Ids de los audios del mensaje (mismo endpoint que las imágenes).</summary>
+    public IReadOnlyList<long> Audios { get; init; } = [];
 }
 
 public sealed class WebChatMensajesResponseDto
@@ -142,14 +145,17 @@ public sealed class WebChatWidgetConfigDto
 
     /// <summary>El visitante puede mandar imágenes (botón de clip y Ctrl+V en el widget).</summary>
     public bool PermiteImagenes { get; init; }
+
+    /// <summary>El visitante puede mandar notas de voz (botón de micrófono en el widget).</summary>
+    public bool PermiteAudios { get; init; }
 }
 
 /// <summary>
-/// Imagen que manda el visitante (POST /api/webchat/{siteKey}/imagenes). Viaja en base64 dentro de
-/// un JSON, como el resto del widget. El tipo real se decide por el contenido (ver <see cref="WebChatImagenes"/>),
-/// nunca por el nombre ni por lo que diga el navegador.
+/// Archivo que manda el visitante (imagen o nota de voz). Viaja en base64 dentro de un JSON, como el
+/// resto del widget. El tipo real se decide por el contenido (ver <see cref="WebChatImagenes"/> y
+/// <see cref="WebChatAudios"/>), nunca por el nombre ni por lo que diga el navegador.
 /// </summary>
-public sealed class WebChatImagenEntranteRequest
+public abstract class WebChatArchivoEntranteRequest
 {
     public string VisitorId { get; set; } = string.Empty;
     public string? ClientMessageId { get; set; }
@@ -157,15 +163,17 @@ public sealed class WebChatImagenEntranteRequest
     public string? PaginaUrl { get; set; }
     public string? Contexto { get; set; }
 
-    /// <summary>Texto opcional que acompaña la imagen.</summary>
+    /// <summary>Texto opcional que acompaña el archivo.</summary>
     public string? Texto { get; set; }
 
-    public string ImagenBase64 { get; set; } = string.Empty;
     public string? NombreArchivo { get; set; }
 
+    /// <summary>Marcador del mensaje sin texto ("[image]", "[audio]"), el mismo que usan los de WhatsApp.</summary>
+    protected abstract string MarcadorSinTexto { get; }
+
     /// <summary>
-    /// Mensaje equivalente para el circuito de siempre. Sin texto va "[image]", el mismo marcador
-    /// que usan los mensajes de imagen de WhatsApp (el asistente lo reconoce como imagen sin texto).
+    /// Mensaje equivalente para el circuito de siempre. Sin texto va el marcador: el asistente lo
+    /// reconoce como imagen o audio sin texto (mira la imagen o transcribe el audio).
     /// </summary>
     public WebChatMensajeEntranteRequest ToMensajeRequest()
         => new()
@@ -175,14 +183,28 @@ public sealed class WebChatImagenEntranteRequest
             Nombre = Nombre,
             PaginaUrl = PaginaUrl,
             Contexto = Contexto,
-            Texto = string.IsNullOrWhiteSpace(Texto) ? WebChatImagenes.MarcadorSinTexto : Texto
+            Texto = string.IsNullOrWhiteSpace(Texto) ? MarcadorSinTexto : Texto
         };
 }
 
-/// <summary>Imagen ya validada, lista para grabar.</summary>
-public sealed record WebChatImagenEntrante(byte[] Bytes, string MimeType, string NombreArchivo);
+/// <summary>Imagen del visitante (POST /api/webchat/{siteKey}/imagenes).</summary>
+public sealed class WebChatImagenEntranteRequest : WebChatArchivoEntranteRequest
+{
+    public string ImagenBase64 { get; set; } = string.Empty;
+    protected override string MarcadorSinTexto => WebChatImagenes.MarcadorSinTexto;
+}
 
-/// <summary>Imagen de una conversación del chat web, para mostrarla en el widget.</summary>
+/// <summary>Nota de voz del visitante (POST /api/webchat/{siteKey}/audios).</summary>
+public sealed class WebChatAudioEntranteRequest : WebChatArchivoEntranteRequest
+{
+    public string AudioBase64 { get; set; } = string.Empty;
+    protected override string MarcadorSinTexto => WebChatAudios.MarcadorSinTexto;
+}
+
+/// <summary>Archivo ya validado, listo para grabar. TipoArchivo: IMAGE o AUDIO.</summary>
+public sealed record WebChatArchivoEntrante(byte[] Bytes, string MimeType, string NombreArchivo, string TipoArchivo);
+
+/// <summary>Imagen o audio de una conversación del chat web, para mostrarlo en el widget.</summary>
 public sealed record WebChatAdjuntoDto(byte[] Bytes, string MimeType);
 
 /// <summary>Reglas de las imágenes del chat web: formatos aceptados y tamaño máximo.</summary>
@@ -215,19 +237,73 @@ public static class WebChatImagenes
     /// Decodifica el base64 del widget (acepta el prefijo "data:...;base64,") y valida tipo y tamaño.
     /// El error es apto para mostrarle al visitante.
     /// </summary>
-    public static bool TryLeer(string? base64, string? nombreArchivo, out WebChatImagenEntrante? imagen, out string error)
+    public static bool TryLeer(string? base64, string? nombreArchivo, out WebChatArchivoEntrante? imagen, out string error)
+        => WebChatArchivos.TryLeer(base64, nombreArchivo, MaxBytes, TryDetectar, "IMAGE", "imagen",
+            "Formato no admitido: se aceptan JPG, PNG, GIF y WEBP.", out imagen, out error);
+}
+
+/// <summary>Reglas de las notas de voz del chat web.</summary>
+public static class WebChatAudios
+{
+    public const int MaxBytes = 5 * 1024 * 1024;
+    public const string MarcadorSinTexto = "[audio]";
+
+    /// <summary>
+    /// Formatos que graban los navegadores (WebM/Opus en Chrome y Edge, MP4/AAC en Safari, OGG en
+    /// Firefox) y los comunes de archivo (MP3, WAV). Se decide por los primeros bytes.
+    /// </summary>
+    public static bool TryDetectar(ReadOnlySpan<byte> bytes, out string mimeType, out string extension)
     {
-        imagen = null;
-        error = "No se pudo leer la imagen.";
+        mimeType = string.Empty;
+        extension = string.Empty;
+        if (bytes.Length >= 4 && bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3)
+            (mimeType, extension) = ("audio/webm", ".webm");
+        else if (bytes.Length >= 4 && bytes[0] == 'O' && bytes[1] == 'g' && bytes[2] == 'g' && bytes[3] == 'S')
+            (mimeType, extension) = ("audio/ogg", ".ogg");
+        else if (bytes.Length >= 12 && bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p')
+            (mimeType, extension) = ("audio/mp4", ".m4a");
+        else if (bytes.Length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+                 && bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E')
+            (mimeType, extension) = ("audio/wav", ".wav");
+        else if ((bytes.Length >= 3 && bytes[0] == 'I' && bytes[1] == 'D' && bytes[2] == '3')
+                 || (bytes.Length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 && bytes[1] != 0xD8))
+            (mimeType, extension) = ("audio/mpeg", ".mp3");
+        return mimeType.Length > 0;
+    }
+
+    public static bool TryLeer(string? base64, string? nombreArchivo, out WebChatArchivoEntrante? audio, out string error)
+        => WebChatArchivos.TryLeer(base64, nombreArchivo, MaxBytes, TryDetectar, "AUDIO", "audio",
+            "Formato de audio no admitido.", out audio, out error);
+}
+
+/// <summary>Lectura común de los archivos que manda el widget en base64.</summary>
+internal static class WebChatArchivos
+{
+    internal delegate bool Detector(ReadOnlySpan<byte> bytes, out string mimeType, out string extension);
+
+    internal static bool TryLeer(
+        string? base64,
+        string? nombreArchivo,
+        int maxBytes,
+        Detector detectar,
+        string tipoArchivo,
+        string nombreDefault,
+        string errorFormato,
+        out WebChatArchivoEntrante? archivo,
+        out string error)
+    {
+        archivo = null;
+        error = "No se pudo leer el archivo.";
+        var errorTamano = $"El archivo es muy grande (máximo {maxBytes / (1024 * 1024)} MB).";
         var datos = (base64 ?? string.Empty).Trim();
         var coma = datos.IndexOf(',');
         if (datos.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && coma > 0)
             datos = datos[(coma + 1)..];
         if (datos.Length == 0)
             return false;
-        if (datos.Length > (MaxBytes / 3 + 2) * 4)
+        if (datos.Length > (maxBytes / 3 + 2) * 4)
         {
-            error = "La imagen es muy grande (máximo 5 MB).";
+            error = errorTamano;
             return false;
         }
 
@@ -243,28 +319,28 @@ public static class WebChatImagenes
 
         if (bytes.Length == 0)
             return false;
-        if (bytes.Length > MaxBytes)
+        if (bytes.Length > maxBytes)
         {
-            error = "La imagen es muy grande (máximo 5 MB).";
+            error = errorTamano;
             return false;
         }
-        if (!TryDetectar(bytes, out var mime, out var extension))
+        if (!detectar(bytes, out var mime, out var extension))
         {
-            error = "Formato no admitido: se aceptan JPG, PNG, GIF y WEBP.";
+            error = errorFormato;
             return false;
         }
 
-        imagen = new WebChatImagenEntrante(bytes, mime, NombreSeguro(nombreArchivo, extension));
+        archivo = new WebChatArchivoEntrante(bytes, mime, NombreSeguro(nombreArchivo, extension, nombreDefault), tipoArchivo);
         error = string.Empty;
         return true;
     }
 
-    private static string NombreSeguro(string? nombre, string extension)
+    private static string NombreSeguro(string? nombre, string extension, string nombreDefault)
     {
         var baseName = Path.GetFileNameWithoutExtension((nombre ?? string.Empty).Trim());
         baseName = System.Text.RegularExpressions.Regex.Replace(baseName, "[^A-Za-z0-9_-]", "_").Trim('_');
         if (baseName.Length == 0)
-            baseName = "imagen";
+            baseName = nombreDefault;
         if (baseName.Length > 60)
             baseName = baseName[..60];
         return baseName + extension;

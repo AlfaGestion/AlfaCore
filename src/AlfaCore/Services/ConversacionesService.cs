@@ -4993,21 +4993,21 @@ public sealed partial class ConversacionesService(
 
     public Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegistrarMensajeEntranteWebChat",
-            token => RegistrarEntranteWebChatCoreAsync(request, imagen: null, token),
+            token => RegistrarEntranteWebChatCoreAsync(request, archivo: null, token),
             "No se pudo registrar el mensaje del chat del sitio web.", ct);
 
-    public Task<WebChatMensajeEntranteResultDto> RegistrarImagenEntranteWebChatAsync(WebChatMensajeEntranteRequest request, WebChatImagenEntrante imagen, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Conversaciones", "RegistrarImagenEntranteWebChat",
+    public Task<WebChatMensajeEntranteResultDto> RegistrarArchivoEntranteWebChatAsync(WebChatMensajeEntranteRequest request, WebChatArchivoEntrante archivo, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegistrarArchivoEntranteWebChat",
             token =>
             {
-                ArgumentNullException.ThrowIfNull(imagen);
-                return RegistrarEntranteWebChatCoreAsync(request, imagen, token);
+                ArgumentNullException.ThrowIfNull(archivo);
+                return RegistrarEntranteWebChatCoreAsync(request, archivo, token);
             },
-            "No se pudo registrar la imagen del chat del sitio web.", ct);
+            "No se pudo registrar el archivo del chat del sitio web.", ct);
 
     private async Task<WebChatMensajeEntranteResultDto> RegistrarEntranteWebChatCoreAsync(
         WebChatMensajeEntranteRequest request,
-        WebChatImagenEntrante? imagen,
+        WebChatArchivoEntrante? archivo,
         CancellationToken token)
     {
             ArgumentNullException.ThrowIfNull(request);
@@ -5021,7 +5021,7 @@ public sealed partial class ConversacionesService(
             {
                 SenderId = request.VisitorId,
                 MessageId = request.ClientMessageId!,
-                MessageType = imagen is null ? "TEXT" : "IMAGE",
+                MessageType = archivo?.TipoArchivo ?? "TEXT",
                 Timestamp = now,
                 Text = request.Texto,
                 RawJson = JsonSerializer.Serialize(new { request.PaginaUrl, request.Contexto, request.Nombre })
@@ -5030,20 +5030,21 @@ public sealed partial class ConversacionesService(
             var conversationId = await EnsureWebChatConversationAsync(request, now, token);
             var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
 
-            // La imagen se graba antes de las respuestas automáticas: el asistente la lee del último
-            // mensaje entrante. En un reintento del widget (mismo clientMessageId) no se duplica.
-            if (imagen is not null && !await MessageAttachmentExistsAsync(storedMessage.MessageId, request.ClientMessageId!, token))
+            // El archivo se graba antes de las respuestas automáticas: el asistente lo lee del último
+            // mensaje entrante (mira la imagen, transcribe el audio). En un reintento del widget
+            // (mismo clientMessageId) no se duplica.
+            if (archivo is not null && !await MessageAttachmentExistsAsync(storedMessage.MessageId, request.ClientMessageId!, token))
             {
-                var rutaLocal = await SaveIncomingAttachmentAsync(conversationId, imagen.NombreArchivo, imagen.Bytes, token);
+                var rutaLocal = await SaveIncomingAttachmentAsync(conversationId, archivo.NombreArchivo, archivo.Bytes, token);
                 await InsertAttachmentRecordAsync(
                     storedMessage.MessageId,
-                    "IMAGE",
-                    imagen.NombreArchivo,
-                    imagen.MimeType,
+                    archivo.TipoArchivo,
+                    archivo.NombreArchivo,
+                    archivo.MimeType,
                     rutaLocal,
-                    imagen.Bytes.LongLength,
+                    archivo.Bytes.LongLength,
                     JsonSerializer.Serialize(new { MediaId = request.ClientMessageId, Origen = "WEBCHAT" }),
-                    imagen.Bytes,
+                    archivo.Bytes,
                     token);
             }
 
@@ -5093,7 +5094,7 @@ public sealed partial class ConversacionesService(
                   AND c.Canal = N'WEBCHAT'
                   AND c.IdentificadorExternoContacto = @VisitorId
                   AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
-                  AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%';
+                  AND (LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%' OR LOWER(ISNULL(a.MimeType, N'')) LIKE N'audio/%');
                 """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -5107,12 +5108,14 @@ public sealed partial class ConversacionesService(
                 ? await File.ReadAllBytesAsync(ruta, token)
                 : rd.IsDBNull(1) ? null : (byte[])rd.GetValue(1);
 
-            // El tipo se vuelve a decidir por el contenido: nunca se sirve algo que no sea imagen.
-            if (bytes is not { Length: > 0 } || !WebChatImagenes.TryDetectar(bytes, out var mime, out _))
+            // El tipo se vuelve a decidir por el contenido: nunca se sirve algo que no sea imagen o audio.
+            if (bytes is not { Length: > 0 })
+                return null;
+            if (!WebChatImagenes.TryDetectar(bytes, out var mime, out _) && !WebChatAudios.TryDetectar(bytes, out mime, out _))
                 return null;
 
             return new WebChatAdjuntoDto(bytes, mime);
-        }, "No se pudo leer la imagen del chat del sitio web.", ct);
+        }, "No se pudo leer el archivo del chat del sitio web.", ct);
 
     public Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "ObtenerMensajesWebChat", async token =>
@@ -5147,12 +5150,14 @@ public sealed partial class ConversacionesService(
                   AND ISNULL(m.EstadoEnvio, N'') <> N'ERROR_ENVIO'
                   AND (NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, N''))), N'') IS NOT NULL
                        OR EXISTS (SELECT 1 FROM dbo.CONV_ADJUNTOS a
-                                  WHERE a.IdMensaje = m.IdMensaje AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%'))
+                                  WHERE a.IdMensaje = m.IdMensaje
+                                    AND (LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%' OR LOWER(ISNULL(a.MimeType, N'')) LIKE N'audio/%')))
                 ORDER BY CASE WHEN @Desde = 0 THEN -m.IdMensaje ELSE m.IdMensaje END;
                 """;
 
             var imagenesPorMensaje = new Dictionary<long, List<long>>();
             var nombresPorMensaje = new Dictionary<long, HashSet<string>>();
+            var audiosPorMensaje = new Dictionary<long, List<long>>();
 
             var mensajes = new List<WebChatMensajeDto>();
             await using (var cn = new SqlConnection(ConnectionString))
@@ -5177,10 +5182,11 @@ public sealed partial class ConversacionesService(
                     // hay bases con compatibility level viejo).
                     var nombres = filas.Select((_, i) => "@m" + i.ToString(CultureInfo.InvariantCulture)).ToList();
                     await using var cmdImg = new SqlCommand($"""
-                        SELECT a.IdMensaje, a.IdAdjunto, ISNULL(a.NombreArchivo, N'')
+                        SELECT a.IdMensaje, a.IdAdjunto, ISNULL(a.NombreArchivo, N''),
+                               CASE WHEN LOWER(ISNULL(a.MimeType, N'')) LIKE N'audio/%' THEN 1 ELSE 0 END
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje IN ({string.Join(",", nombres)})
-                          AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%'
+                          AND (LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%' OR LOWER(ISNULL(a.MimeType, N'')) LIKE N'audio/%')
                         ORDER BY a.IdAdjunto;
                         """, cn);
                     for (var i = 0; i < filas.Count; i++)
@@ -5189,8 +5195,9 @@ public sealed partial class ConversacionesService(
                     while (await rdImg.ReadAsync(token))
                     {
                         var idMensaje = rdImg.GetInt64(0);
-                        if (!imagenesPorMensaje.TryGetValue(idMensaje, out var lista))
-                            imagenesPorMensaje[idMensaje] = lista = [];
+                        var destino = rdImg.GetInt32(3) == 1 ? audiosPorMensaje : imagenesPorMensaje;
+                        if (!destino.TryGetValue(idMensaje, out var lista))
+                            destino[idMensaje] = lista = [];
                         lista.Add(rdImg.GetInt64(1));
                         if (!nombresPorMensaje.TryGetValue(idMensaje, out var nombresAdj))
                             nombresPorMensaje[idMensaje] = nombresAdj = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -5201,19 +5208,21 @@ public sealed partial class ConversacionesService(
                 foreach (var f in filas)
                 {
                     var imagenes = imagenesPorMensaje.TryGetValue(f.Id, out var ids) ? ids : [];
+                    var audios = audiosPorMensaje.TryGetValue(f.Id, out var idsAudio) ? idsAudio : [];
                     mensajes.Add(new WebChatMensajeDto
                     {
                         Id = f.Id,
-                        // "[image]" (imagen del visitante sin texto) o el nombre del archivo (imagen que mandó
-                        // el agente desde la bandeja): el visitante ve solo la imagen.
-                        Texto = imagenes.Count > 0
-                                && (EsImagenSinTexto(f.Texto)
+                        // "[image]"/"[audio]" (archivo del visitante sin texto) o el nombre del archivo
+                        // (lo que mandó el agente desde la bandeja): el visitante ve solo el archivo.
+                        Texto = imagenes.Count + audios.Count > 0
+                                && (EsImagenSinTexto(f.Texto) || EsAudioSinTexto(f.Texto)
                                     || (nombresPorMensaje.TryGetValue(f.Id, out var nombresMsg) && nombresMsg.Contains(f.Texto.Trim())))
                             ? string.Empty
                             : f.Texto,
                         FechaHora = f.FechaHora,
                         EsVisitante = f.EsVisitante,
-                        Imagenes = imagenes
+                        Imagenes = imagenes,
+                        Audios = audios
                     });
                 }
             }
@@ -5663,13 +5672,13 @@ public sealed partial class ConversacionesService(
             EnsureRequestedWhatsAppNumeroMatchesConversation(request.IdNumeroWhatsApp, conversation);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
-            // Chat del sitio web: solo imágenes (es lo que el widget sabe mostrar). No hay envío
+            // Chat del sitio web: solo imágenes y audios (es lo que el widget sabe mostrar). No hay envío
             // externo: queda ENVIADO y el widget la levanta por polling, igual que un texto.
             var isWebChat = string.Equals(conversation.Canal, "WEBCHAT", StringComparison.OrdinalIgnoreCase);
             if (!isInternal && !isWhatsApp && !isWebChat)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío de adjuntos habilitado.");
             if (isWebChat && request.TamanoBytes > WebChatImagenes.MaxBytes)
-                throw new InvalidOperationException("En el chat del sitio web las imágenes pueden pesar hasta 5 MB.");
+                throw new InvalidOperationException("En el chat del sitio web los archivos pueden pesar hasta 5 MB.");
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
             var nombreArchivo = request.NombreArchivo.Trim();
@@ -5730,19 +5739,22 @@ public sealed partial class ConversacionesService(
 
             if (isWebChat)
             {
-                // el tipo se decide por el contenido, como con las imágenes del visitante
-                var bytesImagen = await File.ReadAllBytesAsync(rutaLocal, token);
-                if (bytesImagen.Length > WebChatImagenes.MaxBytes
-                    || !WebChatImagenes.TryDetectar(bytesImagen, out var mimeImagen, out var extImagen))
+                // el tipo se decide por el contenido, como con los archivos del visitante
+                var bytesWeb = await File.ReadAllBytesAsync(rutaLocal, token);
+                string mimeWeb, extWeb;
+                if (bytesWeb.Length <= WebChatImagenes.MaxBytes && WebChatImagenes.TryDetectar(bytesWeb, out mimeWeb, out extWeb))
+                    messageType = "IMAGE";
+                else if (bytesWeb.Length <= WebChatAudios.MaxBytes && WebChatAudios.TryDetectar(bytesWeb, out mimeWeb, out extWeb))
+                    messageType = "AUDIO";
+                else
                 {
                     TryDeleteFile(rutaLocal);
                     throw new InvalidOperationException(
-                        "En el chat del sitio web solo se pueden enviar imágenes (JPG, PNG, GIF o WEBP de hasta 5 MB).");
+                        "En el chat del sitio web solo se pueden enviar imágenes (JPG, PNG, GIF o WEBP) o audios, de hasta 5 MB.");
                 }
 
-                mimeType = mimeImagen;
-                messageType = "IMAGE";
-                nombreArchivo = Path.ChangeExtension(nombreArchivo, extImagen);
+                mimeType = mimeWeb;
+                nombreArchivo = Path.ChangeExtension(nombreArchivo, extWeb);
             }
 
             if (isWhatsApp && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))

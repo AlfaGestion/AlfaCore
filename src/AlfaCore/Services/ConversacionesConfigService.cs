@@ -701,6 +701,7 @@ public sealed class ConversacionesConfigService(
                 Titulo = ReadValue(values, "CONV_WEBCHAT_TITULO", string.Empty, ConversacionWebChatConfigDto.DefaultTitulo),
                 Color = ReadValue(values, "CONV_WEBCHAT_COLOR", string.Empty, ConversacionWebChatConfigDto.DefaultColor),
                 PermiteImagenes = ReadValue(values, "CONV_WEBCHAT_IMAGENES", string.Empty, "1") != "0",
+                PermiteAudios = ReadValue(values, "CONV_WEBCHAT_AUDIOS", string.Empty, "1") != "0",
                 SiteKey = ReadValue(values, "CONV_WEBCHAT_SITE_KEY", string.Empty),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
@@ -722,7 +723,8 @@ public sealed class ConversacionesConfigService(
                 ("CONV_WEBCHAT_MENSAJE_BIENVENIDA", (config.MensajeBienvenida ?? string.Empty).Trim()),
                 ("CONV_WEBCHAT_TITULO", (config.Titulo ?? string.Empty).Trim()),
                 ("CONV_WEBCHAT_COLOR", config.ColorSeguro),
-                ("CONV_WEBCHAT_IMAGENES", config.PermiteImagenes ? "1" : "0")
+                ("CONV_WEBCHAT_IMAGENES", config.PermiteImagenes ? "1" : "0"),
+                ("CONV_WEBCHAT_AUDIOS", config.PermiteAudios ? "1" : "0")
             };
 
             await UpsertConfigItemsAsync(items, token);
@@ -2587,6 +2589,7 @@ public sealed class ConversacionesConfigService(
                 'CONV_WEBCHAT_TITULO',
                 'CONV_WEBCHAT_COLOR',
                 'CONV_WEBCHAT_IMAGENES',
+                'CONV_WEBCHAT_AUDIOS',
                 'CONV_WEBCHAT_SITE_KEY'
             )
             """;

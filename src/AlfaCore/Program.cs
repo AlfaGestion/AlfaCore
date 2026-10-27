@@ -3017,6 +3017,8 @@ public class Program
             .RequireRateLimiting(WebChatWriteRateLimitPolicy);
         app.MapPost("/api/webchat/{siteKey}/imagenes", HandleWebChatPostImageAsync)
             .RequireRateLimiting(WebChatWriteRateLimitPolicy);
+        app.MapPost("/api/webchat/{siteKey}/audios", HandleWebChatPostAudioAsync)
+            .RequireRateLimiting(WebChatWriteRateLimitPolicy);
         app.MapGet("/api/webchat/{siteKey}/adjuntos/{idAdjunto:long}", HandleWebChatGetAttachmentAsync)
             .RequireRateLimiting(WebChatReadRateLimitPolicy);
 
@@ -3866,7 +3868,7 @@ public class Program
     private const string WebChatReadRateLimitPolicy = "webchat-lectura";
     private const string WebChatWriteRateLimitPolicy = "webchat-escritura";
     private const long WebChatMaxBodyBytes = 16 * 1024;
-    // imagen de hasta 5 MB en base64 (+33 %) y los demás campos del JSON
+    // imagen o audio de hasta 5 MB en base64 (+33 %) y los demás campos del JSON
     private const long WebChatMaxImageBodyBytes = 7 * 1024 * 1024 + 32 * 1024;
     private static readonly JsonSerializerOptions WebChatJsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -3946,7 +3948,8 @@ public class Program
             Titulo = config.Titulo,
             Color = config.ColorSeguro,
             MensajeBienvenida = config.MensajeBienvenida,
-            PermiteImagenes = config.PermiteImagenes
+            PermiteImagenes = config.PermiteImagenes,
+            PermiteAudios = config.PermiteAudios
         });
     }
 
@@ -4020,10 +4023,8 @@ public class Program
 
     /// <summary>
     /// Imagen del visitante (botón de clip o Ctrl+V en el widget): JSON con la imagen en base64.
-    /// Límite propio de cuerpo (la imagen es de hasta 5 MB) y la misma resolución de base y control
-    /// de dominios que los mensajes de texto.
     /// </summary>
-    private static async Task<IResult> HandleWebChatPostImageAsync(
+    private static Task<IResult> HandleWebChatPostImageAsync(
         string siteKey,
         HttpRequest request,
         HttpResponse response,
@@ -4031,6 +4032,44 @@ public class Program
         IConversacionesConfigService configService,
         IConversacionesService svc,
         CancellationToken ct)
+        => HandleWebChatPostArchivoAsync<WebChatImagenEntranteRequest>(
+            siteKey, request, response, siteKeys, configService, svc,
+            body => body.ImagenBase64, WebChatImagenes.TryLeer, config => config.PermiteImagenes,
+            "Este chat no recibe imágenes.", ct);
+
+    /// <summary>Nota de voz del visitante (botón de micrófono en el widget): JSON con el audio en base64.</summary>
+    private static Task<IResult> HandleWebChatPostAudioAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+        => HandleWebChatPostArchivoAsync<WebChatAudioEntranteRequest>(
+            siteKey, request, response, siteKeys, configService, svc,
+            body => body.AudioBase64, WebChatAudios.TryLeer, config => config.PermiteAudios,
+            "Este chat no recibe notas de voz.", ct);
+
+    private delegate bool WebChatLectorArchivo(string? base64, string? nombreArchivo, out WebChatArchivoEntrante? archivo, out string error);
+
+    /// <summary>
+    /// Imagen o audio del visitante. Límite propio de cuerpo (archivo de hasta 5 MB en base64) y la
+    /// misma resolución de base y control de dominios que los mensajes de texto.
+    /// </summary>
+    private static async Task<IResult> HandleWebChatPostArchivoAsync<TRequest>(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        Func<TRequest, string> base64,
+        WebChatLectorArchivo leer,
+        Func<ConversacionWebChatConfigDto, bool> permitido,
+        string errorNoPermitido,
+        CancellationToken ct)
+        where TRequest : WebChatArchivoEntranteRequest
     {
         ApplyWebChatCors(request, response);
         DisableWebhookCaching(response);
@@ -4039,41 +4078,41 @@ public class Program
         if (bodySize is { IsReadOnly: false })
             bodySize.MaxRequestBodySize = WebChatMaxImageBodyBytes;
         if (request.ContentLength is > WebChatMaxImageBodyBytes)
-            return Results.Json(new { error = "La imagen es muy grande (máximo 5 MB)." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+            return Results.Json(new { error = "El archivo es muy grande (máximo 5 MB)." }, statusCode: StatusCodes.Status413PayloadTooLarge);
 
-        WebChatImagenEntranteRequest? body;
+        TRequest? body;
         try
         {
-            body = await JsonSerializer.DeserializeAsync<WebChatImagenEntranteRequest>(request.Body, WebChatJsonOptions, ct);
+            body = await JsonSerializer.DeserializeAsync<TRequest>(request.Body, WebChatJsonOptions, ct);
         }
         catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
         {
-            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+            return Results.BadRequest(new { error = "No se pudo leer el archivo." });
         }
 
         if (body is null)
-            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+            return Results.BadRequest(new { error = "No se pudo leer el archivo." });
 
         var mensaje = body.ToMensajeRequest();
         if (!mensaje.TryNormalize(out _))
-            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+            return Results.BadRequest(new { error = "No se pudo leer el archivo." });
 
-        if (!WebChatImagenes.TryLeer(body.ImagenBase64, body.NombreArchivo, out var imagen, out var errorImagen))
-            return Results.BadRequest(new { error = errorImagen });
+        if (!leer(base64(body), body.NombreArchivo, out var archivo, out var errorArchivo))
+            return Results.BadRequest(new { error = errorArchivo });
 
         var config = await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct);
         if (config is null)
             return Results.NotFound();
-        if (!config.PermiteImagenes)
-            return Results.BadRequest(new { error = "Este chat no recibe imágenes." });
+        if (!permitido(config))
+            return Results.BadRequest(new { error = errorNoPermitido });
 
         try
         {
-            return Results.Json(await svc.RegistrarImagenEntranteWebChatAsync(mensaje, imagen!, ct));
+            return Results.Json(await svc.RegistrarArchivoEntranteWebChatAsync(mensaje, archivo!, ct));
         }
         catch (InvalidOperationException)
         {
-            return Results.BadRequest(new { error = "No se pudo registrar la imagen." });
+            return Results.BadRequest(new { error = "No se pudo registrar el archivo." });
         }
     }
 

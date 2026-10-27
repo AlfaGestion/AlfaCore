@@ -244,6 +244,9 @@ public sealed class ConversacionWebChatConfigDto
     /// <summary>El visitante puede mandar imágenes (CONV_WEBCHAT_IMAGENES; sin valor = sí).</summary>
     public bool PermiteImagenes { get; set; } = true;
 
+    /// <summary>El visitante puede mandar notas de voz (CONV_WEBCHAT_AUDIOS; sin valor = sí).</summary>
+    public bool PermiteAudios { get; set; } = true;
+
     /// <summary>Solo instalaciones no SaaS (CONV_WEBCHAT_SITE_KEY). En SaaS la clave está en la base central.</summary>
     public string SiteKey { get; set; } = string.Empty;
 

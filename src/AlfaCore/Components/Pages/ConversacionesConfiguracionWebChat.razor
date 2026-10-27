@@ -20,6 +20,7 @@
                                        Placeholder="@ConversacionWebChatConfigDto.DefaultMensajeBienvenida"
                                        Value="@Config.MensajeBienvenida" ValueChanged="@((string? v) => Config.MensajeBienvenida = v ?? string.Empty)" />
             <AlfaCheckbox Class="cfg-full" Value="@Config.PermiteImagenes" ValueChanged="@((bool? v) => Config.PermiteImagenes = v == true)">Permitir que el visitante mande imágenes (botón de clip o Ctrl+V; JPG, PNG, GIF o WEBP de hasta 5 MB)</AlfaCheckbox>
+            <AlfaCheckbox Class="cfg-full" Value="@Config.PermiteAudios" ValueChanged="@((bool? v) => Config.PermiteAudios = v == true)">Permitir que el visitante mande notas de voz (botón de micrófono, hasta 2 minutos; el asistente las transcribe si "Transcribir audios" está activo)</AlfaCheckbox>
         </ConversacionesConfigTarjeta>
 
         <ConversacionesConfigTarjeta Titulo="Dominios permitidos"

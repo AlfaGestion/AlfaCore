@@ -13,7 +13,7 @@ entran a la misma bandeja de Conversaciones que WhatsApp/Instagram/Facebook/Merc
 
 Fuera de alcance del MVP: transporte en tiempo real (SignalR/WebSocket), identificación del visitante
 a mitad de charla (habilitaría saldo/pedidos reales vía el asistente), varias claves/dominios por base,
-adjuntos que no sean imágenes del visitante (ver "Imágenes del visitante") y branding avanzado.
+adjuntos que no sean imágenes o audios (ver "Imágenes y notas de voz") y branding avanzado.
 
 ## Snippet para el sitio
 
@@ -38,6 +38,7 @@ Se genera en **Configuración de Conversaciones → Canales → Chat del sitio w
 | `CONV_WEBCHAT_TITULO` | Título del widget |
 | `CONV_WEBCHAT_COLOR` | Color `#RRGGBB` (cualquier otro valor cae al default: se inyecta en el CSS del widget) |
 | `CONV_WEBCHAT_MENSAJE_BIENVENIDA` | Primer mensaje que muestra el widget (local, no se graba) |
+| `CONV_WEBCHAT_AUDIOS` | `0` = el visitante no puede mandar notas de voz. Sin valor o `1` = puede (default) |
 | `CONV_WEBCHAT_IMAGENES` | `0` = el visitante no puede mandar imágenes. Sin valor o `1` = puede (default) |
 | `CONV_WEBCHAT_SITE_KEY` | Solo instalaciones **no SaaS**: clave del sitio. En SaaS vive en la base central |
 
@@ -90,7 +91,8 @@ el login ni los demás webhooks.
 | `GET` | `/api/webchat/{siteKey}/mensajes?visitorId=&since=` | Polling. `since` = último `IdMensaje` recibido (0 = últimos 50) |
 | `POST` | `/api/webchat/{siteKey}/mensajes` | `{ visitorId, clientMessageId, texto, nombre?, paginaUrl?, contexto? }` |
 | `POST` | `/api/webchat/{siteKey}/imagenes` | `{ visitorId, clientMessageId, imagenBase64, nombreArchivo?, texto?, nombre?, paginaUrl?, contexto? }` |
-| `GET` | `/api/webchat/{siteKey}/adjuntos/{idAdjunto}?visitorId=` | Imagen de una conversación del visitante |
+| `POST` | `/api/webchat/{siteKey}/audios` | `{ visitorId, clientMessageId, audioBase64, nombreArchivo?, texto?, ... }` |
+| `GET` | `/api/webchat/{siteKey}/adjuntos/{idAdjunto}?visitorId=` | Imagen o audio de una conversación del visitante |
 | `OPTIONS` | `/api/webchat/{siteKey}/*` | Preflight CORS |
 
 - Resolución de tenant: `IWebChatSiteKeyService.TryResolveTenantAsync` (SaaS → `dbo.bases.WebChatSiteKey`
@@ -108,9 +110,10 @@ el login ni los demás webhooks.
 
 `SendMessageAsync` trata `WEBCHAT` como `INTERNO`: el mensaje queda en estado `ENVIADO` y el widget lo
 levanta por polling. Las respuestas del asistente IA, reglas y bienvenida usan el mismo camino. No hay
-ventana de 24 h. Adjuntos: solo imágenes (JPG, PNG, GIF o WEBP de hasta 5 MB, validadas por contenido);
-otro tipo de archivo o un audio se rechaza con un mensaje para el agente. La imagen queda `ENVIADO` y el
-widget la muestra sin el nombre del archivo (el texto del mensaje es el nombre, para la bandeja).
+ventana de 24 h. Adjuntos: solo imágenes (JPG, PNG, GIF o WEBP) y audios (notas de voz grabadas en la
+bandeja, MP3, etc.), de hasta 5 MB, validados por contenido; otro tipo de archivo se rechaza con un
+mensaje para el agente. Queda `ENVIADO` y el
+widget lo muestra sin el nombre del archivo (el texto del mensaje es el nombre, para la bandeja).
 
 ## Widget (`wwwroot/webchat/widget.js`)
 
@@ -130,7 +133,7 @@ conserva. Si `sessionStorage` no está disponible, usa un id en memoria (no sobr
 | `CONV_BOT_GENERA_TICKET` | `1` (default): cuando el bot deriva (`DERIVA` o contención), crea un ticket con la consulta vinculado a la conversación y le pasa el número al cliente. Si la conversación ya tiene un ticket abierto no crea otro. `TicketsService` se resuelve con `IServiceProvider` porque depende de `ConversacionesService` |
 | `CONV_BOT_WEB_PIDE_DATOS` | `1` (default): solo `WEBCHAT`, pedido de WhatsApp y razón social (ver arriba) |
 
-## Imágenes del visitante
+## Imágenes y notas de voz
 
 El widget tiene un botón de clip y acepta pegar una captura con Ctrl+V (si `CONV_WEBCHAT_IMAGENES`
 no es `0`; `/config` devuelve `permiteImagenes`).
@@ -149,8 +152,19 @@ no es `0`; `/config` devuelve `permiteImagenes`).
   `/adjuntos/{id}?visitorId=` con `fetch` (mismo control de dominios) y las muestra como object URL.
   El servidor solo entrega adjuntos de una conversación WEBCHAT de ese `visitorId`, de mensajes
   visibles, y vuelve a validar que el contenido sea imagen (`nosniff`, `inline`).
-- El agente también puede mandar imágenes desde la bandeja (ver "Envío desde la bandeja").
-- Pendiente: audios del visitante.
+- El agente también puede mandar imágenes y audios desde la bandeja (ver "Envío desde la bandeja").
+
+Notas de voz (si `CONV_WEBCHAT_AUDIOS` no es `0`; `/config` devuelve `permiteAudios`):
+
+- Botón de micrófono en el widget (solo si el navegador tiene `MediaRecorder`): se toca para grabar
+  (contador, botón para descartar), se toca de nuevo o se usa la flecha de enviar para mandarla; corta
+  sola a los 2 minutos. El navegador pide permiso de micrófono la primera vez.
+- Formatos aceptados por contenido (`WebChatAudios`): WebM/Opus (Chrome, Edge), MP4/M4A (Safari),
+  OGG (Firefox), WAV y MP3, hasta 5 MB (2 minutos de WebM pesan unos 500 KB).
+- Se graba como un audio entrante de WhatsApp: mensaje `AUDIO` con texto `[audio]` + adjunto. Si en el
+  Asistente IA está activo "Transcribir audios", el bot lo transcribe y responde como si fuera texto.
+- La bandeja lo reproduce con el reproductor de siempre; el widget muestra un reproductor para los
+  audios propios y los del agente (`audios` en el polling, mismo endpoint `/adjuntos/{id}`).
 
 ## Chat con soporte desde Alfa Gestión (VB6)
 

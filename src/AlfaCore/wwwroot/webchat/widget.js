@@ -32,6 +32,8 @@
     var IMAGEN_LADO_MAX = 1920;               // fotos más grandes se achican antes de enviar
     var IMAGEN_REDUCIR_DESDE = 1536 * 1024;   // o si pesan más que esto
     var imagenesCache = {};                   // idAdjunto -> object URL (no se vuelve a pedir)
+    var AUDIO_MAX_SEGUNDOS = 120;             // la grabación corta sola a los 2 minutos
+    var grabacion = null;                     // { recorder, stream, chunks, inicio, timer, cancelada }
     var STORAGE_VISITOR = "alfacore-webchat-visitor";
     var STORAGE_NAME = "alfacore-webchat-nombre";
 
@@ -180,7 +182,32 @@
                 }
             });
         }
+        var puedeGrabar = config.permiteAudios && window.MediaRecorder
+            && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+        var mic = null, micCancel = null, micTime = null;
+        if (puedeGrabar) {
+            mic = el("button", "ac-mic");
+            mic.type = "button";
+            mic.title = "Grabar una nota de voz";
+            mic.setAttribute("aria-label", "Grabar una nota de voz");
+            mic.appendChild(svgIcon("M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"));
+            mic.addEventListener("click", function () { if (grabacion) detenerGrabacion(false); else iniciarGrabacion(); });
+            micCancel = el("button", "ac-mic-cancel");
+            micCancel.type = "button";
+            micCancel.title = "Descartar la grabación";
+            micCancel.setAttribute("aria-label", "Descartar la grabación");
+            micCancel.textContent = "×";
+            micCancel.hidden = true;
+            micCancel.addEventListener("click", function () { detenerGrabacion(true); });
+            micTime = el("span", "ac-mic-time");
+            micTime.hidden = true;
+        }
         form.appendChild(input);
+        if (mic) {
+            form.appendChild(micTime);
+            form.appendChild(micCancel);
+            form.appendChild(mic);
+        }
         form.appendChild(send);
         form.addEventListener("submit", function (e) { e.preventDefault(); submit(); });
 
@@ -196,7 +223,8 @@
         if (!modoVentana) root.appendChild(bubble);
         document.body.appendChild(host);
 
-        ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status, bienvenida: config.mensajeBienvenida || "" };
+        ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status, bienvenida: config.mensajeBienvenida || "",
+               mic: mic, micCancel: micCancel, micTime: micTime };
 
         if (!modoVentana) panel.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(); });
         document.addEventListener("visibilitychange", schedulePoll);
@@ -237,6 +265,8 @@
     }
 
     function submit() {
+        // grabando una nota de voz: la flecha de enviar (o Enter) la manda
+        if (grabacion) { detenerGrabacion(false); return; }
         var texto = ui.input.value.trim();
         if (!texto) return;
         ui.input.value = "";
@@ -262,11 +292,11 @@
             paginaUrl: location.href,
             contexto: contexto || null
         };
-        if (item.esImagen) {
-            payload.imagenBase64 = item.imagenBase64;
-            payload.nombreArchivo = item.nombreArchivo;
-        }
-        fetch(apiBase + (item.esImagen ? "/imagenes" : "/mensajes"), {
+        if (item.tipoArchivo === "imagen") payload.imagenBase64 = item.base64;
+        if (item.tipoArchivo === "audio") payload.audioBase64 = item.base64;
+        if (item.tipoArchivo) payload.nombreArchivo = item.nombreArchivo;
+        var destino = item.tipoArchivo === "imagen" ? "/imagenes" : item.tipoArchivo === "audio" ? "/audios" : "/mensajes";
+        fetch(apiBase + destino, {
             method: "POST",
             mode: "cors",
             credentials: "omit",
@@ -290,7 +320,7 @@
             item.node.classList.add("ac-msg--error");
             item.node.title = "Tocá para reintentar";
             item.node.onclick = function () { item.node.onclick = null; postMessage(item); };
-            if (item.esImagen && fallo && fallo.error && statusCode !== 429) {
+            if (item.tipoArchivo && fallo && fallo.error && statusCode !== 429) {
                 // formato o tamaño rechazado: reintentar no cambia nada
                 item.node.onclick = null;
                 item.node.title = "";
@@ -336,9 +366,10 @@
                 (data.mensajes || []).forEach(function (m) {
                     if (state.renderedIds[m.id]) return;
                     if (m.esVisitante) {
-                        var conImagen = m.imagenes && m.imagenes.length > 0;
+                        var tipoMsg = (m.audios && m.audios.length > 0) ? "audio"
+                            : (m.imagenes && m.imagenes.length > 0) ? "imagen" : "";
                         var pending = state.pending.filter(function (p) {
-                            return conImagen ? p.esImagen : (!p.esImagen && p.texto === m.texto);
+                            return tipoMsg ? p.tipoArchivo === tipoMsg : (!p.tipoArchivo && p.texto === m.texto);
                         })[0];
                         if (pending) {
                             state.renderedIds[m.id] = pending.node;
@@ -380,6 +411,12 @@
             node.appendChild(img);
             cargarImagen(id, img);
         });
+        if (m.audioSrc) node.appendChild(crearAudio(m.audioSrc));
+        (m.audios || []).forEach(function (id) {
+            var audio = crearAudio("");
+            node.appendChild(audio);
+            cargarImagen(id, audio);   // mismo endpoint y la misma cache que las imágenes
+        });
         if (m.texto) {
             var txt = el("div", "ac-text");
             txt.textContent = m.texto;
@@ -397,6 +434,88 @@
         img.addEventListener("load", function () { if (ui.list) ui.list.scrollTop = ui.list.scrollHeight; });
         img.addEventListener("click", function () { if (img.src) window.open(img.src, "_blank"); });
         return img;
+    }
+
+    function crearAudio(src) {
+        var audio = el("audio", "ac-audio");
+        audio.controls = true;
+        audio.preload = "metadata";
+        if (src) audio.src = src;
+        return audio;
+    }
+
+    // ---- Notas de voz ----
+    function formatoGrabacion() {
+        var tipos = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+        for (var i = 0; i < tipos.length; i++) {
+            if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(tipos[i])) return tipos[i];
+        }
+        return "";
+    }
+
+    function mostrarGrabando(activo) {
+        ui.mic.classList.toggle("is-recording", activo);
+        ui.mic.title = activo ? "Enviar la nota de voz" : "Grabar una nota de voz";
+        ui.mic.setAttribute("aria-label", ui.mic.title);
+        ui.micCancel.hidden = !activo;
+        ui.micTime.hidden = !activo;
+        ui.input.hidden = activo;
+        ui.micTime.textContent = "0:00";
+    }
+
+    function iniciarGrabacion() {
+        showStatus("");
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+            var tipo = formatoGrabacion();
+            var recorder;
+            try {
+                recorder = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream);
+            } catch (e) {
+                stream.getTracks().forEach(function (tr) { tr.stop(); });
+                showStatus("Este navegador no puede grabar audio.");
+                return;
+            }
+            grabacion = { recorder: recorder, stream: stream, chunks: [], inicio: Date.now(), cancelada: false };
+            recorder.addEventListener("dataavailable", function (e) { if (e.data && e.data.size) grabacion.chunks.push(e.data); });
+            recorder.addEventListener("stop", finGrabacion);
+            recorder.start();
+            mostrarGrabando(true);
+            grabacion.timer = setInterval(function () {
+                var seg = Math.floor((Date.now() - grabacion.inicio) / 1000);
+                ui.micTime.textContent = Math.floor(seg / 60) + ":" + ("0" + (seg % 60)).slice(-2);
+                if (seg >= AUDIO_MAX_SEGUNDOS) detenerGrabacion(false);
+            }, 250);
+        }).catch(function () {
+            showStatus("No se pudo usar el micrófono. Revisá el permiso del navegador.");
+        });
+    }
+
+    function detenerGrabacion(cancelar) {
+        if (!grabacion) return;
+        grabacion.cancelada = cancelar;
+        clearInterval(grabacion.timer);
+        if (grabacion.recorder.state !== "inactive") grabacion.recorder.stop();
+        else finGrabacion();
+    }
+
+    function finGrabacion() {
+        var g = grabacion;
+        grabacion = null;
+        if (!g) return;
+        g.stream.getTracks().forEach(function (tr) { tr.stop(); });
+        mostrarGrabando(false);
+        ui.input.focus();
+        if (g.cancelada || !g.chunks.length) return;
+        if (Date.now() - g.inicio < 700) {
+            showStatus("La grabación fue muy corta.");
+            return;
+        }
+        var blob = new Blob(g.chunks, { type: g.recorder.mimeType || "audio/webm" });
+        if (blob.size > IMAGEN_MAX_BYTES) {
+            showStatus("La nota de voz es muy larga.");
+            return;
+        }
+        enviarArchivo(blob, "audio", "nota-de-voz");
     }
 
     // La imagen se pide con fetch (lleva el Origin que controla la lista de dominios) y se muestra
@@ -423,25 +542,33 @@
                 showStatus("La imagen es muy grande (máximo 5 MB).");
                 return;
             }
-            var reader = new FileReader();
-            reader.onload = function () {
-                var item = {
-                    clientMessageId: randomId(20),
-                    texto: "",
-                    esImagen: true,
-                    imagenBase64: String(reader.result || ""),
-                    nombreArchivo: file.name || "captura.png",
-                    node: null,
-                    visitorId: visitorId,
-                    generation: state.generation
-                };
-                item.node = appendMessage(ui.list, { texto: "", esVisitante: true, imagenSrc: URL.createObjectURL(blob) });
-                state.pending.push(item);
-                postMessage(item);
-            };
-            reader.onerror = function () { showStatus("No se pudo leer la imagen."); };
-            reader.readAsDataURL(blob);
+            enviarArchivo(blob, "imagen", file.name || "captura.png");
         });
+    }
+
+    // Imagen o nota de voz: se muestra al toque (pendiente) y se manda en base64.
+    function enviarArchivo(blob, tipo, nombreArchivo) {
+        var reader = new FileReader();
+        reader.onload = function () {
+            var item = {
+                clientMessageId: randomId(20),
+                texto: "",
+                tipoArchivo: tipo,
+                base64: String(reader.result || ""),
+                nombreArchivo: nombreArchivo,
+                node: null,
+                visitorId: visitorId,
+                generation: state.generation
+            };
+            var local = URL.createObjectURL(blob);
+            item.node = appendMessage(ui.list, tipo === "audio"
+                ? { texto: "", esVisitante: true, audioSrc: local }
+                : { texto: "", esVisitante: true, imagenSrc: local });
+            state.pending.push(item);
+            postMessage(item);
+        };
+        reader.onerror = function () { showStatus("No se pudo leer el archivo."); };
+        reader.readAsDataURL(blob);
     }
 
     // Fotos grandes (celular, cámara) se achican a IMAGEN_LADO_MAX y van como JPEG: suben más rápido.
@@ -528,6 +655,15 @@
             ".ac-attach{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
             ".ac-attach:hover{color:" + color + ";border-color:" + color + "}",
             ".ac-attach svg{width:18px;height:18px}",
+            ".ac-mic{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
+            ".ac-mic:hover{color:" + color + ";border-color:" + color + "}",
+            ".ac-mic svg{width:18px;height:18px}",
+            ".ac-mic.is-recording{background:#dc2626;border-color:#dc2626;color:#fff;animation:ac-pulse 1.2s infinite}",
+            "@keyframes ac-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.45)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0)}}",
+            ".ac-mic-cancel{width:32px;height:40px;border:0;background:transparent;color:#6b7280;font-size:22px;cursor:pointer;flex:none}",
+            ".ac-mic-cancel[hidden],.ac-mic-time[hidden],.ac-input[hidden]{display:none}",
+            ".ac-mic-time{flex:1;align-self:center;font-size:14px;color:#dc2626;font-variant-numeric:tabular-nums;padding-left:4px}",
+            ".ac-audio{display:block;width:240px;max-width:100%;height:40px}",
             ".ac-msg--error{background:#fee2e2;color:#991b1b;cursor:pointer}",
             ".ac-status{padding:6px 14px;font-size:12px;color:#991b1b;background:#fef2f2}",
             ".ac-status[hidden]{display:none}",
