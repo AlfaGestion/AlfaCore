@@ -67,7 +67,7 @@ public sealed class WhatsAppAttachmentHardeningTests
         var activation = source.IndexOf("TryActivateAuthorizedAttachmentBase(idBase, sessionService, appUserSession)", endpoint, StringComparison.Ordinal);
         var lookup = source.IndexOf("svc.GetAttachmentForServeAsync(idAdjunto, idBase", endpoint, StringComparison.Ordinal);
         var nosniff = source.IndexOf("\"X-Content-Type-Options\"] = \"nosniff\"", endpoint, StringComparison.Ordinal);
-        var sqlBlob = source.IndexOf("if (hasSqlContent)", endpoint, StringComparison.Ordinal);
+        var sqlBlob = source.IndexOf("if (hasSqlContent && !hasLocalFile)", endpoint, StringComparison.Ordinal);
         var localFileInfo = source.IndexOf("var fileInfo = new FileInfo(adjunto.RutaLocal)", endpoint, StringComparison.Ordinal);
 
         Assert.True(nosniff > endpoint && nosniff < activation);
