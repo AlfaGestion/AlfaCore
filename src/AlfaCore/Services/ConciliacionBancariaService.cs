@@ -40,7 +40,8 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
         {
             var message = ex is InvalidOperationException || ex is SqlException { Number: 50001 }
                 ? ex.Message : "No se pudo procesar la conciliación bancaria. Conservamos los datos para reintentar.";
-            var code = await events.LogErrorAsync("ConciliacionBancaria", accion, ex, message, ct: ct);
+            var code = await events.LogErrorAsync("ConciliacionBancaria", accion, ex, message,
+                data:ex.InnerException is not null?new{Diagnostico=ex.InnerException.Message}:null,ct: ct);
             throw new AppUserFacingException(message, code, ex);
         }
     }
@@ -52,7 +53,21 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
     }
 
     public Task<ConciliacionLectura> LeerAsync(ConciliacionArchivo file, BankSource? bank, CancellationToken ct = default)
-        => Ejecutar("LeerArchivo", (_, token) => Task.Run(() => lector.LeerAsync(file,bank,token),token),ct);
+        => Ejecutar("LeerArchivo", (cn, token) => LeerArchivoAsync(cn,file,bank,token),ct);
+
+    private async Task<ConciliacionLectura> LeerArchivoAsync(SqlConnection cn,ConciliacionArchivo file,BankSource? bank,CancellationToken ct)
+    {
+        var python="python";
+        if(Path.GetExtension(file.Nombre).Equals(".pdf",StringComparison.OrdinalIgnoreCase))
+        {
+            var configurado=await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+                SELECT COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),ValorAux))
+                FROM dbo.TA_CONFIGURACION WHERE CLAVE='InterfacesIaComprasPythonExe';
+                """,cancellationToken:ct));
+            if(!string.IsNullOrWhiteSpace(configurado))python=configurado.Trim();
+        }
+        return await Task.Run(()=>lector.LeerAsync(file,bank,ct,python),ct);
+    }
 
     public Task<IReadOnlyList<ConciliacionCuenta>> CuentasAsync(CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<ConciliacionCuenta>>("Cuentas", async (cn,token) =>
@@ -65,9 +80,11 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
     public Task<PagedResult<ConciliacionImportacion>> ImportacionesAsync(int page, CancellationToken ct = default)
         => Ejecutar("Importaciones", async (cn,token) =>
         {
-            using var r = await cn.QueryMultipleAsync(new CommandDefinition("""
+            var conOriginal = await cn.ExecuteScalarAsync<bool>(new CommandDefinition("SELECT CONVERT(bit,CASE WHEN COL_LENGTH('dbo.BK_ImportacionExtracto','ArchivoOriginal') IS NOT NULL THEN 1 ELSE 0 END)", cancellationToken:token));
+            using var r = await cn.QueryMultipleAsync(new CommandDefinition($"""
                 SELECT ImportacionId Id,OrigenCodigo Banco,ArchivoNombre Archivo,ISNULL(CuentaBanco,'') Cuenta,
-                    FechaImportacionUtc FechaUtc,UsuarioImportacion Usuario,CantidadMovimientos Movimientos,ImporteTotal Total,EstadoProceso Estado
+                    FechaImportacionUtc FechaUtc,UsuarioImportacion Usuario,CantidadMovimientos Movimientos,ImporteTotal Total,EstadoProceso Estado,
+                    {(conOriginal ? "CONVERT(bit,CASE WHEN ArchivoOriginal IS NOT NULL THEN 1 ELSE 0 END)" : "CAST(0 AS bit)")} TieneOriginal
                 FROM dbo.BK_ImportacionExtracto ORDER BY ImportacionId DESC OFFSET @skip ROWS FETCH NEXT 50 ROWS ONLY;
                 SELECT COUNT(*) FROM dbo.BK_ImportacionExtracto;
                 """,new { skip=checked((Math.Max(1,page)-1)*50) }, cancellationToken: token));
@@ -183,8 +200,9 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
             var session=sessions.GetActiveSession()!.Id;
             var user=users.GetCurrentUserName();
             // Siempre se relee el archivo en servidor; no se confía en filas normalizadas de la UI.
-            var lectura=await Task.Run(()=>lector.LeerAsync(archivo,banco,token),token);
+            var lectura=await LeerArchivoAsync(cn,archivo,banco,token);
             if(lectura.RequiereFechaReferencia) throw new InvalidOperationException(lectura.Mensaje);
+            if(lectura.Banco!=banco||lectura.Movimientos.Count==0)throw new InvalidOperationException("El archivo no contiene movimientos reconocidos para el banco seleccionado.");
             using var tx=cn.BeginTransaction(IsolationLevel.Serializable);
             CommandDefinition Cmd(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:token);
             var valido=await cn.ExecuteScalarAsync<bool>(Cmd("""
@@ -203,6 +221,9 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 OUTPUT INSERTED.ImportacionId VALUES(@banco,@nombre,'',@hash,SYSUTCDATETIME(),@user,0,0,'PROCESSING',@cuenta,@observaciones);
                 """,new { banco=banco.ToString(),nombre=Path.GetFileName(archivo.Nombre),hash,user,cuenta=cuenta.Trim(),
                     observaciones=archivo.FechaReferencia.HasValue ? $"Fecha de referencia confirmada: {archivo.FechaReferencia:yyyy-MM-dd}" : null }));
+            if (!await cn.ExecuteScalarAsync<bool>(Cmd("SELECT CONVERT(bit,CASE WHEN COL_LENGTH('dbo.BK_ImportacionExtracto','ArchivoOriginal') IS NOT NULL THEN 1 ELSE 0 END)")))
+                throw new InvalidOperationException("Ejecutá las actualizaciones de base de datos para conservar el archivo original antes de importar.");
+            await cn.ExecuteAsync(Cmd("UPDATE dbo.BK_ImportacionExtracto SET ArchivoOriginal=@contenido WHERE ImportacionId=@id",new {id,contenido=archivo.Contenido}));
             int count=0,duplicates=0;
             decimal total=0;
             var occurrences=new Dictionary<string,int>();
@@ -212,8 +233,8 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 var baseKey=Huella(cuenta,banco,m);
                 occurrences.TryGetValue(baseKey,out var ordinal);
                 occurrences[baseKey]=++ordinal;
-                // Sin referencia bancaria, conservar multiplicidad de operaciones idénticas.
-                var huella=string.IsNullOrWhiteSpace(m.ExternalReference) ? Hash(baseKey+"|"+ordinal) : baseKey;
+                // En Nación/Hipotecario el comprobante se reutiliza para gastos e impuestos: no es un ID único de operación.
+                var huella=string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario ? Hash(baseKey+"|"+ordinal) : baseKey;
                 var exists=await cn.ExecuteScalarAsync<bool>(Cmd("""
                     SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.BK_ExtractoMovimiento WITH(UPDLOCK,HOLDLOCK) WHERE HuellaWeb=@huella)
                     THEN 1 ELSE 0 END);
@@ -248,7 +269,7 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
     public static string Huella(string cuenta,BankSource banco,AlfaCore.ConciliacionBancaria.Application.DTOs.NormalizedMovementDto m)
         => Hash(string.Join("|",cuenta.Trim(),banco,m.MovementDate.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),
             m.Amount.ToString("0.00",CultureInfo.InvariantCulture),m.ExternalReference.Trim(),
-            string.IsNullOrWhiteSpace(m.ExternalReference)?m.Description.Trim():""));
+            string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario?m.Description.Trim():""));
     private static string Hash(string s)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s)));
 
     public Task<bool> EliminarAsync(long id, CancellationToken ct=default)

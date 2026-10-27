@@ -18,6 +18,7 @@ public sealed class AyudaContextualTests
     [InlineData("cobranzas","retencion")]
     [InlineData("cobranzas","retenciones")]
     [InlineData("conciliacion","duplicados")]
+    [InlineData("tarjetas","sucursal")]
     public void ManualesIncluidosBuscanSinAcentosYNoExponenOtrosArchivos(string tema,string consulta)
     {
         var manual=AyudaManuales.Obtener(tema);

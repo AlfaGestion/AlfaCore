@@ -1,0 +1,298 @@
+@page "/caja-bancos/conciliacion-tarjetas"
+@page "/{idweb}/{idbase:int}/caja-bancos/conciliacion-tarjetas"
+@using System.Globalization
+@using AlfaCore.Services
+@inject ConciliacionTarjetasService Servicio
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuarios
+@inject IAppUiOperationService UiOps
+@inject IAppEventService Eventos
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Conciliación de tarjetas | AlfaCore</PageTitle>
+<div class="gd-page gd tarjetas-page">
+    <AlfaNotification Message="_feedback" OnDismiss="()=>_feedback=null" />
+    <AlfaTabs Items="Tabs" ActiveKey="@_tab" ActiveKeyChanged="CambiarTab" AriaLabel="Conciliación de tarjetas" />
+    @if(_tab=="importar")
+    {
+        <section class="panel-card tarjetas-importar">
+            <label>Liquidación mensual PDF (hasta 20 MB)
+                <InputFile OnChange="Seleccionar" accept=".pdf" disabled="@_busy" />
+            </label>
+            <p>Se conserva el documento original como testigo. Esta etapa concilia presentaciones; no genera LT, asientos ni libro de IVA.</p>
+            @if(_lectura is {} l)
+            {
+                <p><strong>@_archivo?.Nombre</strong> · @l.Banco · Comercio @l.Comercio · @l.Tarjeta</p>
+                <p>Bruto <strong>@Dinero(l.Bruto)</strong> · Neto @Dinero(l.Neto) · @l.Detalles.Count registros extraídos</p>
+                <div class="tarjetas-campos">
+                    <AlfaSelect Label="Cuenta contable de tarjeta (TJ, pesos)" Value="@_cuenta" ValueChanged="v=>_cuenta=v??string.Empty" Options="OpcionesCuentas" Placeholder="Seleccionar cuenta" Disabled="_busy" />
+                    <AlfaInput Label="Sucursal de Alfa sugerida (opcional)" Value="@_sucursalImportar" ValueChanged="v=>_sucursalImportar=v??string.Empty" Disabled="_busy" />
+                </div>
+                <AlfaCheckbox Value="_recordar" ValueChanged="v=>_recordar=v==true" Disabled="_busy">Recordar cuenta y sucursal para este banco, comercio y tarjeta</AlfaCheckbox>
+                @foreach(var aviso in l.Avisos){<p role="status">@aviso</p>}
+            }
+        </section>
+        <div class="tarjetas-scroll">
+            <table class="tarjetas-tabla">
+                <thead><tr><th>Archivo</th><th>Banco / comercio</th><th>Cuenta</th><th>Operaciones</th><th>Bruto</th><th>Estado</th><th>Acciones</th></tr></thead>
+                <tbody>
+                    @foreach(var i in _importaciones.Skip((_paginaImport-1)*50).Take(50))
+                    {
+                        <tr @key="i.Id"><td>@i.Nombre</td><td>@i.Banco · @i.Comercio<br/>@i.Tarjeta</td><td>@i.Cuenta</td><td>@i.Desde.ToString("dd/MM/yyyy") – @i.Hasta.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(i.Bruto)</td><td>@(!i.DetalleCompleto?"Revisar extracción":i.Pendientes==0?"Conciliada":"Pendientes: "+i.Pendientes)</td><td>
+                            <AlfaButton Size="AlfaSize.Sm" Disabled="_busy" OnClick="()=>Abrir(i)">Conciliar</AlfaButton>
+                            <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>Original(i.Id)">Original</AlfaButton>
+                            <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>AbrirCambioCuenta(i)">Cambiar cuenta</AlfaButton>
+                        </td></tr>
+                    }
+                </tbody>
+            </table>
+            @if(_importaciones.Count==0){<AlfaEmptyState Title="Sin liquidaciones importadas" Message="Seleccioná una liquidación PDF de Nación, Patagonia o Hipotecario para comenzar. Podés revisar la lectura antes de elegir la cuenta contable." />}
+        </div>
+        <footer class="alfa-data-view-footer">@_importaciones.Count importaciones cargadas (hasta 500 recientes) · 50 por página</footer>
+    }
+    else if(_comparacion is {} c)
+    {
+        <div class="tarjetas-contexto">
+            <div><strong>@c.Importacion.Banco · @c.Importacion.Tarjeta</strong><small>Cuenta @c.Importacion.Cuenta · Comercio @c.Importacion.Comercio · @c.Importacion.Nombre</small></div>
+            <div class="tarjetas-contexto-acciones">
+                <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="()=>AbrirCambioCuenta(c.Importacion)">Cambiar cuenta</AlfaButton>
+                <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Icon="bi-file-earmark-pdf" Disabled="_busy" OnClick="()=>Original(c.Importacion.Id)">Documento original</AlfaButton>
+            </div>
+        </div>
+        <div class="tarjetas-indicadores">
+            <section><span>Liquidación · bruto consultado</span><strong>@Dinero(c.Detalles.Sum(x=>x.Importe))</strong><small>@c.Detalles.Count registros · @_detalles.Count seleccionados</small></section>
+            <section><span>Alfa · tarjetas presentadas</span><strong>@Dinero(c.Movimientos.Sum(x=>x.Importe))</strong><small>@c.Movimientos.Count registros · @_movimientos.Count seleccionados</small></section>
+            <section class="@(_detalles.Count>0&&_movimientos.Count>0?(DentroTolerancia?"tarjetas-equilibrado":"tarjetas-diferencia"):"")"><span>Diferencia de selección</span><strong>@Dinero(TotalResumen-TotalAlfa)</strong><small>Tolerancia @Dinero(c.Tolerancia) · @(PuedeConciliar?"Lista para revisar":"Revisá la selección")</small></section>
+        </div>
+        <details class="tarjetas-notas"><summary>Alcance de la comparación y avisos</summary><p>Se compara el bruto presentado, no el neto bancario. Sucursal y fechas filtran Alfa; el detalle de la liquidación se conserva completo. Una diferencia de totales no prueba un impago ni verifica la acreditación bancaria.</p>@if(!string.IsNullOrWhiteSpace(c.Importacion.Avisos)){<p role="status">@c.Importacion.Avisos</p>}</details>
+        <div class="tarjetas-seleccion">
+            <div><strong>@_detalles.Count liquidación / @_movimientos.Count Alfa seleccionados</strong><small>Bruto @Dinero(TotalResumen) · Alfa @Dinero(TotalAlfa) · Se confirmará un único vínculo con esta selección.</small></div>
+            <div class="tarjetas-vista"><AlfaCheckbox Value="_soloSeleccionados" ValueChanged="VerSoloSeleccion" Disabled="_busy">Solo seleccionados</AlfaCheckbox><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||(_detalles.Count==0&&_movimientos.Count==0))" OnClick="LimpiarSeleccion">Limpiar ambos lados</AlfaButton></div>
+            <AlfaSelect Label="Filas por página" Value="@_tamanoPagina.ToString()" ValueChanged="CambiarTamano" Options="TamanosPagina" Disabled="_busy" />
+        </div>
+        <p class="tarjetas-ayuda">Seleccionar todo abarca los pendientes de todas las páginas consultadas. La casilla del encabezado selecciona solo la página visible.</p>
+        <div class="tarjetas-listas">
+            <section class="tarjetas-lista">
+                <header><div><strong>Liquidación</strong><small>@DetallesVisibles.Count() registros · @_detalles.Count seleccionados</small></div><div class="tarjetas-herramientas"><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy||!c.Detalles.Any(d=>d.Vinculo is null))" OnClick="()=>SeleccionarResumen(false,false)">Seleccionar todo</AlfaButton><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>SeleccionarResumen(false,true)">Invertir</AlfaButton><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||_detalles.Count==0)" OnClick="()=>LimpiarLado(true)">Limpiar</AlfaButton></div></header>
+                <div class="tarjetas-scroll">
+                    <table class="tarjetas-tabla"><thead><tr><th><AlfaCheckbox AriaLabel="Seleccionar página de liquidación" Value="EstadoPaginaResumen" ValueChanged="v=>CambiarPaginaResumen(v==true)" Disabled="@(_busy||!PaginaResumen.Any(d=>d.Vinculo is null))" /></th><th><button @onclick="()=>OrdenarResumen(false)">Fecha @(_ordenResumenImporte?"↕":_descResumen?"↓":"↑")</button></th><th>Liquidación / lote / cupón</th><th>Nivel / cantidad</th><th><button @onclick="()=>OrdenarResumen(true)">Bruto @(_ordenResumenImporte?(_descResumen?"↓":"↑"):"↕")</button></th><th>Estado</th></tr></thead><tbody>
+                        @foreach(var d in PaginaResumen)
+                        {
+                            <tr @key="d.Id" class="@(_detalles.Contains(d.Id)?"is-selected":null)"><td><AlfaCheckbox AriaLabel="Seleccionar registro del resumen" Value="_detalles.Contains(d.Id)" ValueChanged="v=>Elegir(d.Id,v==true)" Disabled="@(_busy||d.Vinculo!=null)" /></td><td>@d.Fecha.ToString("dd/MM/yyyy")<br/><small>Pago: @d.FechaPago?.ToString("dd/MM/yyyy")</small></td><td>@d.Liquidacion / @d.Lote / @d.Cupon</td><td>@d.Nivel · @d.Cantidad</td><td class="numero">@Dinero(d.Importe)</td><td>
+                                @if(d.Vinculo is {} vinculo){<AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>PedirDesconciliar(vinculo)">Vínculo #@vinculo</AlfaButton>}else{<span>Pendiente</span>}
+                            </td></tr>
+                        }
+                    </tbody></table>
+                    @if(!DetallesVisibles.Any()){<AlfaEmptyState Title="Sin registros de liquidación en esta vista" Message="Desactivá Solo seleccionados o revisá los filtros." />}
+                </div>
+                <footer class="alfa-data-view-footer"><span>Página @_paginaResumen / @PaginasResumen · @_tamanoPagina por página</span><AlfaButton Size="AlfaSize.Sm" Disabled="@(_busy||_paginaResumen<=1)" OnClick="()=>_paginaResumen--">Anterior</AlfaButton><AlfaButton Size="AlfaSize.Sm" Disabled="@(_busy||_paginaResumen>=PaginasResumen)" OnClick="()=>_paginaResumen++">Siguiente</AlfaButton></footer>
+            </section>
+            <section class="tarjetas-lista">
+                <header><div><strong>Alfa · tarjetas presentadas</strong><small>@MovimientosVisibles.Count() registros · @_movimientos.Count seleccionados</small></div><div class="tarjetas-herramientas"><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy||!c.Movimientos.Any(Seleccionable))" OnClick="()=>SeleccionarAlfa(false,false)">Seleccionar todo</AlfaButton><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>SeleccionarAlfa(false,true)">Invertir</AlfaButton><AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy||_movimientos.Count==0)" OnClick="()=>LimpiarLado(false)">Limpiar</AlfaButton></div></header>
+                <div class="tarjetas-scroll">
+                    <table class="tarjetas-tabla"><thead><tr><th><AlfaCheckbox AriaLabel="Seleccionar página de Alfa" Value="EstadoPaginaAlfa" ValueChanged="v=>CambiarPaginaAlfa(v==true)" Disabled="@(_busy||!PaginaAlfa.Any(Seleccionable))" /></th><th><button @onclick="()=>OrdenarAlfa(false)">Fecha @(_ordenAlfaImporte?"↕":_descAlfa?"↓":"↑")</button></th><th>Comprobante / presentación</th><th>Detalle</th><th><button @onclick="()=>OrdenarAlfa(true)">Importe @(_ordenAlfaImporte?(_descAlfa?"↓":"↑"):"↕")</button></th><th>Estado</th></tr></thead><tbody>
+                        @foreach(var m in PaginaAlfa)
+                        {
+                            <tr @key="m.Clave" class="@(_movimientos.Contains(m.Clave)?"is-selected":null)"><td><AlfaCheckbox AriaLabel="Seleccionar movimiento de Alfa" Value="_movimientos.Contains(m.Clave)" ValueChanged="v=>Elegir(m.Clave,v==true)" Disabled="@(_busy||!Seleccionable(m))" /></td><td>@m.Fecha.ToString("dd/MM/yyyy")</td><td>@m.Comprobante<br/><small>Presentación @m.Presentacion · Sucursal @m.Sucursal</small><br/><small>Cupón: @(string.IsNullOrWhiteSpace(m.Cupon)?"sin identificar":m.Cupon)</small></td><td>@m.Detalle</td><td class="numero">@Dinero(m.Importe)</td><td>
+                                @if(m.Vinculo is {} vinculo){<AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="()=>PedirDesconciliar(vinculo)">Vínculo #@vinculo</AlfaButton>}else{<span>@(m.LegacyLiquidado?"Liquidado en desktop":"Pendiente")</span>}
+                                @if(m.Alterado){<strong>Movimiento modificado: revisar</strong>}
+                            </td></tr>
+                        }
+                    </tbody></table>
+                    @if(!MovimientosVisibles.Any()){<AlfaEmptyState Title="Sin movimientos de Alfa en esta vista" Message="Desactivá Solo seleccionados o revisá las fechas, la sucursal y los filtros." />}
+                </div>
+                <footer class="alfa-data-view-footer"><span>Página @_paginaAlfa / @PaginasAlfa · @_tamanoPagina por página</span><AlfaButton Size="AlfaSize.Sm" Disabled="@(_busy||_paginaAlfa<=1)" OnClick="()=>_paginaAlfa--">Anterior</AlfaButton><AlfaButton Size="AlfaSize.Sm" Disabled="@(_busy||_paginaAlfa>=PaginasAlfa)" OnClick="()=>_paginaAlfa++">Siguiente</AlfaButton></footer>
+            </section>
+        </div>
+    }
+    else{<AlfaEmptyState Title="Elegí una liquidación" Message="Abrí una importación para comparar sus operaciones con las tarjetas presentadas en Alfa." />}
+</div>
+<AlfaDialog Open="@(_corregirCuenta is not null)" Title="Cambiar cuenta de la liquidación" CloseOnBackdrop="false" Size="AlfaDialogSize.Md" OnClose="CerrarCambioCuenta" Loading="_busy">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="_feedback" />
+        @if(_corregirCuenta is {} corregir) {
+            <p>@corregir.Nombre<br/>Cuenta actual: <strong>@corregir.Cuenta</strong></p>
+            <p>Se conserva el documento original y sus operaciones. Solo se permite corregir importaciones sin historial de conciliación.</p>
+            <AlfaSelect Label="Nueva cuenta de tarjeta (TJ, pesos)" Value="@_nuevaCuenta" ValueChanged="v=>_nuevaCuenta=v??string.Empty" Options="OpcionesCuentas" Placeholder="Seleccionar cuenta correcta" Disabled="_busy" />
+            <AlfaInput Label="Motivo de la corrección" Value="@_motivoCuenta" ValueChanged="v=>_motivoCuenta=v??string.Empty" MaxLength="200" Disabled="_busy" />
+            <AlfaCheckbox Value="_recordarCuenta" ValueChanged="v=>_recordarCuenta=v==true" Disabled="_busy">Recordar esta cuenta para el mismo banco, comercio y tarjeta</AlfaCheckbox>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Disabled="_busy" OnClick="CerrarCambioCuenta">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy||_nuevaCuenta.Length==0||_nuevaCuenta==_corregirCuenta?.Cuenta||_motivoCuenta.Trim().Length<3)" OnClick="GuardarCambioCuenta">Guardar cuenta</AlfaButton>
+    </Footer>
+</AlfaDialog>
+<AlfaDialog Open="_confirmar" Title="@(_desconciliar.HasValue?"Desconciliar tarjetas":"Confirmar conciliación de tarjetas")" CloseOnBackdrop="false" Size="AlfaDialogSize.Md" OnClose="CerrarConfirmacion" Loading="_busy">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="_feedback" />
+        @if(_desconciliar is null){<p>Resumen @Dinero(TotalResumen) · Alfa @Dinero(TotalAlfa). La coincidencia por importe o agrupación no identifica por sí sola cada cupón. Confirmá después de revisar el original.</p>}
+        <AlfaInput Label="Motivo (obligatorio para diferencias y desconciliación)" Value="@_motivo" ValueChanged="v=>_motivo=v??string.Empty" Disabled="_busy" />
+    </ChildContent>
+    <Footer><AlfaButton Disabled="_busy" OnClick="CerrarConfirmacion">Cancelar</AlfaButton><AlfaButton Disabled="_busy" Variant="AlfaButtonVariant.Primary" OnClick="Guardar">Confirmar</AlfaButton></Footer>
+</AlfaDialog>
+<AlfaDialog Open="_mostrarIa" Title="Asistir con IA · tarjetas" CloseOnBackdrop="false" Size="AlfaDialogSize.Lg" OnClose="CerrarIa" Loading="_busy">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="_feedback" />
+        @if(_ia is {} analisis)
+        {
+            <p>@analisis.DetallesAnalizados registros de liquidación · @analisis.MovimientosAnalizados movimientos de Alfa · @analisis.Propuestas.Count propuestas.</p>
+            <p class="tarjetas-ayuda">La IA compara brutos, cupones y agrupaciones con margen de @analisis.Dias días. Revisá la evidencia: una suma coincidente no demuestra que sean las mismas operaciones. Elegí una propuesta para revisar y confirmar.</p>
+            @if(analisis.Descartadas>0){<p>Se descartaron @analisis.Descartadas propuestas que no superaron los controles.</p>}
+            @if(analisis.Propuestas.Count==0){<AlfaEmptyState Title="Sin propuestas verificables" Message="Revisá las fechas, la sucursal y el original. Podés conciliar mediante selección manual." />}
+            @foreach(var propuesta in analisis.Propuestas)
+            {
+                <section class="tarjetas-ia-propuesta">
+                    <strong>IA · @propuesta.Confianza · @propuesta.Detalles.Count liquidación / @propuesta.Movimientos.Count Alfa</strong>
+                    <p>Bruto @Dinero(propuesta.Detalles.Sum(x=>x.Importe)) · Alfa @Dinero(propuesta.Movimientos.Sum(x=>x.Importe)) · Diferencia @Dinero(propuesta.Diferencia)</p>
+                    <p>@propuesta.Motivo</p>
+                    <div class="tarjetas-campos">
+                        <div><strong>Liquidación</strong>@foreach(var d in propuesta.Detalles){<p>@d.Fecha.ToString("dd/MM/yyyy") · @Dinero(d.Importe)<br/>@d.Nivel · Liq. @d.Liquidacion · Lote @d.Lote · Cupón @d.Cupon</p>}</div>
+                        <div><strong>Alfa</strong>@foreach(var m in propuesta.Movimientos){<p>@m.Fecha.ToString("dd/MM/yyyy") · @Dinero(m.Importe)<br/>@m.Comprobante · @m.Detalle<br/>Cupón @m.Cupon · Presentación @m.Presentacion · Sucursal @m.Sucursal</p>}</div>
+                    </div>
+                    <AlfaButton Disabled="_busy" OnClick="()=>ElegirIa(propuesta)">Revisar esta propuesta</AlfaButton>
+                </section>
+            }
+        }
+    </ChildContent>
+    <Footer><AlfaButton Disabled="_busy" OnClick="CerrarIa">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+
+@code {
+    private string _tab="importar",_cuenta="",_sucursalImportar="",_motivo="";
+    private bool _busy,_disposed,_recordar=true,_confirmar,_ordenResumenImporte,_ordenAlfaImporte,_descResumen,_descAlfa;
+    private long? _desconciliar;
+    private int _paginaResumen=1,_paginaAlfa=1,_paginaImport=1;
+    private ConciliacionArchivo? _archivo;
+    private TarjetasLectura? _lectura;
+    private TarjetasComparacion? _comparacion;
+    private TarjetasFiltro? _aplicado;
+    private TarjetasIaResultado? _ia;
+    private bool _mostrarIa;
+    private readonly TarjetasBusqueda _filtro=new();
+    private IReadOnlyList<ConciliacionCuenta> _cuentas=[];
+    private IReadOnlyList<TarjetasImportacion> _importaciones=[];
+    private TarjetasImportacion? _corregirCuenta;
+    private string _nuevaCuenta="",_motivoCuenta="";
+    private bool _recordarCuenta;
+    private Task AbrirCambioCuenta(TarjetasImportacion importacion)=>Operar(async ct=>
+    {
+        _cuentas=await Servicio.CuentasAsync(ct);_feedback=null;_corregirCuenta=importacion;
+        _nuevaCuenta="";_motivoCuenta="Corrección de la cuenta elegida al importar";_recordarCuenta=false;
+    });
+    private void CerrarCambioCuenta(){if(!_busy)_corregirCuenta=null;}
+    private Task GuardarCambioCuenta()=>Operar(async ct=>
+    {
+        if(_corregirCuenta is not {} origen)return;
+        await Servicio.CambiarCuentaAsync(origen.Id,origen.Cuenta,_nuevaCuenta,_motivoCuenta,_recordarCuenta,ct);
+        _corregirCuenta=null;_importaciones=await Servicio.ImportacionesAsync(ct);
+        if(_comparacion?.Importacion.Id==origen.Id)await CompararCore(ct);
+        _feedback=AppUiMessage.Success("Cuenta corregida","Se conservó el PDF y se actualizó la comparación con la cuenta elegida.");
+    });
+    private readonly HashSet<long> _detalles=[];
+    private readonly HashSet<string> _movimientos=[];
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _header;
+    private readonly CancellationTokenSource _lifetime=new();
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs=[new("importar","Importación"),new("conciliar","Conciliar tarjetas")];
+    private static readonly IReadOnlyList<AlfaSelectOption> Estados=[new("Pendientes","Pendientes"),new("Conciliados","Conciliados"),new("Todos","Todos")];
+    private IReadOnlyList<AlfaSelectOption> OpcionesCuentas=>_cuentas.Where(c=>c.Moneda=="1").Select(c=>new AlfaSelectOption(c.Codigo,$"{c.Codigo} — {c.Descripcion}")).ToList();
+    private IEnumerable<TarjetasDetalle> DetallesOrdenados=>_comparacion is null?[]:_descResumen?(_ordenResumenImporte?_comparacion.Detalles.OrderByDescending(x=>x.Importe):_comparacion.Detalles.OrderByDescending(x=>x.Fecha)):(_ordenResumenImporte?_comparacion.Detalles.OrderBy(x=>x.Importe):_comparacion.Detalles.OrderBy(x=>x.Fecha));
+    private IEnumerable<TarjetasMovimiento> MovimientosOrdenados=>_comparacion is null?[]:_descAlfa?(_ordenAlfaImporte?_comparacion.Movimientos.OrderByDescending(x=>x.Importe):_comparacion.Movimientos.OrderByDescending(x=>x.Fecha)):(_ordenAlfaImporte?_comparacion.Movimientos.OrderBy(x=>x.Importe):_comparacion.Movimientos.OrderBy(x=>x.Fecha));
+    private decimal TotalResumen=>_comparacion?.Detalles.Where(d=>_detalles.Contains(d.Id)).Sum(d=>d.Importe)??0;
+    private decimal TotalAlfa=>_comparacion?.Movimientos.Where(m=>_movimientos.Contains(m.Clave)).Sum(m=>m.Importe)??0;
+    private static string Dinero(decimal n)=>n.ToString("N2",CultureInfo.GetCultureInfo("es-AR"));
+    private Guid? _sesion;
+    protected override void OnInitialized(){_sesion=Sesiones.GetActiveSession()?.Id;Sesiones.SessionChanged+=CambioSesion;Usuarios.StateChanged+=CambioSesion;Header();}
+    protected override Task OnInitializedAsync()=>Operar(async ct=>{_cuentas=await Servicio.CuentasAsync(ct);_importaciones=await Servicio.ImportacionesAsync(ct);});
+    private string _ultimoHeader="";
+    private string EstadoHeader()=>$"{_tab}|{_busy}|{_cuenta}|{_lectura?.Detalles.Count}|{_comparacion?.Importacion.Id}|{_comparacion?.Importacion.DetalleCompleto}|{_detalles.Count}|{_movimientos.Count}|{_filtro.FechaDesde}|{_filtro.FechaHasta}|{_filtro.Sucursal}|{_filtro.Estado}|{_filtro.Buscar}|{_paginaImport}|{_importaciones.Count}";
+    protected override void OnAfterRender(bool firstRender){if(firstRender||EstadoHeader()!=_ultimoHeader)Header();}
+    private void CambioSesion(){if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;_lifetime.Cancel();_corregirCuenta=null;_archivo=null;_lectura=null;_comparacion=null;_ia=null;_mostrarIa=false;_cuentas=[];_importaciones=[];LimpiarSeleccion();_confirmar=false;_feedback=AppUiMessage.Info("La sesión cambió","Volvé a abrir el módulo en la base activa.");_ = InvokeAsync(StateHasChanged);}
+    private async Task Operar(Func<CancellationToken,Task> work)
+    {
+        if(_busy||_disposed||_lifetime.IsCancellationRequested)return;_busy=true;Header();
+        try{await work(_lifetime.Token);}
+        catch(OperationCanceledException){}
+        catch(Exception ex){if(!_lifetime.IsCancellationRequested){if(ex is not AppUserFacingException)await Eventos.LogErrorAsync("ConciliacionTarjetas","Pantalla",ex,"No se pudo completar la operación.");_feedback=UiOps.BuildMessage(ex,"Conciliación de tarjetas");}}
+        finally{_busy=false;if(!_disposed){Header();await InvokeAsync(StateHasChanged);}}
+    }
+    private Task Seleccionar(InputFileChangeEventArgs e)=>Operar(async ct=>{
+        _lectura=null;_archivo=null;
+        await using var s=e.File.OpenReadStream(20*1024*1024,ct);using var ms=new MemoryStream();await s.CopyToAsync(ms,ct);
+        _archivo=new(e.File.Name,ms.ToArray());_lectura=await Servicio.LeerAsync(_archivo,ct);_cuenta=_lectura.CuentaSugerida;_sucursalImportar=_lectura.SucursalSugerida;
+    });
+    private Task Importar()=>Operar(async ct=>{
+        if(_archivo is null)return;var id=await Servicio.ImportarAsync(_archivo,_cuenta,_sucursalImportar,_recordar,ct);
+        _importaciones=await Servicio.ImportacionesAsync(ct);_archivo=null;_lectura=null;
+        await AbrirCore(_importaciones.Single(x=>x.Id==id),ct);_feedback=AppUiMessage.Success("Liquidación importada","Se conservó el PDF original. No se generaron asientos ni LT.");
+    });
+    private Task Abrir(TarjetasImportacion i)=>Operar(ct=>AbrirCore(i,ct));
+    private async Task AbrirCore(TarjetasImportacion i,CancellationToken ct){_filtro.FechaDesde=i.Desde;_filtro.FechaHasta=i.Hasta;_filtro.Sucursal=i.Sucursal;_filtro.Estado="Pendientes";_filtro.Buscar="";_comparacion=new(i,[],[],0);_tab="conciliar";await CompararCore(ct);}
+    private Task Comparar()=>Operar(CompararCore);
+    private async Task CompararCore(CancellationToken ct){if(_comparacion is null)return;var f=new TarjetasFiltro(_comparacion.Importacion.Id,_filtro.FechaDesde??DateTime.Today,_filtro.FechaHasta??DateTime.Today,_filtro.Sucursal,_filtro.Estado,_filtro.Buscar);_comparacion=await Servicio.CompararAsync(f,ct);_aplicado=f;_ia=null;_mostrarIa=false;LimpiarSeleccion();_paginaResumen=_paginaAlfa=1;}
+    private Task Original(long id)=>Operar(async ct=>{var f=await Servicio.OriginalAsync(id,ct);await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob",Convert.ToBase64String(f.Contenido),"application/pdf",f.Nombre);});
+    private Task CambiarTab(string key){_tab=key;Header();return Task.CompletedTask;}
+    private void Elegir(long id,bool v){if(_busy)return;if(v&&_comparacion?.Detalles.Any(d=>d.Id==id&&d.Vinculo is null)==true&&_detalles.Count<2000)_detalles.Add(id);else if(!v)_detalles.Remove(id);AjustarPaginas();Header();}
+    private void Elegir(string key,bool v){if(_busy)return;if(v&&_comparacion?.Movimientos.Any(m=>m.Clave==key&&Seleccionable(m))==true&&_movimientos.Count<2000)_movimientos.Add(key);else if(!v)_movimientos.Remove(key);AjustarPaginas();Header();}
+    private void LimpiarSeleccion(){_detalles.Clear();_movimientos.Clear();_soloSeleccionados=false;AjustarPaginas();Header();}
+    private void OrdenarResumen(bool importe){_descResumen=_ordenResumenImporte==importe?!_descResumen:false;_ordenResumenImporte=importe;_paginaResumen=1;}
+    private void OrdenarAlfa(bool importe){_descAlfa=_ordenAlfaImporte==importe?!_descAlfa:false;_ordenAlfaImporte=importe;_paginaAlfa=1;}
+    private Task Proponer()
+    {
+        if(_comparacion is null)return Task.CompletedTask;
+        LimpiarSeleccion();
+        foreach(var p in TarjetasPropuestas.Unicas(_comparacion))
+        {
+            _detalles.Add(p.Detalle);_movimientos.Add(p.Clave);
+        }
+        Header();
+        if(_detalles.Count>0){_feedback=AppUiMessage.Info("Selección propuesta",$"{_detalles.Count} coincidencias únicas por fecha e importe, incluyendo otras páginas. Revisá la evidencia; esto no verifica por sí solo el número de cupón.");return Task.CompletedTask;}
+        _feedback=AppUiMessage.Info("Sin propuesta única","Podés seleccionar manualmente varios movimientos y lotes por el mismo bruto, revisando el documento original.");return Task.CompletedTask;
+    }
+    private Task PedirConfirmar(){if(!PuedeConciliar)return Task.CompletedTask;_motivo="";_desconciliar=null;_confirmar=true;return Task.CompletedTask;}
+    private Task AsistirIa()=>Operar(async ct=>{
+        if(_comparacion is null)return;
+        var filtro=new TarjetasFiltro(_comparacion.Importacion.Id,_filtro.FechaDesde??DateTime.Today,_filtro.FechaHasta??DateTime.Today,_filtro.Sucursal,"Pendientes",_filtro.Buscar);
+        var comparacion=await Servicio.CompararAsync(filtro,ct);
+        var analisis=await Servicio.AnalizarIaAsync(filtro,ct);
+        _comparacion=comparacion;_aplicado=filtro;_filtro.Estado="Pendientes";
+        LimpiarSeleccion();_paginaResumen=_paginaAlfa=1;_ia=analisis;_mostrarIa=true;
+    });
+    private Task CerrarIa(){if(!_busy)_mostrarIa=false;return Task.CompletedTask;}
+    private Task ElegirIa(TarjetasIaPropuesta propuesta)
+    {
+        LimpiarSeleccion();
+        foreach(var d in propuesta.Detalles)_detalles.Add(d.Id);
+        foreach(var m in propuesta.Movimientos)_movimientos.Add(m.Clave);
+        _mostrarIa=false;_desconciliar=null;_motivo="IA · "+propuesta.Confianza+": "+propuesta.Motivo;
+        if(_motivo.Length>500)_motivo=_motivo[..500];
+        _confirmar=true;Header();return Task.CompletedTask;
+    }
+    private Task PedirDesconciliar(long id){_motivo="";_desconciliar=id;_confirmar=true;return Task.CompletedTask;}
+    private Task CerrarConfirmacion(){if(!_busy)_confirmar=false;return Task.CompletedTask;}
+    private Task Guardar()=>Operar(async ct=>{
+        if(_aplicado is null||_comparacion is null)return;
+        if(_desconciliar is {} id)await Servicio.DesconciliarAsync(id,_aplicado,_motivo,ct);
+        else await Servicio.ConfirmarAsync(new(_aplicado,_detalles.ToList(),_comparacion.Movimientos.Where(x=>_movimientos.Contains(x.Clave)).Select(x=>new TarjetasSeleccion(x.Clave,x.Huella)).ToList(),_motivo),ct);
+        _confirmar=false;await CompararCore(ct);_importaciones=await Servicio.ImportacionesAsync(ct);_feedback=AppUiMessage.Success("Conciliación actualizada","Se guardó el vínculo y su historial sin modificar la contabilidad.");
+    });
+    private RenderFragment Busqueda()=>@<GestionSmartSearch Model="_filtro" Texto="@_filtro.Buscar" TextoChanged="v=>_filtro.Buscar=v??string.Empty" Placeholder="Buscar lote, cupón, comprobante o detalle…" OnApply="Comparar">
+        <Columnas><div class="smart-search__column"><h4>Tarjetas presentadas</h4><AlfaInput Label="Sucursal de MV_ASIENTOS (vacío: todas)" Value="@_filtro.Sucursal" ValueChanged="v=>_filtro.Sucursal=v??string.Empty" Disabled="_busy" /><AlfaSelect Label="Conciliación" Value="@_filtro.Estado" ValueChanged="v=>_filtro.Estado=v??string.Empty" Options="Estados" Disabled="_busy" /></div></Columnas>
+    </GestionSmartSearch>;
+    private void Header()
+    {
+        if(_disposed)return;
+        _ultimoHeader=EstadoHeader();
+        PageHeader.Set(_header=new PageHeaderConfig{ModuleKey="caja-bancos",ShellMode=PageHeaderShellMode.AlfaDesignPilot,Title="Conciliación de tarjetas",ResponsiveToolbar=true,
+            TopNavigationItems=[new(){Key="tarjetas",Label="Conciliación de tarjetas",Active=true}],SearchContent=_tab=="conciliar"?Busqueda():null,
+            Actions=_tab=="importar" ? [new(){Key="importar",Label="Importar liquidación",Icon="bi-upload",Disabled=_busy||_lectura is null||_cuenta.Length==0,OnClick=Importar},new(){Key="actualizar",Label="Actualizar",Icon="bi-arrow-clockwise",Disabled=_busy,OnClick=()=>Operar(async ct=>_importaciones=await Servicio.ImportacionesAsync(ct))}]
+                :[new(){Key="conciliar",Label="Conciliar selección",Icon="bi-link",Disabled=_busy||!PuedeConciliar,OnClick=PedirConfirmar},new(){Key="proponer",Label="Proponer selección",Icon="bi-stars",Disabled=_busy||_comparacion is null,OnClick=Proponer},new(){Key="ia",Label="Asistir con IA",Icon="bi-stars",Disabled=_busy||_comparacion?.Importacion.DetalleCompleto!=true,OnClick=AsistirIa},new(){Key="comparar",Label="Comparar",Icon="bi-arrow-repeat",Disabled=_busy||_comparacion is null,OnClick=Comparar}],
+            Pagination=_tab=="importar"?new(){Label=$"{_importaciones.Count} importaciones",PageLabel=$"{_paginaImport} / {Math.Max(1,(_importaciones.Count+49)/50)}",HasPrevious=_paginaImport>1,HasNext=_paginaImport*50<_importaciones.Count,Disabled=_busy,OnPrevious=()=>{_paginaImport--;Header();return Task.CompletedTask;},OnNext=()=>{_paginaImport++;Header();return Task.CompletedTask;}}:null});
+    }
+    public void Dispose(){_disposed=true;Sesiones.SessionChanged-=CambioSesion;Usuarios.StateChanged-=CambioSesion;_lifetime.Cancel();_lifetime.Dispose();if(ReferenceEquals(PageHeader.Current,_header))PageHeader.Clear();}
+}

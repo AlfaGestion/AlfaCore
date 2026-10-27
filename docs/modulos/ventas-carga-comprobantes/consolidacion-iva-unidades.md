@@ -26,6 +26,8 @@ La vista oficial conserva su rama histórica para detalles sin trazabilidad; par
 
 La actualización verifica la definición original antes de reemplazarla. Si encuentra una variante de cliente no relevada, se detiene sin adaptarla automáticamente. El plan impide consolidar si falta la tabla/vista actualizada. Al restaurar otra copia de DISTRIWALTERP es necesario ejecutar las actualizaciones antes de probar consolidaciones.
 
+El 27/10/2026 se relevó además la variante de `ELBOLSON2011_PRUEBAS` (10.8.0.160): nombres de tabla calificados y ausencia del filtro PR/RM. El mismo script reconoce expresamente ambas definiciones y conserva su política: mantiene el filtro donde existía y no lo introduce donde faltaba. No se admite cualquier definición arbitraria ni se salta la actualización. Prueba completa con rollback: 4.826.112 grupos históricos conservados; 247 diferencias de suma binaria `float`, de hasta 4,55×10⁻¹³, sin diferencias mayores a 10⁻⁷. La repetición del script no vuelve a modificar la vista. `ActualizacionOrigenLegacyTests` permite verificar ambas variantes en esta base mediante `ORIGEN_LEGACY_TEST_SQL`, revirtiendo todo el ensayo.
+
 Aplicación efectivamente realizada solo en SERVER-ALFAVB6/DISTRIWALTERP: **84.009 filas históricas comparadas por EXCEPT en ambos sentidos, cero diferencias**, con transacción exterior Serializable; segunda ejecución idempotente correcta. No se alteraron movimientos comerciales para aplicar el script.
 
 ## Precios y descuentos

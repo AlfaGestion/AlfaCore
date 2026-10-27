@@ -1,5 +1,27 @@
 # Conciliación bancaria inteligente
 
+## Editor de asientos bancarios (2026-10-27)
+
+Se reutiliza la generación CC existente, con catálogo por base, talonarios, período abierto, numeración compartida con legacy, contrapartidas balanceadas, idempotencia y conciliación transaccional. El editor permite abrir Cuentas y conceptos sin descartar la fecha ni la imputación manual. Tras guardar se recarga el catálogo y se propone una regla única solo si la cuenta seguía vacía. Los borradores del plan de cuentas continúan inactivos hasta guardar la configuración.
+
+ConciliacionAsientoDefaults reconoce además COMISIONES Y GASTOS BANCARIOS, IVA específico de comisiones bancarias y Ley 25.413 por nombres exactos y únicos. IVA genérico, débito fiscal de ventas y cuentas ambiguas no participan. Son imputaciones contables: no se escriben libros fiscales. El catálogo mantiene sus filtros de moneda/medio de pago y nunca modifica la configuración de MA_CUENTAS para incluir una cuenta.
+
+Verificación SQL autorizada en ELBOLSON2011_PRUEBAS: el ensayo de CC comprueba balance, usuario/caja, ausencia de relleno en TC/CUENTA, numeración, idempotencia, duplicados, conciliación y desconciliación con rollback completo. CONCILIACION_ASIENTOS_TEST_USUARIO permite usar el usuario de esa base; el ensayo solo admite las dos bases de pruebas explícitas. No se activa configuración ni se generan CC persistentes durante el ensayo.
+
+## Extractos PDF de texto (2026-10-27)
+
+`ConciliacionExtractoLector` admite PDF además de Excel/CSV. `App_Data/extractos/leer_pdf.py` usa pypdf y reconoce los dos formatos relevados: Nación (cuenta corriente pesos, CBU 011, saldo por fila) e Hipotecario (columnas débito/crédito y saldos diarios). No usa el nombre del archivo para elegir el banco. Rechaza PDF sin texto, formatos desconocidos y varias cuentas en un documento. Nación valida cada diferencia de saldo contra el importe impreso y el saldo final; Hipotecario valida columnas, saldos diarios y el cuadro global de créditos/débitos/IVA. No se importan aperturas, transportes, cierres ni subtotales. Un descuadre aborta la lectura completa.
+
+`ConciliacionExtractoPdfLector` vuelve a validar cantidad, banco, importes y saldo global al recibir JSON. Se reutilizan NormalizedMovementDto, clasificación, propuestas, cuenta DB, transacción, deduplicación y testigo original. BankSource incorpora Nacion=4 e Hipotecario=5 sin cambiar valores anteriores. Sus referencias son comprobantes reutilizables: la huella incluye descripción y ordinal de ocurrencia para conservar multiplicidad; los otros bancos mantienen sus huellas. No hay cambios de esquema ni escrituras contables.
+
+`PdfPythonProceso` comparte con Tarjetas el transporte stdin/JSON UTF-8, cancelación, plazo de dos minutos y diagnóstico stderr registrado mediante el logging central. El PDF no sale del servidor. Bancaria usa `InterfacesIaComprasPythonExe` de la base activa, con fallback al PATH del servicio cuando está vacío; no agrega otra configuración Python. El script se copia en build/publish. Requiere pypdf en ese intérprete, PDF válido de hasta 20 MB y 150 páginas. Tarjetas conserva su override y sus validaciones propias.
+
+Pruebas sintéticas sin datos privados: `python -m unittest discover -s tests/extractos -v`. Las pruebas C# con PDF local se habilitan con TARJETAS_TEST_PYTHON y EXTRACTO_TEST_PDF_NACION / EXTRACTO_TEST_PDF_HIPOTECARIO; no escriben en SQL ni incluyen documentos privados en el repositorio.
+
+## Documento testigo (2026-10-27)
+
+La actualización `2026-10-27-001__caja_extractos_documento_original.sql` agrega `ArchivoOriginal varbinary(max)` nullable a BK_ImportacionExtracto. La importación lo guarda en la misma transacción que las filas y propuestas; falla con mensaje accionable si falta la migración. OriginalAsync autoriza sesión y permiso, comprueba SHA-256 contra HashArchivo y entrega el nombre original saneado. El listado solo consulta disponibilidad, no carga los blobs; históricos sin bytes muestran Sin original. No se reconstruyen ni se modifican importaciones antiguas. La eliminación existente conserva sus guardas. Ver también [criterio de almacenamiento y tarjetas](conciliacion-tarjetas.md).
+
 ## Asistencia IA de conciliación (2026-10-23)
 
 Asistir con IA, en la barra de Conciliar cuenta, consulta pendientes del filtro completo usando la fuente canónica #Banco/#Alfa. Conserva cuenta, moneda, permisos por unidad, sentido, texto, importes y clasificación bancaria; excluye conciliados, marcas legacy y huellas alteradas. La paginación no limita el análisis. CONCILIACION-IA-MAX-FILAS limita cada lista a 300 inicialmente (50 a 1000); el exceso se rechaza antes de llamar al modelo, sin muestras silenciosas. Las propuestas recíprocas del motor existente se reservan primero, con origen Reglas; la IA recibe solo los pendientes restantes. Una consulta sin casos restantes no consume IA.

@@ -17,6 +17,7 @@ public static class AyudaManuales
         new AyudaTema("general","General","AlfaCore.Docs.manual_usuario.md"),
         new AyudaTema("consultas","Consultas","AlfaCore.Docs.manual_consultas.md"),
         new AyudaTema("conciliacion","Conciliación","AlfaCore.Docs.manual_conciliacion_bancaria.md"),
+        new AyudaTema("tarjetas","Conciliación de tarjetas","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
         new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
@@ -26,6 +27,7 @@ public static class AyudaManuales
     {
         var path=ruta.Split('?')[0].ToLowerInvariant();
         if(path.Contains("conciliacion-bancaria"))return "conciliacion";
+        if(path.Contains("conciliacion-tarjetas"))return "tarjetas";
         if(path.Contains("cobranzas"))return "cobranzas";
         if(path.Contains("consultas"))return "consultas";
         return "general";

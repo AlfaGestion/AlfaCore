@@ -8,6 +8,10 @@
     @if(Preparacion is { } prep) {
         <AlfaFeedbackPanel Message="@_feedback" />
         <p><strong>@prep.Movimiento.Detalle</strong><br />Banco: @prep.CuentaBanco · @prep.Movimiento.Fecha.ToString("dd/MM/yyyy") · @Dinero(prep.Movimiento.Importe)</p>
+        <div class="asiento-editor__conceptos">
+            <p>@(CatalogoActual!.Config.Reglas.Count==0 ? "Todavía no hay conceptos configurados. Podés preparar las cuentas sugeridas según el plan de esta base o imputar manualmente." : "Las cuentas se proponen según los conceptos configurados. Revisá la imputación antes de confirmar.")</p>
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="ConfigurarCuentas" Disabled="@_busy">Cuentas y conceptos</AlfaButton>
+        </div>
         <AlfaSelect Label="Concepto" Value="@_regla" ValueChanged="ElegirRegla" Options="@Reglas" Placeholder="Imputación manual" Disabled="@_busy" />
         <div class="asiento-editor__cabecera">
             <AlfaInput Label="Fecha del asiento" Type="date" Value="@_fecha" ValueChanged="v=>_fecha=v ?? string.Empty" Disabled="@_busy" />
@@ -26,7 +30,7 @@
         <div class="asiento-editor__scroll"><table><thead><tr><th>Cuenta</th><th>Debe</th><th>Haber</th><th>Acción</th></tr></thead><tbody>
             <tr><td>@prep.CuentaBanco — @prep.Catalogo.Bancos.FirstOrDefault(b=>b.Codigo==prep.CuentaBanco)?.Descripcion</td><td>@Dinero(prep.Movimiento.Importe>0 ? Math.Abs(prep.Movimiento.Importe) : 0)</td><td>@Dinero(prep.Movimiento.Importe<0 ? Math.Abs(prep.Movimiento.Importe) : 0)</td><td>Banco del extracto</td></tr>
             @foreach(var linea in _lineas) {
-                <tr @key="linea"><td><ConciliacionCuentaLookup Cuenta="@linea.Cuenta" CuentaChanged="v=>linea.Cuenta=v" Cuentas="prep.Catalogo.Cuentas" Disabled="@_busy" /></td>
+                <tr @key="linea"><td><ConciliacionCuentaLookup Cuenta="@linea.Cuenta" CuentaChanged="v=>linea.Cuenta=v" Cuentas="CatalogoActual!.Cuentas" Disabled="@_busy" /></td>
                     <td>@if(prep.Movimiento.Importe<0) { <AlfaInput Label="Importe al Debe" Type="number" Step="0.01" Value="@linea.Importe" ValueChanged="v=>linea.Importe=v ?? string.Empty" Disabled="@_busy" /> } else { <span>0,00</span> }</td>
                     <td>@if(prep.Movimiento.Importe>0) { <AlfaInput Label="Importe al Haber" Type="number" Step="0.01" Value="@linea.Importe" ValueChanged="v=>linea.Importe=v ?? string.Empty" Disabled="@_busy" /> } else { <span>0,00</span> }</td>
                     <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="()=>_lineas.Remove(linea)" Disabled="@(_busy||_lineas.Count==1)">Quitar</AlfaButton></td></tr>
@@ -42,12 +46,17 @@
         <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="Confirmar" Disabled="@(!PuedeConfirmar)">Confirmar asiento y conciliación</AlfaButton>
     </Footer>
 </AlfaDialog>
+@if(_configurando is not null) {
+    <ConciliacionAsientoConfigDialog Catalogo="@_configurando" OnClose="()=>_configurando=null" OnSaved="CuentasGuardadas" />
+}
 @code {
     [Parameter] public ConciliacionAsientoPreparacion? Preparacion { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<ConciliacionAsientoResultado> OnSaved { get; set; }
     private sealed class Linea { public string Cuenta { get; set; }="";public string Importe { get; set; }=""; }
     private ConciliacionAsientoPreparacion? _anterior;
+    private ConciliacionAsientoCatalogo? _catalogoActual,_configurando;
+    private ConciliacionAsientoCatalogo? CatalogoActual=>_catalogoActual??Preparacion?.Catalogo;
     private readonly List<Linea> _lineas=[];
     private string _fecha="",_unidad="",_detalle="",_talonario="",_regla="";
     private bool _busy,_confirmarNuevo;
@@ -55,7 +64,7 @@
     private AppUiMessage? _feedback;
     private readonly CancellationTokenSource _cts=new();
     private IReadOnlyList<AlfaSelectOption> Unidades=>Preparacion?.Catalogo.Unidades.Select(u=>new AlfaSelectOption(u.Codigo,$"{u.Codigo} — {u.Descripcion}")).ToList() ?? [];
-    private IReadOnlyList<AlfaSelectOption> Reglas=>Preparacion?.Catalogo.Config.Reglas.Select(r=>new AlfaSelectOption(r.Id.ToString(),r.Nombre)).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> Reglas=>CatalogoActual?.Config.Reglas.Select(r=>new AlfaSelectOption(r.Id.ToString(),r.Nombre)).ToList() ?? [];
     private IReadOnlyList<CobranzaTalonario> TalonariosUnidad { get { var todos=Preparacion?.Catalogo.Talonarios ?? [];var propios=todos.Where(t=>t.Unidad==_unidad).ToList();return propios.Count>0 ? propios : todos.Where(t=>t.Unidad is "" or "0").ToList(); } }
     private IReadOnlyList<AlfaSelectOption> Talonarios=>TalonariosUnidad.Select(t=>new AlfaSelectOption(t.Talonario.ToString(),$"CC X · Sucursal {t.Sucursal:D4} · Talonario {t.Talonario}")).ToList();
     private static decimal? Numero(string valor)=>decimal.TryParse(valor,NumberStyles.AllowDecimalPoint|NumberStyles.AllowLeadingSign,CultureInfo.InvariantCulture,out var n) ? n : null;
@@ -63,7 +72,7 @@
     private bool PuedeConfirmar=>!_busy&&Preparacion is { } p&&_detalle.Trim().Length>=3&&_unidad.Length>0&&_talonario.Length>0&&Diferencia==0&&_lineas.Count>0
         &&_lineas.All(l=>l.Cuenta.Length>0&&Numero(l.Importe)>0)&&(p.PosiblesDuplicados.Count==0||_confirmarNuevo);
     protected override void OnParametersSet() {
-        if(ReferenceEquals(_anterior,Preparacion))return;_anterior=Preparacion;_feedback=null;_lineas.Clear();_confirmarNuevo=false;_operacion=Guid.NewGuid();
+        if(ReferenceEquals(_anterior,Preparacion))return;_anterior=Preparacion;_catalogoActual=null;_configurando=null;_feedback=null;_lineas.Clear();_confirmarNuevo=false;_operacion=Guid.NewGuid();
         if(Preparacion is not { } p)return;
         _fecha=p.Movimiento.Fecha.ToString("yyyy-MM-dd");_detalle=p.Movimiento.Detalle.Length>200 ? p.Movimiento.Detalle[..200] : p.Movimiento.Detalle;
         _unidad=p.Catalogo.UnidadInicial;CambiarUnidad(_unidad);
@@ -71,9 +80,27 @@
         _regla="";if(p.ReglaSugerida.HasValue)ElegirRegla(p.ReglaSugerida.Value.ToString());
     }
     private void CambiarUnidad(string? unidad) { _unidad=unidad ?? "";var tal=TalonariosUnidad;_talonario=tal.Count==1 ? tal[0].Talonario.ToString() : ""; }
-    private void ElegirRegla(string? id) { _regla=id ?? "";var r=Preparacion?.Catalogo.Config.Reglas.FirstOrDefault(r=>r.Id.ToString()==_regla);if(r is null)return;
+    private void ElegirRegla(string? id) { _regla=id ?? "";var r=CatalogoActual?.Config.Reglas.FirstOrDefault(r=>r.Id.ToString()==_regla);if(r is null)return;
         _lineas.Clear();_lineas.Add(new(){Cuenta=r.Contrapartida,Importe=Math.Abs(Preparacion!.Movimiento.Importe).ToString("0.00",CultureInfo.InvariantCulture)});
         if(r.Detalle.Trim().Length>0)_detalle=r.Detalle.Trim(); }
+    private void ConfigurarCuentas()=>_configurando=CatalogoActual;
+    private async Task CuentasGuardadas()=>AplicarCatalogoGuardado(await Servicio.AsientoCatalogoAsync(_cts.Token));
+    internal void AplicarCatalogoGuardado(ConciliacionAsientoCatalogo catalogo)
+    {
+        // Actualiza el catálogo, conservando fecha, unidad, talonario y la distribución que el usuario ya editó.
+        _catalogoActual=catalogo;
+        _configurando=null;
+        if(Preparacion is { } p&&_lineas.Count==1&&string.IsNullOrWhiteSpace(_lineas[0].Cuenta))
+        {
+            var sugerida=ConciliacionBancariaService.SugerirReglaAsiento(_catalogoActual.Config,p.Categoria,p.CuentaBanco,p.Movimiento.Detalle);
+            if(sugerida.HasValue)
+            {
+                _regla=sugerida.Value.ToString();
+                _lineas[0].Cuenta=_catalogoActual.Config.Reglas.Single(r=>r.Id==sugerida.Value).Contrapartida;
+            }
+        }
+        if(!_catalogoActual.Config.Reglas.Any(r=>r.Id.ToString()==_regla))_regla="";
+    }
     private Task Cerrar()=>_busy ? Task.CompletedTask : OnClose.InvokeAsync();
     private async Task Confirmar() { if(!PuedeConfirmar||Preparacion is not { } p)return;_busy=true;_feedback=null;
         try {

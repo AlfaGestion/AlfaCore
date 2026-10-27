@@ -25,7 +25,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ConciliacionBancariaService.cs`
 - Propósito: importa extractos de Provincia, Santander y Mercado Pago, evita duplicados y prepara clasificación y propuestas para revisión en Caja y Bancos.
 - Datos que usa: `BK_ImportacionExtracto`, `BK_ExtractoMovimiento`, `BK_MovimientoClasificado`, `BK_MovimientoMatch`, `BK_MovimientoAplicacion`, `BK_ReglaInterpretacion`, `BK_AliasClienteBanco`, `BK_GeneracionAlfaLog`, `MA_CUENTAS`, `VT_CLIENTES`, `VE_CPTES_SALDOS_VENTAS`, `VE_COBRANZAS_REALIZADAS`, `TA_CONFIGURACION`.
-- Observaciones: usa sesión activa, permisos, Dapper y transacción; permite corrección manual versionada de clasificación y consulta contextual de facturas/orígenes en `ConciliacionBancariaService.Revision.cs` y cuenta corriente con recibos legacy, contrapartidas y aplicaciones en `ConciliacionBancariaService.CuentaCorriente.cs` (MV_ASIENTOS, MV_APLICACION, V_MV_CPTE, TA_MONEDAS y TA_USUARIOS). El parcial `ConciliacionBancariaService.Vinculos.cs` compara banco/contabilidad, confirma y deshace vínculos auditados en BK_Conciliacion/Banco/Alfa, respetando MV_CONCILIACION legacy y MV_ASIENTOS.Conciliado. El parcial `ConciliacionBancariaService.CobroExistente.cs` reconoce recibos legacy en BK_CobroExistente, con confirmación e idempotencia, sin generar nuevas registraciones ni conciliar. ConciliacionExtractoLector admite XLSX, XLS y CSV, con normalización mediante ConciliacionArchivoTabular/ExcelDataReader y detección de la variante Provincia con cabecera en fila 6. Mercado Pago admite archivos renombrados con fecha de referencia explícita, sugerida desde creación del XLSX cuando existe y revalidada al importar; las conversiones no inventan fechas de descarga. El parcial ConciliacionBancariaService.Clientes.cs permite asignar cliente con prioridad manual, regenerar la propuesta y recordar un alias bancario en BK_AliasClienteBanco para próximas importaciones, con auditoría, reevaluación individual y controles de conflicto. Normaliza CUIT y distingue cuentas del mismo titular por coincidencia única de saldo/importe, incluso con alias recordado. No genera cobranzas ni asientos. Ver `docs/modulos/conciliacion-bancaria.md`.
+- Observaciones: usa sesión activa, permisos, Dapper y transacción; permite corrección manual versionada de clasificación y consulta contextual de facturas/orígenes en `ConciliacionBancariaService.Revision.cs` y cuenta corriente con recibos legacy, contrapartidas y aplicaciones en `ConciliacionBancariaService.CuentaCorriente.cs` (MV_ASIENTOS, MV_APLICACION, V_MV_CPTE, TA_MONEDAS y TA_USUARIOS). El parcial `ConciliacionBancariaService.Vinculos.cs` compara banco/contabilidad, confirma y deshace vínculos auditados en BK_Conciliacion/Banco/Alfa, respetando MV_CONCILIACION legacy y MV_ASIENTOS.Conciliado. El parcial `ConciliacionBancariaService.CobroExistente.cs` reconoce recibos legacy en BK_CobroExistente, con confirmación e idempotencia, sin generar nuevas registraciones ni conciliar. ConciliacionExtractoLector admite XLSX, XLS, CSV y PDF de texto Nación/Hipotecario (pypdf local, saldos verificados, mismo Python de Recepción documental y transporte PdfPythonProceso compartido con tarjetas), con normalización mediante ConciliacionArchivoTabular/ExcelDataReader y detección de la variante Provincia con cabecera en fila 6. Mercado Pago admite archivos renombrados con fecha de referencia explícita, sugerida desde creación del XLSX cuando existe y revalidada al importar; las conversiones no inventan fechas de descarga. El parcial ConciliacionBancariaService.Clientes.cs permite asignar cliente con prioridad manual, regenerar la propuesta y recordar un alias bancario en BK_AliasClienteBanco para próximas importaciones, con auditoría, reevaluación individual y controles de conflicto. Normaliza CUIT y distingue cuentas del mismo titular por coincidencia única de saldo/importe, incluso con alias recordado. No genera cobranzas ni asientos. Ver `docs/modulos/conciliacion-bancaria.md`.
 
 ### Launcher
 
@@ -820,6 +820,30 @@ Criterio aplicado:
 - Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`.
 
 ## Stored Procedures usados
+
+### ConciliacionTarjetasService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConciliacionTarjetasService.cs`
+- Propósito: importar liquidaciones con documento original y conciliar tarjetas presentadas con auditoría y reversión.
+- Datos que usa: `MV_ASIENTOS` (TABLE oficial), `MA_CUENTAS`, `TA_USUARIOS`, `TA_CONFIGURACION`, auxiliares nuevos `TJ_Importacion`, `TJ_Detalle`, `TJ_Vinculo`, `TJ_VinculoDetalle`, `TJ_VinculoAlfa`.
+- Observaciones: permiso D75-TARJETAS-IA, validación por unidad/base, originales SHA-256 y transacciones sin registrar LT ni modificar contabilidad. `ConciliacionTarjetasService.Cuenta.cs` corrige cuentas solo sin historial, verifica duplicados, recalcula huellas y conserva original/auditoría; `ConciliacionTarjetasService.Ia.cs` agrega propuestas asistidas usando el transporte IA existente y `TarjetasIaPropuestas`, con revisión individual y revalidación al confirmar; contrato en `docs/modulos/conciliacion-tarjetas.md`.
+
+### TarjetasPdfLector
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/TarjetasPdfLector.cs`
+- Propósito: leer resúmenes mensuales Nación, Patagonia e Hipotecario conservando importes, anulaciones y precisión cupón/lote.
+- Datos que usa: PDF original en memoria, Python/pypdf y lector local distribuido.
+- Observaciones: stdin/stdout sin archivos temporales ni llamadas a IA, firma/tamaño/páginas/tiempo controlados; diferencias de detalle bloquean confirmar.
+
+### ConciliacionTarjetas
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/ConciliacionTarjetas.razor`
+- Propósito: importar documentos testigo y revisar tarjetas presentadas contra liquidaciones.
+- Datos que usa: `ConciliacionTarjetasService`, filtros de sucursal/fechas/estado, selección N:M y `TarjetasPropuestas`.
+- Observaciones: shell AlfaDesign, ayuda contextual, encabezados fijos y 50 filas por lista; confirmación explícita y diálogos sin cierre por backdrop.
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.
 

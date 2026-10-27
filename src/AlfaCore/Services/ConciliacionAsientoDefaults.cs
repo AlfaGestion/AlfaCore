@@ -23,7 +23,7 @@ internal static class ConciliacionAsientoDefaults
             reglas.Add(new(){Nombre=nombre,Categoria=categoria,Texto=texto,Contrapartida=cuenta});
         }
 
-        var gastos=Cuenta("GASTOS BANCARIOS","COMISIONES BANCARIAS","GASTOS Y COMISIONES BANCARIAS");
+        var gastos=Cuenta("GASTOS BANCARIOS","COMISIONES BANCARIAS","GASTOS Y COMISIONES BANCARIAS","COMISIONES Y GASTOS BANCARIOS");
         Agregar(gastos,"Comisiones bancarias","Comision");
         Agregar(gastos,"Comisiones del banco (sin tilde)","Gasto","comision");
         Agregar(gastos,"Comisiones del banco","Gasto","comisión");
@@ -39,6 +39,16 @@ internal static class ConciliacionAsientoDefaults
         {
             Agregar(iibb,$"SIRCREB ({categoria})",categoria,"sircreb");
             Agregar(iibb,$"Retención bancaria IIBB ({categoria})",categoria,"iibb");
+        }
+        // Son imputaciones contables de conceptos explícitos del extracto, no altas en el libro de IVA.
+        var ivaBanco=Cuenta("I V A DEBITOS COMISIONES BANCOS","IVA DEBITOS COMISIONES BANCOS","IVA COMISIONES BANCARIAS","IVA CREDITO FISCAL BANCARIO");
+        var ley=Cuenta("R LEY 25 413","IMPUESTO LEY 25 413","IMPUESTO LEY 25413","IMPUESTO A LOS DEBITOS Y CREDITOS BANCARIOS");
+        foreach(var categoria in new[]{"Gasto","Impuesto"})
+        {
+            Agregar(ivaBanco,$"IVA bancario base ({categoria})",categoria,"I.V.A. BASE");
+            Agregar(ivaBanco,$"IVA básico bancario ({categoria})",categoria,"DEBITO FISCAL IVA BASICO");
+            Agregar(ley,$"Ley 25.413 ({categoria})",categoria,"25.413");
+            Agregar(ley,$"Ley 25413 ({categoria})",categoria,"25413");
         }
         return reglas;
     }

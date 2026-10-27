@@ -8,13 +8,13 @@ using ClosedXML.Excel;
 
 namespace AlfaCore.Services;
 
-public sealed class ConciliacionExtractoLector
+public sealed class ConciliacionExtractoLector(IWebHostEnvironment? environment=null)
 {
     public const int MaxBytes = 20 * 1024 * 1024;
 
     public static string SugerirCuenta(BankSource banco, IReadOnlyList<ConciliacionCuenta> cuentas)
     {
-        var nombre = banco switch { BankSource.Provincia => "banco provincia", BankSource.Santander => "banco santander", _ => "mercado pago" };
+        var nombre = banco switch { BankSource.Provincia => "banco provincia", BankSource.Santander => "banco santander", BankSource.Nacion => "banco nacion", BankSource.Hipotecario => "banco hipotecario", _ => "mercado pago" };
         var principales=cuentas.Where(c=>Normalizar(c.Descripcion).Contains(nombre,StringComparison.Ordinal)).ToList();
         if (principales.Count==1) return principales[0].Codigo;
         if (principales.Count>1) return "";
@@ -23,14 +23,17 @@ public sealed class ConciliacionExtractoLector
         return candidatas.Count==1 ? candidatas[0].Codigo : "";
     }
 
-    public async Task<ConciliacionLectura> LeerAsync(ConciliacionArchivo archivo, BankSource? banco = null, CancellationToken ct = default)
+    public async Task<ConciliacionLectura> LeerAsync(ConciliacionArchivo archivo, BankSource? banco = null, CancellationToken ct = default,string python="python")
     {
         var extension=Path.GetExtension(archivo.Nombre).ToLowerInvariant();
-        if (extension is not (".xlsx" or ".xls" or ".csv")
+        if (extension is not (".xlsx" or ".xls" or ".csv" or ".pdf")
             || archivo.Contenido.Length is 0 or > MaxBytes)
-            throw new InvalidOperationException("Seleccioná un extracto .xlsx, .xls o .csv de hasta 20 MB.");
+            throw new InvalidOperationException("Seleccioná un extracto .xlsx, .xls, .csv o .pdf de hasta 20 MB.");
         if(archivo.FechaReferencia is { Year: <1900 })
             throw new InvalidOperationException("Indicá una fecha de referencia válida para la descarga.");
+        if(extension==".pdf")
+            return await new ConciliacionExtractoPdfLector(environment??throw new InvalidOperationException("No se pudo localizar el lector PDF en esta instalación."))
+                .LeerAsync(archivo,banco,python,ct);
         // Se reutilizan los parsers del proyecto original con un archivo temporal privado.
         var temp = Path.Combine(Path.GetTempPath(), $"alfacore-extracto-{Guid.NewGuid():N}.xlsx");
         try
@@ -59,7 +62,7 @@ public sealed class ConciliacionExtractoLector
                 BankSource.Provincia => new ProvinciaExcelStatementParser(),
                 BankSource.Santander => new SantanderExcelStatementParser(),
                 BankSource.MercadoPago => new MercadoPagoExcelStatementParser(fechaReferencia),
-                _ => throw new InvalidOperationException("El banco seleccionado no está disponible.")
+                _ => throw new InvalidOperationException("Para Nación e Hipotecario seleccioná el resumen PDF; ese banco no tiene lector Excel o CSV disponible.")
             };
             if(extension==".xlsx") await File.WriteAllBytesAsync(temp,archivo.Contenido,ct);
             else { ct.ThrowIfCancellationRequested();wb.SaveAs(temp); }

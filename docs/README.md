@@ -70,9 +70,12 @@ Material histórico o en bruto que no conviene mezclar con documentación activa
 
 ## Manuales de usuario
 
+- [Conciliación de tarjetas](../src/AlfaCore/Docs/manual_conciliacion_tarjetas.md) · [Contrato técnico](modulos/conciliacion-tarjetas.md).
+
 Viven en:
 
 - [src/AlfaCore/Docs/manual_usuario.md](../src/AlfaCore/Docs/manual_usuario.md)
+- [Demostración de Conciliación y Cobranzas](../src/AlfaCore/Docs/manual_demo_conciliacion_bancaria.md)
 - [src/AlfaCore/Docs/manual_consultas.md](../src/AlfaCore/Docs/manual_consultas.md)
 - [src/AlfaCore/Docs/manual_auditoria_usuarios.md](../src/AlfaCore/Docs/manual_auditoria_usuarios.md)
 
