@@ -13,6 +13,8 @@ public sealed class ActualizacionesDashboardDto
     public SqlServerEngineInfoDto MotorSql { get; set; } = new();
     public IReadOnlyList<ActualizacionScriptDto> Scripts { get; set; } = [];
     public IReadOnlyList<ActualizacionScriptDto> Pendientes { get; set; } = [];
+    /// <summary>Versión menor o igual a la actual y nunca aplicados OK: el motor no los va a correr. Revisar y aplicar a mano.</summary>
+    public IReadOnlyList<ActualizacionScriptDto> Salteados { get; set; } = [];
     public IReadOnlyList<ActualizacionHistorialDto> Historial { get; set; } = [];
 }
 
