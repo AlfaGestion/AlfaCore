@@ -126,7 +126,7 @@ internal static class WhatsAppPhoneInspectionCommand
 
         var baseUrl = graphBaseUrl.TrimEnd('/');
         var version = credential.GraphVersion.Trim('/');
-        var fields = Uri.EscapeDataString("id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app,status,messaging_limit_tier,health_status");
+        var fields = Uri.EscapeDataString("id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app");
         var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(phoneNumberId)}?fields={fields}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -140,12 +140,24 @@ internal static class WhatsAppPhoneInspectionCommand
 
         if (!response.IsSuccessStatusCode)
         {
+            WriteGraphError(output, "GRAPH", body);
             WriteFields(output, null);
             return 1;
         }
 
         using var document = JsonDocument.Parse(body);
         WriteFields(output, document.RootElement);
+
+        // Campos de estado/bloqueo pedidos aparte: si Meta no reconoce alguno en esta versión de Graph
+        // (400), no debe tapar los datos básicos de arriba ni los demás campos.
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, phoneNumberId, credential.AccessToken, "status,messaging_limit_tier", output, ct,
+            root =>
+            {
+                output.WriteLine($"status = {GetField(root, "status")}");
+                output.WriteLine($"messaging_limit_tier = {GetField(root, "messaging_limit_tier")}");
+            });
+        await WriteOptionalFieldsAsync(httpClient, baseUrl, version, phoneNumberId, credential.AccessToken, "health_status", output, ct,
+            root => WriteHealthStatus(output, root));
 
         var numberFields = Uri.EscapeDataString("id,display_phone_number,name_status,new_name_status,certificate,new_certificate");
         var numbersUri = $"{baseUrl}/{version}/{Uri.EscapeDataString(credential.WabaId)}/phone_numbers?fields={numberFields}";
@@ -158,6 +170,7 @@ internal static class WhatsAppPhoneInspectionCommand
 
         if (!numbersResponse.IsSuccessStatusCode)
         {
+            WriteGraphError(output, "PHONE_NUMBERS GRAPH", numbersBody);
             WriteNameStatusFields(output, null);
             return 1;
         }
@@ -186,9 +199,64 @@ internal static class WhatsAppPhoneInspectionCommand
         output.WriteLine($"display_phone_number = {GetField(root, "display_phone_number")}");
         output.WriteLine($"verified_name = {GetField(root, "verified_name")}");
         output.WriteLine($"quality_rating = {GetField(root, "quality_rating")}");
-        output.WriteLine($"status = {GetField(root, "status")}");
-        output.WriteLine($"messaging_limit_tier = {GetField(root, "messaging_limit_tier")}");
-        WriteHealthStatus(output, root);
+    }
+
+    private static async Task WriteOptionalFieldsAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string version,
+        string phoneNumberId,
+        string accessToken,
+        string fields,
+        TextWriter output,
+        CancellationToken ct,
+        Action<JsonElement?> write)
+    {
+        var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(phoneNumberId)}?fields={Uri.EscapeDataString(fields)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            output.WriteLine($"GRAPH ({fields}) HTTP = {(int)response.StatusCode}");
+            WriteGraphError(output, $"GRAPH ({fields})", body);
+            write(null);
+            return;
+        }
+
+        using var document = JsonDocument.Parse(body);
+        write(document.RootElement);
+    }
+
+    /// <summary>
+    /// Imprime el objeto "error" de Graph (mensaje, código, subcódigo, fbtrace_id). Meta no incluye el
+    /// token en estas respuestas; si el cuerpo no es JSON se informa sin volcarlo.
+    /// </summary>
+    private static void WriteGraphError(TextWriter output, string label, string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object)
+            {
+                output.WriteLine($"{label} ERROR = respuesta sin objeto error");
+                return;
+            }
+
+            var code = error.TryGetProperty("code", out var c) ? c.ToString() : "NO DISPONIBLE";
+            var subcode = error.TryGetProperty("error_subcode", out var s) ? s.ToString() : "NO DISPONIBLE";
+            output.WriteLine($"{label} ERROR = ({code}/{subcode}) {GetField(error, "message")}");
+            var userMessage = GetField(error, "error_user_msg");
+            if (userMessage != "NO DISPONIBLE")
+                output.WriteLine($"{label} ERROR_USUARIO = {userMessage}");
+            output.WriteLine($"{label} FBTRACE_ID = {GetField(error, "fbtrace_id")}");
+        }
+        catch (JsonException)
+        {
+            output.WriteLine($"{label} ERROR = respuesta no JSON");
+        }
     }
 
     /// <summary>

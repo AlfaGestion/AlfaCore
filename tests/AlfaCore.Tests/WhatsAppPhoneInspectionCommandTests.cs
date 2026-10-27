@@ -224,6 +224,65 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     }
 
     [Fact]
+    public async Task OptionalFieldRejected_PrintsMetaErrorAndKeepsOtherFields()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+        {
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? string.Empty);
+            if (request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true)
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[]}""") };
+            if (query.Contains("messaging_limit_tier", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("""{"error":{"message":"(#100) Tried accessing nonexisting field (messaging_limit_tier)","code":100,"fbtrace_id":"AbC123"}}""")
+                };
+            if (query.Contains("health_status", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"health_status":{"can_send_message":"LIMITED"}}""") };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"quality_rating":"YELLOW"}""") };
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("quality_rating = YELLOW", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH (status,messaging_limit_tier) HTTP = 400", text, StringComparison.Ordinal);
+        Assert.Contains("ERROR = (100/NO DISPONIBLE) (#100) Tried accessing nonexisting field (messaging_limit_tier)", text, StringComparison.Ordinal);
+        Assert.Contains("FBTRACE_ID = AbC123", text, StringComparison.Ordinal);
+        Assert.Contains("status = NO DISPONIBLE", text, StringComparison.Ordinal);
+        Assert.Contains("HEALTH_CAN_SEND_MESSAGE = LIMITED", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BasicRequestRejected_PrintsMetaErrorWithoutToken()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":{"message":"Error validating access token","code":190,"error_subcode":460,"error_user_msg":"Sesión inválida","fbtrace_id":"Xyz"}}""")
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("GRAPH ERROR = (190/460) Error validating access token", text, StringComparison.Ordinal);
+        Assert.Contains("GRAPH ERROR_USUARIO = Sesión inválida", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretToken, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NameStatus_AvailableWithoutReview_IsSuccessAndDoesNotInferRegistration()
     {
         var text = await ExecuteWithNameStatusesAsync("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW");
