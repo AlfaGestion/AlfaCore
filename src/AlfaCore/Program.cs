@@ -3016,6 +3016,12 @@ public class Program
         app.MapPost("/api/webchat/{siteKey}/mensajes", HandleWebChatPostMessageAsync)
             .RequireRateLimiting(WebChatWriteRateLimitPolicy);
 
+        // Chat con el soporte de ALFA NET, abierto a pantalla completa. Lo abre Alfa Gestion (VB6)
+        // desde su menu / pantalla principal: msedge --app=<servidor>/webchat/soporte?contexto=..&nombre=..
+        // La clave del sitio la pone el servidor (WebChat:SoporteSiteKey), asi el legacy no la guarda.
+        app.MapGet("/webchat/soporte", (HttpRequest request, IConfiguration config) =>
+            Results.Content(BuildWebChatSoporteHtml(request, config), "text/html; charset=utf-8"));
+
         // Mercado Pago (pagos con terminal Point) -- no confundir con Mercado Libre arriba.
         app.MapPost("/api/mercadopago/point/webhook/{token}", async (
             string token,
@@ -3809,6 +3815,48 @@ public class Program
         });
 
         return baseInfo.IdBase;
+    }
+
+    /// <summary>
+    /// Pagina del chat de soporte (ver /webchat/soporte). Usa el mismo widget que los sitios de
+    /// clientes, en modo ventana. contexto y nombre vienen del legacy (cliente, empresa, usuario) y
+    /// quedan en la conversacion para que el equipo sepa quien escribe.
+    /// </summary>
+    private static string BuildWebChatSoporteHtml(HttpRequest request, IConfiguration config)
+    {
+        static string Html(string value) => System.Net.WebUtility.HtmlEncode(value);
+        static string Recortar(string? value, int max)
+        {
+            var limpio = (value ?? string.Empty).Trim();
+            return limpio.Length > max ? limpio[..max] : limpio;
+        }
+
+        var siteKey = (config["WebChat:SoporteSiteKey"] ?? string.Empty).Trim();
+        var titulo = Recortar(config["WebChat:SoporteTitulo"], 100);
+        if (titulo.Length == 0)
+            titulo = "Chat con soporte";
+
+        var head = "<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"utf-8\">"
+            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            + $"<title>{Html(titulo)}</title>"
+            + "<style>html,body{margin:0;height:100%;background:#f8fafc;font-family:system-ui,'Segoe UI',sans-serif}"
+            + ".aviso{max-width:420px;margin:15vh auto;padding:24px;text-align:center;color:#334155}</style></head><body>";
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(siteKey, "^AC-[a-f0-9]{32}$"))
+        {
+            return head
+                + "<div class=\"aviso\"><h2>Chat no disponible</h2>"
+                + "<p>El chat con soporte todavia no esta configurado en este servidor.</p></div></body></html>";
+        }
+
+        var contexto = Recortar(request.Query["contexto"], 200);
+        var nombre = Recortar(request.Query["nombre"], 80);
+
+        return head
+            + "<noscript><div class=\"aviso\">Para usar el chat hay que habilitar JavaScript.</div></noscript>"
+            + $"<script src=\"/webchat/widget.js\" data-site=\"{Html(siteKey)}\" data-modo=\"ventana\""
+            + $" data-contexto=\"{Html(contexto)}\" data-nombre=\"{Html(nombre)}\" defer></script>"
+            + "</body></html>";
     }
 
     private const string WebChatReadRateLimitPolicy = "webchat-lectura";

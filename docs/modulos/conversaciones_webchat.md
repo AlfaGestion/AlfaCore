@@ -125,6 +125,29 @@ conserva. Si `sessionStorage` no está disponible, usa un id en memoria (no sobr
 | `CONV_BOT_GENERA_TICKET` | `1` (default): cuando el bot deriva (`DERIVA` o contención), crea un ticket con la consulta vinculado a la conversación y le pasa el número al cliente. Si la conversación ya tiene un ticket abierto no crea otro. `TicketsService` se resuelve con `IServiceProvider` porque depende de `ConversacionesService` |
 | `CONV_BOT_WEB_PIDE_DATOS` | `1` (default): solo `WEBCHAT`, pedido de WhatsApp y razón social (ver arriba) |
 
+## Chat con soporte desde Alfa Gestión (VB6)
+
+Los usuarios de Alfa Gestión chatean con el soporte de ALFA NET sin salir del sistema. Es el mismo
+widget, en **modo ventana**, servido por AlfaCore en una página propia:
+
+```text
+GET /webchat/soporte?contexto=<quién escribe>&nombre=<nombre precargado>
+```
+
+- La clave del sitio la pone el servidor: `WebChat:SoporteSiteKey` en `appsettings.json` (la clave
+  `AC-...` de la base de ALFA NET, generada en Configuración de Conversaciones → Canales → Chat del
+  sitio web). Sin clave válida la página muestra "Chat no disponible". `WebChat:SoporteTitulo` es el
+  título de la pestaña.
+- Si la base de ALFA NET tiene `CONV_WEBCHAT_DOMINIOS_PERMITIDOS` cargado, agregar el host del propio
+  AlfaCore (ej. `alfacentral.ddns.net`): el widget corre en esa página.
+- Atributos nuevos del widget (no cambian el uso en sitios de clientes): `data-modo="ventana"` (ocupa
+  toda la ventana, arranca abierto, sin burbuja ni botón de cerrar) y `data-nombre` (nombre precargado).
+- Alfa Gestión (CN000PR) abre `msedge --app=<url>` con `contexto = "ALFA GESTION | CLI:<código de
+  cliente> | <razón social> | USR:<usuario> | BASE:<base>"` y `nombre = "<usuario> (<razón social>)"`.
+  Accesos: la línea "Chateá con nosotros" del encabezado del menú y una opción de menú con
+  `PROCESO = ChatSoporte` (se agrega a mano en `TA_MENU`, nombre terminado en "(web)"). En la base del
+  cliente, `TA_CONFIGURACION.CHAT_SOPORTE_URL` cambia la dirección o, con `NO`, oculta el chat.
+
 ## Limitaciones conocidas
 
 - Visitante anónimo: `ResolverCuentaVinculadaAsync` no encuentra cuenta, el asistente responde en
