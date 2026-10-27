@@ -5,6 +5,21 @@ namespace AlfaCore.Components.Pages;
 
 public partial class ConciliacionTarjetas
 {
+    private string _fechaResumenLocal="",_fechaAlfaLocal="",_sucursalAlfaLocal="";
+    private static string FechaClave(DateTime fecha)=>fecha.ToString("yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+    private static IReadOnlyList<AlfaSelectOption> OpcionesFechas(IEnumerable<DateTime> fechas)=>
+        [new("","Todas las fechas"),..fechas.Select(f=>f.Date).Distinct().OrderBy(f=>f).Select(f=>new AlfaSelectOption(FechaClave(f),f.ToString("dd/MM/yyyy")))];
+    private IReadOnlyList<AlfaSelectOption> FechasResumen=>OpcionesFechas(_comparacion?.Detalles.Select(d=>d.Fecha)??[]);
+    private IReadOnlyList<AlfaSelectOption> FechasAlfa=>OpcionesFechas(_comparacion?.Movimientos.Select(m=>m.Fecha)??[]);
+    private IReadOnlyList<AlfaSelectOption> SucursalesAlfa=>[new("","Todas las sucursales"),..(_comparacion?.Movimientos??[]).Select(m=>m.Sucursal.Trim()).Distinct().OrderBy(s=>s).Select(s=>new AlfaSelectOption(s.Length==0?"__sin_sucursal__":s,s.Length==0?"Sin sucursal":s))];
+    private IEnumerable<TarjetasDetalle> ResumenFiltrado=>(_comparacion?.Detalles??[]).Where(d=>_fechaResumenLocal.Length==0||FechaClave(d.Fecha)==_fechaResumenLocal);
+    private IEnumerable<TarjetasMovimiento> AlfaFiltrado=>(_comparacion?.Movimientos??[]).Where(m=>(_fechaAlfaLocal.Length==0||FechaClave(m.Fecha)==_fechaAlfaLocal)&&(_sucursalAlfaLocal.Length==0||m.Sucursal.Trim()==(_sucursalAlfaLocal=="__sin_sucursal__"?"":_sucursalAlfaLocal)));
+    private int SeleccionOcultaResumen=>_detalles.Count-ResumenFiltrado.Count(d=>_detalles.Contains(d.Id));
+    private int SeleccionOcultaAlfa=>_movimientos.Count-AlfaFiltrado.Count(m=>_movimientos.Contains(m.Clave));
+    private void FiltrarFechaResumen(string? valor){if(_busy)return;_fechaResumenLocal=valor??"";_paginaResumen=1;}
+    private void FiltrarFechaAlfa(string? valor){if(_busy)return;_fechaAlfaLocal=valor??"";_paginaAlfa=1;}
+    private void FiltrarSucursalAlfa(string? valor){if(_busy)return;_sucursalAlfaLocal=valor??"";_paginaAlfa=1;}
+    private void LimpiarFiltrosLocales(){_fechaResumenLocal=_fechaAlfaLocal=_sucursalAlfaLocal="";_paginaResumen=_paginaAlfa=1;}
     private bool _soloSeleccionados;
     private int _tamanoPagina=50;
     private static readonly IReadOnlyList<AlfaSelectOption> TamanosPagina=[new("50","50"),new("100","100")];
@@ -35,13 +50,13 @@ public partial class ConciliacionTarjetas
     private void SeleccionarResumen(bool pagina,bool invertir)
     {
         if(_busy||_comparacion is null)return;
-        var candidatos=(pagina?PaginaResumen:_comparacion.Detalles).Where(d=>d.Vinculo is null).Select(d=>d.Id).ToList();
+        var candidatos=(pagina?PaginaResumen:ResumenFiltrado).Where(d=>d.Vinculo is null).Select(d=>d.Id).ToList();
         CambiarSeleccion(_detalles,candidatos,invertir);AjustarPaginas();Header();
     }
     private void SeleccionarAlfa(bool pagina,bool invertir)
     {
         if(_busy||_comparacion is null)return;
-        var candidatos=(pagina?PaginaAlfa:_comparacion.Movimientos).Where(Seleccionable).Select(m=>m.Clave).ToList();
+        var candidatos=(pagina?PaginaAlfa:AlfaFiltrado).Where(Seleccionable).Select(m=>m.Clave).ToList();
         CambiarSeleccion(_movimientos,candidatos,invertir);AjustarPaginas();Header();
     }
     private void CambiarSeleccion<T>(HashSet<T> seleccion,IReadOnlyList<T> candidatos,bool invertir)

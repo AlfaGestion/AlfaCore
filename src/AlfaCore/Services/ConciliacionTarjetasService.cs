@@ -46,18 +46,11 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         => TarjetasPdfLector.ResolverPython(await Config(cn,"TARJETAS-PYTHON",ct),
             await Config(cn,"InterfacesIaComprasPythonExe",ct));
     public Task<IReadOnlyList<ConciliacionCuenta>> CuentasAsync(CancellationToken ct=default)=>Ejecutar<IReadOnlyList<ConciliacionCuenta>>("Cuentas",async(c,t)=>
-        (await c.QueryAsync<ConciliacionCuenta>(Cmd("SELECT LTRIM(RTRIM(CODIGO)) Codigo,DESCRIPCION Descripcion,LTRIM(RTRIM(MONEDA)) Moneda FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(MEDIODEPAGO))='TJ' AND ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 ORDER BY DESCRIPCION",null,t))).AsList(),ct);
+        (await c.QueryAsync<ConciliacionCuenta>(Cmd(CuentasTarjetasSql,null,t))).AsList(),ct);
     public Task<TarjetasLectura> LeerAsync(ConciliacionArchivo archivo,CancellationToken ct=default)=>Ejecutar("LeerPDF",async(c,t)=>
     {
         var lectura=await lector.LeerAsync(archivo,await PythonAsync(c,t),t);
-        var reglas=JsonSerializer.Deserialize<List<Asociacion>>(await Config(c,"TARJETAS-ASOCIACIONES",t))??[];
-        var regla=reglas.SingleOrDefault(x=>x.Banco==lectura.Banco&&x.Comercio==lectura.Comercio&&x.Tarjeta==lectura.Tarjeta);
-        if(regla is not null){lectura.CuentaSugerida=regla.Cuenta;lectura.SucursalSugerida=regla.Sucursal;}
-        else
-        {
-            var cuentas=(await c.QueryAsync<ConciliacionCuenta>(Cmd("SELECT LTRIM(RTRIM(CODIGO)) Codigo,DESCRIPCION Descripcion FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(MEDIODEPAGO))='TJ' AND ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0",null,t))).Where(x=>lectura.Tarjeta.Length>0&&x.Descripcion.Contains(lectura.Tarjeta,StringComparison.OrdinalIgnoreCase)).ToList();
-            if(cuentas.Count==1)lectura.CuentaSugerida=cuentas[0].Codigo;
-        }
+        await DetectarCuenta(c,lectura,t);
         return lectura;
     },ct);
     public Task<long> ImportarAsync(ConciliacionArchivo archivo,string cuenta,string sucursal,bool recordar,CancellationToken ct=default)=>Ejecutar("Importar",async(c,t)=>
@@ -109,29 +102,12 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         if(f.Desde.Date>f.Hasta.Date||f.Sucursal.Length>10||f.Buscar.Length>200||f.Estado is not("Todos" or "Pendientes" or "Conciliados"))throw new InvalidOperationException("Revisá las fechas y los filtros.");
         var i=await c.QuerySingleOrDefaultAsync<TarjetasImportacion>(Cmd("SELECT * FROM dbo.TJ_Importacion WHERE Id=@Importacion",f,ct,tx))??throw new InvalidOperationException("No se encontró la importación.");
         var detalles=(await c.QueryAsync<TarjetasDetalle>(Cmd("SELECT d.*,v.VinculoId Vinculo FROM dbo.TJ_Detalle d LEFT JOIN dbo.TJ_VinculoDetalle v ON v.DetalleId=d.Id AND v.Activo=1 WHERE d.ImportacionId=@Importacion ORDER BY d.Fecha,d.Id",f,ct,tx))).AsList();
-        var movimientos=(await c.QueryAsync<TarjetasMovimiento>(Cmd("""
-            IF NOT EXISTS(SELECT 1 FROM dbo.TA_USUARIOS WHERE UPPER(LTRIM(RTRIM(NOMBRE)))=UPPER(@usuario)) THROW 50001,'El usuario no existe en la base activa.',1;
-            SELECT TOP(10001) CONCAT(RTRIM(a.PERIODO),'|',a.MES_OPERATIVO,'|',a.[NUMERO ASIENTO],'|',RTRIM(a.TIPO_REG),'|',a.SECUENCIA,
-                '|',RTRIM(a.TC),'|',RTRIM(a.SUCURSAL),'|',RTRIM(a.NUMERO),'|',RTRIM(a.LETRA)) Clave,
-                CONCAT(RTRIM(a.PERIODO),'|',a.MES_OPERATIVO,'|',a.[NUMERO ASIENTO],'|',RTRIM(a.TIPO_REG),'|',a.SECUENCIA) ClaveAnterior,
-                CONVERT(varchar(64),HASHBYTES('SHA2_256',CONCAT(CONVERT(varchar(23),a.FECHA,126),'|',a.IMPORTE,'|',a.CUENTA,'|',a.TC,'|',a.SUCURSAL,'|',a.NUMERO,'|',a.LETRA,'|',a.UNEGOCIO,'|',a.TJ_NroCupon,'|',a.TJ_Presentacion,'|',a.TJ_Liquidacion,'|',a.DETALLE)),2) Huella,
-                a.FECHA Fecha,CONCAT(RTRIM(a.TC),' ',a.SUCURSAL,'-',a.NUMERO,' ',a.LETRA) Comprobante,RTRIM(a.SUCURSAL) Sucursal,
-                ISNULL(a.DETALLE,'') Detalle,ISNULL(a.TJ_NroCupon,'') Cupon,ISNULL(a.TJ_Presentacion,0) Presentacion,a.IMPORTE Importe,
-                CONVERT(bit,CASE WHEN ISNULL(a.TJ_Liquidacion,0)>0 THEN 1 ELSE 0 END) LegacyLiquidado
-            FROM dbo.MV_ASIENTOS a WHERE LTRIM(RTRIM(a.CUENTA))=@cuenta AND LTRIM(RTRIM(a.MONEDA))='1'
-                AND ISNULL(a.EsResumen,0)=0 AND ISNULL(a.EsCierre,0)=0 AND ISNULL(a.ES_SALDO_APERTURA,0)=0
-                AND a.[DEBE-HABER]='D' AND a.IMPORTE>0 AND ISNULL(a.TJ_Presentacion,0)>0
-                AND (NULLIF(RTRIM(a.TJ_NroCupon),'') IS NOT NULL OR EXISTS(SELECT 1 FROM dbo.V_TA_Cpte tipo
-                    WHERE LTRIM(RTRIM(tipo.Codigo))=LTRIM(RTRIM(a.TC)) AND LTRIM(RTRIM(tipo.SISTEMA))='Ventas'))
-                AND a.FECHA>=@desde AND a.FECHA<DATEADD(day,1,@hasta)
-                AND (@sucursal='' OR LTRIM(RTRIM(a.SUCURSAL))=@sucursal)
-                AND EXISTS(SELECT 1 FROM dbo.TA_USUARIOS u WHERE UPPER(LTRIM(RTRIM(u.NOMBRE)))=UPPER(@usuario)
-                    AND (ISNULL(u.AdminCentral,0)=1 OR (NULLIF(LTRIM(RTRIM(u.UNEGOCIO)),'') IS NOT NULL AND LTRIM(RTRIM(u.UNEGOCIO))=LTRIM(RTRIM(a.UNEGOCIO)))))
-            ORDER BY a.FECHA,a.[NUMERO ASIENTO],a.SECUENCIA;
-            """,new{cuenta=i.Cuenta,desde=f.Desde.Date,hasta=f.Hasta.Date,sucursal=f.Sucursal.Trim(),usuario=users.GetCurrentUserName()},ct,tx))).AsList();
+        var movimientos=(await c.QueryAsync<TarjetasMovimiento>(Cmd(MovimientosAlfaSql,new{cuenta=i.Cuenta,desde=f.Desde.Date,hasta=f.Hasta.Date,sucursal=f.Sucursal.Trim(),usuario=users.GetCurrentUserName()},ct,tx))).AsList();
         if(movimientos.Count>10000)throw new InvalidOperationException("Acotá el período: hay más de 10.000 operaciones para revisar.");
         if(movimientos.Any(m=>string.IsNullOrWhiteSpace(m.Cupon)||m.Cupon.Trim()=="1"))
             i.Avisos+=" Hay movimientos de Alfa sin número de cupón identificable. Revisá las coincidencias por fecha, presentación e importe; no prueban identidad individual.";
+        if(movimientos.Any(m=>m.Presentacion<=0))
+            i.Avisos+=" Hay cobranzas de Ventas sin número de presentación. Se incluyen por su cuenta de tarjeta; revisá fecha, cupón e importe contra la liquidación.";
         var vinculos=(await c.QueryAsync<(string Clave,string Huella,long Vinculo)>(Cmd("SELECT Clave,Huella,VinculoId Vinculo FROM dbo.TJ_VinculoAlfa WHERE Cuenta=@Cuenta AND Activo=1",new{i.Cuenta},ct,tx))).ToDictionary(x=>x.Clave);
         // Compatibilidad con vínculos previos: la huella desambigua la clave antigua incompleta.
         foreach(var grupo in movimientos.GroupBy(x=>x.ClaveAnterior))

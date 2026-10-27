@@ -13,7 +13,15 @@ public sealed class TarjetasLectura
     public List<string> Avisos {get;set;}=[];
     public string CuentaSugerida {get;set;}="";
     public string SucursalSugerida {get;set;}="";
+    public TarjetasDeteccionCuenta? Deteccion {get;set;}
 }
+public sealed record TarjetasCuentaCandidata(string Cuenta,string Descripcion,int PorCupon,int PorFechaImporte,
+    int LotesCompatibles,decimal ImporteCoincidente,string Sucursal,int MovimientosConsultados)
+{
+    public int Coincidencias=>PorCupon+PorFechaImporte;
+}
+public sealed record TarjetasDeteccionCuenta(DateTime Desde,DateTime Hasta,int Dias,int CuentasAnalizadas,
+    string Mensaje,IReadOnlyList<TarjetasCuentaCandidata> Candidatas);
 public sealed class TarjetasDetalle
 {
     public long Id {get;set;}
@@ -47,6 +55,7 @@ public sealed class TarjetasImportacion
 }
 public sealed class TarjetasMovimiento
 {
+    public string Cuenta {get;set;}="";
     public string Clave {get;set;}="";
     public string ClaveAnterior {get;set;}="";
     public string Huella {get;set;}="";
