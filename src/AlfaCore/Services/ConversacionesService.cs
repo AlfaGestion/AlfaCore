@@ -8845,6 +8845,11 @@ public sealed partial class ConversacionesService(
         {
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
             {
+                // Sólo si el bot está prendido en la base (si lo apagaron a propósito no hay nada que avisar),
+                // una vez por día por conversación.
+                var configBot = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+                if (configBot.BotActivo && !await ExisteNotaInternaHoyAsync(idConversacion, NotaModuloAutomatizacionesInactivo, ct).ConfigureAwait(false))
+                    await AddInternalEventCoreAsync(idConversacion, NotaModuloAutomatizacionesInactivo, null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
                 return;
             }
 
@@ -10289,6 +10294,9 @@ public sealed partial class ConversacionesService(
     /// nota y da false.
     /// </summary>
     internal const string NotaTopeCreditosIa = "🤖⛔ Se alcanzó el tope mensual de créditos de IA: el asistente no responde. Requiere que un operador lo tome.";
+
+    // Sin esta nota el bot callaba sin rastro con el módulo suspendido (prueba vencida, Base4271 2026-10-27).
+    internal const string NotaModuloAutomatizacionesInactivo = "🤖⛔ El asistente no respondió: el módulo Automatizaciones no está activo para esta empresa (Administrar → Módulos). Requiere que un operador lo tome.";
 
     /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
     internal const string NotaBotPidioDatosWeb = "🤖🪪 El asistente le pidió al visitante del chat web su WhatsApp y la razón social.";
