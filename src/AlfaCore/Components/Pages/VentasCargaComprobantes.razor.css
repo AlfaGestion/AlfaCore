@@ -1,0 +1,27 @@
+.cc-page { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding: 24px; }
+.cc-intro, .cc-document-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.cc-page h2 { margin: 8px 0; font-size: 24px; color: var(--alfa-text-primary); }
+.cc-page p { margin: 8px 0; color: var(--alfa-text-secondary); line-height: 1.5; }
+.cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--alfa-text-secondary); }
+.cc-status { padding: 8px 12px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); white-space: nowrap; font-size: 12px; }
+.cc-page .cc-filter-note { margin: 0; font-size: 12px; }
+.cc-data-view { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); min-width: 0; overflow: hidden; }
+.cc-table-scroll { overflow: auto; max-height: 65vh; }
+.cc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cc-table th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-surface); color: var(--alfa-text-secondary); font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
+.cc-table th, .cc-table td { padding: 12px; border-bottom: 1px solid var(--alfa-border-default); vertical-align: middle; }
+.cc-table td small { display: block; color: var(--alfa-text-secondary); margin-top: 4px; }
+.cc-table .cc-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cc-data-footer { padding: 12px 16px; color: var(--alfa-text-secondary); font-size: 12px; }
+.cc-editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.cc-summary { padding: 20px; background: var(--alfa-bg-surface); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); }
+.cc-total { display: block; font-size: 28px; font-weight: 600; color: var(--alfa-text-primary); margin: 16px 0; }
+.cc-effect { border-top: 1px solid var(--alfa-border-default); padding-top: 16px; margin-top: 16px; }
+.cc-summary .cc-note { font-size: 12px; }
+.cc-quantity { min-width: 130px; }
+.cc-table ::deep .alfa-field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.cc-table ::deep .alfa-input__control { min-width: 100px; }
+@media (max-width: 1440px) { .cc-editor { grid-template-columns: minmax(0, 1fr) 250px; } }
+@media (max-width: 1024px) { .cc-page { padding: 16px; } .cc-editor { grid-template-columns: 1fr; } .cc-intro, .cc-document-header { align-items: start; flex-direction: column; } }
+
+.cc-intro--compacto { justify-content: flex-end; }

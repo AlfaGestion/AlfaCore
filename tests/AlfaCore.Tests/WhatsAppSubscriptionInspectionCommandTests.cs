@@ -329,6 +329,7 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
         Assert.False(handler.Called);
         var text = output.ToString();
         Assert.Contains("OWNERSHIP = ERROR", text);
+        Assert.Contains("PHONE_WEBHOOK_HTTP = N/A", text);
         Assert.Contains("EVIDENCE = OWNERSHIP_BLOCKED", text);
     }
 
@@ -435,6 +436,211 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
         Assert.DoesNotContain(querySecret, output);
         Assert.DoesNotContain(webhookSecret, output);
         Assert.DoesNotContain(verifySecret, output);
+    }
+
+    // WebhookTokens con la forma real (64 hex) -- ninguno debe aparecer jamás en la salida.
+    private const string AlfaWebToken = "B6F534AA11BB22CC33DD44EE55FF66007711882299330044AA55BB66CC77DD88";
+    private const string AlfaCentralToken = "86EE44AA11BB22CC33DD44EE55FF66007711882299330044AA55BB66CC77DD99";
+    private const string AlfaWebCallback = "https://alfanetweb.ddns.net/api/conversaciones/whatsapp/webhook/" + AlfaWebToken;
+    private const string AlfaCentralCallback = "https://alfacentral.ddns.net/api/conversaciones/whatsapp/webhook/" + AlfaCentralToken;
+    private const string EmptyPhone = """{"id":"1373763429148369"}""";
+
+    [Fact]
+    public async Task SubscribedApp_ExpectedAppWithAlfaCentralOverride_PrintsMaskedOverrideThatDoesNotMatch()
+    {
+        var handler = new GraphHandler(
+            $$"""{"data":[{"id":"{{ExpectedAppId}}","override_callback_uri":"{{AlfaCentralCallback}}"}]}""",
+            EmptyPhone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("SUBSCRIBED_APPS_COUNT = 1", output);
+        Assert.Contains($"SUBSCRIBED_APP[0]_ID = {ExpectedAppId}", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_HOST = alfacentral.ddns.net", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_PATH = /api/conversaciones/whatsapp/webhook/<token>", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_MATCHES_EXPECTED = False", output);
+        Assert.Contains("EXPECTED_APP_ID_FOUND = True", output);
+        Assert.Contains("APP_ALREADY_SUBSCRIBED = False", output);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task SubscribedApp_ExpectedAppWithAlfaWebOverride_MatchesExpected()
+    {
+        var handler = new GraphHandler(
+            $$"""{"data":[{"id":"{{ExpectedAppId}}","override_callback_uri":"{{AlfaWebCallback}}"}]}""",
+            EmptyPhone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_HOST = alfanetweb.ddns.net", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_MATCHES_EXPECTED = True", output);
+        Assert.Contains("APP_ALREADY_SUBSCRIBED = True", output);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task SubscribedApp_OtherAppId_IsPrintedAndNotCountedAsExpected()
+    {
+        var handler = new GraphHandler(
+            $$"""{"data":[{"id":999000111222333,"override_callback_uri":"{{AlfaWebCallback}}"}]}""",
+            EmptyPhone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("SUBSCRIBED_APP[0]_ID = 999000111222333", output);
+        // El callback coincide, pero de OTRA app: nunca cuenta como suscripción propia.
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_MATCHES_EXPECTED = True", output);
+        Assert.Contains("EXPECTED_APP_ID_FOUND = False", output);
+        Assert.Contains("APP_ALREADY_SUBSCRIBED = False", output);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task SubscribedApp_NullOverride_PrintsNotAvailable()
+    {
+        var handler = new GraphHandler(
+            $$"""{"data":[{"id":"{{ExpectedAppId}}","override_callback_uri":null}]}""",
+            EmptyPhone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains($"SUBSCRIBED_APP[0]_ID = {ExpectedAppId}", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_HOST = N/A", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_PATH = N/A", output);
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_MATCHES_EXPECTED = False", output);
+    }
+
+    [Fact]
+    public async Task PhoneWebhookConfiguration_Present_PrintsLevelsAndPhoneLevelAsEffective()
+    {
+        var phone = $$"""
+            {"webhook_configuration":{
+                "phone_number":"{{AlfaCentralCallback}}",
+                "whatsapp_business_account":"{{AlfaWebCallback}}",
+                "application":"https://app-callback.example.net/api/conversaciones/whatsapp/webhook/APPTOKEN0123"},
+             "id":"1373763429148369"}
+            """;
+        var handler = new GraphHandler("""{"data":[]}""", phone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("PHONE_WEBHOOK_HTTP = 200", output);
+        Assert.Contains("PHONE_WEBHOOK_CONFIG_PRESENT = True", output);
+        Assert.Contains("PHONE_WEBHOOK_LEVEL[phone_number]_HOST = alfacentral.ddns.net", output);
+        Assert.Contains("PHONE_WEBHOOK_LEVEL[whatsapp_business_account]_HOST = alfanetweb.ddns.net", output);
+        Assert.Contains("PHONE_WEBHOOK_LEVEL[whatsapp_business_account]_MATCHES_EXPECTED = True", output);
+        Assert.Contains("PHONE_WEBHOOK_LEVEL[application]_HOST = app-callback.example.net", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_LEVEL = phone_number", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_HOST = alfacentral.ddns.net", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_PATH = /api/conversaciones/whatsapp/webhook/<token>", output);
+        Assert.Contains("PHONE_WEBHOOK_MATCHES_EXPECTED = False", output);
+        Assert.DoesNotContain("APPTOKEN0123", output);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task PhoneWebhookConfiguration_WithoutPhoneLevel_FallsBackToWabaThenApplication()
+    {
+        var phone = $$$"""
+            {"webhook_configuration":{
+                "whatsapp_business_account":{"override_callback_uri":"{{{AlfaWebCallback}}}"},
+                "application":"{{{AlfaCentralCallback}}}"}}
+            """;
+        var handler = new GraphHandler("""{"data":[]}""", phone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_LEVEL = whatsapp_business_account", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_HOST = alfanetweb.ddns.net", output);
+        Assert.Contains("PHONE_WEBHOOK_MATCHES_EXPECTED = True", output);
+        AssertNoSecrets(output);
+    }
+
+    [Fact]
+    public async Task PhoneWebhookConfiguration_Absent_ReportsNotPresent()
+    {
+        var handler = new GraphHandler("""{"data":[]}""", EmptyPhone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("PHONE_WEBHOOK_HTTP = 200", output);
+        Assert.Contains("PHONE_WEBHOOK_CONFIG_PRESENT = False", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_LEVEL = N/A", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_HOST = N/A", output);
+        Assert.Contains("PHONE_WEBHOOK_EFFECTIVE_PATH = N/A", output);
+        Assert.Contains("PHONE_WEBHOOK_MATCHES_EXPECTED = False", output);
+    }
+
+    [Fact]
+    public async Task PhoneWebhookConfiguration_GraphError_IsReportedWithoutBreakingTheCommand()
+    {
+        var handler = new GraphHandler(
+            """{"data":[]}""",
+            """{"error":{"code":100,"type":"OAuthException","message":"Unknown field see /api/conversaciones/whatsapp/webhook/LEAKEDTOKEN99"}}""",
+            phoneStatus: HttpStatusCode.BadRequest);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        Assert.Contains("PHONE_WEBHOOK_HTTP = 400", output);
+        Assert.Contains("PHONE_WEBHOOK_CONFIG_PRESENT = False", output);
+        Assert.Contains("PHONE_WEBHOOK_ERROR_CODE = 100", output);
+        Assert.Contains("PHONE_WEBHOOK_ERROR_TYPE = OAuthException", output);
+        Assert.Contains("/webhook/<token>", output);
+        Assert.DoesNotContain("LEAKEDTOKEN99", output);
+        Assert.Contains("EVIDENCE = ", output);
+    }
+
+    [Fact]
+    public async Task Sanitization_NeverPrintsWebhookTokensQueryStringsOrCredentials()
+    {
+        const string querySecret = "query-secret-never-printed";
+        var overrideWithQuery = AlfaCentralCallback + "?verify_token=" + querySecret + "&token=" + querySecret;
+        var phone = $$$"""{"webhook_configuration":{"phone_number":"{{{overrideWithQuery}}}","application":"{{{AlfaWebCallback}}}?a={{{querySecret}}}"}}""";
+        var handler = new GraphHandler(
+            $$"""{"data":[{"id":"{{ExpectedAppId}}","override_callback_uri":"{{overrideWithQuery}}"}]}""",
+            phone);
+
+        var output = await RunAsync(handler, AlfaWebCallback);
+
+        AssertNoSecrets(output);
+        Assert.DoesNotContain(querySecret, output);
+        Assert.All(
+            output.Split('\n').Where(l => l.Contains("_PATH =", StringComparison.Ordinal)),
+            line => Assert.DoesNotContain("?", line));
+        Assert.Contains("SUBSCRIBED_APP[0]_OVERRIDE_PATH = /api/conversaciones/whatsapp/webhook/<token>", output);
+    }
+
+    [Fact]
+    public async Task ReadOnly_OnlyIssuesGetRequests_AndQueriesPhoneWebhookConfiguration()
+    {
+        var handler = new GraphHandler("""{"data":[]}""", EmptyPhone);
+
+        await RunAsync(handler, AlfaWebCallback);
+
+        Assert.All(handler.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+        Assert.Contains(handler.Requests, r => r.Uri.AbsolutePath.EndsWith($"/{Waba}/subscribed_apps", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, r =>
+            r.Uri.AbsolutePath.EndsWith($"/v26.0/{Phone}", StringComparison.Ordinal)
+            && Uri.UnescapeDataString(r.Uri.Query) == "?fields=webhook_configuration");
+        Assert.Equal(3, handler.Requests.Count); // callback self-check + subscribed_apps + phone.
+    }
+
+    [Theory]
+    [InlineData(null, "N/A")]
+    [InlineData("", "N/A")]
+    [InlineData("not-a-url-" + AlfaWebToken, "INVALID")]
+    [InlineData(AlfaWebCallback, "/api/conversaciones/whatsapp/webhook/<token>")]
+    [InlineData("https://host.example.com/", "/")]
+    public void MaskWebhookPath_NeverPrintsTheLastSegment(string? url, string expected)
+        => Assert.Equal(expected, MaskWebhookPath(url));
+
+    private static void AssertNoSecrets(string output)
+    {
+        Assert.DoesNotContain(AccessToken, output);
+        Assert.DoesNotContain(VerifyToken, output);
+        Assert.DoesNotContain(AlfaWebToken, output);
+        Assert.DoesNotContain(AlfaCentralToken, output);
     }
 
     [Fact]
@@ -546,6 +752,25 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
     {
         public Task<WhatsAppRuntimeCredential> ResolveAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
             => Task.FromException<WhatsAppRuntimeCredential>(exception);
+    }
+
+    /// <summary>Responde el self-check del callback con su challenge, /{waba}/subscribed_apps con
+    /// <paramref name="subscribedAppsJson"/> y /{phone} con <paramref name="phoneJson"/>. Registra
+    /// método y URL de cada request para poder afirmar que el comando es sólo-GET.</summary>
+    private sealed class GraphHandler(string subscribedAppsJson, string phoneJson, HttpStatusCode phoneStatus = HttpStatusCode.OK) : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, Uri Uri)> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            Requests.Add((request.Method, uri));
+            if (!string.Equals(uri.Host, "graph.facebook.com", StringComparison.Ordinal))
+                return Task.FromResult(CallbackSuccess(request));
+            if (uri.AbsolutePath.EndsWith("/subscribed_apps", StringComparison.Ordinal))
+                return Task.FromResult(Json(HttpStatusCode.OK, subscribedAppsJson));
+            return Task.FromResult(Json(phoneStatus, phoneJson));
+        }
     }
 
     private sealed class RoutingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler

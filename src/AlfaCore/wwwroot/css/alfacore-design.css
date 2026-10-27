@@ -46,6 +46,9 @@
 }
 
 .shell.shell--alfa-design {
+    /* app.css fuerza `.shell__content { background: var(--color-bg) !important }` (azul marino
+       legacy): remapear la variable acá evita la franja de 16px alrededor del contenido. */
+    --color-bg: var(--alfa-bg-canvas);
     width: 100%;
     max-width: none;
     height: 100dvh;
@@ -97,6 +100,13 @@
     box-sizing: border-box;
     color: var(--alfa-text-primary);
     transform: none;
+}
+
+/* Paneles de la barra (mensajes, avisos, configuración): mientras uno está abierto, la barra sube
+   por encima de las capas altas de cada página (ej. el encabezado del chat de Conversaciones usa
+   z-index 10000 para sus menús); al cerrarlo vuelve a 1910 y no tapa modales ni drawers. */
+.alfa-app-topbar:has(.tb-msg__panel, .tb-av__panel, .tb-cfg__panel) {
+    z-index: 2147483100;
 }
 
 .alfa-app-topbar__brand,
@@ -730,6 +740,76 @@
     color: var(--alfa-text-primary);
     font-size: var(--alfa-font-small);
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+/* Conciliación: el buscador suele quedar junto al borde derecho de la ventana. */
+.shell.shell--alfa-design .main-page-header .conciliacion-busqueda .smart-search__panel {
+    left: auto !important;
+    right: 0 !important;
+    width: min(860px, calc(100vw - 32px)) !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    max-height: min(70dvh, 560px, calc(100dvh - 190px));
+    box-sizing: border-box;
+}
+
+.shell.shell--alfa-design .conciliacion-busqueda .smart-search__actions {
+    position: sticky;
+    bottom: -12px;
+    z-index: 2;
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--alfa-space-8);
+    padding: var(--alfa-space-12);
+    background: var(--alfa-bg-surface-raised);
+    border-top: 1px solid var(--alfa-border-default);
+}
+
+.main-page-header__overflow-narrow { display: none; }
+.shell.shell--alfa-design .main-page-header .conciliacion-busqueda.conciliacion-busqueda--revision .smart-search__panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: min(680px, calc(100vw - 32px)) !important;
+}
+@media (max-width: 600px) {
+    .shell.shell--alfa-design .main-page-header .conciliacion-busqueda.conciliacion-busqueda--revision .smart-search__panel { grid-template-columns: minmax(0, 1fr) !important; }
+}
+.main-page-header__overflow-wide { display: contents; }
+.shell.shell--alfa-design .main-page-header--responsive .main-page-header__action--primary {
+    width: auto;
+    min-width: max-content;
+}
+
+@media (max-width: 900px) {
+    .shell.shell--alfa-design .main-page-header .conciliacion-busqueda .smart-search__panel { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 600px) {
+    .shell.shell--alfa-design .main-page-header .conciliacion-busqueda .smart-search__panel { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+@media (max-width: 1440px) {
+    .main-page-header--responsive .main-page-header__action--collapse,
+    .main-page-header--responsive .main-page-header__overflow-wide { display: none; }
+    .main-page-header--responsive .main-page-header__overflow-narrow { display: contents; }
+}
+
+@media (max-width: 1280px) {
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--responsive:not(.main-page-header--no-search) {
+        height: auto;
+        flex-basis: auto;
+        min-height: calc(2 * var(--alfa-context-toolbar-height));
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "actions pagination" "search search";
+        padding-block: var(--alfa-space-4);
+    }
+    .main-page-header--responsive .main-page-header__actions { flex-wrap: wrap; min-width: 0; justify-self: start; }
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--responsive .main-page-header__search { min-width: 0; width: 100%; }
+    .shell.shell--alfa-design .main-page-header--responsive .main-page-header__search > .gd-modal-scope { width: 100%; min-width: 0; flex: 1; }
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--responsive .main-page-header__search .smart-search {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
 }
 
 .shell.shell--alfa-design .smart-search__column {

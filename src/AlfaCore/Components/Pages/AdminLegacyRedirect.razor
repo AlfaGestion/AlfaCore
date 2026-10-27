@@ -1,0 +1,19 @@
+@page "/admin/clientes"
+@page "/{idweb}/{idbase:int}/admin/clientes"
+@page "/admin/bases"
+@page "/{idweb}/{idbase:int}/admin/bases"
+@page "/admin/users"
+@page "/{idweb}/{idbase:int}/admin/users"
+@layout AlfaCore.Components.Layout.MainLayout
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+@* Las pantallas legacy de Clientes / Bases / Usuarios centrales se retiraron (2026-10-07): la
+   pantalla principal de Administrar (/admin, AdminHome) ya administra clientes, bases y usuarios.
+   Se conservan las rutas para que favoritos o links viejos no terminen en "página no encontrada". *@
+
+@code {
+    // IdWeb/IdBase de la ruta ya los declara la base común de las páginas (no repetirlos acá).
+    protected override void OnInitialized()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"), replace: true);
+}

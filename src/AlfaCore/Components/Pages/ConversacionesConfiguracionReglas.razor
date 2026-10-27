@@ -1,0 +1,180 @@
+@using System.Globalization
+
+@* Configuración → Automatización → Reglas. El estado (lista, regla en edición, guardado) vive en la
+   página; este componente solo dibuja la lista y el editor, y pide confirmación antes de eliminar. *@
+
+<ConversacionesConfigPagina Titulo="Reglas" Descripcion="Respuestas, derivaciones y prioridad por palabras clave, sin IA. Se evalúan en orden; la primera que coincide y tiene «detener» corta el resto.">
+    <Estado>
+        <AlfaTag Tone="@(Reglas.Any(r => r.Activa) ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+            @Reglas.Count(r => r.Activa) activa(s) de @Reglas.Count
+        </AlfaTag>
+    </Estado>
+    <ChildContent>
+        @if (Edicion is not null)
+        {
+            <ConversacionesConfigTarjeta Titulo="@(EsNueva ? "Nueva regla" : $"Editar regla: {Edicion.Nombre}")" Columnas="2">
+                <AlfaInput Id="regla-nombre" Label="Nombre" Required="true" Placeholder="Ej: Horarios de atención"
+                           Value="@Edicion.Nombre" ValueChanged="@((string? v) => Edicion.Nombre = v ?? string.Empty)" />
+                <AlfaInput Id="regla-orden" Label="Orden (menor = se evalúa antes)" Type="number"
+                           Value="@Edicion.Orden.ToString(CultureInfo.InvariantCulture)"
+                           ValueChanged="@((string? v) => Edicion.Orden = ConversacionesConfiguracionAsistente.ParseEntero(v, Edicion.Orden, 1))" />
+
+                <span class="cfg-label cfg-full">Cuándo aplica</span>
+                <AlfaSelect Id="regla-canal" Label="Canal" Options="CanalOptions"
+                            Value="@Edicion.Canal" ValueChanged="@((string? v) => Edicion.Canal = v ?? string.Empty)" />
+                <AlfaSelect Id="regla-tipo" Label="Tipo de coincidencia" Options="TipoOptions"
+                            Value="@Edicion.TipoCoincidencia" ValueChanged="@((string? v) => Edicion.TipoCoincidencia = v ?? "CONTIENE")" />
+                <AlfaInput Id="regla-palabras" Label="Palabras o frases" Class="cfg-full" Placeholder="turnos, horario, atención"
+                           HelpText="Separadas por coma; coincide con cualquiera."
+                           Value="@Edicion.Palabras" ValueChanged="@((string? v) => Edicion.Palabras = v ?? string.Empty)" />
+                <AlfaSelect Id="regla-horario" Label="Horario" Options="HorarioOptions"
+                            Value="@Edicion.Horario" ValueChanged="@((string? v) => Edicion.Horario = v ?? "SIEMPRE")" />
+                <div class="cfg-stack">
+                    <AlfaCheckbox Value="@Edicion.SoloPrimerContacto" ValueChanged="@((bool? v) => Edicion.SoloPrimerContacto = v == true)">Solo en el primer contacto</AlfaCheckbox>
+                    <AlfaCheckbox Value="@Edicion.SoloSinAsignar" ValueChanged="@((bool? v) => Edicion.SoloSinAsignar = v == true)">Solo si nadie la tiene asignada</AlfaCheckbox>
+                </div>
+
+                <span class="cfg-label cfg-full">Qué hace</span>
+                <ConversacionesConfigTexto Id="regla-respuesta" Label="Respuesta automática (opcional)" Filas="2" Class="cfg-full"
+                                           Placeholder="Atendemos de 9 a 18 h. ¿En qué te ayudamos?"
+                                           Value="@Edicion.RespuestaTexto" ValueChanged="@((string? v) => Edicion.RespuestaTexto = v ?? string.Empty)" />
+                <AlfaSelect Id="regla-tecnico" Label="Derivar a técnico (opcional)" Options="TecnicoOptions"
+                            Value="@Edicion.AsignarTecnico" ValueChanged="@((string? v) => Edicion.AsignarTecnico = v ?? string.Empty)" />
+                <AlfaSelect Id="regla-prioridad" Label="Fijar prioridad (opcional)" Options="PrioridadOptions"
+                            Value="@Edicion.Prioridad" ValueChanged="@((string? v) => Edicion.Prioridad = v ?? string.Empty)" />
+                <div class="cfg-full cfg-stack">
+                    <AlfaCheckbox Value="@Edicion.Detener" ValueChanged="@((bool? v) => Edicion.Detener = v == true)">Si coincide, no evaluar otras reglas ni respuestas automáticas</AlfaCheckbox>
+                    <AlfaCheckbox Value="@Edicion.Activa" ValueChanged="@((bool? v) => Edicion.Activa = v == true)">Regla activa</AlfaCheckbox>
+                </div>
+            </ConversacionesConfigTarjeta>
+
+            <ConversacionesConfigBarraGuardar Etiqueta="Guardar regla" MostrarEstado="false" Busy="@Busy"
+                                              OnGuardar="OnGuardar" OnDescartar="OnCancelar" HayCambios="true" />
+        }
+        else
+        {
+            <ConversacionesConfigTarjeta Titulo="Reglas cargadas">
+                <Extra>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-plus-lg" Disabled="@Busy" OnClick="() => OnNueva.InvokeAsync()">Nueva regla</AlfaButton>
+                </Extra>
+                <ChildContent>
+                    @if (Reglas.Count == 0)
+                    {
+                        <AlfaEmptyState Title="Todavía no hay reglas" Message="El motor de reglas está inactivo hasta que agregues al menos una." />
+                    }
+                    else
+                    {
+                        <ul class="cfg-list">
+                            @foreach (var regla in Reglas)
+                            {
+                                <li class="cfg-list__item">
+                                    <span class="cfg-list__icon">#@regla.Orden</span>
+                                    <div class="cfg-list__text">
+                                        <span class="cfg-list__title">
+                                            @regla.Nombre
+                                            @if (!regla.Activa)
+                                            {
+                                                <AlfaTag Tone="AlfaTagTone.Neutral">Inactiva</AlfaTag>
+                                            }
+                                        </span>
+                                        <span class="cfg-list__desc">@DescribirRegla(regla)</span>
+                                    </div>
+                                    <div class="cfg-list__actions">
+                                        <AlfaIconButton Icon="bi-pencil" Label="Editar regla" Size="AlfaSize.Sm" Disabled="@Busy" OnClick="() => OnEditar.InvokeAsync(regla)" />
+                                        <AlfaIconButton Icon="bi-trash" Label="Eliminar regla" Size="AlfaSize.Sm" Disabled="@Busy" OnClick="() => _aEliminar = regla" />
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </ChildContent>
+            </ConversacionesConfigTarjeta>
+
+            <ConversacionesConfigAyuda>
+                <ol>
+                    <li>En cada mensaje entrante se evalúan las reglas activas por orden (menor primero).</li>
+                    <li>La primera que coincide responde, deriva a un técnico y/o fija la prioridad.</li>
+                    <li>Si esa regla tiene «detener», no se evalúan más reglas ni se dispara la bienvenida o el asistente.</li>
+                    <li>«Solo si nadie la tiene asignada» evita pisar una conversación que ya atiende una persona.</li>
+                    <li>La respuesta se manda si el canal lo permite; la derivación y la prioridad se aplican igual.</li>
+                </ol>
+            </ConversacionesConfigAyuda>
+        }
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+<AlfaConfirmDialog Open="@(_aEliminar is not null)"
+                   Title="Eliminar regla"
+                   Message="@($"¿Eliminar la regla «{_aEliminar?.Nombre}»?")"
+                   SecondaryMessage="Deja de aplicarse en los próximos mensajes. No se puede deshacer."
+                   ConfirmLabel="Eliminar"
+                   LoadingLabel="Eliminando..."
+                   Loading="@Busy"
+                   OnConfirm="ConfirmarEliminarAsync"
+                   OnCancel="() => _aEliminar = null" />
+
+@code {
+    [Parameter] public IReadOnlyList<ConversacionReglaDto> Reglas { get; set; } = [];
+    [Parameter] public ConversacionReglaDto? Edicion { get; set; }
+    [Parameter] public bool EsNueva { get; set; }
+    [Parameter] public IReadOnlyList<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnNueva { get; set; }
+    [Parameter] public EventCallback<ConversacionReglaDto> OnEditar { get; set; }
+    [Parameter] public EventCallback<ConversacionReglaDto> OnEliminar { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private ConversacionReglaDto? _aEliminar;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> CanalOptions =
+    [
+        new("", "Todos los canales"),
+        new("WHATSAPP", "WhatsApp"),
+        new("INSTAGRAM", "Instagram"),
+        new("FACEBOOK", "Facebook"),
+        new("MERCADOLIBRE", "Mercado Libre")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> TipoOptions =
+    [
+        new("CONTIENE", "El mensaje contiene…"),
+        new("EMPIEZA", "El mensaje empieza con…"),
+        new("IGUAL", "El mensaje es exactamente…")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> HorarioOptions =
+    [
+        new("SIEMPRE", "Siempre"),
+        new("DENTRO", "Solo dentro del horario"),
+        new("FUERA", "Solo fuera del horario")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> PrioridadOptions =
+    [
+        new("", "No cambiar"),
+        new("BAJA", "Baja"),
+        new("MEDIA", "Media"),
+        new("ALTA", "Alta"),
+        new("URGENTE", "Urgente")
+    ];
+
+    private IReadOnlyList<AlfaSelectOption> TecnicoOptions
+        => [new AlfaSelectOption("", "No derivar"), .. Tecnicos.Select(t => new AlfaSelectOption(t.IdTecnico, t.Nombre))];
+
+    internal static string DescribirRegla(ConversacionReglaDto regla)
+        => $"{ConversacionesConfiguracion.DescribirCanalRegla(regla.Canal)} · {(regla.TipoCoincidencia ?? string.Empty).ToLowerInvariant()}: {regla.Palabras} · "
+           + ConversacionesConfiguracion.DescribirAccionesRegla(regla)
+           + ConversacionesConfiguracion.DescribirCondicionesRegla(regla)
+           + (regla.Detener ? " · detiene" : string.Empty);
+
+    private async Task ConfirmarEliminarAsync()
+    {
+        var regla = _aEliminar;
+        if (regla is null)
+            return;
+
+        await OnEliminar.InvokeAsync(regla);
+        _aEliminar = null;
+    }
+}

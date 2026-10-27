@@ -147,8 +147,10 @@ public sealed class FacturaDocumentService(
             var tc = tipoDocumento switch
             {
                 TiposDocumentoCore.RemitoR or TiposDocumentoCore.RemitoX => "RM",
+                TiposDocumentoCore.NotaPedido => "NP",
                 TiposDocumentoCore.CobranzaContado => "CBCT",
-                TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaProforma => "CB",
+                TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaX => "CB",
+                TiposDocumentoCore.CobranzaProforma => "FP",
                 _ => string.Empty
             };
             if (tc.Length == 0) return [];
@@ -274,7 +276,7 @@ public sealed class FacturaDocumentService(
             WHERE a.TCO_ORIGEN = @Tc
               AND a.IDComprobante_ORIGEN = @IdComprobante
               AND b.[DEBE-HABER] = 'D'
-            ORDER BY ISNULL(b.ID, 0);
+            ORDER BY ISNULL(b.[NUMERO ASIENTO], 0), ISNULL(b.SECUENCIA, 0), b.CUENTA;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
             cancellationToken: ct));

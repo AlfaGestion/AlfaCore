@@ -2,12 +2,14 @@
 @page "/{idweb}/{idbase:int}/tickets"
 @using Microsoft.AspNetCore.WebUtilities
 @using AlfaCore.Models
+@using AlfaCore.Components.Pages
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
@@ -15,8 +17,8 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
-    @if (_feedback is not null)
+<section class="gd-page gd gd-legacy tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
+    @if (_feedback is not null && IsTicketsInitializationPending(_feedback.Message))
     {
         <section class="panel-card">
             <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
@@ -39,6 +41,7 @@
             </div>
         </section>
     }
+    <AlfaNotification Message="@(_feedback is not null && !IsTicketsInitializationPending(_feedback.Message) ? _feedback : null)" OnDismiss="() => _feedback = null" />
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
@@ -202,39 +205,189 @@
 
     @if (_showEditor)
     {
-        <section class="panel-card tickets-editor">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}")</h3>
-                    <p class="panel-card__subtitle">@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
+        @* Ficha del ticket (2026-10-19): título, barra de etapas (cambia al instante, como en Odoo), datos
+           compactos arriba y un bloque con solapas: Descripción, Mensajes, Actividad y Partes de horas. *@
+        <section class="panel-card tickets-editor tk-ficha">
+            <header class="tk-ficha__head">
+                <div class="tk-ficha__titulo">
+                    <h2>
+                        @if (!_isNew && _detail is not null)
+                        {
+                            <span class="tk-ficha__codigo">@_detail.CodigoVisible</span>
+                        }
+                        <span>@(_isNew ? "Nuevo ticket" : DisplayOrFallback(_form.Titulo, "Sin nombre"))</span>
+                    </h2>
+                    <p>@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
                 </div>
                 <div class="actions">
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
                     {
-                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
+                        <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/conversaciones?id={idConv}")">
                             <i class="bi bi-chat-dots"></i> Ver chat
                         </a>
                     }
                     @if (!_isNew && _detail?.IdContacto is int idContacto)
                     {
-                        <a class="btn btn--ghost" href="@RouteContext.BuildRoute($"/contactos?editar={idContacto}")">
+                        <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/contactos?editar={idContacto}")">
                             <i class="bi bi-person-lines-fill"></i> Ver contacto
                         </a>
                     }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor">
-                        <i class="bi bi-arrow-left"></i> Volver
+                </div>
+            </header>
+
+            <nav class="tk-etapas" aria-label="Etapa del ticket">
+                @foreach (var state in EtapasOrdenadas)
+                {
+                    var actual = string.Equals(state.CodigoEstado, _form.CodigoEstado, StringComparison.OrdinalIgnoreCase);
+                    <button type="button"
+                            class="@EtapaClass(state)"
+                            aria-current="@(actual ? "step" : null)"
+                            title="@(actual ? "Etapa actual" : $"Pasar a {state.Nombre}")"
+                            disabled="@(_saving || _cambiandoEtapa)"
+                            @onclick="() => CambiarEtapaDesdeFichaAsync(state.CodigoEstado)">
+                        @state.Nombre
                     </button>
+                }
+            </nav>
+
+            <div class="field tk-ficha__nombre">
+                <label for="tk-nombre">Nombre del ticket</label>
+                <input id="tk-nombre" type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
+            </div>
+
+            <div class="tk-props">
+                <div class="tk-prop tickets-lookup">
+                    <label>Cliente / empresa</label>
+                    @if (!string.IsNullOrWhiteSpace(_selectedClientLabel))
+                    {
+                        <span class="tk-valor">
+                            <span>@_selectedClientLabel</span>
+                            <button type="button" title="Quitar cliente" @onclick="ClearTicketClient" disabled="@_saving"><i class="bi bi-x"></i></button>
+                        </span>
+                    }
+                    else
+                    {
+                        <input type="text" value="@_ticketClientSearch" @oninput="OnTicketClientSearchInputAsync" disabled="@_saving" placeholder="Buscar cliente..." />
+                        @if (_ticketClientSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var client in _ticketClientSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketClient(client)" disabled="@_saving">
+                                        <strong>@client.RazonSocial</strong>
+                                        <small>@client.Codigo @client.Localidad</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="tk-prop tickets-lookup">
+                    <label>Usuario / contacto</label>
+                    @if (!string.IsNullOrWhiteSpace(_selectedContactLabel))
+                    {
+                        <span class="tk-valor">
+                            <span>@_selectedContactLabel</span>
+                            <button type="button" title="Quitar contacto" @onclick="ClearTicketContact" disabled="@_saving"><i class="bi bi-x"></i></button>
+                        </span>
+                    }
+                    else
+                    {
+                        <input type="text" value="@_ticketContactSearch" @oninput="OnTicketContactSearchInputAsync" disabled="@_saving" placeholder="Buscar contacto..." />
+                        @if (_ticketContactSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var contact in _ticketContactSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketContact(contact)" disabled="@_saving">
+                                        <strong>@contact.Nombre</strong>
+                                        <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="tk-prop">
+                    <label for="tk-asignado">Asignado a</label>
+                    <select id="tk-asignado" @bind="_form.IdTecnico" disabled="@_saving">
+                        <option value="">Sin asignar</option>
+                        @foreach (var tech in _lookups.Tecnicos)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="tk-prop">
+                    <label>Prioridad</label>
+                    <div class="tk-estrellas" role="radiogroup" aria-label="Prioridad">
+                        @for (var nivel = 1; nivel <= 3; nivel++)
+                        {
+                            var n = nivel;
+                            <button type="button"
+                                    role="radio"
+                                    aria-checked="@(_form.Prioridad == n ? "true" : "false")"
+                                    class="tk-estrella @(_form.Prioridad >= n ? "is-on" : string.Empty)"
+                                    title="@RenderPriority(n)"
+                                    disabled="@_saving"
+                                    @onclick="() => _form.Prioridad = _form.Prioridad == n ? n - 1 : n">
+                                <i class="bi @(_form.Prioridad >= n ? "bi-star-fill" : "bi-star")"></i>
+                            </button>
+                        }
+                        <span class="tk-estrellas__texto">@(_form.Prioridad <= 0 ? "Sin prioridad" : RenderPriority(_form.Prioridad))</span>
+                    </div>
+                </div>
+                <div class="tk-prop tk-prop--etiquetas">
+                    <label>Etiquetas</label>
+                    <div class="tk-etiquetas">
+                        @foreach (var tag in _lookups.Etiquetas.Where(t => _formTagIds.Contains(t.IdEtiqueta)))
+                        {
+                            <span class="tickets-tag-chip tk-etiqueta" style="border-color:@tag.Color;color:@tag.Color">
+                                @tag.Nombre
+                                <button type="button" title="Quitar etiqueta" disabled="@_saving"
+                                        @onclick="() => _formTagIds.Remove(tag.IdEtiqueta)"><i class="bi bi-x"></i></button>
+                            </span>
+                        }
+                        <button type="button" class="tk-etiquetas__agregar" title="Agregar o quitar etiquetas"
+                                disabled="@_saving" @onclick="() => _showTagPicker = !_showTagPicker">
+                            <i class="bi bi-tag"></i>@(_formTagIds.Count == 0 ? " Agregar" : string.Empty)
+                        </button>
+                        @if (_showTagPicker)
+                        {
+                            <button type="button" class="tk-popover-fondo" aria-label="Cerrar etiquetas" @onclick="() => _showTagPicker = false"></button>
+                            <div class="tk-popover" role="dialog" aria-label="Etiquetas">
+                                @foreach (var tag in _lookups.Etiquetas)
+                                {
+                                    <label class="tk-popover__opcion">
+                                        <input type="checkbox"
+                                               checked="@_formTagIds.Contains(tag.IdEtiqueta)"
+                                               @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
+                                               disabled="@_saving" />
+                                        <span class="tk-popover__color" style="background:@tag.Color"></span>
+                                        <span>@tag.Nombre</span>
+                                    </label>
+                                }
+                                @if (_lookups.Etiquetas.Count == 0)
+                                {
+                                    <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
+                                }
+                                <button type="button" class="tk-popover__accion" @onclick="() => { _showTagPicker = false; OpenTagManager(); }" disabled="@_saving">
+                                    <i class="bi bi-tags"></i> Administrar etiquetas
+                                </button>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
 
-            <div class="tickets-editor-grid">
-                <div class="tickets-editor-main">
-                    <div class="field">
-                        <label>Nombre del ticket</label>
-                        <input type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
-                    </div>
-                    <div class="field">
-                        <label>Descripción</label>
+            <div class="tk-solapas">
+                <AlfaTabs AriaLabel="Contenido del ticket"
+                          Items="@FichaTabs"
+                          ActiveKey="@_fichaTab"
+                          ActiveKeyChanged="@((string? key) => _fichaTab = key ?? FichaTabDescripcion)" />
+
+                @* La descripción se mantiene montada (oculta en las otras solapas): el editor guarda su estado en el navegador. *@
+                <div class="tk-solapa" hidden="@(_fichaTab != FichaTabDescripcion)">
                         <div class="tickets-rich-editor">
                             <div class="tickets-rich-editor__surface"
                                  @ref="_descriptionEditor"
@@ -284,114 +437,11 @@
                                 </div>
                             }
                         </div>
-                    </div>
                 </div>
-                <aside class="tickets-editor-side">
-                    <div class="field">
-                        <label>Etapa</label>
-                        <select @bind="_form.CodigoEstado" disabled="@_saving">
-                            @foreach (var state in _lookups.Estados)
-                            {
-                                <option value="@state.CodigoEstado">@state.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Prioridad</label>
-                        <select @bind="_form.Prioridad" disabled="@_saving">
-                            <option value="0">Sin prioridad</option>
-                            <option value="1">Baja</option>
-                            <option value="2">Media</option>
-                            <option value="3">Alta</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Asignado a</label>
-                        <select @bind="_form.IdTecnico" disabled="@_saving">
-                            <option value="">Sin asignar</option>
-                            @foreach (var tech in _lookups.Tecnicos)
-                            {
-                                <option value="@tech.IdTecnico">@tech.Nombre</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label>Etiquetas</label>
-                        <div class="tickets-tag-picker">
-                            @foreach (var tag in _lookups.Etiquetas)
-                            {
-                                <label class="tickets-tag-option">
-                                    <input type="checkbox"
-                                           checked="@_formTagIds.Contains(tag.IdEtiqueta)"
-                                           @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
-                                           disabled="@_saving" />
-                                    <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
-                                </label>
-                            }
-                            @if (_lookups.Etiquetas.Count == 0)
-                            {
-                                <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
-                            }
-                        </div>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
-                            <i class="bi bi-tags"></i> Administrar etiquetas
-                        </button>
-                    </div>
-                    <div class="field tickets-lookup">
-                        <label>Cliente / empresa</label>
-                        <input type="text" value="@_ticketClientSearch" @oninput="OnTicketClientSearchInputAsync" disabled="@_saving" placeholder="Buscar cliente..." />
-                        @if (!string.IsNullOrWhiteSpace(_selectedClientLabel))
-                        {
-                            <span class="tickets-lookup__selected">@_selectedClientLabel <button type="button" @onclick="ClearTicketClient" disabled="@_saving"><i class="bi bi-x"></i></button></span>
-                        }
-                        @if (_ticketClientSuggestions.Count > 0)
-                        {
-                            <div class="tickets-lookup__results">
-                                @foreach (var client in _ticketClientSuggestions)
-                                {
-                                    <button type="button" @onclick="() => SelectTicketClient(client)" disabled="@_saving">
-                                        <strong>@client.RazonSocial</strong>
-                                        <small>@client.Codigo @client.Localidad</small>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                    <div class="field tickets-lookup">
-                        <label>Usuario / contacto</label>
-                        <input type="text" value="@_ticketContactSearch" @oninput="OnTicketContactSearchInputAsync" disabled="@_saving" placeholder="Buscar contacto..." />
-                        @if (!string.IsNullOrWhiteSpace(_selectedContactLabel))
-                        {
-                            <span class="tickets-lookup__selected">@_selectedContactLabel <button type="button" @onclick="ClearTicketContact" disabled="@_saving"><i class="bi bi-x"></i></button></span>
-                        }
-                        @if (_ticketContactSuggestions.Count > 0)
-                        {
-                            <div class="tickets-lookup__results">
-                                @foreach (var contact in _ticketContactSuggestions)
-                                {
-                                    <button type="button" @onclick="() => SelectTicketContact(contact)" disabled="@_saving">
-                                        <strong>@contact.Nombre</strong>
-                                        <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                </aside>
-            </div>
 
-        </section>
-
-        @if (!_isNew && _detail is not null)
-        {
-            <section class="tickets-detail-layout">
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Mensajes incluidos</h3>
-                            <p class="panel-card__subtitle">@_detail.MensajesOrigenDetalle.Count mensaje(s) guardados como contexto.</p>
-                        </div>
-                    </div>
+                @if (!_isNew && _detail is not null)
+                {
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabMensajes)">
                     @if (_detail.MensajesOrigenDetalle.Count == 0)
                     {
                         <div class="usuarios-empty">Este ticket no tiene mensajes de conversación vinculados.</div>
@@ -417,17 +467,37 @@
                                             {
                                                 @if (IsImageAttachment(adj))
                                                 {
-                                                    <a href="@GetAttachmentUrl(adj.IdAdjunto)" target="_blank" class="tickets-attachment tickets-attachment--image">
-                                                        <img src="@GetAttachmentUrl(adj.IdAdjunto)" alt="@adj.NombreArchivo" loading="lazy" />
-                                                        <span>@GetAttachmentLabel(adj)</span>
-                                                    </a>
+                                                    @if (adj.ArchivoDisponible)
+                                                    {
+                                                        <a href="@GetAttachmentUrl(adj.IdAdjunto)" target="_blank" class="tickets-attachment tickets-attachment--image">
+                                                            <img src="@GetAttachmentUrl(adj.IdAdjunto)" alt="@adj.NombreArchivo" loading="lazy" />
+                                                            <span>@GetAttachmentLabel(adj)</span>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="tickets-attachment tickets-attachment--image tickets-attachment--unavailable" title="@GetAttachmentUnavailableText(adj, "imagen")">
+                                                            <i class="bi bi-image-alt"></i>
+                                                            <span>@GetAttachmentUnavailableText(adj, "imagen")</span>
+                                                        </div>
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    <a href="@GetAttachmentDownloadUrl(adj.IdAdjunto)" class="tickets-attachment">
-                                                        <i class="bi bi-file-earmark-arrow-down"></i>
-                                                        <span>@GetAttachmentLabel(adj)</span>
-                                                    </a>
+                                                    @if (adj.ArchivoDisponible)
+                                                    {
+                                                        <a href="@GetAttachmentDownloadUrl(adj.IdAdjunto)" class="tickets-attachment">
+                                                            <i class="bi bi-file-earmark-arrow-down"></i>
+                                                            <span>@GetAttachmentLabel(adj)</span>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="tickets-attachment tickets-attachment--unavailable" title="@GetAttachmentUnavailableText(adj, "documento")">
+                                                            <i class="bi bi-file-earmark-x"></i>
+                                                            <span>@GetAttachmentUnavailableText(adj, "documento")</span>
+                                                        </div>
+                                                    }
                                                 }
                                             }
                                         </div>
@@ -436,14 +506,36 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Partes de horas</h3>
-                            <p class="panel-card__subtitle">@GetTicketPartesHorasSubtitle()</p>
-                        </div>
                     </div>
+
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabActividad)">
+                    <div class="field">
+                        <label>Nueva nota</label>
+                        <textarea rows="3" @bind="_newNote"></textarea>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
+                            <i class="bi bi-chat-left-text"></i> Registrar nota
+                        </button>
+                    </div>
+                    <div class="tickets-activity">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <div class="tickets-activity__item">
+                                <strong>@activity.TipoActividad</strong>
+                                <p>@activity.Descripcion</p>
+                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                    </div>
+
+                    <div class="tk-solapa" hidden="@(_fichaTab != FichaTabHoras)">
+                        <div class="tk-solapa__acciones">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AbrirCargaParteHoras" disabled="@(_saving || _savingParteHora)">
+                                <i class="bi bi-stopwatch"></i> Cargar parte de horas
+                            </button>
+                        </div>
                     @if (_loadingTicketPartesHoras)
                     {
                         <div class="usuarios-empty">Buscando partes de horas...</div>
@@ -465,36 +557,10 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Actividad</h3>
-                            <p class="panel-card__subtitle">Notas e historial del ticket.</p>
-                        </div>
                     </div>
-                    <div class="field">
-                        <label>Nueva nota</label>
-                        <textarea rows="3" @bind="_newNote"></textarea>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
-                            <i class="bi bi-chat-left-text"></i> Registrar nota
-                        </button>
-                    </div>
-                    <div class="tickets-activity">
-                        @foreach (var activity in _detail.Actividad)
-                        {
-                            <div class="tickets-activity__item">
-                                <strong>@activity.TipoActividad</strong>
-                                <p>@activity.Descripcion</p>
-                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
-                            </div>
-                        }
-                    </div>
-                </div>
-            </section>
-        }
+                }
+            </div>
+        </section>
     }
     else if (_loading && !HasVisibleTicketData())
     {
@@ -684,88 +750,98 @@
     }
 </section>
 
-@if (_showParteHorasDialog)
-{
-    <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CancelCloseTicketParteHorasDialog"></div>
-    <section class="panel-card conversations-modal conversations-hours-dialog"
-             aria-labelledby="tickets-hours-title"
-             tabindex="-1"
-             @onkeydown="HandleTicketParteHorasDialogKeyDownAsync">
-        <div class="conversations-hours-dialog__head">
-            <div class="conversations-hours-dialog__title">
-                <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
-                <div>
-                    <h3 id="tickets-hours-title" class="panel-card__title">Parte de horas</h3>
-                    <p class="panel-card__subtitle">Estás cerrando @_detail?.CodigoVisible. ¿Cargamos el tiempo trabajado?</p>
-                </div>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-
+@* Ventanas emergentes fuera del wrapper de la página: display:contents, solo aporta el scope .gd
+   para que tomen el aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
+@* Parte de horas del ticket (2026-10-19): AlfaDialog. Se abre desde la solapa (solo cargar) o al cerrar
+   el ticket (cargar y cerrar / cerrar sin parte). *@
+<AlfaDialog Open="@_showParteHorasDialog"
+            Title="Parte de horas"
+            Description="@(CargandoParteSinCerrar
+                ? $"Cargá el tiempo trabajado en {_detail?.CodigoVisible}."
+                : $"Estás cerrando {_detail?.CodigoVisible}. ¿Cargamos el tiempo trabajado?")"
+            Size="AlfaDialogSize.Md"
+            Loading="@_savingParteHora"
+            ErrorMessage="@_parteHoraError"
+            Class="tk-parte-dialog"
+            OnClose="CancelCloseTicketParteHorasDialog">
+    <ChildContent>
         @if (_ticketPartesHoras.Count > 0)
         {
-            <div class="conversations-hours-hint">
-                <i class="bi bi-info-circle"></i>
-                <span>Este ticket ya tiene @GetTicketPartesHorasSubtitle().</span>
-            </div>
+            <p class="tk-parte-aviso"><i class="bi bi-info-circle"></i> Este ticket ya tiene @GetTicketPartesHorasSubtitle().</p>
         }
-
-        @if (!string.IsNullOrWhiteSpace(_parteHoraError))
+        @if (string.IsNullOrWhiteSpace(_detail?.ClienteCodigo) && _parteHoraTipoTrabajo != ParteHoraTipoTrabajoKeys.Interno)
         {
-            <div class="conversations-error conversations-notice">@_parteHoraError</div>
+            <p class="tk-parte-aviso tk-parte-aviso--atencion">
+                <i class="bi bi-exclamation-circle"></i>
+                Este ticket no tiene cliente: asignale uno al ticket o elegí el tipo «@FormatParteHoraTipoTicket(ParteHoraTipoTrabajoKeys.Interno)».
+            </p>
         }
 
-        <div class="conversations-hours-form">
-            <label class="conversations-hours-check">
+        <div class="tk-parte-form">
+            <div class="field">
+                <label for="tk-parte-fecha">Fecha</label>
+                <input id="tk-parte-fecha" type="date" @bind="_parteHoraFecha" max="@DateTime.Today.ToString("yyyy-MM-dd")" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-tecnico">Técnico</label>
+                <select id="tk-parte-tecnico" @bind="_parteHoraIdTecnico" disabled="@_savingParteHora">
+                    <option value="">Elegí un técnico</option>
+                    @foreach (var tecnico in _lookups.Tecnicos)
+                    {
+                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="tk-parte-tipo">Tipo</label>
+                <select id="tk-parte-tipo" @bind="_parteHoraTipoTrabajo" disabled="@_savingParteHora">
+                    @foreach (var tipo in ParteHoraTipoTrabajoKeys.All)
+                    {
+                        <option value="@tipo">@FormatParteHoraTipoTicket(tipo)</option>
+                    }
+                </select>
+            </div>
+            <div class="field tk-parte-form__ancho">
+                <label for="tk-parte-tarea">Tarea</label>
+                <input id="tk-parte-tarea" type="text" maxlength="1000" placeholder="Qué se hizo" @bind="_parteHoraDescripcion" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-horas">Horas</label>
+                <input id="tk-parte-horas" type="number" min="0" max="24" step="1" @bind="_parteHoraHoras" disabled="@_savingParteHora" />
+            </div>
+            <div class="field">
+                <label for="tk-parte-minutos">Minutos</label>
+                <input id="tk-parte-minutos" type="number" min="0" max="59" step="5" @bind="_parteHoraMinutos" disabled="@_savingParteHora" />
+            </div>
+            <label class="checkbox tk-parte-form__check">
                 <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
                 <span>Facturable</span>
             </label>
-
-            <div class="conversations-hours-lines">
-                <div class="conversations-hours-lines__header">
-                    <span>Técnico</span>
-                    <span>Tipo</span>
-                    <span>Tarea</span>
-                    <span>Horas</span>
-                    <span>Minutos</span>
-                    <span></span>
-                </div>
-                <div class="conversations-hours-lines__row">
-                    <select @bind="_parteHoraIdTecnico" disabled="@_savingParteHora">
-                        <option value="">Sin técnico</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
-                        }
-                    </select>
-                    <select @bind="_parteHoraTipoTrabajo" disabled="@_savingParteHora">
-                        @foreach (var tipo in ParteHoraTipoTrabajoKeys.All)
-                        {
-                            <option value="@tipo">@FormatParteHoraTipoTicket(tipo)</option>
-                        }
-                    </select>
-                    <input type="text" maxlength="1000" placeholder="Descripción de la tarea" @bind="_parteHoraDescripcion" disabled="@_savingParteHora" />
-                    <input type="number" min="0" max="24" step="1" @bind="_parteHoraHoras" disabled="@_savingParteHora" />
-                    <input type="number" min="0" max="59" step="1" @bind="_parteHoraMinutos" disabled="@_savingParteHora" />
-                    <span></span>
-                </div>
-            </div>
         </div>
-
-        <div class="actions conversations-hours-actions">
-            <button type="button" class="btn btn--primary" @onclick="SaveTicketParteHorasAsync" disabled="@_savingParteHora">
-                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte y cerrar")
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">
-                Cerrar sin cargar parte
-            </button>
-        </div>
-    </section>
-}
+    </ChildContent>
+    <Footer>
+        @if (CargandoParteSinCerrar)
+        {
+            <button type="button" class="btn btn--ghost" @onclick="CancelCloseTicketParteHorasDialog" disabled="@_savingParteHora">Cancelar</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn--ghost" @onclick="CloseTicketWithoutParteHorasAsync" disabled="@_savingParteHora">Cerrar sin cargar parte</button>
+        }
+        <button type="button" class="btn btn--primary" @onclick="SaveTicketParteHorasAsync" disabled="@_savingParteHora">
+            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : CargandoParteSinCerrar ? "Guardar parte" : "Guardar parte y cerrar")
+        </button>
+    </Footer>
+</AlfaDialog>
+</div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private TicketLookupDto _lookups = new();
     private TicketsFilters _filters = new();
     private string _prioridadFiltro = string.Empty;
@@ -800,9 +876,13 @@
     private string _parteHoraIdTecnico = string.Empty;
     private string _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
     private string _parteHoraDescripcion = string.Empty;
+    private DateTime _parteHoraFecha = DateTime.Today;
+
+    /// <summary>La ventana de parte de horas se abrió desde la solapa (sin cerrar el ticket).</summary>
+    private bool CargandoParteSinCerrar => string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode);
     private int _parteHoraHoras;
     private int _parteHoraMinutos = 30;
-    private bool _parteHoraFacturable = true;
+    private bool _parteHoraFacturable;
     private int _pagedTotal;
     private int _pageNumber = 1;
     private int _totalPages;
@@ -859,30 +939,34 @@
         };
 
     private RenderFragment RenderTicketSmartSearch() => @<div class="smart-search tickets-smart-search" @onclick:stopPropagation>
-                <div class="smart-search__bar">
+                <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
                     <i class="bi bi-search"></i>
+                    <button type="button" class="smart-search__filter-button @(_showSearchPanel ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleTicketSearchPanel">
+                        <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+                    </button>
+                    <div class="smart-search__active-filters" aria-label="Filtros activos">
+                        @{ var chipsActivos = BuildTicketFilterChips().ToList(); }
+                        @foreach (var chip in chipsActivos.Take(2))
+                        {
+                            <button type="button" class="smart-search__active-filter" title="Quitar filtro @chip.Label" aria-label="Quitar filtro @chip.Label" @onclick="() => RemoveTicketChipAsync(chip.Key)">
+                                <span>@chip.Label</span>
+                                <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                            </button>
+                        }
+                        @if (chipsActivos.Count > 2)
+                        {
+                            <span class="smart-search__more-filters" title="@string.Join(", ", chipsActivos.Skip(2).Select(c => c.Label))">+@(chipsActivos.Count - 2)</span>
+                        }
+                    </div>
                     <input type="search"
                            placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
                            @oninput="OnTicketSearchInput"
                            @onkeydown="HandleTicketApplyKeyDownAsync" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
+                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildTicketFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @onclick="() => RemoveTicketChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
-                        </button>
-                    }
-                    @if (BuildTicketFilterChips().Count == 0)
-                    {
-                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
-                    }
                 </div>
 
                 @if (_showSearchPanel)
@@ -1018,6 +1102,14 @@
                 }
     </div>;
 
+    // Las acciones de la barra las dispara MainLayout: sin StateHasChanged la página no se
+    // redibujaba (ej. Guardar sin nombre dejaba el aviso de validación sin mostrar).
+    private Func<Task> AlPresionar(Func<Task> accion) => () => InvokeAsync(async () =>
+    {
+        await accion();
+        StateHasChanged();
+    });
+
     private void UpdatePageHeader()
     {
         var actions = new List<PageHeaderAction>();
@@ -1032,7 +1124,7 @@
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
                 Busy = _saving,
-                OnClick = GuardarAsync
+                OnClick = AlPresionar(GuardarAsync)
             });
             actions.Add(new PageHeaderAction
             {
@@ -1042,7 +1134,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
-                OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { CerrarEditor(); return Task.CompletedTask; })
             });
         }
         else if (HasTicketSelection)
@@ -1055,7 +1147,7 @@
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionEstado); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionEstado); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1065,7 +1157,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionTecnico); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionTecnico); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1075,7 +1167,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Normal,
                 Disabled = _bulkUpdating,
-                OnClick = () => { OpenBulkAction(BulkActionPrioridad); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenBulkAction(BulkActionPrioridad); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1085,7 +1177,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
                 Disabled = _bulkUpdating,
-                OnClick = () => { ClearTicketSelection(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { ClearTicketSelection(); return Task.CompletedTask; })
             });
         }
         else
@@ -1097,7 +1189,7 @@
                 Icon = "bi-plus-circle",
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
-                OnClick = () => { NuevoTicket(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { NuevoTicket(); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -1107,7 +1199,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _loading,
-                OnClick = RecargarAsync
+                OnClick = AlPresionar(RecargarAsync)
             });
             if (_viewMode == "lista")
             {
@@ -1118,7 +1210,7 @@
                     Icon = "bi-sliders",
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Overflow,
-                    OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; }
+                    OnClick = AlPresionar(() => { AbrirConfiguracionVista(); return Task.CompletedTask; })
                 });
             }
             actions.Add(new PageHeaderAction
@@ -1128,7 +1220,7 @@
                 Icon = "bi-tags",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
-                OnClick = () => { OpenTagManager(); return Task.CompletedTask; }
+                OnClick = AlPresionar(() => { OpenTagManager(); return Task.CompletedTask; })
             });
         }
 
@@ -1138,7 +1230,7 @@
                 ? $"{_selectedTicketIds.Count} ticket{(_selectedTicketIds.Count == 1 ? string.Empty : "s")} seleccionado{(_selectedTicketIds.Count == 1 ? string.Empty : "s")}"
                 : "Tickets";
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = title,
             Breadcrumb = ["Soporte", "Tickets"],
@@ -1165,7 +1257,7 @@
                         Icon = "bi-kanban",
                         Active = _viewMode == "kanban",
                         Disabled = _loading,
-                        OnClick = () => CambiarVistaAsync("kanban")
+                        OnClick = AlPresionar(() => CambiarVistaAsync("kanban"))
                     },
                     new PageHeaderViewButton
                     {
@@ -1174,7 +1266,7 @@
                         Icon = "bi-list-ul",
                         Active = _viewMode == "lista",
                         Disabled = _loading,
-                        OnClick = () => CambiarVistaAsync("lista")
+                        OnClick = AlPresionar(() => CambiarVistaAsync("lista"))
                     }
                 ],
             Actions = actions
@@ -1254,7 +1346,8 @@
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _ = DisposeEditorAsync();
         _kanbanDotNetRef?.Dispose();
         _searchDebounceCts?.Cancel();
@@ -2272,6 +2365,92 @@
         _ticketContactSuggestions = [];
     }
 
+    // ---- Ficha del ticket (2026-10-19) ----
+    private const string FichaTabDescripcion = "descripcion";
+    private const string FichaTabMensajes = "mensajes";
+    private const string FichaTabActividad = "actividad";
+    private const string FichaTabHoras = "horas";
+    private string _fichaTab = FichaTabDescripcion;
+    private bool _showTagPicker;
+    private bool _cambiandoEtapa;
+
+    private IReadOnlyList<AlfaTabItem> FichaTabs => _isNew || _detail is null
+        ? [new(FichaTabDescripcion, "Descripción")]
+        :
+        [
+            new(FichaTabDescripcion, "Descripción"),
+            new(FichaTabMensajes, "Mensajes", Badge: _detail.MensajesOrigenDetalle.Count > 0 ? _detail.MensajesOrigenDetalle.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
+            new(FichaTabActividad, "Actividad", Badge: _detail.Actividad.Count > 0 ? _detail.Actividad.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null),
+            new(FichaTabHoras, "Partes de horas", Badge: _ticketPartesHoras.Count > 0 ? _ticketPartesHoras.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null)
+        ];
+
+    private IReadOnlyList<TicketEstadoDto> EtapasOrdenadas
+        => _lookups.Estados.OrderBy(x => x.Orden).ThenBy(x => x.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    private string EtapaClass(TicketEstadoDto state)
+    {
+        var actual = EtapasOrdenadas.FirstOrDefault(x => string.Equals(x.CodigoEstado, _form.CodigoEstado, StringComparison.OrdinalIgnoreCase));
+        if (actual is not null && string.Equals(state.CodigoEstado, actual.CodigoEstado, StringComparison.OrdinalIgnoreCase))
+            return "tk-etapa is-actual";
+        return actual is not null && !state.EsCerrado && state.Orden < actual.Orden ? "tk-etapa is-pasada" : "tk-etapa";
+    }
+
+    /// <summary>
+    /// Barra de etapas: en un ticket existente la etapa se guarda al instante (igual que arrastrarlo en el
+    /// tablero); en uno nuevo queda en el formulario hasta Guardar.
+    /// </summary>
+    private async Task CambiarEtapaDesdeFichaAsync(string codigoEstado)
+    {
+        if (string.Equals(_form.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_isNew || _detail is null)
+        {
+            _form.CodigoEstado = codigoEstado;
+            return;
+        }
+
+        // Cerrar desde la barra pide el parte de horas igual que al cerrar con Guardar.
+        if (IsClosingTicketTransition(_detail.CodigoEstado, codigoEstado))
+        {
+            PromptCloseTicketParteHoras(codigoEstado);
+            return;
+        }
+
+        var anterior = _form.CodigoEstado;
+        _form.CodigoEstado = codigoEstado;
+        _cambiandoEtapa = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.QuickUpdateAsync(new TicketQuickUpdateRequest
+                {
+                    IdTicket = _detail.IdTicket,
+                    CodigoEstado = codigoEstado,
+                    UsuarioAccion = CurrentUserName
+                });
+                return true;
+            }, "No se pudo cambiar la etapa del ticket.");
+
+            if (!result.Success)
+            {
+                _form.CodigoEstado = anterior;
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            var estado = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase));
+            _detail.CodigoEstado = codigoEstado;
+            _detail.EstadoNombre = estado?.Nombre ?? _detail.EstadoNombre;
+            SetFeedback(AppUiMessage.Success("Etapa actualizada", $"El ticket pasó a {estado?.Nombre ?? codigoEstado}."));
+        }
+        finally
+        {
+            _cambiandoEtapa = false;
+        }
+    }
+
     private void ToggleTicketTag(int idEtiqueta, ChangeEventArgs args)
     {
         var selected = args.Value is bool flag && flag;
@@ -2436,6 +2615,24 @@
         return !wasClosed && willBeClosed;
     }
 
+    /// <summary>Solapa Partes de horas: cargar tiempo trabajado sin cerrar el ticket (2026-10-19).</summary>
+    private void AbrirCargaParteHoras()
+    {
+        if (_detail is null)
+            return;
+
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraIdTecnico = string.IsNullOrWhiteSpace(_form.IdTecnico) ? _detail.IdTecnico ?? string.Empty : _form.IdTecnico;
+        _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
+        _parteHoraDescripcion = _detail.Titulo;
+        _parteHoraFecha = DateTime.Today;
+        _parteHoraHoras = 0;
+        _parteHoraMinutos = 30;
+        _parteHoraFacturable = false;
+        _parteHoraError = null;
+        _showParteHorasDialog = true;
+    }
+
     private void PromptCloseTicketParteHoras(string closeStatusCode)
     {
         if (_detail is null)
@@ -2443,13 +2640,14 @@
 
         _parteHoraPendingCloseStatusCode = closeStatusCode;
         _form.CodigoEstado = _detail.CodigoEstado;
+        _parteHoraFecha = DateTime.Today;
 
         _parteHoraIdTecnico = _form.IdTecnico ?? string.Empty;
         _parteHoraTipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte;
         _parteHoraDescripcion = _detail.Titulo;
         _parteHoraHoras = 0;
         _parteHoraMinutos = 30;
-        _parteHoraFacturable = true;
+        _parteHoraFacturable = false;
         _parteHoraError = null;
         _showParteHorasDialog = true;
     }
@@ -2462,14 +2660,6 @@
         _showParteHorasDialog = false;
         _parteHoraPendingCloseStatusCode = string.Empty;
         _parteHoraError = null;
-    }
-
-    private Task HandleTicketParteHorasDialogKeyDownAsync(KeyboardEventArgs args)
-    {
-        if (args.Key == "Escape")
-            CancelCloseTicketParteHorasDialog();
-
-        return Task.CompletedTask;
     }
 
     private async Task SaveTicketParteHorasAsync()
@@ -2503,9 +2693,15 @@
         _parteHoraError = null;
         try
         {
+            if (_parteHoraFecha.Date > DateTime.Today)
+            {
+                _parteHoraError = "La fecha del parte no puede ser futura.";
+                return;
+            }
+
             var idParte = await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
             {
-                Fecha = DateTime.Today,
+                Fecha = _parteHoraFecha.Date,
                 ClienteCodigo = _detail.ClienteCodigo,
                 IdContacto = _detail.IdContacto,
                 IdTicket = _detail.IdTicket,
@@ -2519,15 +2715,29 @@
                 UsuarioAccion = CurrentUserName
             });
 
+            if (CargandoParteSinCerrar)
+            {
+                _showParteHorasDialog = false;
+                _fichaTab = FichaTabHoras;
+                await LoadTicketPartesHorasAsync(_detail.IdTicket);
+                SetFeedback(AppUiMessage.Success("Parte de horas guardado",
+                    $"Se cargó el parte #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} en {_detail.CodigoVisible}."));
+                return;
+            }
+
             await FinalizeTicketCloseAsync(
                 "Ticket cerrado",
                 $"Parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado y ticket cerrado.");
         }
         catch (Exception ex)
         {
-            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.Message
-                : "No se pudo guardar el parte de horas. Revisá los datos y volvé a intentar.";
+            // Las validaciones del parte (cliente, técnico, duración) dicen qué falta: se muestran tal cual.
+            _parteHoraError = ex switch
+            {
+                AlfaCore.Services.AppValidationException validation => validation.UserMessage,
+                AlfaCore.Services.AppUserFacingException userFacing => userFacing.Message,
+                _ => "No se pudo guardar el parte de horas. Revisá los datos y volvé a intentar."
+            };
         }
         finally
         {
@@ -2967,11 +3177,29 @@
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
-    private static string GetAttachmentUrl(long idAdjunto)
-        => $"/api/conversaciones/adjuntos/{idAdjunto}";
+    // Reusa el mismo enum/resolver de estado que Conversaciones.razor (Mejora estados UI media
+    // historica WhatsApp) en vez de duplicarlo: dado ArchivoDisponible/EstadoAlmacenamiento/
+    // PuedeRecuperarse (ya resueltos por ConversacionesService.GetMessageAttachmentsAsync), arma el
+    // mismo texto coherente por estado -- nunca dice "no disponible" para un adjunto todavía
+    // recuperable, y nunca le atribuye a WhatsApp una pérdida que no fue confirmada.
+    internal static string GetAttachmentUnavailableText(TicketAdjuntoOrigenDto adjunto, string tipoLabel)
+        => Conversaciones.GetHistoricalMediaStateText(
+            Conversaciones.ResolveMediaRecoveryVisualState(adjunto.ArchivoDisponible, adjunto.EstadoAlmacenamiento, adjunto.PuedeRecuperarse),
+            tipoLabel);
 
-    private static string GetAttachmentDownloadUrl(long idAdjunto)
-        => $"/api/conversaciones/adjuntos/{idAdjunto}?download=1";
+    private string GetAttachmentUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}?idBase={GetAttachmentBaseId()}{GetAttachmentUserTokenQuery()}";
+
+    private string GetAttachmentDownloadUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}?download=1&idBase={GetAttachmentBaseId()}{GetAttachmentUserTokenQuery()}";
+
+    private int GetAttachmentBaseId()
+        => SessionSvc.GetActiveSession()?.BaseId ?? 0;
+
+    private string GetAttachmentUserTokenQuery()
+        => string.IsNullOrWhiteSpace(AppUserSession.CurrentToken)
+            ? string.Empty
+            : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
 
     private static bool IsImageAttachment(TicketAdjuntoOrigenDto adjunto)
         => string.Equals(adjunto.TipoArchivo, "IMAGE", StringComparison.OrdinalIgnoreCase)

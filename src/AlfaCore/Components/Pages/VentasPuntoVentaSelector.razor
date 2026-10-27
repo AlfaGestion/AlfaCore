@@ -8,6 +8,7 @@
 @inject IRouteContextService RouteCtx
 @inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
@@ -84,10 +85,20 @@
 </section>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private bool _loading = true;
     private bool _esAdministrador;
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
     private AppUiMessage? _feedback;
+    private bool _directPuntoVentaChecked;
+    private const string PuntoVentaStorageKey = "alfacore.pos.puntoVentaId";
+
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -97,9 +108,44 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _directPuntoVentaChecked || _loading)
+            return;
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+        _directPuntoVentaChecked = true;
+        if (!Nav.ToAbsoluteUri(Nav.Uri).Query.Contains("directo=1", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            var idPuntoVenta = IdPuntoVentaQuery.GetValueOrDefault();
+            if (idPuntoVenta <= 0)
+            {
+                var storedId = await Js.InvokeAsync<string?>("localStorage.getItem", PuntoVentaStorageKey);
+                if (!int.TryParse(storedId, out idPuntoVenta) || idPuntoVenta <= 0)
+                    return;
+            }
+
+            if (_puntosVenta.Any(x => x.Id == idPuntoVenta))
+            {
+                await Js.InvokeVoidAsync("localStorage.setItem", PuntoVentaStorageKey, idPuntoVenta.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={idPuntoVenta}&directo=1"));
+            }
+        }
+        catch
+        {
+            // Si el almacenamiento no está disponible, se conserva el selector normal.
+        }
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
         TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "punto-venta")
@@ -129,12 +175,21 @@
     private static bool EstaDisponible(string modo)
         => modo == PuntoVentaModoKeys.Mostrador || modo == PuntoVentaModoKeys.Delivery;
 
-    private Task AbrirAsync(PuntoVentaEntidadDto pv)
+    private async Task AbrirAsync(PuntoVentaEntidadDto pv)
     {
         if (!EstaDisponible(pv.Modo))
         {
             _feedback = AppUiMessage.Success("Próximamente", $"El modo Salón todavía no está disponible para \"{pv.Nombre}\".");
-            return Task.CompletedTask;
+            return;
+        }
+
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", PuntoVentaStorageKey, pv.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch
+        {
+            // La navegación y la selección del PDV no dependen de localStorage.
         }
 
         var ruta = pv.Modo switch
@@ -144,7 +199,6 @@
         };
 
         Nav.NavigateTo(RouteCtx.BuildRoute(ruta));
-        return Task.CompletedTask;
     }
 
     private static string GetModoTexto(string modo) => modo switch

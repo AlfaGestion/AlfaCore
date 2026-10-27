@@ -62,6 +62,7 @@ public sealed class PageHeaderConfig
     public bool ActionsBelowViewButtons { get; init; }
     public bool RecordToolbar { get; init; }
     public bool CompactContextToolbar { get; init; }
+    public bool ResponsiveToolbar { get; init; }
     public bool AlwaysVisible { get; init; }
     public bool ShowHistoryNavigation { get; init; } = true;
     public bool ShowHomeNavigation { get; init; }
@@ -111,6 +112,7 @@ public sealed class PageHeaderPaginationConfig
 
 public sealed class PageHeaderAction
 {
+    public bool CollapseOnNarrow { get; init; }
     public string Key { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
     public string Icon { get; init; } = string.Empty;

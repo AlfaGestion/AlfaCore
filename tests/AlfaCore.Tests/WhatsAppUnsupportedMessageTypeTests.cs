@@ -77,6 +77,10 @@ public sealed class WhatsAppUnsupportedMessageTypeTests
         Assert.Equal(string.Empty, Conversaciones.ExtractUnsupportedType("{}"));
     }
 
+    // Frase actualizada por "Amplia soporte de tipos de mensajes WhatsApp": la fundación extensible
+    // reemplazó "formato no compatible: X"/"todavía no es compatible con el módulo" (sonaba a error del
+    // sistema) por una frase neutra + "Tipo: X" sanitizado (WhatsAppMessageClassifier), sin cambiar el
+    // criterio que este test verifica (tipo real cuando se conoce vs. fallback genérico cuando no).
     [Fact]
     public void GetMessageDisplayText_ShowsTheRealTypeName_InsteadOfTheFullyGenericFallback()
     {
@@ -88,7 +92,7 @@ public sealed class WhatsAppUnsupportedMessageTypeTests
             PayloadJson = payload
         };
 
-        Assert.Equal("WhatsApp envió un formato no compatible: order.", Conversaciones.GetMessageDisplayText(message));
+        Assert.Equal("WhatsApp envió un tipo de mensaje que AlfaCore todavía no puede mostrar. Tipo: order.", Conversaciones.GetMessageDisplayText(message));
     }
 
     [Fact]
@@ -101,7 +105,7 @@ public sealed class WhatsAppUnsupportedMessageTypeTests
             PayloadJson = string.Empty
         };
 
-        Assert.Equal("WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo.", Conversaciones.GetMessageDisplayText(message));
+        Assert.Equal("WhatsApp envió un tipo de mensaje que AlfaCore todavía no puede mostrar.", Conversaciones.GetMessageDisplayText(message));
     }
 
     [Theory]

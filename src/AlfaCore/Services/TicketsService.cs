@@ -11,7 +11,9 @@ namespace AlfaCore.Services;
 public sealed class TicketsService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ITicketsService
+    IAppEventService appEvents,
+    IConversacionesService conversacionesService,
+    IAvisosPushNotifier? avisosPush = null) : ITicketsService
 {
     private const string ModuleName = "Tickets";
     private const string ConfigGroup = "TICKETS";
@@ -504,6 +506,7 @@ public sealed class TicketsService(
                 new { IdTicket = idTicket, title, request.IdConversacion, Mensajes = messageIds, Etiquetas = tagIds },
                 token);
 
+            await AvisarAsignacionAsync(request.IdTecnico, null, $"Te asignaron un ticket: {title}", idTicket, token);
             return idTicket;
         }, "No se pudo crear el ticket.", ct);
 
@@ -557,6 +560,7 @@ public sealed class TicketsService(
             var current = await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "EDICION", BuildTicketUpdateActivity(previous, current), user, token);
             await tx.CommitAsync(token);
+            await AvisarAsignacionAsync(current.IdTecnico, previous.IdTecnico, $"Te asignaron un ticket: {current.Titulo}", request.IdTicket, token);
         }, "No se pudo actualizar el ticket.", ct);
 
     public Task QuickUpdateAsync(TicketQuickUpdateRequest request, CancellationToken ct = default)
@@ -570,6 +574,7 @@ public sealed class TicketsService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
+            var anterior = request.IdTecnico is null ? null : await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
             await using var cmd = new SqlCommand { Connection = cn, Transaction = (SqlTransaction)tx };
             cmd.Parameters.AddWithValue("@IdTicket", request.IdTicket);
 
@@ -603,6 +608,8 @@ public sealed class TicketsService(
 
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "CAMBIO", "Ticket actualizado desde acción rápida.", NormalizeUser(request.UsuarioAccion), token);
             await tx.CommitAsync(token);
+            if (anterior is not null)
+                await AvisarAsignacionAsync(request.IdTecnico, anterior.IdTecnico, $"Te asignaron un ticket: {anterior.Titulo}", request.IdTicket, token);
         }, "No se pudo actualizar el ticket.", ct);
 
     public Task BulkUpdateAsync(TicketBulkUpdateRequest request, CancellationToken ct = default)
@@ -662,6 +669,12 @@ public sealed class TicketsService(
                 await InsertActivityAsync(cn, (SqlTransaction)tx, ticketId, "CAMBIO", "Ticket actualizado desde acción masiva.", user, token);
 
             await tx.CommitAsync(token);
+            if (request.ActualizarTecnico && avisosPush is not null && !string.IsNullOrWhiteSpace(request.IdTecnico))
+            {
+                await avisosPush.NotificarTecnicoAsync(request.IdTecnico,
+                    ticketIds.Count == 1 ? "Te asignaron un ticket" : $"Te asignaron {ticketIds.Count} tickets",
+                    "Abrí Tickets para verlos.", ticketIds.Count == 1 ? $"/tickets?id={ticketIds[0].ToString(CultureInfo.InvariantCulture)}" : "/tickets", token);
+            }
         }, "No se pudieron actualizar los tickets seleccionados.", ct);
 
     public Task AddNoteAsync(TicketNotaRequest request, CancellationToken ct = default)
@@ -1412,7 +1425,7 @@ public sealed class TicketsService(
         }
     }
 
-    private static async Task<IReadOnlyList<TicketMensajeOrigenDto>> GetSourceMessagesAsync(SqlConnection cn, long idTicket, CancellationToken ct)
+    private async Task<IReadOnlyList<TicketMensajeOrigenDto>> GetSourceMessagesAsync(SqlConnection cn, long idTicket, CancellationToken ct)
     {
         const string sql = """
             SELECT
@@ -1429,58 +1442,58 @@ public sealed class TicketsService(
             LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = m.IdTecnicoAutor
             WHERE tm.IdTicket = @IdTicket
             ORDER BY tm.Orden, m.FechaHora, m.IdMensaje;
-
-            SELECT
-                a.IdAdjunto,
-                a.IdMensaje,
-                ISNULL(a.TipoArchivo, ''),
-                ISNULL(a.NombreArchivo, ''),
-                ISNULL(a.MimeType, ''),
-                ISNULL(a.TamanoBytes, 0)
-            FROM dbo.TICK_TICKET_MENSAJES tm
-            INNER JOIN dbo.CONV_ADJUNTOS a ON a.IdMensaje = tm.IdMensaje
-            WHERE tm.IdTicket = @IdTicket
-            ORDER BY a.IdAdjunto;
             """;
 
         var messages = new List<TicketMensajeOrigenDto>();
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@IdTicket", idTicket);
-        await using var rd = await cmd.ExecuteReaderAsync(ct);
-        while (await rd.ReadAsync(ct))
+        await using (var cmd = new SqlCommand(sql, cn))
         {
-            var direction = GetString(rd, 2);
-            var techName = GetString(rd, 7);
-            var user = GetString(rd, 6);
-            messages.Add(new TicketMensajeOrigenDto
-            {
-                IdMensaje = rd.GetInt64(0),
-                IdConversacion = rd.GetInt64(1),
-                Direccion = direction,
-                TipoMensaje = GetString(rd, 3),
-                Texto = GetString(rd, 4),
-                FechaHora = rd.IsDBNull(5) ? DateTime.MinValue : rd.GetDateTime(5),
-                Autor = direction == "ENTRANTE" ? "Cliente / Contacto" : FirstNonEmpty(techName, user, "Equipo Alfa")
-            });
-        }
-
-        if (await rd.NextResultAsync(ct))
-        {
-            var byMessage = messages.ToDictionary(x => x.IdMensaje);
+            cmd.Parameters.AddWithValue("@IdTicket", idTicket);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
             while (await rd.ReadAsync(ct))
             {
-                var idMensaje = rd.GetInt64(1);
-                if (!byMessage.TryGetValue(idMensaje, out var message))
+                var direction = GetString(rd, 2);
+                var techName = GetString(rd, 7);
+                var user = GetString(rd, 6);
+                messages.Add(new TicketMensajeOrigenDto
+                {
+                    IdMensaje = rd.GetInt64(0),
+                    IdConversacion = rd.GetInt64(1),
+                    Direccion = direction,
+                    TipoMensaje = GetString(rd, 3),
+                    Texto = GetString(rd, 4),
+                    FechaHora = rd.IsDBNull(5) ? DateTime.MinValue : rd.GetDateTime(5),
+                    Autor = direction == "ENTRANTE" ? "Cliente / Contacto" : FirstNonEmpty(techName, user, "Equipo Alfa")
+                });
+            }
+        }
+
+        // Adjuntos: se reutiliza IConversacionesService.GetMessageAttachmentsAsync (mismo camino que
+        // usa Conversaciones.razor) en vez de leer CONV_ADJUNTOS acá con una query propia -- así
+        // Tickets hereda automáticamente ArchivoDisponible/PuedeRecuperarse/EstadoAlmacenamiento ya
+        // resueltos (columnas durables, RutaLocal confinada al tenant, SQL-first sobre disco) sin
+        // duplicar esa lógica. Se agrupa por IdConversacion porque el método toma una sola conversación
+        // por llamada; en la práctica casi todos los mensajes de un ticket son de la misma conversación.
+        var byMessage = messages.ToDictionary(x => x.IdMensaje);
+        foreach (var group in messages.GroupBy(x => x.IdConversacion))
+        {
+            var messageIds = group.Select(x => x.IdMensaje).ToArray();
+            var adjuntos = await conversacionesService.GetMessageAttachmentsAsync(group.Key, messageIds, ct);
+            foreach (var adjunto in adjuntos)
+            {
+                if (!byMessage.TryGetValue(adjunto.IdMensaje, out var message))
                     continue;
 
                 message.Adjuntos.Add(new TicketAdjuntoOrigenDto
                 {
-                    IdAdjunto = rd.GetInt64(0),
-                    IdMensaje = idMensaje,
-                    TipoArchivo = GetString(rd, 2),
-                    NombreArchivo = GetString(rd, 3),
-                    MimeType = GetString(rd, 4),
-                    TamanoBytes = rd.IsDBNull(5) ? 0 : Convert.ToInt64(rd.GetValue(5), CultureInfo.InvariantCulture)
+                    IdAdjunto = adjunto.IdAdjunto,
+                    IdMensaje = adjunto.IdMensaje,
+                    TipoArchivo = adjunto.TipoArchivo,
+                    NombreArchivo = adjunto.NombreArchivo,
+                    MimeType = adjunto.MimeType,
+                    TamanoBytes = adjunto.TamanoBytes,
+                    ArchivoDisponible = adjunto.ArchivoDisponible,
+                    PuedeRecuperarse = adjunto.PuedeRecuperarse,
+                    EstadoAlmacenamiento = adjunto.EstadoAlmacenamiento
                 });
             }
         }
@@ -1514,6 +1527,18 @@ public sealed class TicketsService(
         }
 
         return rows;
+    }
+
+    /// <summary>Push al técnico cuando el ticket queda asignado a él (y antes no lo estaba).</summary>
+    private async Task AvisarAsignacionAsync(string? idTecnicoNuevo, string? idTecnicoAnterior, string titulo, long idTicket, CancellationToken ct)
+    {
+        var nuevo = (idTecnicoNuevo ?? string.Empty).Trim();
+        if (avisosPush is null || nuevo.Length == 0
+            || string.Equals(nuevo, (idTecnicoAnterior ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await avisosPush.NotificarTecnicoAsync(nuevo, titulo, "Abrí el ticket para ver el detalle.",
+            $"/tickets?id={idTicket.ToString(CultureInfo.InvariantCulture)}", ct);
     }
 
     private static async Task<TicketEditSnapshot> GetTicketEditSnapshotAsync(SqlConnection cn, SqlTransaction tx, long idTicket, CancellationToken ct)

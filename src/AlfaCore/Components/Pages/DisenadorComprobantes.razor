@@ -44,6 +44,7 @@
                 <option value="@TiposDocumentoCore.CobranzaA">Cobranza A</option>
                 <option value="@TiposDocumentoCore.CobranzaB">Cobranza B</option>
                 <option value="@TiposDocumentoCore.CobranzaC">Cobranza C</option>
+                <option value="@TiposDocumentoCore.CobranzaX">Cobranza X</option>
                 <option value="@TiposDocumentoCore.CobranzaProforma">Factura proforma (letra X)</option>
                 <option value="@TiposDocumentoCore.CobranzaContado">Cobranza contado (CBCT)</option>
                 @foreach (var tipo in TiposDocumentoCore.Fiscales)
@@ -325,6 +326,11 @@
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     [SupplyParameterFromQuery(Name = "idVersion")]
     public long? IdVersion { get; set; }
 
@@ -386,7 +392,10 @@
     }
 
     public void Dispose()
-        => PageHeader.Clear();
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     private void UpdatePageHeader()
     {
@@ -430,7 +439,7 @@
             }
         ]);
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = "Diseñador de comprobantes",
             Breadcrumb = ["Utilidades", "Documentos"],

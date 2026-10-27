@@ -1,0 +1,259 @@
+@using System.Globalization
+@using AlfaCore.Services
+@implements IDisposable
+@inject ConciliacionBancariaService Servicio
+@inject IAppUiOperationService UiOps
+
+<section class="conciliacion-cta" aria-label="Cuenta corriente del cliente" aria-busy="@_busy">
+    @if (MostrarCliente && !_busy && _error is null)
+    {
+        @if (!string.IsNullOrWhiteSpace(_clienteCodigo))
+        {
+            <h3>@_clienteNombre · @_clienteCodigo</h3>
+        }
+        else
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Falta identificar el cliente"
+                Message="Abrí el detalle del movimiento y asigná el cliente en Clasificación y cliente. Luego volvé a consultar su cuenta corriente." />
+        }
+    }
+    <div class="conciliacion-cta__filtros">
+        <AlfaSelect Label="Últimos movimientos" Value="@_cantidad" ValueChanged="CambiarCantidad" Options="@Cantidades" Disabled="@_busy" />
+        <AlfaInput Label="Hasta la fecha" Type="date" Value="@_hasta" ValueChanged="v => _hasta=v ?? string.Empty" Disabled="@_busy" />
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Consultar" Disabled="@_busy">Consultar</AlfaButton>
+    </div>
+    <AlfaFeedbackPanel Message="@_error" />
+    @if(_iniciarReconocimiento)
+    {
+        <div tabindex="-1" @ref="_avisoReconocimiento" aria-label="Reconocer cobranza existente">
+            <AlfaFeedbackPanel Message="@AvisoReconocimiento" />
+        </div>
+    }
+    @if (_busy) { <p role="status">Consultando cuenta corriente…</p> }
+    @if (_datos is { } datos)
+    {
+        @if (!SaldoEnCabecera)
+        {
+            <div class="conciliacion-cta__saldos" aria-label="Saldo del cliente">
+                <span>Saldo del cliente al @_corteConsultado</span>
+                @foreach (var s in datos.Saldos) { <strong>@s.Moneda @Dinero(s.Saldo)</strong> }
+                @if(datos.Saldos.Count==0) { <span>Sin movimientos al corte</span> }
+            </div>
+        }
+        @if (datos.Coincidencias.Count>0)
+        {
+            <h3>Posibles cobranzas ya registradas</h3>
+            <p class="conciliacion-cta__ayuda">Recibos del mismo cliente a ±15 días del movimiento, independientes del corte. Compará importe, banco y aplicaciones antes de confirmar.</p>
+            <div class="conciliacion-cta__coincidencias">
+                @foreach (var c in datos.Coincidencias)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@_busy" OnClick="() => Ver(c)">
+                        @c.Fecha.ToString("dd/MM/yyyy") · @c.Tc @c.Comprobante · @c.Moneda @Dinero(c.Debe+c.Haber) · @(c.Haber!=c.ImporteBanco ? "Importe distinto · " : "")Ver recibo
+                    </AlfaButton>
+                }
+            </div>
+        }
+        @if (_asiento is { } detalle)
+        {
+            <details class="conciliacion-cta__detalle" aria-label="Asiento seleccionado" @key="_versionAsiento" open="@(_versionAsiento>0 || _iniciarReconocimiento)" tabindex="-1" @ref="_reciboSeleccionado">
+                <summary>Recibo / comprobante seleccionado · @detalle.Movimiento.Tc @detalle.Movimiento.Comprobante · @detalle.Movimiento.Fecha.ToString("dd/MM/yyyy")</summary>
+                <p>Importe: @detalle.Movimiento.Moneda @Dinero(detalle.Movimiento.Debe+detalle.Movimiento.Haber)</p>
+                <p>@detalle.Movimiento.Detalle</p>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>AbrirComprobante(detalle.Movimiento.Tc,detalle.Movimiento.Comprobante)">Ver comprobante completo</AlfaButton>
+                <p>Usuario: @detalle.Movimiento.Usuario · Caja: @detalle.Movimiento.Caja · Unidad: @detalle.Movimiento.Unidad</p>
+                @if (!string.IsNullOrWhiteSpace(detalle.Comentarios)) { <p>Comentarios: @detalle.Comentarios</p> }
+                @if (PuedeReconocer && !_reconocido && detalle.Movimiento.ReciboCercano && detalle.Movimiento.CodigoMoneda=="1" && detalle.Movimiento.Haber>0)
+                {
+                    <p>Podés reconocer este recibo como el cobro del movimiento. No se genera otra cobranza y la conciliación bancaria permanece separada.</p>
+                    @if(detalle.Movimiento.Haber!=detalle.Movimiento.ImporteBanco)
+                    {
+                        <p><strong>Importes distintos:</strong> banco @Dinero(detalle.Movimiento.ImporteBanco) · recibo @Dinero(detalle.Movimiento.Haber) · diferencia @Dinero(detalle.Movimiento.Haber-detalle.Movimiento.ImporteBanco).</p>
+                        <p>Reconocer el cobro no corrige esa diferencia ni modifica el asiento.</p>
+                        <AlfaInput Label="Observación sobre la diferencia (obligatoria)" Value="@_observacionCobro" ValueChanged="v=>_observacionCobro=v ?? string.Empty" MaxLength="300" Disabled="@_busy" />
+                    }
+                    <AlfaCheckbox Value="@_confirmoRecibo" ValueChanged="v=>_confirmoRecibo=v==true" Disabled="@_busy">Confirmo que este recibo corresponde al movimiento bancario</AlfaCheckbox>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy||!_confirmoRecibo||(detalle.Movimiento.Haber!=detalle.Movimiento.ImporteBanco && _observacionCobro.Trim().Length<3))" OnClick="ReconocerCobro">Marcar como cobrado</AlfaButton>
+                }
+                @if(_reconocido) { <p role="status">Cobro existente confirmado. El movimiento quedó marcado como Cobrado.</p> }
+                <h4>Medios de pago y contrapartidas</h4>
+                <div class="conciliacion-cta__scroll"><table>
+                    <thead><tr><th>Cuenta</th><th>Descripción</th><th>Medio</th><th>D/H</th><th>Moneda</th><th>Importe</th><th>Referencia</th></tr></thead>
+                    <tbody>@foreach (var p in detalle.Contrapartidas)
+                    {
+                        <tr><td>@p.Cuenta</td><td>@p.Nombre</td><td>@p.Medio</td><td>@p.Signo</td><td>@p.Moneda</td><td class="numero">@Dinero(p.Importe)</td><td>@p.Referencia</td></tr>
+                    }</tbody>
+                </table></div>
+                @if (detalle.Contrapartidas.Count==0) { <p>Sin contrapartidas disponibles.</p> }
+                <h4>Comprobantes aplicados</h4>
+                @if (detalle.Aplicaciones.Count==0) { <p>Sin aplicaciones registradas para este comprobante.</p> }
+                else
+                {
+                    <div class="conciliacion-cta__scroll"><table>
+                        <thead><tr><th>Comprobante</th><th>Fecha</th><th>Importe aplicado</th><th>Comentarios</th></tr></thead>
+                        <tbody>@foreach (var a in detalle.Aplicaciones)
+                        {
+                            <tr><td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="()=>AbrirComprobante(a.Tc,a.Comprobante)">@a.Tc @a.Comprobante</AlfaButton></td><td>@a.Fecha?.ToString("dd/MM/yyyy")</td><td class="numero">@Dinero(a.Importe)</td><td>@a.Comentarios</td></tr>
+                        }</tbody>
+                    </table></div>
+                }
+            </details>
+        }
+        <h3>Cuenta corriente al @_corteConsultado</h3>
+        <p class="conciliacion-cta__ayuda">Últimos @_cantidadConsultada movimientos. El saldo incluye toda la historia hasta el corte, separado por moneda.</p>
+        @if (datos.Movimientos.Count==0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Sin movimientos disponibles"
+                Message="No hay movimientos para el cliente, la fecha y las unidades autorizadas." />
+        }
+        else
+        {
+            <div class="conciliacion-cta__scroll conciliacion-cta__scroll--movimientos"><table>
+                <thead><tr><th>Fecha</th><th>Comprobante</th><th>Detalle</th><th>Moneda</th><th>Debe</th><th>Haber</th><th>Saldo</th><th></th></tr></thead>
+                <tbody>@foreach (var m in datos.Movimientos)
+                {
+                    <tr class="@(m.PosibleCoincidencia ? "posible-coincidencia" : null)">
+                        <td>@m.Fecha.ToString("dd/MM/yyyy")</td><td>@m.Tc @m.Comprobante @if(m.PosibleCoincidencia) { <strong>Posible coincidencia</strong> }</td>
+                        <td>@m.Detalle</td><td>@m.Moneda</td><td class="numero">@Dinero(m.Debe)</td><td class="numero">@Dinero(m.Haber)</td><td class="numero">@Dinero(m.Saldo)</td>
+                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => VerAsientoCompleto(m)">Ver asiento</AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirComprobante(m.Tc,m.Comprobante)">Ver comprobante</AlfaButton></td>
+                    </tr>
+                }</tbody>
+            </table></div>
+        }
+    }
+</section>
+
+@if (_comprobante is { } comprobante)
+{
+    <AlfaDialog Open="true" Title="@($"{(_asientoDirecto ? "Asiento" : "Comprobante")} {comprobante.Tc} {comprobante.Numero}")" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="()=>_comprobante=null">
+        <ChildContent>
+            <ComprobanteViewer @key="(comprobante,_asientoDirecto)" Tc="@comprobante.Tc" IdComprobante="@comprobante.Numero" ModoDetalleCompleto="true"
+                AbrirAsientoInicial="_asientoDirecto" AsientoCerrado="()=> { if (_asientoDirecto) _comprobante=null; }" />
+        </ChildContent>
+        <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="()=>_comprobante=null">Volver a cuenta corriente</AlfaButton></Footer>
+    </AlfaDialog>
+}
+
+@code {
+    [Parameter] public long MovimientoId { get; set; }
+    [Parameter] public bool MostrarCliente { get; set; }
+    [Parameter] public DateTime FechaMovimiento { get; set; }
+    [Parameter] public bool PuedeReconocer { get; set; }
+    [Parameter] public EventCallback CobroReconocido { get; set; }
+    [Parameter] public bool SaldoEnCabecera { get; set; }
+    [Parameter] public EventCallback<ConciliacionSaldoResumen> SaldoConsultado { get; set; }
+    private readonly CancellationTokenSource _lifetime = new();
+    private string _clienteCodigo = "", _clienteNombre = "";
+    private (string Tc, string Numero)? _comprobante;
+    private bool _asientoDirecto;
+    private void AbrirComprobante(string tc, string numero, bool asientoDirecto=false)
+    {
+        if (!string.IsNullOrWhiteSpace(tc) && !string.IsNullOrWhiteSpace(numero))
+        {
+            _asientoDirecto=asientoDirecto;
+            _comprobante = (tc.Trim(), numero.Trim());
+        }
+    }
+    private static readonly IReadOnlyList<AlfaSelectOption> Cantidades = [new("30","30"),new("50","50"),new("100","100")];
+    private string _observacionCobro="";
+    private string _cantidad="30", _hasta="", _corteConsultado="", _cantidadConsultada="";
+    private bool _busy, _disposed, _confirmoRecibo, _reconocido;
+    private AppUiMessage? _error;
+    private ConciliacionCuentaCorriente? _datos;
+    private ConciliacionAsientoDetalle? _asiento;
+    private int _versionAsiento;
+    private bool _iniciarReconocimiento,_enfocarReconocimiento;
+    private ElementReference _avisoReconocimiento,_reciboSeleccionado;
+    private bool ReciboReconocible => _asiento?.Movimiento is {ReciboCercano:true,CodigoMoneda:"1",Haber:>0};
+    private bool FaltaObservacion => _asiento is { } d && d.Movimiento.Haber!=d.Movimiento.ImporteBanco && _observacionCobro.Trim().Length<3;
+    private AppUiMessage AvisoReconocimiento => new()
+    {
+        Severity=_busy ? AppUiFeedbackSeverity.Info : ReciboReconocible ? AppUiFeedbackSeverity.Info : AppUiFeedbackSeverity.Warning,
+        Title=_busy ? "Consultando recibos" : ReciboReconocible ? "Confirmá el recibo existente" : "Falta seleccionar un recibo válido",
+        Message=_busy ? "Esperá a que termine la consulta para revisar el cobro."
+            : ReciboReconocible ? FaltaObservacion ? "Revisá abajo el recibo y completá la observación sobre la diferencia de importes antes de confirmar. No se genera otra cobranza."
+                : "Revisá abajo el recibo, marcá la confirmación y pulsá Marcar como cobrado. No se genera otra cobranza."
+            : "No hay un recibo válido seleccionado para este movimiento. Revisá el cliente y elegí Ver recibo o Ver en Cuenta corriente. Debe ser un crédito en pesos, de la misma cuenta del cliente, dentro de los 15 días anteriores o posteriores a la fecha bancaria. El saldo cero no demuestra que este ingreso ya esté cobrado."
+    };
+    public Task AccionarReconocimientoAsync()
+        => ReciboReconocible && _confirmoRecibo && !FaltaObservacion ? ReconocerCobro() : IniciarReconocimientoAsync();
+    public Task IniciarReconocimientoAsync() => InvokeAsync(() =>
+    {
+        if(!PuedeReconocer || _reconocido || _disposed) return;
+        _iniciarReconocimiento=true;_enfocarReconocimiento=true;_versionAsiento++;
+        StateHasChanged();
+    });
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(!_enfocarReconocimiento || _busy || _disposed) return;
+        _enfocarReconocimiento=false;
+        try { await (ReciboReconocible ? _reciboSeleccionado : _avisoReconocimiento).FocusAsync(); }
+        catch(Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        _hasta=FechaMovimiento.AddDays(15).ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);
+        await Consultar();
+    }
+    private void CambiarCantidad(string? valor) => _cantidad=valor ?? "30";
+    private async Task Consultar() => await Ejecutar(async () =>
+    {
+        if (!DateTime.TryParseExact(_hasta,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var fecha))
+        {
+            _error=AppUiMessage.Error("Fecha inválida","Ingresá una fecha de corte válida."); return;
+        }
+        if (MostrarCliente)
+        {
+            var cliente = (await Servicio.DetalleAsync(MovimientoId, _lifetime.Token)).FirstOrDefault();
+            _lifetime.Token.ThrowIfCancellationRequested();
+            _clienteCodigo = cliente?.ClientCode?.Trim() ?? "";
+            _clienteNombre = cliente?.ClientName?.Trim() ?? "";
+            if (_clienteCodigo.Length == 0) { _datos = null; return; }
+        }
+        var datos=await Servicio.CuentaCorrienteAsync(MovimientoId,int.Parse(_cantidad,CultureInfo.InvariantCulture),fecha,_lifetime.Token);
+        _lifetime.Token.ThrowIfCancellationRequested();
+        _datos=datos;_asiento=null;_versionAsiento=0;_confirmoRecibo=false;_observacionCobro="";
+        _corteConsultado=fecha.ToString("dd/MM/yyyy");_cantidadConsultada=_cantidad;
+        await SaldoConsultado.InvokeAsync(new ConciliacionSaldoResumen(MovimientoId,fecha,datos.Saldos));
+        var detalle=datos.Coincidencias.FirstOrDefault() is { } c
+            ? await Servicio.DetalleAsientoAsync(MovimientoId,c.Clave,_lifetime.Token) : null;
+        _lifetime.Token.ThrowIfCancellationRequested();
+        _asiento=detalle;
+    });
+    private Task Ver(ConciliacionCtaMovimiento m) => Ejecutar(async () =>
+    {
+        var detalle=await Servicio.DetalleAsientoAsync(MovimientoId,m.Clave,_lifetime.Token);
+        _lifetime.Token.ThrowIfCancellationRequested();_asiento=detalle;_versionAsiento++;_confirmoRecibo=false;_observacionCobro="";
+    });
+    private async Task VerAsientoCompleto(ConciliacionCtaMovimiento m)
+    {
+        await Ver(m);
+        if (!_disposed && _error is null && _asiento?.Movimiento.Clave==m.Clave)
+            AbrirComprobante(m.Tc,m.Comprobante,asientoDirecto:true);
+    }
+    private Task ReconocerCobro()=>Ejecutar(async()=>
+    {
+        if(!PuedeReconocer||!_confirmoRecibo||_asiento is not { } d)return;
+        await Servicio.ReconocerCobroAsync(MovimientoId,d.Movimiento.Clave,d.Movimiento.Haber,$"{d.Movimiento.Tc}|{d.Movimiento.Comprobante}",_lifetime.Token,_observacionCobro);
+        _lifetime.Token.ThrowIfCancellationRequested();_reconocido=true;_confirmoRecibo=false;
+        await CobroReconocido.InvokeAsync();
+    });
+    private async Task Ejecutar(Func<Task> work)
+    {
+        if (_busy||_disposed) return;
+        _busy=true;_error=null;
+        try { await work(); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if(!_disposed)
+            {
+                _error=UiOps.BuildMessage(ex,"Cuenta corriente");
+                if(_datos is null) await SaldoConsultado.InvokeAsync(new ConciliacionSaldoResumen(MovimientoId,FechaMovimiento,[],ConsultaFallida:true));
+            }
+        }
+        finally { _busy=false; }
+    }
+    private static string Dinero(decimal valor) => valor.ToString("N2",CultureInfo.GetCultureInfo("es-AR"));
+    public void Dispose() { _disposed=true;_lifetime.Cancel();_lifetime.Dispose(); }
+}

@@ -10,7 +10,7 @@
 
 <PageTitle>Configuración de Cotizaciones | Alfa Gestión</PageTitle>
 
-<div class="page-grid cotizcfg-page">
+<div class="gd-page gd gd-legacy cotizcfg-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <section class="panel-card">
@@ -75,7 +75,7 @@
             </div>
             <div class="cotizcfg-preview">
                 <span>Ejemplo con 5 usuarios</span>
-                <strong>@(_config.PrecioBase + _config.PrecioPorUsuario * 5).ToString("N2")</strong>
+                <strong>@((_config.PrecioBase + _config.PrecioPorUsuario * 5).ToString("N2"))</strong>
             </div>
         </div>
 
@@ -145,12 +145,14 @@
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Packs.Add(new CotizacionAlfaPackReglaDto())">Agregar regla</AlfaButton>
     </section>
 
-    <div class="cotizcfg-save-bar">
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar configuración</AlfaButton>
-    </div>
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private CotizacionAlfaConfigDto _config = new();
     private bool _permiteDescuentoLinea;
     private string _emailTexto = string.Empty;
@@ -162,13 +164,23 @@
 
     protected override void OnInitialized() => UpdatePageHeader();
 
+    private bool _headerSaving;
+
+    // El botón Guardar de la barra superior refleja el estado de guardado.
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender || _headerSaving != _saving)
+        {
+            _headerSaving = _saving;
             UpdatePageHeader();
+        }
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -256,12 +268,25 @@
         _packBusquedaTexto.Remove(pack);
     }
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         Title = "Configuración",
-        Breadcrumb = ["Cotizaciones", "Configuración"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "configuracion")
+        ModuleKey = "cotizaciones",
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "configuracion"),
+        Actions =
+        [
+            new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = "Guardar configuración",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Busy = _saving,
+                Disabled = _saving,
+                OnClick = () => InvokeAsync(async () => { await GuardarAsync(); StateHasChanged(); })
+            },
+        ],
     });
 
     private async Task GuardarAsync()

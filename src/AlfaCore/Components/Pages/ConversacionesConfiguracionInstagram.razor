@@ -1,0 +1,60 @@
+@* Configuración → Canales → Instagram (AlfaDesign v1). Mismos campos y guardado que antes. *@
+
+<ConversacionesConfigPagina Titulo="Instagram" Descripcion="Mensajes directos de una cuenta profesional de Instagram vinculada a una página de Facebook.">
+    <Estado>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForSend)">Envío: @(Config.IsConfiguredForSend ? "listo" : "pendiente")</AlfaTag>
+        <AlfaTag Tone="@Tono(Config.IsConfiguredForVerify)">Webhook: @(Config.IsConfiguredForVerify ? "listo" : "pendiente")</AlfaTag>
+    </Estado>
+    <ChildContent>
+        <ConversacionesConfigTarjeta Titulo="Cuenta" Columnas="2">
+            <AlfaInput Id="ig-account-id" Label="Instagram Account ID" Placeholder="Cuenta profesional de Instagram"
+                       Value="@Config.InstagramAccountId" ValueChanged="@((string? v) => Config.InstagramAccountId = v ?? string.Empty)" />
+            <AlfaInput Id="ig-page-id" Label="Facebook Page ID" Placeholder="Página vinculada a Instagram"
+                       Value="@Config.FacebookPageId" ValueChanged="@((string? v) => Config.FacebookPageId = v ?? string.Empty)" />
+            <AlfaInput Id="ig-app-id" Label="App ID de Meta"
+                       Value="@Config.AppId" ValueChanged="@((string? v) => Config.AppId = v ?? string.Empty)" />
+            <AlfaInput Id="ig-api-version" Label="Versión Graph API" Placeholder="v22.0"
+                       Value="@Config.ApiVersion" ValueChanged="@((string? v) => Config.ApiVersion = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Credenciales" Columnas="2">
+            <ConversacionesConfigTexto Id="ig-access-token" Label="Access Token" Filas="3" Monoespaciado="true" Class="cfg-full"
+                                       Placeholder="Token de página u OAuth con permisos de Instagram Messaging"
+                                       Value="@Config.AccessToken" ValueChanged="@((string? v) => Config.AccessToken = v ?? string.Empty)" />
+            <AlfaInput Id="ig-app-secret" Label="App Secret"
+                       Value="@Config.AppSecret" ValueChanged="@((string? v) => Config.AppSecret = v ?? string.Empty)" />
+            <AlfaInput Id="ig-verify-token" Label="Verify Token" Placeholder="Texto secreto que definís vos"
+                       Value="@Config.VerifyToken" ValueChanged="@((string? v) => Config.VerifyToken = v ?? string.Empty)" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigTarjeta Titulo="Webhook">
+            <AlfaInput Id="ig-public-url" Label="Base pública HTTPS" Placeholder="@SugerenciaBaseUrl"
+                       Value="@Config.PublicBaseUrl" ValueChanged="@((string? v) => Config.PublicBaseUrl = v ?? string.Empty)" />
+            <ConversacionesConfigSoloLectura Label="URL de callback para cargar en Meta" Valor="@UrlCallback()" HelpText="@AyudaToken" />
+            <ConversacionesConfigSoloLectura Label="Ruta interna" Valor="@Config.WebhookPath" />
+        </ConversacionesConfigTarjeta>
+
+        <ConversacionesConfigAyuda Titulo="Qué necesitás en Meta">
+            <ol>
+                <li>Una cuenta de Instagram profesional vinculada a una página de Facebook.</li>
+                <li>Una app en Meta for Developers con Instagram/Messaging.</li>
+                <li>El webhook configurado con la URL de callback y el verify token.</li>
+                <li>Los permisos de mensajería aprobados (App Review) para producción.</li>
+            </ol>
+            <p>Guía interna: <code>docs/modulos/conversaciones_instagram_meta.md</code>.</p>
+        </ConversacionesConfigAyuda>
+
+        <ConversacionesConfigBarraGuardar Etiqueta="Guardar Instagram" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+@code {
+    [Parameter, EditorRequired] public ConversacionInstagramConfigDto Config { get; set; } = new();
+    [Parameter] public string SugerenciaBaseUrl { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public Func<string> UrlCallback { get; set; } = () => string.Empty;
+    [Parameter] public string AyudaToken { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+
+    private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
+}

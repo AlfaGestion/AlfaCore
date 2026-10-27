@@ -20,6 +20,16 @@ public interface IConversacionesConfigService
     Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
     Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
+    Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default);
+    Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default);
+    Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default);
+
+    /// <summary>
+    /// Solo instalaciones no SaaS: devuelve la clave pública del chat web guardada en
+    /// TA_CONFIGURACION, generándola la primera vez. En SaaS la clave vive en la base central
+    /// (<see cref="IWebChatSiteKeyService.EnsureSiteKeyAsync"/>).
+    /// </summary>
+    Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
@@ -34,6 +44,7 @@ public interface IConversacionesConfigService
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default);
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default);
+    Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, ConversacionAutomatizacionSeccion secciones, CancellationToken ct = default);
 
     /// <summary>
     /// Prioridad de atención por clasificación de cliente (CLASIFICA1/2/3 en TA_CONFIGURACION —

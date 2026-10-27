@@ -11,6 +11,12 @@
 
 # 1. Contexto
 
+## Tipos actuales: cobranza X y factura proforma (2026-10-21)
+
+El diseñador ofrece **Cobranza X** para recibos `TC = CB`, letra `X`, con identidad de plantilla `COBRANZA_CB_X`. La vista previa consulta recibos CB X y la impresión resuelve ese mismo tipo.
+
+**Factura proforma** corresponde a `TC = FP` y conserva la clave histórica `COBRANZA_X`, para mantener las plantillas guardadas. Ambos tipos tienen letra X y plantillas independientes; no se migran ni sobrescriben diseños existentes. Si no hay plantilla para Cobranza X, se utiliza el formato estándar de respaldo del motor.
+
 Alfa Gestión históricamente utiliza tecnologías legacy, incluyendo VB6 y Crystal Reports, para impresión de comprobantes e informes.
 
 En Alfa Core, desarrollado sobre tecnologías .NET / Blazor, algunos documentos PDF se generan actualmente mediante código, por ejemplo con QuestPDF. Este enfoque es adecuado para documentos controlados por desarrollo, pero presenta una limitación importante: cualquier cambio de diseño requiere modificar código, recompilar y desplegar.

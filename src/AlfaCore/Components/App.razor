@@ -1,4 +1,19 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+@inject Microsoft.AspNetCore.Http.IHttpContextAccessor HttpContextAccessor
+
+@{
+    var requestPath = (HttpContextAccessor.HttpContext?.Request.Path.Value ?? string.Empty).TrimEnd('/');
+    const string posRouteMarker = "/ventas/punto-venta";
+    var posRouteIndex = requestPath.IndexOf(posRouteMarker, StringComparison.OrdinalIgnoreCase);
+    var isPosPwaRoute = posRouteIndex >= 0;
+    var posScopePath = isPosPwaRoute
+        ? requestPath[..(posRouteIndex + posRouteMarker.Length)]
+        : posRouteMarker;
+    var idPuntoVenta = HttpContextAccessor.HttpContext?.Request.Query["idPuntoVenta"].ToString();
+    var posManifestHref = $"/manifest-punto-venta?start={Uri.EscapeDataString(posScopePath)}"
+        + (string.IsNullOrWhiteSpace(idPuntoVenta) ? string.Empty : $"&idPuntoVenta={Uri.EscapeDataString(idPuntoVenta)}")
+        + "&v=20261014b";
+}
 
 <!DOCTYPE html>
 <html lang="es">
@@ -9,17 +24,45 @@
     <base href="/" />
     <title>AlfaNet - Alfa Gestión</title>
     <link rel="stylesheet" href="/bootstrap/bootstrap.min.css?v=20260703-cssfix" />
-    <link rel="stylesheet" href="/app.css?v=20260914-portal-comprobante-mobile-2" />
-    <link rel="stylesheet" href="/css/informes.css?v=20260703-cssfix" />
+    <link rel="stylesheet" href="/app.css?v=20261022d" />
+    <link rel="stylesheet" href="/css/informes.css?v=20261009a" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20260910a-documentos-tema-firma-toolbar" />
-    <link rel="stylesheet" href="/css/alfacore-design.css?v=20260904b-compras-ventas-contabilidad-caja" />
+    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20261025-ayuda-chat" />
+    <link rel="stylesheet" href="/css/alfacore-design.css?v=20261025-conciliacion-responsive" />
+    <link rel="stylesheet" href="/css/admin-alfadesign.css?v=20261008a" />
+    <link rel="stylesheet" href="/css/gestion-alfadesign.css?v=20261008d" />
+    <link rel="stylesheet" href="/css/home-alfadesign.css?v=20261013a" />
+    <link rel="stylesheet" href="/css/modulos-alfadesign.css?v=20261009y" />
     <link rel="stylesheet" href="/css/auth.css?v=20260819-recuperarclave1" />
     <link rel="stylesheet" href="/theme-overrides.css?v=20260703-themefix3" />
-    <link rel="stylesheet" href="/css/carga-viajes.css?v=20260703-cssfix2" />
+    <link rel="stylesheet" href="/css/carga-viajes.css?v=20261009b" />
     <link rel="stylesheet" href="/css/sticky-list-headers.css?v=20260715b" />
     <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link id="app-manifest" rel="manifest" href="@(isPosPwaRoute ? posManifestHref : "/manifest.webmanifest")" />
+    <script>
+        (function () {
+            // Capturar temprano el evento evita perderlo mientras se cargan Blazor y pwa.js.
+            window._alfaCoreDeferredInstallPrompt = null;
+            window.addEventListener('beforeinstallprompt', function (event) {
+                event.preventDefault();
+                window._alfaCoreDeferredInstallPrompt = event;
+            });
+
+            var path = (window.location.pathname || '').toLowerCase();
+            var manifest = document.getElementById('app-manifest');
+            var marker = '/ventas/punto-venta';
+            var markerIndex = path.indexOf(marker);
+            if (!manifest || markerIndex < 0)
+                return;
+
+            var scope = path.substring(0, markerIndex + marker.length);
+            var idPuntoVenta = new URLSearchParams(window.location.search).get('idPuntoVenta');
+            var href = '/manifest-punto-venta?start=' + encodeURIComponent(scope);
+            if (idPuntoVenta)
+                href += '&idPuntoVenta=' + encodeURIComponent(idPuntoVenta);
+            manifest.href = href + '&v=20261014b';
+        })();
+    </script>
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="theme-color" content="#1f2937" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -225,17 +268,20 @@
     <script src="js/dashboard-export.js?v=20260417"></script>
     <script src="/js/portal-window.js?v=20260918a"></script>
     <script src="js/auth-tree.js?v=20260526a"></script>
-    <script src="js/conversaciones.js?v=20260722a"></script>
+    <script src="js/conversaciones.js?v=20261019a"></script>
     <script src="js/interfaces-upload.js?v=20260526b"></script>
-    <script src="js/pwa.js?v=20260521e"></script>
+    <script src="js/pwa.js?v=20261016-pos-install-direct-start"></script>
     <script src="js/sticky-table-scroll.js?v=20260525a"></script>
     <script src="js/sticky-list-headers.js?v=20260715c"></script>
     <script src="js/sidebar-hover-state.js?v=20260611a"></script>
+    <script src="js/alfa-home.js?v=20261013c"></script>
     <script src="js/alfa-smart-search-popover.js?v=20260814-smart-search-actions"></script>
+    <script src="js/alfa-lookup-popover.js?v=20261020-lookup-focus"></script>
     <script src="js/catalog-toolbar.js?v=20260918a"></script>
-    <script src="js/crm-cotizacion.js?v=20260812b"></script>
+    <script src="js/crm-cotizacion.js?v=20261009a"></script>
     <script src="js/carga-viajes.js?v=20260813a"></script>
-    <script src="/js/reconnect-modal.js?v=20260918a"></script>
+    <script src="js/carga-directa.js?v=20261022b"></script>
+    <script src="/js/reconnect-modal.js?v=20261019a"></script>
 </body>
 
 </html>

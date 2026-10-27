@@ -1,0 +1,58 @@
+<p class="gd-hint">@(Analitico ? "Comprobantes deudores y detalle de sus cancelaciones, incluidos los ya cancelados." : "Solo comprobantes con deuda pendiente positiva, agrupados por código de cuenta.") Las fechas filtran la emisión; los saldos usan las aplicaciones registradas actualmente.</p>
+<p class="gd-hint">Los anticipos y créditos sin aplicar no cancelan una factura hasta su imputación. Este reporte no representa el saldo contable global de la cuenta.</p>
+<div class="kpi-grid">
+    <KpiCard Titulo="Comprobantes" Valor="@Resultado.TotalRegistros.ToString("N0")" Icono="C" />
+    <KpiCard Titulo="Importe original" Valor="@Moneda(Resultado.ImporteTotal)" Icono="=" />
+    <KpiCard Titulo="Aplicado" Valor="@Moneda(Resultado.AplicadoTotal)" Icono="=" />
+    <KpiCard Titulo="Deuda pendiente" Valor="@Moneda(Resultado.PendienteTotal)" Icono="=" />
+</div>
+<DataTable Titulo="@(Analitico ? "Cuenta corriente analítica" : "Cuenta corriente resumida")" Subtitulo="La paginación cuenta comprobantes; conserva todas sus aplicaciones">
+    <Header>
+        <tr><th>Emisión</th><th>Comprobante</th><th>Vencimiento</th><th style="text-align:right;">Original</th><th style="text-align:right;">Aplicado</th><th style="text-align:right;">Pendiente</th></tr>
+    </Header>
+    <Rows>
+        @if(Resultado.Items.Count==0)
+        {
+            <tr><td colspan="6"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="@(Analitico ? "Sin comprobantes" : "Sin comprobantes con deuda pendiente")" Message="Revisá fechas de emisión y filtros de cartera." /></td></tr>
+        }
+        @foreach(var cuenta in Resultado.Items.GroupBy(x=>x.Cuenta))
+        {
+            var primero=cuenta.First();
+            <tr class="data-table__totals"><td colspan="6"><strong>@cuenta.Key · @primero.RazonSocial</strong> · Pendiente en este reporte: @Moneda(primero.PendienteCliente)</td></tr>
+            @foreach(var doc in cuenta)
+            {
+                <tr>
+                    <td>@doc.Fecha.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.IdComprobante</strong></td>
+                    <td>@(doc.Vencimiento?.ToString("dd/MM/yyyy")??"Sin vencimiento")</td>
+                    <td style="text-align:right;">@Moneda(doc.Importe)</td><td style="text-align:right;">@Moneda(doc.Aplicado)</td>
+                    <td style="text-align:right;"><strong>@Moneda(doc.Pendiente)</strong>@if(doc.Pendiente<0){<div>Sobreaplicado</div>}</td>
+                </tr>
+                @if(Analitico)
+                {
+                    @if(doc.DiferenciaAplicaciones!=0)
+                    {
+                        <tr><td colspan="6"><AlfaNotification Message="@(AppUiMessage.Warning("Revisar aplicaciones", $"El saldo del sistema y el detalle de aplicaciones difieren en {Moneda(doc.DiferenciaAplicaciones)}. No se ajustaron importes automáticamente."))" Duration="TimeSpan.FromHours(24)" /></td></tr>
+                    }
+                    @if(doc.Aplicaciones.Count==0)
+                    {
+                        <tr><td colspan="6">Sin aplicaciones registradas para este comprobante.</td></tr>
+                    }
+                    @foreach(var ap in doc.Aplicaciones)
+                    {
+                        <tr>
+                            <td>@(ap.Fecha?.ToString("dd/MM/yyyy")??"Sin fecha confirmada")</td><td colspan="3">Aplicación: @ap.Tc @ap.IdComprobante @(ap.ReferenciaAmbigua ? "· Referencia a revisar" : "")</td>
+                            <td style="text-align:right;">@Moneda(ap.Importe)</td><td style="text-align:right;">@Moneda(ap.SaldoRestante)</td>
+                        </tr>
+                    }
+                }
+            }
+        }
+    </Rows>
+</DataTable>
+
+@code {
+    [Parameter] public bool Ventas { get; set; } = true;
+    [Parameter,EditorRequired] public ComprobantesCuentaCorrienteResultDto Resultado { get; set; } = new();
+    [Parameter] public bool Analitico { get; set; }
+    private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

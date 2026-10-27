@@ -7,21 +7,27 @@
 @inject IJSRuntime JS
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.WebUtilities
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @implements IAsyncDisposable
 
-<PageTitle>Novedades | AlfaNet</PageTitle>
+<PageTitle>Comunicados | AlfaNet</PageTitle>
+
+<div class="gd gd-modal-scope novedades-ad">
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades.css?v=20260710-recupera-css" />
+    <link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
+    <link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013b" />
 </HeadContent>
 
-<link rel="stylesheet" href="/css/novedades.css?v=20260710-recupera-css" />
+<link rel="stylesheet" href="/css/novedades.css?v=20261009a" />
+<link rel="stylesheet" href="/css/novedades-lectura.css?v=20261013b" />
 
 <section class="novedades-shell">
     <aside class="novedades-sidebar">
         <div class="novedades-sidebar__top">
             <div>
                 <span>Informes</span>
-                <h2>Novedades</h2>
+                <h2>Comunicados</h2>
             </div>
             <button type="button" title="Recargar" @onclick="ReloadAsync">
                 <i class="bi bi-arrow-clockwise"></i>
@@ -31,32 +37,26 @@
         <div class="novedades-actions">
             <button type="button" class="novedades-primary" @onclick="() => CreateDraftAsync(NovedadTipos.Manual)">
                 <i class="bi bi-plus-lg"></i>
-                <span>Manual</span>
-            </button>
-            <button type="button" @onclick="() => CreateDraftAsync(NovedadTipos.BoletinPatch)">
-                <i class="bi bi-stars"></i>
-                <span>Boletin patch</span>
+                <span>Nuevo comunicado</span>
             </button>
         </div>
 
         <label class="novedades-search">
             <i class="bi bi-search"></i>
-            <input @bind="_filter.Busqueda" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Buscar version o titulo" />
+            <input @bind="_filter.Busqueda" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Buscar por título" />
         </label>
 
-        <div class="novedades-filter-row">
-            <select @bind="_filter.Estado" @bind:after="ReloadAsync">
-                <option value="">Todos</option>
-                <option value="@NovedadEstados.Borrador">Borradores</option>
-                <option value="@NovedadEstados.Programado">Programadas</option>
-                <option value="@NovedadEstados.Publicado">Publicadas</option>
-            </select>
-            <select @bind="_filter.Tipo" @bind:after="ReloadAsync">
-                <option value="">Tipos</option>
-                <option value="@NovedadTipos.Manual">Manual</option>
-                <option value="@NovedadTipos.BoletinPatch">Boletin patch</option>
-            </select>
-        </div>
+        @* Cada estado en su pestaña: borradores, programados, publicados y archivados no se mezclan. *@
+        <nav class="comunicados-estados" aria-label="Estado de los comunicados">
+            @foreach (var (estado, texto, cantidad) in Pestanias)
+            {
+                <button type="button" class="@(_filter.Estado == estado ? "is-active" : null)" aria-pressed="@(_filter.Estado == estado ? "true" : "false")"
+                        @onclick="() => CambiarEstadoAsync(estado)">
+                    <span>@texto</span>
+                    <small>@cantidad</small>
+                </button>
+            }
+        </nav>
 
         <div class="novedades-list">
             @foreach (var item in _page.Novedades)
@@ -91,8 +91,8 @@
         {
             <div class="novedades-empty">
                 <i class="bi bi-megaphone"></i>
-                <h2>No hay una novedad seleccionada</h2>
-                <p>Creá un comunicado manual o un borrador de patch para empezar.</p>
+                <h2>@VacioTitulo</h2>
+                <p>Los comunicados le llegan a todo el equipo en la campana y quedan guardados en Novedades.</p>
             </div>
         }
         else
@@ -102,6 +102,10 @@
                     <span class="@($"novedades-status novedades-status--{_draft.Estado.ToLowerInvariant()}")">@EstadoLabel(_draft.Estado)</span>
                     <h1>@_draft.Titulo</h1>
                     <p>@_draft.Bajada</p>
+                    @if (_selected.Estado == NovedadEstados.Publicado)
+                    {
+                        <p class="comunicados-publicado"><i class="bi bi-broadcast"></i> Ya está publicado: lo que guardes se actualiza enseguida para todos.</p>
+                    }
                 </div>
                 <div class="novedades-header__actions">
                     <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenPreviewAsync">
@@ -118,25 +122,6 @@
                     </button>
                 </div>
             </header>
-
-            <section class="novedades-metrics">
-                <article>
-                    <span>Borradores</span>
-                    <strong>@_page.Metricas.Borradores</strong>
-                </article>
-                <article>
-                    <span>Programadas</span>
-                    <strong>@_page.Metricas.Programadas</strong>
-                </article>
-                <article>
-                    <span>Publicadas</span>
-                    <strong>@_page.Metricas.Publicadas</strong>
-                </article>
-                <article>
-                    <span>Pendientes</span>
-                    <strong>@_page.Metricas.LecturasPendientes</strong>
-                </article>
-            </section>
 
             <nav class="novedades-tabs" aria-label="Secciones de la novedad">
                 <button type="button"
@@ -212,9 +197,8 @@
                         </header>
                         <div class="novedades-form-grid novedades-form-grid--three">
                             <label class="novedades-span-2"><span>Titulo</span><input @bind="_draft.Titulo" @bind:event="oninput" /></label>
-                            <label><span>Version</span><input @bind="_draft.Version" @bind:event="oninput" placeholder="AlfaCore Patch 0.1" /></label>
+                            <label><span>Etiqueta (opcional)</span><input @bind="_draft.Version" @bind:event="oninput" placeholder="Ej.: Horarios, RRHH" /></label>
                             <label class="novedades-span-3"><span>Bajada</span><input @bind="_draft.Bajada" @bind:event="oninput" /></label>
-                            <label><span>Tipo</span><select @bind="_draft.Tipo"><option value="@NovedadTipos.Manual">Manual</option><option value="@NovedadTipos.BoletinPatch">Boletin patch</option></select></label>
                             <label><span>Prioridad</span><select @bind="_draft.Prioridad"><option value="@NovedadPrioridades.Info">Informativo</option><option value="@NovedadPrioridades.Importante">Importante</option><option value="@NovedadPrioridades.Critico">Critico</option></select></label>
                             <label><span>Icono</span><select @bind="_draft.Icono">@foreach (var icon in IconOptions) { <option value="@icon.Value">@icon.Label</option> }</select></label>
                             <label><span>Color</span><select @bind="_draft.Acento"><option value="@NovedadAcentos.Azul">Azul</option><option value="@NovedadAcentos.Verde">Verde</option><option value="@NovedadAcentos.Cian">Cian</option><option value="@NovedadAcentos.Ambar">Ambar</option><option value="@NovedadAcentos.Rojo">Rojo</option><option value="@NovedadAcentos.Grafito">Grafito</option></select></label>
@@ -230,11 +214,10 @@
                             <label><span>Estado actual</span><input value="@EstadoLabel(_draft.Estado)" readonly /></label>
                             <label class="novedades-span-2"><span>Programar para</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
                         </div>
-                        <div class="novedades-switch-grid">
-                            <label><input type="checkbox" @bind="_draft.MostrarPopup" /><span><strong>Mostrar popup</strong><small>Aparece automaticamente al ingresar.</small></span></label>
-                            <label><input type="checkbox" @bind="_draft.LecturaObligatoria" /><span><strong>Lectura obligatoria</strong><small>No permite cerrar sin confirmar lectura.</small></span></label>
-                            <label><input type="checkbox" @bind="_draft.RepetirHastaLeer" /><span><strong>Repetir hasta leer</strong><small>Vuelve a mostrarse mientras siga pendiente.</small></span></label>
-                        </div>
+                        <p class="novedades-settings-hint">
+                            <i class="bi bi-bell"></i>
+                            Al publicarla, todos los usuarios reciben un aviso en la campana y la novedad queda guardada en la página Novedades.
+                        </p>
                         <div class="novedades-settings-actions">
                             <button type="button" class="btn btn--ghost" @onclick="SchedulePublicationAsync"><i class="bi bi-calendar2-check"></i><span>Programar</span></button>
                             <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
@@ -303,12 +286,40 @@
         </article>
     </div>
 }
+</div>
 
 @code {
     private NovedadesPageDto _page = new();
     private NovedadDetalleDto? _selected;
     private NovedadSaveRequest _draft = new();
-    private NovedadesFilterDto _filter = new();
+    private NovedadesFilterDto _filter = new() { Estado = NovedadEstados.Borrador };
+    private bool _estadoInicialElegido;
+
+    private IEnumerable<(string Estado, string Texto, int Cantidad)> Pestanias =>
+    [
+        (NovedadEstados.Borrador, "Borradores", _page.Metricas.Borradores),
+        (NovedadEstados.Programado, "Programados", _page.Metricas.Programadas),
+        (NovedadEstados.Publicado, "Publicados", _page.Metricas.Publicadas),
+        (NovedadEstados.Archivado, "Archivados", _page.Metricas.Archivadas)
+    ];
+
+    private string VacioTitulo => _filter.Estado switch
+    {
+        NovedadEstados.Programado => "No hay comunicados programados",
+        NovedadEstados.Publicado => "No hay comunicados publicados",
+        NovedadEstados.Archivado => "No hay comunicados archivados",
+        _ => "No hay borradores"
+    };
+
+    private async Task CambiarEstadoAsync(string estado)
+    {
+        if (_filter.Estado == estado)
+            return;
+
+        await FlushEditorAsync();
+        _filter.Estado = estado;
+        await LoadAsync();
+    }
     private ElementReference _editorRoot;
     private ElementReference _contentEditor;
     private ElementReference _previewBody;
@@ -345,7 +356,9 @@
         new("BLOQUES", "Atencion", "Punto importante", "bi-exclamation-triangle", "warningBanner"),
         new("BLOQUES", "Imagen", "Captura o icono", "bi-image", "media"),
         new("BLOQUES", "Separador", "Linea divisoria", "bi-hr", "separator"),
-        new("BLOQUES", "Boton", "Enlace destacado", "bi-link-45deg", "button")
+        new("BLOQUES", "Boton", "Enlace destacado", "bi-link-45deg", "button"),
+        new("BLOQUES", "Antes / Después", "Cómo era y cómo queda", "bi-arrow-left-right", "compare"),
+        new("BLOQUES", "Tarjetas con ícono", "Tres puntos destacados", "bi-grid-3x2-gap", "features")
     ];
 
     private static readonly IReadOnlyList<EditorCommandOption> ToolbarCommands =
@@ -372,6 +385,33 @@
         ("bi-exclamation-triangle", "Atencion")
     ];
 
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "informes",
+            Title = "Comunicados",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInformes(RouteContext, Nav, "novedades"),
+        });
+    }
+
     protected override async Task OnInitializedAsync()
         => await LoadAsync(GetInitialId());
 
@@ -379,7 +419,7 @@
     {
         if (firstRender)
         {
-            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20261013a");
             _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
             _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-02");
             _selfReference = DotNetObjectReference.Create(this);
@@ -409,6 +449,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         if (_informesEditorJs is not null)
             await _informesEditorJs.DisposeAsync();
         if (_novedadesEditorJs is not null)
@@ -432,6 +474,17 @@
         if (result.Success && result.Value is not null)
         {
             _page = result.Value;
+            if (!_estadoInicialElegido)
+            {
+                _estadoInicialElegido = true;
+                if (_page.Novedades.Count == 0 && selectedId is null && _page.Metricas.Publicadas > 0)
+                {
+                    _filter.Estado = NovedadEstados.Publicado;
+                    await LoadAsync();
+                    return;
+                }
+            }
+
             ApplySelected(_page.Seleccionada);
         }
         else

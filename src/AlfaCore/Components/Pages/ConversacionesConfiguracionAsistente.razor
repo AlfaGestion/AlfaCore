@@ -1,0 +1,379 @@
+@using System.Globalization
+
+@* Configuración → Asistente IA. Se separó de ConversacionesConfiguracion.razor (2026-10-05) para que el
+   asistente tenga su propia sección con sub-pantallas. El estado (DTO, original, guardado) sigue
+   viviendo en la página: este componente solo edita el DTO recibido y avisa Guardar/Descartar. *@
+
+<ConversacionesConfigPagina Titulo="@GetTitulo()" Descripcion="@GetDescripcion()">
+    <Estado>
+        <AlfaTag Tone="@(Config.BotActivo ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+            @(Config.BotActivo ? "Asistente activo" : "Asistente apagado")
+        </AlfaTag>
+        @if (!OpenAiConfigurado)
+        {
+            <AlfaTag Tone="AlfaTagTone.Warning">OpenAI sin configurar</AlfaTag>
+        }
+    </Estado>
+    <ChildContent>
+        @switch (Seccion)
+        {
+            case "personalidad":
+                <ConversacionesConfigTarjeta Titulo="Comportamiento" Descripcion="Quién es, con qué tono habla y qué puede o no puede hacer.">
+                    <ConversacionesConfigTexto Id="asis-comportamiento" Label="Instrucciones de comportamiento" Filas="7"
+                                               HelpText="Escribilo como si le explicaras el puesto a una persona nueva."
+                                               Placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."
+                                               Value="@Config.AsistenteComportamiento" ValueChanged="@((string? v) => Config.AsistenteComportamiento = v ?? string.Empty)" />
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Cuando no sabe la respuesta" Descripcion="Qué hace si la información cargada no alcanza para responder.">
+                    <AlfaSelect Id="asis-politica" Label="Política" Options="PoliticaOptions"
+                                Value="@Config.AsistentePolitica"
+                                ValueChanged="@((string? v) => Config.AsistentePolitica = v ?? "GENERAL_AVISA")" />
+                </ConversacionesConfigTarjeta>
+                break;
+
+            case "informacion":
+                <ConversacionesConfigTarjeta Titulo="Información general" Descripcion="Texto libre que el asistente recibe siempre. Para información por tema (horarios, envíos, pagos, preguntas frecuentes) usá los bloques de abajo; para documentos largos, los archivos. Se guarda con «Guardar asistente».">
+                    <ConversacionesConfigTexto Id="asis-informacion" Label="Información" Filas="10"
+                                               Placeholder="Pegá acá lo que el asistente tiene que saber. Cuanto más concreto, mejor responde."
+                                               Value="@Config.AsistenteInformacion" ValueChanged="@((string? v) => Config.AsistenteInformacion = v ?? string.Empty)">
+                        <Pie>
+                            <div class="cfg-meter @(InformacionExtensa(Config.AsistenteInformacion) ? "is-warning" : null)">
+                                <span>@((Config.AsistenteInformacion ?? string.Empty).Length.ToString("N0", Es)) caracteres</span>
+                                <span>≈ @EstimarTokens(Config.AsistenteInformacion).ToString("N0", Es) tokens en cada respuesta</span>
+                            </div>
+                        </Pie>
+                    </ConversacionesConfigTexto>
+                    @if (InformacionExtensa(Config.AsistenteInformacion))
+                    {
+                        <p class="cfg-hint cfg-hint--warning">
+                            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                            Todo este texto se envía a la IA en cada respuesta. Con tanto contenido cada respuesta cuesta más y tarda más; conviene dejar solo lo que el asistente realmente necesita.
+                        </p>
+                    }
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfiguracionAsistenteConocimiento />
+
+                <ConversacionesConfigTarjeta Titulo="Fuentes adicionales" Descripcion="Además del texto de arriba, el asistente puede buscar en documentos externos.">
+                    <AlfaCheckbox Value="@Config.AsistenteUsaKnowledge" ValueChanged="@((bool? v) => Config.AsistenteUsaKnowledge = v == true)">
+                        Buscar también en AlfaKnowledge (documentos e instructivos de tu base de conocimiento)
+                    </AlfaCheckbox>
+                    @if (!AlfaKnowledge.IsConfigured)
+                    {
+                        <p class="cfg-hint">
+                            AlfaKnowledge no está conectado.
+                            <button type="button" class="cfg-link" @onclick="() => OnIrASeccion.InvokeAsync(SeccionConocimiento)">Conectarlo en Conocimiento externo</button>
+                        </p>
+                    }
+                </ConversacionesConfigTarjeta>
+                break;
+
+            case "herramientas":
+                <ConversacionesConfigTarjeta Titulo="Datos que puede consultar" Descripcion="Cada herramienta se usa solo si la conversación está vinculada a la cuenta correspondiente (Cliente o Proveedor, según Contactos).">
+                    <ul class="cfg-list">
+                        @foreach (var tool in Herramientas)
+                        {
+                            <li class="cfg-list__item">
+                                <i class="bi @tool.Icono cfg-list__icon" aria-hidden="true"></i>
+                                <div class="cfg-list__text">
+                                    <span class="cfg-list__title">@tool.Titulo</span>
+                                    <span class="cfg-list__desc">@tool.Descripcion</span>
+                                </div>
+                                <AlfaCheckbox Value="@tool.Leer(Config)" ValueChanged="@((bool? v) => tool.Escribir(Config, v == true))" />
+                            </li>
+                        }
+                    </ul>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Precios y catálogo" Descripcion="Qué ve un comprador que todavía no está identificado como cliente.">
+                    <ul class="cfg-list">
+                        <li class="cfg-list__item">
+                            <i class="bi bi-cash-coin cfg-list__icon" aria-hidden="true"></i>
+                            <div class="cfg-list__text">
+                                <span class="cfg-list__title">Mostrar precios a consumidores finales y leads</span>
+                                <span class="cfg-list__desc">Si está desactivado, el asistente y el catálogo público muestran productos sin precios hasta que el comprador se identifique como cliente.</span>
+                            </div>
+                            <AlfaCheckbox Value="@Config.CatalogoMuestraPrecioConsumidor" ValueChanged="@((bool? v) => Config.CatalogoMuestraPrecioConsumidor = v == true)" />
+                        </li>
+                    </ul>
+                </ConversacionesConfigTarjeta>
+                break;
+
+            case "derivacion":
+                <ConversacionesConfigTarjeta Titulo="Pasar a una persona" Descripcion="Si el cliente escribe alguna de estas palabras, el asistente deja de responder y la conversación queda para un operador.">
+                    <AlfaInput Id="bot-escalado" Label="Palabras que derivan a un humano"
+                               Value="@Config.BotPalabrasEscalado" ValueChanged="@((string? v) => Config.BotPalabrasEscalado = v ?? string.Empty)"
+                               Placeholder="humano, persona, reclamo, operador"
+                               HelpText="Separadas por coma." />
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Urgencias" Columnas="2" Descripcion="Se atienden en cualquier horario: suben la prioridad de la conversación y avisan a los técnicos elegidos.">
+                    <AlfaInput Id="asis-urgencia" Label="Palabras que marcan urgencia" Class="cfg-full"
+                               Value="@Config.AsistenteUrgenciaPalabras" ValueChanged="@((string? v) => Config.AsistenteUrgenciaPalabras = v ?? string.Empty)"
+                               Placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido"
+                               HelpText="Separadas por coma." />
+                    <AlfaInput Id="asis-urgencia-template" Label="Plantilla de WhatsApp para avisar a técnicos"
+                               Value="@Config.AsistenteUrgenciaTemplate" ValueChanged="@((string? v) => Config.AsistenteUrgenciaTemplate = v ?? string.Empty)"
+                               Placeholder="cliente_consultando_urgencia" />
+                    <div class="cfg-full cfg-stack">
+                        <span class="cfg-label">Técnicos que reciben el aviso</span>
+                        @if (Tecnicos.Count == 0)
+                        {
+                            <p class="cfg-hint">No hay técnicos cargados.</p>
+                        }
+                        else
+                        {
+                            <div class="cfg-checks" role="group" aria-label="Técnicos que reciben alertas de urgencia">
+                                @foreach (var tecnico in Tecnicos)
+                                {
+                                    var sinTelefono = string.IsNullOrWhiteSpace(tecnico.Telefono);
+                                    <div class="cfg-check-tile @(sinTelefono ? "is-disabled" : null)">
+                                        <AlfaCheckbox Value="@TecnicoSeleccionado(Config, tecnico.IdTecnico)" Disabled="@sinTelefono"
+                                                      ValueChanged="@((bool? v) => AlternarTecnico(Config, tecnico.IdTecnico, v == true))">
+                                            <span class="cfg-strong">@tecnico.Nombre</span>
+                                            <span class="cfg-muted">@(sinTelefono ? "Sin teléfono cargado" : tecnico.Telefono)</span>
+                                        </AlfaCheckbox>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </ConversacionesConfigTarjeta>
+                break;
+
+            case SeccionAprendido:
+                <ConversacionesConfiguracionAsistenteCorrecciones />
+                break;
+
+            case SeccionConocimiento:
+                <ConversacionesConfigTarjeta Titulo="AlfaKnowledge" Columnas="2" Descripcion="Base de conocimiento externa con documentos e instructivos. La usan el asistente (si lo activás en Información del negocio) y las sugerencias de respuesta de la bandeja.">
+                    <Extra>
+                        <AlfaTag Tone="@(AlfaKnowledge.IsConfigured ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+                            @(AlfaKnowledge.IsConfigured ? "Conectado" : "Sin conectar")
+                        </AlfaTag>
+                    </Extra>
+                    <ChildContent>
+                        <AlfaInput Id="ak-base-url" Label="URL de AlfaKnowledge" Class="cfg-full"
+                                   Value="@AlfaKnowledge.BaseUrl" ValueChanged="@((string? v) => AlfaKnowledge.BaseUrl = v ?? string.Empty)" />
+                        <AlfaInput Id="ak-api-key" Label="API Key" Class="cfg-full"
+                                   Value="@AlfaKnowledge.ApiKey" ValueChanged="@((string? v) => AlfaKnowledge.ApiKey = v ?? string.Empty)"
+                                   Placeholder="Clave X-Api-Key de AlfaKnowledge" />
+                        <AlfaInput Id="ak-kb-id" Label="Knowledge Base Id"
+                                   Value="@AlfaKnowledge.KnowledgeBaseId" ValueChanged="@((string? v) => AlfaKnowledge.KnowledgeBaseId = v ?? string.Empty)"
+                                   Placeholder="GUID de la base o sector" />
+                        <AlfaInput Id="ak-timeout" Label="Tiempo máximo de espera (segundos)" Type="number"
+                                   Value="@AlfaKnowledge.TimeoutSeconds.ToString(CultureInfo.InvariantCulture)"
+                                   ValueChanged="@((string? v) => AlfaKnowledge.TimeoutSeconds = ParseEntero(v, AlfaKnowledge.TimeoutSeconds, minimo: 1))" />
+                        <ConversacionesConfigTexto Id="ak-instrucciones" Label="Instrucciones para las sugerencias de la bandeja" Filas="5" MaxLength="4000" Class="cfg-full"
+                                                   HelpText="Se anteponen a cada sugerencia de respuesta en la bandeja. No cambian el comportamiento del asistente automático."
+                                                   Placeholder="Cómo debe sugerir respuestas: tono, reglas, qué escalar a un humano, qué no responder."
+                                                   Value="@AlfaKnowledge.Instrucciones" ValueChanged="@((string? v) => AlfaKnowledge.Instrucciones = v ?? string.Empty)" />
+                        <div class="cfg-full cfg-actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@Busy" OnClick="() => OnGuardarAlfaKnowledge.InvokeAsync()">Guardar conexión</AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-plug" Disabled="@Busy" OnClick="() => OnProbarAlfaKnowledge.InvokeAsync()">Probar conexión</AlfaButton>
+                        </div>
+                    </ChildContent>
+                </ConversacionesConfigTarjeta>
+                break;
+
+            default:
+                <ConversacionesConfigTarjeta Titulo="Estado" Descripcion="El asistente responde solo los mensajes entrantes, en los canales que elijas.">
+                    @if (!OpenAiConfigurado)
+                    {
+                        <div class="cfg-notice">
+                            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                            <span>Falta la API key de OpenAI en el servidor (<code>OPENAI_API_KEY</code>). Aunque actives el asistente, no va a responder hasta que se configure. No se puede cargar desde esta pantalla.</span>
+                        </div>
+                    }
+                    <AlfaCheckbox Value="@Config.BotActivo" ValueChanged="@((bool? v) => Config.BotActivo = v == true)">
+                        Activar el asistente (responde automáticamente)
+                    </AlfaCheckbox>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Canales" Descripcion="Elegí en qué canales responde el asistente. En los que quedan sin marcar atiende solo tu equipo.">
+                    <div class="cfg-stack">
+                        @foreach (var canal in ConversacionAutomatizacionesConfigDto.BotCanalesDisponibles)
+                        {
+                            var codigo = canal.Codigo;
+                            <AlfaCheckbox Value="@Config.BotRespondeEnCanal(codigo)" ValueChanged="@((bool? v) => SetBotCanal(codigo, v == true))">
+                                @canal.Nombre
+                            </AlfaCheckbox>
+                        }
+                    </div>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Si no encuentra respuesta" Descripcion="Qué hace el asistente cuando no puede resolver la consulta.">
+                    <div class="cfg-stack">
+                        <AlfaCheckbox Value="@Config.BotGeneraTicket" ValueChanged="@((bool? v) => Config.BotGeneraTicket = v == true)">
+                            Generar un ticket con la consulta (se vincula a la conversación y el cliente recibe el número)
+                        </AlfaCheckbox>
+                    </div>
+                    <p class="cfg-hint">Si la conversación ya tiene un ticket abierto, no se crea otro.</p>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Chat del sitio web" Descripcion="Los visitantes del chat web son anónimos: el asistente puede pedirles datos para saber quién escribe.">
+                    <div class="cfg-stack">
+                        <AlfaCheckbox Value="@Config.BotWebPideDatos" ValueChanged="@((bool? v) => Config.BotWebPideDatos = v == true)">
+                            Pedir el número de WhatsApp y la razón social al visitante
+                        </AlfaCheckbox>
+                    </div>
+                    <p class="cfg-hint">Lo pide una sola vez, junto con su primera respuesta. Si el número coincide con un contacto cargado, la conversación queda vinculada a ese cliente.</p>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Cuándo responde" Descripcion="Combiná estas opciones para que el asistente no se superponga con tu equipo.">
+                    <div class="cfg-stack">
+                        <AlfaCheckbox Value="@Config.BotSoloSinAsignar" ValueChanged="@((bool? v) => Config.BotSoloSinAsignar = v == true)">
+                            Solo conversaciones sin asignar (si una persona la tomó, el asistente no interviene)
+                        </AlfaCheckbox>
+                        <AlfaCheckbox Value="@Config.BotSoloFueraHorario" ValueChanged="@((bool? v) => Config.BotSoloFueraHorario = v == true)">
+                            Solo fuera del horario de atención (en horario atiende tu equipo)
+                        </AlfaCheckbox>
+                        <AlfaCheckbox Value="@Config.AsistenteFueraHorario" ValueChanged="@((bool? v) => Config.AsistenteFueraHorario = v == true)">
+                            Fuera de horario, responde el asistente en lugar del mensaje fijo
+                        </AlfaCheckbox>
+                    </div>
+                    <p class="cfg-hint">El horario de atención se configura en Automatización → Horario y mensaje fijo.</p>
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfigTarjeta Titulo="Límites" Columnas="2" Descripcion="Evitan que el asistente se extienda o que se adelante a tu equipo.">
+                    <AlfaInput Id="bot-max" Label="Máximo de respuestas por conversación" Type="number"
+                               Value="@Config.BotMaxRespuestas.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotMaxRespuestas = ParseEntero(v, Config.BotMaxRespuestas, minimo: 1))" />
+                    <AlfaInput Id="bot-espera" Label="Minutos de espera antes de responder" Type="number"
+                               Value="@Config.BotEsperaMinutos.ToString(CultureInfo.InvariantCulture)"
+                               ValueChanged="@((string? v) => Config.BotEsperaMinutos = ParseEntero(v, Config.BotEsperaMinutos, minimo: 0))"
+                               HelpText="Le da tiempo a tu equipo a responder primero. 0 = responde de inmediato." />
+                </ConversacionesConfigTarjeta>
+
+                <ConversacionesConfiguracionAsistenteConsumo />
+                break;
+        }
+
+        @if (Seccion != SeccionConocimiento && Seccion != SeccionAprendido)
+        {
+            <ConversacionesConfigBarraGuardar Etiqueta="Guardar asistente" HayCambios="@IsDirty" Busy="@Busy"
+                                              OnGuardar="OnGuardar" OnDescartar="OnDescartar" />
+        }
+    </ChildContent>
+</ConversacionesConfigPagina>
+
+@code {
+    internal const string SeccionConocimiento = "conocimiento";
+    internal const string SeccionAprendido = "aprendido";
+
+    /// <summary>Por encima de esto se avisa que la información enviada en cada respuesta es mucha.</summary>
+    internal const int TokensInformacionAviso = 6000;
+
+    private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
+
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Config { get; set; } = new();
+    [Parameter, EditorRequired] public ConversacionAutomatizacionesConfigDto Original { get; set; } = new();
+    [Parameter, EditorRequired] public ConversacionAlfaKnowledgeConfigDto AlfaKnowledge { get; set; } = new();
+    [Parameter] public string Seccion { get; set; } = "general";
+    [Parameter] public IReadOnlyList<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
+    [Parameter] public bool OpenAiConfigurado { get; set; }
+
+    private void SetBotCanal(string codigo, bool activo)
+    {
+        var canales = Config.BotCanales.Where(x => !string.Equals(x, codigo, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (activo)
+            canales.Add(codigo);
+        Config.BotCanales = canales;
+    }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public EventCallback OnDescartar { get; set; }
+    [Parameter] public EventCallback OnGuardarAlfaKnowledge { get; set; }
+    [Parameter] public EventCallback OnProbarAlfaKnowledge { get; set; }
+    [Parameter] public EventCallback<string> OnIrASeccion { get; set; }
+
+    private bool IsDirty => !ConversacionesConfiguracion.AutomatizacionesEquals(Config, Original);
+
+    private static readonly IReadOnlyList<AlfaSelectOption> PoliticaOptions =
+    [
+        new("SOLO_INFO", "Responder solo con la información cargada; si no sabe, pasar a una persona"),
+        new("GENERAL_AVISA", "Responder con conocimiento general, avisando que un asesor va a confirmar"),
+        new("GENERAL", "Responder con conocimiento general (más cobertura, más riesgo)")
+    ];
+
+    private sealed record Herramienta(
+        string Icono,
+        string Titulo,
+        string Descripcion,
+        Func<ConversacionAutomatizacionesConfigDto, bool> Leer,
+        Action<ConversacionAutomatizacionesConfigDto, bool> Escribir);
+
+    private static readonly IReadOnlyList<Herramienta> Herramientas =
+    [
+        new("bi-tag", "Precios",
+            "Busca y responde el precio real de un artículo. Respeta la lista de precios del cliente si está identificado.",
+            c => c.AsistenteHerramientaPrecios, (c, v) => c.AsistenteHerramientaPrecios = v),
+        new("bi-wallet2", "Saldo de cliente",
+            "Responde el saldo de cuenta corriente (total, detalle o link al portal) cuando la conversación está vinculada a un cliente.",
+            c => c.AsistenteHerramientaSaldoCliente, (c, v) => c.AsistenteHerramientaSaldoCliente = v),
+        new("bi-truck", "Saldo de proveedor",
+            "Lo mismo, cuando la conversación está vinculada a un proveedor.",
+            c => c.AsistenteHerramientaSaldoProveedor, (c, v) => c.AsistenteHerramientaSaldoProveedor = v),
+        new("bi-clipboard-check", "Pedidos",
+            "Informa el estado de una nota de pedido (pendiente, aprobada, finalizada o anulada) de un cliente identificado.",
+            c => c.AsistenteHerramientaPedidos, (c, v) => c.AsistenteHerramientaPedidos = v),
+        new("bi-box-arrow-up-right", "Portal de autogestión",
+            "Ofrece el link para ver la cuenta corriente online. Hoy disponible para clientes.",
+            c => c.AsistenteHerramientaPortalLink, (c, v) => c.AsistenteHerramientaPortalLink = v)
+    ];
+
+    private string GetTitulo() => Seccion switch
+    {
+        "personalidad" => "Personalidad",
+        "informacion" => "Información del negocio",
+        "herramientas" => "Herramientas",
+        "derivacion" => "Derivación y urgencias",
+        SeccionConocimiento => "Conocimiento externo",
+        SeccionAprendido => "Lo que aprendió",
+        _ => "Asistente IA"
+    };
+
+    private string GetDescripcion() => Seccion switch
+    {
+        "personalidad" => "Cómo se presenta y cómo responde el asistente.",
+        "informacion" => "Lo que el asistente sabe de tu negocio para responder.",
+        "herramientas" => "Datos reales del sistema que el asistente puede consultar.",
+        "derivacion" => "Cuándo pasar la conversación a una persona y a quién avisar ante una urgencia.",
+        SeccionConocimiento => "Conexión con AlfaKnowledge.",
+        SeccionAprendido => "Lo que tu equipo le enseñó al asistente corrigiendo sus respuestas.",
+        _ => "Encendido, horarios en los que responde y límites."
+    };
+
+    /// <summary>Estimación aproximada (≈ 4 caracteres por token en español) para orientar al usuario.</summary>
+    internal static int EstimarTokens(string? texto)
+        => string.IsNullOrEmpty(texto) ? 0 : (texto.Length + 3) / 4;
+
+    internal static bool InformacionExtensa(string? texto)
+        => EstimarTokens(texto) > TokensInformacionAviso;
+
+    internal static int ParseEntero(string? valor, int actual, int minimo)
+        => int.TryParse(valor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= minimo ? n : actual;
+
+    internal static bool TecnicoSeleccionado(ConversacionAutomatizacionesConfigDto config, string idTecnico)
+        => config.AsistenteUrgenciaTecnicos.Any(x => string.Equals(x?.Trim(), idTecnico?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    internal static void AlternarTecnico(ConversacionAutomatizacionesConfigDto config, string idTecnico, bool seleccionado)
+    {
+        var normalizado = (idTecnico ?? string.Empty).Trim();
+        if (normalizado.Length == 0)
+            return;
+
+        var actuales = config.AsistenteUrgenciaTecnicos
+            .Select(x => (x ?? string.Empty).Trim())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        actuales.RemoveAll(x => string.Equals(x, normalizado, StringComparison.OrdinalIgnoreCase));
+        if (seleccionado)
+            actuales.Add(normalizado);
+
+        config.AsistenteUrgenciaTecnicos = actuales;
+    }
+}

@@ -10,8 +10,8 @@ namespace AlfaCore.Services;
 // C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md ("Módulo Archivos > Maestros >
 // Artículos"). Columnas de V_MA_ARTICULOS/v_ta_rubros/v_ta_tipoArticulo/v_ta_unidad verificadas contra
 // una base real (ALFANET2007) antes de escribir este servicio -- no se asumió ninguna estructura.
-// Alcance: datos básicos + un único precio de venta (la clase que indique Cfg("ClasePrecioVenta")),
-// calcado del formulario legacy FrmArtAlta.frm pero sin la sección "Precios de referencia" (web
+// Alcance: datos básicos + las ocho clases de precio de V_MA_ARTICULOS (con la clase configurada como
+// precio de venta), calcado del formulario legacy FrmArtAlta.frm pero sin la sección "Precios de referencia" (web
 // service externo) ni la replicación multi-empresa (ActualizaGEmpresas), que el usuario confirmó que
 // ya no se usa.
 public sealed class ArticulosService(
@@ -43,6 +43,7 @@ public sealed class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
+            var orderByClause = BuildOrderByClause(filters.SortBy, filters.SortDescending, precioColumn);
 
             var sql = $"""
                 SELECT
@@ -56,6 +57,14 @@ public sealed class ArticulosService(
                     ISNULL(LTRIM(RTRIM(a.IDUNIDAD)), '') AS UnidadCodigo,
                     ISNULL(u.Descripcion, '') AS UnidadDescripcion,
                     ISNULL(a.COSTO, 0) AS Costo,
+                    ISNULL(a.PRECIO1, 0) AS Precio1,
+                    ISNULL(a.PRECIO2, 0) AS Precio2,
+                    ISNULL(a.PRECIO3, 0) AS Precio3,
+                    ISNULL(a.PRECIO4, 0) AS Precio4,
+                    ISNULL(a.PRECIO5, 0) AS Precio5,
+                    ISNULL(a.PRECIO6, 0) AS Precio6,
+                    ISNULL(a.PRECIO7, 0) AS Precio7,
+                    ISNULL(a.PRECIO8, 0) AS Precio8,
                     ISNULL(a.{precioColumn}, 0) AS Precio,
                     ISNULL(a.TasaIVA, 0) AS TasaIva,
                     ISNULL(a.EXENTO, 0) AS Exento,
@@ -76,9 +85,7 @@ public sealed class ArticulosService(
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                 ORDER BY
-                    CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN 0 ELSE 1 END,
-                    ISNULL(a.DESCRIPCION, ''),
-                    LTRIM(RTRIM(a.IDARTICULO))
+                    {orderByClause}
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(*)
@@ -127,6 +134,7 @@ public sealed class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
+            var precioOfertaSql = await ResolvePrecioOfertaSqlAsync(cn, token);
 
             var sql = $"""
                 SELECT TOP (1)
@@ -146,6 +154,7 @@ public sealed class ArticulosService(
                     ISNULL(a.Pesable, 0) AS Pesable,
                     ISNULL(a.COSTO, 0) AS Costo,
                     ISNULL(a.{precioColumn}, 0) AS Precio,
+                    {precioOfertaSql.Select},
                     ISNULL(a.UTILIDAD, 0) AS Utilidad,
                     ISNULL(a.TasaIVA, 0) AS TasaIva,
                     ISNULL(a.EXENTO, 0) AS Exento,
@@ -156,12 +165,31 @@ public sealed class ArticulosService(
                 LEFT JOIN dbo.v_ta_tipoArticulo t ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
                 LEFT JOIN dbo.v_ta_unidad u ON LTRIM(RTRIM(ISNULL(a.IDUNIDAD, ''))) = LTRIM(RTRIM(u.IdUnidad))
                 LEFT JOIN dbo.vt_proveedores p ON LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = LTRIM(RTRIM(p.CODIGO))
+                {precioOfertaSql.Join}
                 WHERE LTRIM(RTRIM(a.IDARTICULO)) = @Codigo;
                 """;
 
             var rows = await cn.QueryAsync<ArticuloDetailDto>(new CommandDefinition(sql, new { Codigo = normalizado }, cancellationToken: token));
             return rows.FirstOrDefault();
         }, "No se pudo cargar el artículo.", ct);
+
+    public Task<string> GetNextCodigoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetNextCodigo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+                SELECT ISNULL(MAX(v), 0) + 1
+                FROM (
+                    SELECT TRY_CAST(LTRIM(RTRIM(IDARTICULO)) AS BIGINT) AS v
+                    FROM dbo.V_MA_ARTICULOS
+                ) x
+                WHERE v IS NOT NULL;
+                """, cancellationToken: token));
+
+            return siguiente.ToString();
+        }, "No se pudo calcular el próximo código de artículo.", ct);
 
     public Task<ArticuloLookupDataDto> GetLookupDataAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetLookupData", async token =>
@@ -179,7 +207,13 @@ public sealed class ArticulosService(
                 "SELECT LTRIM(RTRIM(IdUnidad)) AS Codigo, ISNULL(Descripcion, '') AS Descripcion FROM dbo.v_ta_unidad ORDER BY Descripcion;",
                 cancellationToken: token));
 
-            var cfg = await ReadConfigMapAsync(cn, ["PIVA", "MAESTROARTICULOCONIVA", "RETAIL"], token);
+            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta" };
+            claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
+            var cfg = await ReadConfigMapAsync(cn, claves, token);
+            var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 4;
+            var nombresPrecios = Enumerable.Range(1, 8)
+                .Select(i => Get(cfg, $"NOM_PCLASE{i}").Trim())
+                .ToList();
 
             return new ArticuloLookupDataDto
             {
@@ -188,7 +222,9 @@ public sealed class ArticulosService(
                 Unidades = unidades.ToList(),
                 TasaIvaDefault = ParseDecimal(Get(cfg, "PIVA")),
                 PrecioIncluyeIva = ParseBool(Get(cfg, "MAESTROARTICULOCONIVA")),
-                ModoRetail = ParseBool(Get(cfg, "RETAIL"))
+                ModoRetail = ParseBool(Get(cfg, "RETAIL")),
+                ClasePrecioVenta = clasePrecioVenta,
+                NombresPrecios = nombresPrecios
             };
         }, "No se pudieron cargar las referencias de artículos.", ct);
 
@@ -288,8 +324,6 @@ public sealed class ArticulosService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
-
             var esAlta = string.IsNullOrWhiteSpace(request.CodigoOriginal);
             if (esAlta)
             {
@@ -344,6 +378,14 @@ public sealed class ArticulosService(
                 request.Pesable,
                 request.Costo,
                 Precio = request.Precio,
+                request.Precio1,
+                request.Precio2,
+                request.Precio3,
+                request.Precio4,
+                request.Precio5,
+                request.Precio6,
+                request.Precio7,
+                request.Precio8,
                 request.Utilidad,
                 TasaIva = tasaIva,
                 request.Exento
@@ -354,10 +396,10 @@ public sealed class ArticulosService(
                 var insertSql = $"""
                     INSERT INTO dbo.V_MA_ARTICULOS
                         (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
-                         CodigoArtProveedor, Pesable, COSTO, {precioColumn}, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA)
+                        CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA)
                     VALUES
                         (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
-                         @CodigoArtProveedor, @Pesable, @Costo, @Precio, @Utilidad, @TasaIva, @Exento, 0, GETDATE());
+                         @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE());
                     """;
                 await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, cancellationToken: token));
             }
@@ -379,7 +421,14 @@ public sealed class ArticulosService(
                         CodigoArtProveedor = @CodigoArtProveedor,
                         Pesable = @Pesable,
                         COSTO = @Costo,
-                        {precioColumn} = @Precio,
+                        PRECIO1 = @Precio1,
+                        PRECIO2 = @Precio2,
+                        PRECIO3 = @Precio3,
+                        PRECIO4 = @Precio4,
+                        PRECIO5 = @Precio5,
+                        PRECIO6 = @Precio6,
+                        PRECIO7 = @Precio7,
+                        PRECIO8 = @Precio8,
                         UTILIDAD = @Utilidad,
                         TasaIVA = @TasaIva,
                         EXENTO = @Exento
@@ -463,12 +512,86 @@ public sealed class ArticulosService(
 
     // ---- Helpers privados ----
 
+    /// <summary>Arma el ORDER BY del listado a partir de la columna en la que el usuario hizo clic
+    /// (ver ArticuloViewColumnKeys) -- lista blanca fija, nunca concatena SortBy directo al SQL. Sin
+    /// columna reconocida, mantiene el orden por defecto (activos primero, por descripción).</summary>
+    private static string BuildOrderByClause(string? sortBy, bool descending, string precioColumn)
+    {
+        var direction = descending ? "DESC" : "ASC";
+        var expression = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            ArticuloViewColumnKeys.Codigo =>
+                $"CASE WHEN TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) IS NULL THEN 1 ELSE 0 END {direction}, TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) {direction}",
+            ArticuloViewColumnKeys.CodigoBarra => $"LTRIM(RTRIM(a.CODIGOBARRA)) {direction}",
+            ArticuloViewColumnKeys.Descripcion => $"ISNULL(a.DESCRIPCION, '') {direction}",
+            ArticuloViewColumnKeys.Rubro => $"ISNULL(r.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Marca => $"ISNULL(t.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Unidad => $"ISNULL(u.Descripcion, '') {direction}",
+            ArticuloViewColumnKeys.Costo => $"ISNULL(a.COSTO, 0) {direction}",
+            ArticuloViewColumnKeys.Precio => $"ISNULL(a.{precioColumn}, 0) {direction}",
+            ArticuloViewColumnKeys.TasaIva => $"ISNULL(a.TasaIVA, 0) {direction}",
+            _ => string.Empty
+        };
+
+        return expression.Length == 0
+            ? "CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN 0 ELSE 1 END, ISNULL(a.DESCRIPCION, ''), LTRIM(RTRIM(a.IDARTICULO))"
+            : $"{expression}, LTRIM(RTRIM(a.IDARTICULO))";
+    }
+
     private static async Task<string> ResolvePrecioVentaColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         var raw = await ReadSingleConfigValueAsync(cn, "ClasePrecioVenta", ct);
-        var n = int.TryParse(raw, out var parsed) && parsed is >= 1 and <= 8 ? parsed : 1;
+        var n = int.TryParse(raw, out var parsed) && parsed is >= 1 and <= 8 ? parsed : 4;
         return $"PRECIO{n}";
     }
+
+    private static async Task<(string Select, string Join)> ResolvePrecioOfertaSqlAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "V_MA_PRECIOS", ct))
+        {
+            return ("CAST(NULL AS decimal(18,4)) AS PrecioOferta, CAST(NULL AS datetime) AS OfertaHasta", string.Empty);
+        }
+
+        var raw = await ReadSingleConfigValueAsync(cn, "CLASEPRECIOOFERTA", ct);
+        if (!int.TryParse(raw, out var clase) || clase is < 1 or > 8)
+        {
+            return ("CAST(NULL AS decimal(18,4)) AS PrecioOferta, CAST(NULL AS datetime) AS OfertaHasta", string.Empty);
+        }
+
+        return ($"ISNULL(oferta.PrecioOferta, CAST(NULL AS decimal(18,4))) AS PrecioOferta, oferta.OfertaHasta",
+            $"""
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        CASE
+                            WHEN p.FhOfertaDesde IS NOT NULL
+                             AND GETDATE() >= p.FhOfertaDesde
+                             AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta)
+                            THEN NULLIF(p.Precio{clase}, 0)
+                            ELSE NULL
+                        END AS PrecioOferta,
+                        CASE
+                            WHEN p.FhOfertaDesde IS NOT NULL
+                             AND GETDATE() >= p.FhOfertaDesde
+                             AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta)
+                            THEN p.FhOfertaHasta
+                            ELSE NULL
+                        END AS OfertaHasta
+                    FROM dbo.V_MA_PRECIOS p
+                    WHERE LTRIM(RTRIM(ISNULL(p.IdArticulo, ''))) = LTRIM(RTRIM(a.IDARTICULO))
+                      AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, 'V')))) = 'V'
+                    ORDER BY
+                        CASE WHEN LTRIM(RTRIM(ISNULL(p.IdLista, ''))) = '4' THEN 0 ELSE 1 END,
+                        LTRIM(RTRIM(ISNULL(p.IdLista, '')))
+                ) oferta
+                """);
+    }
+
+    private static async Task<bool> SqlObjectExistsAsync(SqlConnection cn, string objectName, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN OBJECT_ID(@ObjectName) IS NULL THEN 0 ELSE 1 END;",
+            new { ObjectName = $"dbo.{objectName}" },
+            cancellationToken: ct)) == 1;
 
     private static async Task<string> ReadSingleConfigValueAsync(SqlConnection cn, string clave, CancellationToken ct)
         => await cn.ExecuteScalarAsync<string>(new CommandDefinition(

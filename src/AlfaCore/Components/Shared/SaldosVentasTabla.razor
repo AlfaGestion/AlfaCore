@@ -1,0 +1,53 @@
+<p class="gd-hint">Saldo contable hasta el @Corte.ToString("dd/MM/yyyy"), incluyendo toda la historia anterior. No se limita por fecha desde ni por tipo de comprobante.</p>
+@if (ControlCredito)
+{
+    <p class="gd-hint">El límite es el actual del maestro del cliente. El disponible se calcula contra su deuda global en todas las unidades. Límite cero devuelve disponible cero. No incorpora exposición adicional por cheques pendientes ni remitos sin facturar.</p>
+}
+<div class="kpi-grid">
+    <KpiCard Titulo="Saldo de la selección" Valor="@Moneda(Resultado.SaldoTotal)" Icono="=" />
+    <KpiCard Titulo="@(Ventas ? "Clientes" : "Proveedores")" Valor="@Resultado.TotalRegistros.ToString("N0")" Icono="C" />
+    @if (ControlCredito)
+    {
+        <KpiCard Titulo="Disponible global" Valor="@Moneda(Resultado.DisponibleTotal)" Icono="=" />
+        <KpiCard Titulo="Exceso sobre límites positivos" Valor="@Moneda(Resultado.ExcesoTotal)" Icono="!" />
+    }
+</div>
+<DataTable Titulo="@(ControlCredito ? "Saldos y control de crédito contable" : (Ventas ? "Saldos por cliente" : "Saldos por proveedor"))" Subtitulo="Una fila por código de cuenta">
+    <Header>
+        <tr>
+            <th>Cuenta</th><th>@(Ventas ? "Cliente" : "Proveedor")</th><th style="text-align:right;">Saldo de la selección</th>
+            @if (ControlCredito)
+            {
+                <th style="text-align:right;">Deuda global</th><th style="text-align:right;">Límite actual</th>
+                <th style="text-align:right;">Disponible global</th><th>Estado</th>
+            }
+        </tr>
+    </Header>
+    <Rows>
+        @if (Resultado.Items.Count==0)
+        {
+            <tr><td colspan="@(ControlCredito ? 7 : 3)"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin saldos para mostrar" Message="Revisá la fecha de corte y los filtros; podés incluir cuentas con saldo cero." /></td></tr>
+        }
+        @foreach (var fila in Resultado.Items)
+        {
+            <tr>
+                <td>@fila.Cuenta</td><td>@fila.RazonSocial</td><td style="text-align:right;">@Moneda(fila.Saldo)</td>
+                @if (ControlCredito)
+                {
+                    <td style="text-align:right;">@Moneda(fila.SaldoGlobal)</td><td style="text-align:right;">@Moneda(fila.LimiteCredito)</td>
+                    <td style="text-align:right;">@Moneda(fila.CreditoDisponible)</td>
+                    <td>@(fila.LimiteCredito==0 ? "Límite cero" : fila.LimiteCredito<0 ? "Límite negativo" : fila.Exceso>0 ? "Excedido" : "Disponible")</td>
+                }
+            </tr>
+        }
+    </Rows>
+</DataTable>
+
+@code {
+    [Parameter] public bool Ventas { get; set; } = true;
+    [Parameter,EditorRequired] public SaldosVentasResultDto Resultado { get; set; } = new();
+    [Parameter] public bool ControlCredito { get; set; }
+    [Parameter] public DateTime? FechaCorte { get; set; }
+    private DateTime Corte => FechaCorte??DateTime.Today;
+    private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

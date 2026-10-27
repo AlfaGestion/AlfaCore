@@ -2,6 +2,10 @@
 @page "/{idweb}/{idbase:int}/costos/perfiles"
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Perfiles de Costos | Alfa Gestión</PageTitle>
 
@@ -13,28 +17,13 @@
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Perfiles de importación</h2>
-                <p class="page-intro__text">Administrá los perfiles de `V_Ta_InterODBC` para definir cómo se interpretan las listas de proveedores.</p>
-            </div>
-            <div class="actions">
-                <button class="btn btn--primary" @onclick="NuevoPerfil">
-                    <i class="bi bi-plus-circle"></i>
-                    <span>Nuevo perfil</span>
-                </button>
-            </div>
-        </section>
+    <div class="gd-page gd gd-legacy">
+        <header class="gd-header">
+            <h2>Perfiles de importación</h2>
+            <p>Administrá los perfiles de `V_Ta_InterODBC` para definir cómo se interpretan las listas de proveedores.</p>
+        </header>
 
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <section class="panel-card">
-                <div class="editor-msg @(_isError ? "editor-msg--error" : "editor-msg--ok")">
-                    <i class="bi @(_isError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @_message
-                </div>
-            </section>
-        }
+        <AlfaNotification Message="@_notificacion.For(_message, _isError)" OnDismiss="() => _message = string.Empty" />
 
         <section class="split-grid">
             <div class="panel-card costos-perfiles__list">
@@ -180,6 +169,8 @@ else
 }
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     private bool _loading = true;
     private bool _busy;
     private bool _isError;
@@ -209,6 +200,51 @@ else
             string.IsNullOrWhiteSpace(_searchText)
             || p.ProviderName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
             || p.ProviderAccount.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "costos",
+            Title = "Perfiles de importación",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCostos(RouteContext, Nav, "perfiles"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nuevo",
+                    Label = "Nuevo perfil",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { NuevoPerfil(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

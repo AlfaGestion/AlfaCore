@@ -5,7 +5,7 @@
 else
 {
     <div class="line-chart" @key="_renderKey">
-        <svg viewBox="0 0 640 290" class="line-chart__svg" role="img" aria-label="@Titulo">
+        <svg viewBox="0 0 @Ancho 290" class="line-chart__svg" role="img" aria-label="@Titulo">
             <defs>
                 <linearGradient id="@_gradientId" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stop-color="rgba(14,165,233,0.40)" />
@@ -15,7 +15,7 @@ else
 
             @foreach (var g in _gridLines)
             {
-                <line x1="70" y1="@F(g.Y)" x2="620" y2="@F(g.Y)"
+                <line x1="70" y1="@F(g.Y)" x2="@(Ancho - 20)" y2="@F(g.Y)"
                       class="line-chart__grid" style="transition:none;animation:none;" />
             }
 
@@ -82,6 +82,9 @@ else
     [Parameter] public bool   MostrarMoneda { get; set; } = true;
     // "area" | "line" | "bars"
     [Parameter] public string ChartType     { get; set; } = "area";
+    // Ancho del viewBox: con un gráfico a todo el ancho conviene uno mayor (ej. 1280) para que el
+    // SVG no se agrande en alto ni escale los textos.
+    [Parameter] public int    Ancho         { get; set; } = 640;
 
     protected override void OnParametersSet()
     {
@@ -94,7 +97,7 @@ else
             return;
         }
 
-        const double chartW = 550;
+        double chartW = Ancho - 90;
         const double chartH = 176;
         const double startX = 70;
         const double startY = 26;

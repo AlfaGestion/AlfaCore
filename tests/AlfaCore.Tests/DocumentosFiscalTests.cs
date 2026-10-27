@@ -24,12 +24,30 @@ public sealed class DocumentosFiscalTests
     [InlineData(TiposDocumentoCore.RemitoR, "R")]
     [InlineData(TiposDocumentoCore.RemitoX, "X")]
     [InlineData(TiposDocumentoCore.CobranzaContado, "X")]
+    [InlineData(TiposDocumentoCore.CobranzaX, "X")]
     public void DocumentosNoFiscalesDelRemotoConservanSuLetra(string tipo, string letra)
     {
         Assert.Equal(letra, TiposDocumentoCore.LetraDe(tipo));
         Assert.True(TiposDocumentoCore.EsDocumentoConLetra(tipo));
         Assert.False(TiposDocumentoCore.EsFiscal(tipo));
         Assert.Single(TiposDocumentoCore.TiposEquivalentes(tipo));
+    }
+
+    [Fact]
+    public void CobranzaXUsaPlantillaPropiaSinCambiarLaIdentidadHistoricaDeProformas()
+    {
+        var cobranza = TiposDocumentoCore.TipoParaComprobante(" CB ", " x ");
+        var proforma = TiposDocumentoCore.TipoParaComprobante("FP", "X");
+        Assert.Equal(TiposDocumentoCore.CobranzaX, cobranza);
+        Assert.Equal("Cobranza X", TiposDocumentoCore.NombrePredeterminado(cobranza));
+        Assert.Equal("COBRANZA_X", proforma);
+        Assert.Equal("Factura proforma", TiposDocumentoCore.NombrePredeterminado(proforma));
+        Assert.DoesNotContain(proforma, TiposDocumentoCore.TiposEquivalentes(cobranza));
+        var html = new DocumentRenderer().RenderFactura(DocumentTemplateDefinition.CrearFacturaEstandar("X"),
+            new FacturaDocumentData { Comprobante = new() { TipoDocumento = cobranza, Letra = "X" } },
+            tituloDocumento: TiposDocumentoCore.NombrePredeterminado(cobranza));
+        Assert.Contains("COBRANZA X", html);
+        Assert.DoesNotContain("FACTURA PROFORMA", html);
     }
 
     [Theory]

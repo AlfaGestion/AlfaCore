@@ -1,0 +1,253 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using AlfaCore.Components.Shared.AlfaDesign
+
+<AlfaDialog CloseOnBackdrop="false" Open="@(Preparacion is not null)" Title="Cobranza rápida" Eyebrow="Caja y Bancos"
+    Size="AlfaDialogSize.Xl" Loading="@Busy" ErrorMessage="@(_error ?? Error)" OnClose="OnClose">
+    <ChildContent>
+        @if (Preparacion is not null)
+        {
+            <div class="cobranza-editor">
+                @if (Preparacion.Documentos.Select(d=>(d.Cliente,d.Unidad)).Distinct().Count()>1)
+                {
+                    <AlfaSelect Label="Cliente y unidad de negocio" Value="@_factura" ValueChanged="CambiarFactura"
+                        Options="@OpcionesDocumentos" Disabled="@Busy" />
+                    <p>Seleccioná comprobantes del mismo cliente y unidad para emitir un único recibo.</p>
+                }
+                @if (Documento is { } doc)
+                {
+                    <section class="cobranza-editor__resumen" aria-label="Cliente, saldo actual e ingreso bancario">
+                        <div class="cobranza-editor__cliente">
+                            <strong>@doc.Nombre</strong>
+                            <small>Cliente @doc.Cliente · Unidad @doc.Unidad</small>
+                            <span>Saldo actual del cliente</span>
+                            @if (Preparacion.SaldoAl is { } corte)
+                            {
+                                @foreach (var saldo in Preparacion.SaldosCliente.Where(s=>s.Cliente==doc.Cliente))
+                                {
+                                    <strong class="cobranza-editor__importe">@saldo.Moneda @Dinero(saldo.Saldo)</strong>
+                                }
+                                @if (!Preparacion.SaldosCliente.Any(s=>s.Cliente==doc.Cliente)) { <strong class="cobranza-editor__importe">$ 0,00</strong> }
+                                <small>Al @corte.ToString("dd/MM/yyyy") · unidades autorizadas · antes de esta cobranza</small>
+                            }
+                            else { <small>Saldo no consultado</small> }
+                        </div>
+                        <div class="cobranza-editor__ingreso">
+                            <span>Recibido en el banco</span>
+                            <strong class="cobranza-editor__importe">$ @Dinero(Preparacion.ImporteBanco)</strong>
+                            <small>@Preparacion.Fecha.ToString("dd/MM/yyyy")</small>
+                            <span>@Preparacion.Medios.FirstOrDefault(m=>m.Cuenta==Preparacion.CuentaBanco)?.Descripcion</span>
+                        </div>
+                    </section>
+                    <h3>1. Facturas a cancelar</h3>
+                    <p>Seleccioná las facturas. Podés corregir el importe aplicado a cada una.</p>
+                    @if (_seleccionSugerida) { <p class="cobranza-editor__sugerencia">Selección precargada desde la propuesta. Revisala antes de confirmar.</p> }
+                    <div class="cobranza-editor__documentos"><table>
+                        <thead><tr><th>Seleccionar</th><th>Comprobante</th><th>Pendiente de factura</th><th>Aplicar</th></tr></thead>
+                        <tbody>@foreach(var d in DocumentosUnidad)
+                        {
+                            var importe=AplicacionesActuales.FirstOrDefault(a=>a.FacturaId==d.Id)?.Importe ?? 0;
+                            <tr @key="d.Id">
+                                <td><AlfaCheckbox Value="@_seleccionadas.Contains(d.Id)" ValueChanged="v=>CambiarSeleccion(d,v==true)" Disabled="@Busy">@($"Seleccionar {d.Tc} {d.Comprobante}")</AlfaCheckbox></td>
+                                <td>@d.Tc @d.Comprobante[..4]-@d.Comprobante.Substring(4,8) @d.Comprobante[^1]</td><td class="numero">@Dinero(d.Saldo)</td>
+                                <td><AlfaInput Label="@($"Aplicar a {d.Tc} {d.Comprobante}")" Type="number" Step="0.01"
+                                    Value="@(_importesManuales.TryGetValue(d.Id,out var editado) ? editado : importe.ToString("0.00",Invariante))"
+                                    ValueChanged="v=>_importesManuales[d.Id]=v ?? string.Empty" Disabled="@(Busy || !_seleccionadas.Contains(d.Id))" /></td>
+                            </tr>
+                        }</tbody>
+                    </table></div>
+                    <p>@_seleccionadas.Count factura(s) · Pendiente seleccionado: <strong>@Dinero(SaldoSeleccionado)</strong>.</p>
+                }
+                <h3>2. Banco y retenciones</h3>
+                @foreach (var linea in _lineas)
+                {
+                    <div class="cobranza-editor__medio" @key="linea">
+                        @if (linea.Banco)
+                        {
+                            <div><small>Cuenta bancaria</small><p>@Preparacion.Medios.FirstOrDefault(m=>m.Cuenta==linea.Cuenta)?.Descripcion</p></div>
+                            <strong class="cobranza-editor__importe-banco">$ @Dinero(Preparacion.ImporteBanco)</strong>
+                        }
+                        else
+                        {
+                            <AlfaSelect Label="Retención" Value="@linea.Cuenta"
+                                ValueChanged="v => { linea.Cuenta=v ?? string.Empty; linea.Sugerida=false; }" Options="@OpcionesRetenciones"
+                                Placeholder="Seleccionar retención" Disabled="@Busy" />
+                            <AlfaInput Label="Importe" Type="number" Step="0.01" Value="@linea.Importe"
+                                ValueChanged="v => { linea.Importe=v ?? string.Empty; linea.Sugerida=false; }" Disabled="@Busy" />
+                        }
+                        @if (!linea.Banco)
+                        {
+                            @if (linea.Sugerida && UltimaRetencion is { } anterior)
+                            {
+                                <p class="cobranza-editor__sugerencia">Retención sugerida por la diferencia pendiente, según CB @anterior.Comprobante del @anterior.Fecha.ToString("dd/MM/yyyy"). Podés corregirla o quitarla.</p>
+                            }
+                            <AlfaInput Label="Certificado de retención (opcional)" Value="@linea.Certificado" ValueChanged="v => { linea.Certificado=v ?? string.Empty; linea.Sugerida=false; }"
+                                MaxLength="50" Disabled="@Busy" />
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@Busy" OnClick="() => _lineas.Remove(linea)">Quitar</AlfaButton>
+                        }
+                    </div>
+                }
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _lineas.Count>=20)" OnClick="AgregarRetencion">Agregar retención</AlfaButton>
+                <details class="cobranza-editor__opciones" open="@string.IsNullOrWhiteSpace(_talonario)">
+                    <summary>3. Datos del recibo y comentario · @FechaResumen</summary>
+                    <div class="cobranza-editor__cabecera">
+                        <AlfaInput Label="Fecha de cobranza" Type="date" Value="@_fecha" ValueChanged="v => _fecha=v ?? string.Empty" Disabled="@Busy" />
+                        <AlfaSelect Label="Talonario del recibo" Value="@_talonario" ValueChanged="v => _talonario=v ?? string.Empty"
+                            Options="@OpcionesTalonarios" Placeholder="Seleccionar talonario CB" Disabled="@Busy" />
+                    </div>
+                    <AlfaInput Label="Detalle de la cobranza" Value="@_detalle" ValueChanged="v => _detalle=v ?? string.Empty" MaxLength="100" Disabled="@Busy" />
+                    <p class="cobranza-editor__sugerencia">El número definitivo de CB se asignará al confirmar.</p>
+                </details>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <div class="cobranza-editor__totales">
+            <span>Total CB: <strong>@Dinero(Total)</strong></span>
+            <span>Aplicado: <strong>@Dinero(TotalAplicado)</strong> · Diferencia por aplicar: <strong>@Dinero(Total-TotalAplicado)</strong></span>
+            <span>Pendiente en facturas seleccionadas: <strong>@Dinero(SaldoSeleccionado-TotalAplicado)</strong></span>
+        </div>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@Busy" OnClick="() => OnClose.InvokeAsync()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || Documento is null || string.IsNullOrEmpty(_talonario) || _seleccionadas.Count==0 || Total!=TotalAplicado || AplicacionesActuales.Any(a=>a.Importe<=0))"
+            OnClick="Confirmar">@(Busy ? "Registrando…" : "Confirmar cobranza CB")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public CobranzaPreparacion? Preparacion { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<CobranzaSolicitud> OnConfirm { get; set; }
+    [Parameter] public string? ComprobantePreferido { get; set; }
+    private CobranzaPreparacion? _anterior;
+    private Guid _operacion;
+    private string _factura="",_talonario="",_fecha="";
+    private string FechaResumen => DateTime.TryParseExact(_fecha,"yyyy-MM-dd",Invariante,System.Globalization.DateTimeStyles.None,out var fecha)
+        ? fecha.ToString("dd/MM/yyyy") : _fecha;
+    private string _detalle="",_detalleSugerido="";
+    private string? _error;
+    private readonly List<Linea> _lineas=[];
+    private readonly HashSet<int> _seleccionadas=[];
+    private readonly Dictionary<int,string> _importesManuales=[];
+    private bool _seleccionSugerida;
+    private static readonly System.Globalization.CultureInfo Invariante=System.Globalization.CultureInfo.InvariantCulture;
+    private static string Dinero(decimal valor) => valor.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+    private CobranzaDocumento? Documento => Preparacion?.Documentos.SingleOrDefault(d=>d.Id.ToString()==_factura);
+    private IReadOnlyList<AlfaSelectOption> OpcionesDocumentos => Preparacion?.Documentos.DistinctBy(d=>(d.Cliente,d.Unidad))
+        .Select(d=>new AlfaSelectOption(d.Id.ToString(),$"{d.Nombre} · Unidad {d.Unidad}")).ToList() ?? [];
+    private IReadOnlyList<CobranzaDocumento> DocumentosUnidad => Preparacion?.Documentos.Where(d=>d.Cliente==Documento?.Cliente && d.Unidad==Documento?.Unidad).ToList() ?? [];
+    private decimal SaldoSeleccionado => DocumentosUnidad.Where(d=>_seleccionadas.Contains(d.Id)).Sum(d=>d.Saldo);
+    private decimal TotalAplicado => AplicacionesActuales.Sum(a=>a.Importe);
+    private IReadOnlyList<CobranzaAplicacion> AplicacionesActuales
+    {
+        get
+        {
+            var seleccion=DocumentosUnidad.Where(d=>_seleccionadas.Contains(d.Id)).ToList();
+            var disponible=Total-seleccion.Where(d=>_importesManuales.ContainsKey(d.Id)).Sum(d=>ParsearImporte(_importesManuales[d.Id]));
+            var resultado=new List<CobranzaAplicacion>();
+            foreach(var d in seleccion)
+            {
+                var manual=_importesManuales.TryGetValue(d.Id,out var texto);
+                var importe=manual ? ParsearImporte(texto!) : Math.Min(d.Saldo,Math.Max(0,disponible));
+                if(!manual) disponible-=importe;
+                resultado.Add(new(d.Id,importe));
+            }
+            return resultado;
+        }
+    }
+    private static decimal ParsearImporte(string texto) => decimal.TryParse(texto,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0;
+    private IReadOnlyList<CobranzaTalonario> TalonariosUnidad
+    {
+        get
+        {
+            var todos=Preparacion?.Talonarios ?? [];
+            return todos.Any(t=>t.Unidad==Documento?.Unidad) ? todos.Where(t=>t.Unidad==Documento?.Unidad).ToList()
+                : todos.Where(t=>t.Unidad is "" or "0").ToList();
+        }
+    }
+    private IReadOnlyList<AlfaSelectOption> OpcionesTalonarios => TalonariosUnidad.Select(t=>new AlfaSelectOption(t.Talonario.ToString(),t.Display)).ToList();
+    private IReadOnlyList<AlfaSelectOption> OpcionesBanco => Preparacion?.Medios.Where(m=>m.Cuenta==Preparacion.CuentaBanco)
+        .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Cuenta} — {m.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> OpcionesRetenciones => Preparacion?.Medios.Where(m=>m.Tipo!="DB"&&m.Moneda=="1")
+        .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Descripcion} ({m.Tipo})")).ToList() ?? [];
+    private decimal Total => _lineas.Sum(l=>decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0);
+    private CobranzaRetencionSugerida? UltimaRetencion => Preparacion?.RetencionesSugeridas.FirstOrDefault(r=>
+        r.Cliente==Documento?.Cliente && r.Unidad==Documento?.Unidad && OpcionesRetenciones.Any(o=>o.Value==r.Cuenta));
+    protected override void OnParametersSet()
+    {
+        if(ReferenceEquals(_anterior,Preparacion)) return;
+        _anterior=Preparacion; _error=null; _lineas.Clear(); _seleccionadas.Clear();_importesManuales.Clear();_seleccionSugerida=false;
+        _operacion=Guid.NewGuid(); _detalle=_detalleSugerido="";
+        if(Preparacion is null) return;
+        _fecha=Preparacion.Fecha.ToString("yyyy-MM-dd");
+        _lineas.Add(new() { Banco=true,Cuenta=Preparacion.CuentaBanco,Importe=Preparacion.ImporteBanco.ToString("0.00",Invariante) });
+        var propuestaId=Preparacion.AplicacionesSugeridas.FirstOrDefault()?.FacturaId;
+        CambiarFactura((Preparacion.Documentos.FirstOrDefault(d=>$"{d.Tc}|{d.Comprobante}"==ComprobantePreferido)
+            ?? Preparacion.Documentos.FirstOrDefault(d=>d.Id==propuestaId) ?? Preparacion.Documentos.First()).Id.ToString());
+        if(Preparacion.AplicacionesSugeridas.Count>0 && Preparacion.AplicacionesSugeridas.Any(a=>a.FacturaId==Documento?.Id)
+            && Preparacion.AplicacionesSugeridas.All(a=>DocumentosUnidad.Any(d=>d.Id==a.FacturaId)))
+        {
+            _seleccionadas.Clear();foreach(var a in Preparacion.AplicacionesSugeridas) _seleccionadas.Add(a.FacturaId);
+            _seleccionSugerida=true;ActualizarRetencionSugerida();
+            if(Preparacion.AplicacionesSugeridas.Sum(a=>a.Importe)==Total)
+                foreach(var a in Preparacion.AplicacionesSugeridas) _importesManuales[a.FacturaId]=a.Importe.ToString("0.00",Invariante);
+        }
+    }
+    private void CambiarFactura(string? valor)
+    {
+        var proponer=string.IsNullOrWhiteSpace(_detalle)||_detalle==_detalleSugerido;
+        _factura=valor ?? ""; _talonario=TalonariosUnidad.FirstOrDefault()?.Talonario.ToString() ?? ""; _error=null;
+        _seleccionadas.Clear();_importesManuales.Clear();_seleccionSugerida=false;
+        if(Documento is { } actual) _seleccionadas.Add(actual.Id);
+        _detalleSugerido=Documento?.DetallePredeterminado ?? "";
+        if(proponer) _detalle=_detalleSugerido;
+        ActualizarRetencionSugerida();
+    }
+    private void CambiarSeleccion(CobranzaDocumento documento,bool seleccionar)
+    {
+        if(seleccionar) _seleccionadas.Add(documento.Id); else { _seleccionadas.Remove(documento.Id);_importesManuales.Remove(documento.Id); }
+        _seleccionSugerida=false;_error=null;ActualizarRetencionSugerida();
+    }
+    private void ActualizarRetencionSugerida()
+    {
+        _lineas.RemoveAll(l=>l.Sugerida);
+        if(!_lineas.Any(l=>!l.Banco) && UltimaRetencion is { } retencion && SaldoSeleccionado>Total)
+            _lineas.Add(new() { Cuenta=retencion.Cuenta,Importe=(SaldoSeleccionado-Total).ToString("0.00",Invariante),Sugerida=true });
+    }
+    private void AgregarRetencion() => _lineas.Add(new() {
+        Cuenta=UltimaRetencion?.Cuenta ?? "",
+        Importe=SaldoSeleccionado>Total ? (SaldoSeleccionado-Total).ToString("0.00",Invariante) : ""
+    });
+    private async Task Confirmar()
+    {
+        try
+        {
+            _error=null;
+            if(!DateTime.TryParseExact(_fecha,"yyyy-MM-dd",Invariante,System.Globalization.DateTimeStyles.None,out var fecha)||
+                !int.TryParse(_talonario,out var tal)||Documento is null)
+                throw new InvalidOperationException("Seleccioná comprobante, fecha y talonario.");
+            var pagos=_lineas.Select(l=>new CobranzaPago(l.Cuenta,
+                decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0,l.Certificado)).ToList();
+            var aplicaciones=AplicacionesActuales;
+            if(aplicaciones.Count==0) throw new InvalidOperationException("Seleccioná al menos un comprobante a cobrar.");
+            var solicitud=new CobranzaSolicitud(_operacion,aplicaciones[0].FacturaId,fecha,tal,pagos,Preparacion!.MovimientoId,_detalle,
+                aplicaciones.Count==1 && aplicaciones[0].Importe==Total ? null : aplicaciones);
+            var total=CobranzasService.ValidarImportes(solicitud);
+            if(aplicaciones.Any(a=>a.Importe>DocumentosUnidad.Single(d=>d.Id==a.FacturaId).Saldo))
+                throw new InvalidOperationException("El importe aplicado supera el saldo de un comprobante. Revisá los importes y las retenciones.");
+            if(_lineas.Any(l=>!l.Banco&&string.IsNullOrEmpty(l.Cuenta)))
+                throw new InvalidOperationException("Seleccioná la cuenta de cada retención.");
+            await OnConfirm.InvokeAsync(solicitud);
+        }
+        catch(InvalidOperationException ex) { _error=ex.Message; }
+    }
+    private sealed class Linea
+    {
+        public bool Banco { get; set; }
+        public bool Sugerida { get; set; }
+        public string Cuenta { get; set; }="";
+        public string Importe { get; set; }="";
+        public string Certificado { get; set; }="";
+    }
+}

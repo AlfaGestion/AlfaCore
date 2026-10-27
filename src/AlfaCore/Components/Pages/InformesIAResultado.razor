@@ -9,10 +9,10 @@
 
 <PageTitle>Resultado InformesIA | Dashboard de Compras</PageTitle>
 
-<section class="page-grid ia-page">
+<div class="gd-page gd ia-page">
     @if (_result is null)
     {
-        <div class="loading">Cargando informe...</div>
+        <AlfaEmptyState Title="Cargando informe" Message="Preparando el resultado de la consulta." />
     }
     else
     {
@@ -23,10 +23,7 @@
                     <p class="panel-card__subtitle">@_result.Subtitulo</p>
                 </div>
                 <div class="ia-report__toolbar no-print">
-                    <button class="btn btn--ghost" @onclick="ExportResultPdfAsync">
-                        <i class="bi bi-file-earmark-pdf"></i>
-                        <span>Exportar PDF</span>
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-pdf" OnClick="_ => ExportResultPdfAsync()">Exportar PDF</AlfaButton>
                 </div>
             </div>
 
@@ -109,7 +106,7 @@
                     <div class="ia-chip-list">
                         @foreach (var item in _result.SugerenciasRelacionadas)
                         {
-                            <a class="ia-chip ia-chip--secondary" href="/compras/informesia">
+                            <a class="ia-chip ia-chip--secondary" href="@RouteContext.BuildRoute("/compras/informesia")">
                                 <span class="ia-chip__title">@item.Texto</span>
                             </a>
                         }
@@ -118,9 +115,14 @@
             }
         </section>
     }
-</section>
+</div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     [Parameter] public Guid ExecutionId { get; set; }
     private InformeIaResultDto? _result;
 
@@ -132,11 +134,16 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 
-    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "compras",
         TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "informesia")
     });
 

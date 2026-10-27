@@ -110,6 +110,12 @@
                                    LoadingProvinces="_loadingProvincias"
                                    Provinces="_provincias"
                                    LinkedAccounts="_linkedAccounts"
+                                   AccountsBusy="@(_linkingAccount || _unlinkingClient)"
+                                   SearchAccounts="SearchAccountsForRecordAsync"
+                                   LinkAccount="LinkAccountToRecordAsync"
+                                   AccountLinked="ShowAccountLinkedFeedback"
+                                   UnlinkClientAccount="RequestUnlinkClientAsync"
+                                   ReplaceClientAccount="ReplaceClientAccountAsync"
                                    FieldErrors="_fieldErrors"
                                    ActiveTab="(int)_activeTab"
                                    ActiveTabChanged="SetEditTabAsync"
@@ -145,7 +151,10 @@
                              SearchAccounts="SearchAccountsForRecordAsync"
                              LinkAccount="LinkAccountToRecordAsync"
                              AccountLinked="ShowAccountLinkedFeedback"
-                             LinkingAccount="@_linkingAccount" />
+                             LinkingAccount="@_linkingAccount"
+                             UnlinkClientAccount="RequestUnlinkClientAsync"
+                             UnlinkingClient="@_unlinkingClient"
+                             ReplaceClientAccount="ReplaceClientAccountAsync" />
     }
     else
     {
@@ -470,6 +479,17 @@
                    OnConfirm="ConfirmDeactivateAsync"
                    OnCancel="CloseDeactivateConfirm" />
 
+<AlfaConfirmDialog Open="@_showUnlinkClientConfirm"
+                   Title="Desvincular cliente"
+                   Message="¿Querés desvincular este contacto del cliente seleccionado?"
+                   SecondaryMessage="La ficha del contacto y sus demás relaciones no se eliminan."
+                   ConfirmLabel="Desvincular"
+                   LoadingLabel="Desvinculando..."
+                   Loading="@_unlinkingClient"
+                   ErrorMessage="@_unlinkClientError"
+                   OnConfirm="ConfirmUnlinkClientAsync"
+                   OnCancel="CloseUnlinkClientConfirm" />
+
 <AlfaConfirmDialog Open="@_showDiscardEditConfirm"
                    Title="@(_pageMode == ContactosPageMode.New ? "Descartar contacto nuevo" : "Descartar cambios")"
                    Message="Hay cambios sin guardar. Si salís ahora, se perderán."
@@ -501,6 +521,11 @@
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
     private readonly List<ContactoGridItemDto> _items = [];
@@ -518,6 +543,7 @@
     private bool _saving;
     private bool _openingConversation;
     private bool _linkingAccount;
+    private bool _unlinkingClient;
     private bool _isNewMode = true;
     private ContactosPageMode _pageMode = ContactosPageMode.Browse;
     private bool _showEditor => _pageMode is ContactosPageMode.Edit or ContactosPageMode.New;
@@ -532,6 +558,7 @@
     private bool _loadingEdit;
     private bool _editDirty;
     private bool _showDiscardEditConfirm;
+    private bool _showUnlinkClientConfirm;
     private bool _allowEditNavigation;
     private string _editInitialState = string.Empty;
     private string _editErrorMessage = string.Empty;
@@ -555,6 +582,7 @@
     private string _recordReturnViewMode = ContactosViewModeKeys.Listado;
     private string _recordErrorMessage = string.Empty;
     private string _recordNavigationError = string.Empty;
+    private string _unlinkClientError = string.Empty;
     private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
@@ -564,6 +592,7 @@
     private bool _mergeSearchExecuted;
     private bool _mergingContact;
     private ContactoMergeCandidateDto? _mergeConfirmCandidate;
+    private ContactoCuentaDto? _pendingUnlinkClient;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
     private bool _showDeactivateConfirm;
@@ -929,7 +958,7 @@
             }
         }
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = _showRecordView
                 ? DisplayOrFallback(_recordDetail?.NombreApellido, _loadingRecord ? "Cargando contacto" : "Contacto")
@@ -1184,7 +1213,8 @@
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
         _listSearchCts?.Cancel();
@@ -1882,7 +1912,7 @@
         var suppliersTask = CuentasSvc.SearchAsync(CuentaComercialTipo.Proveedor, BuildFilters(text), ct);
         await Task.WhenAll(clientsTask, suppliersTask);
 
-        var linked = (_recordDetail?.CuentasVinculadas ?? [])
+        var linked = _linkedAccounts
             .Select(account => account.Codigo.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -1926,7 +1956,7 @@
                 return false;
             }
 
-            await CargarFichaAsync(_selectedId);
+            await RefreshLinkedAccountsAsync(_selectedId);
             return IsAccountLinked(account);
         }
         finally
@@ -1935,9 +1965,153 @@
         }
     }
 
+    /// <summary>
+    /// "Cambiar cliente" desde la ficha o la edición del contacto: desvincula el actual y vincula el
+    /// elegido. Desvincular primero importa: limpia CONV_CONVERSACIONES.ClienteCodigo del cliente
+    /// viejo y así LinkContactoAsync deja las conversaciones del contacto con el cliente nuevo.
+    /// </summary>
+    private async Task<bool> ReplaceClientAccountAsync(ContactoCuentaDto current, ContactoCuentaLookupOptionDto replacement)
+    {
+        if (_selectedId <= 0 || _linkingAccount || _unlinkingClient || replacement.Tipo != CuentaComercialTipo.Cliente)
+            return false;
+
+        var contactId = _selectedId;
+        _linkingAccount = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                async () =>
+                {
+                    await CuentasSvc.UnlinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoUnlinkRequest
+                    {
+                        CuentaCodigo = current.Codigo,
+                        ContactoId = contactId
+                    });
+                    await CuentasSvc.LinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoLinkRequest
+                    {
+                        CuentaCodigo = replacement.Codigo,
+                        ContactoId = contactId
+                    });
+                    return true;
+                },
+                "No se pudo cambiar el cliente del contacto.");
+
+            await RefreshLinkedAccountsAsync(contactId);
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return false;
+            }
+
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = "Cliente cambiado",
+                Message = $"El contacto ahora está vinculado a {(string.IsNullOrWhiteSpace(replacement.RazonSocial) ? replacement.Codigo : replacement.RazonSocial)}."
+            });
+            return true;
+        }
+        finally
+        {
+            _linkingAccount = false;
+        }
+    }
+
+    /// <summary>
+    /// En la ficha recarga todo; en edición solo las cuentas, para no pisar lo que se está escribiendo
+    /// en el formulario (CargarFichaAsync -> ApplyDetailState reescribe _form).
+    /// </summary>
+    private async Task RefreshLinkedAccountsAsync(int contactId)
+    {
+        if (_pageMode != ContactosPageMode.Edit)
+        {
+            await CargarFichaAsync(contactId);
+            return;
+        }
+
+        var result = await UiOps.RunAsync(
+            () => ContactosSvc.GetCuentasVinculadasAsync(contactId),
+            "No se pudieron actualizar las cuentas vinculadas.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        _linkedAccounts.Clear();
+        _linkedAccounts.AddRange(result.Value);
+        if (_recordDetail is not null && _recordDetail.Id == contactId)
+            _recordDetail.CuentasVinculadas = result.Value.ToList();
+    }
+
     private bool IsAccountLinked(ContactoCuentaLookupOptionDto account)
-        => (_recordDetail?.CuentasVinculadas ?? []).Any(linked =>
+        => _linkedAccounts.Any(linked =>
             string.Equals(linked.Codigo.Trim(), account.Codigo.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private Task RequestUnlinkClientAsync(ContactoCuentaDto account)
+    {
+        if (_selectedId <= 0
+            || !string.Equals(account.Tipo, "Cliente", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(account.Codigo)
+            || _unlinkingClient)
+            return Task.CompletedTask;
+
+        _pendingUnlinkClient = account;
+        _unlinkClientError = string.Empty;
+        _showUnlinkClientConfirm = true;
+        return Task.CompletedTask;
+    }
+
+    private void CloseUnlinkClientConfirm()
+    {
+        if (_unlinkingClient)
+            return;
+
+        _showUnlinkClientConfirm = false;
+        _pendingUnlinkClient = null;
+        _unlinkClientError = string.Empty;
+    }
+
+    private async Task ConfirmUnlinkClientAsync()
+    {
+        if (_selectedId <= 0 || _pendingUnlinkClient is null)
+            return;
+
+        _unlinkingClient = true;
+        _unlinkClientError = string.Empty;
+        try
+        {
+            var account = _pendingUnlinkClient;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.UnlinkContactoAsync(CuentaComercialTipo.Cliente, new CuentaComercialContactoUnlinkRequest
+                {
+                    CuentaCodigo = account.Codigo,
+                    ContactoId = _selectedId
+                }),
+                "No se pudo desvincular el contacto del cliente.");
+
+            if (!result.Success)
+            {
+                _unlinkClientError = result.Feedback?.Message ?? "No se pudo desvincular el contacto del cliente.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _showUnlinkClientConfirm = false;
+            _pendingUnlinkClient = null;
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = "Contacto desvinculado",
+                Message = $"El contacto ya no está vinculado a {account.RazonSocial}."
+            });
+            await RefreshLinkedAccountsAsync(_selectedId);
+        }
+        finally
+        {
+            _unlinkingClient = false;
+        }
+    }
 
     private void ShowAccountLinkedFeedback(ContactoCuentaLookupOptionDto account)
     {
@@ -2824,7 +2998,7 @@
 
             SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversación(es). Nuevas: {created}."));
             if (contacts.Count == 1 && firstConversation.HasValue)
-                Nav.NavigateTo($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
         }
         finally
         {
@@ -3094,7 +3268,7 @@
     {
         if (contact.IdConversacionWhatsApp.HasValue)
         {
-            Nav.NavigateTo($"/conversaciones?id={contact.IdConversacionWhatsApp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={contact.IdConversacionWhatsApp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
             return;
         }
 
@@ -3123,7 +3297,7 @@
                 return;
             }
 
-            Nav.NavigateTo($"/conversaciones?id={result.Value.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={result.Value.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
         }
         finally
         {

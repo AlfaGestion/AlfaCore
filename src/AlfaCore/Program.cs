@@ -11,7 +11,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
 using AlfaCore.Services.MercadoPagoPoint.Models;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -98,6 +101,20 @@ public class Program
                 .GetAwaiter()
                 .GetResult();
             Environment.Exit(subscriptionInspectExitCode);
+            return;
+        }
+
+        // Modo one-shot administrativo: dry-run por defecto (sólo GET); con --commit llama UNA vez a
+        // EnsureWabaSubscriptionAsync para actualizar el override de callback de un WABA existente.
+        // No arranca Kestrel ni hosted services, no toca onboarding ni SQL. Ver
+        // WhatsAppWabaSubscriptionRepairCommand.
+        if (WhatsAppWabaSubscriptionRepairCommand.IsRequested(args))
+        {
+            var wabaRepairExitCode = WhatsAppWabaSubscriptionRepairCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(wabaRepairExitCode);
             return;
         }
 
@@ -250,6 +267,7 @@ public class Program
         builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
         builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
         builder.Services.AddScoped<ICentralPublicLinkService, CentralPublicLinkService>();
+        builder.Services.AddScoped<ICatalogoClienteLinkService, CatalogoClienteLinkService>();
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
@@ -264,6 +282,7 @@ public class Program
         builder.Services.AddScoped<ISaaSTenantRouteGuard, SaaSTenantRouteGuard>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
+        builder.Services.AddScoped<ReporteComercialService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<ICierreCajaService, CierreCajaService>();
         builder.Services.AddScoped<CierreCajaExportService>();
@@ -274,9 +293,28 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IWebChatSiteKeyService, WebChatSiteKeyService>();
+        // Hoy solo lo usan los endpoints públicos del chat web (/api/webchat/...): son los únicos de
+        // escritura totalmente anónimos (cualquier visitante del sitio del cliente les pega directo).
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = (context, _) =>
+            {
+                ApplyWebChatCors(context.HttpContext.Request, context.HttpContext.Response);
+                return ValueTask.CompletedTask;
+            };
+            options.AddPolicy(WebChatReadRateLimitPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                BuildWebChatRateLimitKey(context),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            options.AddPolicy(WebChatWriteRateLimitPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                BuildWebChatRateLimitKey(context),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        });
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IWhatsAppPortfolioResolutionService, WhatsAppPortfolioResolutionService>();
+        builder.Services.AddScoped<IWhatsAppUsoMetaService, WhatsAppUsoMetaService>();
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
@@ -299,7 +337,11 @@ public class Program
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
+        builder.Services.AddScoped<IAvisosPushNotifier, AvisosPushNotifier>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
+        builder.Services.AddScoped<CalendarioIndicadorNotifier>();
+        builder.Services.AddScoped<ICentroAvisosService, CentroAvisosService>();
+        builder.Services.AddScoped<INovedadesSistemaService, NovedadesSistemaService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
@@ -323,6 +365,7 @@ public class Program
         builder.Services.AddScoped<IMercadoPagoPointConfigService, MercadoPagoPointConfigService>();
         builder.Services.AddScoped<IMercadoPagoPointPosService, MercadoPagoPointPosService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
+        builder.Services.AddScoped<ConfiguracionCargaComprobantesService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
@@ -376,6 +419,19 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
+        builder.Services.AddScoped<ConciliacionExtractoLector>();
+        builder.Services.AddScoped<ConciliacionBancariaService>();
+        builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
+        builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
+        builder.Services.AddScoped<CobranzasService>();
+        builder.Services.AddScoped<CargaComprobantesRepository>();
+        builder.Services.AddScoped<CargaComprobantesElectronicaVerificador>();
+        builder.Services.AddScoped<CargaComprobantesElectronicaEmisor>();
+        builder.Services.AddScoped<CargaComprobantesPlanificador>();
+        builder.Services.AddScoped<CargaComprobantesActualizadorOrigen>();
+        builder.Services.AddScoped<CargaComprobantesGrabador>();
+        builder.Services.AddScoped<CargaComprobantesEmisionService>();
+        builder.Services.AddScoped<ICargaComprobantesService, CargaComprobantesService>();
         builder.Services.AddScoped<IPortalClienteService, PortalClienteService>();
         builder.Services.AddScoped<IPortalClienteRecuperarClaveService, PortalClienteRecuperarClaveService>();
         builder.Services.AddScoped<IPortalClienteRegistrarEmailService, PortalClienteRegistrarEmailService>();
@@ -410,9 +466,11 @@ public class Program
         builder.Services.AddSingleton<VentasRubrosExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
+        builder.Services.AddScoped<ICargaViajesTarifaIaService, CargaViajesTarifaIaService>();
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
         builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<ConversacionesInformeExcelExporter>();
+        builder.Services.AddScoped<IConversacionesSatisfaccionService, ConversacionesSatisfaccionService>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -447,16 +505,30 @@ public class Program
         builder.Services.AddScoped<IConversacionAsistenteService, ConversacionAsistenteService>();
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
+        builder.Services.AddScoped<IConversacionAsistenteConocimientoService, ConversacionAsistenteConocimientoService>();
+        builder.Services.AddScoped<IConversacionAsistenteCorreccionesService, ConversacionAsistenteCorreccionesService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
-        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-        builder.Services.AddHostedService<BillingHostedService>();
-        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
-        builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+        builder.Services.AddSingleton<IaUsoCola>();
+        builder.Services.AddScoped<IIaUsoRecorder, IaUsoRecorder>();
+        builder.Services.AddScoped<IIaConsumoService, IaConsumoService>();
+        builder.Services.AddHostedService<IaUsoFlushService>();
+        if (!builder.Configuration.GetValue("ProcesosSegundoPlano:Deshabilitados", false))
+            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        // Para correr una instancia local contra bases que ya atiende el servidor real: sin esto, los
+        // procesos de abajo (programados, auto-cierre, bot diferido, WhatsApp Web...) se ejecutarían
+        // en las dos instancias a la vez y podrían duplicar envíos. Por defecto quedan activos.
+        if (!builder.Configuration.GetValue("ProcesosSegundoPlano:Deshabilitados", false))
+        {
+            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+            builder.Services.AddHostedService<BillingHostedService>();
+            builder.Services.AddHostedService<CalendarioRecordatoriosHostedService>();
+            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
+            builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+        }
 
         var app = builder.Build();
 
@@ -502,6 +574,7 @@ public class Program
             FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(app.Environment.WebRootPath),
             ContentTypeProvider = StaticFileContentTypes.CreateProvider()
         });
+        app.UseRateLimiter();
         app.UseAntiforgery();
 
         app.MapGet("/manifest.webmanifest", () =>
@@ -510,6 +583,48 @@ public class Program
             return File.Exists(manifestPath)
                 ? Results.File(manifestPath, "application/manifest+json")
                 : Results.NotFound();
+        });
+
+        app.MapGet("/manifest-punto-venta", (HttpContext httpContext) =>
+        {
+            var requestedScope = httpContext.Request.Query["start"].ToString();
+            var scope = requestedScope.Trim();
+            if (string.IsNullOrWhiteSpace(scope)
+                || !scope.StartsWith("/", StringComparison.Ordinal)
+                || !scope.Contains("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase))
+            {
+                scope = "/ventas/punto-venta";
+            }
+
+            var idPuntoVenta = httpContext.Request.Query["idPuntoVenta"].ToString().Trim();
+            var startUrl = $"{scope}/mostrador?directo=1";
+            var appId = scope;
+            if (int.TryParse(idPuntoVenta, out var parsedId) && parsedId > 0)
+            {
+                startUrl += $"&idPuntoVenta={parsedId}";
+                appId += $"#pdv-{parsedId}";
+            }
+
+            return Results.Json(new
+            {
+                name = "AlfaCore - Punto de Venta",
+                short_name = "Punto de Venta",
+                description = "Punto de Venta de AlfaCore.",
+                id = appId,
+                start_url = startUrl,
+                scope,
+                display = "standalone",
+                background_color = "#f6f8fb",
+                theme_color = "#1f2937",
+                orientation = "any",
+                icons = new[]
+                {
+                    new { src = "/icons/icon-192.png", sizes = "192x192", type = "image/png", purpose = "any" },
+                    new { src = "/icons/icon-512.png", sizes = "512x512", type = "image/png", purpose = "any" },
+                    new { src = "/icons/maskable-192.png", sizes = "192x192", type = "image/png", purpose = "maskable" },
+                    new { src = "/icons/maskable-512.png", sizes = "512x512", type = "image/png", purpose = "maskable" }
+                }
+            }, contentType: "application/manifest+json");
         });
 
         app.MapGet("/app.css", () =>
@@ -974,6 +1089,8 @@ public class Program
             ICentralBasesService centralBasesSvc,
             ICentralPublicLinkService publicLinkSvc,
             ISessionService sessionSvc,
+            ICatalogoClienteLinkService clienteLinkSvc,
+            HttpRequest request,
             CancellationToken ct) =>
         {
             var link = await publicLinkSvc.ResolveAsync(idweb, PublicLinkTipos.Catalogo, token, ct);
@@ -997,7 +1114,15 @@ public class Program
                 Activa = true
             });
 
-            return await GenerarPdfCatalogoAsync(link.IdReferencia, idweb, vista, link.IdBase, catalogosSvc, puntoVentaSvc, pdfSvc, ct);
+            // Misma identidad que la página: credencial personal "?c=" validada con el alcance del
+            // link ya resuelto (base, idweb, catálogo). Inválida/ausente → PDF anónimo.
+            var credencial = request.Query[CatalogoClienteLinkService.QueryParameter].ToString();
+            var clienteIdentificado = string.IsNullOrWhiteSpace(credencial)
+                ? null
+                : await clienteLinkSvc.ValidarCredencialAsync(credencial, idweb, link.IdBase, link.IdReferencia, ct);
+
+            return await GenerarPdfCatalogoAsync(link.IdReferencia, idweb, vista, link.IdBase, catalogosSvc, puntoVentaSvc, pdfSvc, ct,
+                visitanteIdentificado: clienteIdentificado is not null);
         }).AllowAnonymous();
 
         async Task<(bool Ok, string CodigoCliente, string NombreCliente, string NombreEmpresa, byte[]? LogoBytes, IResult? Error)> ResolvePortalClienteExportContextAsync(
@@ -1900,6 +2025,58 @@ public class Program
             return Results.Text(cliente.IdCliente, "text/plain; charset=utf-8");
         });
 
+        // Licencia del legacy (VB6): reemplaza la lectura directa de ESTADISTICAS.dbo.clientes /
+        // sp_ObtenerDatosLicencia. Respuesta en texto, una línea por dato, para leerla fácil desde VB6:
+        // IdCliente, FTP server, FTP usuario, FTP clave. 404 = licencia inexistente.
+        app.MapGet("/api/vb6/licencia", async (
+            HttpRequest request,
+            ICentralClientesService clientesSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var licencia = request.Query["licenciaPrincipal"].ToString();
+            if (string.IsNullOrWhiteSpace(licencia))
+                return Results.BadRequest("Falta licenciaPrincipal.");
+
+            // 404 con texto propio: el VB6 solo da la licencia por inválida con esta respuesta, no con
+            // un 404 genérico (ej. un AlfaCore que todavía no tiene publicado este endpoint).
+            var datos = await clientesSvc.GetLicenciaLegacyAsync(licencia, ct);
+            if (datos is null)
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+
+            var texto = string.Join("\r\n", datos.IdCliente, datos.FtpServer, datos.FtpUsuario, datos.FtpClave);
+            return Results.Text(texto, "text/plain; charset=utf-8");
+        });
+
+        // Antes sp_ActivaLicencia en ESTADISTICAS: graba la fecha de activación si todavía no la tiene.
+        app.MapPost("/api/vb6/activar-licencia", async (
+            HttpRequest request,
+            ICentralClientesService clientesSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var form = request.HasFormContentType ? await request.ReadFormAsync(ct) : null;
+            var licencia = form?["licenciaPrincipal"].ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(licencia))
+                return Results.BadRequest("Falta licenciaPrincipal.");
+
+            return await clientesSvc.ActivarLicenciaAsync(licencia, ct) ? Results.NoContent() : Results.NotFound();
+        });
+
         app.MapGet("/vb6/consume", async (
             HttpRequest request,
             IVb6BridgeService vb6BridgeSvc,
@@ -2415,6 +2592,7 @@ public class Program
             {
                 AgruparPor = TrimOrEmpty(request.Query["agruparPor"]),
                 Texto = TrimOrEmpty(request.Query["texto"]),
+                NombreLista = TrimOrEmpty(request.Query["nombreLista"]),
                 Cliente = TrimOrEmpty(request.Query["cliente"]),
                 Chofer = TrimOrEmpty(request.Query["chofer"]),
                 Destino = TrimOrEmpty(request.Query["destino"]),
@@ -2621,7 +2799,17 @@ public class Program
         // para el cliente actual) y una nueva con "/{token}" (resuelve el tenant desde
         // ALFA_CENTRAL.dbo.bases.WebhookToken ANTES de tocar cualquier tabla, sin depender de la
         // sesión del usuario — necesario porque un webhook entrante nunca tiene sesión).
-        app.MapGet("/api/conversaciones/whatsapp/webhook", HandleWhatsAppVerifyAsync);
+        app.MapGet("/api/conversaciones/whatsapp/webhook", (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConfiguration configuration,
+            IOptions<WhatsAppOptions> whatsAppOptions,
+            ISessionService sessionService,
+            IAppModeService appMode,
+            CancellationToken ct) =>
+            IsLegacyWhatsAppWebhookTenantAuthoritative(appMode, sessionService)
+                ? HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, sessionService, ct)
+                : Task.FromResult<IResult>(Results.NotFound()));
         app.MapGet("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
@@ -2648,8 +2836,11 @@ public class Program
             IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
             IWhatsAppAssetOwnershipStore ownershipStore,
+            IAppModeService appMode,
             CancellationToken ct) =>
-            HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ownershipStore, ct));
+            IsLegacyWhatsAppWebhookTenantAuthoritative(appMode, sessionService)
+                ? HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ownershipStore, ct)
+                : Task.FromResult<IResult>(Results.NotFound()));
         app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
@@ -2804,6 +2995,24 @@ public class Program
             return await HandleMercadoLibreMessageAsync(request, svc, ct);
         });
 
+        // Chat web embebible (canal WEBCHAT, widget en wwwroot/webchat/widget.js). Lo llama el
+        // navegador de visitantes anónimos desde el dominio del cliente: CORS manual + rate limiting.
+        app.MapMethods("/api/webchat/{siteKey}/{recurso}", ["OPTIONS"], (HttpRequest request, HttpResponse response) =>
+        {
+            ApplyWebChatCors(request, response);
+            response.Headers.AccessControlAllowMethods = "GET, POST, OPTIONS";
+            response.Headers.AccessControlAllowHeaders = "Content-Type";
+            response.Headers.AccessControlMaxAge = "600";
+            return Results.NoContent();
+        }).RequireRateLimiting(WebChatReadRateLimitPolicy);
+
+        app.MapGet("/api/webchat/{siteKey}/config", HandleWebChatConfigAsync)
+            .RequireRateLimiting(WebChatReadRateLimitPolicy);
+        app.MapGet("/api/webchat/{siteKey}/mensajes", HandleWebChatGetMessagesAsync)
+            .RequireRateLimiting(WebChatReadRateLimitPolicy);
+        app.MapPost("/api/webchat/{siteKey}/mensajes", HandleWebChatPostMessageAsync)
+            .RequireRateLimiting(WebChatWriteRateLimitPolicy);
+
         // Mercado Pago (pagos con terminal Point) -- no confundir con Mercado Libre arriba.
         app.MapPost("/api/mercadopago/point/webhook/{token}", async (
             string token,
@@ -2954,21 +3163,29 @@ public class Program
         app.MapGet("/api/conversaciones/adjuntos/{idAdjunto:long}", async (
             long idAdjunto,
             HttpRequest request,
+            ISessionService sessionService,
+            IAppUserSessionService appUserSession,
             IConversacionesService svc,
             CancellationToken ct) =>
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+            request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
             var idBaseRaw = request.Query["idBase"].ToString();
             var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
                 ? parsedIdBase
                 : (int?)null;
             var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            if (!TryActivateAuthorizedAttachmentBase(idBase, sessionService, appUserSession))
+                return Results.NotFound();
+
             var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
             if (adjunto is null)
                 return Results.NotFound();
 
-            var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var hasLocalFile = !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
+            var servePolicy = BuildAttachmentServePolicy(adjunto.MimeType, adjunto.NombreArchivo, adjunto.NombreDescarga, download);
+            var hasLocalFile = adjunto.RutaLocalConfiable && !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
             var hasSqlContent = adjunto.Contenido.Length > 0;
             if (!hasLocalFile && !hasSqlContent)
                 return Results.NotFound();
@@ -2988,19 +3205,15 @@ public class Program
                 request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            var downloadName = download
-                ? string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga
-                : null;
-
-            if (!hasLocalFile)
+            if (hasSqlContent)
             {
                 var fechaArchivo = adjunto.FechaHoraModificacion?.ToUniversalTime() ?? DateTime.UtcNow;
                 var lastModifiedSql = new DateTimeOffset(fechaArchivo, TimeSpan.Zero);
                 var entityTagSql = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"sql-{adjunto.Contenido.Length:x}-{lastModifiedSql.UtcTicks:x}\"");
                 return Results.File(
                     adjunto.Contenido,
-                    contentType: mime,
-                    fileDownloadName: downloadName,
+                    contentType: servePolicy.ContentType,
+                    fileDownloadName: servePolicy.FileDownloadName,
                     lastModified: lastModifiedSql,
                     entityTag: entityTagSql,
                     enableRangeProcessing: false);
@@ -3011,8 +3224,8 @@ public class Program
             var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
             return Results.File(
                 adjunto.RutaLocal,
-                contentType: mime,
-                fileDownloadName: downloadName,
+                contentType: servePolicy.ContentType,
+                fileDownloadName: servePolicy.FileDownloadName,
                 lastModified: lastModified,
                 entityTag: entityTag,
                 enableRangeProcessing: true);
@@ -3284,10 +3497,58 @@ public class Program
         return "DOCUMENT";
     }
 
+    public readonly record struct AttachmentServePolicy(string ContentType, string? FileDownloadName);
+
+    public static AttachmentServePolicy BuildAttachmentServePolicy(
+        string? mimeType,
+        string? fileName,
+        string? downloadName,
+        bool forceDownload)
+    {
+        var normalized = NormalizeAttachmentMime(mimeType, fileName);
+        var safeName = SanitizeHttpDownloadFileName(
+            string.IsNullOrWhiteSpace(downloadName) ? fileName : downloadName,
+            Path.GetExtension(fileName ?? string.Empty));
+
+        if (forceDownload)
+            return new AttachmentServePolicy(normalized, safeName);
+
+        return IsSafeInlineAttachmentMime(normalized)
+            ? new AttachmentServePolicy(normalized, null)
+            : new AttachmentServePolicy("application/octet-stream", safeName);
+    }
+
+    public static bool IsSafeInlineAttachmentMime(string? mimeType)
+    {
+        var normalized = NormalizeAttachmentMime(mimeType, string.Empty);
+        return normalized is "image/jpeg" or "image/png" or "image/gif" or "image/webp" or "application/pdf"
+            || normalized.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string SanitizeHttpDownloadFileName(string? fileName, string? fallbackExtension = null)
+    {
+        var name = Path.GetFileName(string.IsNullOrWhiteSpace(fileName) ? "adjunto" : fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            name = name.Replace(invalid, '_');
+
+        name = Regex.Replace(name, @"[\x00-\x1F\x7F]", "_").Trim('.', ' ', '_');
+        if (string.IsNullOrWhiteSpace(name))
+            name = "adjunto";
+
+        if (!Path.HasExtension(name) && !string.IsNullOrWhiteSpace(fallbackExtension))
+            name += fallbackExtension.StartsWith('.') ? fallbackExtension : "." + fallbackExtension;
+
+        return name;
+    }
+
     private static string NormalizeAttachmentMime(string? mimeType, string? fileName)
     {
         if (!string.IsNullOrWhiteSpace(mimeType))
-            return mimeType.Trim();
+        {
+            var normalizedMime = mimeType.Split(';', 2)[0].Trim().ToLowerInvariant();
+            return normalizedMime.Length == 0 ? "application/octet-stream" : normalizedMime;
+        }
 
         var ext = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
         return ext switch
@@ -3305,6 +3566,34 @@ public class Program
             ".txt" => "text/plain",
             _ => "application/octet-stream"
         };
+    }
+
+    internal static bool TryActivateAuthorizedAttachmentBase(
+        int? idBase,
+        ISessionService sessionService,
+        IAppUserSessionService appUserSession)
+    {
+        if (!appUserSession.IsAuthenticated)
+            return false;
+
+        var active = sessionService.GetActiveSession();
+        if (idBase is > 0)
+        {
+            if (active?.BaseId != idBase.Value)
+            {
+                var session = sessionService.GetAllSessions().FirstOrDefault(s => s.BaseId == idBase.Value);
+                if (session is null || !appUserSession.IsAuthorizedForSession(session.Id))
+                    return false;
+
+                sessionService.SetWebhookOverride(session);
+                active = sessionService.GetActiveSession();
+            }
+
+            if (active?.BaseId != idBase.Value)
+                return false;
+        }
+
+        return TenantDataAccessGuard.IsActiveSessionAuthorized(sessionService, appUserSession);
     }
 
     private static bool TryGetApiUser(HttpRequest request, AppUserSessionStore sessionStore, out AppUserSessionInfo? user)
@@ -3430,11 +3719,28 @@ public class Program
         IInterfacesCatalogosService catalogosSvc,
         IPuntoVentaService puntoVentaSvc,
         ICatalogoPublicoPdfService pdfSvc,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool visitanteIdentificado = false)
     {
         var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
         if (catalogo is null)
             return Results.NotFound();
+
+        // Misma regla que la página: anónimo respeta CATALOGO_MUESTRA_PRECIO_CONSUMIDOR (si no se
+        // puede leer, falla cerrado: sin precios); cliente identificado por credencial personal
+        // validada (sólo en la ruta con token) → con precios. La ruta legacy por IdInsert siempre es
+        // anónima.
+        bool muestraPrecios;
+        try
+        {
+            muestraPrecios = await catalogosSvc.MuestraPreciosConsumidorFinalAsync(resolvedBaseId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            muestraPrecios = false;
+        }
+
+        catalogo = CatalogosPublicPriceVisibility.ParaVisitante(catalogo, muestraPrecios, visitanteAutenticado: visitanteIdentificado);
 
         var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
         var settings = await puntoVentaSvc.GetSettingsAsync(ct);
@@ -3444,6 +3750,28 @@ public class Program
 
         return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
     }
+
+    /// <summary>
+    /// Guard compartido por las dos rutas legacy sin token (GET de verificación y POST de mensajes en
+    /// /api/conversaciones/whatsapp/webhook, sin "/{token}") -- se conservan para no romper lo que ya
+    /// está configurado en Meta para el cliente actual (instalación monobase/legacy), pero NUNCA deben
+    /// resolver tenant por sesión de UI en un host SaaS (multi-base): acá no hay circuito Blazor, así
+    /// que ISessionService.GetActiveSession()/GetAllSessions() en modo SaaS terminan intentando leer
+    /// NavigationManager.Uri y explotan con "RemoteNavigationManager has not been initialized" (ya
+    /// visto en producción tumbando el POST de este mismo webhook con 500, ver el comentario de
+    /// ConexionClienteService.GetActiveSession) -- se falla cerrado ANTES de tocar esa ruta de código,
+    /// sin excepción ruidosa.
+    ///
+    /// En legacy/monobase (el único consumidor real confirmado) sólo se autoriza cuando hay
+    /// EXACTAMENTE una base local configurada -- ni cero (no hay tenant al que atribuirle nada; no se
+    /// depende de que BaseId=0 falle más abajo por falta de secreto, se corta acá mismo) ni más de una
+    /// (un mismo AlfaCore atendiendo varias empresas: tampoco hay forma autoritativa de saber a cuál
+    /// pertenece un webhook server-to-server sin token -- confiar en "la que esté marcada activa en ese
+    /// instante" sería justamente la sesión de UI accidental que se quiere evitar). Con exactamente una,
+    /// no hay ambigüedad posible (es "el cliente actual") y sigue funcionando igual que siempre.
+    /// </summary>
+    internal static bool IsLegacyWhatsAppWebhookTenantAuthoritative(IAppModeService appMode, ISessionService sessionService)
+        => !appMode.IsSaaSMode && sessionService.GetAllSessions().Count == 1;
 
     /// <summary>
     /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como
@@ -3478,6 +3806,149 @@ public class Program
         });
 
         return baseInfo.IdBase;
+    }
+
+    private const string WebChatReadRateLimitPolicy = "webchat-lectura";
+    private const string WebChatWriteRateLimitPolicy = "webchat-escritura";
+    private const long WebChatMaxBodyBytes = 16 * 1024;
+    private static readonly JsonSerializerOptions WebChatJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Partición del rate limiting del chat web: clave de sitio + IP del visitante. No se usa el
+    /// visitorId porque lo elige el propio cliente y rotarlo saltearía el límite.
+    /// </summary>
+    private static string BuildWebChatRateLimitKey(HttpContext context)
+        => $"{context.Request.RouteValues["siteKey"]}|{context.Connection.RemoteIpAddress}";
+
+    /// <summary>
+    /// El widget corre en el dominio del cliente: se refleja el Origin para que el navegador deje
+    /// leer la respuesta. Quién puede usar el chat lo decide <see cref="TryOpenWebChatAsync"/>
+    /// (dominios permitidos), no este header.
+    /// </summary>
+    private static void ApplyWebChatCors(HttpRequest request, HttpResponse response)
+    {
+        if (!request.Path.StartsWithSegments("/api/webchat", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var origin = request.Headers.Origin.ToString();
+        if (string.IsNullOrWhiteSpace(origin))
+            return;
+
+        response.Headers.AccessControlAllowOrigin = origin;
+        response.Headers.Vary = "Origin";
+    }
+
+    /// <summary>
+    /// Resuelve la base por la clave del sitio y valida canal activo + dominio permitido. Ante
+    /// cualquier rechazo el caller responde 404, sin revelar si la clave existía.
+    /// </summary>
+    private static async Task<ConversacionWebChatConfigDto?> TryOpenWebChatAsync(
+        string siteKey,
+        HttpRequest request,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        var idBase = await siteKeys.TryResolveTenantAsync(siteKey, ct);
+        if (idBase is null)
+            return null;
+
+        var config = await configService.GetWebChatConfigAsync(idBase > 0 ? idBase : null, ct);
+        if (!config.Activo || !config.IsOriginAllowed(request.Headers.Origin.ToString()))
+            return null;
+
+        return config;
+    }
+
+    private static async Task<IResult> HandleWebChatConfigAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var config = await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct);
+        if (config is null)
+            return Results.NotFound();
+
+        return Results.Json(new WebChatWidgetConfigDto
+        {
+            Titulo = config.Titulo,
+            Color = config.ColorSeguro,
+            MensajeBienvenida = config.MensajeBienvenida
+        });
+    }
+
+    private static async Task<IResult> HandleWebChatGetMessagesAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var visitorId = request.Query["visitorId"].ToString();
+        if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId))
+            return Results.BadRequest();
+
+        _ = long.TryParse(request.Query["since"].ToString(), out var since);
+
+        if (await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct) is null)
+            return Results.NotFound();
+
+        return Results.Json(await svc.ObtenerMensajesWebChatAsync(visitorId, since, ct));
+    }
+
+    private static async Task<IResult> HandleWebChatPostMessageAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (bodySize is { IsReadOnly: false })
+            bodySize.MaxRequestBodySize = WebChatMaxBodyBytes;
+        if (request.ContentLength is > WebChatMaxBodyBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+        WebChatMensajeEntranteRequest? body;
+        try
+        {
+            body = await JsonSerializer.DeserializeAsync<WebChatMensajeEntranteRequest>(request.Body, WebChatJsonOptions, ct);
+        }
+        catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
+        {
+            return Results.BadRequest();
+        }
+
+        if (body is null || !body.TryNormalize(out _))
+            return Results.BadRequest(new { error = "No se pudo leer el mensaje." });
+
+        if (await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct) is null)
+            return Results.NotFound();
+
+        try
+        {
+            return Results.Json(await svc.RegistrarMensajeEntranteWebChatAsync(body, ct));
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.BadRequest(new { error = "No se pudo registrar el mensaje." });
+        }
     }
 
     private static void DisableWebhookCaching(HttpResponse response)

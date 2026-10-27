@@ -14,10 +14,14 @@ public sealed class ArcaPadronService(
     IAppEventService appEvents) : IArcaPadronService
 {
     private const string ModuleName = "ArcaPadron";
-    // El componente VB6 usa este servicio específico del padrón A5. No es el
-    // servicio genérico de constancia de inscripción.
-    private const string Servicio = "ws_sr_padron_a5";
+    // ARCA reemplazó el servicio histórico ws_sr_padron_a5 por la consulta de
+    // constancia de inscripción. El endpoint SOAP conserva personaServiceA5,
+    // pero el nombre del servicio usado para obtener el ticket cambió.
+    private const string Servicio = "ws_sr_constancia_inscripcion";
     private const string UrlHomologacion = "https://awshomo.arca.gov.ar/sr-padron/webservices/personaServiceA5";
+    // El endpoint documentado actualmente bajo aws.arca.gov.ar no resuelve
+    // desde este servidor. El alias productivo legado de AFIP sigue operativo
+    // y responde el mismo servicio migrado.
     private const string UrlProduccion = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -57,7 +61,7 @@ public sealed class ArcaPadronService(
                 || ex.Message.Contains("Certificado expirado", StringComparison.OrdinalIgnoreCase);
             var ambiente = emisor?.Ambiente == ArcaAmbiente.Produccion ? "producción" : "homologación";
             var mensaje = noAutorizado
-                ? $"ARCA no autorizó el certificado para consultar el padrón A5. Habilitá este computador/certificado para el servicio ws_sr_padron_a5 en {ambiente}."
+                ? $"ARCA no autorizó el certificado para consultar el padrón. Habilitá este computador/certificado para el servicio ws_sr_constancia_inscripcion en {ambiente}."
                 : certificadoVencido
                     ? "El certificado configurado para consultar el padrón ARCA está vencido. Reemplazalo por un certificado vigente de padrón."
                 : "No se pudo autenticar contra ARCA para consultar el padrón.";

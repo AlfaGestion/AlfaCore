@@ -1,0 +1,409 @@
+@page "/conversaciones/informes/satisfaccion"
+@page "/{idweb}/{idbase:int}/conversaciones/informes/satisfaccion"
+@inject AlfaCore.Services.IConversacionesSatisfaccionService SatisfaccionSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime Js
+@implements IDisposable
+@using AlfaCore.Models
+
+<PageTitle>Satisfacción de clientes | Alfa Gestión</PageTitle>
+
+<AlfaNotification Message="@FeedbackMessage" OnDismiss="() => _feedback = null" />
+
+<div class="sat-page">
+    <AlfaTabs Items="VistasInformes" ActiveKey="satisfaccion" ActiveKeyChanged="CambiarVista" AriaLabel="Informes" />
+
+    <ConversacionesConfigPagina Titulo="Satisfacción de clientes" Amplia="true"
+                                Descripcion="Cómo calificaron los clientes nuestra atención al cerrar sus conversaciones de WhatsApp.">
+        <ChildContent>
+            <ConversacionesConfigTarjeta>
+                <div class="sat-toolbar">
+                    <AlfaInput Id="sat-desde" Label="Desde" Type="date" Value="@_filtros.Desde.ToString("yyyy-MM-dd")" ValueChanged="OnDesdeChangedAsync" />
+                    <AlfaInput Id="sat-hasta" Label="Hasta" Type="date" Value="@_filtros.Hasta.ToString("yyyy-MM-dd")" ValueChanged="OnHastaChangedAsync" />
+                    <AlfaSelect Id="sat-atendio" Label="Atendió" Options="PersonaOptions" Value="@(_filtros.Atendio ?? string.Empty)" ValueChanged="OnAtendioChangedAsync" />
+                    @if (_opciones.Numeros.Count > 1)
+                    {
+                        <AlfaSelect Id="sat-numero" Label="Número de WhatsApp" Options="NumeroOptions"
+                                    Value="@(_filtros.IdNumeroWhatsApp?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)" ValueChanged="OnNumeroChangedAsync" />
+                    }
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-file-earmark-excel" Disabled="@(_informe is null || _informe.Enviadas == 0)" OnClick="ExportarExcelAsync">Excel</AlfaButton>
+                </div>
+            </ConversacionesConfigTarjeta>
+
+            @if (_cargando && _informe is null)
+            {
+                <ConversacionesConfigTarjeta>
+                    <p class="sat-muted">Cargando…</p>
+                </ConversacionesConfigTarjeta>
+            }
+            else if (_informe is not null && _informe.Enviadas == 0)
+            {
+                <ConversacionesConfigTarjeta>
+                    <AlfaEmptyState Title="Todavía no hay encuestas en este período"
+                                    Message="La encuesta se activa en Configuración → Automatización → Encuesta de satisfacción. Se envía al cerrar una conversación de WhatsApp." />
+                </ConversacionesConfigTarjeta>
+            }
+            else if (_informe is not null)
+            {
+                <div class="sat-kpis">
+                    <div class="sat-kpi sat-kpi--main">
+                        <span class="sat-kpi__label">Clientes satisfechos</span>
+                        <span class="sat-kpi__value">@Pct(_informe.PorcentajeSatisfechos)</span>
+                        <span class="sat-kpi__hint">calificaron «Muy bien»</span>
+                    </div>
+                    <div class="sat-kpi">
+                        <span class="sat-kpi__label">Respondidas</span>
+                        <span class="sat-kpi__value">@_informe.Respondidas <small>de @_informe.Enviadas</small></span>
+                        <span class="sat-kpi__hint">@Pct(_informe.PorcentajeRespuesta) respondió la encuesta</span>
+                    </div>
+                    <div class="sat-kpi">
+                        <span class="sat-kpi__label">Promedio</span>
+                        <span class="sat-kpi__value">@_informe.Promedio.ToString("0.0", EsAr) <small>/ 3</small></span>
+                        <span class="sat-kpi__hint">1 = Mal · 3 = Muy bien</span>
+                    </div>
+                    <div class="sat-kpi">
+                        <span class="sat-kpi__label">Calificaciones malas</span>
+                        <span class="sat-kpi__value @(_informe.Mal > 0 ? "sat-kpi__value--bad" : null)">@_informe.Mal</span>
+                        <span class="sat-kpi__hint">@_informe.ConComentario dejaron comentario</span>
+                    </div>
+                </div>
+
+                @if (_informe.Respondidas > 0)
+                {
+                    <ConversacionesConfigTarjeta Titulo="Distribución">
+                        <div class="sat-dist" role="img" aria-label="@($"Muy bien {_informe.MuyBien}, Regular {_informe.Regular}, Mal {_informe.Mal}")">
+                            @foreach (var (valor, cantidad, css) in Distribucion)
+                            {
+                                if (cantidad > 0)
+                                {
+                                    <div class="sat-dist__seg @css" style="flex-grow:@cantidad;" title="@($"{ConversacionEncuestaCalificaciones.Etiqueta(valor)}: {cantidad}")"></div>
+                                }
+                            }
+                        </div>
+                        <div class="sat-dist__legend">
+                            @foreach (var (valor, cantidad, css) in Distribucion)
+                            {
+                                <span><i class="sat-dot @css"></i>@ConversacionEncuestaCalificaciones.Emoji(valor) @ConversacionEncuestaCalificaciones.Etiqueta(valor): <strong>@cantidad</strong> (@Pct(_informe.Respondidas == 0 ? 0 : Math.Round(cantidad * 100.0 / _informe.Respondidas, 1)))</span>
+                            }
+                        </div>
+                    </ConversacionesConfigTarjeta>
+                }
+
+                <ConversacionesConfigTarjeta Titulo="Por persona" Descripcion="Quién atendió cada conversación encuestada. «Asistente IA» = la resolvió el asistente sin intervención del equipo.">
+                    <div class="sat-table-wrap">
+                        <table class="sat-table">
+                            <thead>
+                                <tr>
+                                    <th>Atendió</th>
+                                    <th class="num">Enviadas</th>
+                                    <th class="num">Respondidas</th>
+                                    <th class="num">😀 Muy bien</th>
+                                    <th class="num">😐 Regular</th>
+                                    <th class="num">😞 Mal</th>
+                                    <th class="num">% satisfechos</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var p in _informe.PorPersona)
+                                {
+                                    <tr>
+                                        <td>@p.Nombre</td>
+                                        <td class="num">@p.Enviadas</td>
+                                        <td class="num">@p.Respondidas</td>
+                                        <td class="num">@p.MuyBien</td>
+                                        <td class="num">@p.Regular</td>
+                                        <td class="num @(p.Mal > 0 ? "sat-bad" : null)">@p.Mal</td>
+                                        <td class="num">@(p.Respondidas == 0 ? "—" : Pct(p.PorcentajeSatisfechos))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ConversacionesConfigTarjeta>
+
+                @if (_informe.PorSemana.Count > 1)
+                {
+                    <ConversacionesConfigTarjeta Titulo="Evolución semanal" Descripcion="% de clientes satisfechos por semana (según la fecha en que respondieron).">
+                        <div class="sat-chart" role="img" aria-label="Porcentaje de clientes satisfechos por semana">
+                            @foreach (var s in _informe.PorSemana)
+                            {
+                                <div class="sat-chart__col" title="@($"Semana del {s.Desde:dd/MM}: {Pct(s.PorcentajeSatisfechos)} satisfechos ({s.Respondidas} respuestas)")">
+                                    <span class="sat-chart__value">@Pct(s.PorcentajeSatisfechos)</span>
+                                    <div class="sat-chart__bar" style="height:@Math.Max((int)Math.Round(s.PorcentajeSatisfechos), 2)%;"></div>
+                                    <span class="sat-chart__label">@s.Desde.ToString("dd/MM")</span>
+                                </div>
+                            }
+                        </div>
+                    </ConversacionesConfigTarjeta>
+                }
+
+                <ConversacionesConfigTarjeta Titulo="Respuestas" Descripcion="Primero las malas. Tocá una fila para abrir la conversación.">
+                    @if (_informe.Respuestas.Count == 0)
+                    {
+                        <AlfaEmptyState Title="Sin respuestas" Message="Se enviaron encuestas pero todavía ningún cliente respondió." />
+                    }
+                    else
+                    {
+                        <div class="sat-table-wrap">
+                            <table class="sat-table sat-table--rows">
+                                <thead>
+                                    <tr>
+                                        <th>Calificación</th>
+                                        <th>Cliente</th>
+                                        <th>Atendió</th>
+                                        <th>Fecha</th>
+                                        <th>Comentario</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in _informe.Respuestas)
+                                    {
+                                        <tr tabindex="0" @onclick="() => AbrirConversacion(r)" @onkeydown="args => AbrirConversacionConTecla(args, r)">
+                                            <td><AlfaTag Tone="@Tono(r.Calificacion)">@ConversacionEncuestaCalificaciones.Emoji(r.Calificacion) @ConversacionEncuestaCalificaciones.Etiqueta(r.Calificacion)</AlfaTag></td>
+                                            <td>@r.Cliente</td>
+                                            <td>@r.Atendio</td>
+                                            <td>@r.FechaRespuesta.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td class="sat-comment">@r.Comentario</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </ConversacionesConfigTarjeta>
+            }
+        </ChildContent>
+    </ConversacionesConfigPagina>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo EsAr = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    // Último encabezado publicado por esta página: al cerrarse sólo lo limpia si sigue siendo el suyo
+    // (mismo criterio que ConversacionesInformes).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    private readonly SatisfaccionFiltros _filtros = new();
+    private SatisfaccionOpcionesDto _opciones = new();
+    private SatisfaccionInformeDto? _informe;
+    private bool _cargando;
+    private string? _feedback;
+    private long _generation;
+
+    internal static readonly IReadOnlyList<AlfaTabItem> VistasInformes =
+    [
+        new("mensuales", "Informes mensuales"),
+        new("satisfaccion", "Satisfacción")
+    ];
+
+    protected override void OnInitialized()
+    {
+        UpdatePageHeader();
+        SessionSvc.SessionChanged += OnTenantContextChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync(conOpciones: true);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        SessionSvc.SessionChanged -= OnTenantContextChanged;
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void OnTenantContextChanged() => _ = InvokeAsync(() => LoadAsync(conOpciones: true));
+
+    private int? CurrentExpectedBaseIdOrNull()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
+
+    private async Task LoadAsync(bool conOpciones = false)
+    {
+        var generation = ++_generation;
+        _cargando = true;
+        _feedback = null;
+        try
+        {
+            if (conOpciones)
+                _opciones = await SatisfaccionSvc.GetOpcionesAsync(CurrentExpectedBaseIdOrNull());
+            var informe = await SatisfaccionSvc.GetInformeAsync(_filtros, CurrentExpectedBaseIdOrNull());
+            if (generation == _generation)
+                _informe = informe;
+        }
+        catch (Exception ex)
+        {
+            if (generation == _generation)
+                _feedback = ex is AlfaCore.Services.AppUserFacingException uf ? uf.UserMessage : $"No se pudo armar el informe: {ex.Message}";
+        }
+        finally
+        {
+            if (generation == _generation)
+                _cargando = false;
+        }
+    }
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems()
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+        =>
+        [
+            BuildTopNavItem("conversaciones", "Conversaciones", "/conversaciones"),
+            BuildTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"),
+            BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"),
+            BuildTopNavItem("estadisticas", "Estadísticas", "/conversaciones/estadisticas"),
+            BuildTopNavItem("informes", "Informes", "/conversaciones/informes", active: true)
+        ];
+
+    private PageHeaderTopNavItem BuildTopNavItem(string key, string label, string route, bool active = false)
+    {
+        var url = RouteContext.BuildRoute(route);
+        return new PageHeaderTopNavItem
+        {
+            Key = key,
+            Label = label,
+            Url = url,
+            Active = active,
+            OnClick = () =>
+            {
+                Nav.NavigateTo(url);
+                return Task.CompletedTask;
+            }
+        };
+    }
+
+    private void CambiarVista(string? key)
+    {
+        if (key == "mensuales")
+            Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones/informes"));
+    }
+
+    private async Task OnDesdeChangedAsync(string? value)
+    {
+        if (!DateTime.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+            return;
+        _filtros.Desde = d;
+        if (_filtros.Hasta < d)
+            _filtros.Hasta = d;
+        await LoadAsync();
+    }
+
+    private async Task OnHastaChangedAsync(string? value)
+    {
+        if (!DateTime.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+            return;
+        _filtros.Hasta = d;
+        if (_filtros.Desde > d)
+            _filtros.Desde = d;
+        await LoadAsync();
+    }
+
+    private async Task OnAtendioChangedAsync(string? value)
+    {
+        _filtros.Atendio = string.IsNullOrWhiteSpace(value) ? null : value;
+        await LoadAsync();
+    }
+
+    private async Task OnNumeroChangedAsync(string? value)
+    {
+        _filtros.IdNumeroWhatsApp = int.TryParse(value, out var n) ? n : null;
+        await LoadAsync();
+    }
+
+    private IReadOnlyList<AlfaSelectOption> PersonaOptions
+        => new List<AlfaSelectOption>
+            {
+                new(string.Empty, "Todos"),
+                new(SatisfaccionFiltros.AtendioAsistente, "Asistente IA")
+            }
+            .Concat(_opciones.Personas.Select(p => new AlfaSelectOption(p.Valor, p.Texto)))
+            .ToList();
+
+    private IReadOnlyList<AlfaSelectOption> NumeroOptions
+        => new List<AlfaSelectOption> { new(string.Empty, "Todos") }
+            .Concat(_opciones.Numeros.Select(n => new AlfaSelectOption(n.Valor, n.Texto)))
+            .ToList();
+
+    private IEnumerable<(int Valor, int Cantidad, string Css)> Distribucion
+        =>
+        [
+            (ConversacionEncuestaCalificaciones.MuyBien, _informe?.MuyBien ?? 0, "sat-good"),
+            (ConversacionEncuestaCalificaciones.Regular, _informe?.Regular ?? 0, "sat-mid"),
+            (ConversacionEncuestaCalificaciones.Mal, _informe?.Mal ?? 0, "sat-bad-bg")
+        ];
+
+    // El Excel se arma acá, dentro de la sesión de la pantalla (que sabe en qué base está), y se
+    // entrega al navegador como archivo: un enlace de descarga aparte no lleva esa sesión.
+    private async Task ExportarExcelAsync()
+    {
+        if (_informe is null)
+            return;
+        try
+        {
+            var bytes = SatisfaccionSvc.ExportarExcel(_informe, _filtros);
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                AlfaCore.Services.ConversacionesSatisfaccionService.NombreArchivo(_filtros));
+        }
+        catch (Exception ex)
+        {
+            _feedback = $"No se pudo generar el Excel: {ex.Message}";
+        }
+    }
+
+    private void AbrirConversacion(SatisfaccionRespuestaDto r)
+        => Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones?id={r.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+
+    private void AbrirConversacionConTecla(KeyboardEventArgs args, SatisfaccionRespuestaDto r)
+    {
+        if (args.Key is "Enter" or " ")
+            AbrirConversacion(r);
+    }
+
+    private static AlfaTagTone Tono(int calificacion) => calificacion switch
+    {
+        ConversacionEncuestaCalificaciones.MuyBien => AlfaTagTone.Success,
+        ConversacionEncuestaCalificaciones.Regular => AlfaTagTone.Warning,
+        _ => AlfaTagTone.Danger
+    };
+
+    private static string Pct(double valor) => valor.ToString("0.#", EsAr) + "%";
+
+    private AppUiMessage? _feedbackMessage;
+
+    private AppUiMessage? FeedbackMessage
+    {
+        get
+        {
+            if (_feedback is null)
+                return _feedbackMessage = null;
+            if (_feedbackMessage is null || _feedbackMessage.Message != _feedback)
+            {
+                _feedbackMessage = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Error,
+                    Title = "No se pudo completar",
+                    Message = _feedback
+                };
+            }
+            return _feedbackMessage;
+        }
+    }
+}

@@ -1,0 +1,21 @@
+.conciliacion-cta { min-width: 0; padding-top: var(--alfa-space-16); }
+.conciliacion-cta__filtros { display: flex; flex-wrap: wrap; gap: var(--alfa-space-12); align-items: end; }
+.conciliacion-cta__filtros ::deep .alfa-input, .conciliacion-cta__filtros ::deep .alfa-select { flex: 1; min-width: 150px; }
+.conciliacion-cta h3, .conciliacion-cta h4 { font-size: var(--alfa-font-body); margin-block: var(--alfa-space-16) var(--alfa-space-8); }
+.conciliacion-cta p { overflow-wrap: anywhere; }
+.conciliacion-cta__coincidencias, .conciliacion-cta__saldos { display: flex; flex-wrap: wrap; gap: var(--alfa-space-12); margin-block: var(--alfa-space-12); }
+.conciliacion-cta__coincidencias ::deep button { height: auto; min-height: 36px; padding: var(--alfa-space-8) var(--alfa-space-12); white-space: normal; text-align: left; }
+.conciliacion-cta__detalle { border: 1px solid var(--alfa-border-strong); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-12); margin-block: var(--alfa-space-16); }
+.conciliacion-cta__detalle summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.conciliacion-cta__detalle summary:focus-visible { outline: 2px solid var(--alfa-accent); outline-offset: var(--alfa-space-4); }
+.conciliacion-cta__ayuda { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); margin-block: var(--alfa-space-8); }
+.conciliacion-cta__saldos { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-12); align-items: center; }
+.conciliacion-cta__saldos strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.conciliacion-cta__scroll { max-width: 100%; overflow: auto; }
+.conciliacion-cta__scroll--movimientos { max-height: 38vh; }
+.conciliacion-cta table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.conciliacion-cta th, .conciliacion-cta td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--alfa-border-default); vertical-align: top; }
+.conciliacion-cta th { position: sticky; top: 0; background: var(--alfa-bg-surface); white-space: nowrap; }
+.conciliacion-cta .numero { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.conciliacion-cta .posible-coincidencia { background: var(--alfa-state-selected); }
+.conciliacion-cta td strong { display: block; }

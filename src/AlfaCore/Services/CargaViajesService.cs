@@ -727,6 +727,7 @@ public sealed partial class CargaViajesService(
             var tarifaFleteroFiltro = ParseNullableBitFilter(filters.TarifaFletero);
             var activoFiltro = ParseNullableBitFilter(filters.Activo);
             var textoLike = SearchTextHelper.LikeContains(filters.Texto);
+            var nombreListaLike = SearchTextHelper.LikeContains(filters.NombreLista);
             var idListaExpr = SqlStringColumnOrEmpty("t", idListaColumn);
             var nombreExpr = hasNombre ? "ISNULL(t.Nombre, '')" : "CAST('' AS nvarchar(100))";
             var importeExpr = hasImporte ? "ISNULL(t.Importe, 0)" : "CAST(0 AS money)";
@@ -880,6 +881,10 @@ public sealed partial class CargaViajesService(
                             OR {tipoVehiculoNombreExpr} COLLATE Latin1_General_CI_AI LIKE @TextoLike
                         )
                       AND (
+                            @NombreListaLike = ''
+                            OR {nombreExpr} COLLATE Latin1_General_CI_AI LIKE @NombreListaLike
+                        )
+                      AND (
                             @Cliente = ''
                             OR {clienteCodeExpr} LIKE @ClienteLike
                             OR {clienteNombreExpr} COLLATE Latin1_General_CI_AI LIKE @ClienteLike
@@ -910,6 +915,10 @@ public sealed partial class CargaViajesService(
                 SELECT COUNT(*)
                 {searchFromClause}
                 WHERE (
+                        @NombreListaLike = ''
+                        OR {nombreExpr} COLLATE Latin1_General_CI_AI LIKE @NombreListaLike
+                    )
+                  AND (
                         @TextoLike = ''
                         OR {idListaExpr} LIKE @TextoLike
                         OR {nombreExpr} COLLATE Latin1_General_CI_AI LIKE @TextoLike
@@ -949,6 +958,7 @@ public sealed partial class CargaViajesService(
             var rows = new List<CargaViajeTarifaGridItemDto>();
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@TextoLike", textoLike);
+            cmd.Parameters.AddWithValue("@NombreListaLike", nombreListaLike);
             cmd.Parameters.AddWithValue("@Cliente", (filters.Cliente ?? string.Empty).Trim());
             cmd.Parameters.AddWithValue("@ClienteLike", SearchTextHelper.LikeContains(filters.Cliente));
             cmd.Parameters.AddWithValue("@Chofer", (filters.Chofer ?? string.Empty).Trim());

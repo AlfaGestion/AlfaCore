@@ -78,8 +78,8 @@ public sealed class WhatsAppEchoAuthorAttributionTests
     /// <summary>
     /// Los otros dos call-sites de "new ConversacionMensajeDto" en ConversacionesService.cs quedan
     /// documentados y SIN tocar, con evidencia de por qué no aplican acá:
-    /// - GetPendingMediaHydrationAsync: sólo ENTRANTE (WHERE Direction='ENTRANTE'), un echo es siempre
-    ///   SALIENTE -- estructuralmente no puede alcanzar un mensaje de echo.
+    /// - GetPendingMediaHydrationAsync: no renderiza ni calcula autor; desde recovery histórico puede
+    ///   alcanzar ENTRANTE y SALIENTE, pero sólo para completar adjuntos faltantes.
     /// - El helper de contexto para IA (histórico de conversación para el asistente): no llena
     ///   UsuarioAutor/TecnicoAutorNombre en absoluto (sólo Direction/Texto/FechaHora) y no se renderiza
     ///   nunca como "quién lo mandó" en ninguna UI -- no hay atribución de autor que corregir ahí.
@@ -92,7 +92,9 @@ public sealed class WhatsAppEchoAuthorAttributionTests
         var hydrationStart = source.IndexOf("private async Task<List<PendingMediaHydration>> GetPendingMediaHydrationAsync(", StringComparison.Ordinal);
         Assert.True(hydrationStart >= 0, "No se encontró GetPendingMediaHydrationAsync.");
         var hydrationBody = ExtractBody(source, hydrationStart);
-        Assert.Contains("UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'", hydrationBody, StringComparison.Ordinal);
+        Assert.Contains("UPPER(ISNULL(m.Direction, '')) IN (N'ENTRANTE', N'SALIENTE')", hydrationBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("UsuarioAutor", hydrationBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("TecnicoAutorNombre", hydrationBody, StringComparison.Ordinal);
     }
 
     // GetMessageAuthor delega en ResolveNonIncomingMessageAuthor (internal static, extraído a propósito

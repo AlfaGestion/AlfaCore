@@ -5,7 +5,7 @@ using AlfaCore.Models;
 
 namespace AlfaCore.Services;
 
-public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFactory) : IConversacionAnalisisService
+public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFactory, IIaUsoRecorder? iaUso = null) : IConversacionAnalisisService
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
@@ -34,7 +34,7 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
               contexto). En español rioplatense.
             No inventes datos que no estén en la conversación; si no hay pedido claro, dejá campos vacíos.
             """;
-        var texto = await CallOpenAiAsync(system, BuildTranscript(mensajes), ct);
+        var texto = await CallOpenAiAsync(system, BuildTranscript(mensajes), ct, IaUsoFunciones.Oportunidad);
         return ParseExtraccion(texto);
     }
 
@@ -49,11 +49,11 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
             Mantené la intención y los datos; no agregues información, saludos ni explicaciones nuevas.
             Devolvé SOLO el texto final, sin comillas ni comentarios.
             """;
-        var resultado = await CallOpenAiAsync(system, borrador, ct);
+        var resultado = await CallOpenAiAsync(system, borrador, ct, IaUsoFunciones.Reescritura);
         return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
     }
 
-    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct)
+    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct, string funcion = IaUsoFunciones.Analisis)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey) || transcript.Length == 0)
@@ -85,6 +85,7 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
 
             var body = await response.Content.ReadAsStringAsync(ct);
             using var document = JsonDocument.Parse(body);
+            iaUso?.Registrar(funcion, document.RootElement, model);
             return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         }
         catch (OperationCanceledException)

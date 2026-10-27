@@ -18,10 +18,10 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
         var maestroConIva = ParseBool(await ReadConfigAsync(cn, "MaestroArticuloConIVA", ct, tx));
         var fijaListasConIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASCONIVA", ct, tx));
         var fijaListasSinIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASSINIVA", ct, tx));
-        var claseDefaultRaw = await ReadConfigAsync(cn, "CLASEPRECIOVENTA", ct, tx);
-        if (string.IsNullOrWhiteSpace(claseDefaultRaw))
-            claseDefaultRaw = await ReadConfigAsync(cn, "ClaseDePrecioDefault", ct, tx);
-        var claseDefault = int.TryParse(claseDefaultRaw, out var cd) && cd is >= 1 and <= 8 ? cd : 1;
+        var claseDefaultRaw = await ReadConfigAsync(cn, "CLASEDEPRECIODEFAULT", ct, tx);
+        if (!int.TryParse(claseDefaultRaw, out var cdDefault) || cdDefault is < 1 or > 8)
+            claseDefaultRaw = await ReadConfigAsync(cn, "CLASEPRECIOVENTA", ct, tx);
+        var claseDefault = int.TryParse(claseDefaultRaw, out var cd) && cd is >= 1 and <= 8 ? cd : 4;
 
         var codigo = (clienteCodigo ?? string.Empty).Trim();
         var esConsumidorFinal = false;
@@ -74,6 +74,10 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
         var parameters = new DynamicParameters();
         parameters.Add("IdLista", pricing.IdLista);
         parameters.Add("Take", limit);
+        // Código exacto primero (ej. "1"): ordenando sólo por descripción quedaba fuera del TOP (2026-10-22).
+        var exacto = (texto ?? string.Empty).Trim().ToUpperInvariant();
+        parameters.Add("Exacto", exacto);
+        parameters.Add("Inicio", exacto.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%");
         for (var i = 0; i < palabras.Length; i++)
         {
             parameters.Add($"Like{i}", $"%{palabras[i]}%");
@@ -103,7 +107,9 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
             WHERE ISNULL(a.Suspendido, 0) <> 1
               AND ISNULL(a.SuspendidoV, 0) <> 1
               {wordFilters}
-            ORDER BY a.DESCRIPCION, a.IDARTICULO;
+            ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(a.IDARTICULO))) = @Exacto OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) = @Exacto THEN 0
+                          WHEN UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Inicio THEN 1 ELSE 2 END,
+                a.DESCRIPCION, a.IDARTICULO;
             """;
 
         var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, parameters, cancellationToken: ct));

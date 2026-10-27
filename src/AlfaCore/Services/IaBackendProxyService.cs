@@ -12,7 +12,8 @@ namespace AlfaCore.Services;
 public sealed class IaBackendProxyService(
     IConfiguration configuration,
     IHttpClientFactory httpClientFactory,
-    ILogger<IaBackendProxyService> logger) : IIaBackendProxyService
+    ILogger<IaBackendProxyService> logger,
+    IaUsoCola? iaUsoCola = null) : IIaBackendProxyService
 {
     private const int MaxSkewSeconds = 300;
     private const int NonceTtlSeconds = 600;
@@ -137,7 +138,7 @@ public sealed class IaBackendProxyService(
             string outputText;
             try
             {
-                outputText = await CallOpenAiAsync(model, maxOutputTokens, inputElement, textElement, ct);
+                outputText = await CallOpenAiAsync(model, maxOutputTokens, inputElement, textElement, ct, idClientePayload?.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
             catch (Exception ex)
             {
@@ -262,7 +263,7 @@ public sealed class IaBackendProxyService(
         }
     }
 
-    private async Task<string> CallOpenAiAsync(string model, int maxOutputTokens, JsonElement input, JsonElement? text, CancellationToken ct)
+    private async Task<string> CallOpenAiAsync(string model, int maxOutputTokens, JsonElement input, JsonElement? text, CancellationToken ct, string? idCliente = null)
     {
         var apiKey = (Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty).Trim();
         if (apiKey.Length == 0)
@@ -288,7 +289,35 @@ public sealed class IaBackendProxyService(
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"OpenAI HTTP {(int)response.StatusCode}: {body}");
 
+        RegistrarUso(body, model, idCliente);
         return ExtractOutputText(body);
+    }
+
+    /// <summary>Consumo del proxy: no hay base activa, se identifica por el cliente de la licencia.</summary>
+    private void RegistrarUso(string body, string model, string? idCliente)
+    {
+        if (iaUsoCola is null)
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var tokens = AlfaCore.Models.IaUsoTokens.Desde(doc.RootElement);
+            if (tokens.Vacio)
+                return;
+
+            var cliente = (idCliente ?? string.Empty).Trim();
+            iaUsoCola.Encolar(new AlfaCore.Models.IaUsoRegistro(
+                DateTime.UtcNow, null, string.Empty, AlfaCore.Models.IaUsoFunciones.Proxy,
+                AlfaCore.Models.IaUsoTokens.Modelo(doc.RootElement, model),
+                tokens.Entrada, tokens.EntradaCacheada, tokens.Salida, 0, 0,
+                cliente.Length == 0 ? string.Empty : $"cliente:{cliente}",
+                cliente.Length == 0 ? null : cliente));
+        }
+        catch
+        {
+            // La medición nunca interrumpe el proxy.
+        }
     }
 
     private static string? ValidateAttachments(JsonElement input)

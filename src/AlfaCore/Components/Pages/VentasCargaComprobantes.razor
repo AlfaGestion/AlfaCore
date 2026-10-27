@@ -1,0 +1,593 @@
+@page "/ventas/carga-comprobantes"
+@page "/{idweb}/{idbase:int}/ventas/carga-comprobantes"
+@using AlfaCore.Services
+@inject ICargaComprobantesService Service
+@inject ISessionService Sessions
+@inject IAppUserSessionService Users
+@inject IPageHeaderService PageHeader
+@inject IAppUiOperationService UiOps
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Carga de Comprobantes | Alfa Gestión</PageTitle>
+
+<div class="gd-page gd cc-page">
+    @if (_busy)
+    {
+        <AlfaNotification Message="@AppUiMessage.Info("Operación en curso", "Procesando la consulta. Esperá a que aparezca el resultado.")" />
+    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    @if (_grabacion is { } grabacion)
+    {
+        <AlfaNotification Message="@(grabacion.Estado == "GRABADA"
+            ? AppUiMessage.Success("Comprobante de prueba grabado", $"{grabacion.Tc} {grabacion.Comprobante} · Asiento {grabacion.NumeroAsiento}" +
+                (grabacion.Cae is null ? "." : $" · CAE {grabacion.Cae} · Vencimiento {grabacion.Vencimiento:dd/MM/yyyy}.") + " Se registraron los efectos comerciales en esta base de homologación.")
+            : AppUiMessage.Warning("Operación pendiente", $"{grabacion.Estado}. {grabacion.Mensaje} Usá Recuperar operación antes de emitir otra factura."))" />
+    }
+    @if (_mostrarHistorial)
+    {
+        <section class="cc-data-view" aria-label="Comprobantes y operaciones de prueba">
+            <div class="cc-table-scroll"><table class="cc-table">
+                <thead><tr><th>Comprobante / operación</th><th>Estado</th><th>Asiento</th><th>CAE</th><th>Acciones</th></tr></thead>
+                <tbody>@foreach (var op in _recientes)
+                {
+                    <tr @key="op.Operacion"><td>@op.Tc @(op.Comprobante ?? op.Operacion.ToString())<small>@(op.Borrador.HasValue ? "Carga directa" : $"Origen interno {op.OrigenId}")</small></td>
+                        <td>@op.Estado</td><td>@op.NumeroAsiento</td><td>@op.Cae</td><td>
+                            @if (op.Estado == "GRABADA") { <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => DescargarFacturaAsync(op.Operacion)">PDF</AlfaButton> }
+                            else if (op.Estado != "RECHAZADA") { <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => RecuperarOperacionAsync(op.Operacion)">Recuperar</AlfaButton> }
+                        </td></tr>
+                }</tbody>
+            </table></div>
+            <footer class="cc-data-footer">Últimas @_recientes.Count operaciones · Homologación · La recuperación conserva el número y la operación originales.</footer>
+        </section>
+    }
+    @if (_electronica is { } electronica)
+    {
+        <AlfaNotification Message="@AppUiMessage.Info("Electrónica verificada", $"Homologación · Punto de venta {electronica.PuntoVenta}. Últimas facturas autorizadas: A {electronica.UltimaFacturaA}, B {electronica.UltimaFacturaB}, C {electronica.UltimaFacturaC}. Esta consulta no emitió una factura ni reservó números.")" />
+    }
+    @if (_pruebaElectronica is { } prueba)
+    {
+        <AlfaNotification Message="@AppUiMessage.Info("Resultado de homologación", $"{prueba.Estado} · Punto {prueba.PuntoVenta} · Tipo ARCA {prueba.TipoComprobante} · Número {prueba.Numero} · Total {Moneda(prueba.Importe)} · CAE {prueba.Cae ?? "pendiente"} · Vencimiento {prueba.Vencimiento:dd/MM/yyyy}. El resultado se guardó como prueba; el pedido/remito conserva sus pendientes.")" />
+    }
+    @if (_contexto is null)
+    {
+        <AlfaEmptyState Kind="@(_feedback is null ? AlfaEmptyStateKind.NoData : AlfaEmptyStateKind.Error)"
+            Title="@(_busy ? "Cargando comprobantes" : "No se pudo cargar el módulo")"
+            Message="Seleccioná una base e ingresá con un usuario habilitado." ActionLabel="Reintentar" OnAction="_ => InicializarAsync()" />
+    }
+    else if (_origen is null)
+    {
+        @* Menos texto (2026-10-22): el título ya está en la barra y la nota de fechas en el panel de filtros. *@
+        <section class="cc-intro cc-intro--compacto">
+            <span class="cc-status">Facturación de prueba · Homologación</span>
+        </section>
+        @if (_result?.Items.Count > 0)
+        {
+            <section class="cc-data-view" aria-label="Documentos pendientes" aria-busy="@_busy">
+                <div class="cc-table-scroll">
+                    <table class="cc-table">
+                        <thead><tr><th>Seleccionar</th><th>Fecha</th><th>Comprobante</th><th>Cliente</th><th>Unidad / depósito</th><th class="cc-number">Importe origen</th><th>Acción</th></tr></thead>
+                        <tbody>
+                        @foreach (var doc in _result.Items)
+                        {
+                            <tr @key="doc.Id"><td><AlfaCheckbox Value="@_seleccionados.Contains(doc.Id)" ValueChanged="v => Seleccionar(doc.Id, v == true)" Disabled="@_busy">@doc.Tc @doc.Comprobante</AlfaCheckbox></td><td>@doc.Fecha?.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.Comprobante</strong></td>
+                                <td>@doc.Cliente<small>@doc.Cuenta</small></td><td>@doc.UnidadNegocio / @doc.Deposito</td><td class="cc-number">@Moneda(doc.Importe)</td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => CargarAsync(doc.Id)">Cargar</AlfaButton></td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="cc-data-footer">@_result.Total.ToString("N0") documentos · @_result.Items.Count en esta página</footer>
+            </section>
+        }
+        else if (!_busy)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin documentos pendientes" Message="Probá otro tipo de origen o una búsqueda diferente." />
+        }
+    }
+    else
+    {
+        <section class="cc-document-header">
+            <div><span class="cc-eyebrow">FACTURA DESDE @_origen.Tc @_origen.Comprobante</span><h2>@_origen.Cliente</h2>
+                <p>Cuenta @_origen.Cuenta · Unidad @_origen.UnidadNegocio · Depósito @_origen.Deposito · Lista @_origen.Lista</p></div>
+            <AlfaSelect Label="Talonario de factura" Value="@_talonario" ValueChanged="CambiarTalonario" Options="@TalonarioOptions" Placeholder="Elegir talonario" Disabled="@(_busy || _grabacion is not null)" />
+        </section>
+        @if (_documentos.Count > 1)
+        {
+            <p class="cc-filter-note">@_documentos.Count orígenes: @string.Join(" · ", _documentos.Select(x => $"{x.Tc} {x.Comprobante}"))</p>
+        }
+        @if (_origen.TieneReservas || _origen.TienePreparacion || _origen.TieneOtrosDetalles)
+        {
+            <AlfaNotification Message="@AppUiMessage.Warning("Origen con circuito adicional", "Este documento puede consultarse; su simulación completa requiere incorporar reservas, preparación, servicios u otros conceptos.")" />
+        }
+        <section class="cc-editor">
+            <div class="cc-data-view">
+                <div class="cc-table-scroll">
+                    <table class="cc-table">
+                        <thead><tr><th>Artículo</th><th>Unidad</th><th class="cc-number">Original</th><th class="cc-number">Pendiente</th><th class="cc-quantity">A facturar</th><th class="cc-number">Precio neto</th><th class="cc-number">Dto. %</th><th>Edición</th></tr></thead>
+                        <tbody>
+                        @foreach (var linea in _origen.Lineas)
+                        {
+                            <tr @key="linea.Id"><td><strong>@linea.Descripcion</strong><small>@linea.Articulo · Renglón @linea.Secuencia
+                                    @if (_documentos.Count > 1) { <span> · @OrigenLinea(linea.Id)</span> }
+                                    @if (linea.RenglonesArticulo > 1) { <span> · Requiere distribuir el pendiente entre renglones</span> }</small></td>
+                                <td>@linea.Unidad</td><td class="cc-number">@Cantidad(linea.CantidadOriginal)</td><td class="cc-number">@Cantidad(linea.Pendiente)</td>
+                                <td><AlfaInput Type="number" Step="any" Id="@($"cc-cantidad-{linea.Id}")" Label="@($"Cantidad de {linea.Articulo}")"
+                                    Value="@_cantidades[linea.Id]" ValueChanged="v => CambiarCantidad(linea.Id, v)"
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || linea.Pendiente <= 0 || linea.RenglonesArticulo > 1)" /></td>
+                                <td><AlfaInput Type="number" Step="0.0001" Label="@($"Precio neto {linea.Id}")"
+                                    Value="@PrecioEditor(linea)" ValueChanged="v => EditarLinea(linea.Id, v, false)"
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || !_contexto.PuedeEditarPrecio)" /></td>
+                                <td><AlfaInput Type="number" Step="0.0001" Label="@($"Descuento {linea.Id}")"
+                                    Value="@DescuentoEditor(linea)" ValueChanged="v => EditarLinea(linea.Id, v, true)"
+                                    Disabled="@(_busy || _grabacion is not null || _intentoComercial || !_contexto.PuedeEditarDescuento)" /></td>
+                                <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_busy || _grabacion is not null || _intentoComercial)"
+                                    OnClick="_ => RestablecerLinea(linea.Id)">Restablecer</AlfaButton></td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="cc-data-footer">@_origen.Lineas.Count renglones · Cantidades consultadas al cargar el origen</footer>
+            </div>
+            <aside class="cc-summary">
+                <span class="cc-eyebrow">VISTA PREVIA</span>
+                @if (_simulacion is not null)
+                {
+                    <span class="cc-total">@Moneda(_simulacion.ImporteReferencia)</span><p>Importe de referencia · @_simulacion.LineasSeleccionadas renglones</p>
+                    @if (_simulacion.Liquidacion is { } liquidacion)
+                    {
+                        <div class="cc-effect"><strong>Liquidación con precios de origen</strong>
+                            <p>Neto gravado: @Moneda(liquidacion.NetoGravado)</p>
+                            <p>Neto no gravado: @Moneda(liquidacion.NetoNoGravado)</p>
+                            @foreach (var iva in liquidacion.Alicuotas)
+                            { <p>IVA @iva.Alicuota.ToString("0.####", Culture)%: @Moneda(iva.Iva)</p> }
+                            <p>Impuestos internos: @Moneda(liquidacion.ImpuestosInternos)</p>
+                            <p><strong>Total calculado: @Moneda(liquidacion.Total)</strong></p>
+                            <p class="cc-note">Usá Validar grabación para comprobar el circuito completo antes de pedir CAE y grabar en la base de pruebas.</p>
+                            @if (_planGrabacion is { } plan)
+                            {
+                                <p><strong>Grabación validada · Punto @plan.PuntoVenta · Letra @plan.Letra</strong></p>
+                                <p>Fecha: @plan.Fecha.ToString("dd/MM/yyyy") · Vencimiento: @plan.Vencimiento.ToString("dd/MM/yyyy")</p>
+                                <p>Cuenta cliente @plan.CuentaCliente · Ventas @plan.CuentaVentas · IVA @plan.CuentaIva</p>
+                                <p>@(plan.DescargaStock ? "Generará salida de stock." : "El remito ya descargó stock.")</p>
+                            }
+                        </div>
+                    }
+                    @foreach (var pendiente in _simulacion.PendientesCalculo)
+                    { <p class="cc-note">@pendiente</p> }
+                    <div class="cc-effect"><strong>Stock</strong><p>@_simulacion.EfectoStock</p></div>
+                    @foreach (var aviso in _simulacion.Avisos) { <p class="cc-note">@aviso</p> }
+                }
+                else
+                {
+                    <h3>Revisá tu selección</h3><p>Indicá las cantidades y elegí el talonario. Luego usá «Simular factura».</p>
+                    <p class="cc-note">Simulá, verificá electrónica y validá la grabación para emitir una factura comercial de prueba en homologación.</p>
+                }
+            </aside>
+        </section>
+    }
+</div>
+@if (_confirmarGrabacion && _planGrabacion is { } planConfirmacion)
+{
+    <AlfaConfirmDialog Open="true" Title="Grabar factura de prueba"
+        Message="@($"Factura {planConfirmacion.Letra} · Punto {planConfirmacion.PuntoVenta} · Total {Moneda(planConfirmacion.Liquidacion.Total)} · Homologación.")"
+        SecondaryMessage="Se solicitará CAE y se grabarán factura, artículos, cuenta corriente, asiento, aplicación al origen y stock cuando corresponda. Estos cambios quedan en la base de pruebas."
+        ConfirmLabel="Emitir y grabar" OnConfirm="GrabarFacturaAsync" OnCancel="() => _confirmarGrabacion = false" />
+}
+@if (_confirmarPrueba)
+{
+    <AlfaConfirmDialog Open="true" Title="Emitir prueba en homologación"
+        Message="Se solicitará un CAE de prueba a ARCA con los datos y cantidades seleccionados."
+        SecondaryMessage="Se registra el resultado de homologación. La grabación comercial de stock, contabilidad y aplicaciones continúa en desarrollo; el origen conserva sus pendientes."
+        ConfirmLabel="Emitir prueba ARCA" OnConfirm="EmitirPruebaAsync" OnCancel="() => _confirmarPrueba = false" />
+}
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private CargaComprobantesContexto? _contexto;
+    private CargaComprobantesOrigen? _origen;
+    private PagedResult<CargaComprobantesOrigen>? _result;
+    private CargaComprobantesSimulacion? _simulacion;
+    private CargaComprobantesElectronicaEstado? _electronica;
+    private CargaComprobantesElectronicaPrueba? _pruebaElectronica;
+    private Guid _operacionPrueba = Guid.NewGuid();
+    private bool _confirmarPrueba;
+    private bool _confirmarGrabacion;
+    private CargaComprobantesPlanGrabacion? _planGrabacion;
+    private CargaComprobantesGrabacionResultado? _grabacion;
+    private Guid _operacionComercial = Guid.NewGuid();
+    private bool _intentoComercial;
+    private bool _mostrarHistorial;
+    private IReadOnlyList<CargaComprobantesGrabacionResultado> _recientes = [];
+    private readonly CargaComprobantesFiltro _filtro = new();
+    private CargaComprobantesFiltro _filtroAplicado = new();
+    private readonly Dictionary<int, string?> _cantidades = [];
+    private readonly HashSet<int> _seleccionados = [];
+    private List<CargaComprobantesOrigen> _documentos = [];
+    private readonly Dictionary<int, string?> _precios = [];
+    private readonly Dictionary<int, string?> _descuentos = [];
+    private string OrigenLinea(int id) => _documentos.Where(x => x.Lineas.Any(l => l.Id == id)).Select(x => $"{x.Tc} {x.Comprobante}").FirstOrDefault() ?? "";
+    private string? PrecioEditor(CargaComprobantesLineaOrigen linea) => _precios.GetValueOrDefault(linea.Id, (linea.PrecioReferenciaNeto ?? linea.PrecioSinIva).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private string? DescuentoEditor(CargaComprobantesLineaOrigen linea) => _descuentos.GetValueOrDefault(linea.Id,
+        (_documentos.SelectMany(x=>x.Lineas).FirstOrDefault(x=>x.Id==linea.Id)?.Descuento ?? linea.Descuento).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private void RestablecerLinea(int id)
+    {
+        if(_busy || _grabacion is not null || _intentoComercial)return;
+        _precios.Remove(id);_descuentos.Remove(id);_simulacion=null;_planGrabacion=null;UpdateHeader();
+    }
+    private void EditarLinea(int id, string? value, bool descuento)
+    {
+        if (_busy || _grabacion is not null || _intentoComercial) return;
+        (descuento ? _descuentos : _precios)[id] = value;
+        _simulacion = null; _planGrabacion = null; UpdateHeader();
+    }
+    private void Seleccionar(int id, bool value) { if (value) _seleccionados.Add(id); else _seleccionados.Remove(id); UpdateHeader(); }
+    private Task CargarSeleccionAsync() => RunAsync(async () =>
+    {
+        if (_seleccionados.Count is < 1 or > 30) throw new CargaComprobantesReglaException("Seleccioná entre uno y 30 orígenes.");
+        var documentos = new List<CargaComprobantesOrigen>();
+        foreach (var id in _seleccionados.Order())
+        {
+            documentos.Add(await Service.GetOrigenAsync(id, _lifetime.Token));
+            var operacion = await Service.GetUltimaGrabacionAsync(id, _lifetime.Token);
+            if (operacion is not null && operacion.Estado is not ("GRABADA" or "RECHAZADA"))
+                throw new CargaComprobantesReglaException("Un origen tiene una operación pendiente. Recuperala desde Comprobantes de prueba.");
+        }
+        var unido = CargaComprobantesConsolidacion.Unir(documentos);
+        _documentos = documentos; _origen = unido; _cantidades.Clear(); _precios.Clear(); _descuentos.Clear();
+        foreach (var linea in unido.Lineas) _cantidades[linea.Id] = linea.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _grabacion = null; _planGrabacion = null; _simulacion = null; _electronica = null; _pruebaElectronica = null;
+        _intentoComercial = false; _operacionComercial = Guid.NewGuid(); _operacionPrueba = Guid.NewGuid(); _talonario = null;
+    });
+    private string? _talonario;
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _header;
+    private bool _busy;
+    private bool _filtrosAbiertos;
+    private bool _disposed;
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private static IReadOnlyList<AlfaSelectOption> TipoOptions => [new("NP", "Pedidos"), new("RM", "Remitos")];
+    private static IReadOnlyList<AlfaSelectOption> Opciones(IReadOnlyList<CargaComprobantesOpcionFiltro> items)
+        => [new("", "Todos"), .. items.Select(x => new AlfaSelectOption(x.Codigo,
+            x.Codigo == x.Descripcion ? x.Codigo : $"{x.Codigo} · {x.Descripcion}"))];
+    private static string? FechaHtml(DateTime? fecha) => fecha?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+    private static DateTime? LeerFecha(string? value) => DateTime.TryParseExact(value, "yyyy-MM-dd",
+        System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fecha) ? fecha : null;
+    private IReadOnlyList<AlfaSelectOption> TalonarioOptions => (_contexto?.Talonarios ?? [])
+        .Where(x => _origen is not null && (x.UnidadNegocio.Length == 0 || x.UnidadNegocio == _origen.UnidadNegocio))
+        .Select(x => new AlfaSelectOption(x.Talonario.ToString(), $"{x.Talonario} · {x.Descripcion} · {x.Letras}")).ToList();
+
+    protected override void OnInitialized()
+    {
+        Sessions.SessionChanged += ContextChanged;
+        Users.StateChanged += ContextChanged;
+        UpdateHeader();
+    }
+    protected override Task OnInitializedAsync() => InicializarAsync();
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+
+    private async Task InicializarAsync()
+    {
+        if (_busy || _disposed) return;
+        await RunAsync(async () =>
+        {
+            var contexto = await Service.GetContextoAsync(_lifetime.Token);
+            _contexto = contexto;
+            _result = await Service.BuscarOrigenesAsync(_filtroAplicado, _lifetime.Token);
+            _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
+        });
+    }
+    private void CambiarTalonario(string? value) { _talonario = value; _simulacion = null; _planGrabacion = null; UpdateHeader(); }
+    private void CambiarCantidad(int id, string? value) { _cantidades[id] = value; _simulacion = null; _planGrabacion = null; UpdateHeader(); }
+    private Task BuscarAsync(bool reset) => RunAsync(async () =>
+    {
+        var consulta = reset ? new CargaComprobantesFiltro
+        {
+            TipoOrigen = _filtro.TipoOrigen, Busqueda = _filtro.Busqueda,
+            FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta,
+            Vendedor = _filtro.Vendedor, Zona = _filtro.Zona, UnidadNegocio = _filtro.UnidadNegocio,
+            Deposito = _filtro.Deposito, PageSize = _filtro.PageSize, PageNumber = 1
+        } : _filtroAplicado;
+        var resultado = await Service.BuscarOrigenesAsync(consulta, _lifetime.Token);
+        _filtroAplicado = consulta;
+        _result = resultado;
+        _filtrosAbiertos = false;
+    });
+    private Task PaginarAsync(int delta) { _filtroAplicado.PageNumber = Math.Max(1, (_result?.PageNumber ?? 1) + delta); return BuscarAsync(false); }
+    private Task LimpiarFiltrosAsync()
+    {
+        LimpiarCamposFiltro();
+        return BuscarAsync(true);
+    }
+    private void LimpiarCamposFiltro()
+    {
+        _filtro.Busqueda = string.Empty; _filtro.FechaDesde = null; _filtro.FechaHasta = null;
+        _filtro.Vendedor = string.Empty; _filtro.Zona = string.Empty; _filtro.UnidadNegocio = string.Empty; _filtro.Deposito = string.Empty;
+    }
+    private Task CargarAsync(int id) => RunAsync(async () =>
+    {
+        var doc = await Service.GetOrigenAsync(id, _lifetime.Token);
+        var prueba = await Service.GetUltimaPruebaElectronicaAsync(id, _lifetime.Token);
+        _grabacion = await Service.GetUltimaGrabacionAsync(id, _lifetime.Token);
+        _planGrabacion = null; _operacionComercial = _grabacion?.Operacion ?? Guid.NewGuid(); _intentoComercial = false;
+        _origen = doc; _documentos = [doc]; _precios.Clear(); _descuentos.Clear(); _simulacion = null; _electronica = null; _pruebaElectronica = null;
+        _filtrosAbiertos = false;
+        _operacionPrueba = Guid.NewGuid(); _talonario = null; _cantidades.Clear();
+        _pruebaElectronica = prueba;
+        if (_grabacion is not null) _pruebaElectronica = null;
+        if (prueba is not null) _operacionPrueba = prueba.Operacion;
+        foreach (var line in doc.Lineas) _cantidades[line.Id] = line.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    });
+    private Task SimularAsync() => RunAsync(async () =>
+    {
+        _simulacion = null; _planGrabacion = null;
+        if (_origen is null || !int.TryParse(_talonario, out var talonario))
+            throw new InvalidOperationException("Elegí el talonario de factura.");
+        _simulacion = await Service.SimularAsync(_origen.Id, talonario, LeerCantidades(), _lifetime.Token);
+    }, () => AppUiMessage.Info("Simulación lista", "Revisá los importes y avisos en Vista previa. No se grabó una factura ni se modificó el pedido/remito."));
+    private IReadOnlyList<CargaComprobantesCantidad> LeerCantidades()
+    {
+        var cantidades = new List<CargaComprobantesCantidad>();
+        foreach (var item in _cantidades)
+        {
+            if (!decimal.TryParse(item.Value, System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out var cantidad))
+                throw new InvalidOperationException("Revisá las cantidades ingresadas.");
+            decimal? Edicion(Dictionary<int,string?> valores)
+            {
+                if (!valores.TryGetValue(item.Key, out var valor)) return null;
+                if (!decimal.TryParse(valor, System.Globalization.NumberStyles.AllowDecimalPoint | System.Globalization.NumberStyles.AllowLeadingSign,
+                    System.Globalization.CultureInfo.InvariantCulture, out var numero)) throw new InvalidOperationException("Revisá el precio o descuento ingresado.");
+                return numero;
+            }
+            cantidades.Add(new() { LineaId = item.Key, Cantidad = cantidad,
+                OrigenId = _documentos.Count > 1 ? _documentos.Single(x => x.Lineas.Any(l => l.Id == item.Key)).Id : 0,
+                PrecioUnitarioNeto = Edicion(_precios), Descuento = Edicion(_descuentos) });
+        }
+        return cantidades;
+    }
+    private Task VerificarElectronicaAsync() => RunAsync(async () =>
+    {
+        _electronica = null;
+        _electronica = await Service.VerificarElectronicaAsync(_origen?.Id, _lifetime.Token);
+    });
+    private Task AbrirPruebaAsync() { _confirmarPrueba = true; return InvokeAsync(StateHasChanged); }
+    private Task ValidarGrabacionAsync() => RunAsync(async () =>
+    {
+        _planGrabacion = null;
+        if (_origen is null || !int.TryParse(_talonario, out var talonario)) throw new InvalidOperationException("Elegí el origen y talonario de factura.");
+        _planGrabacion = await Service.ValidarGrabacionAsync(_origen.Id, talonario, LeerCantidades(), _lifetime.Token);
+        _origen = _planGrabacion.Origen;
+        if (_simulacion is not null) _simulacion.Liquidacion = _planGrabacion.Liquidacion;
+    }, () => AppUiMessage.Success("Grabación validada", "Se comprobaron los efectos comerciales y se revirtieron los cambios del ensayo. Podés emitir y grabar la factura de prueba."));
+    private Task AbrirGrabacionAsync() { _confirmarGrabacion = true; return InvokeAsync(StateHasChanged); }
+    private Task GrabarFacturaAsync()
+    {
+        _confirmarGrabacion = false;
+        return RunAsync(async () =>
+        {
+            if (_origen is null || _planGrabacion is null || !int.TryParse(_talonario, out var talonario)) throw new InvalidOperationException("Primero validá la grabación.");
+            _intentoComercial = true;
+            _grabacion = await Service.GrabarFacturaAsync(_origen.Id, talonario, LeerCantidades(), _operacionComercial, _planGrabacion.Huella, _lifetime.Token);
+            _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
+        });
+    }
+    private Task RecuperarOperacionAsync(Guid operacion) => RunAsync(async () =>
+    {
+        _grabacion = await Service.RecuperarGrabacionAsync(operacion, _lifetime.Token);
+        _operacionComercial = operacion;
+        if (_origen?.Id != _grabacion.OrigenId) { _origen = null; _simulacion = null; _planGrabacion = null; }
+        _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
+    });
+    private Task DescargarFacturaAsync(Guid operacion) => RunAsync(async () =>
+    {
+        var bytes = await Service.GetPdfFacturaAsync(operacion, _lifetime.Token);
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(bytes), "application/pdf", $"factura-homologacion-{operacion}.pdf");
+    });
+    private Task MostrarHistorialAsync() => RunAsync(async () =>
+    {
+        _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token); _mostrarHistorial = !_mostrarHistorial;
+    });
+    private Task RecuperarPruebaAsync() => RunAsync(async () =>
+    {
+        if (_pruebaElectronica is not null) _pruebaElectronica = await Service.RecuperarPruebaElectronicaAsync(_pruebaElectronica.Operacion, _lifetime.Token);
+    });
+    private Task EmitirPruebaAsync()
+    {
+        _confirmarPrueba = false;
+        return RunAsync(async () =>
+        {
+            if (_origen is null || !int.TryParse(_talonario, out var talonario)) throw new InvalidOperationException("Elegí un origen y talonario.");
+            _pruebaElectronica = await Service.EmitirPruebaElectronicaAsync(_origen.Id, talonario, LeerCantidades(), _operacionPrueba, _lifetime.Token);
+        });
+    }
+    private Task VolverAsync() { _origen = null; _documentos.Clear(); _precios.Clear(); _descuentos.Clear(); _simulacion = null; _electronica = null; _pruebaElectronica = null; _cantidades.Clear(); _feedback = null;
+        _grabacion = null; _planGrabacion = null; _intentoComercial = false; _operacionComercial = Guid.NewGuid(); UpdateHeader(); return InvokeAsync(StateHasChanged); }
+    private Task NuevaFacturaAsync() => RunAsync(async () =>
+    {
+        if (_origen is null) return;
+        var pendiente = await Service.GetOrigenAsync(_origen.Id, _lifetime.Token);
+        _origen = pendiente; _documentos = [pendiente]; _precios.Clear(); _descuentos.Clear(); _simulacion = null; _planGrabacion = null; _grabacion = null; _pruebaElectronica = null;
+        _intentoComercial = false; _operacionComercial = Guid.NewGuid(); _cantidades.Clear();
+        foreach (var linea in pendiente.Lineas) _cantidades[linea.Id] = linea.Pendiente.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    });
+    private async Task RunAsync(Func<Task> action, Func<AppUiMessage>? success = null)
+    {
+        if (_busy || _disposed) return;
+        _busy = true; _feedback = null; UpdateHeader();
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(action, "Carga de Comprobantes", _lifetime.Token);
+            if (!_disposed) _feedback = result.Success ? success?.Invoke() : result.Feedback;
+        }
+        finally
+        {
+            _busy = false;
+            if (!_disposed)
+            {
+                UpdateHeader();
+                // Las acciones del header se ejecutan en otro componente; hay que refrescar esta página.
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+    private void ContextChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            _contexto = null; _origen = null; _result = null; _simulacion = null; _electronica = null; _cantidades.Clear();
+            _seleccionados.Clear(); _documentos.Clear(); _precios.Clear(); _descuentos.Clear();
+            _pruebaElectronica = null; _confirmarPrueba = false; _operacionPrueba = Guid.NewGuid();
+            _grabacion = null; _planGrabacion = null; _confirmarGrabacion = false; _operacionComercial = Guid.NewGuid();
+            _intentoComercial = false; _mostrarHistorial = false; _recientes = [];
+            _filtrosAbiertos = false;
+            LimpiarCamposFiltro(); _filtro.TipoOrigen = "NP"; _filtroAplicado = new();
+            _feedback = AppUiMessage.Info("Cambió la sesión", "Volvé a cargar el módulo para consultar los documentos del usuario y la base actuales.");
+            UpdateHeader(); StateHasChanged();
+        });
+    }
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas", Title = "Carga de Comprobantes",
+        ShowHistoryNavigation = false,
+        Breadcrumb = ["Ventas", "Carga de Comprobantes"],
+        // Una sola pestaña: conserva el aislamiento ?directo=1 sin accesos a otros módulos.
+        TopNavigationItems = [new() { Key = "carga", Label = "Carga de Comprobantes", Active = true }],
+        State = _busy ? PageHeaderState.Loading : _origen is null ? PageHeaderState.List : PageHeaderState.Editing,
+        Search = _origen is null && _contexto is not null ? new() : null,
+        SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,
+        Actions = _origen is null
+            // Menos botones a la vista (2026-10-22): "Cargar selección" aparece al elegir pedidos/remitos y el resto va al menú "…".
+            ? [.. (_seleccionados.Count > 0
+                    ? new PageHeaderAction[] { new() { Key = "cargar-seleccion", Label = $"Cargar selección ({_seleccionados.Count})", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = CargarSeleccionAsync } }
+                    : []),
+                new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = _seleccionados.Count > 0 ? PageHeaderActionStyle.Secondary : PageHeaderActionStyle.Primary,
+                    Disabled = _busy || _contexto is null, OnClick = () => { Navigation.NavigateTo(Navigation.Uri.Split('?')[0].TrimEnd('/') + "/nuevo" + new Uri(Navigation.Uri).Query); return Task.CompletedTask; } },
+                new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = _contexto is null ? InicializarAsync : () => BuscarAsync(false) },
+                new() { Key = "historial", Label = "Comprobantes de prueba", Icon = "bi-clock-history", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
+                new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = VerificarElectronicaAsync }]
+            : [new() { Key = "volver", Label = "Cambiar origen", Disabled = _busy, OnClick = VolverAsync },
+                new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Disabled = _busy, OnClick = VerificarElectronicaAsync },
+                new() { Key = "validar-grabacion", Label = "Validar grabación", Icon = "bi-check2-square", Disabled = _busy || _simulacion?.Liquidacion is null || _grabacion is not null || _intentoComercial, OnClick = ValidarGrabacionAsync },
+                new() { Key = "grabar", Label = "Grabar factura de prueba", Icon = "bi-save", Disabled = _busy || _electronica is null || _planGrabacion is null || _grabacion is not null || _intentoComercial, Style = PageHeaderActionStyle.Primary, OnClick = AbrirGrabacionAsync },
+                new() { Key = "recuperar", Label = "Recuperar operación", Icon = "bi-arrow-repeat", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || (!_intentoComercial && _grabacion is null) || _grabacion?.Estado is "GRABADA" or "RECHAZADA", OnClick = () => RecuperarOperacionAsync(_operacionComercial) },
+                new() { Key = "pdf", Label = "PDF factura", Icon = "bi-file-earmark-pdf", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado != "GRABADA", OnClick = () => DescargarFacturaAsync(_operacionComercial) },
+                new() { Key = "nueva-pendiente", Label = "Nueva factura sobre pendientes", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado is not ("GRABADA" or "RECHAZADA"), OnClick = NuevaFacturaAsync },
+                new() { Key = "prueba-arca", Label = "Solo probar autorización ARCA", Icon = "bi-send", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _documentos.Count > 1 || _precios.Count > 0 || _descuentos.Count > 0 || _electronica is null || _simulacion?.Liquidacion is null || _pruebaElectronica is not null || _grabacion is not null || _intentoComercial, OnClick = AbrirPruebaAsync },
+                new() { Key = "conciliar-prueba", Label = "Conciliar prueba ARCA", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _pruebaElectronica is null, OnClick = RecuperarPruebaAsync },
+                new() { Key = "simular", Label = "Simular factura", Icon = "bi-calculator", Disabled = _busy || _grabacion is not null || _intentoComercial, OnClick = SimularAsync }],
+        Pagination = _origen is null && _result is not null ? new()
+        {
+            PageLabel = $"{_result.PageNumber} / {Math.Max(_result.TotalPages, 1)}", Label = $"{_result.Total} documentos",
+            HasPrevious = _result.HasPrev, HasNext = _result.HasNext, Disabled = _busy,
+            OnPrevious = () => PaginarAsync(-1), OnNext = () => PaginarAsync(1)
+        } : null
+    });
+    private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var chips = FiltrosActivos(); }
+        <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > 1 ? "is-active" : string.Empty)"
+                aria-label="Abrir filtros" title="Abrir filtros" aria-expanded="@_filtrosAbiertos" disabled="@_busy" @onclick="AlternarFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in chips.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" disabled="@_busy"
+                        aria-label="@(chip.Key == "origen" ? "Cambiar origen" : $"Quitar filtro {chip.Label}")"
+                        title="@chip.Label" @onclick="() => QuitarFiltroAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        @if (chip.Key != "origen") { <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span> }
+                    </button>
+                }
+                @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
+            </div>
+            <input @onfocus="() => { if (!_filtrosAbiertos) AlternarFiltros(); }" type="search" aria-label="Buscar cliente o comprobante" placeholder="Cliente, cuenta o comprobante..."
+                maxlength="100" value="@_filtro.Busqueda" disabled="@_busy" @oninput="e => _filtro.Busqueda = e.Value?.ToString() ?? string.Empty"
+                @onkeydown="TeclaBusquedaAsync" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
+                disabled="@_busy" @onclick="AlternarFiltros"><i class="bi @(_filtrosAbiertos ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+        </div>
+        @if (_filtrosAbiertos && _contexto is not null)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="TeclaBusquedaAsync" @onkeydown:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <AlfaInput Type="date" Label="Fecha desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => _filtro.FechaDesde = LeerFecha(v)" Disabled="@_busy" />
+                    <AlfaInput Type="date" Label="Fecha hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => _filtro.FechaHasta = LeerFecha(v)" Disabled="@_busy" />
+                    <span class="smart-search__hint">Sin fechas: todo el historial pendiente.</span>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-people"></i> Comercial</h4>
+                    <AlfaSelect Label="Vendedor" Value="@_filtro.Vendedor" ValueChanged="v => _filtro.Vendedor = v ?? string.Empty" Options="@Opciones(_contexto.Vendedores)" Disabled="@_busy" />
+                    <AlfaSelect Label="Zona del cliente" Value="@_filtro.Zona" ValueChanged="v => _filtro.Zona = v ?? string.Empty" Options="@Opciones(_contexto.Zonas)" Disabled="@_busy" />
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-file-earmark-text"></i> Documentos</h4>
+                    <AlfaSelect Label="Origen" Value="@_filtro.TipoOrigen" ValueChanged='v => _filtro.TipoOrigen = v ?? "NP"' Options="@TipoOptions" Disabled="@_busy" />
+                    <AlfaSelect Label="Unidad de negocio" Value="@_filtro.UnidadNegocio" ValueChanged="v => _filtro.UnidadNegocio = v ?? string.Empty" Options="@Opciones(_contexto.UnidadesNegocio)" Disabled="@_busy" />
+                    <AlfaSelect Label="Depósito" Value="@_filtro.Deposito" ValueChanged="v => _filtro.Deposito = v ?? string.Empty" Options="@Opciones(_contexto.Depositos)" Disabled="@_busy" />
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_busy" OnClick="_ => BuscarAsync(true)">Aplicar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_busy" OnClick="_ => LimpiarFiltrosAsync()">Limpiar</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
+    private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdateHeader(); }
+    private void CerrarFiltros() { _filtrosAbiertos = false; UpdateHeader(); }
+    private Task TeclaBusquedaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") return BuscarAsync(true);
+        if (args.Key == "Escape") CerrarFiltros();
+        return Task.CompletedTask;
+    }
+    private List<(string Key, string Label)> FiltrosActivos()
+    {
+        var f = _filtroAplicado;
+        var chips = new List<(string, string)> { ("origen", f.TipoOrigen == "RM" ? "Remitos" : "Pedidos") };
+        if (f.FechaDesde.HasValue || f.FechaHasta.HasValue)
+            chips.Add(("fechas", $"{f.FechaDesde?.ToString("dd/MM/yyyy") ?? "Inicio"} – {f.FechaHasta?.ToString("dd/MM/yyyy") ?? "Hoy y posteriores"}"));
+        if (f.Vendedor.Length > 0) chips.Add(("vendedor", $"Vendedor: {NombreFiltro(_contexto?.Vendedores, f.Vendedor)}"));
+        if (f.Zona.Length > 0) chips.Add(("zona", $"Zona: {NombreFiltro(_contexto?.Zonas, f.Zona)}"));
+        if (f.UnidadNegocio.Length > 0) chips.Add(("unidad", $"Unidad: {NombreFiltro(_contexto?.UnidadesNegocio, f.UnidadNegocio)}"));
+        if (f.Deposito.Length > 0) chips.Add(("deposito", $"Depósito: {NombreFiltro(_contexto?.Depositos, f.Deposito)}"));
+        return chips;
+    }
+    private static string NombreFiltro(IReadOnlyList<CargaComprobantesOpcionFiltro>? items, string codigo)
+        => items?.FirstOrDefault(x => x.Codigo == codigo)?.Descripcion ?? codigo;
+    private Task QuitarFiltroAsync(string key)
+    {
+        if (key == "origen") { if (!_filtrosAbiertos) AlternarFiltros(); return Task.CompletedTask; }
+        // Quitar un chip modifica la consulta aplicada, no los cambios aún pendientes del panel.
+        var f = _filtroAplicado;
+        _filtro.TipoOrigen = f.TipoOrigen; _filtro.Busqueda = f.Busqueda;
+        _filtro.FechaDesde = f.FechaDesde; _filtro.FechaHasta = f.FechaHasta;
+        _filtro.Vendedor = f.Vendedor; _filtro.Zona = f.Zona;
+        _filtro.UnidadNegocio = f.UnidadNegocio; _filtro.Deposito = f.Deposito;
+        switch (key)
+        {
+            case "fechas": _filtro.FechaDesde = null; _filtro.FechaHasta = null; break;
+            case "vendedor": _filtro.Vendedor = string.Empty; break;
+            case "zona": _filtro.Zona = string.Empty; break;
+            case "unidad": _filtro.UnidadNegocio = string.Empty; break;
+            case "deposito": _filtro.Deposito = string.Empty; break;
+        }
+        return BuscarAsync(true);
+    }
+    private string Moneda(decimal value) => value.ToString($"C{_contexto?.Decimales ?? 2}", Culture);
+    private static string Cantidad(decimal value) => value.ToString("0.########", Culture);
+    public void Dispose()
+    {
+        _disposed = true; Sessions.SessionChanged -= ContextChanged; Users.StateChanged -= ContextChanged;
+        _lifetime.Cancel(); _lifetime.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

@@ -8,10 +8,14 @@
     <UserSecretsId>AlfaCore-Development</UserSecretsId>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**</DefaultItemExcludes>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../docs/modulos/ventas-carga-comprobantes/configuracion-vb6.csv" LogicalName="AlfaCore.Ventas.ConfiguracionVb6.csv" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="ExcelDataReader" Version="3.9.0" />
     <PackageReference Include="Markdig" Version="1.1.2" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Microsoft.Playwright" Version="1.55.0" />
@@ -27,6 +31,8 @@
     <EmbeddedResource Include="Services\CierreCajaSql\*.sql" />
     <EmbeddedResource Include="Services\DocumentPagination.js" LogicalName="AlfaCore.DocumentPagination.js" />
     <EmbeddedResource Include="Docs\manual_consultas.md" />
+    <EmbeddedResource Include="Docs\manual_conciliacion_bancaria.md" />
+    <EmbeddedResource Include="Docs\manual_cobranzas.md" />
   </ItemGroup>
 
   <ItemGroup>
@@ -66,6 +72,10 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="App_Data\updates\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="App_Data\novedades-sistema\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

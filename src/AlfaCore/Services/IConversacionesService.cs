@@ -62,16 +62,19 @@ public interface IConversacionesService
     /// <summary>
     /// Resuelve automáticamente, cuando es posible, los valores de las variables BODY de la plantilla
     /// indicada para el envío manual desde Conversaciones. Por posición: si hay mapping persistido con
-    /// una VariableKey resoluble en este flujo (contact.name / cobranza.detalleDeuda / pago.formaPago)
-    /// se resuelve con su resolver real; si hay mapping pero la key no es resoluble acá (Tareas/Guardia)
-    /// o falta contexto, esa posición y las siguientes quedan sin completar (el operador las completa a
-    /// mano, señalizado vía Observaciones); si no hay mapping para la posición, se preserva el
+    /// una VariableKey resoluble en este flujo se resuelve con su resolver real; si falta contexto, esa
+    /// posición y las siguientes quedan sin completar (el operador las completa a mano, señalizado vía
+    /// Observaciones); si no hay mapping para la posición, se preserva el
     /// comportamiento heurístico histórico (posición 1=nombre, 2=deuda, 3=forma de pago) para no romper
     /// plantillas existentes sin mapping. <paramref name="idPlantilla"/> puede ser 0/una plantilla
     /// remota de Meta sin fila local: en ese caso simplemente no hay mappings y todo cae al heurístico.
     /// </summary>
     Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default);
+    /// <summary>Igual que la anterior, con valores de contexto que aporta la pantalla que envía (ej. cierre.fecha y cierre.caja desde Cierre de caja).</summary>
+    Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, IReadOnlyDictionary<string, string> valoresContexto, CancellationToken ct = default);
     Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default);
+    /// <summary>Envía una plantilla aprobada con encabezado DOCUMENT llevando el archivo indicado (sirve con la ventana de 24 h vencida).</summary>
+    Task<ConversacionPlantillaMessageResultDto> SendTemplateWithDocumentAsync(ConversacionPlantillaDocumentoSendRequest request, CancellationToken ct = default);
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);
     Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default);
     Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default);
@@ -99,6 +102,16 @@ public interface IConversacionesService
     Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingMercadoLibreWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mensaje de un visitante del chat web embebido (canal WEBCHAT). Crea o reutiliza la
+    /// conversación por visitorId y corre la misma cadena de respuestas automáticas que los demás
+    /// canales (reglas, bienvenida, fuera de horario, asistente IA).
+    /// </summary>
+    Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default);
+
+    /// <summary>Mensajes visibles para el visitante posteriores a <paramref name="desdeIdMensaje"/> (polling del widget).</summary>
+    Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> SyncMercadoLibreQuestionsAsync(CancellationToken ct = default);
     /// <summary>
     /// Contexto del cliente asociado a la conversación (N° de cliente, razón social, rubro del

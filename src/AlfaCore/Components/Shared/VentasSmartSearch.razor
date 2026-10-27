@@ -1,0 +1,254 @@
+@using AlfaCore.Models
+
+@* Smart Search de los tableros de Ventas (AlfaDesign v1). Va en el Context Toolbar
+   (PageHeaderConfig.SearchContent) y reemplaza a la vieja VentasFiltersBar, que ocupaba media
+   pantalla arriba del contenido. El texto busca por cliente; el panel tiene período, unidad de
+   negocio y el resto de los filtros comerciales. El rango rápido y quitar un chip aplican al
+   instante; el resto se aplica con "Aplicar" o Enter.
+   SoloPeriodo = true (Comparativo) muestra únicamente el período. *@
+
+<div class="smart-search" @onclick:stopPropagation>
+    @{ var chips = BuildChips(); }
+    <div class="smart-search__bar @(_open ? "is-open" : string.Empty)">
+        <span class="smart-search__search-icon" aria-hidden="true">
+            <i class="bi bi-search"></i>
+        </span>
+        <button type="button"
+                class="smart-search__filter-button @(_open || chips.Count > 1 ? "is-active" : string.Empty)"
+                title="Abrir filtros"
+                aria-label="Abrir filtros"
+                aria-expanded="@_open"
+                @onclick="Toggle">
+            <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+        </button>
+        <div class="smart-search__active-filters" aria-label="Filtros activos">
+            @foreach (var chip in chips.Take(2))
+            {
+                <button type="button"
+                        class="smart-search__active-filter"
+                        title="@(chip.Removible ? $"Quitar filtro {chip.Label}" : chip.Label)"
+                        aria-label="@(chip.Removible ? $"Quitar filtro {chip.Label}" : chip.Label)"
+                        @onclick="() => RemoveChipAsync(chip.Key)">
+                    <span>@chip.Label</span>
+                    @if (chip.Removible)
+                    {
+                        <span class="smart-search__active-filter-remove" aria-hidden="true">
+                            <i class="bi bi-x"></i>
+                        </span>
+                    }
+                </button>
+            }
+            @if (chips.Count > 2)
+            {
+                <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(c => c.Label))">+@(chips.Count - 2)</span>
+            }
+        </div>
+        @if (SoloPeriodo)
+        {
+            <input type="search" placeholder="Período..." readonly @onfocus="Open" />
+        }
+        else
+        {
+            <input type="search"
+                   placeholder="Buscar cliente..."
+                   value="@Model.Cliente"
+                   @oninput="e => Model.Cliente = NullIfEmpty(e.Value?.ToString())"
+                   @onkeydown="HandleKeyDownAsync" />
+        }
+        <button type="button" class="smart-search__toggle" @onclick="Toggle" aria-label="Mostrar filtros" aria-expanded="@_open">
+            <i class="bi @(_open ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+        </button>
+    </div>
+
+    @if (_open)
+    {
+        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="Close"></button>
+        <div class="smart-search__panel @(SoloPeriodo ? "smart-search__panel--compact" : string.Empty)" @onclick:stopPropagation @onkeydown="HandleKeyDownAsync">
+            <div class="smart-search__column">
+                <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                @{ var rangoActivo = GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta); }
+                @foreach (var rango in GestionRangosFecha.Todos)
+                {
+                    <button type="button" class="@OptionClass(rangoActivo == rango.Key)" @onclick="() => ApplyRangoAsync(rango.Key)">@rango.Label</button>
+                }
+                <div class="smart-search__inline">
+                    <label>Desde</label>
+                    <InputDate @bind-Value="Model.FechaDesde" />
+                </div>
+                <div class="smart-search__inline">
+                    <label>Hasta</label>
+                    <InputDate @bind-Value="Model.FechaHasta" />
+                </div>
+            </div>
+
+            @if (!SoloPeriodo)
+            {
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-diagram-3"></i> Unidad de negocio</h4>
+                    <button type="button" class="@OptionClass(Model.UnidadesNegocio.Count == 0)" @onclick="() => Model.UnidadesNegocio.Clear()">Todas</button>
+                    @foreach (var unidad in Options.UnidadesNegocio)
+                    {
+                        <button type="button" class="@OptionClass(Model.UnidadesNegocio.Contains(unidad.Codigo))" @onclick="() => ToggleUnidad(unidad.Codigo)">@unidad.Descripcion</button>
+                    }
+                    @if (Options.UnidadesNegocio.Count == 0)
+                    {
+                        <span class="smart-search__hint">No hay unidades de negocio con datos.</span>
+                    }
+                    @if (MostrarComparativoUnidadNegocio)
+                    {
+                        <span class="smart-search__hint">Con más de una unidad elegida, el tablero las compara por separado.</span>
+                    }
+                </div>
+
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Más filtros</h4>
+                    <div class="smart-search__inline">
+                        <label>Usuario</label>
+                        <select value="@(Model.Usuario ?? string.Empty)" @onchange="e => Model.Usuario = NullIfEmpty(e.Value?.ToString())">
+                            <option value="">Todos</option>
+                            @foreach (var item in Options.Usuarios)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Depósito</label>
+                        <select value="@(Model.Deposito ?? string.Empty)" @onchange="e => Model.Deposito = NullIfEmpty(e.Value?.ToString())">
+                            <option value="">Todos</option>
+                            @foreach (var item in Options.Depositos)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Tipo de comprobante</label>
+                        <select value="@(Model.TipoComprobante ?? string.Empty)" @onchange="e => Model.TipoComprobante = NullIfEmpty(e.Value?.ToString())">
+                            <option value="">Todos</option>
+                            @foreach (var item in Options.TiposComprobante)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            }
+
+            <div class="smart-search__actions">
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => ClearAsync()">Limpiar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" OnClick="_ => ApplyAsync()">Aplicar</AlfaButton>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public VentasDashboardFilters Model { get; set; } = new();
+    [Parameter] public VentasFilterOptionsDto Options { get; set; } = new();
+    [Parameter] public bool MostrarComparativoUnidadNegocio { get; set; }
+    [Parameter] public bool SoloPeriodo { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+
+    private bool _open;
+
+    private sealed record Chip(string Key, string Label, bool Removible);
+
+    private List<Chip> BuildChips()
+    {
+        var chips = new List<Chip>
+        {
+            new("periodo", GestionRangosFecha.Etiqueta(Model.FechaDesde, Model.FechaHasta), Removible: GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta) != "mes")
+        };
+
+        if (SoloPeriodo)
+            return chips;
+
+        if (Model.UnidadesNegocio.Count > 0)
+        {
+            var nombres = Options.UnidadesNegocio
+                .Where(u => Model.UnidadesNegocio.Contains(u.Codigo))
+                .Select(u => u.Descripcion)
+                .ToList();
+            chips.Add(new("unidad", nombres.Count == 1 ? nombres[0] : $"{nombres.Count} unidades", true));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Model.Usuario))
+            chips.Add(new("usuario", $"Usuario: {Model.Usuario}", true));
+        if (!string.IsNullOrWhiteSpace(Model.Deposito))
+            chips.Add(new("deposito", $"Depósito: {Model.Deposito}", true));
+        if (!string.IsNullOrWhiteSpace(Model.TipoComprobante))
+            chips.Add(new("tc", $"TC: {Model.TipoComprobante}", true));
+
+        return chips;
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "periodo":
+                if (GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta) == "mes")
+                {
+                    Open();
+                    return;
+                }
+                (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular("mes");
+                break;
+            case "unidad": Model.UnidadesNegocio.Clear(); break;
+            case "usuario": Model.Usuario = null; break;
+            case "deposito": Model.Deposito = null; break;
+            case "tc": Model.TipoComprobante = null; break;
+        }
+
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task ApplyRangoAsync(string key)
+    {
+        (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular(key);
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private void ToggleUnidad(string codigo)
+    {
+        if (!Model.UnidadesNegocio.Remove(codigo))
+            Model.UnidadesNegocio.Add(codigo);
+    }
+
+    private async Task ApplyAsync()
+    {
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task ClearAsync()
+    {
+        (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular("mes");
+        Model.Cliente = null;
+        Model.Usuario = null;
+        Model.UnidadesNegocio = [];
+        Model.ComparativoUnidadNegocio = false;
+        Model.Deposito = null;
+        Model.TipoComprobante = null;
+        _open = false;
+        await OnApply.InvokeAsync();
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await ApplyAsync();
+        else if (args.Key == "Escape")
+            Close();
+    }
+
+    private void Toggle() => _open = !_open;
+    private void Open() => _open = true;
+    private void Close() => _open = false;
+
+    private static string OptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

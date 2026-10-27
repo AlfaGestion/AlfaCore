@@ -22,6 +22,15 @@ Está pensado para que Codex/GPT entienda qué representa cada objeto antes de m
 > Nota: las descripciones marcadas como genéricas fueron inferidas por prefijo/nombre del objeto. Las descripciones más confiables son las documentadas en el Excel y en las reglas funcionales indicadas por Alberto.
 
 ## Objetos documentados manualmente
+
+### Escritura de códigos: maestros frente a movimientos
+
+`CodigoPk.Format(codigo, ancho)` se utiliza para PK/códigos de maestros y referencias que requieren ancho fijo (unidad de negocio, moneda, vendedor, depósito, etc.). **No se utiliza para `TC` ni `CUENTA` en tablas de movimientos.**
+
+En `V_MV_CPTE`, `MV_ASIENTOS`, `MV_APLICACION` y demás movimientos, grabar `.Trim()` para `TC`, sus variantes de origen (`TCORIGEN`, `TC_ORIGEN`, `TCO_ORIGEN`) y `TC_PRINT`, así como para la cuenta de cliente, proveedor o cuenta contable. No usar `PadRight`, `PadLeft` ni rellenar a la longitud declarada del campo: `TC='CB'` y `CUENTA='112010681'` deben conservar la representación de Alfa Gestión. Los campos maestros asociados, por ejemplo `UNEGOCIO='   1'`, conservan su formato estándar.
+
+Ante dudas, relevar un movimiento equivalente grabado por Alfa Gestión y comparar `DATALENGTH` además del contenido. En `nvarchar`, `DATALENGTH(N'CB')=4`; el relleno aumenta esa longitud. SQL Server ignora espacios finales en muchas comparaciones con `=` y `LEN` excluye los espacios finales, pero concatenaciones, claves construidas en código y exportaciones pueden conservarlos y romper la compatibilidad (por ejemplo, Ver asiento).
+
 # Plan de Cuentas, Clientes y Proveedores
 
 ## Descripción general

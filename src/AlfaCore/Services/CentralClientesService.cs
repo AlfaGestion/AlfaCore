@@ -18,6 +18,46 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
     public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default)
         => QuerySingleAsync("WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(LTRIM(RTRIM(@LicenciaPrincipal)))", new { LicenciaPrincipal = licenciaPrincipal }, ct);
 
+    public async Task<LicenciaLegacyDto?> GetLicenciaLegacyAsync(string licenciaPrincipal, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(licenciaPrincipal))
+            return null;
+
+        const string sql = """
+            SELECT TOP (1)
+                LTRIM(RTRIM(idcliente)) AS IdCliente,
+                ISNULL(LTRIM(RTRIM(FTP_Server)), '') AS FtpServer,
+                ISNULL(LTRIM(RTRIM(FTP_Usuario)), '') AS FtpUsuario,
+                ISNULL(LTRIM(RTRIM(FTP_Clave)), '') AS FtpClave,
+                FechaActivacion
+            FROM dbo.Clientes
+            WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(LTRIM(RTRIM(@LicenciaPrincipal)));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        return await cn.QuerySingleOrDefaultAsync<LicenciaLegacyDto>(
+            new CommandDefinition(sql, new { LicenciaPrincipal = licenciaPrincipal }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<bool> ActivarLicenciaAsync(string licenciaPrincipal, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(licenciaPrincipal))
+            return false;
+
+        const string sql = """
+            UPDATE dbo.Clientes
+            SET FechaActivacion = ISNULL(FechaActivacion, GETDATE())
+            WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(LTRIM(RTRIM(@LicenciaPrincipal)));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var filas = await cn.ExecuteAsync(
+            new CommandDefinition(sql, new { LicenciaPrincipal = licenciaPrincipal }, cancellationToken: ct)).ConfigureAwait(false);
+        return filas > 0;
+    }
+
     public async Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default)
     {
         const string sql = """

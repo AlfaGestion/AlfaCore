@@ -14,6 +14,9 @@ BEGIN
         SET @Trigger = REPLACE(@Trigger, N'CREATE TRIGGER', N'ALTER TRIGGER');
         SET @Trigger = REPLACE(@Trigger, N'CREATE  TRIGGER', N'ALTER TRIGGER');
         SET @Trigger = REPLACE(@Trigger, N'ALTER TRIGGER', N'ALTER TRIGGER');
+        -- Compatibilidad SQL 2008 (nivel 100): sin TRY_CONVERT (2026-10-06).
+        IF (SELECT compatibility_level FROM sys.databases WHERE database_id = DB_ID()) < 110
+            SET @Trigger = REPLACE(@Trigger, N'TRY_CONVERT(', N'CONVERT(');
         EXEC sys.sp_executesql @Trigger;
     END;
 END;
@@ -30,6 +33,8 @@ BEGIN
         SET @Procedimiento = REPLACE(@Procedimiento, N'[FECHA HASTA] >= @Fecha', N'TRY_CONVERT(datetime, [FECHA HASTA], 103) >= @Fecha');
         SET @Procedimiento = REPLACE(@Procedimiento, N'CREATE PROCEDURE', N'ALTER PROCEDURE');
         SET @Procedimiento = REPLACE(@Procedimiento, N'CREATE   PROCEDURE', N'ALTER PROCEDURE');
+        IF (SELECT compatibility_level FROM sys.databases WHERE database_id = DB_ID()) < 110
+            SET @Procedimiento = REPLACE(@Procedimiento, N'TRY_CONVERT(', N'CONVERT(');
         EXEC sys.sp_executesql @Procedimiento;
     END;
 END;

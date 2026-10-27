@@ -8,9 +8,9 @@
 
 @if (Open)
 {
-    <div class="drawer-overlay @(DarkTheme ? "drawer-overlay--login" : string.Empty)" @onclick="Close"></div>
+    <div class="drawer-overlay @(DarkTheme ? "drawer-overlay--login" : "drawer-overlay--alfa")" @onclick="Close"></div>
 
-    <div class="drawer @(DarkTheme ? "drawer--login" : string.Empty)" role="dialog" aria-label="Selector de bases">
+    <div class="drawer @(DarkTheme ? "drawer--login" : "drawer--alfa")" role="dialog" aria-label="Selector de bases">
         <div class="drawer__header">
             <h3 class="drawer__title">
                 <i class="bi bi-database"></i> Bases disponibles

@@ -48,6 +48,8 @@ Usar cuando:
 - Si una URL entra con `?directo=1`, AlfaCore debe quedar encerrado en ese módulo: no debe mostrar `Aplicaciones` ni accesos a otros módulos. Esta regla aplica a todos los módulos actuales y a cualquier módulo nuevo.
 - **Códigos-PK de texto (ancho fijo):** al grabar un PK de texto de un maestro/tabla de referencia (TA_/V_TA_/C_TA_, artículos, vendedores, etc.) se formatea al ancho del campo con la lógica estándar del sistema: **numérico → alineado a la derecha (blancos a la izquierda); alfanumérico → a la izquierda**. Usar `AlfaCore.Common.CodigoPk.Format(codigo, ancho)`. Para comparar/leer, hacerlo siempre con `LTRIM(RTRIM(...))`. Detalle y excepción (plan de cuentas `MA_CUENTAS`, siempre a la izquierda) en `docs/DATABASE_TABLES_SUMMARY.md`.
 
+- **Excepción obligatoria en movimientos: `TC` y `CUENTA` se graban sin relleno.** Usar `.Trim()`, nunca `CodigoPk.Format`, `PadRight` ni `PadLeft`, para el tipo de comprobante y la cuenta de cliente/proveedor/contabilidad en `V_MV_CPTE`, `MV_ASIENTOS`, `MV_APLICACION` y demás movimientos. Incluye variantes como `TC_ORIGEN`, `TCO_ORIGEN`, `TC_PRINT` y `TCORIGEN`. La regla de ancho fijo anterior corresponde a códigos maestros (unidad, moneda, vendedor, depósito, etc.), no a estos campos de movimiento. Conservar la representación de Alfa Gestión: `TC='CB'`, `CUENTA='112010681'`; verificar con `DATALENGTH` contra un registro equivalente legacy. Las comparaciones con `=` y `LEN` no sirven para detectar espacios finales; las concatenaciones sí pueden resultar distintas.
+
 ## Atajos estándar del punto de venta
 
 En el módulo web de Punto de Venta se deben conservar estos atajos y vincularlos a la misma acción del botón correspondiente:

@@ -20,8 +20,14 @@ public interface IArticulosService
 
     /// <summary>Alta o edición. El código (IDARTICULO) es la clave de negocio -- se crea con el valor
     /// tipeado por el usuario (igual que FrmArtAlta.frm: el código escaneado/tipeado ES el artículo
-    /// nuevo, no hay numeración automática separada), y no se puede modificar una vez creado.</summary>
+    /// nuevo), y no se puede modificar una vez creado. GetNextCodigoAsync solo lo propone como punto de
+    /// partida editable, no reserva nada.</summary>
     Task<string> SaveAsync(ArticuloSaveRequest request, CancellationToken ct = default);
+
+    /// <summary>Próximo código numérico libre (MAX(IDARTICULO numérico) + 1), igual que la planilla
+    /// legacy (Ma_art.frm) propone al dar de alta. Solo un punto de partida editable -- el usuario
+    /// puede sobreescribirlo con cualquier código, existente (para editar) o no (para crear).</summary>
+    Task<string> GetNextCodigoAsync(CancellationToken ct = default);
 
     /// <summary>Baja lógica (V_MA_ARTICULOS.SUSPENDIDO = 1). Sin borrado físico.</summary>
     Task DeactivateAsync(string codigo, CancellationToken ct = default);

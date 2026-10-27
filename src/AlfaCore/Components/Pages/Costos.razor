@@ -3,6 +3,9 @@
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Actualización de Costos | Alfa Gestión</PageTitle>
 
@@ -14,39 +17,13 @@
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Actualización de Costos</h2>
-                <p class="page-intro__text">Importá listas de proveedores, apoyate en perfiles de `V_Ta_InterODBC` y dejá trazabilidad de cada corrida para revisión y aplicación controlada.</p>
-            </div>
-            <div class="actions">
-                <a class="btn btn--primary" href="@RouteContext.BuildRoute("/costos/nueva")">
-                    <i class="bi bi-upload"></i>
-                    <span>Nueva importación</span>
-                </a>
-                <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/costos/perfiles")">
-                    <i class="bi bi-sliders"></i>
-                    <span>Perfiles</span>
-                </a>
-            </div>
-        </section>
+    <div class="gd-page gd gd-legacy">
+        <header class="gd-header">
+            <h2>Actualización de Costos</h2>
+            <p>Importá listas de proveedores, apoyate en perfiles de `V_Ta_InterODBC` y dejá trazabilidad de cada corrida para revisión y aplicación controlada.</p>
+        </header>
 
-        @if (_feedback is not null)
-        {
-            <div class="conversations-inline @GetFeedbackClass(_feedback)">
-                <strong>@_feedback.Title</strong>
-                <div>@_feedback.Message</div>
-                @if (_feedback.HasCode)
-                {
-                    <div>Código: @_feedback.Code</div>
-                }
-                @if (_feedback.HasSuggestion)
-                {
-                    <div>@_feedback.Suggestion</div>
-                }
-            </div>
-        }
+        <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
         <section class="kpi-grid">
             <article class="kpi-card">
@@ -176,6 +153,51 @@ else
     private IReadOnlyList<AlfaCore.Models.CostosProfileDto> _profiles = [];
     private IReadOnlyList<AlfaCore.Models.CostosBatchSummaryDto> _batches = [];
     private IReadOnlyList<AlfaCore.Models.CostosHistoryDto> _history = [];
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "costos",
+            Title = "Actualización de costos",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCostos(RouteContext, Nav, "inicio"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nueva",
+                    Label = "Nueva importación",
+                    Icon = "bi-upload",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(RouteContext.BuildRoute("/costos/nueva")); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

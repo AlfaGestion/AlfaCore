@@ -17,5 +17,8 @@ public interface INotificacionesPushService
     /// generales de alcance/canal del usuario, es un llamado explícito.
     /// </summary>
     Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default);
+
+    /// <summary>Push de un aviso de la campana (reserva, evento agendado, ticket asignado) a usuarios puntuales con push habilitado.</summary>
+    Task<NotificacionesPushSendResultDto> NotifyAvisoAsync(IReadOnlyCollection<string> userNames, string titulo, string cuerpo, string url, CancellationToken ct = default);
     Task<bool> UserCanUseConversacionesAsync(string userName, CancellationToken ct = default);
 }

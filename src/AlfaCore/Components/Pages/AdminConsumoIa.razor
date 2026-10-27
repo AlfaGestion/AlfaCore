@@ -1,0 +1,618 @@
+@page "/admin/consumo-ia"
+@page "/{idweb}/{idbase:int}/admin/consumo-ia"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@using AlfaCore.Services
+@implements IDisposable
+@inject IAppUserSessionService AppUserSession
+@inject IIaConsumoService ConsumoSvc
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<PageTitle>Consumo IA | AlfaNet</PageTitle>
+
+@* Administrar → Consumo IA (2026-10-05): consumo de OpenAI por cliente, créditos, conciliación con lo que
+   factura OpenAI y generación de los cargos mensuales de créditos IA. *@
+
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+<div class="cia-page">
+    <div class="cia">
+        <header class="cia__header">
+            <div>
+                <h2>Consumo IA</h2>
+                <p>Consumo de OpenAI por cliente. 1 crédito = @(_resumen?.UsdPorCredito.ToString("0.####", Inv) ?? "0.001") USD de costo; el margen va en el precio del plan.</p>
+            </div>
+            <div class="cia__periodo">
+                <AlfaSelect Id="cia-mes" Label="Mes" Options="MesOptions" Value="@_mes.ToString(Inv)" ValueChanged="OnMesChangedAsync" />
+                <AlfaSelect Id="cia-anio" Label="Año" Options="AnioOptions" Value="@_anio.ToString(Inv)" ValueChanged="OnAnioChangedAsync" />
+            </div>
+        </header>
+
+        @if (AppUserSession.CurrentUser?.SuperAdmin != true)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
+        }
+        else if (!ConsumoSvc.Disponible)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Sin conexión central" Message="Esta instalación no tiene configurada la conexión a ALFA_CENTRAL." />
+        }
+        else if (_error is not null)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar el consumo" Message="@_error" />
+        }
+        else if (_resumen is null)
+        {
+            <p class="cia__hint">Cargando…</p>
+        }
+        else
+        {
+            <section class="cia__kpis" aria-label="Totales del mes">
+                <div class="cia__kpi">
+                    <span>Costo medido</span>
+                    <strong>USD @Usd(_resumen.CostoUsdTotal)</strong>
+                </div>
+                <div class="cia__kpi">
+                    <span>Créditos</span>
+                    <strong>@_resumen.CreditosTotal.ToString("N0", Es)</strong>
+                </div>
+                <div class="cia__kpi">
+                    <span>Facturado por OpenAI</span>
+                    @if (_conciliacion is { Disponible: true } c)
+                    {
+                        <strong>USD @c.CostoOpenAiUsd.ToString("N2", Es)</strong>
+                        <small class="@(Math.Abs(c.DiferenciaUsd) > 1 ? "is-warning" : null)">Diferencia: USD @c.DiferenciaUsd.ToString("N2", Es)</small>
+                    }
+                    else
+                    {
+                        <strong>—</strong>
+                        <small>@(_conciliacion?.Mensaje ?? "Calculando…")</small>
+                    }
+                </div>
+                <div class="cia__kpi">
+                    <span>Importe a cobrar (estimado)</span>
+                    <strong>@ImporteTotalTexto</strong>
+                </div>
+            </section>
+
+            @if (_resumen.LlamadasSinPrecio > 0)
+            {
+                <div class="cia__notice">
+                    <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                    <span>@_resumen.LlamadasSinPrecio.ToString("N0", Es) uso(s) no tienen precio cargado para su modelo y no suman costo ni créditos. Cargá el precio en <code>IA_PRECIO_MODELO</code> (ALFA_CENTRAL).</span>
+                </div>
+            }
+
+            @if (_solicitudes.Count > 0)
+            {
+                <section class="cia__card" aria-label="Pedidos de cambio de plan">
+                    <header class="cia__card-header">
+                        <div>
+                            <h3>Pedidos de cambio de plan</h3>
+                            <p>Los pide el cliente desde Asistente IA → General. Al aprobar, el plan nuevo rige para el cargo de este mes; si es una baja, conviene aprobarla a principio de mes.</p>
+                        </div>
+                    </header>
+                    <div class="cia__table-wrap">
+                        <table class="cia__table cia__table--static">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Plan pedido</th>
+                                    <th>Pedido por</th>
+                                    <th>Fecha</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in _solicitudes)
+                                {
+                                    <tr>
+                                        <td><strong>@FirstNonEmpty(s.Cliente, s.IdCliente)</strong><small>@s.IdCliente</small></td>
+                                        <td>
+                                            <span>@s.PlanNombre</span>
+                                            <small>@s.PlanCreditos.ToString("N0", Es) créditos@(PlanActualDe(s.IdCliente) is { Length: > 0 } actual ? $" · hoy: {actual}" : string.Empty)</small>
+                                        </td>
+                                        <td>@s.SolicitadoPor</td>
+                                        <td>@s.SolicitadoUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Es)</td>
+                                        <td>
+                                            <div class="cia__tope-acciones">
+                                                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Disabled="@_busy" OnClick="() => DecidirAsync(s, aprobar: true)">Aprobar</AlfaButton>
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => DecidirAsync(s, aprobar: false)">Rechazar</AlfaButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+
+            <section class="cia__card">
+                <header class="cia__card-header">
+                    <div>
+                        <h3>Clientes</h3>
+                        <p>Hacé clic en un cliente para ver el detalle por función.</p>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-receipt" Disabled="@(_busy || !MesTerminado)" OnClick="() => _confirmarCargos = true">
+                        Generar cargos del mes
+                    </AlfaButton>
+                </header>
+                @if (!MesTerminado)
+                {
+                    <p class="cia__hint">Los cargos se generan cuando el mes terminó.</p>
+                }
+
+                @if (_resumen.Clientes.Count == 0)
+                {
+                    <AlfaEmptyState Title="Sin consumo" Message="No hubo consumo de IA en este mes." />
+                }
+                else
+                {
+                    <div class="cia__table-wrap">
+                        <table class="cia__table">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th class="num">Bases</th>
+                                    <th class="num">Usos</th>
+                                    <th class="num">Costo USD</th>
+                                    <th class="num">Créditos</th>
+                                    <th>Plan</th>
+                                    <th class="num">Excedente</th>
+                                    <th class="num">Importe</th>
+                                    <th class="num">Tope</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var cliente in _resumen.Clientes)
+                                {
+                                    <tr class="@(_expandido == cliente.IdCliente ? "is-open" : null)" tabindex="0"
+                                        @onclick="() => Alternar(cliente.IdCliente)" @onkeydown="args => AlternarConTecla(args, cliente.IdCliente)">
+                                        <td>
+                                            <strong>@cliente.Cliente</strong>
+                                            @if (cliente.IdCliente.Length > 0)
+                                            {
+                                                <small>@cliente.IdCliente</small>
+                                            }
+                                        </td>
+                                        <td class="num">@cliente.Bases</td>
+                                        <td class="num">@cliente.Llamadas.ToString("N0", Es)</td>
+                                        <td class="num">@Usd(cliente.CostoUsd)</td>
+                                        <td class="num">@cliente.Creditos.ToString("N0", Es)</td>
+                                        <td>
+                                            @if (cliente.Plan is { } plan)
+                                            {
+                                                <span>@plan.PlanNombre</span>
+                                                <small>@plan.CreditosIncluidos.ToString("N0", Es) incluidos@(plan.PorDefecto ? " · por defecto" : string.Empty)</small>
+                                            }
+                                            else
+                                            {
+                                                <AlfaTag Tone="AlfaTagTone.Warning">Sin plan</AlfaTag>
+                                            }
+                                        </td>
+                                        <td class="num">@cliente.CreditosExcedentes.ToString("N0", Es)</td>
+                                        <td class="num">@(cliente.Plan is null ? "—" : $"{cliente.ImporteEstimado.ToString("N2", Es)} {cliente.Plan.Moneda}")</td>
+                                        <td class="num">
+                                            @if (cliente.TopeCreditos is int topeCliente)
+                                            {
+                                                <span class="@(cliente.Creditos >= topeCliente ? "is-danger" : null)">@topeCliente.ToString("N0", Es)</span>
+                                                <small>@(cliente.TopeOrigen == IaTopeOrigenes.Plan ? "del plan" : "manual")</small>
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                                @if (cliente.SinTopeManual)
+                                                {
+                                                    <small>sin tope</small>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                    @if (_expandido == cliente.IdCliente)
+                                    {
+                                        <tr class="cia__detail">
+                                            <td colspan="9">
+                                                <ul>
+                                                    @foreach (var f in cliente.PorFuncion)
+                                                    {
+                                                        <li>
+                                                            <span>@IaUsoFunciones.Nombre(f.Funcion)</span>
+                                                            <span>@f.Llamadas.ToString("N0", Es) usos · USD @f.CostoUsd.ToString("N4", Es) · @f.Creditos.ToString("N0", Es) @(f.Creditos == 1 ? "crédito" : "créditos")@(f.LlamadasSinPrecio > 0 ? $" · {f.LlamadasSinPrecio:N0} sin precio" : string.Empty)</span>
+                                                        </li>
+                                                    }
+                                                </ul>
+                                                @if (cliente.IdCliente.Length > 0)
+                                                {
+                                                    <div class="cia__tope" @onclick:stopPropagation="true">
+                                                        <AlfaInput Id="@($"tope-{cliente.IdCliente}")" Label="Tope mensual de créditos" Type="number"
+                                                                   Placeholder="Del plan" HelpText="Al llegar, el asistente deja de responder y pasa a una persona."
+                                                                   Value="@_topeEdicion" ValueChanged="@((string? v) => _topeEdicion = v ?? string.Empty)" />
+                                                        <AlfaInput Id="@($"aviso-{cliente.IdCliente}")" Label="Avisar desde (%)" Type="number"
+                                                                   Value="@_avisoEdicion" ValueChanged="@((string? v) => _avisoEdicion = v ?? "80")" />
+                                                        <div class="cia__tope-acciones">
+                                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.Guardar)">Guardar tope</AlfaButton>
+                                                            @if (cliente.TopeOrigen == IaTopeOrigenes.Manual || cliente.SinTopeManual)
+                                                            {
+                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.UsarPlan)">Usar el del plan</AlfaButton>
+                                                            }
+                                                            @if (!cliente.SinTopeManual)
+                                                            {
+                                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_busy" OnClick="() => GuardarTopeAsync(cliente.IdCliente, TopeAccion.SinTope)">Sin tope</AlfaButton>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            @if (_config is not null)
+            {
+                <section class="cia__card" aria-label="Configuración de créditos">
+                    <header class="cia__card-header">
+                        <div>
+                            <h3>Configuración de créditos</h3>
+                            <p>Plan que usan los clientes sin plan asignado y tope automático según el plan. Los planes se editan en Módulos → Créditos de IA → Planes.</p>
+                        </div>
+                        @if (_config.IdModulo > 0)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-pencil" OnClick="AbrirPlanes">Editar planes</AlfaButton>
+                        }
+                    </header>
+                    <div class="cia__config">
+                        <AlfaSelect Id="cia-plan-default" Label="Plan por defecto" Options="PlanDefaultOptions"
+                                    Value="@_cfgPlanDefault" ValueChanged="@((string? v) => _cfgPlanDefault = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-factor" Label="Tope de planes con excedente (× incluidos)" Type="number"
+                                   HelpText="0 = sin tope automático. Los planes sin excedente cortan en los incluidos."
+                                   Value="@_cfgFactor" ValueChanged="@((string? v) => _cfgFactor = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-aviso" Label="Avisar desde (%)" Type="number"
+                                   Value="@_cfgAviso" ValueChanged="@((string? v) => _cfgAviso = v ?? string.Empty)" />
+                        <AlfaInput Id="cia-cfg-usd" Label="1 crédito = USD" Type="number"
+                                   HelpText="Costo de OpenAI que equivale a un crédito."
+                                   Value="@_cfgUsd" ValueChanged="@((string? v) => _cfgUsd = v ?? string.Empty)" />
+                    </div>
+                    @if (_config.Planes.Count > 0)
+                    {
+                        <ul class="cia__planes">
+                            @foreach (var p in _config.Planes)
+                            {
+                                <li class="@(p.Activo ? null : "is-off")">
+                                    <strong>@p.Nombre</strong>
+                                    <span>@p.CreditosIncluidos.ToString("N0", Es) créditos · @(p.Precio == 0 ? "sin abono" : $"{p.Moneda} {p.Precio.ToString("N2", Es)}/mes")@(p.PermiteExcedentes ? $" · excedente {p.Moneda} {p.PrecioExcedente.ToString("N2", Es)} c/ 1.000" : " · sin excedente")@(p.Activo ? string.Empty : " · inactivo")@(p.VisibleCatalogo ? string.Empty : " · no visible para el cliente")</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="cia__hint">Todavía no hay planes de créditos. Se crean solos al arrancar la aplicación, o cargalos en Módulos → Créditos de IA → Planes.</p>
+                    }
+                    <div class="cia__tope-acciones">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-floppy" Disabled="@_busy" OnClick="GuardarConfigAsync">Guardar configuración</AlfaButton>
+                    </div>
+                </section>
+            }
+
+            <details class="cia__help">
+                <summary><i class="bi bi-question-circle" aria-hidden="true"></i> Cómo se cobra</summary>
+                <ol>
+                    <li>Los clientes sin plan usan el <strong>plan por defecto</strong> (IA Inicial: incluido, sin abono). Para cobrarle a un cliente, asignale el módulo <strong>Créditos de IA</strong> con un plan de tipo <strong>CREDITOS</strong>, o aprobá el pedido que hace desde Asistente IA → General.</li>
+                    <li>Al terminar el mes, «Generar cargos del mes» crea un cargo por cliente con plan asignado: abono + excedentes × precio de excedente (por cada 1.000 créditos). Es idempotente: no duplica cargos ya generados.</li>
+                    <li>Los cargos aparecen en Administrar → Cargos y se cobran como cualquier otro.</li>
+                    <li>La conciliación compara el costo medido con el que factura OpenAI (requiere <code>OPENAI_ADMIN_KEY</code>). Una diferencia grande indica precios desactualizados o consumos fuera de AlfaCore.</li>
+                </ol>
+            </details>
+        }
+    </div>
+</div>
+
+<AlfaConfirmDialog Open="@_confirmarCargos"
+                   Title="Generar cargos de créditos IA"
+                   Message="@($"Se va a generar un cargo por cada cliente con plan de créditos IA para {NombreMes(_mes)} {_anio}.")"
+                   SecondaryMessage="Los cargos que ya existan para ese mes no se duplican."
+                   ConfirmLabel="Generar cargos" LoadingLabel="Generando..." Loading="@_busy"
+                   OnConfirm="GenerarCargosAsync" OnCancel="() => _confirmarCargos = false" />
+
+@code {
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    // Montos chicos (centavos de dólar) con 4 decimales: con 2 un consumo real se veía como 0,00.
+    internal static string Usd(decimal valor)
+        => valor != 0 && Math.Abs(valor) < 1 ? valor.ToString("N4", Es) : valor.ToString("N2", Es);
+
+    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+    private PageHeaderConfig? _pageHeaderPublicado;
+
+    private int _anio = DateTime.Today.Year;
+    private int _mes = DateTime.Today.Month;
+    private IaConsumoCentralDto? _resumen;
+    private IaConciliacionDto? _conciliacion;
+    private string? _error;
+    private string? _expandido;
+    private bool _busy;
+    private bool _confirmarCargos;
+    private AppUiMessage? _feedback;
+
+    private bool MesTerminado => new DateTime(_anio, _mes, 1).AddMonths(1) <= DateTime.Today;
+
+    private string ImporteTotalTexto
+        => _resumen is null || _resumen.Clientes.All(c => c.Plan is null)
+            ? "—"
+            : string.Join(" + ", _resumen.Clientes.Where(c => c.Plan is not null)
+                .GroupBy(c => c.Plan!.Moneda)
+                .Select(g => $"{g.Sum(c => c.ImporteEstimado).ToString("N2", Es)} {g.Key}"));
+
+    private static readonly IReadOnlyList<AlfaSelectOption> MesOptions
+        = Enumerable.Range(1, 12).Select(m => new AlfaSelectOption(m.ToString(Inv), NombreMes(m))).ToList();
+
+    private static IReadOnlyList<AlfaSelectOption> AnioOptions
+        => Enumerable.Range(0, 3).Select(i => DateTime.Today.Year - i).Select(y => new AlfaSelectOption(y.ToString(Inv), y.ToString(Inv))).ToList();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        if (AppUserSession.CurrentUser?.SuperAdmin != true || !ConsumoSvc.Disponible)
+            return;
+
+        _error = null;
+        _resumen = null;
+        _conciliacion = null;
+        try
+        {
+            _resumen = await ConsumoSvc.GetResumenCentralAsync(_anio, _mes);
+            StateHasChanged();
+            await CargarExtrasAsync();
+            StateHasChanged();
+            _conciliacion = await ConsumoSvc.GetConciliacionAsync(_anio, _mes);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OnMesChangedAsync(string? value)
+    {
+        if (int.TryParse(value, out var mes) && mes is >= 1 and <= 12 && mes != _mes)
+        {
+            _mes = mes;
+            await CargarAsync();
+        }
+    }
+
+    private async Task OnAnioChangedAsync(string? value)
+    {
+        if (int.TryParse(value, out var anio) && anio != _anio)
+        {
+            _anio = anio;
+            await CargarAsync();
+        }
+    }
+
+    private string _topeEdicion = string.Empty;
+    private string _avisoEdicion = "80";
+    private IReadOnlyList<IaSolicitudPlanDto> _solicitudes = [];
+    private IaConfigCreditosDto? _config;
+    private string _cfgPlanDefault = string.Empty;
+    private string _cfgFactor = "2";
+    private string _cfgAviso = "80";
+    private string _cfgUsd = "0.001";
+
+    private enum TopeAccion { Guardar, UsarPlan, SinTope }
+
+    private IReadOnlyList<AlfaSelectOption> PlanDefaultOptions
+        => new[] { new AlfaSelectOption(string.Empty, "Ninguno (sin plan por defecto)") }
+            .Concat((_config?.Planes ?? []).Where(p => p.Activo).Select(p => new AlfaSelectOption(p.Codigo, $"{p.Nombre} ({p.CreditosIncluidos.ToString("N0", Es)} créditos)")))
+            .ToList();
+
+    private string PlanActualDe(string idCliente)
+        => _resumen?.Clientes.FirstOrDefault(c => c.IdCliente == idCliente)?.Plan?.PlanNombre ?? string.Empty;
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
+
+    private void AbrirPlanes()
+    {
+        if (_config is { IdModulo: > 0 } c)
+            Nav.NavigateTo(RouteContext.BuildRoute($"/admin/modulos/{c.IdModulo.ToString(Inv)}/planes"));
+    }
+
+    private async Task CargarExtrasAsync()
+    {
+        try
+        {
+            _solicitudes = await ConsumoSvc.GetSolicitudesPlanAsync();
+            _config = await ConsumoSvc.GetConfigAsync();
+            _cfgPlanDefault = _config.PlanDefaultCodigo;
+            _cfgFactor = _config.TopeFactorExcedentes.ToString("0.##", Inv);
+            _cfgAviso = _config.AvisoPorcentaje.ToString(Inv);
+            _cfgUsd = _config.UsdPorCredito.ToString("0.########", Inv);
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "No se pudo cargar la configuración de créditos", Message = ex.Message };
+        }
+    }
+
+    private async Task GuardarConfigAsync()
+    {
+        if (!decimal.TryParse(_cfgFactor.Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var factor) || factor < 0
+            || !int.TryParse(_cfgAviso, System.Globalization.NumberStyles.Integer, Inv, out var aviso) || aviso is < 1 or > 100
+            || !decimal.TryParse(_cfgUsd.Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var usd) || usd <= 0)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Revisá los valores", Message = "El factor tiene que ser 0 o más, el aviso entre 1 y 100 y el valor del crédito mayor a cero." };
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.SaveConfigAsync(new IaConfigCreditosDto
+            {
+                PlanDefaultCodigo = _cfgPlanDefault,
+                TopeFactorExcedentes = factor,
+                AvisoPorcentaje = aviso,
+                UsdPorCredito = usd
+            });
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Configuración guardada", Message = "Los cambios se aplican al consumo y a los topes en un par de minutos." };
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo guardar la configuración", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DecidirAsync(IaSolicitudPlanDto solicitud, bool aprobar)
+    {
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.DecidirSolicitudPlanAsync(solicitud.Id, aprobar);
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = aprobar ? "Plan aprobado" : "Pedido rechazado",
+                Message = aprobar
+                    ? $"{FirstNonEmpty(solicitud.Cliente, solicitud.IdCliente)} ahora tiene el plan {solicitud.PlanNombre}."
+                    : $"Se rechazó el pedido de {FirstNonEmpty(solicitud.Cliente, solicitud.IdCliente)}."
+            };
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo completar el pedido", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Alternar(string idCliente)
+    {
+        _expandido = _expandido == idCliente ? null : idCliente;
+        var cliente = _resumen?.Clientes.FirstOrDefault(c => c.IdCliente == idCliente);
+        // Solo se precarga el tope manual: el del plan se muestra como sugerencia (vacío = del plan).
+        _topeEdicion = cliente?.TopeOrigen == IaTopeOrigenes.Manual ? cliente.TopeCreditos?.ToString(Inv) ?? string.Empty : string.Empty;
+        _avisoEdicion = (cliente?.AvisoPorcentaje ?? 80).ToString(Inv);
+    }
+
+    private async Task GuardarTopeAsync(string idCliente, TopeAccion accion)
+    {
+        int? tope = accion switch
+        {
+            TopeAccion.UsarPlan => null,
+            TopeAccion.SinTope => 0,
+            _ => -1
+        };
+        if (accion == TopeAccion.Guardar)
+        {
+            if (!int.TryParse(_topeEdicion, System.Globalization.NumberStyles.Integer, Inv, out var valor) || valor <= 0)
+            {
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tope inválido", Message = "Ingresá una cantidad de créditos mayor a cero, o usá «Usar el del plan» o «Sin tope»." };
+                return;
+            }
+            tope = valor;
+        }
+
+        var aviso = int.TryParse(_avisoEdicion, System.Globalization.NumberStyles.Integer, Inv, out var a) ? a : 80;
+        _busy = true;
+        try
+        {
+            await ConsumoSvc.SaveTopeAsync(idCliente, tope, aviso);
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = accion switch { TopeAccion.UsarPlan => "Tope del plan", TopeAccion.SinTope => "Sin tope", _ => "Tope guardado" },
+                Message = accion switch
+                {
+                    TopeAccion.UsarPlan => "El cliente vuelve a tener el tope automático de su plan.",
+                    TopeAccion.SinTope => "El asistente no tiene límite mensual para este cliente.",
+                    _ => $"Tope de {tope:N0} créditos por mes, con aviso desde el {Math.Clamp(aviso, 1, 100)}%."
+                }
+            };
+            var expandido = _expandido;
+            await CargarAsync();
+            if (expandido is not null)
+                Alternar(expandido);
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo guardar el tope", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void AlternarConTecla(KeyboardEventArgs args, string idCliente)
+    {
+        if (args.Key is "Enter" or " ")
+            Alternar(idCliente);
+    }
+
+    private async Task GenerarCargosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var resultado = await ConsumoSvc.GenerarCargosAsync(_anio, _mes);
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Success,
+                Title = "Cargos generados",
+                Message = $"{resultado.Generados} nuevo(s), {resultado.YaExistentes} ya existían, {resultado.SinImporte} sin importe."
+            };
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudieron generar los cargos", Message = ex.Message };
+        }
+        finally
+        {
+            _busy = false;
+            _confirmarCargos = false;
+        }
+    }
+
+    private static string NombreMes(int mes)
+        => Es.DateTimeFormat.GetMonthName(mes) is { Length: > 0 } nombre ? char.ToUpper(nombre[0], Es) + nombre[1..] : mes.ToString(Inv);
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        Title = "Consumo IA",
+        Breadcrumb = ["Administrar", "Consumo IA"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
+        TopNavigationItems = ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "consumo-ia")
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+}

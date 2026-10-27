@@ -4,7 +4,11 @@ public enum TipoReporteCompras
 {
     ResumenDeCompras,
     DetalleDeCompras,
-    CuentaCorriente
+    CuentaCorriente,
+    Saldos,
+    ControlCredito,
+    CuentaCorrienteResumida,
+    CuentaCorrienteAnalitica
 }
 
 public class FiltrosReporteCompras
@@ -19,7 +23,16 @@ public class FiltrosReporteCompras
     public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
     public string? Proveedor { get; set; }
+    public string? CuentaExacta { get; set; }
+    public string? Provincia { get; set; }
+    public bool IncluirProforma { get; set; }
     public string? TipoComprobante { get; set; }
+    public string? Vendedor { get; set; }
+    public bool SinVendedor { get; set; }
+    public string? Zona { get; set; }
+    public bool SinZona { get; set; }
+    public bool IncluirSaldosCero { get; set; }
+    public string[] UnidadesNegocio { get; set; } = [];
     public int Pagina { get; set; } = 1;
     public int TamanioPagina { get; set; } = 50;
 }
@@ -27,7 +40,14 @@ public class FiltrosReporteCompras
 public sealed class ReporteComprasOptionsDto
 {
     public IReadOnlyList<string> TiposComprobante { get; init; } = [];
+    public IReadOnlyList<ReporteFiltroOpcion> Vendedores { get; init; } = [];
+    public IReadOnlyList<ReporteFiltroOpcion> UnidadesNegocio { get; init; } = [];
+    public bool PuedeIncluirProforma { get; init; }
+    public IReadOnlyList<ReporteFiltroOpcion> Provincias { get; init; } = [];
+    public IReadOnlyList<string> Zonas { get; init; } = [];
 }
+
+public sealed record ReporteFiltroOpcion(string Codigo, string Nombre);
 
 // ── Resumen de Compras ──────────────────────────────────────────────────────
 
@@ -86,10 +106,16 @@ public sealed class CuentaCorrienteFilaDto
     public DateTime Fecha { get; init; }
     public string Tc { get; init; } = string.Empty;
     public string IdComprobante { get; init; } = string.Empty;
-    // 'H' = suma (factura/deuda), 'D' = resta (pago/descuento)
+    // Clientes: D suma/H resta. Proveedores: H suma/D resta.
     public string DebeHaber { get; init; } = string.Empty;
     public decimal Importe { get; init; }
     public decimal ImporteSignado { get; init; }
+    public bool EsSaldoInicial { get; init; }
+    public decimal SaldoInicial { get; init; }
+    public decimal SaldoAnteriorLinea { get; init; }
+    public decimal SaldoParcial { get; init; }
+    public decimal SaldoFinalCuenta { get; init; }
+    public bool UltimaLineaCuenta { get; init; }
 }
 
 public sealed class CuentaCorrienteResultDto
@@ -99,5 +125,7 @@ public sealed class CuentaCorrienteResultDto
     public int PaginaActual { get; init; }
     public int TamanioPagina { get; init; }
     public decimal SaldoTotal { get; init; }
+    public decimal SaldoInicialTotal { get; init; }
+    public decimal SaldoFinalTotal { get; init; }
     public int TotalPaginas => TamanioPagina > 0 ? (int)Math.Ceiling((double)TotalRegistros / TamanioPagina) : 0;
 }

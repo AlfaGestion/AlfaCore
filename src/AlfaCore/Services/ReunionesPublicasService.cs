@@ -9,9 +9,15 @@ namespace AlfaCore.Services;
 public sealed class ReunionesPublicasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IReunionesPublicasService
+    IAppEventService appEvents,
+    IConversacionesService conversacionesService,
+    IAvisosPushNotifier? avisosPush = null) : IReunionesPublicasService
 {
     private const string ModuleName = "CalendarioReuniones";
+    private const string PlantillaOrganizador = "capacitacion_reserva_organizador";
+    private const string PlantillaCliente = "capacitacion_reserva_cliente";
+    private const string PlantillaCancelacionOrganizador = "capacitacion_reserva_cancelada_organizador";
+    private const string PlantillaCancelacionCliente = "capacitacion_reserva_cancelada_cliente";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -81,6 +87,25 @@ public sealed class ReunionesPublicasService(
             if (overlaps > 0)
                 throw new InvalidOperationException("Ese horario acaba de ser reservado. Elegi otro horario disponible.");
 
+            // Un mismo cliente: una reserva por semana (los técnicos agendan sin límite desde el Calendario).
+            var semana = ReunionesPublicasLimite.InicioSemana(request.FechaInicio);
+            var confirmadas = await cn.QueryAsync<ReunionesPublicasLimite.ReservaCliente>(
+                """
+                SELECT FechaInicio, ISNULL(Email, N'') AS Email, ISNULL(Telefono, N'') AS Telefono, ISNULL(RazonSocial, N'') AS RazonSocial
+                FROM dbo.CAL_RESERVAS_REUNION
+                WHERE ISNULL(Baja, 0) = 0
+                  AND Estado = N'CONFIRMADA'
+                  AND FechaInicio >= @Desde
+                  AND FechaInicio < @Hasta;
+                """,
+                new { Desde = semana, Hasta = semana.AddDays(7) },
+                dbTx);
+            var limite = ReunionesPublicasLimite.Verificar(
+                new ReunionesPublicasLimite.ReservaCliente(request.FechaInicio, request.Email, request.Telefono, request.RazonSocial),
+                confirmadas);
+            if (limite is not null)
+                throw new InvalidOperationException(limite);
+
             var tituloEvento = $"{tipo.Titulo} - {FirstNonEmpty(request.RazonSocial, request.ClienteNombre)}";
             var descripcion = BuildReservationDescription(request);
             var idEvento = await cn.ExecuteScalarAsync<long>(
@@ -148,6 +173,15 @@ public sealed class ReunionesPublicasService(
             await tx.CommitAsync(token);
             await appEvents.LogAuditAsync(ModuleName, "ReservaCreada", "CAL_RESERVAS_REUNION", idReserva.ToString(CultureInfo.InvariantCulture), tituloEvento, new { idEvento, request.Email }, token);
 
+            if (avisosPush is not null)
+            {
+                var cliente = string.IsNullOrWhiteSpace(request.RazonSocial) ? request.ClienteNombre.Trim() : request.RazonSocial.Trim();
+                await avisosPush.NotificarTecnicoAsync(tipo.IdTecnico, $"Nueva reserva: {request.TipoCapacitacion.Trim()}",
+                    $"{cliente} · {request.FechaInicio.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)}", "/calendario", token);
+            }
+
+            await TrySendReservationWhatsAppAsync(tipo, request, idReserva, token);
+
             return new ReunionPublicaReservaResult
             {
                 IdReserva = idReserva,
@@ -159,6 +193,173 @@ public sealed class ReunionesPublicasService(
                 Modalidad = tipo.Modalidad
             };
         }, "No se pudo confirmar la reserva.", ct);
+
+    private async Task TrySendReservationWhatsAppAsync(
+        ReunionPublicaTipoDto tipo,
+        ReunionPublicaReservaRequest request,
+        long idReserva,
+        CancellationToken ct)
+    {
+        var cliente = FirstNonEmpty(request.RazonSocial, request.ClienteNombre);
+        var fechaHora = FormatReservationDate(request.FechaInicio);
+        var tipoCapacitacion = FirstNonEmpty(request.TipoCapacitacion, tipo.Titulo);
+        var tecnico = FirstNonEmpty(tipo.TecnicoNombre, tipo.Titulo);
+
+        var valores = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [WhatsAppTemplateVariableCatalog.CapacitacionTecnico] = tecnico,
+            [WhatsAppTemplateVariableCatalog.CapacitacionCliente] = cliente,
+            [WhatsAppTemplateVariableCatalog.CapacitacionTipo] = tipoCapacitacion,
+            [WhatsAppTemplateVariableCatalog.CapacitacionFechaHora] = fechaHora
+        };
+
+        await TrySendReservationTemplateAsync(
+            PlantillaOrganizador,
+            tipo.TelefonoWhatsApp,
+            tipo.IdTecnico,
+            valores,
+            $"Reserva {idReserva.ToString(CultureInfo.InvariantCulture)}: aviso al organizador",
+            ct);
+
+        await TrySendReservationTemplateAsync(
+            PlantillaCliente,
+            request.Telefono,
+            tipo.IdTecnico,
+            valores,
+            $"Reserva {idReserva.ToString(CultureInfo.InvariantCulture)}: confirmación al cliente",
+            ct);
+    }
+
+    private async Task TrySendReservationCancellationWhatsAppAsync(
+        ReservationNotificationSnapshot reserva,
+        string? motivoNotificacion,
+        CancellationToken ct)
+    {
+        var cliente = FirstNonEmpty(reserva.RazonSocial, reserva.ClienteNombre);
+        var fechaHora = FormatReservationDate(reserva.FechaInicio);
+        var tipoCapacitacion = FirstNonEmpty(reserva.TipoCapacitacion, reserva.Titulo);
+        var tecnico = FirstNonEmpty(reserva.TecnicoNombre, reserva.Titulo);
+
+        var valores = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [WhatsAppTemplateVariableCatalog.CapacitacionTecnico] = tecnico,
+            [WhatsAppTemplateVariableCatalog.CapacitacionCliente] = cliente,
+            [WhatsAppTemplateVariableCatalog.CapacitacionTipo] = tipoCapacitacion,
+            [WhatsAppTemplateVariableCatalog.CapacitacionFechaHora] = fechaHora
+        };
+
+        var contextoMotivo = string.IsNullOrWhiteSpace(motivoNotificacion) ? "cancelacion" : motivoNotificacion.Trim();
+        await TrySendReservationTemplateAsync(
+            PlantillaCancelacionOrganizador,
+            reserva.TelefonoWhatsApp,
+            reserva.IdTecnico,
+            valores,
+            $"Reserva {reserva.IdReserva.ToString(CultureInfo.InvariantCulture)}: {contextoMotivo} al organizador",
+            ct);
+
+        await TrySendReservationTemplateAsync(
+            PlantillaCancelacionCliente,
+            reserva.Telefono,
+            reserva.IdTecnico,
+            valores,
+            $"Reserva {reserva.IdReserva.ToString(CultureInfo.InvariantCulture)}: {contextoMotivo} al cliente",
+            ct);
+    }
+
+    private async Task TrySendReservationTemplateAsync(
+        string nombreMeta,
+        string? telefono,
+        string? idTecnico,
+        IReadOnlyDictionary<string, string> valores,
+        string contexto,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(telefono))
+            return;
+
+        try
+        {
+            var idNumeroWhatsApp = await ResolveActiveWhatsAppNumberIdAsync(ct);
+            var template = await FindApprovedTemplateByMetaNameAsync(nombreMeta, idNumeroWhatsApp, ct);
+            if (template is null)
+            {
+                await appEvents.LogErrorAsync(ModuleName, "ReservaWhatsAppSinPlantilla",
+                    new InvalidOperationException($"No existe plantilla aprobada {nombreMeta}."),
+                    "No se envió un WhatsApp automático de reserva porque falta aprobar la plantilla en Meta.",
+                    new { NombreMeta = nombreMeta, Contexto = contexto }, AppEventSeverity.Warning, ct);
+                return;
+            }
+
+            var conv = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
+            {
+                TelefonoWhatsApp = telefono.Trim(),
+                IdNumeroWhatsApp = idNumeroWhatsApp,
+                IdTecnico = idTecnico,
+                UsuarioAccion = "ReunionesPublicas",
+                SistemaAccion = "AlfaCore"
+            }, ct);
+
+            await conversacionesService.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+            {
+                IdConversacion = conv.IdConversacion,
+                IdPlantilla = template.IdPlantilla,
+                IdTecnicoAutor = idTecnico,
+                UsuarioAccion = "ReunionesPublicas",
+                SistemaAccion = "AlfaCore",
+                ValoresVariables = BuildReservationTemplateValues(nombreMeta, valores),
+                ValoresPorVariable = new Dictionary<string, string>(valores, StringComparer.Ordinal)
+            }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await appEvents.LogErrorAsync(ModuleName, "ReservaWhatsApp", ex,
+                "La reserva se confirmó, pero no se pudo enviar un WhatsApp automático.",
+                new { NombreMeta = nombreMeta, Telefono = telefono, Contexto = contexto }, AppEventSeverity.Warning, ct);
+        }
+    }
+
+    private async Task<int?> ResolveActiveWhatsAppNumberIdAsync(CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        return await cn.ExecuteScalarAsync<int?>(
+            """
+            SELECT TOP (1) IdNumero
+            FROM dbo.CONV_WHATSAPP_NUMEROS
+            WHERE ISNULL(Activo, 0) = 1
+              AND NULLIF(LTRIM(RTRIM(ISNULL(PhoneNumberId, N''))), N'') IS NOT NULL
+              AND NULLIF(LTRIM(RTRIM(ISNULL(WabaId, N''))), N'') IS NOT NULL
+            ORDER BY IdNumero;
+            """);
+    }
+
+    private async Task<ConversacionPlantillaDto?> FindApprovedTemplateByMetaNameAsync(string nombreMeta, int? idNumeroWhatsApp, CancellationToken ct)
+    {
+        var templates = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+        {
+            IdNumeroWhatsApp = idNumeroWhatsApp,
+            EstadoMeta = "APPROVED",
+            IncluirInactivas = false,
+            Search = nombreMeta
+        }, ct);
+
+        return templates.FirstOrDefault(x => string.Equals(x.NombreMeta.Trim(), nombreMeta, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> BuildReservationTemplateValues(string nombreMeta, IReadOnlyDictionary<string, string> valores)
+    {
+        var tecnico = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionTecnico, string.Empty);
+        var cliente = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionCliente, string.Empty);
+        var fechaHora = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionFechaHora, string.Empty);
+        var tipo = valores.GetValueOrDefault(WhatsAppTemplateVariableCatalog.CapacitacionTipo, string.Empty);
+
+        if (string.Equals(nombreMeta, PlantillaCliente, StringComparison.OrdinalIgnoreCase))
+            return [cliente, fechaHora, tecnico, tipo];
+
+        if (string.Equals(nombreMeta, PlantillaCancelacionCliente, StringComparison.OrdinalIgnoreCase))
+            return [cliente, fechaHora, tipo];
+
+        return [tecnico, cliente, fechaHora, tipo];
+    }
 
     public Task<ReunionPublicaAdminDto> GetAdminAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAdmin", async token =>
@@ -266,10 +467,11 @@ public sealed class ReunionesPublicasService(
             return id;
         }, "No se pudo guardar el tipo de reunion.", ct);
 
-    public Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, CancellationToken ct = default)
+    public Task CancelReservationAsync(long idReserva, string? usuarioAccion = null, string? motivoNotificacion = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("CancelReservation", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            var reserva = await GetReservationNotificationSnapshotAsync(cn, idReserva, token);
             await cn.ExecuteAsync(
                 """
                 DECLARE @IdEvento bigint;
@@ -287,7 +489,36 @@ public sealed class ReunionesPublicasService(
                 """,
                 new { IdReserva = idReserva });
             await appEvents.LogAuditAsync(ModuleName, "ReservaCancelada", "CAL_RESERVAS_REUNION", idReserva.ToString(CultureInfo.InvariantCulture), "Reserva cancelada", null, token);
+
+            if (reserva is not null)
+                await TrySendReservationCancellationWhatsAppAsync(reserva, motivoNotificacion, token);
         }, "No se pudo cancelar la reserva.", ct);
+
+    private static async Task<ReservationNotificationSnapshot?> GetReservationNotificationSnapshotAsync(SqlConnection cn, long idReserva, CancellationToken ct)
+    {
+        return await cn.QueryFirstOrDefaultAsync<ReservationNotificationSnapshot>(
+            """
+            SELECT TOP 1
+                   r.IdReserva,
+                   r.IdEvento,
+                   r.FechaInicio,
+                   r.FechaFin,
+                   ISNULL(r.ClienteNombre, N'') AS ClienteNombre,
+                   ISNULL(r.RazonSocial, N'') AS RazonSocial,
+                   ISNULL(r.Telefono, N'') AS Telefono,
+                   ISNULL(r.TipoCapacitacion, N'') AS TipoCapacitacion,
+                   ISNULL(t.Titulo, N'') AS Titulo,
+                   ISNULL(t.IdTecnico, N'') AS IdTecnico,
+                   ISNULL(t.TecnicoNombre, N'') AS TecnicoNombre,
+                   ISNULL(t.TelefonoWhatsApp, N'') AS TelefonoWhatsApp,
+                   ISNULL(t.Modalidad, N'') AS Modalidad
+            FROM dbo.CAL_RESERVAS_REUNION r
+            INNER JOIN dbo.CAL_TIPOS_REUNION t ON t.IdTipoReunion = r.IdTipoReunion
+            WHERE r.IdReserva = @IdReserva
+              AND ISNULL(r.Baja, 0) = 0;
+            """,
+            new { IdReserva = idReserva });
+    }
 
     private static async Task<ReunionPublicaTipoDto?> GetTipoBySlugAsync(SqlConnection cn, string? slug, CancellationToken ct)
     {
@@ -443,6 +674,9 @@ public sealed class ReunionesPublicasService(
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
+    private static string FormatReservationDate(DateTime value)
+        => value.ToString("dddd dd/MM/yyyy 'a las' HH:mm", CultureInfo.GetCultureInfo("es-AR"));
+
     private static string? EmptyToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -476,5 +710,22 @@ public sealed class ReunionesPublicasService(
     {
         public DateTime Inicio { get; init; }
         public DateTime Fin { get; init; }
+    }
+
+    private sealed class ReservationNotificationSnapshot
+    {
+        public long IdReserva { get; init; }
+        public long IdEvento { get; init; }
+        public DateTime FechaInicio { get; init; }
+        public DateTime FechaFin { get; init; }
+        public string ClienteNombre { get; init; } = string.Empty;
+        public string RazonSocial { get; init; } = string.Empty;
+        public string Telefono { get; init; } = string.Empty;
+        public string TipoCapacitacion { get; init; } = string.Empty;
+        public string Titulo { get; init; } = string.Empty;
+        public string IdTecnico { get; init; } = string.Empty;
+        public string TecnicoNombre { get; init; } = string.Empty;
+        public string TelefonoWhatsApp { get; init; } = string.Empty;
+        public string Modalidad { get; init; } = string.Empty;
     }
 }

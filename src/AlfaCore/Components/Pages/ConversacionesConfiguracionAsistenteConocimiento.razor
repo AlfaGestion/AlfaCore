@@ -1,0 +1,426 @@
+@using AlfaCore.Services
+@implements IDisposable
+@inject IConversacionAsistenteConocimientoService ConocimientoSvc
+
+@* Asistente IA → Información del negocio: bloques por tema y archivos de conocimiento (2026-10-05).
+   Se guardan al momento (no dependen del botón "Guardar asistente"). *@
+
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+<ConversacionesConfigTarjeta Titulo="Información por tema"
+                             Descripcion="Cargá la información en bloques: es más fácil de mantener y el asistente la usa toda. Podés desactivar un bloque sin borrarlo.">
+    <Extra>
+        @if (_edicion is null)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-plus-lg" Disabled="@_busy" OnClick="() => NuevoBloque(null)">Agregar bloque</AlfaButton>
+        }
+    </Extra>
+    <ChildContent>
+        @if (_edicion is not null)
+        {
+            <div class="cfg-stack">
+                <div class="conoc-editor">
+                    <AlfaSelect Id="bloque-categoria" Label="Tema" Options="CategoriaOptions"
+                                Value="@_edicion.Categoria" ValueChanged="@((string? v) => _edicion.Categoria = v ?? AsistenteBloqueCategorias.General)" />
+                    <AlfaInput Id="bloque-titulo" Label="Título" Required="true" Placeholder="Ej: Horario de atención en sucursal centro"
+                               Value="@_edicion.Titulo" ValueChanged="@((string? v) => _edicion.Titulo = v ?? string.Empty)" />
+                </div>
+                <ConversacionesConfigTexto Id="bloque-contenido" Label="Contenido" Filas="7"
+                                           Placeholder="Escribilo como se lo explicarías a un cliente. Para preguntas frecuentes: «P: … R: …»."
+                                           Value="@_edicion.Contenido" ValueChanged="@((string? v) => _edicion.Contenido = v ?? string.Empty)" />
+                <AlfaCheckbox Value="@_edicion.Activo" ValueChanged="@((bool? v) => _edicion.Activo = v == true)">Bloque activo (el asistente lo usa)</AlfaCheckbox>
+                <div class="cfg-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi-floppy" Loading="@_busy" Disabled="@_busy" OnClick="GuardarBloqueAsync">Guardar bloque</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _edicion = null">Cancelar</AlfaButton>
+                </div>
+            </div>
+        }
+        else if (_cargando)
+        {
+            <p class="cfg-hint">Cargando…</p>
+        }
+        else if (_bloques.Count == 0)
+        {
+            <p class="cfg-hint">Todavía no hay bloques. Empezá por los temas que más preguntan:</p>
+            <div class="cfg-inline">
+                @foreach (var sugerido in Sugeridos)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-plus" OnClick="() => NuevoBloque(sugerido)">@AsistenteBloqueCategorias.Nombre(sugerido)</AlfaButton>
+                }
+            </div>
+        }
+        else
+        {
+            <ul class="cfg-list">
+                @foreach (var bloque in _bloques)
+                {
+                    <li class="cfg-list__item">
+                        <i class="bi @IconoCategoria(bloque.Categoria) cfg-list__icon" aria-hidden="true"></i>
+                        <div class="cfg-list__text">
+                            <span class="cfg-list__title">
+                                @bloque.Titulo
+                                <AlfaTag Tone="AlfaTagTone.Neutral">@AsistenteBloqueCategorias.Nombre(bloque.Categoria)</AlfaTag>
+                                @if (!bloque.Activo)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Warning">Inactivo</AlfaTag>
+                                }
+                            </span>
+                            <span class="cfg-list__desc">@Resumen(bloque.Contenido)</span>
+                        </div>
+                        <div class="cfg-list__actions">
+                            <AlfaIconButton Icon="bi-pencil" Label="Editar bloque" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => EditarBloque(bloque)" />
+                            <AlfaIconButton Icon="bi-trash" Label="Eliminar bloque" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _bloqueAEliminar = bloque" />
+                        </div>
+                    </li>
+                }
+            </ul>
+            <div class="cfg-meter @(ConversacionesConfiguracionAsistente.InformacionExtensa(TextoBloquesActivos) ? "is-warning" : null)">
+                <span>@_bloques.Count(b => b.Activo) bloque(s) activo(s) · @TextoBloquesActivos.Length.ToString("N0", Es) caracteres</span>
+                <span>≈ @ConversacionesConfiguracionAsistente.EstimarTokens(TextoBloquesActivos).ToString("N0", Es) tokens en cada respuesta</span>
+            </div>
+        }
+    </ChildContent>
+</ConversacionesConfigTarjeta>
+
+<ConversacionesConfigTarjeta Titulo="Archivos"
+                             Descripcion="Manuales, listas, catálogos, condiciones. El asistente busca en ellos lo relacionado con cada pregunta (entiende sinónimos) y solo usa esos fragmentos, así no encarece cada respuesta.">
+    <Extra>
+        @if (ConocimientoSvc.ArchivosDisponibles)
+        {
+            <label class="conoc-upload @(_subiendo ? "is-busy" : null)">
+                <i class="bi @(_subiendo ? "bi-hourglass-split" : "bi-upload")" aria-hidden="true"></i>
+                <span>@(_subiendo ? "Subiendo…" : "Subir archivos")</span>
+                <InputFile OnChange="SubirArchivosAsync" multiple accept="@Accept" disabled="@_subiendo" />
+            </label>
+        }
+    </Extra>
+    <ChildContent>
+        @if (!ConocimientoSvc.ArchivosDisponibles)
+        {
+            <div class="cfg-notice">
+                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                <span>Falta la API key de OpenAI en el servidor: no se pueden subir archivos.</span>
+            </div>
+        }
+        <p class="cfg-hint">Formatos: PDF, Word, PowerPoint, texto, Markdown, HTML y JSON. Hasta 20 MB por archivo. Los PDF escaneados (solo imagen) no se pueden leer.</p>
+        @if (_archivos.Count > 0)
+        {
+            <ul class="cfg-list">
+                @foreach (var archivo in _archivos)
+                {
+                    <li class="cfg-list__item">
+                        <i class="bi @IconoArchivo(archivo.NombreArchivo) cfg-list__icon" aria-hidden="true"></i>
+                        <div class="cfg-list__text">
+                            <span class="cfg-list__title">
+                                @archivo.NombreArchivo
+                                <AlfaTag Tone="@TonoEstado(archivo.Estado)">@TextoEstado(archivo.Estado)</AlfaTag>
+                            </span>
+                            <span class="cfg-list__desc">
+                                @FormatearTamano(archivo.Tamano) · @archivo.FechaAlta.ToString("dd/MM/yyyy HH:mm")@(string.IsNullOrWhiteSpace(archivo.UsuarioAlta) ? null : $" · {archivo.UsuarioAlta}")
+                                @if (archivo.Estado == AsistenteArchivoEstados.Error && !string.IsNullOrWhiteSpace(archivo.UltimoError))
+                                {
+                                    <br /><span class="cfg-hint--warning">@archivo.UltimoError</span>
+                                }
+                            </span>
+                        </div>
+                        <div class="cfg-list__actions">
+                            <AlfaIconButton Icon="bi-trash" Label="Eliminar archivo" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="() => _archivoAEliminar = archivo" />
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        else if (!_cargando)
+        {
+            <p class="cfg-hint">Todavía no subiste archivos.</p>
+        }
+    </ChildContent>
+</ConversacionesConfigTarjeta>
+
+<AlfaConfirmDialog Open="@(_bloqueAEliminar is not null)"
+                   Title="Eliminar bloque"
+                   Message="@($"¿Eliminar «{_bloqueAEliminar?.Titulo}»?")"
+                   SecondaryMessage="El asistente deja de usar esta información. Si solo querés pausarlo, editalo y desactivalo."
+                   ConfirmLabel="Eliminar" LoadingLabel="Eliminando..." Loading="@_busy"
+                   OnConfirm="EliminarBloqueAsync" OnCancel="() => _bloqueAEliminar = null" />
+
+<AlfaConfirmDialog Open="@(_archivoAEliminar is not null)"
+                   Title="Eliminar archivo"
+                   Message="@($"¿Eliminar «{_archivoAEliminar?.NombreArchivo}»?")"
+                   SecondaryMessage="Se borra también de OpenAI y el asistente deja de usarlo. No se puede deshacer."
+                   ConfirmLabel="Eliminar" LoadingLabel="Eliminando..." Loading="@_busy"
+                   OnConfirm="EliminarArchivoAsync" OnCancel="() => _archivoAEliminar = null" />
+
+@code {
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private static readonly string Accept = string.Join(",", ConversacionAsistenteConocimientoService.ExtensionesPermitidas);
+    private static readonly string[] Sugeridos =
+    [
+        AsistenteBloqueCategorias.Horarios, AsistenteBloqueCategorias.Envios, AsistenteBloqueCategorias.Pagos, AsistenteBloqueCategorias.Faq
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> CategoriaOptions
+        = AsistenteBloqueCategorias.Todas.Select(c => new AlfaSelectOption(c.Clave, c.Nombre)).ToList();
+
+    private IReadOnlyList<AsistenteBloqueDto> _bloques = [];
+    private IReadOnlyList<AsistenteArchivoDto> _archivos = [];
+    private AsistenteBloqueDto? _edicion;
+    private AsistenteBloqueDto? _bloqueAEliminar;
+    private AsistenteArchivoDto? _archivoAEliminar;
+    private AppUiMessage? _feedback;
+    private bool _cargando = true;
+    private bool _busy;
+    private bool _subiendo;
+    private readonly CancellationTokenSource _cts = new();
+    private Timer? _refresco;
+
+    private string TextoBloquesActivos
+        => ConversacionAsistenteConocimientoService.ComponerInformacion(string.Empty, _bloques, []);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync(refrescar: true);
+        _cargando = false;
+    }
+
+    private async Task CargarAsync(bool refrescar)
+    {
+        try
+        {
+            _bloques = await ConocimientoSvc.GetBloquesAsync(_cts.Token);
+            _archivos = await ConocimientoSvc.GetArchivosAsync(refrescar, _cts.Token);
+            ProgramarRefresco();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Avisar(false, ex.Message);
+        }
+    }
+
+    // Mientras haya archivos procesándose en OpenAI, se consulta el estado cada 5 segundos.
+    private void ProgramarRefresco()
+    {
+        _refresco?.Dispose();
+        _refresco = null;
+        if (!_archivos.Any(a => a.Estado == AsistenteArchivoEstados.Procesando))
+            return;
+
+        _refresco = new Timer(_ => _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                _archivos = await ConocimientoSvc.GetArchivosAsync(true, _cts.Token);
+                ProgramarRefresco();
+                StateHasChanged();
+            }
+            catch
+            {
+            }
+        }), null, TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
+    }
+
+    private void NuevoBloque(string? categoria)
+        => _edicion = new AsistenteBloqueDto
+        {
+            Categoria = categoria ?? AsistenteBloqueCategorias.General,
+            Titulo = categoria is null ? string.Empty : AsistenteBloqueCategorias.Nombre(categoria),
+            Activo = true,
+            Orden = (_bloques.Count == 0 ? 0 : _bloques.Max(b => b.Orden)) + 10
+        };
+
+    private void EditarBloque(AsistenteBloqueDto bloque)
+        => _edicion = new AsistenteBloqueDto
+        {
+            IdBloque = bloque.IdBloque,
+            Categoria = bloque.Categoria,
+            Titulo = bloque.Titulo,
+            Contenido = bloque.Contenido,
+            Activo = bloque.Activo,
+            Orden = bloque.Orden
+        };
+
+    private async Task GuardarBloqueAsync()
+    {
+        if (_edicion is null)
+            return;
+        if (string.IsNullOrWhiteSpace(_edicion.Titulo))
+        {
+            Avisar(false, "Poné un título para identificar el bloque.");
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ConocimientoSvc.SaveBloqueAsync(_edicion, _cts.Token);
+            _edicion = null;
+            _bloques = await ConocimientoSvc.GetBloquesAsync(_cts.Token);
+            Avisar(true, "Bloque guardado. El asistente ya lo usa.");
+        }
+        catch (Exception ex)
+        {
+            Avisar(false, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task EliminarBloqueAsync()
+    {
+        if (_bloqueAEliminar is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            await ConocimientoSvc.DeleteBloqueAsync(_bloqueAEliminar.IdBloque, _cts.Token);
+            _bloques = await ConocimientoSvc.GetBloquesAsync(_cts.Token);
+            Avisar(true, "Bloque eliminado.");
+        }
+        catch (Exception ex)
+        {
+            Avisar(false, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            _bloqueAEliminar = null;
+        }
+    }
+
+    private async Task SubirArchivosAsync(InputFileChangeEventArgs e)
+    {
+        _subiendo = true;
+        var subidos = 0;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(10))
+            {
+                var error = ConversacionAsistenteConocimientoService.ValidarArchivo(file.Name, file.Size);
+                if (error is not null)
+                {
+                    Avisar(false, $"{file.Name}: {error}");
+                    continue;
+                }
+
+                try
+                {
+                    await using var stream = file.OpenReadStream(ConversacionAsistenteConocimientoService.TamanoMaximo, _cts.Token);
+                    await ConocimientoSvc.SubirArchivoAsync(stream, file.Name, file.ContentType, file.Size, _cts.Token);
+                    subidos++;
+                }
+                catch (Exception ex)
+                {
+                    Avisar(false, $"{file.Name}: {ex.Message}");
+                }
+            }
+
+            _archivos = await ConocimientoSvc.GetArchivosAsync(false, _cts.Token);
+            ProgramarRefresco();
+            if (subidos > 0)
+                Avisar(true, subidos == 1
+                    ? "Archivo subido. OpenAI lo está procesando; en unos segundos queda listo."
+                    : $"{subidos} archivos subidos. OpenAI los está procesando.");
+        }
+        catch (Exception ex)
+        {
+            Avisar(false, ex.Message);
+        }
+        finally
+        {
+            _subiendo = false;
+        }
+    }
+
+    private async Task EliminarArchivoAsync()
+    {
+        if (_archivoAEliminar is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            await ConocimientoSvc.DeleteArchivoAsync(_archivoAEliminar.IdArchivo, _cts.Token);
+            _archivos = await ConocimientoSvc.GetArchivosAsync(false, _cts.Token);
+            Avisar(true, "Archivo eliminado.");
+        }
+        catch (Exception ex)
+        {
+            Avisar(false, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            _archivoAEliminar = null;
+        }
+    }
+
+    private void Avisar(bool ok, string mensaje)
+        => _feedback = new AppUiMessage
+        {
+            Severity = ok ? AppUiFeedbackSeverity.Success : AppUiFeedbackSeverity.Error,
+            Title = ok ? "Listo" : "No se pudo completar",
+            Message = mensaje
+        };
+
+    internal static string Resumen(string? contenido)
+    {
+        var texto = (contenido ?? string.Empty).ReplaceLineEndings(" ").Trim();
+        return texto.Length <= 140 ? (texto.Length == 0 ? "Sin contenido" : texto) : texto[..140] + "…";
+    }
+
+    internal static string FormatearTamano(long bytes)
+        => bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.#} MB"
+            : bytes >= 1024 ? $"{bytes / 1024d:0} KB"
+            : $"{bytes} B";
+
+    private static string IconoCategoria(string categoria)
+        => ConversacionAsistenteConocimientoService.NormalizarCategoria(categoria) switch
+        {
+            AsistenteBloqueCategorias.Empresa => "bi-building",
+            AsistenteBloqueCategorias.Horarios => "bi-clock",
+            AsistenteBloqueCategorias.Envios => "bi-truck",
+            AsistenteBloqueCategorias.Pagos => "bi-credit-card",
+            AsistenteBloqueCategorias.Garantias => "bi-shield-check",
+            AsistenteBloqueCategorias.Faq => "bi-question-circle",
+            AsistenteBloqueCategorias.Productos => "bi-box-seam",
+            AsistenteBloqueCategorias.NoResponder => "bi-slash-circle",
+            _ => "bi-journal-text"
+        };
+
+    private static string IconoArchivo(string nombre)
+        => Path.GetExtension(nombre).ToLowerInvariant() switch
+        {
+            ".pdf" => "bi-file-earmark-pdf",
+            ".doc" or ".docx" => "bi-file-earmark-word",
+            ".pptx" => "bi-file-earmark-slides",
+            ".html" or ".htm" or ".json" => "bi-file-earmark-code",
+            _ => "bi-file-earmark-text"
+        };
+
+    private static AlfaTagTone TonoEstado(string estado) => estado switch
+    {
+        AsistenteArchivoEstados.Listo => AlfaTagTone.Success,
+        AsistenteArchivoEstados.Error => AlfaTagTone.Danger,
+        _ => AlfaTagTone.Warning
+    };
+
+    private static string TextoEstado(string estado) => estado switch
+    {
+        AsistenteArchivoEstados.Listo => "Listo",
+        AsistenteArchivoEstados.Error => "Error",
+        _ => "Procesando"
+    };
+
+    public void Dispose()
+    {
+        _refresco?.Dispose();
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

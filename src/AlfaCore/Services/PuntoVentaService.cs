@@ -17,6 +17,7 @@ public sealed class PuntoVentaService(
     IWebHostEnvironment env,
     IArcaConfigService arcaConfigService,
     IArcaFacturacionElectronicaService arcaFacturacion,
+    IArticuloPrecioResolverService articuloPrecioResolver,
     ILogger<PuntoVentaService> logger) : IPuntoVentaService
 {
     private const string ModuleName = "PuntoVenta";
@@ -28,6 +29,15 @@ public sealed class PuntoVentaService(
     private const int ArcaNumeracionTimeoutSeconds = 35;
     private const string SurchargeArticleCode = "RECARGO-TARJETA";
     private const string ConfigGroup = "PUNTOVENTA";
+    private static readonly IReadOnlyDictionary<string, string> DefaultEmailConfigKeys =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EMAIL_SERVER"] = "RegistroPublico:EmailServer",
+            ["EMAIL_PORT"] = "RegistroPublico:EmailPort",
+            ["EMAIL_CTA"] = "RegistroPublico:EmailAccount",
+            ["EMAIL_PASS"] = "RegistroPublico:EmailPassword",
+            ["EMAIL_SSL"] = "RegistroPublico:EmailSsl"
+        };
     private bool _requiredSaleProceduresChecked;
     private bool? _lineDetailParameterExists;
     /// <summary>sp_web_Alta_Comprobante graba siempre UNEGOCIO='   1' (literal, confirmado en el SP)
@@ -383,18 +393,26 @@ public sealed class PuntoVentaService(
             if (items.Count == 0)
                 throw new InvalidOperationException("No hay artículos cargados para cobrar.");
 
+            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? DefaultTc : request.TipoComprobante.Trim();
+            // Remito interno (RM) y Nota de pedido (NP): quedan pendientes de facturar -- no piden
+            // medio de pago, no generan cobranza ni asiento contable, ni mueven stock (igual que hoy no
+            // lo mueve ningún otro tipo de comprobante en este flujo). La factura real se sigue
+            // generando después, por ahora desde el sistema de escritorio.
+            var esRemitoONotaPedido = tc.Equals("RM", StringComparison.OrdinalIgnoreCase)
+                || tc.Equals("NP", StringComparison.OrdinalIgnoreCase);
+
             var pagos = request.Pagos
                 .Where(x => !string.IsNullOrWhiteSpace(x.CodigoMedioPago) && x.Importe > 0)
                 .ToList();
 
-            if (pagos.Count == 0)
+            if (!esRemitoONotaPedido && pagos.Count == 0)
                 throw new InvalidOperationException("No se informaron medios de pago.");
 
             var totalItems = decimal.Round(items.Sum(x => x.Subtotal), 2);
             var totalRecargos = decimal.Round(pagos.Sum(x => Math.Max(x.Recargo, 0m)), 2);
             var totalFactura = decimal.Round(totalItems + totalRecargos, 2);
             var totalPagos = decimal.Round(pagos.Sum(x => x.Importe), 2);
-            if (totalPagos + 0.01m < totalFactura)
+            if (!esRemitoONotaPedido && totalPagos + 0.01m < totalFactura)
                 throw new InvalidOperationException("El total cobrado debe cubrir al menos el total del carrito.");
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -422,14 +440,13 @@ public sealed class PuntoVentaService(
                     Familia = ""
                 });
             }
-            await EnsureRequiredSaleProceduresAsync(cn, token);
+            await EnsureRequiredSaleProceduresAsync(cn, token, requiereCobranzaYAsiento: !esRemitoONotaPedido);
 
             // La pantalla ya envía tipo y sucursal. No hace falta volver a
             // cargar el contexto completo del POS ni toda la configuración
             // (incluye usuario, permisos y varias consultas adicionales).
             var cuentaConsumidorFinal = await TryReadConfigValueAsync(cn, "CUENTACONSUMIDORFINAL", token);
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
-            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? DefaultTc : request.TipoComprobante.Trim();
             if (tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase))
             {
@@ -454,26 +471,27 @@ public sealed class PuntoVentaService(
             if (string.IsNullOrWhiteSpace(cliente))
                 throw new InvalidOperationException("No se pudo resolver la cuenta de consumidor final para grabar la venta.");
 
+            var ivaCliente = request.ClienteEventual is not null
+                ? await GetCondicionIvaAsync(cn, request.ClienteEventual.CondicionIva, token)
+                : await GetClienteIvaAsync(cn, cliente, token);
             var esConsumidorFinal = request.ClienteEventual is not null
-                ? EsConsumidorFinalIva(request.ClienteEventual.CondicionIva)
+                ? EsConsumidorFinalIva(ivaCliente.Codigo, ivaCliente.Descripcion)
                 : string.Equals(
                     cliente,
                     cuentaConsumidorFinal.Trim(),
-                    StringComparison.OrdinalIgnoreCase);
-            var ivaCliente = request.ClienteEventual is not null
-                && !string.IsNullOrWhiteSpace(request.ClienteEventual.CondicionIva)
-                    ? request.ClienteEventual.CondicionIva.Trim()
-                    : await GetClienteIvaAsync(cn, cliente, token);
+                    StringComparison.OrdinalIgnoreCase)
+                  || EsConsumidorFinalIva(ivaCliente.Codigo, ivaCliente.Descripcion);
             var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase)
+                || esRemitoONotaPedido
                 ? "X"
                 : ResolveLetraForCliente(
                     tc,
                     request.Letra,
                     esConsumidorFinal,
-                    ivaCliente,
-                    tcConfig,
-                    sucursal);
+                    ivaCliente.Codigo,
+                    ivaCliente.Descripcion,
+                    tcConfig);
 
             var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
 
@@ -550,6 +568,9 @@ public sealed class PuntoVentaService(
                     "actualizar los datos del cliente en la factura",
                     () => RefreshReceiptCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, cliente, token));
 
+            if (tc.Equals("NP", StringComparison.OrdinalIgnoreCase))
+                await MarkNotaPedidoPendienteAsync(cn, comprobante.IdComprobante, token);
+
             // Un cliente eventual usa la cuenta de consumidor final para la
             // imputación, pero sus datos deben quedar en la cabecera del
             // comprobante para que salgan en la factura/PDF y se envíen a ARCA.
@@ -601,67 +622,71 @@ public sealed class PuntoVentaService(
             }
 
             var caeIntento = ArcaCaeIntentoDto.NoAplica;
-            if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+            var idCobranza = 0;
+            if (!esRemitoONotaPedido)
             {
-                if (request.Progreso is not null) await request.Progreso("Enviando la factura a ARCA y obteniendo el CAE...");
-                var contextoCae = new PuntoVentaCaeContextoDto(
-                    comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
-                    comprobante.Letra, PosUNegocio, itemsFactura, totalFactura);
-                caeIntento = await EjecutarEtapaVentaAsync(
-                    "solicitar y guardar el CAE de ARCA",
-                    () => arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token, request.Progreso));
-
-                if (caeIntento.Aplica && !caeIntento.Aprobado)
+                if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
                 {
-                    if (modoFalloCae == ArcaModoFalloCae.Estricto)
-                        throw new InvalidOperationException($"AFIP no autorizó el comprobante ({caeIntento.Motivo}). La venta no se completó -- el comprobante quedó grabado sin cobranza para reintentar.");
+                    if (request.Progreso is not null) await request.Progreso("Enviando la factura a ARCA y obteniendo el CAE...");
+                    var contextoCae = new PuntoVentaCaeContextoDto(
+                        comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
+                        comprobante.Letra, PosUNegocio, itemsFactura, totalFactura);
+                    caeIntento = await EjecutarEtapaVentaAsync(
+                        "solicitar y guardar el CAE de ARCA",
+                        () => arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token, request.Progreso));
 
-                    caeIntento = caeIntento with { Estado = ArcaCaeEstado.Pendiente };
+                    if (caeIntento.Aplica && !caeIntento.Aprobado)
+                    {
+                        if (modoFalloCae == ArcaModoFalloCae.Estricto)
+                            throw new InvalidOperationException($"AFIP no autorizó el comprobante ({caeIntento.Motivo}). La venta no se completó -- el comprobante quedó grabado sin cobranza para reintentar.");
+
+                        caeIntento = caeIntento with { Estado = ArcaCaeEstado.Pendiente };
+                    }
                 }
-            }
 
-            if (request.Progreso is not null) await request.Progreso("Generando el asiento de la factura...");
-            // MV_Asientos_ValidaFechas es un trigger histórico que convierte
-            // valores dd/MM/yyyy de TA_CONFIGURACION usando el DATEFORMAT de
-            // la sesión. Fijamos DMY antes del asiento para que las bases
-            // antiguas no dependan del idioma de la conexión SQL.
-            await SetDateFormatDmyAsync(cn, token);
-            await EjecutarEtapaVentaAsync(
-                "crear el asiento de la factura",
-                () => CreateInvoiceAccountingAsync(cn, comprobante.IdComprobante, token));
-
-            // Las bases antiguas tienen procedimientos de cobranza que convierten
-            // temporalmente la fecha a dd/mm/yyyy. Fijamos el formato de sesión
-            // antes de ejecutarlos para que no dependan de la configuración regional
-            // de la conexión SQL activa.
-            if (request.Progreso is not null) await request.Progreso("Preparando la cobranza...");
-            await SetDateFormatDmyAsync(cn, token);
-            if (request.Progreso is not null) await request.Progreso("Creando la cobranza...");
-            var idCobranza = await EjecutarEtapaVentaAsync(
-                "crear la cobranza",
-                () => CreateCollectionAsync(cn, comprobante.IdComprobante, token));
-            if (request.Progreso is not null) await request.Progreso("Normalizando los datos de la cobranza...");
-            await EjecutarEtapaVentaAsync(
-                "normalizar las claves de la cobranza",
-                () => NormalizeComprobanteKeysAsync(cn, idCobranza, token));
-            if (request.Progreso is not null) await request.Progreso("Generando el asiento inicial...");
-            await EjecutarEtapaVentaAsync(
-                "crear el asiento inicial de la cobranza",
-                () => CreatePaymentSeedAsync(cn, idCobranza, token));
-
-            foreach (var pago in pagos)
-            {
-                if (request.Progreso is not null)
-                    await request.Progreso($"Registrando el medio de pago {pago.DescripcionMedioPago.Trim()}...");
+                if (request.Progreso is not null) await request.Progreso("Generando el asiento de la factura...");
+                // MV_Asientos_ValidaFechas es un trigger histórico que convierte
+                // valores dd/MM/yyyy de TA_CONFIGURACION usando el DATEFORMAT de
+                // la sesión. Fijamos DMY antes del asiento para que las bases
+                // antiguas no dependan del idioma de la conexión SQL.
+                await SetDateFormatDmyAsync(cn, token);
                 await EjecutarEtapaVentaAsync(
-                    $"grabar el medio de pago {pago.CodigoMedioPago}",
-                    () => CreatePaymentLineAsync(cn, idCobranza, pago, token));
-            }
+                    "crear el asiento de la factura",
+                    () => CreateInvoiceAccountingAsync(cn, comprobante.IdComprobante, token));
 
-            if (request.Progreso is not null) await request.Progreso("Aplicando la cobranza a la factura...");
-            await EjecutarEtapaVentaAsync(
-                "aplicar la cobranza a la factura",
-                () => CreateCollectionApplicationAsync(cn, idCobranza, comprobante.IdComprobante, token));
+                // Las bases antiguas tienen procedimientos de cobranza que convierten
+                // temporalmente la fecha a dd/mm/yyyy. Fijamos el formato de sesión
+                // antes de ejecutarlos para que no dependan de la configuración regional
+                // de la conexión SQL activa.
+                if (request.Progreso is not null) await request.Progreso("Preparando la cobranza...");
+                await SetDateFormatDmyAsync(cn, token);
+                if (request.Progreso is not null) await request.Progreso("Creando la cobranza...");
+                idCobranza = await EjecutarEtapaVentaAsync(
+                    "crear la cobranza",
+                    () => CreateCollectionAsync(cn, comprobante.IdComprobante, token));
+                if (request.Progreso is not null) await request.Progreso("Normalizando los datos de la cobranza...");
+                await EjecutarEtapaVentaAsync(
+                    "normalizar las claves de la cobranza",
+                    () => NormalizeComprobanteKeysAsync(cn, idCobranza, token));
+                if (request.Progreso is not null) await request.Progreso("Generando el asiento inicial...");
+                await EjecutarEtapaVentaAsync(
+                    "crear el asiento inicial de la cobranza",
+                    () => CreatePaymentSeedAsync(cn, idCobranza, token));
+
+                foreach (var pago in pagos)
+                {
+                    if (request.Progreso is not null)
+                        await request.Progreso($"Registrando el medio de pago {pago.DescripcionMedioPago.Trim()}...");
+                    await EjecutarEtapaVentaAsync(
+                        $"grabar el medio de pago {pago.CodigoMedioPago}",
+                        () => CreatePaymentLineAsync(cn, idCobranza, pago, token));
+                }
+
+                if (request.Progreso is not null) await request.Progreso("Aplicando la cobranza a la factura...");
+                await EjecutarEtapaVentaAsync(
+                    "aplicar la cobranza a la factura",
+                    () => CreateCollectionApplicationAsync(cn, idCobranza, comprobante.IdComprobante, token));
+            }
 
             if (request.Progreso is not null) await request.Progreso("Finalizando la operación...");
 
@@ -670,7 +695,9 @@ public sealed class PuntoVentaService(
                 "CreateSale",
                 "V_MV_CPTE",
                 comprobante.IdComprobante.ToString(),
-                "Venta POS generada con cobranza inmediata.",
+                esRemitoONotaPedido
+                    ? "Remito/Nota de pedido generado sin cobro, pendiente de facturar."
+                    : "Venta POS generada con cobranza inmediata.",
                 new
                 {
                     comprobante.IdComprobante,
@@ -859,16 +886,18 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudo cargar el contexto de cierre del comprobante.", ct);
 
-    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string? tipoComprobante = null, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetRecentReceipts", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var tc = string.IsNullOrWhiteSpace(tipoComprobante) ? DefaultTc : tipoComprobante.Trim();
+            var tc = string.IsNullOrWhiteSpace(tipoComprobante)
+                ? null
+                : tipoComprobante.Trim().ToUpperInvariant();
             var rows = await cn.QueryAsync<PuntoVentaReceiptListItemDto>(new CommandDefinition(
                 """
-                SELECT TOP (10)
+                SELECT
                     ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(TC)), '') AS TipoComprobante,
                     ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
@@ -877,7 +906,7 @@ public sealed class PuntoVentaService(
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Total,
                     CAST(ISNULL(Impreso, 0) AS bit) AS Impreso
                 FROM dbo.V_MV_CPTE
-                WHERE UPPER(LTRIM(RTRIM(TC))) = @Tc
+                WHERE (@Tc IS NULL OR UPPER(LTRIM(RTRIM(TC))) = @Tc)
                   AND (@Sucursal IS NULL OR LTRIM(RTRIM(SUCURSAL)) = @Sucursal)
                   AND (@FechaDesde IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) >= @FechaDesde)
                   AND (@FechaHasta IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) < DATEADD(day, 1, @FechaHasta))
@@ -886,7 +915,7 @@ public sealed class PuntoVentaService(
                 """,
                 new
                 {
-                    Tc = tc.ToUpperInvariant(),
+                    Tc = tc,
                     Sucursal = string.IsNullOrWhiteSpace(sucursal) ? null : NormalizeSucursal(sucursal),
                     FechaDesde = fechaDesde?.Date,
                     FechaHasta = fechaHasta?.Date
@@ -1003,6 +1032,9 @@ public sealed class PuntoVentaService(
         }, "No se pudo actualizar el estado de impresión del comprobante.", ct);
 
     public Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default)
+        => SearchArticulosAsync(filters, null, ct);
+
+    public Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, string? clienteCodigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchArticulos", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
@@ -1011,8 +1043,14 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 throw new InvalidOperationException("La base activa no tiene V_MA_ARTICULOS. No se puede consultar el catálogo del POS.");
 
-            var pricing = await ResolvePricingContextAsync(cn, token);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+            var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
+            var ofertaSelect = clasePrecioOferta > 0
+                ? string.IsNullOrWhiteSpace(pricing.ListaPrecioActual)
+                    ? $"ISNULL(a.PRECIO{clasePrecioOferta}, 0)"
+                    : $"CASE WHEN p.FhOfertaDesde IS NOT NULL AND GETDATE() >= p.FhOfertaDesde AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN ISNULL(p.Precio{clasePrecioOferta}, 0) ELSE 0 END"
+                : "CAST(0 AS decimal(18,4))";
             var familyFilter = filters.IdFamilia.Trim();
             var rubroFilter = filters.IdRubro.Trim();
             var search = filters.Texto.Trim();
@@ -1068,6 +1106,13 @@ public sealed class PuntoVentaService(
                     ISNULL(a.PESABLE, 0) AS Pesable,
                     ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(a.PRECIO2, 0) AS PrecioBase2,
+                    ISNULL(a.PRECIO3, 0) AS PrecioBase3,
+                    ISNULL(a.PRECIO4, 0) AS PrecioBase4,
+                    ISNULL(a.PRECIO5, 0) AS PrecioBase5,
+                    ISNULL(a.PRECIO6, 0) AS PrecioBase6,
+                    ISNULL(a.PRECIO7, 0) AS PrecioBase7,
+                    ISNULL(a.PRECIO8, 0) AS PrecioBase8,
                     ISNULL(p.Precio1, 0) AS PrecioLista1,
                     ISNULL(p.Precio2, 0) AS PrecioLista2,
                     ISNULL(p.Precio3, 0) AS PrecioLista3,
@@ -1075,7 +1120,8 @@ public sealed class PuntoVentaService(
                     ISNULL(p.Precio5, 0) AS PrecioLista5,
                     ISNULL(p.Precio6, 0) AS PrecioLista6,
                     ISNULL(p.Precio7, 0) AS PrecioLista7,
-                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                    ISNULL(p.Precio8, 0) AS PrecioLista8,
+                    {ofertaSelect} AS PrecioOferta
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
@@ -1103,8 +1149,11 @@ public sealed class PuntoVentaService(
                 materializedRows.RemoveAt(materializedRows.Count - 1);
 
             var articles = materializedRows
-                .Select(row => new PuntoVentaArticleDto
+                .Select(row =>
                 {
+                    var price = ResolvePriceDetails(row, clasePrecio);
+                    return new PuntoVentaArticleDto
+                    {
                     IdArticulo = row.IdArticulo,
                     CodigoBarra = row.CodigoBarra,
                     Descripcion = row.Descripcion,
@@ -1113,12 +1162,15 @@ public sealed class PuntoVentaService(
                     IdFamilia = row.IdFamilia,
                     Familia = row.Familia,
                     IdUnidad = row.IdUnidad,
-                    PrecioUnitario = ResolvePrice(row, clasePrecio),
+                    PrecioUnitario = price.Effective,
+                    PrecioOriginal = price.Original,
+                    EsPrecioOferta = price.IsOffer,
                     TasaIva = row.TasaIva,
                     Exento = row.Exento,
                     NoControlaStock = row.NoControlaStock,
                     Pesable = row.Pesable,
                     RutaImagen = row.RutaImagen
+                    };
                 })
                 .ToList();
 
@@ -1130,6 +1182,7 @@ public sealed class PuntoVentaService(
                 ListaPrecioActual = pricing.ListaPrecioActual,
                 NombreListaPrecioActual = pricing.NombreListaPrecioActual,
                 ClasePrecioActual = pricing.ClasePrecioActual,
+                ClasePrecioOfertaActual = pricing.ClasePrecioOfertaActual,
                 UsaPrecioFallback = usaFallback,
                 TieneMasResultados = tieneMasResultados,
                 PaginaActual = pagina
@@ -1137,6 +1190,9 @@ public sealed class PuntoVentaService(
         }, "No se pudieron cargar los artículos del punto de venta.", ct);
 
     public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default)
+        => GetArticuloPorCodigoAsync(codigo, null, ct);
+
+    public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, string? clienteCodigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticuloPorCodigo", async token =>
         {
             var buscar = (codigo ?? string.Empty).Trim().ToUpperInvariant();
@@ -1149,8 +1205,14 @@ public sealed class PuntoVentaService(
             if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
                 return null;
 
-            var pricing = await ResolvePricingContextAsync(cn, token);
+            var pricing = await ResolvePricingContextAsync(cn, token, clienteCodigo);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+            var clasePrecioOferta = ParseClasePrecio(pricing.ClasePrecioOfertaActual);
+            var ofertaSelect = clasePrecioOferta > 0
+                ? string.IsNullOrWhiteSpace(pricing.ListaPrecioActual)
+                    ? $"ISNULL(a.PRECIO{clasePrecioOferta}, 0)"
+                    : $"CASE WHEN p.FhOfertaDesde IS NOT NULL AND GETDATE() >= p.FhOfertaDesde AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN ISNULL(p.Precio{clasePrecioOferta}, 0) ELSE 0 END"
+                : "CAST(0 AS decimal(18,4))";
 
             var row = await cn.QuerySingleOrDefaultAsync<PuntoVentaArticleRow>(new CommandDefinition(
                 """
@@ -1169,6 +1231,13 @@ public sealed class PuntoVentaService(
                     ISNULL(a.PESABLE, 0) AS Pesable,
                     ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(a.PRECIO2, 0) AS PrecioBase2,
+                    ISNULL(a.PRECIO3, 0) AS PrecioBase3,
+                    ISNULL(a.PRECIO4, 0) AS PrecioBase4,
+                    ISNULL(a.PRECIO5, 0) AS PrecioBase5,
+                    ISNULL(a.PRECIO6, 0) AS PrecioBase6,
+                    ISNULL(a.PRECIO7, 0) AS PrecioBase7,
+                    ISNULL(a.PRECIO8, 0) AS PrecioBase8,
                     ISNULL(p.Precio1, 0) AS PrecioLista1,
                     ISNULL(p.Precio2, 0) AS PrecioLista2,
                     ISNULL(p.Precio3, 0) AS PrecioLista3,
@@ -1176,7 +1245,8 @@ public sealed class PuntoVentaService(
                     ISNULL(p.Precio5, 0) AS PrecioLista5,
                     ISNULL(p.Precio6, 0) AS PrecioLista6,
                     ISNULL(p.Precio7, 0) AS PrecioLista7,
-                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                    ISNULL(p.Precio8, 0) AS PrecioLista8,
+                    {ofertaSelect} AS PrecioOferta
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
@@ -1201,6 +1271,7 @@ public sealed class PuntoVentaService(
             if (row is null)
                 return null;
 
+            var price = ResolvePriceDetails(row, clasePrecio);
             return new PuntoVentaArticleDto
             {
                 IdArticulo = row.IdArticulo,
@@ -1211,7 +1282,9 @@ public sealed class PuntoVentaService(
                 IdFamilia = row.IdFamilia,
                 Familia = row.Familia,
                 IdUnidad = row.IdUnidad,
-                PrecioUnitario = ResolvePrice(row, clasePrecio),
+                PrecioUnitario = price.Effective,
+                PrecioOriginal = price.Original,
+                EsPrecioOferta = price.IsOffer,
                 TasaIva = row.TasaIva,
                 Exento = row.Exento,
                 NoControlaStock = row.NoControlaStock,
@@ -1440,74 +1513,80 @@ public sealed class PuntoVentaService(
             cancellationToken: ct));
     }
 
-    private async Task<string> GetClienteIvaAsync(SqlConnection cn, string cliente, CancellationToken ct)
+    private async Task<ClienteIvaData> GetClienteIvaAsync(SqlConnection cn, string cliente, CancellationToken ct)
     {
         if (!await ObjectExistsAsync(cn, "VT_CLIENTES", null, ct))
-            return string.Empty;
+            return new ClienteIvaData(string.Empty, string.Empty);
 
-        return await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+        return await cn.QuerySingleOrDefaultAsync<ClienteIvaData>(new CommandDefinition(
             """
-            SELECT TOP (1) ISNULL(LTRIM(RTRIM(IVA)), '')
-            FROM dbo.VT_CLIENTES
-            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)));
+            SELECT TOP (1)
+                ISNULL(LTRIM(RTRIM(c.IVA)), '') AS Codigo,
+                ISNULL(LTRIM(RTRIM(ci.DESCRIPCION)), '') AS Descripcion
+            FROM dbo.VT_CLIENTES c
+            LEFT JOIN dbo.TA_CONDIVA ci
+                ON LTRIM(RTRIM(ci.CODIGO)) = LTRIM(RTRIM(c.IVA))
+            WHERE UPPER(LTRIM(RTRIM(c.CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)));
             """,
             new { Cliente = cliente },
             commandTimeout: SaleCommandTimeoutSeconds,
-            cancellationToken: ct)) ?? string.Empty;
+            cancellationToken: ct)) ?? new ClienteIvaData(string.Empty, string.Empty);
     }
 
-    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct)
+    private async Task<ClienteIvaData> GetCondicionIvaAsync(SqlConnection cn, string codigo, CancellationToken ct)
     {
-        var clasePrecio = DefaultClasePrecio;
-        if (await TableExistsAsync(cn, "TA_CONFIGURACION", ct))
-        {
-            var claseConfigurada = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
-                """
-                SELECT TOP (1)
-                    CASE
-                        WHEN ISNULL(LTRIM(RTRIM(VALOR)), '') <> '' THEN LTRIM(RTRIM(VALOR))
-                        WHEN ISNULL(CAST(ValorAux AS nvarchar(150)), '') <> '' THEN LTRIM(RTRIM(CAST(ValorAux AS nvarchar(150))))
-                        ELSE ''
-                    END
-                FROM dbo.TA_CONFIGURACION
-                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'CLASEDEPRECIODEFAULT';
-                """,
-                cancellationToken: ct));
+        return await cn.QuerySingleOrDefaultAsync<ClienteIvaData>(new CommandDefinition(
+            """
+            SELECT TOP (1)
+                ISNULL(LTRIM(RTRIM(CODIGO)), '') AS Codigo,
+                ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion
+            FROM dbo.TA_CONDIVA
+            WHERE LTRIM(RTRIM(CODIGO)) = LTRIM(RTRIM(@Codigo));
+            """,
+            new { Codigo = codigo ?? string.Empty },
+            commandTimeout: SaleCommandTimeoutSeconds,
+            cancellationToken: ct))
+            ?? new ClienteIvaData(codigo?.Trim() ?? string.Empty, string.Empty);
+    }
 
-            if (!string.IsNullOrWhiteSpace(claseConfigurada))
-                clasePrecio = claseConfigurada.Trim();
-        }
+    private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct, string? clienteCodigo = null)
+    {
+        var resolved = await articuloPrecioResolver.ResolveContextAsync(cn, clienteCodigo, ct);
+        var clasePrecio = Math.Clamp(resolved.ClasePrecio, 1, 8).ToString();
+        var clasePrecioOferta = await TryReadConfigValueAsync(cn, "CLASEPRECIOOFERTA", ct);
+        if (ParseClasePrecio(clasePrecioOferta) == 1 && !string.Equals(clasePrecioOferta.Trim(), "1", StringComparison.Ordinal))
+            clasePrecioOferta = string.Empty;
+        var idLista = resolved.IdLista?.Trim() ?? string.Empty;
+        var nombreLista = string.Empty;
 
         if (!await TableExistsAsync(cn, "V_MA_PreciosCab", ct))
         {
             return new PricingContext
             {
-                ClasePrecioActual = clasePrecio
+                ClasePrecioActual = clasePrecio,
+                ClasePrecioOfertaActual = clasePrecioOferta,
+                ListaPrecioActual = idLista
             };
         }
 
-        var lista = await cn.QuerySingleOrDefaultAsync<ListaPrecioRow>(new CommandDefinition(
-            """
-            SELECT TOP (1)
-                ISNULL(LTRIM(RTRIM(IdLista)), '') AS IdLista,
-                ISNULL(LTRIM(RTRIM(Nombre)), '') AS Nombre
-            FROM dbo.V_MA_PreciosCab
-            WHERE TipoLista = 'V'
-            ORDER BY
-                CASE
-                    WHEN (VigenciaDesde IS NULL OR VigenciaDesde <= GETDATE())
-                     AND (VigenciaHasta IS NULL OR VigenciaHasta >= GETDATE()) THEN 0
-                    ELSE 1
-                END,
-                IdLista;
-            """,
-            cancellationToken: ct));
+        if (!string.IsNullOrWhiteSpace(idLista))
+        {
+            nombreLista = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+                """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(Nombre)), '')
+                FROM dbo.V_MA_PreciosCab
+                WHERE TipoLista = 'V' AND LTRIM(RTRIM(IdLista)) = LTRIM(RTRIM(@IdLista));
+                """,
+                new { IdLista = idLista },
+                cancellationToken: ct)) ?? string.Empty;
+        }
 
         return new PricingContext
         {
             ClasePrecioActual = clasePrecio,
-            ListaPrecioActual = lista?.IdLista?.Trim() ?? string.Empty,
-            NombreListaPrecioActual = lista?.Nombre?.Trim() ?? string.Empty
+            ClasePrecioOfertaActual = clasePrecioOferta,
+            ListaPrecioActual = idLista,
+            NombreListaPrecioActual = nombreLista
         };
     }
 
@@ -1720,20 +1799,50 @@ public sealed class PuntoVentaService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task MarkNotaPedidoPendienteAsync(SqlConnection cn, int idComprobante, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            UPDATE dbo.V_MV_CPTE
+            SET FECHAESTFIN = NULL,
+                FECHAFINALIZACION = NULL,
+                FINALIZADA = 0,
+                ANULADA = 0,
+                BLOQUEADA = 0
+            WHERE ID = @IdComprobante
+              AND UPPER(LTRIM(RTRIM(TC))) = 'NP';
+            """, cn)
+        {
+            CommandTimeout = SaleCommandTimeoutSeconds
+        };
+        cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task EnsureRequiredSaleProceduresAsync(
+        SqlConnection cn,
+        CancellationToken ct,
+        bool requiereCobranzaYAsiento)
     {
         if (_requiredSaleProceduresChecked)
             return;
 
-        var requiredProcedures = new[]
+        var requiredProcedures = new List<string>
         {
             "sp_web_Alta_Comprobante",
-            "sp_web_CpteInsumos",
-            "sp_web_CreaCobPorFactura",
-            "sp_web_creaLineaAsiento",
-            "sp_web_CreaAplicacionCobranzaFactura",
-            "sp_web_CreaAsientoFactura"
+            "sp_web_CpteInsumos"
         };
+
+        if (requiereCobranzaYAsiento)
+        {
+            requiredProcedures.AddRange(
+            [
+                "sp_web_CreaCobPorFactura",
+                "sp_web_creaLineaAsiento",
+                "sp_web_CreaAplicacionCobranzaFactura",
+                "sp_web_CreaAsientoFactura"
+            ]);
+        }
 
         var missing = new List<string>();
         foreach (var procedure in requiredProcedures)
@@ -1744,7 +1853,11 @@ public sealed class PuntoVentaService(
 
         if (missing.Count == 0)
         {
-            _requiredSaleProceduresChecked = true;
+            // Un remito solo valida los procedimientos de alta. No marcar la
+            // validación completa como realizada, porque luego una venta fiscal
+            // todavía debe comprobar cobranza y asiento.
+            if (requiereCobranzaYAsiento)
+                _requiredSaleProceduresChecked = true;
             return;
         }
 
@@ -2354,7 +2467,28 @@ public sealed class PuntoVentaService(
         if (precioLista > 0)
             return decimal.Round(precioLista, 2);
 
-        return decimal.Round(row.PrecioBase1, 2);
+        var precioBase = clasePrecio switch
+        {
+            2 => row.PrecioBase2,
+            3 => row.PrecioBase3,
+            4 => row.PrecioBase4,
+            5 => row.PrecioBase5,
+            6 => row.PrecioBase6,
+            7 => row.PrecioBase7,
+            8 => row.PrecioBase8,
+            _ => row.PrecioBase1
+        };
+
+        return decimal.Round(precioBase > 0m ? precioBase : row.PrecioBase1, 2);
+    }
+
+    private static (decimal Original, decimal Effective, bool IsOffer) ResolvePriceDetails(PuntoVentaArticleRow row, int clasePrecio)
+    {
+        var original = ResolvePrice(row, clasePrecio);
+        var oferta = decimal.Round(row.PrecioOferta, 2);
+        return oferta > 0m
+            ? (original, oferta, true)
+            : (original, original, false);
     }
 
     private static int ParseClasePrecio(string clasePrecio)
@@ -2543,9 +2677,18 @@ public sealed class PuntoVentaService(
         if (!string.IsNullOrWhiteSpace(dbValue))
             return dbValue.Trim();
 
-        return configuration[key]
-               ?? configuration[$"PuntoVenta:{key}"]
-               ?? string.Empty;
+        if (DefaultEmailConfigKeys.TryGetValue(key, out var defaultKey)
+            && configuration[defaultKey] is { Length: > 0 } defaultValue)
+        {
+            return defaultValue.Trim();
+        }
+
+        return new[]
+            {
+                configuration[key],
+                configuration[$"PuntoVenta:{key}"]
+            }
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
     }
 
     private async Task<ReceiptCompanyRow> LoadCompanyMailInfoAsync(SqlConnection cn, CancellationToken ct)
@@ -2819,64 +2962,49 @@ public sealed class PuntoVentaService(
     private static string NormalizeOptionalSucursal(string value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : NormalizeSucursal(value);
 
-    private static string ResolveLetraDefault(TipoComprobanteRow? row, string sucursal)
-    {
-        if (row is null)
-            return "B";
-
-        if (row.SucursalB > 0 && sucursal == row.SucursalB.ToString("0000"))
-            return "B";
-
-        if (row.SucursalA > 0 && sucursal == row.SucursalA.ToString("0000"))
-            return "A";
-
-        if (row.SucursalC > 0 && sucursal == row.SucursalC.ToString("0000"))
-            return "C";
-
-        if (row.SucursalX > 0 && sucursal == row.SucursalX.ToString("0000"))
-            return "X";
-
-        var letras = row.Letras?.ToUpperInvariant() ?? string.Empty;
-        foreach (var letra in letras.Where(char.IsLetter))
-            return letra.ToString();
-
-        return "B";
-    }
-
     private static string ResolveLetraForCliente(
         string tc,
         string? requestedLetter,
         bool esConsumidorFinal,
         string ivaCliente,
-        TipoComprobanteRow? config,
-        string sucursal)
+        string ivaClienteDescripcion,
+        TipoComprobanteRow? config)
     {
         if (tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
             || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase))
             return "X";
 
-        // Para comprobantes fiscales la letra depende de la condición de IVA del cliente:
-        // RI (código 1) requiere A; consumidor final y las demás condiciones requieren B.
-        var codigoIva = (ivaCliente ?? string.Empty).Trim().TrimStart('0');
-        var letraPreferida = !esConsumidorFinal && codigoIva == "1" ? "A" : "B";
+        // Para comprobantes fiscales la letra depende de la combinación válida que informa
+        // ARCA. En particular, el monotributo (AFIP 6) requiere A; no es válido enviarlo
+        // como Factura B aunque el código local histórico sea distinto de 1.
+        var condicionIvaReceptorId = ArcaCodigosAfip.ResolverCondicionIvaReceptor(
+            ivaClienteDescripcion,
+            ivaCliente);
+        var letraPreferida = esConsumidorFinal
+            ? "B"
+            : ArcaCodigosAfip.RequiereFacturaA(condicionIvaReceptorId) ? "A" : "B";
         var letrasDisponibles = config?.Letras?.ToUpperInvariant() ?? string.Empty;
 
         if (letrasDisponibles.Contains(letraPreferida, StringComparison.Ordinal))
             return letraPreferida;
 
-        // Si la base no informa las letras configuradas, conservamos la selección explícita
-        // y finalmente el comportamiento histórico como respaldo.
+        // Si la base no informa las letras configuradas, conservamos una selección explícita
+        // solamente cuando también es válida para la condición del receptor. Nunca devolvemos
+        // una letra incompatible solo porque venía como default de la pantalla.
         if (!string.IsNullOrWhiteSpace(requestedLetter))
-            return requestedLetter.Trim().ToUpperInvariant();
+        {
+            var solicitada = requestedLetter.Trim().ToUpperInvariant();
+            if (ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionIvaReceptorId, solicitada))
+                return solicitada;
+        }
 
-        return ResolveLetraDefault(config, sucursal);
+        return letraPreferida;
     }
 
-    private static bool EsConsumidorFinalIva(string? codigo)
-    {
-        var valor = (codigo ?? string.Empty).Trim().TrimStart('0');
-        return valor.Length == 0 || valor == "3";
-    }
+    private static bool EsConsumidorFinalIva(string? codigo, string? descripcion = null)
+        => ArcaCodigosAfip.ResolverCondicionIvaReceptor(descripcion, codigo) == 5;
+
+    private sealed record ClienteIvaData(string Codigo, string Descripcion);
 
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,
@@ -2980,6 +3108,7 @@ public sealed class PuntoVentaService(
         public string ListaPrecioActual { get; init; } = string.Empty;
         public string NombreListaPrecioActual { get; init; } = string.Empty;
         public string ClasePrecioActual { get; init; } = DefaultClasePrecio;
+        public string ClasePrecioOfertaActual { get; init; } = string.Empty;
     }
 
     private sealed class SpResultRow
@@ -3014,6 +3143,13 @@ public sealed class PuntoVentaService(
         public bool Pesable { get; init; }
         public string RutaImagen { get; init; } = string.Empty;
         public decimal PrecioBase1 { get; init; }
+        public decimal PrecioBase2 { get; init; }
+        public decimal PrecioBase3 { get; init; }
+        public decimal PrecioBase4 { get; init; }
+        public decimal PrecioBase5 { get; init; }
+        public decimal PrecioBase6 { get; init; }
+        public decimal PrecioBase7 { get; init; }
+        public decimal PrecioBase8 { get; init; }
         public decimal PrecioLista1 { get; init; }
         public decimal PrecioLista2 { get; init; }
         public decimal PrecioLista3 { get; init; }
@@ -3022,6 +3158,7 @@ public sealed class PuntoVentaService(
         public decimal PrecioLista6 { get; init; }
         public decimal PrecioLista7 { get; init; }
         public decimal PrecioLista8 { get; init; }
+        public decimal PrecioOferta { get; init; }
     }
 
     private sealed record MailConfig(string Server, int Port, string FromAddress, string Password, bool EnableSsl);

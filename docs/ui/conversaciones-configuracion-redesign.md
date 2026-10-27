@@ -1,12 +1,65 @@
 # Rediseño Conversaciones → Configuración (AlfaDesign)
 
-**Estado del documento:** MIGRACIÓN EN PLANIFICACIÓN
+**Estado del documento:** MIGRACIÓN EN CURSO (C3 — Asistente IA, 2026-10-05)
 **C0 — Baseline + contrato de producto:** COMPLETADO (commit `3fd78b5`)
 **C1 — Shell + Information Architecture + navegación interna:** COMPLETADO (commit `2d56b70`, pusheado a `origin/main`)
 **C2 — WhatsApp UX foundation:** TODAVÍA PENDIENTE DE APROBACIÓN FINAL (incluye C2.1 — migración visual, C2.2 — pulido de width/help/status, C2.3 — flujo de conexión Business + fix de backend, y C2.4 — QR lifecycle + scroll vertical + cierre del flujo Business; sin commit todavía, pendiente de aprobación visual **y funcional** — ver limitaciones de entorno en las secciones C2.3 y C2.4)
 
 **WhatsApp es, a la fecha, la única sección de Configuración migrada visualmente a AlfaDesign v1** (Business y API). Funciona como referencia de patrón para las siguientes secciones. El resto de Configuración (Automatización, Integraciones IA, Operación y accesos, Soporte) sigue con estilo legacy — deuda visual registrada más abajo, no implementada.
 **Rama de trabajo:** `main` (se trabaja directamente sobre `main`, sin rama nueva)
+
+---
+
+## C3.2 — Estadísticas e Informes en AlfaDesign + parpadeo del sidebar (2026-10-05)
+
+**Estadísticas, Informes y Detalle de informe** usan las mismas piezas que Configuración (`ConversacionesConfigPagina` con `Amplia="true"`, `ConversacionesConfigTarjeta`, `ConversacionesConfigTexto`) y componentes AlfaDesign (`AlfaInput` fecha/email, `AlfaSelect`, `AlfaTabs` para rangos rápidos, `AlfaButton`, `AlfaTag`, `AlfaEmptyState`, `AlfaNotification`). Se eliminaron los `<style>` inline con colores fijos y `!important`; cada página tiene CSS aislado con tokens `--alfa-*` (`ConversacionesEstadisticas.razor.css`, `ConversacionesInformes.razor.css`, `ConversacionesInformeDetalle.razor.css`). Mismas consultas, filtros, links de auditoría, orden de columnas, exportación a Excel y envíos.
+
+**Parpadeo del sidebar legacy al cambiar de pantalla:** Blazor inicializa la página nueva (que publica su `PageHeader` AlfaDesignPilot) y recién después dispone la anterior, cuyo `Dispose()` hacía `PageHeader.Clear()` sin condición y borraba el header de la página nueva. Durante un render `MainLayout` veía el shell legacy y mostraba el sidebar hasta el `OnAfterRender` de la página nueva. Las seis páginas de Conversaciones guardan el header que publicaron (`_pageHeaderPublicado`) y solo lo limpian si sigue siendo el actual. **Pendiente (fuera del módulo):** el mismo patrón en las páginas de otros módulos AlfaDesign (Contactos, Clientes, etc.) sigue pudiendo producir el parpadeo al venir desde ellas hacia Conversaciones.
+
+---
+
+## C3.1 — AlfaDesign en toda Configuración (2026-10-05)
+
+Todas las pantallas de Configuración usan ahora AlfaDesign v1. Se eliminó el markup legacy (`panel-card`, `conv-config-*`, inputs/checkbox nativos, banner `conversations-inline`) y su CSS sin uso.
+
+**Piezas comunes del módulo** (en `Components/Pages`, prefijo `ConversacionesConfig*`, sin tocar `Shared/AlfaDesign`):
+
+- `ConversacionesConfigPagina`: título, descripción y tags de estado de cada pantalla.
+- `ConversacionesConfigTarjeta`: tarjeta con 1 o 2 columnas. Define utilidades para su contenido vía `::deep` (`cfg-full`, `cfg-hint`, `cfg-stack`, `cfg-inline`, `cfg-checks`, `cfg-check-tile`, `cfg-list*`, `cfg-kv`, `cfg-notice`, `cfg-meter`, `cfg-link`, `cfg-actions`).
+- `ConversacionesConfigTexto`: textarea con el aspecto de `AlfaInput` (que no es multilínea), opción monoespaciada para tokens.
+- `ConversacionesConfigSoloLectura`: URLs/rutas seleccionables (`AlfaInput` no tiene readonly).
+- `ConversacionesConfigBarraGuardar`: Guardar/Descartar fija al pie, con indicador de cambios si la pantalla lo soporta.
+- `ConversacionesConfigAyuda`: "Cómo funciona" plegable, cerrado por defecto.
+
+**Componentes por sección:** `ConversacionesConfiguracionAsistente`, `…Automatizacion` (Horario, Bienvenida, Auto-cierre, SLA, Informe), `…Reglas`, `…Operacion` (Prioridades, Accesos por número, Administradores), `…Soporte` (Estado de webhooks, Diagnóstico de canales, AnyDesk), `…Instagram`, `…Facebook`, `…MercadoLibre`. El estado y los `Save*Async` siguen en `ConversacionesConfiguracion.razor`: los componentes editan el DTO recibido y avisan por callbacks. Mismos DTOs, claves y servicios.
+
+**Cambios de comportamiento visibles:**
+
+- Las subsecciones de Operación y Soporte ahora muestran solo su contenido (antes mostraban todo junto).
+- "Accesos por número" lista los números con sus usuarios y lleva a editarlos en WhatsApp Business / WhatsApp API (sigue habiendo una sola fuente de edición).
+- "Diagnóstico de canales" muestra qué datos tiene cargados cada canal ("Listo"/"Pendiente"); no es una prueba en vivo.
+- Eliminar una regla pide confirmación (`AlfaConfirmDialog`).
+- Todo el feedback de guardado usa `AlfaNotification`; un aviso de WhatsApp se descarta al salir de Canales.
+
+**Sin cambios:** secretos visibles en Instagram/Facebook/Mercado Libre/AlfaKnowledge (deuda SEC-1), OAuth de Mercado Libre, webhooks. **Pendiente:** validación visual en 2048/1440/1024.
+
+---
+
+## C3 — Asistente IA como sección propia + Automatización dividida (2026-10-05)
+
+**Navegación nueva (Nivel 1):** `Resumen | Canales | Asistente IA | Automatización | Informes | Operación y accesos | Soporte`. Desaparece "Integraciones IA".
+
+- **Asistente IA** (`seccion=asistente-ia`): `General` (activar, cuándo responde, límites), `Personalidad` (comportamiento, política cuando no sabe), `Información del negocio` (texto con contador de caracteres/tokens y aviso cuando es mucho; opción "Buscar también en AlfaKnowledge"), `Herramientas` (precios, saldos, pedidos, portal, precios a consumidores), `Derivación y urgencias` (palabras de derivación, urgencia, plantilla, técnicos), `Conocimiento externo` (conexión AlfaKnowledge, con su propio Guardar/Probar).
+- **Automatización:** `Horario y mensaje fijo`, `Bienvenida`, `Reglas`, `Auto-cierre`, `SLA`. Cada subsección muestra solo su contenido (antes eran acordeones apilados).
+- **Informes:** instrucciones del informe mensual por cliente.
+
+**Componente:** el Asistente IA vive en `ConversacionesConfiguracionAsistente.razor(.css)`, ya en AlfaDesign (`AlfaInput`, `AlfaSelect`, `AlfaCheckbox`, `AlfaButton`, `AlfaTag`; textarea local `.asis-textarea` porque `AlfaInput` no es multilínea). El estado sigue en la página: el componente edita el DTO recibido y avisa Guardar/Descartar. Automatización e Informes conservan por ahora el markup legacy de sus campos (restyle pendiente, fase F4).
+
+**Guardado por sección:** `SaveAutomatizacionesConfigAsync(config, ConversacionAutomatizacionSeccion, ct)` graba solo las claves de la sección (`Horario`, `Bienvenida`, `Asistente`, `AutoCierre`, `Sla`, `Informe`); `CONV_ASISTENTE` se graba solo con `Asistente`. Mismas claves `CONV_*` que antes; la sobrecarga sin sección graba todo (`Todas`). Así, guardar una pantalla no pisa con valores viejos lo que otro usuario cambió en otra. Tests: `ConversacionesAutomatizacionSeccionesTests` (la unión de secciones = las 33 claves históricas, sin repetidos).
+
+**Links viejos:** `NormalizarSeccionLegacy` traduce `integraciones-ia` → `asistente-ia` (`alfaknowledge` → `conocimiento`, `informes-ia` → `informes`) y `horario-bienvenida` → `horario`. Tests: `ConversacionesConfiguracionNavegacionTests`.
+
+**Sin cambios:** claves, tablas, lógica del bot, secretos (la API Key de AlfaKnowledge sigue visible: deuda SEC-1). **Pendiente:** validación visual en 2048/1440/1024.
 
 ---
 

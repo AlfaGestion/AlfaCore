@@ -1,4 +1,4 @@
-﻿using AlfaCore.Configuration;
+using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -407,6 +407,56 @@ public sealed class NotificacionesPushService(
                 token);
         }, "No se pudo enviar la notificación push de mensaje nuevo.", ct);
 
+    public Task<NotificacionesPushSendResultDto> NotifyAvisoAsync(IReadOnlyCollection<string> userNames, string titulo, string cuerpo, string url, CancellationToken ct = default)
+        => ExecuteLoggedAsync<NotificacionesPushSendResultDto>("NotifyAviso", async token =>
+        {
+            var normalizedUsers = (userNames ?? [])
+                .Select(NormalizeUser)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (normalizedUsers.Length == 0)
+                return new NotificacionesPushSendResultDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var toSend = new List<StoredSubscription>();
+            foreach (var userName in normalizedUsers)
+            {
+                foreach (var subscription in (await ReadUserSubscriptionsAsync(cn, userName, token)).Where(x => x.Activo))
+                {
+                    var preferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
+                    if (preferences.Habilitadas)
+                        toSend.Add(subscription);
+                }
+            }
+
+            if (toSend.Count == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
+            {
+                Title = SanitizeText(titulo, 80),
+                Body = SanitizeText(cuerpo, 180),
+                Url = string.IsNullOrWhiteSpace(url) ? "/" : url,
+                Preview = SanitizeText(cuerpo, 180),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Renotify = true
+            }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyAvisoResult",
+                "AVISOS",
+                string.Join(",", normalizedUsers),
+                "Resultado de envío push de un aviso (campana).",
+                new { Usuarios = normalizedUsers, SuscripcionesAEnviar = toSend.Count, titulo, url },
+                token);
+
+            return result;
+        }, "No se pudo enviar el aviso push.", ct);
+
     public Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default)
         => ExecuteLoggedAsync("NotifyMention", async token =>
         {
@@ -702,6 +752,26 @@ public sealed class NotificacionesPushService(
         CancellationToken ct)
     {
         var result = new NotificacionesPushSendResultDto { TotalCount = subscriptions.Count };
+
+        // Con las claves VAPID mal configuradas no sale ningún push: se anota una vez por hora (no
+        // por cada mensaje entrante, que en producción llegó a ~430 errores por día) y no se intenta.
+        string? configError = null;
+        try
+        {
+            EnsureVapidConfigured();
+        }
+        catch (InvalidOperationException ex)
+        {
+            configError = ex.Message;
+        }
+
+        if (configError is not null)
+        {
+            await RegistrarConfiguracionInvalidaAsync(configError, ct);
+            result.FailCount = subscriptions.Count;
+            return result;
+        }
+
         foreach (var subscription in subscriptions)
         {
             var item = await SendToSubscriptionAsync(cn, subscription, payload, ct);
@@ -851,9 +921,51 @@ public sealed class NotificacionesPushService(
             && !subject.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("PushNotifications:Subject debe tener formato mailto:admin@alfagestion.com o una URL http/https.");
 
-        ValidateVapidKeys(pushOptions.PublicKey, pushOptions.PrivateKey);
+        try
+        {
+            ValidateVapidKeys(pushOptions.PublicKey, pushOptions.PrivateKey);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException($"{ex.Message} {DescribirOrigenClaves()}", ex);
+        }
 
         return pushOptions;
+    }
+
+    private static long _ultimoAvisoConfiguracionInvalidaTicks;
+
+    private async Task RegistrarConfiguracionInvalidaAsync(string mensaje, CancellationToken ct)
+    {
+        var ahora = DateTime.UtcNow.Ticks;
+        var ultimo = Interlocked.Read(ref _ultimoAvisoConfiguracionInvalidaTicks);
+        if (ahora - ultimo < TimeSpan.FromHours(1).Ticks
+            || Interlocked.CompareExchange(ref _ultimoAvisoConfiguracionInvalidaTicks, ahora, ultimo) != ultimo)
+            return;
+
+        await appEvents.LogErrorAsync(ModuleName, "ConfiguracionVapidInvalida", new InvalidOperationException(mensaje),
+            "Las notificaciones push no se envían porque la configuración VAPID del servidor no es válida. Se anota una vez por hora.",
+            null, AppEventSeverity.Warning, ct);
+    }
+
+    /// <summary>
+    /// De qué fuente de configuración sale cada clave y qué largo tiene (nunca el valor), para
+    /// diagnosticar cuando el archivo parece correcto pero el sitio está leyendo otra cosa.
+    /// </summary>
+    private string DescribirOrigenClaves()
+    {
+        if (configuration is not IConfigurationRoot root)
+            return string.Empty;
+
+        string Origen(string clave)
+        {
+            var ruta = $"{PushNotificationsOptions.SectionName}:{clave}";
+            var proveedor = root.Providers.Reverse().FirstOrDefault(p => p.TryGet(ruta, out _));
+            var largo = (root[ruta] ?? string.Empty).Trim().Length;
+            return $"{clave} desde {proveedor?.ToString() ?? "ninguna fuente"} (largo {largo})";
+        }
+
+        return $"Origen: {Origen("PublicKey")}; {Origen("PrivateKey")}.";
     }
 
     private async Task DeactivateSubscriptionAsync(
@@ -908,12 +1020,13 @@ public sealed class NotificacionesPushService(
         return PushNotificationEvaluation.Blocked($"Alcance no soportado: {preferences.Alcance}.", "Canal válido.");
     }
 
-    private static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
+    internal static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
     {
         preferences ??= new();
-        var alcance = string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase)
-            ? NotificacionesPushScopes.Accesibles
-            : NotificacionesPushScopes.Asignadas;
+        // Solo queda en "asignadas" si el usuario lo eligió; sin preferencia, todas las accesibles.
+        var alcance = string.Equals(preferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase)
+            ? NotificacionesPushScopes.Asignadas
+            : NotificacionesPushScopes.Accesibles;
 
         var canales = preferences.Canales
             .Where(x => !string.IsNullOrWhiteSpace(x))

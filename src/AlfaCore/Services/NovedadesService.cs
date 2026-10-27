@@ -358,6 +358,49 @@ public sealed class NovedadesService(
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad, Usuario = NormalizeUser(usuario) }, cancellationToken: token));
         }, "No se pudo registrar la vista de la novedad.", ct);
 
+    public Task<IReadOnlyList<NovedadDetalleDto>> GetPublicadasAsync(string usuario, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetPublicadas", async token =>
+        {
+            const string sql = """
+                SELECT TOP (100)
+                    n.IdNovedad,
+                    n.Tipo,
+                    n.Estado,
+                    n.Prioridad,
+                    ISNULL(n.Version, '') AS Version,
+                    n.Titulo,
+                    ISNULL(n.Bajada, '') AS Bajada,
+                    ISNULL(n.Resumen, '') AS Resumen,
+                    ISNULL(n.Contenido, '') AS Contenido,
+                    ISNULL(n.Icono, 'bi-megaphone') AS Icono,
+                    ISNULL(n.Acento, 'azul') AS Acento,
+                    ISNULL(n.PortadaTipo, 'NONE') AS PortadaTipo,
+                    ISNULL(n.PortadaValor, '') AS PortadaValor,
+                    ISNULL(n.Footer, '') AS Footer,
+                    n.FechaProgramada,
+                    n.FechaPublicacion,
+                    n.VigenteHasta,
+                    ISNULL(n.FechaHora_Modificacion, n.FechaHora_Alta) AS FechaHoraModificacion,
+                    CONVERT(bit, CASE WHEN l.FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS LeidaPorUsuario,
+                    l.FechaHoraLeido
+                FROM dbo.ALFACORE_NOVEDADES n
+                LEFT JOIN dbo.ALFACORE_NOVEDADES_LECTURAS l
+                       ON l.IdNovedad = n.IdNovedad
+                      AND UPPER(LTRIM(RTRIM(l.Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                WHERE n.Estado = N'PUBLICADO'
+                  AND ISNULL(n.Archivado, 0) = 0
+                  AND (n.FechaProgramada IS NULL OR n.FechaProgramada <= GETDATE())
+                ORDER BY COALESCE(n.FechaPublicacion, n.FechaProgramada, n.FechaHora_Alta) DESC, n.IdNovedad DESC;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureSchemaAsync(cn, token);
+            await ActivateDueScheduledAnnouncementsAsync(cn, token);
+            var rows = await cn.QueryAsync<NovedadDetalleDto>(new CommandDefinition(sql, new { Usuario = NormalizeUser(usuario) }, cancellationToken: token));
+            return (IReadOnlyList<NovedadDetalleDto>)rows.ToList();
+        }, "No se pudieron cargar las novedades.", ct);
+
     public Task MarkReadAsync(long idNovedad, string usuario, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "MarkRead", async token =>
         {
@@ -425,9 +468,11 @@ public sealed class NovedadesService(
 
     private static string BuildListSql(NovedadesFilterDto filter)
     {
-        var filters = new List<string> { "ISNULL(n.Archivado, 0) = 0" };
+        // Archivados: pestaña propia (se archiva con el bit Archivado, conservando el estado).
+        var archivados = string.Equals(filter.Estado, NovedadEstados.Archivado, StringComparison.OrdinalIgnoreCase);
+        var filters = new List<string> { archivados ? "(ISNULL(n.Archivado, 0) = 1 OR n.Estado = N'ARCHIVADO')" : "ISNULL(n.Archivado, 0) = 0" };
 
-        if (!string.IsNullOrWhiteSpace(filter.Estado))
+        if (!string.IsNullOrWhiteSpace(filter.Estado) && !archivados)
             filters.Add("n.Estado = @Estado");
         if (!string.IsNullOrWhiteSpace(filter.Tipo))
             filters.Add("n.Tipo = @Tipo");
@@ -618,11 +663,11 @@ public sealed class NovedadesService(
     {
         const string sql = """
             SELECT
-                SUM(CASE WHEN Estado = N'BORRADOR' THEN 1 ELSE 0 END) AS Borradores,
-                SUM(CASE WHEN Estado = N'PROGRAMADO' THEN 1 ELSE 0 END) AS Programadas,
-                SUM(CASE WHEN Estado = N'PUBLICADO' THEN 1 ELSE 0 END) AS Publicadas
-            FROM dbo.ALFACORE_NOVEDADES
-            WHERE ISNULL(Archivado, 0) = 0;
+                ISNULL(SUM(CASE WHEN ISNULL(Archivado, 0) = 0 AND Estado = N'BORRADOR' THEN 1 ELSE 0 END), 0) AS Borradores,
+                ISNULL(SUM(CASE WHEN ISNULL(Archivado, 0) = 0 AND Estado = N'PROGRAMADO' THEN 1 ELSE 0 END), 0) AS Programadas,
+                ISNULL(SUM(CASE WHEN ISNULL(Archivado, 0) = 0 AND Estado = N'PUBLICADO' THEN 1 ELSE 0 END), 0) AS Publicadas,
+                ISNULL(SUM(CASE WHEN ISNULL(Archivado, 0) = 1 OR Estado = N'ARCHIVADO' THEN 1 ELSE 0 END), 0) AS Archivadas
+            FROM dbo.ALFACORE_NOVEDADES;
 
             SELECT COUNT(1)
             FROM dbo.ALFACORE_NOVEDADES n
@@ -689,15 +734,15 @@ public sealed class NovedadesService(
             Tipo = NovedadTipos.Manual,
             Prioridad = NovedadPrioridades.Info,
             Version = string.Empty,
-            Titulo = "Nueva novedad interna",
-            Bajada = "Comunicado interno para el equipo.",
+            Titulo = "Nuevo comunicado",
+            Bajada = "Comunicado para el equipo.",
             Icono = "bi-megaphone",
             Acento = NovedadAcentos.Azul,
             PortadaTipo = NovedadPortadas.Gradiente,
             PortadaValor = NovedadAcentos.Azul,
             Footer = "AlfaCore",
             Contenido = """
-                <h1>Nueva novedad interna</h1>
+                <h1>Nuevo comunicado</h1>
                 <p>Contale al equipo que cambio, por que es importante y desde cuando esta disponible.</p>
                 <div class="ticket-editor-banner ticket-editor-banner--info"><i class="bi bi-info-circle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>Este bloque sirve para destacar el mensaje principal. Todo el texto es editable.</p></div></div>
                 <h2>Lo mas importante</h2>

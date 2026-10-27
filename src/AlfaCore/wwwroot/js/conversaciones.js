@@ -725,7 +725,12 @@ window.conversacionesUi = {
             }
 
             event.preventDefault();
-            dotNetRef.invokeMethodAsync('SendComposerFromEnter').catch(() => {});
+            // La marca vive en el elemento porque Blazor puede volver a enlazar el handler.
+            if (event.repeat || event.isComposing || element._conversacionesReplySending) return;
+            element._conversacionesReplySending = true;
+            dotNetRef.invokeMethodAsync('SendComposerFromEnter')
+                .catch(() => {})
+                .finally(() => { element._conversacionesReplySending = false; });
         };
 
         const resize = () => window.conversacionesUi.autoResizeTextarea(element, 44, 120);

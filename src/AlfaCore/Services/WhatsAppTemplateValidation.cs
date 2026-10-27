@@ -10,11 +10,15 @@ namespace AlfaCore.Services;
 // rechazo explícito de componentes no soportados y mensajes de error Meta accionables.
 public static class WhatsAppTemplateValidation
 {
-    public static void ValidateSend(ConversacionPlantillaDto template, IReadOnlyList<string> values)
+    // documentoDisponible: el llamador trae el archivo para un HEADER DOCUMENT (SendTemplateWithDocumentAsync).
+    // Sin archivo, una plantilla con encabezado documento sigue siendo no soportada.
+    public static void ValidateSend(ConversacionPlantillaDto template, IReadOnlyList<string> values, bool documentoDisponible = false)
     {
         if (!template.Activa)
             throw new InvalidOperationException("La plantilla está archivada. Elegí una plantilla activa.");
-        var unsupported = UnsupportedReason(template);
+        if (documentoDisponible && !RequiereDocumento(template))
+            throw new InvalidOperationException("La plantilla elegida no tiene encabezado de documento. Elegí una plantilla con documento adjunto.");
+        var unsupported = UnsupportedReason(template, documentoDisponible);
         if (unsupported.Length > 0) throw new InvalidOperationException(unsupported);
         var indexes = Regex.Matches(template.CuerpoTexto, @"\{\{\s*(\d+)\s*\}\}")
             .Select(m => int.TryParse(m.Groups[1].Value, out var index) ? index : -1).Distinct().Order().ToArray();
@@ -24,11 +28,35 @@ public static class WhatsAppTemplateValidation
             throw new InvalidOperationException($"La plantilla requiere exactamente {indexes.Length} valores BODY no vacíos, en el orden indicado.");
     }
 
-    public static string UnsupportedReason(ConversacionPlantillaDto template)
+    /// <summary>True si la plantilla (según los componentes de Meta) tiene encabezado de tipo DOCUMENT.</summary>
+    public static bool RequiereDocumento(ConversacionPlantillaDto template)
+    {
+        // Plantillas creadas en AlfaCore: el formato queda guardado aunque todavía no se haya
+        // sincronizado el payload de Meta (ComponentesMetaJson vacío).
+        if (string.Equals(template.EncabezadoFormato, ConversacionPlantillaEncabezados.Documento, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.IsNullOrWhiteSpace(template.ComponentesMetaJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(template.ComponentesMetaJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return false;
+            return document.RootElement.EnumerateArray().Any(component =>
+                string.Equals(component.TryGetProperty("type", out var type) ? type.GetString() : null, "HEADER", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(component.TryGetProperty("format", out var format) ? format.GetString() : null, "DOCUMENT", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static string UnsupportedReason(ConversacionPlantillaDto template, bool documentoDisponible = false)
     {
         const string message = "Esta plantilla requiere componentes que AlfaCore todavía no permite completar (HEADER variable/media, botones o variables con nombre). Elegí una plantilla con BODY posicional y encabezado fijo.";
         if (template.EncabezadoTexto.Contains("{{", StringComparison.Ordinal)
             || Regex.IsMatch(template.CuerpoTexto, @"\{\{\s*[^\d\s}][^}]*\}\}")) return message;
+        if (!documentoDisponible && RequiereDocumento(template))
+            return "Esta plantilla lleva un documento adjunto en el encabezado: se envía desde la pantalla que genera el documento (por ejemplo, Cierre de caja → WhatsApp).";
         if (string.IsNullOrWhiteSpace(template.ComponentesMetaJson)) return string.Empty;
         using var document = JsonDocument.Parse(template.ComponentesMetaJson);
         foreach (var component in document.RootElement.EnumerateArray())
@@ -36,6 +64,8 @@ public static class WhatsAppTemplateValidation
             var type = component.GetProperty("type").GetString()?.ToUpperInvariant();
             if (type == "BODY" || type == "FOOTER") continue;
             if (type != "HEADER") return message;
+            if (documentoDisponible && component.TryGetProperty("format", out var docFormat)
+                && string.Equals(docFormat.GetString(), "DOCUMENT", StringComparison.OrdinalIgnoreCase)) continue;
             if (!component.TryGetProperty("format", out var format) || format.GetString() != "TEXT") return message;
             if (component.TryGetProperty("text", out var text) && (text.GetString() ?? "").Contains("{{", StringComparison.Ordinal)) return message;
         }

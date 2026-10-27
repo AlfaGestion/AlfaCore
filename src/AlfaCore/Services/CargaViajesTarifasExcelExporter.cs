@@ -73,6 +73,7 @@ public sealed class CargaViajesTarifasExcelExporter
         var parts = new List<string> { $"{totalRows} tarifa(s)" };
 
         AddFilter(parts, "Texto", filters.Texto);
+        AddFilter(parts, "Nombre de lista", filters.NombreLista);
         AddFilter(parts, "Cliente", filters.Cliente);
         AddFilter(parts, "Chofer", filters.Chofer);
         AddFilter(parts, "Destino", filters.Destino);

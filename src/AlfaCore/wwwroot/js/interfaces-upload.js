@@ -90,6 +90,45 @@
         bindGlobalPaste();
     }
 
+    function bindImageCompression(inputSelector, maxDimension = 2400, quality = 0.82) {
+        const input = document.querySelector(inputSelector);
+        if (!input || input.getAttribute('data-image-compression-ready') === '1') return;
+
+        let processing = false;
+        input.addEventListener('change', async event => {
+            // El evento que generamos después de comprimir debe llegar a Blazor,
+            // pero no volver a entrar en este mismo compresor.
+            if (event.__alfaCoreImageCompressed) return;
+            if (processing || !input.files?.length) return;
+            processing = true;
+            event.stopImmediatePropagation();
+            try {
+                const compressed = [];
+                for (const file of Array.from(input.files)) {
+                    if (!file.type.startsWith('image/')) { compressed.push(file); continue; }
+                    const bitmap = await createImageBitmap(file);
+                    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+                    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+                    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+                    bitmap.close();
+                    compressed.push(blob ? new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }) : file);
+                }
+                const dataTransfer = new DataTransfer();
+                compressed.forEach(file => dataTransfer.items.add(file));
+                input.files = dataTransfer.files;
+            } finally {
+                processing = false;
+                const compressedChange = new Event('change', { bubbles: true });
+                compressedChange.__alfaCoreImageCompressed = true;
+                input.dispatchEvent(compressedChange);
+            }
+        }, true);
+        input.setAttribute('data-image-compression-ready', '1');
+    }
+
     function getFirstVisibleBinding() {
         for (const entry of registry.values()) {
             if (!entry?.dropzone || !entry?.input) continue;
@@ -119,6 +158,7 @@
 
     window.alfaCoreInterfacesUpload = {
         bindPasteDrop,
+        bindImageCompression,
         async pasteImageFromClipboard(inputSelector) {
             const input = document.querySelector(inputSelector);
             if (!input) {
@@ -204,6 +244,25 @@
             const win = window.open(url, '_blank', 'noopener,noreferrer');
             if (win) {
                 win.opener = null;
+            }
+        },
+        async downloadUrl(url, fileName) {
+            if (!url) return;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('No se pudo descargar la imagen.');
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = objectUrl;
+                anchor.download = fileName || 'imagen-articulo';
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+                URL.revokeObjectURL(objectUrl);
+            } catch {
+                window.open(url, '_blank', 'noopener,noreferrer');
             }
         },
         downloadBlob(base64, mimeType, fileName) {

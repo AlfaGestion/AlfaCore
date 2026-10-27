@@ -264,3 +264,20 @@ VALUES
     @Pc,
     @Usuario
 )
+## Journal de Cobranzas (19/10/2026)
+
+`ALFACORE_COBRANZA_OPERACION` es una tabla auxiliar nueva creada por la actualización `2026-10-19-004__caja_cobranzas_operacion.sql`. Guarda operación, hash de solicitud y resultado CB; el índice único filtrado de MovimientoId evita generar dos recibos desde un mismo movimiento bancario. No reemplaza `V_MV_CPTE`, `MV_ASIENTOS` ni `MV_APLICACION`, que se graban en la misma transacción. La lectura de saldo continúa usando `VE_CPTES_SALDOS_VENTAS`. Ver [Cobranzas](modulos/cobranzas.md).
+
+## Trazabilidad de Carga de Comprobantes (17/10/2026)
+
+`ALFACORE_VENTAS_CARGA_ORIGEN_LINEA` es una tabla auxiliar creada por actualización para consolidaciones nuevas. Relaciona `V_MV_CPTEINSUMOS.ID` destino con `V_MV_CPTE.ID` y `V_MV_CPTEINSUMOS.ID` de origen; no duplica cantidades ni reemplaza `MV_APLICACION`. La vista oficial `VT_V_MV_INSUMOS_APLICACION` usa esas relaciones solo para los detalles trazados y conserva su cálculo para los históricos. Esto evita descontar todos los artículos de una factura de cada origen relacionado. Ver [contrato y migración protegida](modulos/ventas-carga-comprobantes/consolidacion-iva-unidades.md).
+
+## Vínculos de conciliación bancaria (20/10/2026)
+
+BK_Conciliacion, BK_ConciliacionBanco y BK_ConciliacionAlfa son auxiliares de la actualización 2026-10-20-001. Guardan los vínculos entre BK_ExtractoMovimiento y la clave completa de MV_ASIENTOS, sus copias, huellas y auditoría de confirmación/desconciliación. No reemplazan la contabilidad. Se respeta Conciliado de MV_ASIENTOS y MV_CONCILIACION legacy. Solo las marcas nuevas de AlfaCore pueden liberarse desde este módulo. Ver [Conciliación bancaria](modulos/conciliacion-bancaria.md).
+
+## Reconocimiento de cobros existentes (20/10/2026)
+
+BK_CobroExistente (actualización 2026-10-20-002) vincula un movimiento importado con la clave completa del recibo existente en MV_ASIENTOS, guardando usuario/fecha/importe. No reemplaza ni graba comprobantes, asientos, aplicaciones o conciliaciones. Tiene unicidad por movimiento y recibo; el servicio audita COBRO_EXISTENTE y actualiza exclusivamente EstadoRevision a Cobrado. Ver [Conciliación bancaria](modulos/conciliacion-bancaria.md).
+
+La actualización 2026-10-20-003 agrega ImporteBanco y Observacion a BK_CobroExistente para reconocer manualmente cobros con diferencias justificadas por el usuario. Importe conserva el total del recibo; ambos importes y la observación se auditan sin ajustar MV_ASIENTOS ni conciliar la diferencia.

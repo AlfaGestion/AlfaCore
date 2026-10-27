@@ -1,0 +1,217 @@
+@using AlfaCore.Services
+@inject IIaConsumoService ConsumoSvc
+
+@* Asistente IA → General: consumo de IA del mes de la base (créditos). Solo en SaaS, con medición central. *@
+
+@if (_resumen is not null)
+{
+    <ConversacionesConfigTarjeta Titulo="Consumo de IA este mes"
+                                 Descripcion="Créditos que usaron el asistente y las demás funciones de IA en esta base. Se actualiza cada pocos minutos.">
+        <Extra>
+            <AlfaTag Tone="AlfaTagTone.Neutral">@NombreMes(_resumen.Mes) @_resumen.Anio</AlfaTag>
+        </Extra>
+        <ChildContent>
+            <div class="consumo-kpis">
+                <div class="consumo-kpi">
+                    <strong>@_resumen.CreditosBase.ToString("N0", Es)</strong>
+                    <span>créditos en esta base</span>
+                </div>
+                @if (_resumen.CreditosCliente != _resumen.CreditosBase)
+                {
+                    <div class="consumo-kpi">
+                        <strong>@_resumen.CreditosCliente.ToString("N0", Es)</strong>
+                        <span>créditos en todas tus bases</span>
+                    </div>
+                }
+                @if (_resumen.Plan is { } plan)
+                {
+                    <div class="consumo-kpi">
+                        <strong>@plan.CreditosIncluidos.ToString("N0", Es)</strong>
+                        <span>incluidos en @plan.PlanNombre</span>
+                    </div>
+                }
+            </div>
+
+            @if (_resumen.Plan is { CreditosIncluidos: > 0 } planConCupo)
+            {
+                var porcentaje = Porcentaje(_resumen.CreditosCliente, planConCupo.CreditosIncluidos);
+                <div class="consumo-bar @(porcentaje >= 100 ? "is-over" : porcentaje >= 80 ? "is-warning" : null)"
+                     role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Min(porcentaje, 100)">
+                    <span style="width:@Math.Min(porcentaje, 100)%"></span>
+                </div>
+                <p class="cfg-hint @(porcentaje >= 80 ? "cfg-hint--warning" : null)">
+                    @if (porcentaje >= 100)
+                    {
+                        @(planConCupo.PermiteExcedentes
+                            ? $"Superaste los créditos incluidos. Los excedentes se facturan a fin de mes ({planConCupo.Moneda} {planConCupo.PrecioExcedente.ToString("N2", Es)} cada 1.000 créditos)."
+                            : "Usaste todos los créditos incluidos en tu plan este mes.")
+                    }
+                    else
+                    {
+                        @($"Usaste el {porcentaje}% de los créditos incluidos en tu plan este mes.")
+                    }
+                </p>
+            }
+
+            @if (_resumen.Tope is { } tope)
+            {
+                @if (tope.Alcanzado)
+                {
+                    <div class="cfg-notice">
+                        <i class="bi bi-slash-circle" aria-hidden="true"></i>
+                        <span>Se alcanzó el tope mensual de @Creditos(tope.TopeCreditos): el asistente no responde y las conversaciones quedan para tu equipo hasta el mes que viene.</span>
+                    </div>
+                }
+                else
+                {
+                    <p class="cfg-hint @(tope.EnAviso ? "cfg-hint--warning" : null)">
+                        Tope mensual: @Creditos(tope.TopeCreditos) (llevás el @tope.Porcentaje%). Al llegar, el asistente deja de responder y pasa las conversaciones a tu equipo@(_planes is { Planes.Count: > 1 } ? ". Si necesitás más, pedí otro plan acá abajo." : ".")
+                    </p>
+                }
+            }
+
+            @if (_resumen.PorFuncion.Count > 0)
+            {
+                <ul class="cfg-list">
+                    @foreach (var funcion in _resumen.PorFuncion)
+                    {
+                        <li class="cfg-list__item">
+                            <i class="bi @Icono(funcion.Funcion) cfg-list__icon" aria-hidden="true"></i>
+                            <div class="cfg-list__text">
+                                <span class="cfg-list__title">@IaUsoFunciones.Nombre(funcion.Funcion)</span>
+                                <span class="cfg-list__desc">@funcion.Llamadas.ToString("N0", Es) uso(s)</span>
+                            </div>
+                            <strong class="consumo-creditos">@Creditos(funcion.Creditos)</strong>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="cfg-hint">Todavía no hubo consumo de IA este mes en esta base.</p>
+            }
+        </ChildContent>
+    </ConversacionesConfigTarjeta>
+}
+
+@if (_planes is { Planes.Count: > 0 } planes)
+{
+    <ConversacionesConfigTarjeta Titulo="Plan de IA"
+                                 Descripcion="Créditos que incluye cada plan por mes. Si pedís un cambio, lo confirmamos y te avisamos.">
+        <ChildContent>
+            @if (planes.Pendiente is { } pendiente)
+            {
+                <div class="cfg-notice">
+                    <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                    <span>Pediste el plan @pendiente.PlanNombre el @pendiente.SolicitadoUtc.ToLocalTime().ToString("dd/MM", Es). Lo estamos revisando.</span>
+                </div>
+            }
+            <ul class="consumo-planes">
+                @foreach (var p in planes.Planes)
+                {
+                    var esActual = p.IdPlan == planes.IdPlanActual;
+                    <li class="consumo-plan @(esActual ? "is-actual" : null)">
+                        <div class="consumo-plan__info">
+                            <strong>@p.Nombre</strong>
+                            <span>@p.CreditosIncluidos.ToString("N0", Es) créditos por mes · @PrecioTexto(p)</span>
+                            @if (!string.IsNullOrWhiteSpace(p.Descripcion))
+                            {
+                                <small>@p.Descripcion</small>
+                            }
+                        </div>
+                        @if (esActual)
+                        {
+                            <AlfaTag Tone="AlfaTagTone.Success">Tu plan</AlfaTag>
+                        }
+                        else if (planes.Pendiente?.IdPlan == p.IdPlan)
+                        {
+                            <AlfaTag Tone="AlfaTagTone.Warning">Pedido</AlfaTag>
+                        }
+                        else
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_pidiendo" OnClick="() => _planAPedir = p">Pedir este plan</AlfaButton>
+                        }
+                    </li>
+                }
+            </ul>
+        </ChildContent>
+    </ConversacionesConfigTarjeta>
+}
+
+<AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+<AlfaConfirmDialog Open="@(_planAPedir is not null)"
+                   Title="Pedir cambio de plan"
+                   Message="@($"Vas a pedir el plan {_planAPedir?.Nombre}: {_planAPedir?.CreditosIncluidos.ToString("N0", Es)} créditos por mes ({(_planAPedir is null ? string.Empty : PrecioTexto(_planAPedir))}).")"
+                   SecondaryMessage="Lo confirmamos desde Alfa y el cambio rige desde ese momento."
+                   ConfirmLabel="Pedir plan" LoadingLabel="Enviando..." Loading="@_pidiendo"
+                   OnConfirm="PedirPlanAsync" OnCancel="() => _planAPedir = null" />
+
+@code {
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private IaConsumoBaseDto? _resumen;
+    private IaPlanesClienteDto? _planes;
+    private IaPlanOpcionDto? _planAPedir;
+    private bool _pidiendo;
+    private AppUiMessage? _feedback;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!ConsumoSvc.Disponible)
+            return;
+
+        var hoy = DateTime.Today;
+        _resumen = await ConsumoSvc.GetResumenBaseActivaAsync(hoy.Year, hoy.Month);
+        _planes = await ConsumoSvc.GetPlanesBaseActivaAsync();
+    }
+
+    private async Task PedirPlanAsync()
+    {
+        if (_planAPedir is not { } plan)
+            return;
+
+        _pidiendo = true;
+        try
+        {
+            await ConsumoSvc.SolicitarPlanAsync(plan.IdPlan);
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Success, Title = "Pedido enviado", Message = $"Pediste el plan {plan.Nombre}. Te avisamos cuando esté activo." };
+            _planes = await ConsumoSvc.GetPlanesBaseActivaAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Error, Title = "No se pudo pedir el plan", Message = ex.Message };
+        }
+        finally
+        {
+            _pidiendo = false;
+            _planAPedir = null;
+        }
+    }
+
+    internal static string PrecioTexto(IaPlanOpcionDto plan)
+    {
+        var es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+        var abono = plan.Precio <= 0 ? "incluido" : $"{plan.Moneda} {plan.Precio.ToString("N2", es)} por mes";
+        return plan.PermiteExcedentes
+            ? $"{abono} + {plan.Moneda} {plan.PrecioExcedente.ToString("N2", es)} cada 1.000 créditos extra"
+            : $"{abono}, sin excedentes";
+    }
+
+    private static string Creditos(long cantidad)
+        => $"{cantidad.ToString("N0", Es)} {(cantidad == 1 ? "crédito" : "créditos")}";
+
+    internal static int Porcentaje(long usados, int incluidos)
+        => incluidos <= 0 ? 0 : (int)Math.Round(usados * 100d / incluidos, MidpointRounding.AwayFromZero);
+
+    private static string NombreMes(int mes)
+        => Es.DateTimeFormat.GetMonthName(mes) is { Length: > 0 } nombre ? char.ToUpper(nombre[0], Es) + nombre[1..] : mes.ToString(Es);
+
+    private static string Icono(string funcion) => funcion switch
+    {
+        IaUsoFunciones.Bot => "bi-robot",
+        IaUsoFunciones.ArchivosBusqueda => "bi-search",
+        IaUsoFunciones.ArchivosAlmacenamiento => "bi-hdd",
+        IaUsoFunciones.InformesIa or IaUsoFunciones.Resumen => "bi-bar-chart",
+        IaUsoFunciones.Cotizacion => "bi-file-earmark-ruled",
+        _ => "bi-stars"
+    };
+}

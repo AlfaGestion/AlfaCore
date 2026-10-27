@@ -294,6 +294,8 @@
     [Parameter] public int IdComplemento { get; set; }
     [Parameter] public string? ReturnUrl { get; set; }
     [Parameter] public bool ModoDetalleCompleto { get; set; }
+    [Parameter] public bool AbrirAsientoInicial { get; set; }
+    [Parameter] public EventCallback AsientoCerrado { get; set; }
     [SupplyParameterFromQuery(Name = "reimpresion")] public string? Reimpresion { get; set; }
 
     private static readonly (string Key, string Label)[] Tabs =
@@ -384,6 +386,8 @@
         }
         _activeTab = ResolveDefaultTab(_dto);
         _loading = false;
+        if (AbrirAsientoInicial)
+            await MostrarAsientoAsync();
     }
 
     private async Task VolverAlAnteriorAsync()
@@ -428,7 +432,7 @@
     private Task CerrarAsientoModalAsync()
     {
         _asientoModalAbierto = false;
-        return Task.CompletedTask;
+        return AsientoCerrado.InvokeAsync();
     }
 
 

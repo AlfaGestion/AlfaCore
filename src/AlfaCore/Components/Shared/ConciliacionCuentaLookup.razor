@@ -1,0 +1,24 @@
+<AlfaLookup TItem="ConciliacionAsientoCuenta" Label="@Label" Placeholder="Buscar por código o nombre de cuenta"
+    SearchText="@_texto" SearchTextChanged="v=>_texto=v" SelectedItem="@_seleccion" SelectedItemChanged="Elegir"
+    SearchFunc="Buscar" ItemKey="c=>c.Codigo" Disabled="Disabled" MinimumCharacters="1">
+    <ItemTemplate Context="c">@c.Codigo · @c.Descripcion</ItemTemplate>
+</AlfaLookup>
+@code {
+    [Parameter] public string Label { get; set; }="Contrapartida";
+    [Parameter] public string Cuenta { get; set; }="";
+    [Parameter] public EventCallback<string> CuentaChanged { get; set; }
+    [Parameter] public IReadOnlyList<ConciliacionAsientoCuenta> Cuentas { get; set; }=[];
+    [Parameter] public bool Disabled { get; set; }
+    private string _texto="",_anterior="";
+    private ConciliacionAsientoCuenta? _seleccion;
+    protected override void OnParametersSet() {
+        if(Cuenta==_anterior&&_seleccion is not null)return;
+        _anterior=Cuenta;_seleccion=Cuentas.FirstOrDefault(c=>c.Codigo==Cuenta);
+        _texto=_seleccion is null ? "" : $"{_seleccion.Codigo} · {_seleccion.Descripcion}";
+    }
+    private Task<IReadOnlyList<ConciliacionAsientoCuenta>> Buscar(string texto,CancellationToken ct) {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<ConciliacionAsientoCuenta>>(Cuentas.Where(c=>c.Codigo.Contains(texto.Trim(),StringComparison.OrdinalIgnoreCase)||c.Descripcion.Contains(texto.Trim(),StringComparison.OrdinalIgnoreCase)).Take(30).ToList());
+    }
+    private async Task Elegir(ConciliacionAsientoCuenta? cuenta) { _seleccion=cuenta;await CuentaChanged.InvokeAsync(cuenta?.Codigo ?? ""); }
+}

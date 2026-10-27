@@ -1,0 +1,112 @@
+@* Configuración → Soporte: estado de webhooks, diagnóstico de configuración por canal y AnyDesk.
+   "Listo" indica que los datos necesarios están cargados, no que el canal esté verificado en vivo. *@
+
+@switch (Seccion)
+{
+    case "diagnostico-canales":
+        <ConversacionesConfigPagina Titulo="Diagnóstico de canales" Descripcion="Qué datos tiene cargados cada canal. Indica configuración completa, no una prueba de conexión en vivo.">
+            @foreach (var canal in Canales)
+            {
+                <ConversacionesConfigTarjeta Titulo="@canal.Nombre" Icono="@canal.Icono">
+                    <Extra>
+                        <AlfaTag Tone="@(canal.Items.All(i => i.Listo) ? AlfaTagTone.Success : AlfaTagTone.Warning)">
+                            @(canal.Items.All(i => i.Listo) ? "Completo" : "Incompleto")
+                        </AlfaTag>
+                    </Extra>
+                    <ChildContent>
+                        <ul class="cfg-list">
+                            @foreach (var item in canal.Items)
+                            {
+                                <li class="cfg-list__item">
+                                    <i class="bi @(item.Listo ? "bi-check-circle" : "bi-exclamation-circle") cfg-list__icon" aria-hidden="true"></i>
+                                    <div class="cfg-list__text">
+                                        <span class="cfg-list__title">@item.Nombre</span>
+                                        <span class="cfg-list__desc">@item.Detalle</span>
+                                    </div>
+                                    <AlfaTag Tone="@(item.Listo ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(item.Listo ? "Listo" : "Pendiente")</AlfaTag>
+                                </li>
+                            }
+                        </ul>
+                    </ChildContent>
+                </ConversacionesConfigTarjeta>
+            }
+        </ConversacionesConfigPagina>
+        break;
+
+    case "anydesk":
+        <ConversacionesConfigPagina Titulo="AnyDesk" Descripcion="Generá un archivo para que los links «Conectar por AnyDesk» de la bandeja abran AnyDesk en tu PC.">
+            <ConversacionesConfigTarjeta Titulo="Registrar AnyDesk en esta PC" Descripcion="Se hace una vez por PC. La ruta no se guarda en AlfaCore: solo se usa para armar el archivo.">
+                <AlfaInput Id="anydesk-path" Label="Ruta de AnyDesk en tu PC"
+                           Placeholder="C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
+                           HelpText="Buscala con clic derecho en el acceso directo de AnyDesk → Propiedades → Destino."
+                           Value="@AnyDeskRuta" ValueChanged="@((string? v) => AnyDeskRutaChanged.InvokeAsync(v ?? string.Empty))" />
+                <div class="cfg-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-download" Disabled="@AnyDeskBusy" Loading="@AnyDeskBusy"
+                                OnClick="() => OnDescargarAnyDesk.InvokeAsync()">Descargar archivo de registro (.reg)</AlfaButton>
+                </div>
+                @if (AnyDeskFeedback is not null)
+                {
+                    <div class="cfg-notice @(AnyDeskFeedback.Severity == AppUiFeedbackSeverity.Success ? "cfg-notice--ok" : null)">
+                        <i class="bi @(AnyDeskFeedback.Severity == AppUiFeedbackSeverity.Success ? "bi-check-circle" : "bi-exclamation-triangle")" aria-hidden="true"></i>
+                        <span>
+                            <strong>@AnyDeskFeedback.Title</strong>
+                            @AnyDeskFeedback.Message
+                            @if (!string.IsNullOrWhiteSpace(AnyDeskFeedback.Suggestion))
+                            {
+                                <br />@AnyDeskFeedback.Suggestion
+                            }
+                        </span>
+                    </div>
+                }
+            </ConversacionesConfigTarjeta>
+            <ConversacionesConfigAyuda>
+                <ol>
+                    <li>AlfaCore corre en un servidor, así que no puede tocar el registro de Windows de tu PC directamente.</li>
+                    <li>Hacé doble clic en el archivo descargado y confirmá el aviso de Windows.</li>
+                    <li>Desde ese momento, los links «Conectar por AnyDesk» de la bandeja abren tu AnyDesk conectando al ID.</li>
+                    <li>Cada técnico lo repite una vez, en su propia PC.</li>
+                </ol>
+            </ConversacionesConfigAyuda>
+        </ConversacionesConfigPagina>
+        break;
+
+    default:
+        <ConversacionesConfigPagina Titulo="Estado de webhooks" Descripcion="Las URLs que cada plataforma usa para mandarle mensajes a AlfaCore.">
+            @if (EsSaaS)
+            {
+                <ConversacionesConfigTarjeta Titulo="Identificación de la base">
+                    <Extra>
+                        <AlfaTag Tone="@(TieneTokenWebhook ? AlfaTagTone.Success : AlfaTagTone.Danger)">@(TieneTokenWebhook ? "Identificada" : "Sin identificar")</AlfaTag>
+                    </Extra>
+                    <ChildContent>
+                        <p class="cfg-hint @(TieneTokenWebhook ? null : "cfg-hint--warning")">@AyudaToken</p>
+                    </ChildContent>
+                </ConversacionesConfigTarjeta>
+            }
+            <ConversacionesConfigTarjeta Titulo="URLs de callback por canal" Descripcion="Copialas en la configuración de cada plataforma (Meta, Mercado Libre).">
+                @foreach (var webhook in Webhooks)
+                {
+                    <ConversacionesConfigSoloLectura Label="@webhook.Canal" Valor="@webhook.Url" />
+                }
+            </ConversacionesConfigTarjeta>
+        </ConversacionesConfigPagina>
+        break;
+}
+
+@code {
+    public sealed record ItemEstado(string Nombre, bool Listo, string Detalle);
+    public sealed record CanalEstado(string Nombre, string Icono, IReadOnlyList<ItemEstado> Items);
+    public sealed record WebhookCanal(string Canal, string Url);
+
+    [Parameter] public string Seccion { get; set; } = "estado-webhooks";
+    [Parameter] public bool EsSaaS { get; set; }
+    [Parameter] public bool TieneTokenWebhook { get; set; }
+    [Parameter] public string AyudaToken { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<WebhookCanal> Webhooks { get; set; } = [];
+    [Parameter] public IReadOnlyList<CanalEstado> Canales { get; set; } = [];
+    [Parameter] public string AnyDeskRuta { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> AnyDeskRutaChanged { get; set; }
+    [Parameter] public bool AnyDeskBusy { get; set; }
+    [Parameter] public AppUiMessage? AnyDeskFeedback { get; set; }
+    [Parameter] public EventCallback OnDescargarAnyDesk { get; set; }
+}

@@ -19,6 +19,7 @@ public interface ICuentasComercialesService
     Task<IReadOnlyList<CuentaComercialContactoCandidateDto>> SearchContactosParaVincularAsync(CuentaComercialTipo tipo, string cuentaCodigo, string texto, CancellationToken ct = default);
     Task<int> CreateContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoCreateRequest request, CancellationToken ct = default);
     Task LinkContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoLinkRequest request, CancellationToken ct = default);
+    Task UnlinkContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoUnlinkRequest request, CancellationToken ct = default);
     Task UpdateContactoQuickAsync(CuentaComercialTipo tipo, CuentaComercialContactoQuickUpdateRequest request, CancellationToken ct = default);
     Task<CuentaComercialViewSettingsDto> GetViewSettingsAsync(CuentaComercialTipo tipo, string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(CuentaComercialTipo tipo, string userName, CuentaComercialViewSettingsDto settings, CancellationToken ct = default);

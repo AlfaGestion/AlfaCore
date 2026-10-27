@@ -97,6 +97,9 @@ public sealed class TicketAdjuntoOrigenDto
     public string TipoArchivo { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
+    public bool ArchivoDisponible { get; set; }
+    public bool PuedeRecuperarse { get; set; }
+    public string EstadoAlmacenamiento { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
 }
 

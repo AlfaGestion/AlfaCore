@@ -1,0 +1,6 @@
+.config-carga { display: grid; gap: 16px; }
+.config-carga__links { display: flex; flex-wrap: wrap; gap: 8px; }
+.config-carga fieldset { border: 1px solid var(--alfa-border-default); padding: 16px; min-width: 0; }
+.config-carga__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 18px; }
+.config-carga small { display: block; margin-top: 5px; opacity: .8; overflow-wrap: anywhere; }
+.config-carga details p { overflow-wrap: anywhere; }

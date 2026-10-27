@@ -13,6 +13,12 @@ public sealed class AdminClienteDto
     public string RazonSocial { get; init; } = string.Empty;
     public string IdWeb { get; init; } = string.Empty;
     public bool SuperAdmin { get; init; }
+    /// <summary>Licencia del legacy (VB6, CfgNW("LICENCIAPRINCIPAL")). Por defecto es el IdCliente.</summary>
+    public string LicenciaPrincipal { get; init; } = string.Empty;
+    public string FtpServer { get; init; } = string.Empty;
+    public string FtpUsuario { get; init; } = string.Empty;
+    public bool TieneFtpClave { get; init; }
+    public DateTime? FechaActivacion { get; init; }
 }
 
 /// <summary>Fila del filtro "clientes con el módulo X" del buscador de Administrar -- misma
@@ -64,6 +70,23 @@ public sealed class CrearClienteRequest
     public string IdWeb { get; set; } = string.Empty;
     public bool SuperAdmin { get; set; }
     public string? PasswordInicial { get; set; }
+    /// <summary>Vacía al crear = el IdCliente. Vacía al editar = se conserva la actual.</summary>
+    public string LicenciaPrincipal { get; set; } = string.Empty;
+    public string FtpServer { get; set; } = string.Empty;
+    public string FtpUsuario { get; set; } = string.Empty;
+    /// <summary>Vacía al editar = se conserva la actual (igual que la contraseña de las bases).</summary>
+    public string? FtpClave { get; set; }
+}
+
+/// <summary>Datos que el legacy (VB6) pide a partir de su licencia: reemplaza la lectura directa de
+/// ESTADISTICAS.dbo.clientes / sp_ObtenerDatosLicencia.</summary>
+public sealed class LicenciaLegacyDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string FtpServer { get; init; } = string.Empty;
+    public string FtpUsuario { get; init; } = string.Empty;
+    public string FtpClave { get; init; } = string.Empty;
+    public DateTime? FechaActivacion { get; init; }
 }
 
 public sealed class CrearBaseRequest

@@ -16,6 +16,10 @@
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
 
@@ -69,7 +73,7 @@
         min-width: 0;
         overflow: hidden;
         border: 1px solid var(--color-border);
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: var(--color-panel);
     }
 
@@ -129,7 +133,7 @@
         min-width: 260px;
         align-items: center;
         border: 1px solid var(--color-border);
-        border-radius: 8px;
+        border-radius: var(--alfa-radius-sm, 4px);
         background: var(--input-bg);
         transition: border-color .16s ease, box-shadow .16s ease;
     }
@@ -171,7 +175,7 @@
     .partes-horas-page .partes-filter-summary span {
         padding: 5px 8px;
         border: 1px solid var(--color-border);
-        border-radius: 6px;
+        border-radius: var(--alfa-radius-sm, 4px);
         color: var(--color-muted);
         font-size: 11px;
         line-height: 1;
@@ -208,6 +212,56 @@
         max-height: 520px;
     }
 
+    .partes-horas-page .partes-dialog__grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px 16px;
+    }
+
+    .partes-horas-page .partes-dialog__ticket {
+        display: flex;
+        gap: 8px;
+    }
+
+    .partes-horas-page .partes-dialog__ticket input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .partes-horas-page .partes-dialog__hint {
+        color: var(--alfa-text-secondary, #a6abb5);
+        font-size: 12px;
+    }
+
+    .partes-horas-page .partes-dialog__checks {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding-top: 22px;
+    }
+
+    .partes-horas-page .partes-dialog__tickets {
+        max-height: 220px;
+        margin-top: 12px;
+    }
+
+    .partes-horas-page .partes-dialog__subtitulo {
+        margin: 20px 0 10px;
+        color: var(--alfa-text-primary, #f5f5f7);
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    @@media (max-width: 720px) {
+        .partes-horas-page .partes-dialog__grid {
+            grid-template-columns: 1fr;
+        }
+
+        .partes-horas-page .partes-dialog__checks {
+            padding-top: 0;
+        }
+    }
+
     .partes-lines {
         display: grid;
         gap: 8px;
@@ -233,8 +287,8 @@
         min-width: 0;
         width: 100%;
         border: 1px solid rgba(125, 161, 207, .28);
-        border-radius: 8px;
-        background: rgba(15, 23, 42, .62);
+        border-radius: var(--alfa-radius-sm, 4px);
+        background: var(--alfa-bg-surface);
         color: var(--color-text);
         outline: none;
     }
@@ -246,7 +300,7 @@
     }
 
     .partes-lines__row select option {
-        background: #111827;
+        background: var(--alfa-bg-surface);
         color: var(--color-text);
     }
 
@@ -302,7 +356,7 @@
             grid-template-columns: 1fr 1fr;
             padding: 10px;
             border: 1px solid var(--color-border);
-            border-radius: 8px;
+            border-radius: var(--alfa-radius-sm, 4px);
         }
 
         .partes-lines__row input[type="text"] {
@@ -346,10 +400,9 @@
     }
 </style>
 
-<div class="page-grid partes-horas-page">
+<div class="gd-page gd gd-legacy partes-horas-page">
     <section class="partes-hero">
         <div class="partes-hero__main">
-            <span class="partes-hero__eyebrow">Control operativo</span>
             <h2 class="partes-hero__title">Partes de horas</h2>
             <p class="partes-hero__text">Registro de tiempo por cliente, ticket y técnico, con lectura rápida de excedentes mensuales.</p>
         </div>
@@ -371,143 +424,22 @@
                 <strong>@_dashboard.PartesPendientes</strong>
             </article>
         </div>
-        <div class="partes-hero__actions">
-            <button type="button" class="btn btn--primary" @onclick="NuevoParte">Nuevo parte</button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">Recargar</button>
-        </div>
     </section>
 
-    @if (_feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    @* Con la ventana de parte abierta, los avisos van adentro de ella (EditorError). *@
+    <AlfaNotification Message="@(_showEditor ? null : _feedback)" OnDismiss="() => _feedback = null" />
 
-    <section class="panel-card partes-search-card">
-        <div class="partes-search">
-            <div class="partes-search__input">
-                <i class="bi bi-search partes-search__icon" aria-hidden="true"></i>
-                <input type="search"
-                       value="@_quickSearch"
-                       @oninput="OnQuickSearchChanged"
-                       @onfocus="OpenFiltros"
-                       @onkeydown="HandleQuickSearchKeyDownAsync"
-                       placeholder="Buscar por cliente o número de ticket" />
-            </div>
-            <button type="button" class="btn btn--primary" @onclick="AplicarBusquedaAsync" disabled="@_loading">Buscar</button>
-            <button type="button" class="btn btn--ghost" @onclick="ToggleFiltros">@(_filtersExpanded ? "Ocultar filtros" : "Filtros")</button>
-            <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
-        </div>
-
-        <div class="partes-filter-summary">
-            <span>@FormatDateRange()</span>
-            @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
-            {
-                <span>Cliente @_filters.ClienteCodigo</span>
-            }
-            @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
-            {
-                <span>Técnico @_filters.IdTecnico</span>
-            }
-            @if (_filters.SoloFacturables)
-            {
-                <span>Facturables</span>
-            }
-            @if (_filters.SoloExcedentes)
-            {
-                <span>Excedentes</span>
-            }
-        </div>
-
-        @if (_filtersExpanded)
-        {
-            <div class="partes-filters-panel">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_filters.FechaDesde" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_filters.FechaHasta" />
-                </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_filters.IdTecnico">
-                        <option value="">Todos</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select @bind="_filters.Estado">
-                        <option value="">Todos</option>
-                        @foreach (var estado in _lookups.Estados)
-                        {
-                            <option value="@estado">@LabelEstado(estado)</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_filters.TipoTrabajo">
-                        <option value="">Todos</option>
-                        @foreach (var tipo in _lookups.TiposTrabajo)
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
-                </div>
-                <div class="partes-filter-checks">
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloFacturables" />
-                        <span>Solo facturables</span>
-                    </label>
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
-                        <span>Solo excedentes</span>
-                    </label>
-                </div>
-                <div class="actions partes-filters-panel__actions">
-                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">Aplicar filtros</button>
-                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
-                </div>
-            </div>
-        }
-    </section>
-
-    @if (_showEditor)
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")</h3>
-                    <p class="panel-card__subtitle">Imputá tiempo a un cliente y, cuando aplique, vinculalo con un ticket.</p>
-                </div>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditor">Cerrar</button>
-            </div>
-
-            <div class="filters-grid filters-grid--wide">
+    @* Nuevo/editar parte (2026-10-19): ventana flotante AlfaDialog en lugar de abrirse dentro de la pantalla. *@
+    <AlfaDialog Open="@_showEditor"
+                Title="@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")"
+                Description="Imputá tiempo a un cliente y, cuando aplique, vinculalo con un ticket."
+                Size="AlfaDialogSize.Xl"
+                Loading="@_saving"
+                ErrorMessage="@EditorError"
+                Class="partes-dialog"
+                OnClose="CerrarEditor">
+        <ChildContent>
+            <div class="partes-dialog__grid">
                 <div class="field">
                     <label>Fecha</label>
                     <InputDate @bind-Value="_form.Fecha" />
@@ -518,30 +450,20 @@
                 </div>
                 <div class="field">
                     <label>Ticket</label>
-                    <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_form.IdTecnico">
-                        <option value="">Sin técnico</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
+                    <div class="partes-dialog__ticket">
+                        <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarTicketsAsync" disabled="@_saving">
+                            <i class="bi bi-search"></i> Buscar
+                        </button>
+                    </div>
+                    @if (_form.IdTicket is long idTicketElegido)
+                    {
+                        <small class="partes-dialog__hint">Vinculado al ticket #@idTicketElegido.ToString("00", System.Globalization.CultureInfo.InvariantCulture)</small>
+                    }
                 </div>
                 <div class="field">
                     <label>Usuario</label>
                     <input type="text" @bind="_form.Usuario" @bind:event="oninput" />
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_form.TipoTrabajo">
-                        @foreach (var tipo in _lookups.TiposTrabajo)
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
                 </div>
                 <div class="field">
                     <label>Estado</label>
@@ -552,16 +474,46 @@
                         }
                     </select>
                 </div>
-                <label class="checkbox">
-                    <input type="checkbox" @bind="_form.Facturable" />
-                    <span>Facturable</span>
-                </label>
-                <label class="checkbox">
-                    <input type="checkbox" @bind="_form.Excedente" />
-                    <span>Excedente</span>
-                </label>
+                <div class="partes-dialog__checks">
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.Facturable" />
+                        <span>Facturable</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.Excedente" />
+                        <span>Excedente</span>
+                    </label>
+                </div>
             </div>
 
+            @if (_ticketOptions.Count > 0)
+            {
+                <div class="usuarios-table-wrap partes-dialog__tickets">
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Cliente</th>
+                                <th>Título</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ticket in _ticketOptions)
+                            {
+                                <tr>
+                                    <td>@ticket.CodigoVisible</td>
+                                    <td>@ticket.ClienteCodigo - @ticket.ClienteNombre</td>
+                                    <td>@ticket.Titulo</td>
+                                    <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarTicket(ticket)">Usar</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <h3 class="partes-dialog__subtitulo">Trabajo realizado</h3>
             <div class="partes-lines">
                 <div class="partes-lines__header">
                     <span>Técnico</span>
@@ -595,52 +547,25 @@
                                @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
                                placeholder="Descripción de la tarea" />
                         <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" />
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
+                        <button type="button" class="btn btn--ghost btn--sm" title="Quitar línea" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
                 }
-                <div class="actions">
+                <div>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="AgregarLinea">
                         <i class="bi bi-plus-circle"></i> Agregar línea
                     </button>
                 </div>
             </div>
-
-            <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="BuscarTicketsAsync" disabled="@_saving">Buscar ticket</button>
-                <button type="button" class="btn btn--primary" @onclick="GuardarParteAsync" disabled="@_saving">Guardar</button>
-                <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">Cancelar</button>
-            </div>
-
-            @if (_ticketOptions.Count > 0)
-            {
-                <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table" data-sticky-list-header>
-                        <thead>
-                            <tr>
-                                <th>Ticket</th>
-                                <th>Cliente</th>
-                                <th>Título</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var ticket in _ticketOptions)
-                            {
-                                <tr>
-                                    <td>@ticket.CodigoVisible</td>
-                                    <td>@ticket.ClienteCodigo - @ticket.ClienteNombre</td>
-                                    <td>@ticket.Titulo</td>
-                                    <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarTicket(ticket)">Usar</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-    }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">Cancelar</button>
+            <button type="button" class="btn btn--primary" @onclick="GuardarParteAsync" disabled="@_saving">
+                <i class="bi bi-floppy"></i> Guardar
+            </button>
+        </Footer>
+    </AlfaDialog>
 
     <section class="panel-card">
         <div class="panel-card__header">
@@ -813,6 +738,203 @@
     private int? _ticketNumeroBusqueda;
     private int? _pendingLineaDescripcionFocusIndex;
 
+    // Smart Search en el Context Toolbar (antes era una tarjeta con Buscar / Filtros / Limpiar).
+    private RenderFragment RenderPartesSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="HandlePartesSearchKeyDown">
+        <div class="smart-search__bar @(_filtersExpanded ? "is-open" : string.Empty)">
+            <i class="bi bi-search"></i>
+            <button type="button" class="smart-search__filter-button @(_filtersExpanded ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                <span class="smart-search__active-filter smart-search__active-filter--periodo" title="Período: @FormatDateRange()">
+                    <span>@FormatDateRangeCorto()</span>
+                </span>
+                @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro cliente" @onclick='() => QuitarFiltroAsync("cliente")'>
+                        <span>Cliente @_filters.ClienteCodigo</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro técnico" @onclick='() => QuitarFiltroAsync("tecnico")'>
+                        <span>Técnico @_filters.IdTecnico</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (_filters.SoloFacturables)
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro facturables" @onclick='() => QuitarFiltroAsync("facturables")'>
+                        <span>Facturables</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (_filters.SoloExcedentes)
+                {
+                    <button type="button" class="smart-search__active-filter" title="Quitar filtro" aria-label="Quitar filtro excedentes" @onclick='() => QuitarFiltroAsync("excedentes")'>
+                        <span>Excedentes</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+            </div>
+            <input @onfocus="() => { if (!_filtersExpanded) ToggleFiltros(); }" type="search"
+                   value="@_quickSearch"
+                   @oninput="OnQuickSearchChanged"
+                   @onkeydown="HandleQuickSearchKeyDownAsync"
+                   placeholder="Buscar por cliente o número de ticket" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtersExpanded" @onclick="ToggleFiltros">
+                <i class="bi @(_filtersExpanded ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_filtersExpanded)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <InputDate @bind-Value="_filters.FechaDesde" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <InputDate @bind-Value="_filters.FechaHasta" />
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <div class="smart-search__inline">
+                        <label>Cliente</label>
+                        <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Técnico</label>
+                        <select @bind="_filters.IdTecnico">
+                            <option value="">Todos</option>
+                            @foreach (var tecnico in _lookups.Tecnicos)
+                            {
+                                <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Estado</label>
+                        <select @bind="_filters.Estado">
+                            <option value="">Todos</option>
+                            @foreach (var estado in _lookups.Estados)
+                            {
+                                <option value="@estado">@LabelEstado(estado)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Tipo</label>
+                        <select @bind="_filters.TipoTrabajo">
+                            <option value="">Todos</option>
+                            @foreach (var tipo in _lookups.TiposTrabajo)
+                            {
+                                <option value="@tipo">@LabelTipo(tipo)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Opciones</h4>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloFacturables" />
+                        <span>Solo facturables</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
+                        <span>Solo excedentes</span>
+                    </label>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading"><i class="bi bi-search"></i> Aplicar</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loading"><i class="bi bi-eraser"></i> Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void CerrarFiltros() => _filtersExpanded = false;
+
+    private void HandlePartesSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            CerrarFiltros();
+    }
+
+    private async Task QuitarFiltroAsync(string clave)
+    {
+        switch (clave)
+        {
+            case "cliente": _filters.ClienteCodigo = string.Empty; break;
+            case "tecnico": _filters.IdTecnico = string.Empty; break;
+            case "facturables": _filters.SoloFacturables = false; break;
+            case "excedentes": _filters.SoloExcedentes = false; break;
+        }
+        await AplicarFiltrosAsync();
+    }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _loading, _filtersExpanded, _quickSearch, _filters.ClienteCodigo, _filters.IdTecnico, _filters.SoloFacturables, _filters.SoloExcedentes, _filters.FechaDesde, _filters.FechaHasta, _lookups.Tecnicos.Count);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "partes-horas",
+            Title = "Partes de horas",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildPartesHoras(RouteContext, Nav, "partes"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nuevo",
+                    Label = "Nuevo parte",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { NuevoParte(); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loading,
+                    OnClick = () => InvokeAsync(async () => { await RecargarAsync(); StateHasChanged(); })
+                },
+            ],
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderPartesSearch(),
+        });
+    }
+
     protected override async Task OnInitializedAsync()
     {
         NuevoParte();
@@ -933,14 +1055,22 @@
         ];
         _ticketNumeroBusqueda = null;
         _ticketOptions.Clear();
+        _feedback = null;
         _showEditor = true;
     }
 
     private void CerrarEditor()
     {
+        if (_saving)
+            return;
         _showEditor = false;
         _ticketOptions.Clear();
     }
+
+    /// <summary>Con la ventana abierta, los avisos de validación/guardado se muestran adentro de ella.</summary>
+    private string? EditorError => _showEditor && _feedback is { } aviso && aviso.Severity != AppUiFeedbackSeverity.Success
+        ? string.IsNullOrWhiteSpace(aviso.Message) ? aviso.Title : aviso.Message
+        : null;
 
     private async Task EditarParteAsync(long id)
     {
@@ -980,6 +1110,7 @@
             }
         ];
         _ticketNumeroBusqueda = null;
+        _feedback = null;
         _showEditor = true;
     }
 
@@ -1160,6 +1291,15 @@
 
     private static string FormatMinutes(int minutes)
         => $"{minutes / 60}h {minutes % 60:00}m";
+
+    // Versión corta para el chip del buscador (el chip estándar es angosto); el período completo
+    // queda en el title.
+    private string FormatDateRangeCorto()
+    {
+        var desde = _filters.FechaDesde?.ToString("dd/MM") ?? "…";
+        var hasta = _filters.FechaHasta?.ToString("dd/MM") ?? "…";
+        return $"{desde} – {hasta}";
+    }
 
     private string FormatDateRange()
     {

@@ -14,36 +14,18 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Carrito general | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">@( _editingIdCarrito.HasValue ? $"Editar carrito general #{_editingIdCarrito}" : "Nuevo carrito")</h2>
-            <p class="page-intro__text">Configurá artículos y precios sin depender de un catálogo previo.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="@BuildSaasRoute("/carrito-compras")">
-                <i class="bi bi-arrow-left"></i> Volver a Carritos
-            </a>
-            <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_loading">
-                <i class="bi bi-floppy"></i> Guardar
-            </button>
-        </div>
-    </div>
+<section class="gd-page gd gd-legacy carrito-general-page">
+    <header class="gd-header">
+        <h2>@(_editingIdCarrito.HasValue ? $"Editar carrito general #{_editingIdCarrito}" : "Nuevo carrito")</h2>
+        <p>Configurá artículos y precios sin depender de un catálogo previo.</p>
+    </header>
 
-    @if (!string.IsNullOrWhiteSpace(_feedback))
-    {
-        <div class="panel-card">
-            <div class="editor-msg @(_feedbackIsError ? "is-error" : "is-success")">
-                <div>
-                    <strong>@_feedbackTitle</strong>
-                    <p>@_feedback</p>
-                </div>
-            </div>
-        </div>
-    }
+    <AlfaNotification Message="@_notificacion.For(_feedback, _feedbackSeverity, _feedbackTitle)" OnDismiss="() => SetFeedback(null)" />
 
     <section class="section-block">
         <div class="section-block__head">
@@ -265,6 +247,10 @@
                            OnClose="CloseBaseMaestraImagenesAsync" />
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+    // "Atención" son avisos (amarillo); antes se mostraban como error o como éxito.
+    private AppUiFeedbackSeverity _feedbackSeverity = AppUiFeedbackSeverity.Success;
+
     [Parameter] public int? IdCarrito { get; set; }
 
     private readonly List<CatalogosListaPrecioDto> _listasPrecio = [];
@@ -291,6 +277,60 @@
     private string _feedbackTitle = string.Empty;
     private bool _feedbackIsError;
     private string _ftpCodigoCta = string.Empty;
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _loading, _editingIdCarrito);
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "carrito-general",
+            Title = _editingIdCarrito.HasValue ? $"Carrito general #{_editingIdCarrito}" : "Nuevo carrito",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCarritoCompras(RouteContext, Nav, "carritos"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "volver",
+                    Label = "Volver a carritos",
+                    Icon = "bi-arrow-left",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = false,
+                    OnClick = () => InvokeAsync(() => { Nav.NavigateTo(BuildSaasRoute("/carrito-compras")); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "guardar",
+                    Label = "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = _loading,
+                    OnClick = () => InvokeAsync(async () => { await GuardarAsync(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -605,6 +645,7 @@
         _feedbackTitle = "Imágenes actualizadas";
         _feedback = $"{resultado.Asignadas} imagen(es) fueron asignadas al carrito.";
         _feedbackIsError = resultado.ConError > 0;
+        _feedbackSeverity = _feedbackIsError ? AppUiFeedbackSeverity.Warning : AppUiFeedbackSeverity.Success;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -677,6 +718,9 @@
         _feedback = message;
         _feedbackTitle = title;
         _feedbackIsError = isError;
+        _feedbackSeverity = isError ? AppUiFeedbackSeverity.Error
+            : title == "Atención" ? AppUiFeedbackSeverity.Warning
+            : AppUiFeedbackSeverity.Success;
     }
 
     private void SetFeedback(AppUiMessage? feedback)
@@ -692,5 +736,6 @@
         _feedback = feedback.Message;
         _feedbackTitle = string.IsNullOrWhiteSpace(feedback.Title) ? "Atención" : feedback.Title;
         _feedbackIsError = feedback.Severity is AppUiFeedbackSeverity.Error or AppUiFeedbackSeverity.Warning;
+        _feedbackSeverity = feedback.Severity;
     }
 }

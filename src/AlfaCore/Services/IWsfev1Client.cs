@@ -11,4 +11,7 @@ public interface IWsfev1Client
     Task<long> ObtenerUltimoAutorizadoAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct);
 
     Task<ArcaCaeResultadoDto> SolicitarCaeAsync(WsaaTicket ticket, ArcaCaeSolicitudDto solicitud, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct);
+
+    Task<ArcaComprobanteConsultadoDto> ConsultarComprobanteAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo,
+        long numero, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct);
 }

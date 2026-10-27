@@ -1,0 +1,46 @@
+@* Texto multilínea de Configuración. AlfaInput no tiene variante multilínea: este componente replica
+   su aspecto (tokens --alfa-*) para mensajes, instrucciones y tokens largos. *@
+
+<div class="cfg-text @Class">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="cfg-text__label" for="@Id">@Label</label>
+    }
+    <textarea id="@Id"
+              class="cfg-text__control @(Monoespaciado ? "is-mono" : null)"
+              rows="@Filas"
+              value="@Value"
+              placeholder="@Placeholder"
+              maxlength="@MaxLength"
+              disabled="@Disabled"
+              @oninput="OnInputAsync"></textarea>
+    @if (Pie is not null)
+    {
+        @Pie
+    }
+    @if (!string.IsNullOrWhiteSpace(HelpText))
+    {
+        <span class="cfg-text__hint">@HelpText</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = string.Empty;
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public int Filas { get; set; } = 3;
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public int? MaxLength { get; set; }
+    [Parameter] public string? HelpText { get; set; }
+    [Parameter] public bool Monoespaciado { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? Pie { get; set; }
+
+    private Task OnInputAsync(ChangeEventArgs args)
+    {
+        Value = args.Value?.ToString();
+        return ValueChanged.InvokeAsync(Value);
+    }
+}

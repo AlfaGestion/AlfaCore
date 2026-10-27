@@ -199,6 +199,13 @@ public interface IMetaWhatsAppManagementClient
     Task<MetaCustomerPaymentReadiness> GetCustomerPaymentReadinessAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
 
     /// <summary>
+    /// GET /{wabaId}?fields=primary_funding_id: id del método de pago de la WABA en Meta, o null si no
+    /// tiene. Sólo informativo (pantalla de uso de mensajes); no participa del alta de WhatsApp.
+    /// </summary>
+    Task<string?> GetWabaPrimaryFundingIdAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el método de pago.");
+
+    /// <summary>
     /// POST /{phoneNumberId}/smb_app_data { messaging_product:"whatsapp", sync_type:"history"|"smb_app_state_sync" }.
     /// Sólo soporta esos dos sync_type. Nunca expone token/PIN/AppSecret -- únicamente captura request_id
     /// (best effort: si Meta no lo devuelve, RequestId queda vacío pero la llamada no se considera fallida).

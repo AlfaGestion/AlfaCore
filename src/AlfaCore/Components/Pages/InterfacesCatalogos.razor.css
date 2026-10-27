@@ -296,6 +296,7 @@ html[data-theme="light"] .catalogos-view-settings {
 }
 
 .catalogos-config-logo__preview {
+    box-sizing: border-box;
     min-height: 120px;
     padding: 0.75rem;
     border-radius: 16px;
@@ -303,6 +304,7 @@ html[data-theme="light"] .catalogos-view-settings {
     background: rgba(15, 23, 42, 0.72);
     display: grid;
     place-items: center;
+    overflow: hidden;
 }
 
 .catalogos-config-logo__preview--auto {
@@ -321,10 +323,28 @@ html[data-theme="light"] .catalogos-view-settings {
 }
 
 .catalogos-config-logo__preview img {
+    box-sizing: border-box;
     width: 100%;
     height: 100%;
     object-fit: contain;
     display: block;
+}
+
+.catalogos-config-checkbox {
+    grid-column: 1 / -1;
+    justify-self: start;
+    width: fit-content;
+    cursor: pointer;
+}
+
+.catalogos-config-checkbox input[type="checkbox"] {
+    width: 1rem;
+    min-width: 1rem;
+    height: 1rem;
+    min-height: 1rem;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--alfa-accent, var(--color-primary));
 }
 
 .catalogos-config-logo__actions {

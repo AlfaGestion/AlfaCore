@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using System.Reflection;
 using AlfaCore.Models;
 using AlfaCore.Services;
@@ -305,10 +308,11 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void FueraDeHorario_SkipsWhenAsistenteIaHandlesOutOfHoursInstead()
     {
-        // Si el bot está activo y configurado para atender fuera de horario, el mensaje FIJO no se
-        // manda -- lo atiende el asistente IA en su lugar (ver EjecutarRespuestaBotAsync).
+        // Si el bot está activo, configurado para atender fuera de horario y atiende el canal de la
+        // conversación, el mensaje FIJO no se manda -- lo atiende el asistente IA en su lugar (ver
+        // EjecutarRespuestaBotAsync). En un canal sin bot sigue saliendo el mensaje fijo.
         Assert.Contains(
-            "if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)\r\n                        return;",
+            "if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured\r\n                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))\r\n                        return;",
             ServiceSource, StringComparison.Ordinal);
     }
 
@@ -446,7 +450,7 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("HumanoYaRespondioUltimoEntrante", ServiceSource, StringComparison.Ordinal);
         Assert.Contains("NOT IN ({AutomatedOutgoingSistemaAutorSqlList})", ServiceSource, StringComparison.Ordinal);
         Assert.Contains("if (humanoYaRespondio)", ServiceSource, StringComparison.Ordinal);
-        Assert.Contains("EjecutarStop:HumanoYaRespondioEsteMensaje", ServiceSource, StringComparison.Ordinal);
+        Assert.Matches(@"if \(humanoYaRespondio\)\s*\{\s*return;", ServiceSource);
 
         // La comparación es por IdMensaje contra el ÚLTIMO entrante (mismo criterio que
         // yaRespondioEsteMensaje) -- NO "alguna vez hubo un humano en la conversación", para no
@@ -458,10 +462,13 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Handoff_Fix_DoesNotChangeSemanticsOfTheExistingAutomatedDedupeCheck()
     {
-        // La corrección agrega una columna/condición nueva a la MISMA consulta -- no toca
-        // yaRespondioEsteMensaje (dedupe de respuestas automáticas) ni botCount (tope
-        // BotMaxRespuestas), que siguen calculándose igual que antes.
-        Assert.Contains("(SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),", ServiceSource, StringComparison.Ordinal);
+        // yaRespondioEsteMensaje (dedupe de respuestas automáticas) sigue por IdMensaje. botCount
+        // (tope BotMaxRespuestas) desde 2026-10-15 reconoce al asistente por AutorAutomatico y cuenta
+        // sólo desde la última respuesta de una persona y en las últimas 24 h (antes contaba siempre
+        // 0 porque los mensajes del asistente se grababan sin autor).
+        Assert.Contains("{AutorMensajeSql(\"b\")} = N'BOT'", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("AND b.FechaHora >= DATEADD(hour, -24, GETDATE())", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("{AutorMensajeSql()} IN ({AutomatedOutgoingSistemaAutorSqlList})", ServiceSource, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -785,18 +792,39 @@ public sealed class ConversacionesAutomationPipelineTests
         IPortalClienteService? portal = null,
         IProveedorSaldoService? proveedor = null,
         IConversacionesConfigService? config = null,
-        IAppUserSessionService? appUser = null,
-        ISessionService? session = null)
+        ICentralBasesService? centralBases = null,
+        ICentralClientesService? centralClientes = null,
+        ISessionService? session = null,
+        ICatalogoClienteLinkService? clienteLinks = null)
         => new(
             new FakeConfiguration(),
             session ?? new FakeSessionService(),
-            appUser ?? new FakeAppUserSessionService(),
             crm ?? new ThrowingCrmCotizacionService(),
             catalogos ?? new ThrowingInterfacesCatalogosService(),
             publicLinks ?? new ThrowingCentralPublicLinkService(),
+            centralBases ?? new FakeCentralBasesService(),
+            centralClientes ?? new FakeCentralClientesService(),
             portal ?? new ThrowingPortalClienteService(),
             proveedor ?? new ThrowingProveedorSaldoService(),
-            config ?? new FakeConversacionesConfigService());
+            config ?? new FakeConversacionesConfigService(),
+            clienteLinks ?? new FakeCatalogoClienteLinkService());
+
+    /// <summary>Credencial reconocible ("CRED-{base}-{catálogo}-{cliente}") para afirmar que la tool
+    /// pidió el link personal con el alcance correcto. La criptografía real se prueba en
+    /// CatalogoClienteLinkTests.</summary>
+    private sealed class FakeCatalogoClienteLinkService : ICatalogoClienteLinkService
+    {
+        public List<(string IdWeb, int IdBase, int IdReferencia, string Cliente)> Emitidas { get; } = [];
+
+        public Task<string?> CrearCredencialAsync(string idWeb, int idBase, int idReferenciaCatalogo, string codigoCliente, CancellationToken ct = default)
+        {
+            Emitidas.Add((idWeb, idBase, idReferenciaCatalogo, codigoCliente));
+            return Task.FromResult<string?>($"CRED-{idBase}-{idReferenciaCatalogo}-{codigoCliente}");
+        }
+
+        public Task<CatalogoClienteIdentificado?> ValidarCredencialAsync(string? credencial, string idWeb, int idBase, int idReferenciaCatalogo, CancellationToken ct = default)
+            => Task.FromResult<CatalogoClienteIdentificado?>(null);
+    }
 
     [Fact]
     public void Tools_NoToolsAreOfferedWhenTheMessageHasNoKeywordSignal()
@@ -842,6 +870,21 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public void Tools_IdentifiedClient_WithExplicitCatalogIntent_GetsPublicCatalogPlusClientTools()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "Quiero comprar pilas, tienen catálogo?");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
+    }
+
+    [Fact]
     public void Tools_LeadWithConsumerPricesOff_GetsPublicCatalogButNoPriceTool()
     {
         var service = CreateToolsService();
@@ -853,6 +896,822 @@ public sealed class ConversacionesAutomationPipelineTests
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_LeadCommercialQuestionWithoutCatalogIntent_KeepsPublicCatalogFallback()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            null,
+            "cuanto salen las pilas?");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    // Caso real Base4264 (2026-09-30): "Que precio tienen las pilas doble A?" → consultar_precio con
+    // "pilas doble A" no encontraba "PILA DURACELL - AA" (búsqueda AND por palabra) y el bot derivaba.
+    [Fact]
+    public async Task Tools_ConsultarPrecio_NaturalLanguageTerms_RetriesWithNormalizedSearch()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pilas doble A"}""", cliente);
+
+        Assert.Equal(["pilas doble A", "pila aa"], crm.Busquedas);
+        Assert.Contains("PILA DURACELL - AA", result);
+        Assert.Contains("$ 2.500,00", result);
+        Assert.DoesNotContain("No se encontró", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_DirectMatch_DoesNotRetry()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pila duracell AA"}""", cliente);
+
+        Assert.Equal(["pila duracell AA"], crm.Busquedas);
+        Assert.Contains("$ 2.500,00", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_NoMatch_ReturnsNotFoundWithoutRedundantRetry()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var sinCambios = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", cliente);
+        var normalizadoSinResultados = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillos de madera"}""", cliente);
+
+        Assert.StartsWith("Sin coincidencias", sinCambios);
+        Assert.StartsWith("Sin coincidencias", normalizadoSinResultados);
+        Assert.Contains("ACLARA", sinCambios);
+        // "tornillo" normalizado es igual al original: no se repite la búsqueda.
+        Assert.Equal(["tornillo", "tornillos de madera", "tornillo madera"], crm.Busquedas);
+    }
+
+    [Theory]
+    [InlineData("pilas doble A", "pila aa")]
+    [InlineData("Que precio tienen las pilas doble A?", "pila aa")]
+    [InlineData("Pila Duracell AA", "pila duracell aa")]
+    [InlineData("pilas triple A", "pila aaa")]
+    [InlineData("¿Cuánto salen los adaptadores?", "adaptador")]
+    [InlineData("cables USB", "cabl usb")]
+    [InlineData("cuánto sale?", "")]
+    [InlineData("", "")]
+    public void NormalizarBusquedaArticulo_GeneraTerminosTolerantes(string entrada, string esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.NormalizarBusquedaArticulo(entrada));
+
+    [Fact]
+    public void Tools_FollowUpWithoutKeyword_UsesPreviousPriceMessage()
+    {
+        var service = CreateToolsService();
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var conPrevio = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Que precio tienen las pilas doble A?");
+        var sinPrevio = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA");
+
+        Assert.Contains(conPrevio, h => h.Nombre == "consultar_precio");
+        // El previo sólo habilita la lista: el catálogo sigue dependiendo del mensaje actual.
+        Assert.DoesNotContain(conPrevio, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.Empty(sinPrevio);
+    }
+
+    [Fact]
+    public void Tools_FollowUpAfterNonToolMessage_StaysWithoutTools()
+    {
+        var service = CreateToolsService();
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Hola, buen día");
+
+        Assert.Empty(herramientas);
+    }
+
+    [Fact]
+    public void MensajePrevioCliente_WithinWindow_SkipsCurrentMessageAndReturnsPrevious()
+    {
+        var t0 = new DateTime(2026, 9, 30, 10, 58, 22);
+        var mensajes = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas doble A?", FechaHora = t0 },
+            new() { Direction = "SALIENTE", Texto = "No encontré información...", FechaHora = t0.AddSeconds(5) },
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0.AddSeconds(25) }
+        };
+
+        var previo = ConversacionesService.ObtenerMensajePrevioCliente(mensajes, "Pila duracell AA", t0.AddSeconds(26), TimeSpan.FromMinutes(30));
+
+        Assert.Equal("Que precio tienen las pilas doble A?", previo);
+    }
+
+    [Fact]
+    public void MensajePrevioCliente_OutsideWindowOrNoPrevious_ReturnsNull()
+    {
+        var t0 = new DateTime(2026, 9, 30, 9, 0, 0);
+        var viejo = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas?", FechaHora = t0 },
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0.AddHours(2) }
+        };
+        var soloActual = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Pila duracell AA", FechaHora = t0 }
+        };
+        // El mensaje actual todavía no está en el historial: la ventana se mide contra "ahora".
+        var sinActual = new List<ConversacionMensajeDto>
+        {
+            new() { Direction = "ENTRANTE", Texto = "Que precio tienen las pilas?", FechaHora = t0 }
+        };
+
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(viejo, "Pila duracell AA", t0.AddHours(2), TimeSpan.FromMinutes(30)));
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(soloActual, "Pila duracell AA", t0, TimeSpan.FromMinutes(30)));
+        Assert.Null(ConversacionesService.ObtenerMensajePrevioCliente(sinActual, "Pila duracell AA", t0.AddHours(1), TimeSpan.FromMinutes(30)));
+        Assert.Equal("Que precio tienen las pilas?",
+            ConversacionesService.ObtenerMensajePrevioCliente(sinActual, "Pila duracell AA", t0.AddMinutes(5), TimeSpan.FromMinutes(30)));
+    }
+
+    [Fact]
+    public async Task Assistant_PriceToolCall_TracesSearchTermAndNotFoundStatus()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas doble A\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"respuesta\":\"Lo consulto con un asesor.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "consultar_precio",
+                    Descripcion = "Busca el precio real de un artículo.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}"
+                }
+            };
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Que precio tienen las pilas doble A?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("No se encontró ningún artículo que coincida con \"pilas doble A\"."),
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            Assert.Contains("BotToolCall|tool=consultar_precio|articulo=pilas doble A", traces);
+            Assert.Contains("BotToolResult|tool=consultar_precio|status=NOT_FOUND", traces);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_RealCase4264_PriceQuestion_ToolReturnsPriceThroughRealToolsService()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var crm = new CatalogoCrmCotizacionService();
+            var toolsService = CreateToolsService(crm: crm);
+            var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+            const string mensaje = "Que precio tienen las pilas doble A?";
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cliente, mensaje);
+            var toolResults = new List<string>();
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas doble A\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"La pila Duracell AA sale $ 2.500,00 con IVA.\"}"}}]}
+                """);
+            var assistant = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            var answer = await assistant.ResponderAsync(
+                comportamiento: "Sos un asistente comercial.",
+                informacion: "Info real.",
+                politica: "GENERAL_AVISA",
+                mensajeCliente: mensaje,
+                historial: [],
+                herramientas: herramientas,
+                ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
+                {
+                    var r = await toolsService.EjecutarAsync(nombre, argumentos, cliente, ct: ct);
+                    toolResults.Add(r);
+                    return r;
+                });
+
+            Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+            Assert.Contains("PILA DURACELL - AA", toolResults.Single());
+            Assert.Contains("$ 2.500,00", toolResults.Single());
+            Assert.Equal("RESUELVE", answer?.Tipo);
+
+            // El resultado de la tool que recibe el modelo en la segunda llamada es el precio real.
+            using var secondPayload = JsonDocument.Parse(handler.RequestBodies[1]);
+            var toolMessage = secondPayload.RootElement.GetProperty("messages").EnumerateArray()
+                .Last(m => m.GetProperty("role").GetString() == "tool");
+            Assert.Contains("$ 2.500,00", toolMessage.GetProperty("content").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Flujo acordado (2026-10-01) para Cliente con precios: 1 coincidencia → RESUELVE; 2..5 → ACLARA
+    // mostrando opciones con precio; más de 5 → ACLARA pidiendo marca/medida; 0 → ACLARA.
+    [Fact]
+    public async Task Tools_ConsultarPrecio_GenericTerm_ReturnsOptionsWithAclaraInstruction()
+    {
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"pilas"}""", cliente);
+
+        Assert.Equal(["pilas", "pila"], crm.Busquedas);
+        Assert.StartsWith("2 coincidencias.", result);
+        Assert.Contains("ACLARA", result);
+        Assert.Contains("PILA DURACELL - AA (código 01): $ 2.500,00", result);
+        Assert.Contains("PILA DURACELL - AAA (código 02): $ 2.000,00", result);
+    }
+
+    [Fact]
+    public async Task Tools_ConsultarPrecio_FollowUpMedida_PrefersWholeWordMatch()
+    {
+        // "AA" por substring también trae "AAA": la respuesta a la aclaración tiene que resolver la AA.
+        var crm = new CatalogoCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var soloMedida = await service.EjecutarAsync("consultar_precio", """{"articulo":"AA"}""", cliente);
+        var combinado = await service.EjecutarAsync("consultar_precio", """{"articulo":"pila AA"}""", cliente);
+
+        foreach (var result in new[] { soloMedida, combinado })
+        {
+            Assert.StartsWith("1 coincidencia.", result);
+            Assert.Contains("RESUELVE", result);
+            Assert.Contains("PILA DURACELL - AA (código 01): $ 2.500,00", result);
+            Assert.DoesNotContain("AAA", result);
+        }
+    }
+
+    [Fact]
+    public void FormatearResultadoPrecio_MasDeCincoCoincidencias_PideMarcaOMedida()
+    {
+        var muchos = Enumerable.Range(1, ConversacionAsistenteHerramientasService.MaxOpcionesPrecio + 1)
+            .Select(i => new CrmCotizacionArticuloDto { IdArticulo = $"{i:00}", Codigo = $"{i:00}", Descripcion = $"PILA MARCA{i} AA", PrecioUnitarioConIva = 1000m + i })
+            .ToList();
+
+        var result = ConversacionAsistenteHerramientasService.FormatearResultadoPrecio("pilas", "pila", muchos, esConsumidorFinal: false);
+
+        Assert.StartsWith($"Más de {ConversacionAsistenteHerramientasService.MaxOpcionesPrecio} coincidencias", result);
+        Assert.Contains("ACLARA", result);
+        Assert.Contains("marca o medida", result);
+        Assert.Equal(ConversacionAsistenteHerramientasService.MaxOpcionesPrecio, result.Split('\n').Count(l => l.StartsWith("- ", StringComparison.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData("¿Cuánto salen las pilas?", true)]
+    [InlineData("precio de la pila AA", true)]
+    [InlineData("¿Los precios incluyen IVA?", false)]
+    [InlineData("tienen lista de precios?", false)]
+    [InlineData("aumentaron los precios?", false)]
+    [InlineData("hola", false)]
+    public void MensajePidePrecioArticulo_ExcluyePreguntasGenerales(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensaje));
+
+    // Caso real Base4264 (2026-10-26): "Quiero 10 pilas duracell AA" no habilitaba herramientas y el
+    // modelo contestó "No vendemos pilas Duracell" con el artículo cargado.
+    [Theory]
+    [InlineData("Quiero 10 pilas duracell AA", true)]
+    [InlineData("necesito dos cables usb", true)]
+    [InlineData("¿Venden cargadores?", true)]
+    [InlineData("hay stock de pilas AAA?", true)]
+    [InlineData("necesito una mano con el sistema", false)]
+    [InlineData("Hola, quiero una pila AAA", true)]
+    [InlineData("busco un cargador", true)]
+    [InlineData("necesito un técnico", false)]
+    [InlineData("quiero una factura del mes pasado", false)]
+    [InlineData("necesito una copia de la factura", false)]
+    [InlineData("quiero hablar con alguien", false)]
+    [InlineData("hola", false)]
+    public void MensajePideArticulo_DetectaCompraSinPalabraPrecio(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideArticulo(mensaje));
+
+    // Caso real Base4264 (2026-10-26): "Pasame la lista de precios" / "Quiero hacer un pedido" de un
+    // Cliente identificado terminaban en "contactá a un asesor" en vez del link al Portal Cliente.
+    [Theory]
+    [InlineData("Pasame la lista de precios", true)]
+    [InlineData("Quiero hacer un pedido", true)]
+    [InlineData("¿Cómo pido?", true)]
+    [InlineData("quiero pedir pilas", true)]
+    [InlineData("¿Cómo están mis pedidos?", false)]
+    [InlineData("cuánto sale la pila AA?", false)]
+    public void MensajePidePortal_DetectaListaDePreciosOHacerPedido(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePortal(mensaje));
+
+    // Caso real Base4264 (2026-10-26): con tickets abiertos, "¿Cómo están mis pedidos?" se contestó
+    // como seguimiento sin consultar las Notas de Pedido. El verbo ("lo que les pedí") y el pedido de
+    // soporte siguen siendo seguimiento; "hacer un pedido" es portal, no consulta.
+    [Theory]
+    [InlineData("¿Cómo están mis pedidos?", true)]
+    [InlineData("¿Llegó mi pedido?", true)]
+    [InlineData("estado del pedido NP-123", true)]
+    [InlineData("cómo viene mi pedido", true)]
+    [InlineData("¿pudieron ver lo que les pedí?", false)]
+    [InlineData("¿cómo va mi pedido de soporte?", false)]
+    [InlineData("Quiero hacer un pedido", false)]
+    [InlineData("¿novedades?", false)]
+    public void MensajeConsultaPedidos_DistingueVentaDeSoporte(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    // Caso real Base4264 (2026-10-26): tras "¿Llegó mi pedido NP-999?", "¿Cómo están mis pedidos?"
+    // volvía a buscar NP-999 porque el modelo arrastraba el número del mensaje anterior.
+    [Theory]
+    [InlineData("NP-999", "¿Llegó mi pedido NP-999?", "NP-999")]
+    [InlineData("999", "estado del pedido 999", "999")]
+    [InlineData("NP-999", "¿Cómo están mis pedidos?", null)]
+    [InlineData("NP-999", null, "NP-999")]
+    [InlineData(null, "¿Cómo están mis pedidos?", null)]
+    public void NumeroPedidoDelMensaje_IgnoraNumerosArrastradosDelHistorial(string? numero, string? mensaje, string? esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.NumeroPedidoDelMensaje(numero, mensaje));
+
+    [Fact]
+    public void ResultadoSinPedidos_DerivaAlSeguimientoSiHayTemaPendiente()
+    {
+        Assert.Contains("SEGUIMIENTO", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
+        Assert.Contains("RESUELVE", ConversacionAsistenteHerramientasService.ResultadoSinPedidos);
+        // Con número puntual es una compra: nunca seguimiento.
+        Assert.Contains("RESUELVE", ConversacionAsistenteHerramientasService.ResultadoPedidoNoEncontrado);
+        Assert.Contains("No es un seguimiento", ConversacionAsistenteHerramientasService.ResultadoPedidoNoEncontrado);
+    }
+
+    [Fact]
+    public void Tools_IdentifiedClient_BuyingWithoutPriceKeyword_GetsPriceAndPortalTools()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "Quiero 10 pilas duracell AA");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
+    }
+
+    [Theory]
+    [InlineData("AA", true)]
+    [InlineData("Duracell", true)]
+    [InlineData("la de 9 V", true)]
+    [InlineData("AAA?", true)]
+    [InlineData("¿Qué es el código RECICLA10?", false)]
+    [InlineData("¿Cómo pago con transferencia?", false)]
+    [InlineData("Tienen envío a Córdoba?", false)]
+    [InlineData("necesito las pilas para el control remoto de la tele del living", false)]
+    [InlineData("", false)]
+    public void PuedeCompletarAclaracion_SoloRespuestasCortasNoPreguntasNuevas(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(mensaje));
+
+    [Theory]
+    [InlineData("Hola", true)]
+    [InlineData("Buenas tardes!", true)]
+    [InlineData("GRACIAS", true)]
+    [InlineData("Hola, cuánto salen las pilas?", false)]
+    [InlineData("Hola, se me cortó el sistema", false)]
+    public void EsMensajeSocial_SoloSaludosYCierres(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.EsMensajeSocial(mensaje));
+
+    [Theory]
+    [InlineData("Hola", "¡Hola! ¿En qué te puedo ayudar?")]
+    [InlineData("Buenos días", "¡Hola! ¿En qué te puedo ayudar?")]
+    [InlineData("Muchas gracias!", "¡De nada! Si necesitás algo más, escribime cuando quieras.")]
+    [InlineData("dale, perfecto", "¡Genial! Si necesitás algo más, avisame.")]
+    public void RespuestaSaludo_SegunElMensaje(string mensaje, string esperada)
+        => Assert.Equal(esperada, ConversacionesService.RespuestaSaludo(mensaje));
+
+    [Fact]
+    public void FormatearResultadoPrecio_SinCoincidencias_Prioriza_LaInformacionDelNegocio()
+    {
+        var result = ConversacionAsistenteHerramientasService.FormatearResultadoPrecio("envío GBA", "envio gba", [], esConsumidorFinal: false);
+
+        Assert.StartsWith("Sin coincidencias", result);
+        Assert.Contains("INFORMACIÓN DEL NEGOCIO", result);
+        Assert.Contains("RESUELVE", result);
+        Assert.Contains("ACLARA", result);
+    }
+
+    [Theory]
+    [InlineData(true, true, false, "consultar_precio")]
+    [InlineData(true, false, false, null)]
+    [InlineData(false, true, false, null)]
+    [InlineData(true, true, true, "required")]
+    public async Task Assistant_ForzarConsultarPrecio_ToolChoiceEnRondaCero(bool forzar, bool ofrecida, bool pideCatalogo, string? esperado)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new List<ConversacionAsistenteHerramientaDefinicionDto>
+            {
+                new() { Nombre = "generar_link_catalogo_publico", Descripcion = "Catálogo.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}" }
+            };
+            if (ofrecida)
+                tools.Add(new() { Nombre = "consultar_precio", Descripcion = "Precio.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}" });
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                pideCatalogo ? "¿Cuánto salen las pilas? ¿Tienen catálogo?" : "¿Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("ok"),
+                forzarConsultarPrecio: forzar);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var hasChoice = payload.RootElement.TryGetProperty("tool_choice", out var choice);
+            if (esperado is null)
+            {
+                Assert.False(hasChoice);
+            }
+            else if (esperado == "required")
+            {
+                Assert.Equal("required", choice.GetString());
+            }
+            else
+            {
+                Assert.Equal(esperado, choice.GetProperty("function").GetProperty("name").GetString());
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_PriceToolAmbiguousResult_IsTracedAsAmbiguous()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"pilas\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"ACLARA\",\"puede_responder\":false,\"respuesta\":\"Tenemos AA a $2.500 y AAA a $2.000. ¿Cuál necesitás?\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "consultar_precio",
+                    Descripcion = "Precio.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}"
+                }
+            };
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "¿Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("2 coincidencias. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA..."),
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            Assert.Contains("BotToolResult|tool=consultar_precio|status=AMBIGUOUS", traces);
+            Assert.Equal("ACLARA", result?.Tipo);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Theory]
+    [InlineData("Que precio tienen las pilas AAA", true)]
+    [InlineData("¿Cuánto salen las pilas?", true)]
+    [InlineData("a cuánto están?", true)]
+    [InlineData("me pasás el valor?", true)]
+    [InlineData("cotización de pilas", true)]
+    [InlineData("hola", false)]
+    [InlineData("tienen catálogo?", false)]
+    [InlineData("quiero comprar pilas", false)]
+    [InlineData("cuánto debo?", false)]
+    [InlineData("qué pilas preciosas", false)]
+    public void MensajePidePrecio_DetectaIntencionExplicita(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePidePrecio(mensaje));
+
+    // Caso real Base4264 (2026-09-30): contacto sin identificar + "Que precio tienen las pilas AAA" con
+    // precios a leads OFF → el bot respondía "No tengo el precio en este momento..." y derivaba.
+    [Fact]
+    public void PrecioRequiereIdentificacion_SoloParaSinIdentificarConPreciosLeadsOff()
+    {
+        const string precio = "Que precio tienen las pilas AAA";
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+        var proveedor = new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno");
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, precio, null));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), ambigua, precio, null));
+        Assert.True(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "y las AAA?", "cuánto salen las pilas?"));
+
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: true), null, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), cliente, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), proveedor, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precios: false, precioConsumidor: false), null, precio, null));
+        Assert.False(ConversacionesService.PrecioRequiereIdentificacion(ToolsConfig(precioConsumidor: false), null, "tienen catálogo?", null));
+    }
+
+    [Fact]
+    public void RespuestaPrecioRequiereIdentificacion_UsaElTextoAcordado_SinFrasesProhibidas()
+    {
+        const string link = "https://alfanetweb.ddns.net/ALFANET/catalogo/prueba-tok";
+        var conLink = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(link);
+        var sinLink = ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(null);
+
+        Assert.Equal(
+            "Para pasarte el precio correcto primero necesito identificarte como cliente, porque puede variar según tu cuenta.\n\n"
+            + "Si ya sos cliente, decime tu nombre o razón social y seguimos.\n\n"
+            + "Mientras tanto podés ver los productos disponibles acá: " + link,
+            conLink);
+        Assert.DoesNotContain("acá:", sinLink);
+        Assert.DoesNotContain("catálogo", sinLink, StringComparison.OrdinalIgnoreCase);
+        foreach (var texto in new[] { conLink, sinLink })
+        {
+            Assert.DoesNotContain("no tengo el precio", texto, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("asesor", texto, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("precios en el catálogo", texto, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // Caso real 4264 (2026-10-01): el lead recibía "podés ver el catálogo" SIN el link.
+    private const string LinkCatalogoLead = "https://alfanetweb.ddns.net/ALFANET/catalogo/prueba-tok123";
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_ModeloOmiteElLink_SeAgregaElLinkReal()
+    {
+        var modelo = new ConversacionAsistenteRespuesta
+        {
+            Tipo = "RESUELVE",
+            PuedeResponder = true,
+            Respuesta = "Para pasarte el precio necesito identificarte como cliente. Si ya sos cliente, decime tu razón social. También podés ver nuestros productos en el catálogo."
+        };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.False(plantilla);
+        Assert.Equal("RESUELVE", respuesta.Tipo);
+        Assert.True(respuesta.PuedeResponder);
+        Assert.StartsWith(modelo.Respuesta, respuesta.Respuesta);
+        Assert.EndsWith(LinkCatalogoLead, respuesta.Respuesta);
+    }
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_ModeloYaIncluyeElLink_NoLoDuplica()
+    {
+        var modelo = new ConversacionAsistenteRespuesta
+        {
+            Tipo = "RESUELVE",
+            PuedeResponder = true,
+            Respuesta = $"Para pasarte el precio necesito identificarte como cliente. Mirá los productos: [Catálogo]({LinkCatalogoLead})"
+        };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.False(plantilla);
+        Assert.Equal(modelo.Respuesta, respuesta.Respuesta);
+    }
+
+    [Theory]
+    [InlineData("DERIVA", "Lo veo con un compañero y te respondo.")]
+    [InlineData("RESUELVE", "No tengo el precio en este momento, mirá el catálogo.")]
+    [InlineData("RESUELVE", "Un asesor te va a pasar el precio.")]
+    [InlineData("RESUELVE", "Identificate como cliente. Catálogo: https://otro-sitio.example.com/catalogo")]
+    [InlineData("ACLARA", "")]
+    public void AsegurarRespuestaPrecioLead_RespuestaIncorrecta_UsaLaPlantillaConElLinkReal(string tipo, string texto)
+    {
+        var modelo = new ConversacionAsistenteRespuesta { Tipo = tipo, PuedeResponder = tipo == "RESUELVE", Respuesta = texto };
+
+        var (respuesta, plantilla) = ConversacionesService.AsegurarRespuestaPrecioLead(modelo, LinkCatalogoLead);
+
+        Assert.True(plantilla);
+        Assert.Equal("RESUELVE", respuesta.Tipo);
+        Assert.True(respuesta.PuedeResponder);
+        Assert.Equal(ConversacionesService.ConstruirRespuestaPrecioRequiereIdentificacion(LinkCatalogoLead), respuesta.Respuesta);
+        Assert.DoesNotContain("otro-sitio", respuesta.Respuesta);
+    }
+
+    [Fact]
+    public void AsegurarRespuestaPrecioLead_SinLinkDisponible_NoMencionaCatalogoNiInventaLinks()
+    {
+        var conLinkInventado = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = "Mirá acá: https://alfanetweb.ddns.net/catalogo" };
+        var limpio = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = "Necesito identificarte como cliente. Decime tu razón social." };
+
+        var (inventado, plantillaInventado) = ConversacionesService.AsegurarRespuestaPrecioLead(conLinkInventado, null);
+        var (sinCambios, plantillaLimpio) = ConversacionesService.AsegurarRespuestaPrecioLead(limpio, null);
+
+        Assert.True(plantillaInventado);
+        Assert.DoesNotContain("http", inventado.Respuesta);
+        Assert.False(plantillaLimpio);
+        Assert.Equal(limpio.Respuesta, sinCambios.Respuesta);
+    }
+
+    [Theory]
+    [InlineData(LinkCatalogoLead)]
+    [InlineData(null)]
+    public async Task Assistant_PrecioLead_PromptIncluyeElLinkRealOProhibeMencionarCatalogo(string? link)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.", "Info real.", "GENERAL_AVISA", "¿Cuánto salen las pilas?", [],
+                precioRequiereIdentificacion: true,
+                linkCatalogoParaLead: link);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            if (link is null)
+            {
+                Assert.Contains("No menciones el catálogo", system);
+            }
+            else
+            {
+                Assert.Contains(link, system);
+                Assert.DoesNotContain("No menciones el catálogo", system);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Caso real 4264 (2026-10-01): imagen sana (JPEG en SQL) → el bot sólo veía "[image]", contestaba
+    // "hay un problema con las imágenes" y derivaba.
+    [Theory]
+    [InlineData("[image]", "Recibí la imagen. ¿Qué querés que revise?")]
+    [InlineData("[document] factura.pdf", "Recibí el archivo. ¿Qué querés que revise?")]
+    [InlineData("[video]", "Recibí el video. ¿Qué querés que revise?")]
+    [InlineData("[audio]", "Recibí tu audio, pero por ahora no puedo escucharlo. ¿Me escribís tu consulta?")]
+    [InlineData("esta es la pila que necesito", null)]
+    [InlineData("[sticker]", null)]
+    [InlineData("hola", null)]
+    public void AclaracionMediaSinTexto_RepreguntaSinDerivarNiCulparAlArchivo(string texto, string? esperado)
+    {
+        var aclaracion = ConversacionesService.ConstruirAclaracionMediaSinTexto(texto);
+
+        Assert.Equal(esperado, aclaracion);
+        if (aclaracion is not null)
+            Assert.DoesNotContain("problema", aclaracion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Assistant_PrecioRequiereIdentificacion_AgregaLaReglaAlPromptSoloCuandoCorresponde(bool requiere)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"ok\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Que precio tienen las pilas AAA",
+                [],
+                precioRequiereIdentificacion: requiere);
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            var system = payload.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? string.Empty;
+            Assert.Equal(requiere, system.Contains("PRECIO SIN CLIENTE IDENTIFICADO", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Link personal de catálogo (2026-10-01): Cliente identificado → credencial firmada con su
+    // identidad; Lead/ambigua/proveedor → link público sin credencial.
+    [Fact]
+    public async Task Tools_CatalogLink_IdentifiedClient_GetsPersonalSignedLink()
+    {
+        var clienteLinks = new FakeCatalogoClienteLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: new FakeCentralPublicLinkService(),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }),
+            clienteLinks: clienteLinks);
+        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cliente);
+
+        var emitida = Assert.Single(clienteLinks.Emitidas);
+        Assert.Equal(("empresa-a", 4271, "112010002"), (emitida.IdWeb, emitida.IdBase, emitida.Cliente));
+        Assert.StartsWith("https://portal.example.com/empresa-a/catalogo/catalogo-tok123?c=", result);
+        Assert.EndsWith(Uri.EscapeDataString($"CRED-4271-{emitida.IdReferencia}-112010002"), result);
+    }
+
+    [Theory]
+    [InlineData("lead")]
+    [InlineData("ambigua")]
+    [InlineData("proveedor")]
+    public async Task Tools_CatalogLink_NotIdentifiedClient_GetsPublicLinkWithoutCredential(string tipo)
+    {
+        var clienteLinks = new FakeCatalogoClienteLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: new FakeCentralPublicLinkService(),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }),
+            clienteLinks: clienteLinks);
+        ConversacionCuentaVinculadaDto? cuenta = tipo switch
+        {
+            "ambigua" => new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true },
+            "proveedor" => new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"),
+            _ => null
+        };
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
+
+        Assert.Equal("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Empty(clienteLinks.Emitidas);
     }
 
     [Fact]
@@ -915,6 +1774,20 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_IdentifiedClient_PriceOnlyQuestion_DoesNotOfferPublicCatalog()
+    {
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: false),
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
+            "cuánto salen las pilas?");
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
     }
 
     [Fact]
@@ -1002,7 +1875,8 @@ public sealed class ConversacionesAutomationPipelineTests
     [Fact]
     public void Tools_ConsumerPriceConfig_IsStoredPerTenantConfiguration()
     {
-        Assert.Contains("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", ConfigServiceSource, StringComparison.Ordinal);
+        // La lista de claves que se leen sale de las que se graban (incluye la del catálogo).
+        Assert.Contains("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", ConversacionesConfigService.AutomatizacionesClavesLeidas);
         Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetAutomatizacionesConfig\")", ConfigServiceSource, StringComparison.Ordinal);
         Assert.Contains("await using var cn = new SqlConnection(tenant.ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);
         Assert.Contains("await using var cn = new SqlConnection(ConnectionString);", ConfigServiceSource, StringComparison.Ordinal);
@@ -1012,28 +1886,80 @@ public sealed class ConversacionesAutomationPipelineTests
     public async Task Tools_PublicCatalogLink_UsesCurrentCompanyAndBaseOnly()
     {
         var publicLinks = new FakeCentralPublicLinkService();
+        var catalogos = new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } };
+        var service = CreateToolsService(
+            catalogos: catalogos,
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Equal(4271, catalogos.LastPublicExpectedBaseId);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
+        Assert.DoesNotContain(publicLinks.Requests, r => r.IdWeb == "empresa-b" || r.IdBase == 9999);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_WebhookContextWithoutUiUser_ResolvesIdWebServerSide()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
         var service = CreateToolsService(
             catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
             publicLinks: publicLinks,
-            appUser: new FakeAppUserSessionService("empresa-a"),
             session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
 
         var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
 
         Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
         Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
-        Assert.DoesNotContain(publicLinks.Requests, r => r.IdWeb == "empresa-b" || r.IdBase == 9999);
     }
 
     [Fact]
-    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsRejectedInFavorOfPortalCliente()
+    public async Task Tools_PublicCatalogLink_CrossTenantContextFailsClosed()
     {
-        var service = CreateToolsService();
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            centralBases: new FakeCentralBasesService { ForceMismatchedBaseId = true },
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("no se pudo resolver la empresa/base actual", result);
+        Assert.Empty(publicLinks.Requests);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_RequiresPublicCatalog()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = null },
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", null);
+
+        Assert.Contains("No hay un catálogo público predeterminado disponible", result);
+        Assert.Empty(publicLinks.Requests);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsAllowedBecauseCatalogIsPublic()
+    {
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
         var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
 
         var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
 
-        Assert.Contains("debe usar el Portal Cliente", result);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
     }
 
     [Fact]
@@ -1046,7 +1972,6 @@ public sealed class ConversacionesAutomationPipelineTests
         var service = CreateToolsService(
             catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
             publicLinks: publicLinks,
-            appUser: new FakeAppUserSessionService("empresa-a"),
             session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
         var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
 
@@ -1082,6 +2007,248 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("más de una cuenta vinculada", saldo);
         Assert.Contains("más de una cuenta vinculada", portalLink);
     }
+
+    [Fact]
+    public async Task Assistant_ExplicitCatalogIntent_ForcesCatalogToolBeforeFinalAnswer()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catálogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var traces = new List<string>();
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+            var executedTools = new List<string>();
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Quiero comprar pilas, tienen catálogo?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (nombre, _, _) =>
+                {
+                    executedTools.Add(nombre);
+                    return Task.FromResult("https://portal.example.com/empresa-a/catalogo/catalogo-tok123");
+                },
+                traceDiagAsync: (paso, _) =>
+                {
+                    traces.Add(paso);
+                    return Task.CompletedTask;
+                });
+
+            using var firstPayload = JsonDocument.Parse(handler.RequestBodies[0]);
+            var forcedTool = firstPayload.RootElement.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString();
+
+            Assert.Equal("generar_link_catalogo_publico", forcedTool);
+            Assert.Equal(["generar_link_catalogo_publico"], executedTools);
+            Assert.Equal("RESUELVE", result?.Tipo);
+            Assert.Contains(traces, t => t == "BotToolCall|tool=generar_link_catalogo_publico");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_ToolCallsPresentWithStopFinishReason_StillExecutesToolDefensively()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catálogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+            var executedTools = new List<string>();
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Quiero comprar pilas, tienen catálogo?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (nombre, _, _) =>
+                {
+                    executedTools.Add(nombre);
+                    return Task.FromResult("https://portal.example.com/empresa-a/catalogo/catalogo-tok123");
+                });
+
+            Assert.Equal(["generar_link_catalogo_publico"], executedTools);
+            Assert.Equal("RESUELVE", result?.Tipo);
+            Assert.Equal(2, handler.RequestBodies.Count);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_LeadCommercialQuestionWithoutCatalogIntent_DoesNotForceCatalogToolChoice()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"respuesta\":\"Un asesor lo confirma.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new[]
+            {
+                new ConversacionAsistenteHerramientaDefinicionDto
+                {
+                    Nombre = "generar_link_catalogo_publico",
+                    Descripcion = "Genera el link al catálogo público.",
+                    ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}"
+                }
+            };
+
+            await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Info real.",
+                "GENERAL_AVISA",
+                "Cuánto salen las pilas?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => throw new InvalidOperationException("No debe forzar tool."));
+
+            using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
+            Assert.False(payload.RootElement.TryGetProperty("tool_choice", out _));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task Assistant_LeadCatalogIntent_WithoutUiUser_ExecutesPublicCatalogAndDoesNotDerive()
+    {
+        var result = await RunCatalogIntentConversationThroughRealToolAsync(cuenta: null);
+
+        Assert.Contains("generar_link_catalogo_publico", result.AvailableTools);
+        Assert.Equal(["generar_link_catalogo_publico"], result.ExecutedTools);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result.ToolResults.Single());
+        Assert.Equal("RESUELVE", result.Answer?.Tipo);
+        Assert.NotEqual("DERIVA", result.Answer?.Tipo);
+    }
+
+    [Fact]
+    public async Task Assistant_IdentifiedClientCatalogIntent_WithoutUiUser_ExecutesPublicCatalogAndDoesNotDerive()
+    {
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await RunCatalogIntentConversationThroughRealToolAsync(cuenta);
+
+        Assert.Contains("generar_link_catalogo_publico", result.AvailableTools);
+        Assert.Equal(["generar_link_catalogo_publico"], result.ExecutedTools);
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result.ToolResults.Single());
+        Assert.Equal("RESUELVE", result.Answer?.Tipo);
+        Assert.NotEqual("DERIVA", result.Answer?.Tipo);
+    }
+
+    private static async Task<CatalogIntentConversationResult> RunCatalogIntentConversationThroughRealToolAsync(ConversacionCuentaVinculadaDto? cuenta)
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var toolsService = CreateToolsService(
+                catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+                publicLinks: new FakeCentralPublicLinkService(),
+                session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+            const string mensaje = "Quiero comprar pilas, tienen catalogo?";
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cuenta, mensaje);
+            var executedTools = new List<string>();
+            var toolResults = new List<string>();
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"generar_link_catalogo_publico","arguments":"{}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"Te paso el catalogo: https://portal.example.com/empresa-a/catalogo/catalogo-tok123\"}"}}]}
+                """);
+            var assistant = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+
+            var answer = await assistant.ResponderAsync(
+                comportamiento: "Sos un asistente comercial.",
+                informacion: "Info real.",
+                politica: "GENERAL_AVISA",
+                mensajeCliente: mensaje,
+                historial: [],
+                herramientas: herramientas,
+                ejecutarHerramientaAsync: async (nombre, argumentos, ct) =>
+                {
+                    executedTools.Add(nombre);
+                    var toolResult = await toolsService.EjecutarAsync(nombre, argumentos, cuenta, ct: ct);
+                    toolResults.Add(toolResult);
+                    return toolResult;
+                });
+
+            return new CatalogIntentConversationResult(
+                herramientas.Select(h => h.Nombre).ToArray(),
+                executedTools.ToArray(),
+                toolResults.ToArray(),
+                answer);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    private sealed record CatalogIntentConversationResult(
+        IReadOnlyList<string> AvailableTools,
+        IReadOnlyList<string> ExecutedTools,
+        IReadOnlyList<string> ToolResults,
+        ConversacionAsistenteRespuesta? Answer);
 
     [Fact]
     public async Task Tools_SaldoQuery_AlwaysUsesTheLinkedAccount_NeverAnyIdentifierFromModelArguments()
@@ -1314,42 +2481,6 @@ public sealed class ConversacionesAutomationPipelineTests
         => Assert.Contains("NOT IN (N'PENDIENTE', N'EN_GESTION')", ServiceSource, StringComparison.Ordinal);
 
     // ---------------------------------------------------------------------------------------
-    // 12. TraceDiagAsync -- auditoría (no se retira: ver conclusión en el reporte).
-    // ---------------------------------------------------------------------------------------
-
-    [Fact]
-    public void TraceDiag_WritesOnlyAStepNameAndConversationId_NoMessageTextNoTokensNoPii()
-    {
-        var method = ServiceSource.IndexOf("private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)", StringComparison.Ordinal);
-        Assert.True(method >= 0);
-        var insert = ServiceSource.IndexOf("INSERT INTO dbo.AUX_ERR (Proceso, Fecha, Error, Descripcion, Usuario) VALUES (@Proceso, GETDATE(), -1, @Descripcion, N'DIAG');", method, StringComparison.Ordinal);
-        var descripcion = ServiceSource.IndexOf("cmd.Parameters.AddWithValue(\"@Descripcion\", $\"{paso} | idConversacion={idConversacion}\");", method, StringComparison.Ordinal);
-        Assert.True(insert > method && descripcion > insert);
-    }
-
-    [Fact]
-    public void TraceDiag_IsBestEffortAndNeverThrowsIntoTheRealPipeline()
-    {
-        var method = ServiceSource.IndexOf("private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)", StringComparison.Ordinal);
-        var catchAll = ServiceSource.IndexOf("catch\r\n        {\r\n            // Best-effort: un fallo acá nunca debe interrumpir el flujo real.", method, StringComparison.Ordinal);
-        Assert.True(catchAll > method);
-    }
-
-    [Fact]
-    public void TraceDiag_IsStillCalledFromEveryHotPathOfTheBotPipeline_UnboundedAuxErrGrowthRemainsARisk()
-    {
-        // Auditoría: sigue instrumentando TODO el camino del bot (entrada, cada guardarraíl, cada
-        // paso de la llamada a OpenAI), no solo fallas -- cada mensaje que activa el bot deja
-        // ~10-15 filas en dbo.AUX_ERR, una tabla sin límite de tamaño/expiración visible en este
-        // archivo. No hay evidencia en el repo de que el incidente original que motivó agregarlo
-        // ("retirar una vez encontrada la causa", ver auditoría) ya esté resuelto -- CONCLUSIÓN:
-        // AÚN NECESARIO. No se retira en este trabajo. Se deja documentado el riesgo de
-        // crecimiento no acotado de AUX_ERR para una decisión de producto explícita.
-        var occurrences = System.Text.RegularExpressions.Regex.Matches(ServiceSource, "TraceDiagAsync\\(").Count;
-        Assert.True(occurrences >= 15, $"Se esperaban muchas llamadas activas a TraceDiagAsync (hay {occurrences}); si bajó bruscamente, revisar si ya se retiró en otro lado.");
-    }
-
-    // ---------------------------------------------------------------------------------------
     // 13. Gate de módulo AUTOMATIZACIONES -- auditoría, NO se cambia.
     // ---------------------------------------------------------------------------------------
 
@@ -1407,21 +2538,37 @@ public sealed class ConversacionesAutomationPipelineTests
         public void ClearActiveSession() { }
     }
 
-    private sealed class FakeAppUserSessionService(string idWeb = "empresa-a") : IAppUserSessionService
+    private sealed class FakeCentralBasesService : ICentralBasesService
     {
-        public event Action? StateChanged;
-        public bool IsAuthenticated => true;
-        public AppUserSessionInfo? CurrentUser { get; } = new() { UserName = "admin", IdWeb = idWeb };
-        public bool RequiresInternalLogin => false;
-        public string? CurrentToken => "test-token";
-        public Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default) => throw new NotSupportedException();
-        public void AdoptInternalUser(AppUserSessionInfo internalUser) => throw new NotSupportedException();
-        public bool TryRestoreFromToken(string token) => throw new NotSupportedException();
-        public void Logout() => throw new NotSupportedException();
-        public void HandleSqlSessionChanged() { }
-        public string GetCurrentUserName(string fallback = "") => CurrentUser?.UserName ?? fallback;
-        public bool IsAuthorizedForSession(Guid? activeSessionId) => true;
-        public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
+        public bool ForceMismatchedBaseId { get; set; }
+
+        public Task<BaseCentralDto?> GetByIdAsync(int idBase, CancellationToken ct = default)
+            => Task.FromResult<BaseCentralDto?>(new BaseCentralDto
+            {
+                IdBase = ForceMismatchedBaseId ? idBase + 1 : idBase,
+                IdCliente = "CLI-A",
+                Nombre = "Base A"
+            });
+
+        public Task<IReadOnlyList<BaseCentralDto>> GetByClienteAsync(string idCliente, bool includeAllForSuperAdmin = false, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BaseCentralDto>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<BaseCentralDto?> GetByWebhookTokenAsync(string webhookToken, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> EnsureWebhookTokenAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeCentralClientesService : ICentralClientesService
+    {
+        public string IdWeb { get; set; } = "empresa-a";
+
+        public Task<ClienteCentralDto?> GetByIdClienteAsync(string idCliente, CancellationToken ct = default)
+            => Task.FromResult<ClienteCentralDto?>(new ClienteCentralDto { IdCliente = idCliente, IdWeb = IdWeb, RazonSocial = "Empresa A" });
+
+        public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<LicenciaLegacyDto?> GetLicenciaLegacyAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> ActivarLicenciaAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeCentralPublicLinkService : ICentralPublicLinkService
@@ -1472,9 +2619,21 @@ public sealed class ConversacionesAutomationPipelineTests
     private class FakeInterfacesCatalogosService : IInterfacesCatalogosService
     {
         public CatalogosCatalogoDetalleDto? Catalogo { get; set; } = new() { IdInsert = 123, Nombre = "Catálogo público" };
+        public int? LastPublicExpectedBaseId { get; private set; }
 
         public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)
             => Task.FromResult(Catalogo);
+
+        public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default)
+            => Task.FromResult(Catalogo);
+
+        public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default)
+        {
+            LastPublicExpectedBaseId = expectedBaseId;
+            return Task.FromResult(Catalogo);
+        }
+
+        public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default) => Task.FromResult(true);
 
         public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default) => throw new NotSupportedException();
@@ -1488,8 +2647,6 @@ public sealed class ConversacionesAutomationPipelineTests
         public Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, string? idWeb = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<PagedResult<CatalogosCatalogoResumenDto>> SearchCatalogosAsync(string? texto, int pageNumber = 1, int pageSize = 50, DateTime? fechaFiltro = null, string? tipoFiltro = null, string? estadoFiltro = null, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> GetCatalogoPredeterminadoIdAsync(CancellationToken ct = default) => throw new NotSupportedException();
@@ -1499,6 +2656,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SavePublicIdentityNameAsync(string userName, string? nombreVisible, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SavePublicLogoFormatAsync(string userName, string? idWeb, string logoFormat, CancellationToken ct = default) => throw new NotSupportedException();
@@ -1515,12 +2673,52 @@ public sealed class ConversacionesAutomationPipelineTests
     private sealed class ThrowingInterfacesCatalogosService : FakeInterfacesCatalogosService
     {
         public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default) => throw new NotSupportedException();
+        public override Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeConversacionesConfigService : ThrowingConversacionesConfigService
     {
         public override Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
             => Task.FromResult(new ConversacionWhatsAppConfigDto { PublicBaseUrl = "https://portal.example.com" });
+    }
+
+    private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class QueueHttpHandler(params string[] responses) : HttpMessageHandler
+    {
+        private readonly Queue<string> _responses = new(responses);
+        public List<string> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestBodies.Add(request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken));
+            if (_responses.Count == 0)
+                throw new InvalidOperationException("No hay más respuestas HTTP fake configuradas.");
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_responses.Dequeue(), Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    private sealed class FakeAppEventService : IAppEventService
+    {
+        public Task<string> LogErrorAsync(string module, string action, Exception exception, string userMessage, object? data = null, AppEventSeverity severity = AppEventSeverity.Error, CancellationToken ct = default)
+            => Task.FromResult(Guid.NewGuid().ToString("N"));
+
+        public Task<string> LogAuditAsync(string module, string action, string entityType, string entityId, string message, object? data = null, CancellationToken ct = default)
+            => Task.FromResult(Guid.NewGuid().ToString("N"));
+
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction transaction, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditActivityPageDto> GetActivityAsync(string entityType, string recordId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction? transaction = null, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeCrmCotizacionService : ICrmCotizacionService
@@ -1534,6 +2732,47 @@ public sealed class ConversacionesAutomationPipelineTests
             WasCalled = true;
             LastClienteCodigo = clienteCodigo;
             IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = PrecioUnitarioConIva }];
+            return Task.FromResult(result);
+        }
+
+        public Task<CrmCotizacionPricingContextDto> ResolvePricingContextAsync(string? clienteCodigo, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CrmCotizacionDto>> GetByOportunidadAsync(long idOportunidad, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CrmCotizacionDetailDto?> GetByIdAsync(long idCotizacion, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<long> SaveAsync(CrmCotizacionSaveRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task ChangeEstadoAsync(long idCotizacion, string estado, string? usuarioAccion = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task DeleteAsync(long idCotizacion, string? usuarioAccion = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> GenerateEmailMessageAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<CrmCotizacionShareDto> EnsureShareAsync(long idCotizacion, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SendByEmailAsync(long idCotizacion, string destinatario, string? publicUrl = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Imita la búsqueda real de ArticuloPrecioResolverService.SearchArticulosAsync: CADA palabra
+    /// (en mayúsculas) tiene que aparecer como substring del código o la descripción. Los artículos
+    /// replican los de Base4264 (2026-09-30).
+    /// </summary>
+    private sealed class CatalogoCrmCotizacionService : ICrmCotizacionService
+    {
+        private readonly (string Id, string Descripcion, decimal PrecioConIva)[] _articulos =
+        [
+            ("01", "PILA DURACELL - AA", 2500m),
+            ("02", "PILA DURACELL - AAA", 2000m)
+        ];
+
+        public List<string> Busquedas { get; } = [];
+
+        public Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosAsync(string? clienteCodigo, string texto, int take = 25, CancellationToken ct = default)
+        {
+            Busquedas.Add(texto);
+            var palabras = (texto ?? string.Empty).ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            IReadOnlyList<CrmCotizacionArticuloDto> result = _articulos
+                .Where(a => palabras.All(p => a.Id.Contains(p, StringComparison.Ordinal) || a.Descripcion.Contains(p, StringComparison.Ordinal)))
+                .Take(take)
+                .Select(a => new CrmCotizacionArticuloDto { IdArticulo = a.Id, Codigo = a.Id, Descripcion = a.Descripcion, PrecioUnitarioConIva = a.PrecioConIva })
+                .ToList();
             return Task.FromResult(result);
         }
 
@@ -1634,6 +2873,10 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
@@ -1642,6 +2885,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, ConversacionAutomatizacionSeccion secciones, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

@@ -6,16 +6,16 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Nav
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Nueva Importación de Costos | Alfa Gestión</PageTitle>
 
-<div class="page-grid">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Nueva Importación</h2>
-            <p class="page-intro__text">Seleccioná un perfil y cargá un archivo estructurado (`.xlsx`, `.csv`, `.txt`). PDF e imagen quedan para la siguiente etapa IA.</p>
-        </div>
-    </section>
+<div class="gd-page gd gd-legacy">
+    <header class="gd-header">
+        <h2>Nueva Importación</h2>
+        <p>Seleccioná un perfil y cargá un archivo estructurado (`.xlsx`, `.csv`, `.txt`). PDF e imagen quedan para la siguiente etapa IA.</p>
+    </header>
 
     <section class="panel-card">
         <div class="panel-card__header">
@@ -126,12 +126,7 @@
             </div>
         }
 
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="editor-msg @(_isError ? "editor-msg--error" : "editor-msg--ok")" style="margin-top:1rem;">
-                <i class="bi @(_isError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @_message
-            </div>
-        }
+        <AlfaNotification Message="@_notificacion.For(_message, _isError)" OnDismiss="() => _message = string.Empty" />
 
         @* Barra de progreso *@
         @if (_busy)
@@ -226,6 +221,8 @@
 </div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     private IReadOnlyList<AlfaCore.Models.CostosProfileDto> _profiles = [];
     private int _profileId;
     private string _filterText = string.Empty;
@@ -254,6 +251,39 @@
             .OrderBy(p => p.ProviderName)
             .Take(50)
             .ToList();
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "costos",
+            Title = "Nueva importación",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCostos(RouteContext, Nav, "nueva"),
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {

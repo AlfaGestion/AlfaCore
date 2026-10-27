@@ -15,22 +15,29 @@ public interface IConversacionAsistenteHerramientasService
     /// Arma la lista de herramientas habilitadas para esta conversación: cruza cada toggle de
     /// <paramref name="config"/> contra si aplica al tipo de cuenta vinculada. Sin Cliente
     /// vinculado, el catálogo público se puede ofrecer siempre; precios de consumidor final solo si
-    /// la configuración explícita lo permite.
+    /// la configuración explícita lo permite. <paramref name="mensajePrevioCliente"/> (opcional) es el
+    /// mensaje anterior del mismo cliente dentro de una ventana corta: permite ofrecer herramientas a
+    /// un seguimiento que por sí solo no las pide (p. ej. "Que precio tienen las pilas?" → "Pila
+    /// duracell AA").
     /// </summary>
     IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
         ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente);
+        string mensajeCliente,
+        string? mensajePrevioCliente = null);
 
     /// <summary>
     /// Ejecuta una herramienta por nombre. La cuenta viene resuelta server-side (nunca del modelo);
     /// <paramref name="argumentosJson"/> es lo que mandó OpenAI, pero ninguna herramienta sensible
     /// acepta de ahí un identificador de cuenta -- ver guardrail en ObtenerHerramientasDisponibles.
     /// Devuelve texto plano/compacto listo para pasarle de vuelta al modelo como resultado de la tool.
+    /// <paramref name="mensajeCliente"/> es el mensaje actual: valida los datos que el modelo arrastra
+    /// del historial (ej. un número de pedido que el cliente no escribió en este mensaje).
     /// </summary>
     Task<string> EjecutarAsync(
         string nombre,
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
+        string? mensajeCliente = null,
         CancellationToken ct = default);
 }

@@ -84,6 +84,8 @@ Puentes disponibles desde `docs/`:
 
 ## Dónde guardar documentación nueva
 
+Proyecto en desarrollo: [Ventas — Carga de Comprobantes](./modulos/ventas-carga-comprobantes/README.md), con alcance por rubro, matriz de compatibilidad, inventario VB6 y relevamiento SQL preparado.
+
 - Si explica uso para usuario final: `src/AlfaCore/Docs/`
 - Si explica implementación, arquitectura o decisiones técnicas: `docs/arquitectura/` o `docs/modulos/`
 - Si es SQL o soporte de base de datos: `docs/base-datos/` o `docs/base-datos/sql-referencia/`
@@ -98,3 +100,11 @@ Antes de crear un documento nuevo:
 2. Elegir la carpeta por tipo de documento, no por costumbre.
 3. Mantener nombres claros y consistentes.
 4. Evitar dejar archivos sueltos en la raíz de `docs/`, salvo los considerados base.
+
+Reportes comerciales: [documentación técnica](./modulos/reportes-comerciales.md), [manual de Compras/Ventas y búsqueda de Configuración](../src/AlfaCore/Docs/manual_reportes_comerciales.md) y [avances de la pasada](./gestion/configuracion-reportes-comerciales-avances.md).
+
+Cuenta corriente de Compras: [fuentes, comportamiento y validación](./modulos/reportes-compras-cuenta-corriente.md).
+
+Conciliación bancaria inteligente: [integración y alcance](modulos/conciliacion-bancaria.md), [manual de uso](../src/AlfaCore/Docs/manual_conciliacion_bancaria.md).
+
+Ayuda contextual: [modelo y mantenimiento](arquitectura/ayuda-contextual.md). Primeros manuales: [Conciliación](../src/AlfaCore/Docs/manual_conciliacion_bancaria.md) y [Cobranzas](../src/AlfaCore/Docs/manual_cobranzas.md).

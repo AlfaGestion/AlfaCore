@@ -555,6 +555,10 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ConversacionWebChatConfigDto> GetWebChatConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveWebChatConfigAsync(ConversacionWebChatConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> EnsureLocalWebChatSiteKeyAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
@@ -563,6 +567,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, ConversacionAutomatizacionSeccion secciones, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

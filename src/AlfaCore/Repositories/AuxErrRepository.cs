@@ -7,26 +7,11 @@ namespace AlfaCore.Repositories;
 public sealed class AuxErrRepository(
     IConfiguration configuration,
     IHttpContextAccessor httpContextAccessor,
-    ILogger<AuxErrRepository> logger) : IAuxErrRepository
+    ILogger<AuxErrRepository> logger,
+    IServiceProvider? services = null) : IAuxErrRepository
 {
-    private string ConnectionString
-    {
-        get
-        {
-            if (httpContextAccessor.HttpContext?.Items.TryGetValue("AlfaCore.ConnectionString", out var currentConnection) == true
-                && currentConnection is string itemConnection
-                && !string.IsNullOrWhiteSpace(itemConnection))
-            {
-                return itemConnection;
-            }
-
-            var configured = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(configured))
-                return configured;
-
-            throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
-        }
-    }
+    // Base de la empresa activa (ver TenantLogConnection); antes caía siempre a AlfaGestion.
+    private string ConnectionString => TenantLogConnection.Resolve(services, httpContextAccessor, configuration);
 
     public async Task<int> InsertAsync(AuxErrEntry entry, CancellationToken ct = default)
     {

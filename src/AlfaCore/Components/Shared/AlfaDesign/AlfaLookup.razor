@@ -1,7 +1,8 @@
+@inject IJSRuntime JS
 @typeparam TItem where TItem : class
 @implements IDisposable
 
-<div class="alfa-lookup @Class">
+<div @ref="_root" class="alfa-lookup @Class" @onfocusout="HandleFocusOutAsync">
     @if (!string.IsNullOrWhiteSpace(Label))
     {
         <label class="alfa-lookup__label" for="@_inputId">@Label</label>
@@ -27,11 +28,22 @@
         {
             <span class="alfa-lookup__spinner" aria-hidden="true"></span>
         }
+        @if (SelectedItem is not null || !string.IsNullOrEmpty(SearchText))
+        {
+            <button type="button"
+                    class="alfa-lookup__clear"
+                    aria-label="Limpiar selección"
+                    title="Limpiar"
+                    @onmousedown:preventDefault="true"
+                    @onclick="ClearAsync">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
+        }
     </div>
 
     @if (Open)
     {
-        <div id="@_listId" class="alfa-lookup__results" role="listbox">
+        <div @ref="_results" id="@_listId" class="alfa-lookup__results" role="listbox">
             @if (!string.IsNullOrWhiteSpace(ErrorMessage))
             {
                 <div class="alfa-lookup__state alfa-lookup__state--error" role="alert">@ErrorMessage</div>
@@ -55,11 +67,14 @@
                     var item = _items[index];
                     var optionIndex = index;
                     <button type="button"
+                            @key="ItemKey(item)"
                             id="@OptionId(optionIndex)"
                             class="alfa-lookup__option @(IsSelected(item) || _activeIndex == optionIndex ? "is-selected" : string.Empty)"
                             role="option"
                             aria-selected="@IsSelected(item)"
                             @onmouseenter="() => _activeIndex = optionIndex"
+                            @onmousedown:preventDefault="true"
+                            @onmousedown="() => SelectAsync(item)"
                             @onclick="() => SelectAsync(item)">
                         @ItemTemplate(item)
                     </button>
@@ -87,12 +102,33 @@
 
     private readonly string _inputId = $"alfa-lookup-{Guid.NewGuid():N}";
     private readonly string _listId = $"alfa-lookup-list-{Guid.NewGuid():N}";
+    private ElementReference _root;
+    private ElementReference _results;
     private readonly List<TItem> _items = [];
     private CancellationTokenSource? _searchCts;
     private bool Open { get; set; }
     private bool Loading { get; set; }
     private string ErrorMessage { get; set; } = string.Empty;
     private int _activeIndex = -1;
+    private bool _hasEditSnapshot;
+    private bool _disposed;
+    private TItem? _editSnapshotItem;
+    private string _editSnapshotText = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("AlfaLookupPopover.position", _root, _results);
+            }
+            catch (JSDisconnectedException)
+            {
+                // La vista puede desmontarse mientras se completa una búsqueda.
+            }
+        }
+    }
 
     private string ControlClass => string.Join(" ", new[]
     {
@@ -105,6 +141,13 @@
 
     private async Task HandleInputAsync(ChangeEventArgs args)
     {
+        if (!_hasEditSnapshot)
+        {
+            _hasEditSnapshot = true;
+            _editSnapshotItem = SelectedItem;
+            _editSnapshotText = SearchText;
+        }
+
         SearchText = args.Value?.ToString() ?? string.Empty;
         SelectedItem = null;
         _activeIndex = -1;
@@ -116,9 +159,33 @@
 
     private async Task HandleFocusAsync()
     {
+        // Con un ítem ya elegido no se reabre la lista vieja: un Enter o un Tab tomaba el primero de esa
+        // lista y reemplazaba la selección (2026-10-22, carga de comprobantes elegía otro cliente).
+        if (SelectedItem is not null)
+            return;
         Open = true;
         if (_items.Count == 0 && SearchText.Trim().Length >= MinimumCharacters)
             await QueueSearchAsync(immediate: true);
+    }
+
+    private async Task HandleFocusOutAsync()
+    {
+        // Al hacer clic en una opción se evita el cambio de foco en el mousedown para
+        // que la selección llegue primero al handler de click. El pequeño margen también
+        // evita cerrar la lista antes de que Blazor procese un click fuera del control.
+        await Task.Delay(50);
+        if(_disposed || !Open) return;
+        try
+        {
+            if(await JS.InvokeAsync<bool>("AlfaLookupPopover.containsFocus",_root)) return;
+        }
+        catch(JSDisconnectedException) { return; }
+        if (Open && !_disposed)
+        {
+            Open = false;
+            _activeIndex = -1;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task QueueSearchAsync(bool immediate = false)
@@ -168,9 +235,31 @@
 
     private async Task SelectAsync(TItem item)
     {
+        if(Disabled || (!Open && IsSelected(item))) return;
+        _searchCts?.Cancel();
         SelectedItem = item;
+        _items.Clear();
+        _activeIndex = -1;
+        _hasEditSnapshot = false;
+        _editSnapshotItem = null;
+        _editSnapshotText = string.Empty;
         Open = false;
         await SelectedItemChanged.InvokeAsync(item);
+    }
+
+    private async Task ClearAsync()
+    {
+        _searchCts?.Cancel();
+        _items.Clear();
+        SearchText = string.Empty;
+        SelectedItem = null;
+        _hasEditSnapshot = false;
+        _editSnapshotItem = null;
+        _editSnapshotText = string.Empty;
+        Open = false;
+        _activeIndex = -1;
+        await SearchTextChanged.InvokeAsync(string.Empty);
+        await SelectedItemChanged.InvokeAsync(null);
     }
 
     private async Task HandleKeyDownAsync(KeyboardEventArgs args)
@@ -179,6 +268,16 @@
         {
             Open = false;
             _activeIndex = -1;
+            if (_hasEditSnapshot)
+            {
+                SearchText = _editSnapshotText;
+                SelectedItem = _editSnapshotItem;
+                _hasEditSnapshot = false;
+                _editSnapshotItem = null;
+                _editSnapshotText = string.Empty;
+                await SearchTextChanged.InvokeAsync(SearchText);
+                await SelectedItemChanged.InvokeAsync(SelectedItem);
+            }
             return;
         }
 
@@ -206,6 +305,7 @@
 
     public void Dispose()
     {
+        _disposed=true;
         _searchCts?.Cancel();
         _searchCts?.Dispose();
     }

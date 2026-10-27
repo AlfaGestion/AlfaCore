@@ -106,7 +106,7 @@
                 <div class="smart-search" @onclick:stopPropagation>
                     <div class="smart-search__bar">
                         <i class="bi bi-search"></i>
-                        <input type="search"
+                        <input @onfocus="() => { if (!_showCatalogosSearchPanel) ToggleCatalogosSearchPanel(); }" type="search"
                                placeholder="Buscar por nombre, grupo, lista o ID..."
                                value="@_catalogosTexto"
                                @oninput="OnCatalogosSearchInput"
@@ -642,10 +642,19 @@
             <div class="section-block">
                 <div class="field">
                     <label>Menú</label>
-                    <label class="checkbox">
+                    <label class="checkbox catalogos-config-checkbox">
                         <input type="checkbox" checked="@_menuHabilitadoDraft" @onchange="ToggleMenuHabilitadoDraft" />
                         <span>Mostrar opción Menú</span>
                     </label>
+                </div>
+
+                <div class="field">
+                    <label>Precios del catálogo público</label>
+                    <label class="checkbox catalogos-config-checkbox">
+                        <input type="checkbox" checked="@_muestraPreciosConsumidorDraft" @onchange="ToggleMuestraPreciosConsumidorDraft" />
+                        <span>Mostrar precios a consumidores finales y leads</span>
+                    </label>
+                    <small class="catalogos-config-help">Si está desactivado, los visitantes deben identificarse como clientes para ver los precios.</small>
                 </div>
 
                 <div class="field">
@@ -733,6 +742,11 @@
                            OnClose="CloseBaseMaestraImagenesAsync" />
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private const string SectionCatalogos = "catalogo";
     private const string SectionNuevo = "nuevo";
     private const string SectionPredeterminado = "predeterminado";
@@ -785,6 +799,7 @@
     private bool _modificaPrecio;
     private bool _menuHabilitado;
     private bool _menuHabilitadoDraft;
+    private bool _muestraPreciosConsumidorDraft;
     private CatalogosPublicIdentityDto _publicIdentity = new();
     private string _publicIdentityNameDraft = string.Empty;
     private string _publicLogoFormatDraft = CatalogosPublicLogoFormatKeys.Auto;
@@ -880,7 +895,8 @@
     {
         Nav.LocationChanged -= OnLocationChanged;
         _disposeCts.Cancel();
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
     }
 
     private async Task LoadAsync()
@@ -905,12 +921,13 @@
             var listasTask = TraceTaskAsync(traceId, "LoadAsync", "GetListasPrecioAsync", () => CatalogosSvc.GetListasPrecioAsync(_disposeCts.Token));
             var viewTask = TraceTaskAsync(traceId, "LoadAsync", "GetViewSettingsAsync", () => CatalogosSvc.GetViewSettingsAsync(currentUser, _disposeCts.Token));
             var menuTask = TraceTaskAsync(traceId, "LoadAsync", "GetMenuHabilitadoAsync", () => CatalogosSvc.GetMenuHabilitadoAsync(_disposeCts.Token));
+            var muestraPreciosConsumidorTask = TraceTaskAsync(traceId, "LoadAsync", "MuestraPreciosConsumidorFinalAsync", () => CatalogosSvc.MuestraPreciosConsumidorFinalAsync(null, _disposeCts.Token));
             var identityTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicIdentityAsync", () => CatalogosSvc.GetPublicIdentityAsync(idweb, _disposeCts.Token));
             var posSettingsTask = TraceTaskAsync(traceId, "LoadAsync", "PuntoVentaSvc.GetSettingsAsync", () => PuntoVentaSvc.GetSettingsAsync(_disposeCts.Token));
             var clasePrecioTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicClasePrecioAsync", () => CatalogosSvc.GetPublicClasePrecioAsync(idweb, _disposeCts.Token));
 
             Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} esperando tareas paralelas", traceId);
-            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask, identityTask, posSettingsTask, clasePrecioTask);
+            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask, muestraPreciosConsumidorTask, identityTask, posSettingsTask, clasePrecioTask);
             Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} tareas paralelas completadas", traceId);
 
             _modalidades.Clear();
@@ -925,6 +942,7 @@
             _draftAgruparPor = _viewSettings.AgruparPor;
             _menuHabilitado = menuTask.Result;
             _menuHabilitadoDraft = _menuHabilitado;
+            _muestraPreciosConsumidorDraft = muestraPreciosConsumidorTask.Result;
             _publicIdentity = identityTask.Result;
             _publicIdentityNameDraft = _publicIdentity.NombreVisible;
             _publicLogoPreviewUrl = _publicIdentity.LogoUrl;
@@ -1699,11 +1717,15 @@
     private void ToggleMenuHabilitadoDraft(ChangeEventArgs args)
         => _menuHabilitadoDraft = args.Value is bool value && value;
 
+    private void ToggleMuestraPreciosConsumidorDraft(ChangeEventArgs args)
+        => _muestraPreciosConsumidorDraft = args.Value is bool value && value;
+
     private async Task GuardarConfiguracionCatalogosAsync()
     {
         var result = await UiOps.RunAsync(async () =>
         {
             await CatalogosSvc.SaveMenuHabilitadoAsync(_catalogosUserName, _menuHabilitadoDraft, _disposeCts.Token);
+            await CatalogosSvc.SaveMuestraPreciosConsumidorFinalAsync(_catalogosUserName, _muestraPreciosConsumidorDraft, _disposeCts.Token);
             await CatalogosSvc.SavePublicIdentityNameAsync(_catalogosUserName, _publicIdentityNameDraft, _disposeCts.Token);
             await CatalogosSvc.SavePublicLogoFormatAsync(_catalogosUserName, idweb, _publicLogoFormatDraft, _disposeCts.Token);
             await CatalogosSvc.SavePublicClasePrecioAsync(_catalogosUserName, idweb, _clasePrecioDraft, _disposeCts.Token);
@@ -1748,7 +1770,7 @@
         _publicLogoContentType = string.Empty;
         _publicLogoRestoreRequested = false;
         _hasCustomPublicLogo = _publicIdentity.TieneLogoPersonalizado;
-        _feedback = AppUiMessage.Success("Configuración guardada", "La identidad pública y la visibilidad del menú quedaron actualizadas.");
+        _feedback = AppUiMessage.Success("Configuración guardada", "La identidad pública, el menú y la visibilidad de precios quedaron actualizados.");
         UpdatePageHeader();
     }
 
@@ -1818,7 +1840,7 @@
     private void UpdatePageHeader()
     {
         var showEditorActions = ShouldShowEditorHeaderActions();
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
@@ -1862,7 +1884,7 @@
                     <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
                 }
             </div>
-            <input type="search"
+            <input @onfocus="() => { if (!_showCatalogosSearchPanel) ToggleCatalogosSearchPanel(); }" type="search"
                    placeholder="Buscar por nombre, grupo, lista o ID..."
                    value="@_catalogosTexto"
                    @oninput="OnCatalogosSearchInput"

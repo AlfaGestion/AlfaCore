@@ -5,6 +5,7 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Errores | Alfa Gestión</PageTitle>
@@ -17,22 +18,8 @@
 }
 else
 {
-    <div class="page-grid">
-        @if (_feedback is not null)
-        {
-            <div class="conversations-inline @GetFeedbackClass(_feedback)">
-                <strong>@_feedback.Title</strong>
-                <div>@_feedback.Message</div>
-                @if (_feedback.HasCode)
-                {
-                    <div>Código: @_feedback.Code</div>
-                }
-                @if (_feedback.HasSuggestion)
-                {
-                    <div>@_feedback.Suggestion</div>
-                }
-            </div>
-        }
+    <div class="gd-page gd gd-legacy">
+        <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
         <section class="panel-card">
             <div class="table-wrap">
@@ -74,6 +61,11 @@ else
 }
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private bool _loading = true;
     private AlfaCore.Models.AppUiMessage? _feedback;
     private IReadOnlyList<string> _usuarios = [];
@@ -166,8 +158,12 @@ else
 
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "auditoria",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAuditoria(RouteContext, Nav, "errores"),
             Title = "Errores",
             Breadcrumb = ["Auditoría", "Errores"],
             State = _loading || _searching ? PageHeaderState.Loading : PageHeaderState.List,
@@ -196,6 +192,18 @@ else
                 }
             ]
         });
+    }
+
+    // El buscador vive en la barra superior: si cambia algo que muestra (texto, panel, carga), se
+    // vuelve a publicar el header después del render de la página.
+    private string _headerSnapshot = string.Empty;
+
+    private string HeaderSnapshot() => string.Join('|', _texto, _showFilters, _loading, _searching);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
     }
 
     protected override async Task OnInitializedAsync()
@@ -296,5 +304,8 @@ else
         };
 
     public void Dispose()
-        => PageHeader.Clear();
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
 }

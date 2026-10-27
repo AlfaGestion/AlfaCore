@@ -1,0 +1,245 @@
+@using AlfaCore.Services
+@implements IAsyncDisposable
+@inject IMenuService MenuSvc
+@inject IRecentService RecentSvc
+@inject IWorkspaceService WorkspaceSvc
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<BuscadorGlobal> Logger
+
+@* Buscador de aplicaciones con Ctrl+K (Cmd+K en Mac) desde cualquier pantalla: el mismo del
+   Inicio (recientes y búsqueda en el menú), abierto encima de la página actual. En el Inicio se
+   sigue usando su propio buscador (alfa-home.js le da el foco). *@
+
+@if (_abierto)
+{
+    <div class="buscador-global__fondo" @onclick="Cerrar"></div>
+    <div class="alfa-home buscador-global" role="dialog" aria-modal="true" aria-label="Buscar una aplicación">
+        <div class="alfa-home__search is-open">
+            <div class="alfa-home__search-box">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input id="buscador-global-input"
+                       type="search"
+                       autocomplete="off"
+                       placeholder="Buscar una aplicación: clientes, cierre de caja, compras…"
+                       aria-label="Buscar una aplicación"
+                       aria-controls="buscador-global-resultados"
+                       value="@_texto"
+                       @oninput="OnInput"
+                       @onkeydown="OnKeyDownAsync" />
+                <kbd aria-hidden="true">Esc</kbd>
+            </div>
+
+            <div id="buscador-global-resultados" class="alfa-home__results" role="listbox">
+                @if (string.IsNullOrWhiteSpace(_texto))
+                {
+                    <span class="alfa-home__results-label">Recientes</span>
+                    @if (_recientes.Count == 0)
+                    {
+                        <p class="alfa-home__results-hint">Escribí el nombre de una opción del menú.</p>
+                    }
+                    @for (var i = 0; i < _recientes.Count; i++)
+                    {
+                        var item = _recientes[i];
+                        var index = i;
+                        <div class="alfa-home__result @(index == _activo ? "is-active" : null)" role="option" aria-selected="@(index == _activo ? "true" : "false")"
+                             @onclick="() => AbrirRutaAsync(item.Menu, item.Clave, item.RutaWeb)" @onmouseenter="() => _activo = index">
+                            <span class="alfa-home__result-icon"><i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)" aria-hidden="true"></i></span>
+                            <span class="alfa-home__result-name">@item.Nombre</span>
+                        </div>
+                    }
+                }
+                else if (_cargando)
+                {
+                    <p class="alfa-home__results-hint" role="status">Preparando opciones del menú…</p>
+                }
+                else
+                {
+                    var resultados = Resultados;
+                    <span class="alfa-home__results-label">Resultados</span>
+                    @if (resultados.Count == 0)
+                    {
+                        <p class="alfa-home__results-hint">No hay aplicaciones que coincidan con «@_texto».</p>
+                    }
+                    @for (var i = 0; i < resultados.Count; i++)
+                    {
+                        var item = resultados[i];
+                        var index = i;
+                        <div class="alfa-home__result @(index == _activo ? "is-active" : null)" role="option" aria-selected="@(index == _activo ? "true" : "false")"
+                             @onclick="() => AbrirRutaAsync(item.Menu, item.Clave, item.RutaWeb)" @onmouseenter="() => _activo = index">
+                            <span class="alfa-home__result-icon"><i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-grid" : item.Icono)" aria-hidden="true"></i></span>
+                            <span class="alfa-home__result-name">@item.Nombre</span>
+                            <span class="alfa-home__result-meta">@(item.EsModulo ? "Módulo" : item.ModuloNombre)</span>
+                        </div>
+                    }
+                }
+                <p class="alfa-home__results-foot"><kbd>↑</kbd><kbd>↓</kbd> para elegir · <kbd>Enter</kbd> para abrir · <kbd>Esc</kbd> para cerrar</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DotNetObjectReference<BuscadorGlobal>? _ref;
+    private bool _abierto;
+    private bool _enfocar;
+    private string _texto = string.Empty;
+    private int _activo = -1;
+    private bool _cargando;
+    private bool _catalogoCargado;
+    private IReadOnlyList<ShellMenuSearchItemDto> _catalogo = [];
+    private IReadOnlyList<ShellMenuNodeDto> _recientes = [];
+
+    private IReadOnlyList<ShellMenuSearchItemDto> Resultados => ShellMenuSearch.Filter(_catalogo, _texto);
+
+    private int CantidadNavegable => string.IsNullOrWhiteSpace(_texto) ? _recientes.Count : Resultados.Count;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ref = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("alfaBuscadorGlobal.registrar", _ref); }
+            catch (JSException) { }
+        }
+
+        if (_enfocar)
+        {
+            _enfocar = false;
+            try { await JS.InvokeVoidAsync("alfaBuscadorGlobal.enfocar"); }
+            catch (JSException) { }
+        }
+    }
+
+    [JSInvokable]
+    public async Task AbrirAsync()
+    {
+        if (_abierto)
+        {
+            _enfocar = true;
+            StateHasChanged();
+            return;
+        }
+
+        _abierto = true;
+        _texto = string.Empty;
+        _activo = -1;
+        _enfocar = true;
+        StateHasChanged();
+
+        try
+        {
+            _recientes = (await WorkspaceSvc.GetHomeAsync()).Recents;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "BuscadorGlobal: no se pudieron cargar los recientes.");
+            _recientes = [];
+        }
+
+        await CargarCatalogoAsync();
+        StateHasChanged();
+    }
+
+    private async Task CargarCatalogoAsync()
+    {
+        if (_catalogoCargado || _cargando)
+            return;
+
+        _cargando = true;
+        try
+        {
+            _catalogo = await MenuSvc.GetSearchItemsAsync();
+            _catalogoCargado = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "BuscadorGlobal: no se pudo cargar el catálogo del menú.");
+            _catalogo = [];
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void Cerrar()
+    {
+        _abierto = false;
+        _texto = string.Empty;
+        _activo = -1;
+    }
+
+    private void OnInput(ChangeEventArgs args)
+    {
+        _texto = args.Value?.ToString() ?? string.Empty;
+        _activo = string.IsNullOrWhiteSpace(_texto) ? -1 : 0;
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                if (CantidadNavegable > 0)
+                    _activo = (_activo + 1) % CantidadNavegable;
+                break;
+            case "ArrowUp":
+                if (CantidadNavegable > 0)
+                    _activo = _activo <= 0 ? CantidadNavegable - 1 : _activo - 1;
+                break;
+            case "Enter":
+                await AbrirActivoAsync();
+                break;
+            case "Escape":
+                Cerrar();
+                break;
+        }
+    }
+
+    private async Task AbrirActivoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_texto))
+        {
+            if (_activo >= 0 && _activo < _recientes.Count)
+            {
+                var r = _recientes[_activo];
+                await AbrirRutaAsync(r.Menu, r.Clave, r.RutaWeb);
+            }
+            return;
+        }
+
+        var resultados = Resultados;
+        if (resultados.Count == 0)
+            return;
+        var item = resultados[_activo >= 0 && _activo < resultados.Count ? _activo : 0];
+        await AbrirRutaAsync(item.Menu, item.Clave, item.RutaWeb);
+    }
+
+    private async Task AbrirRutaAsync(string menu, string clave, string rutaWeb)
+    {
+        if (string.IsNullOrWhiteSpace(rutaWeb))
+            return;
+
+        try
+        {
+            await RecentSvc.RegisterRecentAsync(menu, clave);
+        }
+        catch
+        {
+            // El reciente es accesorio: si falla, se abre igual.
+        }
+
+        Cerrar();
+        Nav.NavigateTo(RouteContext.BuildRoute(rutaWeb));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("alfaBuscadorGlobal.desregistrar", _ref); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        _ref?.Dispose();
+    }
+}

@@ -9,7 +9,9 @@ public static class NotificacionesPushScopes
 public sealed class NotificacionesPushPreferencesDto
 {
     public bool Habilitadas { get; set; }
-    public string Alcance { get; set; } = NotificacionesPushScopes.Asignadas;
+    // Por defecto todas las conversaciones accesibles: con "asignadas" una conversación sin técnico
+    // (la mayoría de las nuevas) nunca generaba push (2026-10-06).
+    public string Alcance { get; set; } = NotificacionesPushScopes.Accesibles;
     public List<string> Canales { get; set; } = ["WHATSAPP"];
 }
 

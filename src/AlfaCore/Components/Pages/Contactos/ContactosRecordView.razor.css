@@ -334,6 +334,16 @@
     gap: var(--alfa-space-8);
 }
 
+.contactos-record-account-row {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+}
+
+.contactos-record-account-row .contactos-record-account {
+    flex: 1 1 auto;
+}
+
 .contactos-record-account {
     min-width: 0;
     display: flex;

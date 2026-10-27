@@ -10,7 +10,8 @@ DECLARE @Definicion nvarchar(max) = OBJECT_DEFINITION(OBJECT_ID(N'dbo.sp_web_Cre
 IF @Definicion IS NULL
     RETURN;
 
-IF @Definicion LIKE N'%TRY_CONVERT(datetime, FECHA, 103)%'
+-- Cubre TRY_CONVERT y CONVERT (bases en compatibilidad SQL 2008).
+IF @Definicion LIKE N'%CONVERT(datetime, FECHA, 103)%'
     RETURN;
 
 DECLARE @FechaAnterior nvarchar(4000) = N'@Fecha = FECHA,';
@@ -26,4 +27,6 @@ SET @Definicion = REPLACE(@Definicion,
       AND TRY_CONVERT(datetime, [FECHA HASTA], 103) >= @Fecha;');
 SET @Definicion = REPLACE(@Definicion, N'CREATE PROCEDURE', N'ALTER PROCEDURE');
 SET @Definicion = REPLACE(@Definicion, N'CREATE   PROCEDURE', N'ALTER PROCEDURE');
+IF (SELECT compatibility_level FROM sys.databases WHERE database_id = DB_ID()) < 110
+    SET @Definicion = REPLACE(@Definicion, N'TRY_CONVERT(', N'CONVERT(');
 EXEC sys.sp_executesql @Definicion;

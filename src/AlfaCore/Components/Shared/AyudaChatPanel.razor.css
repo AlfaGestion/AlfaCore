@@ -1,0 +1,9 @@
+.ayuda-chat { display:flex; flex-direction:column; gap:12px; flex:1; min-height:0; }
+.ayuda-chat__nota, .ayuda-chat small { color:var(--alfa-text-secondary); font-size:var(--alfa-font-small); margin:0; }
+.ayuda-chat__mensajes { flex:1; min-height:80px; overflow:auto; overflow-wrap:anywhere; }
+.ayuda-chat__turno { padding:12px; margin-bottom:12px; border:1px solid var(--alfa-border-default); border-radius:8px; }
+.ayuda-chat__texto { white-space:pre-wrap; line-height:1.5; }
+.ayuda-chat__turno ::deep button { white-space:normal; height:auto; min-height:32px; text-align:left; }
+.ayuda-chat__consulta { display:flex; flex-direction:column; gap:8px; }
+.ayuda-chat__acciones { display:flex; flex-wrap:wrap; gap:8px; }
+.ayuda-chat__error { color:var(--alfa-danger); margin:0; }

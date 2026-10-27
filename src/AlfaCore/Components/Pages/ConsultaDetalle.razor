@@ -4,9 +4,13 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject IJSRuntime JS
 @using AlfaCore.Models
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>@(_consulta?.Grupo ?? "Consulta") | Alfa Gestión</PageTitle>
 
+<div class="gd-page gd gd-legacy consultas-ad">
 @if (_cargando)
 {
     <div class="consultas-loading">
@@ -463,6 +467,7 @@ else
 
     </div>
 }
+</div>
 
 @code {
     [Parameter] public int Id { get; set; }
@@ -917,6 +922,39 @@ else
     {
         if (checked_) { if (!_colsValores.Contains(idx)) _colsValores = [.. _colsValores, idx]; }
         else _colsValores = _colsValores.Where(i => i != idx).ToList();
+    }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => _consulta?.Grupo ?? string.Empty;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "consultas",
+            Title = _consulta?.Grupo ?? "Consulta",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConsultas(RouteContext, Nav, "consultas"),
+        });
     }
 
     protected override async Task OnInitializedAsync()

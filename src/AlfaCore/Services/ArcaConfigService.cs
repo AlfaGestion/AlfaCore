@@ -13,8 +13,13 @@ public sealed class ArcaConfigService(
     private const string ModuleName = "ArcaFacturacionElectronica";
     private const string ClaveGlobal = "GLOBAL";
     private const int ArcaSqlCommandTimeoutSeconds = 120;
+    // ARCA mantiene publicados los endpoints AFIP para WSAA y son los que
+    // resuelven correctamente desde los servidores de AlfaCore.
     private const string WsaaProduccionDefault = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl";
     private const string WsaaHomologacionDefault = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl";
+    // La consulta de padrón es un circuito independiente de facturación y se
+    // ejecuta siempre contra producción.
+    private const string WsaaPadronProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
     private const string WsfeProduccionDefault = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL";
     private const string WsfeHomologacionDefault = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL";
 
@@ -115,7 +120,7 @@ public sealed class ArcaConfigService(
 
         var certificadoConfigurado = await ReadCertificadoAsync(cn, "PADRON", ct);
         var certificado = certificadoConfigurado is not null
-            ? (certificadoConfigurado.Value.Crt, certificadoConfigurado.Value.Key, Ambiente: string.Equals(ReadValue(global, "ARCA_PADRON_AMBIENTE", ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION")), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion)
+            ? (certificadoConfigurado.Value.Crt, certificadoConfigurado.Value.Key, Ambiente: ArcaAmbiente.Produccion)
             : ReadCertificadoPadronPorDefecto();
         if (certificado is null || certificado.Value.Crt is null || certificado.Value.Key is null)
             throw new InvalidOperationException("No hay un certificado propio configurado para consultar el padrón ARCA.");
@@ -128,7 +133,7 @@ public sealed class ArcaConfigService(
             Encoding.UTF8.GetString(certificado.Value.Crt),
             Encoding.UTF8.GetString(certificado.Value.Key),
             ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty)),
-            ReadValue(global, "WSAA_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsaaProduccionDefault : WsaaHomologacionDefault),
+            WsaaPadronProduccion,
             ReadValue(global, "WSFE_URL", certificado.Value.Ambiente == ArcaAmbiente.Produccion ? WsfeProduccionDefault : WsfeHomologacionDefault));
     }
 
@@ -153,7 +158,7 @@ public sealed class ArcaConfigService(
             {
                 var key = Path.Combine(carpeta, "Cprivada_CONSULTAPADRON.key");
                 if (File.Exists(key) && CertificadoVigente(crt))
-                    return (File.ReadAllBytes(crt), File.ReadAllBytes(key), ArcaAmbiente.Homologacion);
+                    return (File.ReadAllBytes(crt), File.ReadAllBytes(key), ArcaAmbiente.Produccion);
             }
 
             // En instalaciones antiguas de VB6 el padrón se consultaba con el
@@ -487,7 +492,7 @@ public sealed class ArcaConfigService(
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (
                 N'USAFCELECTRONICA', N'ARCA_AMBIENTE', N'ARCA_MODO_FALLO_CAE',
-                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE'
+                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE', N'WSAA_URL', N'WSFE_URL'
             )
             """;
 
@@ -578,6 +583,24 @@ public sealed class ArcaConfigService(
             return ambiente == ArcaAmbiente.Produccion ? produccion : homologacion;
 
         var normalized = configured.Trim().TrimEnd('/');
+        // Algunas bases quedaron configuradas con hosts ARCA que no resuelven
+        // desde el servidor (www.homo.arca.gov.ar, wsaahomo.arca.gov.ar o
+        // wsaa.homo.arca.gov.ar). Se conserva la configuración almacenada,
+        // pero se usa el endpoint WSAA operativo publicado por ARCA.
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var configuredUri)
+            && (configuredUri.Host.Equals("www.homo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)
+                || configuredUri.Host.Equals("wsaahomo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)
+                || configuredUri.Host.Equals("wsaa.homo.arca.gov.ar", StringComparison.OrdinalIgnoreCase)))
+        {
+            return homologacion;
+        }
+
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out configuredUri)
+            && configuredUri.Host.Equals("wsaa.arca.gov.ar", StringComparison.OrdinalIgnoreCase))
+        {
+            return produccion;
+        }
+
         var officialProduction = produccion.Trim().TrimEnd('/');
         var officialHomologacion = homologacion.Trim().TrimEnd('/');
         var configuredBase = normalized.EndsWith("?wsdl", StringComparison.OrdinalIgnoreCase)

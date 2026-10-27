@@ -948,6 +948,31 @@ public sealed class InterfacesCatalogosService(
     public Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default)
         => GetCatalogoInternalAsync(idInsert, soloPublico: true, ct, expectedBaseId);
 
+    public Task<bool> MuestraPreciosConsumidorFinalAsync(int? expectedBaseId = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "MuestraPreciosConsumidorFinal", async token =>
+        {
+            var connectionString = ResolveConnectionString(expectedBaseId, "Catalogos.MuestraPreciosConsumidorFinal");
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(token);
+            // Misma semántica que el checkbox de Configuración (ver CatalogoPrecioConsumidorSetting):
+            // sin tabla o sin clave → OFF.
+            if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", token))
+                return false;
+
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var row = await cn.QuerySingleOrDefaultAsync<(string? Valor, string? ValorAux)?>(new CommandDefinition(
+                $"""
+                SELECT TOP (1) ISNULL(VALOR, ''), ISNULL({detailColumn}, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """,
+                new { Clave = CatalogoPrecioConsumidorSetting.Clave },
+                cancellationToken: token));
+
+            return CatalogoPrecioConsumidorSetting.EstaActivo(
+                row is null ? null : ResolveStoredValue(row.Value.Valor ?? string.Empty, row.Value.ValorAux ?? string.Empty));
+        }, "No se pudo leer la visibilidad de precios del catálogo.", ct);
+
     public Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveCatalogoVigencia", async token =>
         {
@@ -1605,7 +1630,8 @@ public sealed class InterfacesCatalogosService(
                 """;
 
             var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(sql, new { Clave = MenuEnabledConfigKey }, cancellationToken: ct));
-            var raw = ResolveStoredValue(row.Valor, row.ValorAux);
+            // Sin la clave guardada (la mayoría de las bases) la fila viene vacía: menú deshabilitado.
+            var raw = ResolveStoredValue(row.Valor, row.ValorAux) ?? string.Empty;
             return string.Equals(raw.Trim(), "SI", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
@@ -1688,6 +1714,31 @@ public sealed class InterfacesCatalogosService(
 
             return true;
         }, "No se pudo guardar la configuración del menú de catálogos.", ct);
+
+    public Task SaveMuestraPreciosConsumidorFinalAsync(string userName, bool mostrar, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveCatalogosPrecioConsumidor", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la configuración de precios.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var valor = CatalogoPrecioConsumidorSetting.Serializar(mostrar);
+
+            await UpsertConfigValueAsync(cn, detailColumn, CatalogoPrecioConsumidorSetting.Clave, valor, ConfigGroup, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveCatalogosPrecioConsumidor",
+                "TA_CONFIGURACION",
+                CatalogoPrecioConsumidorSetting.Clave,
+                "Configuración de visibilidad de precios para consumidores y leads actualizada.",
+                new { UserName = userName.Trim(), Mostrar = mostrar },
+                token);
+
+            return true;
+        }, "No se pudo guardar la visibilidad de precios del catálogo.", ct);
 
     public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicIdentity", async token =>

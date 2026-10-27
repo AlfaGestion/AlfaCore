@@ -1,0 +1,167 @@
+@using AlfaCore.Services
+@inject IMenuService MenuSvc
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+@* Engranaje de la barra superior: configuración del módulo actual, preferencias personales y
+   configuración de empresa/sistema, con buscador. Las entradas salen de ConfiguracionCatalogo y se
+   filtran por los módulos y pantallas habilitados para el usuario. *@
+
+<div class="tb-cfg">
+    <button type="button" class="alfa-app-topbar__global-icon tb-cfg__trigger @(_open ? "is-active" : null)"
+            title="Configuración" aria-label="Configuración" aria-haspopup="true" aria-expanded="@(_open ? "true" : "false")"
+            @onclick="ToggleAsync">
+        <i class="bi bi-gear" aria-hidden="true"></i>
+    </button>
+
+    @if (_open)
+    {
+        <div class="tb-cfg__backdrop" @onclick="Close"></div>
+        <section class="tb-cfg__panel" role="dialog" aria-label="Configuración" @onkeydown="OnKeyDown">
+            <form class="tb-cfg__search" @onsubmit="Buscar" @onsubmit:preventDefault="true">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="search" placeholder="Buscar una configuración…" aria-label="Buscar una configuración"
+                       value="@_texto" @oninput="args => _texto = args.Value?.ToString() ?? string.Empty" />
+            </form>
+
+            <div class="tb-cfg__body">
+                @if (!string.IsNullOrWhiteSpace(_texto))
+                {
+                    var resultados = ConfiguracionCatalogo.Buscar(_visibles, _texto).Take(8).ToList();
+                    <div class="tb-cfg__group">
+                        <span class="tb-cfg__label">Resultados</span>
+                        @if (resultados.Count == 0)
+                        {
+                            <p class="tb-cfg__hint">Sin resultados para «@_texto».</p>
+                        }
+                        @foreach (var entrada in resultados)
+                        {
+                            @Item(entrada)
+                        }
+                    </div>
+                }
+                else
+                {
+                    @if (_delModulo.Count > 0)
+                    {
+                        <div class="tb-cfg__group">
+                            <span class="tb-cfg__label">Este módulo</span>
+                            @foreach (var entrada in _delModulo.Take(5))
+                            {
+                                @Item(entrada)
+                            }
+                        </div>
+                    }
+
+                    <div class="tb-cfg__group">
+                        <span class="tb-cfg__label">Mis preferencias</span>
+                        <button type="button" class="tb-cfg__item" @onclick="ConfigurarPushAsync">
+                            <i class="bi bi-phone-vibrate" aria-hidden="true"></i>
+                            <span class="tb-cfg__text">
+                                <strong>Notificaciones en este dispositivo</strong>
+                                <span>Avisos push de mensajes nuevos y alcance.</span>
+                            </span>
+                        </button>
+                    </div>
+
+                    @if (_sistema.Count > 0)
+                    {
+                        <div class="tb-cfg__group">
+                            <span class="tb-cfg__label">Empresa y sistema</span>
+                            @foreach (var entrada in _sistema)
+                            {
+                                @Item(entrada)
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <footer class="tb-cfg__footer">
+                <a class="tb-cfg__all" href="@RouteContext.BuildRoute("/configuracion")" @onclick="Close">
+                    Ver toda la configuración <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                </a>
+            </footer>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public string? ModuloActual { get; set; }
+    [Parameter] public EventCallback OnConfigurarPush { get; set; }
+
+    private bool _open;
+    private bool _cargado;
+    private string _texto = string.Empty;
+    private IReadOnlyList<ConfiguracionEntrada> _visibles = ConfiguracionCatalogo.Entradas;
+    private IReadOnlyList<ConfiguracionEntrada> _delModulo = [];
+    private IReadOnlyList<ConfiguracionEntrada> _sistema = [];
+
+    private RenderFragment Item(ConfiguracionEntrada entrada) => __builder =>
+    {
+        <a class="tb-cfg__item" href="@RouteContext.BuildRoute(entrada.Ruta)" @onclick="Close">
+            <i class="bi @entrada.Icono" aria-hidden="true"></i>
+            <span class="tb-cfg__text">
+                <strong>@entrada.Titulo</strong>
+                <span>@entrada.Descripcion</span>
+            </span>
+        </a>
+    };
+
+    private async Task ToggleAsync()
+    {
+        _open = !_open;
+        _texto = string.Empty;
+        if (_open)
+            await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        if (!_cargado)
+        {
+            try
+            {
+                var modulos = await MenuSvc.GetModulesAsync();
+                var rutas = await MenuSvc.GetSearchItemsAsync();
+                _visibles = ConfiguracionCatalogo.Visibles(modulos.Select(m => m.RutaWeb), rutas.Select(r => r.RutaWeb));
+                _cargado = true;
+            }
+            catch
+            {
+                // Sin menú dinámico se muestran todas: cada pantalla aplica su propio control de acceso.
+                _visibles = ConfiguracionCatalogo.Entradas;
+            }
+        }
+
+        _delModulo = ConfiguracionCatalogo.DelModulo(_visibles, ModuloActual);
+        var delModulo = new HashSet<string>(_delModulo.Select(e => e.Clave));
+        _sistema = _visibles
+            .Where(e => e.Principal && e.Area is ConfiguracionCatalogo.AreaEmpresa or ConfiguracionCatalogo.AreaUsuarios)
+            .Where(e => !delModulo.Contains(e.Clave))
+            .ToList();
+    }
+
+    private void Close() => _open = false;
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+            Close();
+    }
+
+    private void Buscar()
+    {
+        var resultados = ConfiguracionCatalogo.Buscar(_visibles, _texto);
+        Close();
+        Nav.NavigateTo(resultados.Count == 1
+            ? RouteContext.BuildRoute(resultados[0].Ruta)
+            : RouteContext.BuildRoute($"/configuracion?buscar={Uri.EscapeDataString(_texto.Trim())}"));
+    }
+
+    private async Task ConfigurarPushAsync()
+    {
+        Close();
+        await OnConfigurarPush.InvokeAsync();
+    }
+}

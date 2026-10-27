@@ -12,6 +12,11 @@ public sealed class AppExceptionLoggingMiddleware(RequestDelegate next)
         {
             await next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // El navegador cortó la solicitud (cerró la pantalla, cambió de conversación mientras
+            // bajaba un adjunto): no es un error del sistema, no se anota.
+        }
         catch (Exception ex)
         {
             TryWriteWebhookFailureDiagnostic(context, ex);

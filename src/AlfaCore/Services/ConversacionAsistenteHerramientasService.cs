@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -21,13 +22,15 @@ namespace AlfaCore.Services;
 public sealed class ConversacionAsistenteHerramientasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppUserSessionService appUserSession,
     ICrmCotizacionService crmCotizacionService,
     IInterfacesCatalogosService catalogosService,
     ICentralPublicLinkService publicLinkService,
+    ICentralBasesService centralBasesService,
+    ICentralClientesService centralClientesService,
     IPortalClienteService portalClienteService,
     IProveedorSaldoService proveedorSaldoService,
-    IConversacionesConfigService conversacionesConfigService) : IConversacionAsistenteHerramientasService
+    IConversacionesConfigService conversacionesConfigService,
+    ICatalogoClienteLinkService catalogoClienteLinkService) : IConversacionAsistenteHerramientasService
 {
     private const string ToolConsultarPrecio = "consultar_precio";
     private const string ToolConsultarSaldoTotal = "consultar_saldo_total";
@@ -70,15 +73,244 @@ public sealed class ConversacionAsistenteHerramientasService(
     private static bool MensajeNecesitaHerramientas(string mensajeCliente)
     {
         var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
-        return texto.Length > 0 && PalabrasClaveHerramientas.Any(texto.Contains);
+        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente));
+    }
+
+    /// <summary>
+    /// Quiere artículos puntuales sin decir "precio" ni "pedido" ("Quiero 10 pilas AA", "necesito dos
+    /// cables", "venden cargadores?"). Sin esto el mensaje no habilitaba herramientas y el modelo
+    /// contestaba de memoria: caso real Base4264 (2026-10-26), "No vendemos pilas Duracell" con el
+    /// artículo cargado. Con "un/una" ("quiero una pila AAA") excluye lo que no es un artículo
+    /// ("necesito una mano con el sistema", "quiero un técnico").
+    /// </summary>
+    internal static bool MensajePideArticulo(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        if (Regex.IsMatch(texto,
+            @"\b(quiero|quisiera|necesito|busco|mandame|pasame|encargo|me\s+llevo)\s+"
+            + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b"
+            + @"|\b(venden|vendes|hay\s+stock|tienen\s+stock|stock\s+de)\b"))
+            return true;
+
+        var unArticulo = Regex.Match(texto, @"\b(quiero|quisiera|necesito|busco|me\s+llevo)\s+(un|una|unos|unas)\s+([a-z]+)");
+        return unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value);
+    }
+
+    // Lo que sigue a "necesito un/una ..." en consultas de soporte o atención, no de compra.
+    private static readonly HashSet<string> NoSonArticulos = new(StringComparer.Ordinal)
+    {
+        "mano", "ayuda", "consulta", "pregunta", "duda", "tecnico", "persona", "asesor", "operador", "vendedor",
+        "turno", "visita", "respuesta", "solucion", "informacion", "factura", "nota", "copia", "comprobante",
+        "presupuesto", "cotizacion", "reclamo", "devolucion", "cambio", "favor", "link", "usuario", "clave",
+        "contrasena", "acceso", "cuenta", "reunion", "llamada", "capacitacion", "demo", "licencia", "actualizacion",
+        "pedido", "envio", "descuento", "rato", "minuto", "momento", "dato", "numero"
+    };
+
+    /// <summary>
+    /// Cliente que quiere ver su lista de precios o hacer un pedido: se resuelve con su link al Portal
+    /// Cliente (precios de su cuenta y carga de pedidos). Caso real Base4264 (2026-10-26): con la tool
+    /// ofrecida, el modelo contestaba "contactá a un asesor".
+    /// </summary>
+    /// <summary>
+    /// Pregunta por sus Notas de Pedido ("¿cómo están mis pedidos?", "¿llegó mi pedido?", "NP-123").
+    /// "Pedido" también se usa para un pedido de soporte: sólo se detecta el sustantivo con posesivo o
+    /// palabra de estado, nunca el verbo ("lo que les pedí" sigue siendo seguimiento), y si no tiene
+    /// pedidos la tool deriva al seguimiento del tema pendiente. Caso real Base4264 (2026-10-26): con
+    /// tickets abiertos, "¿Cómo están mis pedidos?" se contestó como seguimiento sin consultar pedidos.
+    /// </summary>
+    internal static bool MensajeConsultaPedidos(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0 || MensajePidePortal(mensajeCliente))
+            return false;
+        if (Regex.IsMatch(texto, @"\bpedidos?\s+de\s+(soporte|ayuda|asistencia|servicio|visita|presupuesto)\b"))
+            return false;
+
+        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+\b|\bnota\s+de\s+pedido\b")
+            || (Regex.IsMatch(texto, @"\bpedidos?\b")
+                && Regex.IsMatch(texto, @"\b(mi|mis|estado|como|donde|cuando|llego|llegaron|llega|llegan|sale|salen|salio|salieron|novedad|novedades|ultimo|numero)\b"));
+    }
+
+    internal const string ResultadoSinPedidos =
+        "No tiene Notas de Pedido registradas. Ojo: \"pedido\" también puede ser un pedido de soporte. Si en esta conversación hay un tema de soporte o reclamo pendiente al que el cliente pueda estar refiriéndose, respondé tipo SEGUIMIENTO; si no, informale (tipo RESUELVE) que no tiene pedidos registrados.";
+
+    /// <summary>
+    /// El modelo arrastraba el número de un mensaje anterior: tras "¿Llegó mi pedido NP-999?",
+    /// "¿Cómo están mis pedidos?" volvía a buscar NP-999 (Base4264, 2026-10-26). Sólo se usa el número
+    /// si sus dígitos están en el mensaje actual; sin mensaje (otros llamadores) se respeta tal cual.
+    /// </summary>
+    internal static string? NumeroPedidoDelMensaje(string? numeroPedido, string? mensajeCliente)
+    {
+        if (string.IsNullOrWhiteSpace(numeroPedido) || mensajeCliente is null)
+            return numeroPedido;
+
+        var digitos = new string(numeroPedido.Where(char.IsDigit).ToArray());
+        return digitos.Length > 0 && mensajeCliente.Contains(digitos, StringComparison.Ordinal) ? numeroPedido : null;
+    }
+
+    // Con número de pedido no hay ambigüedad venta/soporte: sin esta instrucción el modelo lo tomó como
+    // seguimiento de un tema viejo y avisó al operador (Base4264, 2026-10-26, "¿Llegó mi pedido NP-999?").
+    internal const string ResultadoPedidoNoEncontrado =
+        "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";
+
+    internal static bool MensajePidePortal(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return Regex.IsMatch(texto,
+            @"\blista\s+de\s+precios?\b"
+            + @"|\b(hacer|hago|cargar|cargo|armar|armo|realizar|pasar|paso|mandar|mando)\s+(un|el|mi|otro)?\s*pedido\b"
+            + @"|\bquiero\s+(pedir|encargar)\b"
+            + @"|\bcomo\s+(pido|compro|encargo)\b");
+    }
+
+    /// <summary>
+    /// Intención explícita de precio ("precio", "cuánto sale/cuesta/vale", "a cuánto", "valor",
+    /// "cotización"). Se usa para decidir la respuesta a un contacto sin identificar cuando la empresa
+    /// no informa precios a leads -- no para ofrecer herramientas (eso sigue siendo
+    /// MensajeNecesitaHerramientas).
+    /// </summary>
+    internal static bool MensajePidePrecio(string? mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return Regex.IsMatch(texto,
+            @"\b(precio|precios|valor|valores|cotizacion|cotizar|cotizame)\b"
+            + @"|\bcuanto\s+(sale|salen|cuesta|cuestan|vale|valen|esta|estan)\b"
+            + @"|\ba\s+cuanto\b");
+    }
+
+    /// <summary>
+    /// Pide el precio de un artículo puntual. Excluye preguntas generales sobre precios ("¿los precios
+    /// incluyen IVA?", "lista de precios", "¿aumentaron los precios?") que no se responden buscando un
+    /// artículo. Es la que decide forzar consultar_precio.
+    /// </summary>
+    internal static bool MensajePidePrecioArticulo(string? mensajeCliente)
+    {
+        if (!MensajePidePrecio(mensajeCliente))
+            return false;
+
+        var texto = NormalizarTexto(mensajeCliente);
+        return !Regex.IsMatch(texto,
+            @"\b(incluye|incluyen|con|sin|mas)\s+iva\b"
+            + @"|\blista\s+de\s+precios?\b"
+            + @"|\b(aumentaron|subieron|bajaron|cambiaron|actualizaron)\b"
+            + @"|\bprecios?\s+(actualizados?|vigentes?|nuevos?)\b");
+    }
+
+    private static readonly string[] InicioPreguntaNueva =
+    [
+        "que ", "como ", "cual ", "cuales ", "donde ", "cuando ", "quien ", "por que ", "porque ",
+        "tienen ", "tenes ", "hacen ", "haces ", "venden ", "aceptan ", "puedo ", "se puede "
+    ];
+
+    /// <summary>
+    /// Si el mensaje puede ser la respuesta a una aclaración de precio ("AA", "Duracell", "la de 9 V").
+    /// Una pregunta nueva ("¿Qué es el código RECICLA10?") no completa la consulta anterior y no debe
+    /// forzar consultar_precio con el artículo del mensaje previo (2026-10-06).
+    /// </summary>
+    internal static bool PuedeCompletarAclaracion(string? mensajeCliente)
+    {
+        var texto = Regex.Replace(NormalizarTexto(mensajeCliente), @"[¿?¡!.,;:]", " ").Trim();
+        if (texto.Length == 0)
+            return false;
+
+        var palabras = texto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var conEspacio = string.Join(' ', palabras) + " ";
+        return palabras.Length <= 6 && !InicioPreguntaNueva.Any(conEspacio.StartsWith);
+    }
+
+    private static bool MensajePideCatalogo(string mensajeCliente)
+    {
+        var texto = NormalizarTexto(mensajeCliente);
+        if (texto.Length == 0)
+            return false;
+
+        return texto.Contains("catalogo", StringComparison.Ordinal)
+            || texto.Contains("ver productos", StringComparison.Ordinal)
+            || texto.Contains("ver los productos", StringComparison.Ordinal)
+            || texto.Contains("mostrar productos", StringComparison.Ordinal)
+            || texto.Contains("pasame productos", StringComparison.Ordinal)
+            || texto.Contains("pasar productos", StringComparison.Ordinal)
+            || texto.Contains("lista de productos", StringComparison.Ordinal);
+    }
+
+    // Palabras que el cliente/modelo suele incluir pero nunca forman parte de la descripción de un
+    // artículo. Van sin tildes (se comparan contra el texto ya normalizado).
+    private static readonly HashSet<string> PalabrasVaciasBusqueda = new(StringComparer.Ordinal)
+    {
+        "de", "del", "la", "las", "el", "los", "lo", "un", "una", "unos", "unas", "al", "en", "y", "o",
+        "para", "con", "por", "que", "cual", "cuales", "es", "son", "me", "mi", "su", "sus",
+        "precio", "precios", "valor", "cuanto", "cuantos", "cuanta", "cuantas", "sale", "salen",
+        "cuesta", "cuestan", "vale", "valen", "tiene", "tienen", "tenes", "hay",
+        "quiero", "necesito", "busco", "pasame"
+    };
+
+    /// <summary>
+    /// Versión tolerante de lo que pidió el cliente, para reintentar la búsqueda de artículos:
+    /// sin tildes ni signos, "doble A"/"triple A" → AA/AAA, sin palabras vacías ni de una letra, y
+    /// en singular aproximado (la búsqueda es por substring: "pila" encuentra "PILA", "cabl" encuentra
+    /// "CABLE"). Devuelve "" si no queda ningún término útil.
+    /// </summary>
+    internal static string NormalizarBusquedaArticulo(string? texto)
+    {
+        var normalizado = Regex.Replace(NormalizarTexto(texto), "[^a-z0-9]+", " ");
+        normalizado = Regex.Replace(normalizado, @"\b(doble|dos)\s+a\b", "aa");
+        normalizado = Regex.Replace(normalizado, @"\b(triple|tres)\s+a\b", "aaa");
+
+        var terminos = normalizado
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length > 1 && !PalabrasVaciasBusqueda.Contains(t))
+            .Select(Singularizar)
+            .Distinct(StringComparer.Ordinal);
+        return string.Join(' ', terminos);
+    }
+
+    private static string Singularizar(string termino)
+    {
+        // "adaptadores" → "adaptador", "pilas" → "pila", "cables" → "cabl". Sólo plurales regulares;
+        // ante la duda queda más corto, que en una búsqueda por substring sigue encontrando "CABLE".
+        if (termino.Length >= 5 && termino.EndsWith("es", StringComparison.Ordinal) && "rlndj".Contains(termino[^3]))
+            return termino[..^2];
+        if (termino.Length >= 4 && termino.EndsWith('s') && !termino.EndsWith("ss", StringComparison.Ordinal))
+            return termino[..^1];
+        return termino;
+    }
+
+    private static string NormalizarTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        var normalized = texto.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category != UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        }
+
+        return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
         ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente)
+        string mensajeCliente,
+        string? mensajePrevioCliente = null)
     {
-        if (!MensajeNecesitaHerramientas(mensajeCliente))
+        // El seguimiento ("Pila duracell AA" después de "Que precio tienen las pilas?") no trae
+        // palabra clave propia: sin el mensaje previo quedaba sin herramientas y el bot derivaba. El
+        // previo sólo habilita la lista; catálogo forzado/ofrecido sigue dependiendo del mensaje actual.
+        if (!MensajeNecesitaHerramientas(mensajeCliente) && !MensajeNecesitaHerramientas(mensajePrevioCliente ?? string.Empty))
             return [];
 
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
@@ -91,6 +323,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         var esCliente = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Cliente;
         var esProveedor = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Proveedor;
         var puedeInformarPrecio = !esAmbigua && (esCliente || config.CatalogoMuestraPrecioConsumidor);
+        var pideCatalogo = MensajePideCatalogo(mensajeCliente);
 
         if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
@@ -101,7 +334,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                     ? "Busca el precio real de un artículo para el Cliente identificado. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
                     : "Busca el precio real de consumidor final usando la fuente/lista real configurada en AlfaCore. No inventar precios.",
                 ParametrosJsonSchema = """
-                    {"type":"object","properties":{"articulo":{"type":"string","description":"Nombre o código del artículo a buscar"}},"required":["articulo"]}
+                    {"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos clave cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila AA', 'pila duracell AA'. No incluir palabras como precio o cuánto."}},"required":["articulo"]}
                     """
             });
         }
@@ -146,7 +379,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
-        if (!esCliente)
+        if (!esCliente || pideCatalogo)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
@@ -165,6 +398,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         string nombre,
         string argumentosJson,
         ConversacionCuentaVinculadaDto? cuenta,
+        string? mensajeCliente = null,
         CancellationToken ct = default)
     {
         if (cuenta?.EsAmbigua == true && ToolsPrivadasDeCuenta.Contains(nombre))
@@ -177,7 +411,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                 ToolConsultarPrecio => await EjecutarConsultarPrecioAsync(argumentosJson, cuenta, ct),
                 ToolConsultarSaldoTotal => await EjecutarConsultarSaldoTotalAsync(cuenta, ct),
                 ToolConsultarSaldoDetalle => await EjecutarConsultarSaldoDetalleAsync(cuenta, ct),
-                ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, ct),
+                ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, mensajeCliente, ct),
                 ToolGenerarLinkPortal => await EjecutarGenerarLinkPortalAsync(cuenta, ct),
                 ToolGenerarLinkCatalogoPublico => await EjecutarGenerarLinkCatalogoPublicoAsync(cuenta, ct),
                 _ => "Herramienta desconocida."
@@ -198,28 +432,85 @@ public sealed class ConversacionAsistenteHerramientasService(
             return "No se especificó qué artículo buscar.";
 
         var codigoCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente ? cuenta.Codigo : null;
-        var resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, articulo, take: 5, ct: ct);
-        if (resultados.Count == 0)
-            return $"No se encontró ningún artículo que coincida con \"{articulo}\".";
+        // Se piden MaxOpcionesPrecio + 1 para saber si hay "muchas" coincidencias sin traer todo.
+        var busquedaUsada = articulo.Trim();
+        var resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, busquedaUsada, take: MaxOpcionesPrecio + 1, ct: ct);
 
-        // Consumidor final/lead (sin cuenta Cliente): si la base no tiene bien configurado el precio
-        // de consumidor final, el resolver general puede devolver 0 -- no rediseñamos ese motor (lo
-        // usan POS/Cotizaciones/Crm), pero acá no debe salir como si fuera un precio real.
-        var esConsumidorFinal = codigoCliente is null;
-        var sb = new StringBuilder();
-        foreach (var art in resultados)
+        // La búsqueda compartida (POS/Cotizaciones) exige que CADA palabra aparezca en el artículo:
+        // "pilas doble A" no encuentra "PILA DURACELL - AA" (Base4264, 2026-09-30). No se toca ese
+        // motor; acá, sólo si no hubo resultados, se reintenta una vez con los términos normalizados.
+        if (resultados.Count == 0)
         {
+            var normalizada = NormalizarBusquedaArticulo(articulo);
+            if (normalizada.Length > 0 && !string.Equals(normalizada, busquedaUsada, StringComparison.OrdinalIgnoreCase))
+            {
+                busquedaUsada = normalizada;
+                resultados = await crmCotizacionService.SearchArticulosAsync(codigoCliente, busquedaUsada, take: MaxOpcionesPrecio + 1, ct: ct);
+            }
+        }
+
+        return FormatearResultadoPrecio(articulo, busquedaUsada, resultados, esConsumidorFinal: codigoCliente is null);
+    }
+
+    internal const int MaxOpcionesPrecio = 5;
+
+    /// <summary>
+    /// Arma el resultado de consultar_precio con una instrucción explícita para el modelo según
+    /// cuántas coincidencias hubo (1 → RESUELVE; 2..5 → ACLARA mostrando opciones con precio; más de
+    /// 5 → ACLARA pidiendo marca/medida; 0 → ACLARA pidiendo marca/medida). La búsqueda es por
+    /// substring, así que "AA" también trae "AAA": si algunas coincidencias contienen TODOS los
+    /// términos como palabra completa, se usan sólo esas.
+    /// </summary>
+    internal static string FormatearResultadoPrecio(
+        string articuloPedido,
+        string busquedaUsada,
+        IReadOnlyList<CrmCotizacionArticuloDto> resultados,
+        bool esConsumidorFinal)
+    {
+        if (resultados.Count == 0)
+            // "¿Cuánto sale el envío?" o "¿qué es el código X?" no son artículos: si la información del
+            // negocio (texto, bloques o archivos) lo responde, se usa eso en vez de repreguntar (2026-10-06).
+            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si no, respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
+
+        var hayMas = resultados.Count > MaxOpcionesPrecio;
+        var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();
+        if (!hayMas)
+        {
+            var terminos = PalabrasCompletas(busquedaUsada);
+            var exactos = candidatos.Where(a => terminos.IsSubsetOf(PalabrasCompletas($"{a.IdArticulo} {a.Codigo} {a.Descripcion}"))).ToList();
+            if (exactos.Count > 0 && exactos.Count < candidatos.Count)
+                candidatos = exactos;
+        }
+
+        var lineas = new StringBuilder();
+        foreach (var art in candidatos)
+        {
+            var codigo = string.IsNullOrWhiteSpace(art.Codigo) ? art.IdArticulo : art.Codigo;
+            // Consumidor final/lead (sin cuenta Cliente): si la base no tiene bien configurado el precio
+            // de consumidor final, el resolver general puede devolver 0 -- no rediseñamos ese motor (lo
+            // usan POS/Cotizaciones/Crm), pero acá no debe salir como si fuera un precio real.
             if (esConsumidorFinal && art.PrecioUnitarioConIva <= 0)
             {
-                sb.AppendLine($"- {art.Descripcion} (código {art.Codigo}): precio no disponible, hay que consultarlo.");
+                lineas.AppendLine($"- {art.Descripcion} (código {codigo}): precio no disponible, hay que consultarlo.");
                 continue;
             }
 
-            sb.AppendLine(
-                $"- {art.Descripcion} (código {art.Codigo}): $ {art.PrecioUnitarioConIva.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (IVA incluido)");
+            lineas.AppendLine(
+                $"- {art.Descripcion} (código {codigo}): $ {art.PrecioUnitarioConIva.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (IVA incluido)");
         }
-        return sb.ToString().Trim();
+
+        var detalle = lineas.ToString().Trim();
+        if (hayMas)
+            return $"Más de {MaxOpcionesPrecio} coincidencias para \"{articuloPedido}\" (se muestran {MaxOpcionesPrecio}). Respondé tipo ACLARA sin listar todos los precios: preguntale qué marca o medida busca, mencionando como ejemplo algunas de estas opciones.\n{detalle}";
+        if (candidatos.Count == 1)
+            return $"1 coincidencia. Respondé tipo RESUELVE informando este precio:\n{detalle}";
+        return $"{candidatos.Count} coincidencias. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA mostrando estas opciones con su precio y preguntando cuál necesita (una sola pregunta):\n{detalle}";
     }
+
+    private static HashSet<string> PalabrasCompletas(string? texto)
+        => Regex.Split(NormalizarTexto(texto), "[^a-z0-9]+")
+            .Where(p => p.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
 
     private async Task<string> EjecutarConsultarSaldoTotalAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
     {
@@ -281,12 +572,12 @@ public sealed class ConversacionAsistenteHerramientasService(
         return sb.ToString().Trim();
     }
 
-    private async Task<string> EjecutarConsultarPedidosAsync(string argumentosJson, ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
+    private async Task<string> EjecutarConsultarPedidosAsync(string argumentosJson, ConversacionCuentaVinculadaDto? cuenta, string? mensajeCliente, CancellationToken ct)
     {
         if (cuenta is null || cuenta.Tipo != CuentaComercialTipo.Cliente)
             return "No se pudo identificar al cliente para consultar sus pedidos.";
 
-        var numeroPedido = LeerArgumentoString(argumentosJson, "numero_pedido");
+        var numeroPedido = NumeroPedidoDelMensaje(LeerArgumentoString(argumentosJson, "numero_pedido"), mensajeCliente);
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -315,8 +606,8 @@ public sealed class ConversacionAsistenteHerramientasService(
             // Nunca se distingue "no existe" de "es de otro cliente" -- mismo criterio que el resto
             // de las consultas del Portal Cliente.
             return string.IsNullOrWhiteSpace(numeroPedido)
-                ? "No tiene pedidos registrados."
-                : "No encontré ningún pedido con ese número asociado a su cuenta.";
+                ? ResultadoSinPedidos
+                : ResultadoPedidoNoEncontrado;
         }
 
         var cultura = CultureInfo.GetCultureInfo("es-AR");
@@ -347,31 +638,57 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     private async Task<string> EjecutarGenerarLinkCatalogoPublicoAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
     {
-        // Ambigua comparte Tipo=Cliente (no hay un tercer valor de enum para "ambiguo", ver
-        // ConversacionCuentaVinculadaDto) -- por eso EsAmbigua se evalúa PRIMERO acá. Un contacto
-        // ambiguo no es un Cliente identificado: no puede ir al Portal (elegiría una cuenta por él)
-        // y sí debe poder recibir el catálogo público como fallback seguro, igual que un lead.
-        if (cuenta?.EsAmbigua != true && cuenta?.Tipo == CuentaComercialTipo.Cliente)
-            return "El cliente identificado debe usar el Portal Cliente para ver su catálogo y precios.";
-
-        var idWeb = appUserSession.CurrentUser?.IdWeb?.Trim() ?? string.Empty;
-        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
-        if (string.IsNullOrWhiteSpace(idWeb) || idBase <= 0)
+        // El catálogo público no expone datos privados de cuenta: puede compartirse con Cliente,
+        // Lead, Proveedor o identidad ambigua. La empresa/base se resuelve server-side.
+        var contexto = await ResolverContextoCatalogoPublicoAsync(ct);
+        if (contexto is null)
             return "El catálogo público está disponible, pero no se pudo resolver la empresa/base actual para generar el link. Avisale que un asesor lo comparte.";
 
+        var (idWeb, idBase) = contexto.Value;
         var whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
         var baseUrl = (whatsAppConfig.PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
         if (string.IsNullOrWhiteSpace(baseUrl))
             return "El catálogo público está disponible, pero todavía no se configuró la URL pública del sistema; avisale que un asesor le manda el link.";
 
-        var catalogo = await catalogosService.GetCatalogoAsync(0, ct);
+        var catalogo = await catalogosService.GetCatalogoPublicoAsync(0, expectedBaseId: idBase, ct);
         if (catalogo is null)
             return "No hay un catálogo público predeterminado disponible para compartir en este momento.";
 
         var link = await publicLinkService.TryGetExistingAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, ct)
             ?? await publicLinkService.GetOrCreateAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, catalogo.Nombre, ct);
 
-        return $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
+        var url = $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
+
+        // Cliente identificado (nunca ambiguo) → link PERSONAL: el mismo catálogo + una credencial
+        // firmada server-side con su identidad, para que vea los precios sin volver a loguearse.
+        // Lead/Proveedor/ambigua → link público (sin precios si la base no los muestra a leads).
+        // La cuenta viene resuelta por el servidor, nunca de los argumentos del modelo.
+        if (cuenta is { EsAmbigua: false, Tipo: CuentaComercialTipo.Cliente } && !string.IsNullOrWhiteSpace(cuenta.Codigo))
+        {
+            var credencial = await catalogoClienteLinkService.CrearCredencialAsync(idWeb, idBase, link.IdReferencia, cuenta.Codigo, ct);
+            if (!string.IsNullOrWhiteSpace(credencial))
+                url += $"?{CatalogoClienteLinkService.QueryParameter}={Uri.EscapeDataString(credencial)}";
+        }
+
+        return url;
+    }
+
+    private async Task<(string IdWeb, int IdBase)?> ResolverContextoCatalogoPublicoAsync(CancellationToken ct)
+    {
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (idBase <= 0)
+            return null;
+
+        var baseCentral = await centralBasesService.GetByIdAsync(idBase, ct);
+        if (baseCentral is null || baseCentral.IdBase != idBase || string.IsNullOrWhiteSpace(baseCentral.IdCliente))
+            return null;
+
+        var clienteCentral = await centralClientesService.GetByIdClienteAsync(baseCentral.IdCliente, ct);
+        var idWeb = clienteCentral?.IdWeb?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(idWeb))
+            return null;
+
+        return (idWeb, idBase);
     }
 
     private static string? LeerArgumentoString(string argumentosJson, string nombre)

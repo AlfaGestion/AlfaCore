@@ -5,6 +5,10 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Lote de Costos | Alfa Gestión</PageTitle>
 
@@ -23,36 +27,16 @@ else if (_detail is null)
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">@_detail.Batch.ProviderName</h2>
-                <p class="page-intro__text">
-                    Lote #@_detail.Batch.Id
+    <div class="gd-page gd gd-legacy">
+        <header class="gd-header">
+            <h2>@_detail.Batch.ProviderName</h2>
+            <p>Lote #@_detail.Batch.Id
                     @if (_detail.Profile is not null)
                     {
                         <span> · Perfil: @_detail.Profile.ProviderName@(string.IsNullOrWhiteSpace(_detail.Profile.ProviderAccount) ? string.Empty : $" [{_detail.Profile.ProviderAccount}]")</span>
                     }
-                    <span> · @_detail.Batch.SourceFileName · @_detail.Batch.Status</span>
-                </p>
-            </div>
-            <div class="actions">
-                <a class="btn btn--secondary"
-                   href="/api/costos/importaciones/@_detail.Batch.Id/descargar-archivo"
-                   target="_blank">
-                    <i class="bi bi-file-earmark-arrow-down"></i>
-                    <span>Archivo original</span>
-                </a>
-                <button class="btn btn--primary" @onclick="ProcesarMatchingAsync" disabled="@_busy">
-                    <i class="bi bi-diagram-3"></i>
-                    <span>Procesar matching</span>
-                </button>
-                <button class="btn btn--ghost" @onclick="DeshacerAplicacionAsync" disabled="@(_busy || !_detail.Rows.Any(r => string.Equals(r.Status, "APLICADO", StringComparison.OrdinalIgnoreCase)))">
-                    <i class="bi bi-arrow-counterclockwise"></i>
-                    <span>Deshacer aplicación</span>
-                </button>
-            </div>
-        </section>
+                    <span> · @_detail.Batch.SourceFileName · @_detail.Batch.Status</span></p>
+        </header>
 
         <section class="kpi-grid">
             <article class="kpi-card">
@@ -129,12 +113,7 @@ else
                 </div>
             </div>
 
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="editor-msg @(_isError ? "editor-msg--error" : "editor-msg--ok")" style="margin-bottom:1rem;">
-                    <i class="bi @(_isError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @_message
-                </div>
-            }
+            <AlfaNotification Message="@_notificacion.For(_message, _isError)" OnDismiss="() => _message = string.Empty" />
 
             <div class="costos-lote__grid-shell">
                 <div class="table-wrap costos-lote__table-wrap">
@@ -219,6 +198,9 @@ else
     </div>
 }
 
+@* Ventanas emergentes fuera del wrapper de la página: display:contents, solo aporta el scope .gd
+   para que tomen el aspecto AlfaDesign. *@
+<div class="gd gd-legacy gd-modal-scope">
 @if (_showCandidatesModal)
 {
     <div class="costos-lote__modal-backdrop" @onclick="CerrarCandidatos"></div>
@@ -321,8 +303,11 @@ else
         </div>
     </section>
 }
+</div>
 
 @code {
+    private readonly AlfaNotificationSlot _notificacion = new();
+
     [Parameter] public int Id { get; set; }
 
     private bool _loading = true;
@@ -354,6 +339,70 @@ else
     private bool AreAllVisibleChecked =>
         FilteredRows.Where(r => r.CanBeChecked).Any()
         && FilteredRows.Where(r => r.CanBeChecked).All(r => _checkedRows.Contains(r.RowNumber));
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string _headerSnapshot = string.Empty;
+
+    // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
+    // republica el header después del render de la página.
+    private string HeaderSnapshot() => string.Join('|', _busy, _detail?.Batch.Id, (_detail?.Rows.Any(r => string.Equals(r.Status, "APLICADO", StringComparison.OrdinalIgnoreCase)) ?? false));
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || HeaderSnapshot() != _headerSnapshot)
+            UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        _headerSnapshot = HeaderSnapshot();
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ModuleKey = "costos",
+            Title = _detail is null ? "Lote de costos" : $"Lote #{_detail.Batch.Id}",
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCostos(RouteContext, Nav, "historial"),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "archivo",
+                    Label = "Archivo original",
+                    Icon = "bi-file-earmark-arrow-down",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _detail is null,
+                    OnClick = () => InvokeAsync(async () => { await JS.InvokeVoidAsync("open", $"/api/costos/importaciones/{_detail!.Batch.Id}/descargar-archivo", "_blank"); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "matching",
+                    Label = "Procesar matching",
+                    Icon = "bi-diagram-3",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = _busy || _detail is null,
+                    OnClick = () => InvokeAsync(async () => { await ProcesarMatchingAsync(); StateHasChanged(); })
+                },
+                new PageHeaderAction
+                {
+                    Key = "deshacer",
+                    Label = "Deshacer aplicación",
+                    Icon = "bi-arrow-counterclockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _busy || !(_detail?.Rows.Any(r => string.Equals(r.Status, "APLICADO", StringComparison.OrdinalIgnoreCase)) ?? false),
+                    OnClick = () => InvokeAsync(async () => { await DeshacerAplicacionAsync(); StateHasChanged(); })
+                },
+            ],
+        });
+    }
 
     protected override async Task OnParametersSetAsync()
     {

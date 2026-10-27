@@ -71,7 +71,7 @@ public sealed class AppUserSessionService(
         };
 
         if (_sessionToken is not null)
-            sessionStore.Upsert(_sessionToken, _currentUser);
+            _sessionToken = sessionStore.Reissue(_sessionToken, _currentUser);
         else
             _sessionToken = sessionStore.Store(_currentUser);
 
@@ -110,7 +110,7 @@ public sealed class AppUserSessionService(
         };
 
         if (_sessionToken is not null)
-            sessionStore.Upsert(_sessionToken, _currentUser);
+            _sessionToken = sessionStore.Reissue(_sessionToken, _currentUser);
 
         StateChanged?.Invoke();
     }
@@ -168,7 +168,7 @@ public sealed class AppUserSessionService(
         _currentUser = syncedUser;
 
         if (_sessionToken is not null)
-            sessionStore.Upsert(_sessionToken, _currentUser);
+            _sessionToken = sessionStore.Reissue(_sessionToken, _currentUser);
 
         SyncAuditActor();
         StateChanged?.Invoke();

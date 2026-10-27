@@ -124,11 +124,23 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
         }
         catch (CryptographicException ex)
         {
-            throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura de WhatsApp Embedded Signup no puede abrirse en este proceso.", ex);
+            // El motivo de Data Protection ("key {id} was not found", "Keyset does not exist"...) no trae
+            // material sensible y es lo único que distingue llave faltante de permiso sobre el certificado:
+            // AUX_ERR no guarda la InnerException (caso SERVER-ALFAWEB, 2026-10-26).
+            throw new WhatsAppEmbeddedVaultUnavailableException($"La credencial segura de WhatsApp Embedded Signup no puede abrirse en este proceso. Motivo: {DescribirCadena(ex)}", ex);
         }
 
         if (secret.IsEmpty) throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura del número Embedded Signup está vacía.");
         return new(ownership.WabaId, normalizedPhoneId, _options.GraphApiVersion, secret.ToString(), WhatsAppRuntimeCredentialOrigin.EmbeddedSignup, reference);
+    }
+
+    // Data Protection envuelve el motivo real ("Keyset does not exist", ...) en dos o tres niveles.
+    private static string DescribirCadena(Exception ex)
+    {
+        var partes = new List<string>();
+        for (var actual = ex; actual is not null && partes.Count < 5; actual = actual.InnerException)
+            partes.Add($"{actual.GetType().Name}: {actual.Message}");
+        return string.Join(" --> ", partes);
     }
 
     private static WhatsAppRuntimeCredential Legacy(string normalizedPhoneId, ConversacionWhatsAppConfigDto legacyConfig)

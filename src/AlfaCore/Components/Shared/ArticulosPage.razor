@@ -2,12 +2,15 @@
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.WebUtilities
 @inject IArticulosService ArticulosSvc
+@inject IArticuloImagenFtpService ArticuloImagenFtpSvc
+@inject IBaseMaestraImagenService BaseMaestraImagenSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
 @inject ISessionService SessionSvc
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 @implements IDisposable
 
 @* Módulo Archivos > Maestros > Artículos (MVP) -- mismo patrón estructural que Clientes
@@ -15,7 +18,7 @@
    IPageHeaderService + editor de página completa (no modal) con pestañas. Alcance y decisiones en
    C:\Users\albert\.claude\plans\fluttering-drifting-moonbeam.md. *@
 
-<div class="articulos-page" @onclick="HandlePageClickAsync">
+<div class="articulos-page gd gd-legacy" @onclick="HandlePageClickAsync">
     <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
 
     <AlfaDialog Open="@_showViewSettings"
@@ -60,6 +63,16 @@
                        Loading="@_saving"
                        OnConfirm="ConfirmDeactivateAsync"
                        OnCancel="CloseDeactivateConfirm" />
+
+    <AlfaConfirmDialog Open="@_showBorrarImagenConfirm"
+                       Title="Borrar imagen del artículo"
+                       Message="¿Querés borrar la imagen actual de este artículo?"
+                       SecondaryMessage="La imagen completa y su miniatura se eliminarán del almacenamiento de imágenes."
+                       ConfirmLabel="Borrar imagen"
+                       CancelLabel="Cancelar"
+                       Loading="@_borrandoImagen"
+                       OnConfirm="BorrarImagenAsync"
+                       OnCancel="CerrarBorrarImagenConfirm" />
 
     <BaseMaestraImagenesDialog Open="@_showBuscarImagenModal"
                                Titulo="Imágenes encontradas"
@@ -126,7 +139,13 @@
                                 </th>
                                 @foreach (var column in GetVisibleColumns())
                                 {
-                                    <th class="@GetColumnCssClass(column.Key)">@column.Label</th>
+                                    <th class="@GetColumnCssClass(column.Key) articulos-list-table__th--sortable" @onclick="() => OrdenarPorAsync(column.Key)">
+                                        @column.Label
+                                        @if (string.Equals(_filters.SortBy, column.Key, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <i class="bi @(_filters.SortDescending ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
+                                        }
+                                    </th>
                                 }
                                 <th class="articulos-list-table__actions">Acciones</th>
                             </tr>
@@ -176,18 +195,8 @@
     }
     else
     {
-        <section class="panel-card">
+        <section class="panel-card articulos-editor-card">
             <div class="articulos-summary">
-                <div class="articulos-summary__avatar">
-                    @if (!string.IsNullOrWhiteSpace(_imagenUrl))
-                    {
-                        <img src="@_imagenUrl" alt="Imagen del artículo" onerror="this.style.visibility='hidden'" />
-                    }
-                    else
-                    {
-                        @GetArticuloInitial()
-                    }
-                </div>
                 <div class="articulos-summary__body">
                     <h2>@(string.IsNullOrWhiteSpace(_form.Descripcion) ? "Nuevo artículo" : _form.Descripcion)</h2>
                     <div class="articulos-summary__meta">
@@ -196,36 +205,32 @@
                         {
                             <span><i class="bi bi-circle-fill @(_selectedActivo ? "articulos-status-dot--activo" : "articulos-status-dot--inactivo")"></i>@(_selectedActivo ? "Activo" : "Inactivo")</span>
                         }
-                        <span><i class="bi bi-tag"></i>Precio: @_form.Precio.ToString("N2")</span>
+                        <span><i class="bi bi-tag"></i>Precio: @PrecioVentaResumen.ToString("C2")</span>
+                        @if (PrecioOfertaVigente is decimal oferta)
+                        {
+                            <span class="articulos-offer-meta"><i class="bi bi-lightning-charge-fill"></i>Oferta: @oferta.ToString("C2")</span>
+                        }
                     </div>
-                    @if (!_isNewMode)
-                    {
-                        <div class="articulos-image-actions">
-                            <div class="articulos-image-picker">
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Size="AlfaSize.Sm" Disabled="@_subiendoImagen">
-                                    @(_subiendoImagen ? "Subiendo..." : "Subir imagen")
-                                </AlfaButton>
-                                <InputFile class="articulos-image-input" OnChange="HandleImagenSeleccionadaAsync" accept=".jpg,.jpeg,.png,image/jpeg,image/png" disabled="@_subiendoImagen" />
-                            </div>
-                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-search" Size="AlfaSize.Sm" Disabled="@_subiendoImagen" OnClick="AbrirBusquedaImagenAsync">
-                                Buscar en internet
-                            </AlfaButton>
-                        </div>
-                    }
                 </div>
             </div>
 
-            <AlfaTabs Items="@_tabItems" ActiveKey="@_activeTab.ToString()" ActiveKeyChanged="SetActiveTabAsync" AriaLabel="Secciones del artículo" />
+            <div class="articulos-editor-layout">
+                <div class="articulos-editor-main">
+                    <AlfaTabs Items="@_tabItems" ActiveKey="@_activeTab.ToString()" ActiveKeyChanged="SetActiveTabAsync" AriaLabel="Secciones del artículo" />
 
-            @if (_activeTab == ArticuloTab.Datos)
-            {
-                <div class="articulos-form-grid">
-                    <AlfaInput Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
+                    @if (_activeTab == ArticuloTab.Datos)
+                    {
+                <div class="articulos-form-grid articulos-form-grid--datos">
+                    <div class="articulos-form-row">
+                    <AlfaInput Id="articulo-codigo-editor" Label="Código de artículo" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty"
+                               OnBlur="VerificarCodigoNuevoAsync"
                                Disabled="@(!_isNewMode)" Required="true" MaxLength="25"
-                               HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- numérico o alfanumérico." : "No se puede modificar en un artículo existente.")" />
+                               HelpText="@(_isNewMode ? "Identificador único del artículo (PK) -- se propone el próximo libre, pero podés cambiarlo; si ya existe, se abre para editar." : "No se puede modificar en un artículo existente.")" />
                     <AlfaInput Label="Código de barras" Value="@_form.CodigoBarra" ValueChanged="v => _form.CodigoBarra = v ?? string.Empty" MaxLength="25" />
+                    </div>
 
-                    <AlfaInput Label="Descripción" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Required="true" MaxLength="150" Class="articulos-form-grid__span2" />
+                    <div class="articulos-form-row">
+                    <AlfaInput Label="Descripción" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Required="true" MaxLength="150" />
 
                     <div class="articulos-field">
                         <label class="articulos-field__label">Rubro</label>
@@ -242,6 +247,9 @@
                         </AlfaLookup>
                         <small class="articulos-field__help">Elegí uno existente o escribí uno nuevo para crearlo al grabar.</small>
                     </div>
+                    </div>
+
+                    <div class="articulos-form-row">
                     <div class="articulos-field">
                         <label class="articulos-field__label">Marca</label>
                         <AlfaLookup TItem="ArticuloLookupOptionDto"
@@ -270,7 +278,9 @@
                             <ItemTemplate Context="u">@u.Descripcion</ItemTemplate>
                         </AlfaLookup>
                     </div>
+                    </div>
 
+                    <div class="articulos-form-row">
                     <div class="articulos-field">
                         <label class="articulos-field__label">Proveedor</label>
                         <AlfaLookup TItem="ArticuloLookupOptionDto"
@@ -292,6 +302,7 @@
                                @onchange="e => _form.CodigoArtProveedor = e.Value?.ToString() ?? string.Empty" maxlength="25" />
                         <small class="articulos-field__help">Código que usa el proveedor para identificar este artículo (texto libre, sin validar).</small>
                     </div>
+                    </div>
 
                     <div class="articulos-form-grid__span2">
                         <AlfaCheckbox Value="@_form.Pesable" ValueChanged="v => _form.Pesable = v == true">
@@ -299,36 +310,115 @@
                         </AlfaCheckbox>
                     </div>
                 </div>
-            }
-            else
-            {
-                <div class="articulos-form-grid">
-                    <AlfaInput Label="Costo" Type="number" Value="@_form.Costo.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                               ValueChanged="OnCostoChangedAsync" />
-                    <AlfaInput Label="Precio de venta" Type="number" Value="@_form.Precio.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                               ValueChanged="OnPrecioChangedAsync" />
-                    <AlfaInput Label="Utilidad %" Type="number" Value="@_form.Utilidad.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                               ValueChanged="OnUtilidadChangedAsync" />
-                    <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                               ValueChanged="v => _form.TasaIva = ParseDecimal(v)" />
-                    <div class="articulos-form-grid__span2">
-                        <AlfaCheckbox Value="@_form.Exento" ValueChanged="v => _form.Exento = v == true">
-                            <i class="bi bi-receipt"></i> Exento de IVA
-                        </AlfaCheckbox>
-                    </div>
-                    @if (_lookups.PrecioIncluyeIva)
+                    }
+                    else
                     {
-                        <div class="articulos-form-grid__span2 articulos-hint">
-                            <i class="bi bi-info-circle"></i> Configuración vigente: el precio de venta se carga con IVA incluido.
+                <div class="articulos-precios-layout">
+                    <section class="articulos-precios-config" aria-labelledby="articulos-precios-config-title">
+                        <h3 id="articulos-precios-config-title">Costo y configuración</h3>
+                        <div class="articulos-precios-config-grid">
+                            <AlfaInput Label="Costo" Type="number" Value="@_form.Costo.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                       ValueChanged="OnCostoChangedAsync" />
+                            <AlfaInput Label="Utilidad %" Type="number" Value="@_form.Utilidad.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                       ValueChanged="OnUtilidadChangedAsync" />
+                            <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                       ValueChanged="v => _form.TasaIva = ParseDecimal(v)" />
                         </div>
+                        <div class="articulos-precios-exento">
+                            <AlfaCheckbox Value="@_form.Exento" ValueChanged="v => _form.Exento = v == true">
+                                <i class="bi bi-receipt"></i> Exento de IVA
+                            </AlfaCheckbox>
+                        </div>
+                        @if (_lookups.PrecioIncluyeIva)
+                        {
+                            <div class="articulos-hint">
+                                <i class="bi bi-info-circle"></i> Configuración vigente: el precio de venta se carga con IVA incluido.
+                            </div>
+                        }
+                    </section>
+
+                    <div class="articulos-precios-sections">
+                        <section class="articulos-precios-block" aria-labelledby="articulos-precios-ventas-title">
+                            <h3 id="articulos-precios-ventas-title">Precios de venta</h3>
+                            <div class="articulos-precios-fields">
+                                @for (var clase = 1; clase <= 8; clase++)
+                                {
+                                    var claseActual = clase;
+                                    if (!EsCostoAdicional(claseActual))
+                                    {
+                                        <AlfaInput Label="@GetPrecioLabel(claseActual)" Type="number" Value="@GetPrecioClase(claseActual).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                   ValueChanged="v => OnPrecioClaseChangedAsync(claseActual, v)" />
+                                    }
+                                }
+                            </div>
+                        </section>
+
+                        <section class="articulos-precios-block" aria-labelledby="articulos-precios-adicionales-title">
+                            <h3 id="articulos-precios-adicionales-title">Costos adicionales</h3>
+                            <div class="articulos-precios-fields">
+                                @for (var clase = 1; clase <= 8; clase++)
+                                {
+                                    var claseActual = clase;
+                                    if (EsCostoAdicional(claseActual))
+                                    {
+                                        <AlfaInput Label="@GetPrecioLabel(claseActual)" Type="number" Value="@GetPrecioClase(claseActual).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                   ValueChanged="v => OnPrecioClaseChangedAsync(claseActual, v)" />
+                                    }
+                                }
+                            </div>
+                        </section>
+                    </div>
+                </div>
                     }
                 </div>
-            }
+
+                <aside class="articulos-image-panel" aria-labelledby="articulos-image-panel-title">
+                    <div class="articulos-image-panel__heading">
+                        <h3 id="articulos-image-panel-title">Imagen del artículo</h3>
+                        @if (_subiendoImagen || _borrandoImagen)
+                        {
+                            <span class="articulos-image-panel__status">Procesando...</span>
+                        }
+                    </div>
+                    <div class="articulos-image-panel__preview">
+                        @if (!string.IsNullOrWhiteSpace(_imagenUrl))
+                        {
+                            <img src="@_imagenUrl" alt="Vista previa de la imagen del artículo" onerror="this.style.visibility='hidden'" />
+                        }
+                        else
+                        {
+                            <span aria-hidden="true"><i class="bi bi-image"></i></span>
+                        }
+                    </div>
+                    <p class="articulos-image-panel__help">@(_isNewMode ? "Guardá el artículo para habilitar la gestión de imágenes." : "Administrá la imagen asociada al artículo.")</p>
+                    <div class="articulos-image-panel__actions">
+                        <AlfaButton Class="articulos-image-action--full" Variant="AlfaButtonVariant.Ghost" Icon="bi bi-clipboard-image" Size="AlfaSize.Sm" Disabled="@(_isNewMode || _subiendoImagen)" OnClick="PegarImagenAsync">Pegar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-search" Size="AlfaSize.Sm" Disabled="@(_isNewMode || _subiendoImagen)" OnClick="AbrirBusquedaImagenAsync">Buscar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-box-arrow-up-right" Size="AlfaSize.Sm" Disabled="@(_isNewMode || string.IsNullOrWhiteSpace(_imagenUrl))" OnClick="AbrirImagenAsync">Abrir</AlfaButton>
+                        <AlfaButton Class="articulos-image-action--full" Variant="AlfaButtonVariant.Ghost" Icon="bi bi-google" Size="AlfaSize.Sm" Disabled="@(_isNewMode || _subiendoImagen)" OnClick="BuscarImagenEnGoogleAsync">Buscar en Google</AlfaButton>
+                        <AlfaButton Class="articulos-image-action--full" Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Size="AlfaSize.Sm" Disabled="@(_isNewMode || string.IsNullOrWhiteSpace(_imagenUrl) || _borrandoImagen)" OnClick="SolicitarBorrarImagen">Borrar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-download" Size="AlfaSize.Sm" Disabled="@(_isNewMode || string.IsNullOrWhiteSpace(_imagenUrl))" OnClick="DescargarImagenAsync">Descargar</AlfaButton>
+                        <div class="articulos-image-picker articulos-image-action--full">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-file-earmark-arrow-up" Size="AlfaSize.Sm" Disabled="@(_isNewMode || _subiendoImagen)" OnClick="SeleccionarImagenAsync">Seleccionar imagen</AlfaButton>
+                            <InputFile id="articulo-image-input" class="articulos-image-input" style="display:none" tabindex="-1" aria-hidden="true" OnChange="HandleImagenSeleccionadaAsync" accept=".jpg,.jpeg,.png,image/jpeg,image/png" disabled="@(_isNewMode || _subiendoImagen)" />
+                        </div>
+                        <span class="articulos-image-file-name">@(_nombreImagenSeleccionada ?? "Ningún archivo seleccionado")</span>
+                        <div class="articulos-image-action--full" title="Buscar imágenes en Internet desde AlfaCore">
+                            <AlfaButton Class="articulos-image-action--full" Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Size="AlfaSize.Sm" Disabled="@(_isNewMode || _subiendoImagen)" OnClick="AbrirBusquedaImagenAsync">Buscar imágenes</AlfaButton>
+                        </div>
+                    </div>
+                </aside>
+            </div>
         </section>
     }
 </div>
 
 @code {
+    // Último encabezado publicado por esta página. Al cerrarse solo lo limpia si sigue siendo el
+    // suyo: Blazor dispone la página anterior DESPUÉS de inicializar la nueva, y un Clear() sin
+    // condición borraba el header recién publicado (se veía un instante el sidebar legacy).
+    private PageHeaderConfig? _pageHeaderPublicado;
+
     private readonly List<ArticuloGridItemDto> _items = [];
     private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
     private ArticuloFilters _filters = new();
@@ -346,6 +436,7 @@
     private bool _showViewSettings;
     private bool _showEditor;
     private bool _isNewMode;
+    private bool _focusCodigoNuevoAfterRender;
     private bool _selectedActivo = true;
     private string _selectedCodigo = string.Empty;
     private ArticuloTab _activeTab = ArticuloTab.Datos;
@@ -359,13 +450,21 @@
     private ArticuloLookupOptionDto? _proveedorSeleccionado;
 
     private string _imagenUrl = string.Empty;
+    private string? _nombreImagenSeleccionada;
     private bool _subiendoImagen;
+    private bool _borrandoImagen;
+    private bool _showBorrarImagenConfirm;
     private bool _showBuscarImagenModal;
     private IReadOnlyList<BaseMaestraImagenOrigenDto> _buscarImagenOrigen = [];
     private bool _incluirExistentesEnBusqueda;
     private string? _ftpCodigoCta;
     private ArticuloSaveRequest _form = new();
     private AppUiMessage? _feedback;
+
+    private decimal PrecioVentaResumen => _form.Precio > 0m ? _form.Precio : _form.Precio4;
+    private decimal? PrecioOfertaVigente => _form.PrecioOferta is > 0m && _form.PrecioOferta < PrecioVentaResumen
+        ? _form.PrecioOferta
+        : null;
 
     private bool _showDeactivateConfirm;
     private readonly List<string> _pendingDeactivateCodes = [];
@@ -415,10 +514,16 @@
         UpdatePageHeader();
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
             UpdatePageHeader();
+
+        if (_focusCodigoNuevoAfterRender && _showEditor && _isNewMode)
+        {
+            _focusCodigoNuevoAfterRender = false;
+            await Js.InvokeVoidAsync("eval", "document.getElementById('articulo-codigo-editor')?.focus()");
+        }
     }
 
     private void OnHeaderChanged() => _ = InvokeAsync(StateHasChanged);
@@ -427,7 +532,8 @@
     {
         Nav.LocationChanged -= OnLocationChanged;
         PageHeader.Changed -= OnHeaderChanged;
-        PageHeader.Clear();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
     }
@@ -506,7 +612,7 @@
                 });
             }
 
-            PageHeader.Set(new PageHeaderConfig
+            PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
             {
                 Title = _isNewMode ? "Nuevo artículo" : $"Editar {_form.Descripcion}",
                 Breadcrumb = ["Archivos", "Maestros", "Artículos"],
@@ -533,7 +639,7 @@
         actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
         actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
 
-        PageHeader.Set(new PageHeaderConfig
+        PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
         {
             Title = "Artículos",
             Breadcrumb = ["Archivos", "Maestros", "Artículos"],
@@ -854,6 +960,26 @@
         UpdatePageHeader();
     }
 
+    /// <summary>Clic en un encabezado de columna: primer clic ordena ascendente, un segundo clic sobre
+    /// la misma columna invierte a descendente -- orden real contra la base (no solo la página
+    /// visible), consistente con la paginación del listado.</summary>
+    private async Task OrdenarPorAsync(string key)
+    {
+        if (_loadingList)
+            return;
+
+        if (string.Equals(_filters.SortBy, key, StringComparison.OrdinalIgnoreCase))
+            _filters.SortDescending = !_filters.SortDescending;
+        else
+        {
+            _filters.SortBy = key;
+            _filters.SortDescending = false;
+        }
+
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
     private async Task LimpiarFiltrosAsync()
     {
         _filters = new ArticuloFilters();
@@ -937,6 +1063,7 @@
         _showEditor = true;
         _showViewSettings = false;
         _isNewMode = true;
+        _focusCodigoNuevoAfterRender = true;
         _selectedCodigo = string.Empty;
         _selectedActivo = true;
         _activeTab = ArticuloTab.Datos;
@@ -948,7 +1075,37 @@
         _proveedorSeleccionado = null;
         _imagenUrl = string.Empty;
         UpdatePageHeader();
-        await Task.CompletedTask;
+
+        // Igual que la planilla legacy (Ma_art.frm): propone el próximo código numérico libre como
+        // punto de partida editable -- el usuario puede dejarlo, o sobreescribirlo con cualquier otro
+        // código (existente para editar, o nuevo para dar de alta con ese código puntual).
+        var siguiente = await UiOps.RunAsync(() => ArticulosSvc.GetNextCodigoAsync(), "No se pudo proponer el próximo código.");
+        if (siguiente.Success && _isNewMode && string.IsNullOrWhiteSpace(_form.Codigo))
+        {
+            _form.Codigo = siguiente.Value ?? string.Empty;
+            UpdatePageHeader();
+        }
+    }
+
+    /// <summary>Se dispara al salir del campo Código mientras se está dando de alta un artículo nuevo
+    /// -- reproduce el flujo de "Altas" del legacy: si el código tipeado ya existe, abre ESE artículo
+    /// para editar en vez de dejar seguir cargando un alta duplicada. Evita tener que buscarlo en la
+    /// lista completa cuando hay cientos de códigos parecidos.</summary>
+    private async Task VerificarCodigoNuevoAsync()
+    {
+        if (!_isNewMode)
+            return;
+
+        var codigo = _form.Codigo.Trim();
+        if (codigo.Length == 0)
+            return;
+
+        var existente = await UiOps.RunAsync(() => ArticulosSvc.GetByIdAsync(codigo), "No se pudo verificar el código.");
+        if (existente.Success && existente.Value is not null)
+        {
+            SetFeedback(AppUiMessage.Info("Artículo existente", $"El código {existente.Value.Codigo} ya existe -- abriendo para editar."));
+            await AbrirEditorAsync(existente.Value.Codigo);
+        }
     }
 
     private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
@@ -995,6 +1152,11 @@
             ? null
             : new ArticuloLookupOptionDto { Codigo = _form.CuentaProveedor, Descripcion = result.Value.CuentaProveedorNombre };
         _proveedorTexto = _proveedorSeleccionado is null ? string.Empty : $"{_proveedorSeleccionado.Codigo} -- {_proveedorSeleccionado.Descripcion}";
+        // No confiar en a.UTILIDAD (la columna de la base): igual que el legacy (CalcularUtlPrecio se
+        // ejecuta también al abrir el artículo, no solo al tipear), se recalcula siempre desde
+        // Costo/Precio/IVA -- la columna queda desactualizada apenas el precio se toca por otra vía
+        // (Aumento Global, planilla, etc.) y termina mostrando valores sin sentido como negativos.
+        RecalcularUtilidadDesdePrecio();
         UpdatePageHeader();
         await LoadImagenAsync();
     }
@@ -1019,6 +1181,7 @@
         if (file is null || _isNewMode)
             return;
 
+        _nombreImagenSeleccionada = file.Name;
         _subiendoImagen = true;
         try
         {
@@ -1042,6 +1205,88 @@
         finally
         {
             _subiendoImagen = false;
+        }
+    }
+
+    private Task SeleccionarImagenAsync()
+        => Js.InvokeVoidAsync("eval", "document.getElementById('articulo-image-input')?.click()").AsTask();
+
+    private async Task PegarImagenAsync()
+    {
+        if (_isNewMode || _subiendoImagen)
+            return;
+
+        var result = await Js.InvokeAsync<ClipboardPasteResult>(
+            "alfaCoreInterfacesUpload.pasteImageFromClipboard", "#articulo-image-input");
+        if (!result.Ok)
+        {
+            SetFeedback(AppUiMessage.Warning(
+                "No se pudo pegar la imagen",
+                string.IsNullOrWhiteSpace(result.Message)
+                    ? "No se detectó ninguna imagen en el portapapeles."
+                    : result.Message));
+        }
+    }
+
+    private async Task AbrirImagenAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_imagenUrl))
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openUrl", _imagenUrl);
+    }
+
+    private async Task DescargarImagenAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_imagenUrl))
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadUrl", _imagenUrl, $"articulo-{_form.Codigo}.jpg");
+    }
+
+    private async Task BuscarImagenEnGoogleAsync()
+    {
+        if (_isNewMode)
+            return;
+
+        var url = BaseMaestraImagenSvc.BuildGoogleImagesSearchUrl(_form.CodigoBarra, _form.Descripcion);
+        if (!string.IsNullOrWhiteSpace(url))
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openUrl", url);
+    }
+
+    private void SolicitarBorrarImagen()
+    {
+        if (!string.IsNullOrWhiteSpace(_imagenUrl))
+            _showBorrarImagenConfirm = true;
+    }
+
+    private void CerrarBorrarImagenConfirm() => _showBorrarImagenConfirm = false;
+
+    private async Task BorrarImagenAsync()
+    {
+        if (_isNewMode || string.IsNullOrWhiteSpace(_imagenUrl))
+            return;
+
+        _borrandoImagen = true;
+        try
+        {
+            _ftpCodigoCta ??= await ArticulosSvc.GetFtpCodigoCtaAsync();
+            var idBase = SessionSvc.GetActiveSession()?.BaseId;
+            if (string.IsNullOrWhiteSpace(_ftpCodigoCta))
+            {
+                SetFeedback(AppUiMessage.Warning("Borrar imagen", "No se pudo determinar el almacenamiento de imágenes."));
+                return;
+            }
+
+            await ArticuloImagenFtpSvc.EliminarImagenAsync(_ftpCodigoCta, idBase, _form.Codigo, thumbnail: false);
+            await ArticuloImagenFtpSvc.EliminarImagenAsync(_ftpCodigoCta, idBase, _form.Codigo, thumbnail: true);
+            _imagenUrl = string.Empty;
+            _showBorrarImagenConfirm = false;
+            SetFeedback(AppUiMessage.Success("Imagen borrada", "La imagen del artículo se eliminó correctamente."));
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No se pudo borrar la imagen del artículo."));
+        }
+        finally
+        {
+            _borrandoImagen = false;
         }
     }
 
@@ -1138,6 +1383,13 @@
             _imagenUrl = await ArticulosSvc.GetImagenUrlAsync(_form.Codigo, forzarRecarga: true);
         else
             await BuscarAsync();
+    }
+
+    private sealed class ClipboardPasteResult
+    {
+        public bool Ok { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public int AddedCount { get; set; }
     }
 
     private void CerrarEditor()
@@ -1314,10 +1566,14 @@
         return Task.CompletedTask;
     }
 
-    private Task OnPrecioChangedAsync(string? value)
+    private Task OnPrecioClaseChangedAsync(int clase, string? value)
     {
-        _form.Precio = ParseDecimal(value);
-        RecalcularUtilidadDesdePrecio();
+        SetPrecioClase(clase, ParseDecimal(value));
+        if (clase == _lookups.ClasePrecioVenta)
+        {
+            _form.Precio = GetPrecioClase(clase);
+            RecalcularUtilidadDesdePrecio();
+        }
         return Task.CompletedTask;
     }
 
@@ -1331,12 +1587,18 @@
         }
 
         _form.Precio = Math.Round(precio, 2);
+        SetPrecioClase(_lookups.ClasePrecioVenta, _form.Precio);
     }
 
     private void RecalcularUtilidadDesdePrecio()
     {
         if (_form.Costo <= 0)
+        {
+            // Sin costo cargado la utilidad no tiene sentido (división por cero) -- se deja en 0 en
+            // vez de arrastrar el valor crudo de a.UTILIDAD, que puede quedar desactualizado.
+            _form.Utilidad = 0;
             return;
+        }
 
         var precioNeto = _form.Precio;
         if (_lookups.PrecioIncluyeIva && !_form.Exento)
@@ -1346,6 +1608,47 @@
         }
 
         _form.Utilidad = _form.Costo >= precioNeto ? 0 : Math.Round(((precioNeto * 100m) / _form.Costo) - 100m, 2);
+    }
+
+    private string GetPrecioLabel(int clase)
+    {
+        var nombre = _lookups.NombresPrecios.ElementAtOrDefault(clase - 1)?.Trim();
+        return string.IsNullOrWhiteSpace(nombre) ? $"Precio {clase}" : nombre;
+    }
+
+    private bool EsCostoAdicional(int clase)
+    {
+        var nombre = GetPrecioLabel(clase).Trim().ToUpperInvariant();
+        return nombre.Contains("FLETE", StringComparison.Ordinal)
+            || nombre.Contains("SEGURO", StringComparison.Ordinal);
+    }
+
+    private decimal GetPrecioClase(int clase) => clase switch
+    {
+        1 => _form.Precio1,
+        2 => _form.Precio2,
+        3 => _form.Precio3,
+        4 => _form.Precio4,
+        5 => _form.Precio5,
+        6 => _form.Precio6,
+        7 => _form.Precio7,
+        8 => _form.Precio8,
+        _ => 0m
+    };
+
+    private void SetPrecioClase(int clase, decimal value)
+    {
+        switch (clase)
+        {
+            case 1: _form.Precio1 = value; break;
+            case 2: _form.Precio2 = value; break;
+            case 3: _form.Precio3 = value; break;
+            case 4: _form.Precio4 = value; break;
+            case 5: _form.Precio5 = value; break;
+            case 6: _form.Precio6 = value; break;
+            case 7: _form.Precio7 = value; break;
+            case 8: _form.Precio8 = value; break;
+        }
     }
 
     private string GetArticuloInitial()
