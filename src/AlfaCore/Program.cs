@@ -3905,11 +3905,20 @@ public class Program
             return null;
 
         var config = await configService.GetWebChatConfigAsync(idBase > 0 ? idBase : null, ct);
-        if (!config.Activo || !config.IsOriginAllowed(request.Headers.Origin.ToString()))
+        if (!config.Activo || !(IsWebChatSameOriginRequest(request) || config.IsOriginAllowed(request.Headers.Origin.ToString())))
             return null;
 
         return config;
     }
+
+    /// <summary>
+    /// Pedido hecho desde una pagina del propio AlfaCore (ej. /webchat/soporte, que abre Alfa Gestion).
+    /// El navegador no manda Origin en un GET al mismo sitio, asi que la lista de dominios lo
+    /// rechazaba; Sec-Fetch-Site lo pone el navegador y una pagina externa no lo puede falsificar.
+    /// </summary>
+    private static bool IsWebChatSameOriginRequest(HttpRequest request)
+        => string.IsNullOrWhiteSpace(request.Headers.Origin.ToString())
+           && string.Equals(request.Headers["Sec-Fetch-Site"].ToString(), "same-origin", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<IResult> HandleWebChatConfigAsync(
         string siteKey,
