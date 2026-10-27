@@ -713,17 +713,22 @@
                                 <input @ref="_tarifaImporteInput" type="number" step="0.01" @bind="_tarifaForm.Importe" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" />
                             </div>
 
-                            <div class="field field--wide carga-viajes-tarifa-editor__fixed">
+                            <div class="field field--wide carga-viajes-tarifa-editor__additional">
                                 <label>Adicionales de esta tarifa</label>
+                                <div class="carga-viajes-tarifa-editor__fixed-hint">En cada adicional se usa el importe o el porcentaje que tenga un valor distinto de cero.</div>
                                 <div class="carga-viajes-tarifa-editor__fixed-grid">
                                     <div class="carga-viajes-tarifa-editor__fixed-item">
                                         <div class="field">
-                                            <label>Adicional 1 descripción</label>
+                                            <label>Adicional 1 · Descripción</label>
                                             <input type="text" @bind="_tarifaForm.AdicionalFijo1Descripcion" placeholder="Dsp de 8hs" />
                                         </div>
                                         <div class="field">
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo1Importe" />
+                                        </div>
+                                        <div class="field">
+                                            <label>Porcentaje (%)</label>
+                                            <input type="number" min="0" step="0.01" @bind="_tarifaForm.PorcentajeAdic" />
                                         </div>
                                         <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo1PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
                                             <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo1PideCantidad" />
@@ -733,12 +738,16 @@
                                     </div>
                                     <div class="carga-viajes-tarifa-editor__fixed-item">
                                         <div class="field">
-                                            <label>Adicional 2 descripción</label>
+                                            <label>Adicional 2 · Descripción</label>
                                             <input type="text" @bind="_tarifaForm.AdicionalFijo2Descripcion" placeholder="Otro adicional" />
                                         </div>
                                         <div class="field">
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo2Importe" />
+                                        </div>
+                                        <div class="field">
+                                            <label>Porcentaje (%)</label>
+                                            <input type="number" min="0" step="0.01" @bind="_tarifaForm.PorcentajeAdic1" />
                                         </div>
                                         <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo2PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
                                             <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo2PideCantidad" />
@@ -748,12 +757,16 @@
                                     </div>
                                     <div class="carga-viajes-tarifa-editor__fixed-item">
                                         <div class="field">
-                                            <label>Adicional 3 descripción</label>
+                                            <label>Adicional 3 · Descripción</label>
                                             <input type="text" @bind="_tarifaForm.AdicionalFijo3Descripcion" />
                                         </div>
                                         <div class="field">
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo3Importe" />
+                                        </div>
+                                        <div class="field">
+                                            <label>Porcentaje (%)</label>
+                                            <input type="number" min="0" step="0.01" @bind="_tarifaForm.PorcentajeAdic2" />
                                         </div>
                                         <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo3PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
                                             <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo3PideCantidad" />
@@ -763,7 +776,18 @@
                                     </div>
                                 </div>
                                 <div class="carga-viajes-tarifa-editor__fixed-hint">
-                                    Si una descripción tiene importe 0, se mostrará como advertencia visual.
+                                    Si importe y porcentaje quedan en cero, el adicional no se aplicará. Los porcentajes adicionales 4 y 5 se conservan en los campos avanzados.
+                                </div>
+                                <div class="carga-viajes-tarifa-editor__subsection-title carga-viajes-tarifa-editor__subsection-title--secondary">Porcentajes adicionales 4 y 5</div>
+                                <div class="carga-viajes-tarifa-editor__percentages-grid carga-viajes-tarifa-editor__percentages-grid--secondary">
+                                    <div class="field">
+                                        <label>Porcentaje 4 (%)</label>
+                                        <input type="number" min="0" step="0.01" @bind="_tarifaForm.PorcentajeAdic3" />
+                                    </div>
+                                    <div class="field">
+                                        <label>Porcentaje 5 (%)</label>
+                                        <input type="number" min="0" step="0.01" @bind="_tarifaForm.PorcentajeAdic4" />
+                                    </div>
                                 </div>
                                 <div class="actions" style="justify-content:flex-start; margin-top: .75rem;">
                                     <button type="button"
@@ -2109,6 +2133,10 @@
                                                         </button>
                                                     </div>
                                                 </div>
+                                                <label class="carga-viajes-viaje-tarifas__zero-toggle">
+                                                    <input type="checkbox" @bind="_viajeTarifasIgnorarCero" />
+                                                    <span>Ignorar tarifas en $0</span>
+                                                </label>
 
                                                 @if (_viajeTarifasLoading)
                                                 {
@@ -2116,7 +2144,7 @@
                                                 }
                                                 else if (GetVisibleViajeTarifas().Count == 0)
                                                 {
-                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
+                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">@(_viajeTarifasIgnorarCero ? "No hay tarifas con importe mayor a cero para mostrar." : "No hay tarifas para mostrar con ese filtro.")</div>
                                                 }
                                                 else
                                                 {
@@ -2214,10 +2242,8 @@
                                        inputmode="decimal"
                                        class="carga-viajes-viaje__money-input"
                                        value="@_viajeImporteClienteTexto"
-                                       disabled="@_viajeReadOnly"
-                                       @oninput="OnViajeImporteClienteTextChangedAsync"
-                                       @onblur="OnViajeImporteClienteBlurAsync"
-                                       @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
+                                       readonly="true"
+                                       aria-readonly="true" />
                             </div>
                             <div class="field carga-viajes-viaje__importe">
                                 <label>Importe fletero</label>
@@ -2226,10 +2252,8 @@
                                        inputmode="decimal"
                                        class="carga-viajes-viaje__money-input"
                                        value="@_viajeImporteFleteroTexto"
-                                       disabled="@_viajeReadOnly"
-                                       @oninput="OnViajeImporteFleteroTextChangedAsync"
-                                       @onblur="OnViajeImporteFleteroBlurAsync"
-                                       @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajePeajeAsync)" />
+                                       readonly="true"
+                                       aria-readonly="true" />
                             </div>
                             <div class="field">
                                 <label>Peaje</label>
@@ -2270,7 +2294,10 @@
                                                @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         <span class="carga-viajes-adicionales__simple-main">
                                             <span class="carga-viajes-adicionales__simple-name">@GetAdicionalLabel(index)</span>
-                                            <span class="carga-viajes-adicionales__simple-percent">@GetViajeAdicionalPercentText(index)</span>
+                                            <span class="carga-viajes-adicionales__simple-percent">
+                                                <span class="carga-viajes-adicionales__simple-type">@(GetConfigAdicionalEsPorcentaje(index) ? "Porcentaje" : "Importe fijo")</span>
+                                                @GetViajeAdicionalPercentText(index)
+                                            </span>
                                         </span>
                                         @{
                                             var adicionalImporte = GetViajeAdicionalImporte(index);
@@ -2651,6 +2678,7 @@
     private bool _showViajeTarifasClientePanel;
     private bool _viajeTarifasLoading;
     private string _viajeTarifasSearch = string.Empty;
+    private bool _viajeTarifasIgnorarCero = true;
     private string _viajeTarifasSelectionHint = string.Empty;
     private AppUiMessage? _viajeTarifasFeedback;
     private readonly List<CargaViajeTarifaClienteResumenDto> _viajeTarifasClienteRows = [];
@@ -4956,6 +4984,9 @@
                 ? $"{GetViajeAdicionalPercent(index):0.##}%"
                 : FormatMoney(GetViajeAdicionalPercent(index));
 
+    private static string FormatAdicionalPercentInput(decimal value)
+        => value.ToString("0.##", MoneyCulture);
+
     private decimal GetViajeAdicionalPercent(int index)
         => !GetConfigAdicionalHabilitado(index)
             ? 0m
@@ -5166,6 +5197,21 @@
         MarkViajeDirty();
         await InvokeAsync(StateHasChanged);
         await Task.CompletedTask;
+    }
+
+    private async Task OnViajeAdicionalPercentChangedAsync(int index, ChangeEventArgs args)
+    {
+        if (!GetConfigAdicionalHabilitado(index) || !GetConfigAdicionalEsPorcentaje(index))
+            return;
+
+        if (!TryParseMoneyInput(args.Value?.ToString(), out var value))
+            return;
+
+        value = Math.Max(0m, value);
+        SetViajeAdicionalPercent(index, value);
+        _viajeAdicionalesActivos[index] = value > 0m;
+        MarkViajeDirty();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ToggleViajeAdicionalFijoAsync(int index)
@@ -6023,9 +6069,11 @@
                 var existentes = await CargarTarifasIaCandidatasAsync(row.TarifaFletero);
                 var tarifa = BuscarTarifaIaCoincidencia(existentes, row);
 
-                if (tarifa is null && (row.TarifaFletero
-                    ? string.IsNullOrWhiteSpace(row.ChoferCodigo) && string.IsNullOrWhiteSpace(row.Chofer)
-                    : string.IsNullOrWhiteSpace(row.ClienteCodigo) && string.IsNullOrWhiteSpace(row.Cliente)))
+                // El cliente vacío es válido: representa una tarifa general.
+                // Solo un alta de fletero necesita obligatoriamente un chofer.
+                if (tarifa is null && row.TarifaFletero
+                    && string.IsNullOrWhiteSpace(row.ChoferCodigo)
+                    && string.IsNullOrWhiteSpace(row.Chofer))
                 {
                     omitidas++;
                     continue;
@@ -7665,6 +7713,7 @@
         _viajeTarifasFeedback = null;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasSearch = string.Empty;
+        _viajeTarifasIgnorarCero = true;
         _viajeTarifasLoading = true;
         await InvokeAsync(StateHasChanged);
 
@@ -7734,10 +7783,14 @@
             return [];
 
         var search = SearchTextHelper.Normalize(_viajeTarifasSearch);
-        if (search.Length == 0)
-            return _viajeTarifasClienteRows;
+        var tarifasFiltradas = _viajeTarifasIgnorarCero
+            ? _viajeTarifasClienteRows.Where(tarifa => tarifa.ImporteCliente > 0m || tarifa.ImporteFletero > 0m)
+            : _viajeTarifasClienteRows.AsEnumerable();
 
-        return _viajeTarifasClienteRows
+        if (search.Length == 0)
+            return tarifasFiltradas.ToList();
+
+        return tarifasFiltradas
             .Where(tarifa =>
                 SearchTextHelper.Normalize(tarifa.DestinoNombre).Contains(search, StringComparison.OrdinalIgnoreCase) ||
                 SearchTextHelper.Normalize(tarifa.TipoVehiculoNombre).Contains(search, StringComparison.OrdinalIgnoreCase) ||
@@ -7798,7 +7851,9 @@
         _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
 
         _viajeForm.ImporteCliente = tarifa.ImporteCliente;
-        _viajeForm.ImporteFletero = 0m;
+        // La fila seleccionada ya trae el importe fletero asociado (incluido el
+        // fallback general). No debe perderse solo porque todavía no haya chofer.
+        _viajeForm.ImporteFletero = Math.Max(0m, tarifa.ImporteFletero);
         SyncViajeMoneyTexts();
 
         var hadChoferSelected = !string.IsNullOrWhiteSpace(_viajeForm.Chofer);
@@ -7846,9 +7901,7 @@
         }
         else
         {
-            _viajeForm.ImporteFletero = 0m;
-            SyncViajeMoneyTexts();
-            if (!hadChoferSelected)
+            if (!hadChoferSelected && tarifa.ImporteFletero <= 0m)
                 _viajeTarifasSelectionHint = "Seleccione un chofer fletero para sumar la tarifa fletero.";
         }
 
@@ -8530,9 +8583,9 @@
 
     private void SyncViajeMoneyTexts()
     {
-        _viajeImporteClienteTexto = FormatMoney(Math.Max(0m, _viajeForm.ImporteCliente));
-        _viajeImporteFleteroTexto = FormatMoney(Math.Max(0m, _viajeForm.ImporteFletero));
-        _viajePeajeTexto = FormatMoney(Math.Max(0m, _viajeForm.Peaje));
+        _viajeImporteClienteTexto = FormatMoneyInput(Math.Max(0m, _viajeForm.ImporteCliente));
+        _viajeImporteFleteroTexto = FormatMoneyInput(Math.Max(0m, _viajeForm.ImporteFletero));
+        _viajePeajeTexto = FormatMoneyInput(Math.Max(0m, _viajeForm.Peaje));
     }
 
     private static string FormatReporteDate(DateTime? value)
@@ -11298,6 +11351,7 @@
         _viajeTarifasLoading = false;
         _viajeTarifasClienteRows.Clear();
         _viajeTarifasSearch = string.Empty;
+        _viajeTarifasIgnorarCero = true;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasFeedback = null;
         _viajeTarifasPanelPositionPending = false;

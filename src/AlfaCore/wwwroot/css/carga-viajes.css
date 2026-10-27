@@ -668,6 +668,31 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-liquidaciones__separat
     line-height: 1.1;
 }
 
+.carga-viajes-adicionales__simple-type {
+    margin-right: .2rem;
+    color: var(--alfa-text-muted);
+    font-size: .65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.carga-viajes-adicionales__simple-percent-editor {
+    display: inline-flex;
+    align-items: center;
+    gap: .2rem;
+}
+
+.carga-viajes-adicionales__simple-percent-editor input {
+    width: 4.25rem;
+    padding: .16rem .3rem;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: 4px;
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+    font: inherit;
+    text-align: right;
+}
+
 .carga-viajes-adicionales__simple-amount {
     font-size: .8rem;
     font-weight: 800;
@@ -1303,8 +1328,39 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-tarifas__importe-cell 
     background: linear-gradient(180deg, color-mix(in srgb, var(--alfa-accent) 22%, transparent), var(--alfa-bg-surface));
 }
 
-.carga-viajes-tarifa-editor__fixed {
+.carga-viajes-tarifa-editor__additional {
     margin-top: .15rem;
+    padding: .75rem;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
+}
+
+.carga-viajes-tarifa-editor__additional > label {
+    display: block;
+    margin-bottom: .45rem;
+    font-weight: 800;
+}
+
+.carga-viajes-tarifa-editor__subsection-title {
+    margin: .6rem 0 .35rem;
+    color: var(--alfa-text-primary);
+    font-size: .76rem;
+    font-weight: 800;
+}
+
+.carga-viajes-tarifa-editor__percentages-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .6rem;
+}
+
+.carga-viajes-tarifa-editor__percentages-grid .field {
+    gap: .18rem;
+}
+
+.carga-viajes-tarifa-editor__percentages-grid label {
+    font-size: .72rem;
 }
 
 .carga-viajes-tarifa-editor__fixed-grid {
@@ -1337,6 +1393,10 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-tarifas__importe-cell 
 }
 
 @media (max-width: 1120px) {
+    .carga-viajes-tarifa-editor__percentages-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .carga-viajes-tarifa-editor__fixed-grid {
         grid-template-columns: 1fr;
     }
