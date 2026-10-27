@@ -19,6 +19,7 @@
             <ConversacionesConfigTexto Id="webchat-bienvenida" Label="Mensaje de bienvenida" Filas="2"
                                        Placeholder="@ConversacionWebChatConfigDto.DefaultMensajeBienvenida"
                                        Value="@Config.MensajeBienvenida" ValueChanged="@((string? v) => Config.MensajeBienvenida = v ?? string.Empty)" />
+            <AlfaCheckbox Class="cfg-full" Value="@Config.PermiteImagenes" ValueChanged="@((bool? v) => Config.PermiteImagenes = v == true)">Permitir que el visitante mande imágenes (botón de clip o Ctrl+V; JPG, PNG, GIF o WEBP de hasta 5 MB)</AlfaCheckbox>
         </ConversacionesConfigTarjeta>
 
         <ConversacionesConfigTarjeta Titulo="Dominios permitidos"

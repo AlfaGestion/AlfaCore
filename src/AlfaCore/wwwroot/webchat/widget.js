@@ -28,6 +28,10 @@
     var apiBase = new URL(script.src, location.href).origin + "/api/webchat/" + encodeURIComponent(siteKey);
 
     var POLL_ACTIVE_MS = 3500;
+    var IMAGEN_MAX_BYTES = 5 * 1024 * 1024;   // mismo límite que el servidor
+    var IMAGEN_LADO_MAX = 1920;               // fotos más grandes se achican antes de enviar
+    var IMAGEN_REDUCIR_DESDE = 1536 * 1024;   // o si pesan más que esto
+    var imagenesCache = {};                   // idAdjunto -> object URL (no se vuelve a pedir)
     var STORAGE_VISITOR = "alfacore-webchat-visitor";
     var STORAGE_NAME = "alfacore-webchat-nombre";
 
@@ -148,6 +152,34 @@
         send.type = "submit";
         send.setAttribute("aria-label", "Enviar");
         send.appendChild(svgIcon("M3 20l18-8L3 4v6l12 2-12 2z"));
+        if (config.permiteImagenes) {
+            var fileInput = el("input", "ac-file");
+            fileInput.type = "file";
+            fileInput.accept = "image/png,image/jpeg,image/webp,image/gif";
+            fileInput.hidden = true;
+            fileInput.addEventListener("change", function () {
+                if (fileInput.files && fileInput.files[0]) enviarImagen(fileInput.files[0]);
+                fileInput.value = "";
+            });
+            var attach = el("button", "ac-attach");
+            attach.type = "button";
+            attach.title = "Enviar una imagen (también podés pegar una captura con Ctrl+V)";
+            attach.setAttribute("aria-label", "Enviar una imagen");
+            attach.appendChild(svgIcon("M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6z"));
+            attach.addEventListener("click", function () { fileInput.click(); });
+            form.appendChild(fileInput);
+            form.appendChild(attach);
+            // Ctrl+V de una captura: se manda la imagen; si lo pegado es texto, sigue el pegado normal.
+            input.addEventListener("paste", function (e) {
+                var items = (e.clipboardData && e.clipboardData.items) || [];
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].kind === "file" && /^image\//.test(items[i].type)) {
+                        var f = items[i].getAsFile();
+                        if (f) { e.preventDefault(); enviarImagen(f); return; }
+                    }
+                }
+            });
+        }
         form.appendChild(input);
         form.appendChild(send);
         form.addEventListener("submit", function (e) { e.preventDefault(); submit(); });
@@ -222,33 +254,50 @@
         var nombre = ui.nameInput.value.trim();
         if (nombre) storageSet(STORAGE_NAME, nombre);
 
-        fetch(apiBase + "/mensajes", {
+        var payload = {
+            visitorId: item.visitorId,
+            clientMessageId: item.clientMessageId,
+            texto: item.texto,
+            nombre: nombre || null,
+            paginaUrl: location.href,
+            contexto: contexto || null
+        };
+        if (item.esImagen) {
+            payload.imagenBase64 = item.imagenBase64;
+            payload.nombreArchivo = item.nombreArchivo;
+        }
+        fetch(apiBase + (item.esImagen ? "/imagenes" : "/mensajes"), {
             method: "POST",
             mode: "cors",
             credentials: "omit",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                visitorId: item.visitorId,
-                clientMessageId: item.clientMessageId,
-                texto: item.texto,
-                nombre: nombre || null,
-                paginaUrl: location.href,
-                contexto: contexto || null
-            })
+            body: JSON.stringify(payload)
         }).then(function (r) {
-            if (!r.ok) throw r.status;
-            return r.json();
+            if (r.ok) return r.json();
+            // el servidor explica por qué rechazó la imagen (formato, tamaño...)
+            return r.json().catch(function () { return {}; }).then(function (b) {
+                throw { status: r.status, error: b && b.error };
+            });
         }).then(function (result) {
             if (item.generation !== state.generation) return; // la charla ya se reinició
             item.node.classList.remove("ac-msg--pending");
             resolvePending(item, result.idMensaje);
             poll();
-        }).catch(function (statusCode) {
+        }).catch(function (fallo) {
+            var statusCode = fallo && fallo.status !== undefined ? fallo.status : fallo;
             if (item.generation !== state.generation) return;
             item.node.classList.remove("ac-msg--pending");
             item.node.classList.add("ac-msg--error");
             item.node.title = "Tocá para reintentar";
             item.node.onclick = function () { item.node.onclick = null; postMessage(item); };
+            if (item.esImagen && fallo && fallo.error && statusCode !== 429) {
+                // formato o tamaño rechazado: reintentar no cambia nada
+                item.node.onclick = null;
+                item.node.title = "";
+                state.pending = state.pending.filter(function (p) { return p !== item; });
+                showStatus(fallo.error);
+                return;
+            }
             showStatus(statusCode === 429
                 ? "Estás enviando muchos mensajes seguidos. Esperá un momento y tocá el mensaje para reintentar."
                 : "No se pudo enviar. Tocá el mensaje para reintentar.");
@@ -287,7 +336,10 @@
                 (data.mensajes || []).forEach(function (m) {
                     if (state.renderedIds[m.id]) return;
                     if (m.esVisitante) {
-                        var pending = state.pending.filter(function (p) { return p.texto === m.texto; })[0];
+                        var conImagen = m.imagenes && m.imagenes.length > 0;
+                        var pending = state.pending.filter(function (p) {
+                            return conImagen ? p.esImagen : (!p.esImagen && p.texto === m.texto);
+                        })[0];
                         if (pending) {
                             state.renderedIds[m.id] = pending.node;
                             return;
@@ -320,10 +372,98 @@
 
     function appendMessage(list, m) {
         var node = el("div", "ac-msg " + (m.esVisitante ? "ac-msg--me" : "ac-msg--them"));
-        node.textContent = m.texto;
+        if (m.imagenSrc) {
+            node.appendChild(crearImagen(m.imagenSrc));
+        }
+        (m.imagenes || []).forEach(function (id) {
+            var img = crearImagen("");
+            node.appendChild(img);
+            cargarImagen(id, img);
+        });
+        if (m.texto) {
+            var txt = el("div", "ac-text");
+            txt.textContent = m.texto;
+            node.appendChild(txt);
+        }
         list.appendChild(node);
         list.scrollTop = list.scrollHeight;
         return node;
+    }
+
+    function crearImagen(src) {
+        var img = el("img", "ac-img");
+        img.alt = "Imagen";
+        if (src) img.src = src;
+        img.addEventListener("load", function () { if (ui.list) ui.list.scrollTop = ui.list.scrollHeight; });
+        img.addEventListener("click", function () { if (img.src) window.open(img.src, "_blank"); });
+        return img;
+    }
+
+    // La imagen se pide con fetch (lleva el Origin que controla la lista de dominios) y se muestra
+    // como object URL; queda en memoria para no pedirla de nuevo.
+    function cargarImagen(id, img) {
+        if (imagenesCache[id]) { img.src = imagenesCache[id]; return; }
+        var url = apiBase + "/adjuntos/" + encodeURIComponent(id) + "?visitorId=" + encodeURIComponent(visitorId);
+        fetch(url, { method: "GET", mode: "cors", credentials: "omit" })
+            .then(function (r) { if (!r.ok) throw r.status; return r.blob(); })
+            .then(function (blob) {
+                imagenesCache[id] = URL.createObjectURL(blob);
+                img.src = imagenesCache[id];
+            })
+            .catch(function () { img.alt = "Imagen no disponible"; img.classList.add("ac-img--error"); });
+    }
+
+    function enviarImagen(file) {
+        if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type || "")) {
+            showStatus("Formato no admitido: se aceptan JPG, PNG, GIF y WEBP.");
+            return;
+        }
+        prepararImagen(file, function (blob) {
+            if (!blob || blob.size > IMAGEN_MAX_BYTES) {
+                showStatus("La imagen es muy grande (máximo 5 MB).");
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function () {
+                var item = {
+                    clientMessageId: randomId(20),
+                    texto: "",
+                    esImagen: true,
+                    imagenBase64: String(reader.result || ""),
+                    nombreArchivo: file.name || "captura.png",
+                    node: null,
+                    visitorId: visitorId,
+                    generation: state.generation
+                };
+                item.node = appendMessage(ui.list, { texto: "", esVisitante: true, imagenSrc: URL.createObjectURL(blob) });
+                state.pending.push(item);
+                postMessage(item);
+            };
+            reader.onerror = function () { showStatus("No se pudo leer la imagen."); };
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    // Fotos grandes (celular, cámara) se achican a IMAGEN_LADO_MAX y van como JPEG: suben más rápido.
+    // Las capturas chicas y los GIF (pueden ser animados) se mandan tal cual.
+    function prepararImagen(file, done) {
+        if (file.type === "image/gif" || !window.createImageBitmap || !document.createElement("canvas").toBlob) {
+            done(file);
+            return;
+        }
+        createImageBitmap(file).then(function (bmp) {
+            var lado = Math.max(bmp.width, bmp.height);
+            if (lado <= IMAGEN_LADO_MAX && file.size <= IMAGEN_REDUCIR_DESDE) { done(file); return; }
+            var escala = Math.min(1, IMAGEN_LADO_MAX / lado);
+            var canvas = document.createElement("canvas");
+            canvas.width = Math.round(bmp.width * escala);
+            canvas.height = Math.round(bmp.height * escala);
+            var ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#fff";   // las transparencias del PNG no quedan negras en el JPEG
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(function (b) { done(b || file); }, "image/jpeg", 0.85);
+        }).catch(function () { done(file); });
     }
 
     function showStatus(text) {
@@ -382,6 +522,12 @@
             ".ac-msg--them{align-self:flex-start;background:#fff;border:1px solid #e5e7eb}",
             ".ac-msg--me{align-self:flex-end;background:" + color + ";color:#fff}",
             ".ac-msg--pending{opacity:.6}",
+            ".ac-img{display:block;max-width:100%;max-height:240px;border-radius:8px;cursor:zoom-in;background:#e5e7eb;min-width:60px;min-height:40px}",
+            ".ac-img--error{cursor:default;min-height:0}",
+            ".ac-msg .ac-img+.ac-text{margin-top:6px}",
+            ".ac-attach{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
+            ".ac-attach:hover{color:" + color + ";border-color:" + color + "}",
+            ".ac-attach svg{width:18px;height:18px}",
             ".ac-msg--error{background:#fee2e2;color:#991b1b;cursor:pointer}",
             ".ac-status{padding:6px 14px;font-size:12px;color:#991b1b;background:#fef2f2}",
             ".ac-status[hidden]{display:none}",

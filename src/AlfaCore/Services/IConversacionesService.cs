@@ -110,6 +110,15 @@ public interface IConversacionesService
     /// </summary>
     Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default);
 
+    /// <summary>
+    /// Imagen que manda el visitante del chat web: se graba como adjunto del mensaje (igual que una
+    /// imagen de WhatsApp) antes de correr las respuestas automáticas, así el asistente la puede ver.
+    /// </summary>
+    Task<WebChatMensajeEntranteResultDto> RegistrarImagenEntranteWebChatAsync(WebChatMensajeEntranteRequest request, WebChatImagenEntrante imagen, CancellationToken ct = default);
+
+    /// <summary>Imagen de una conversación del visitante; null si no es suya, no es imagen o no está disponible.</summary>
+    Task<WebChatAdjuntoDto?> ObtenerAdjuntoWebChatAsync(string visitorId, long idAdjunto, CancellationToken ct = default);
+
     /// <summary>Mensajes visibles para el visitante posteriores a <paramref name="desdeIdMensaje"/> (polling del widget).</summary>
     Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> SyncMercadoLibreQuestionsAsync(CancellationToken ct = default);

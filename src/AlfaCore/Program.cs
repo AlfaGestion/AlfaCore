@@ -3015,6 +3015,10 @@ public class Program
             .RequireRateLimiting(WebChatReadRateLimitPolicy);
         app.MapPost("/api/webchat/{siteKey}/mensajes", HandleWebChatPostMessageAsync)
             .RequireRateLimiting(WebChatWriteRateLimitPolicy);
+        app.MapPost("/api/webchat/{siteKey}/imagenes", HandleWebChatPostImageAsync)
+            .RequireRateLimiting(WebChatWriteRateLimitPolicy);
+        app.MapGet("/api/webchat/{siteKey}/adjuntos/{idAdjunto:long}", HandleWebChatGetAttachmentAsync)
+            .RequireRateLimiting(WebChatReadRateLimitPolicy);
 
         // Chat con el soporte de ALFA NET, abierto a pantalla completa. Lo abre Alfa Gestion (VB6)
         // desde su menu / pantalla principal: msedge --app=<servidor>/webchat/soporte?contexto=..&nombre=..
@@ -3862,6 +3866,8 @@ public class Program
     private const string WebChatReadRateLimitPolicy = "webchat-lectura";
     private const string WebChatWriteRateLimitPolicy = "webchat-escritura";
     private const long WebChatMaxBodyBytes = 16 * 1024;
+    // imagen de hasta 5 MB en base64 (+33 %) y los demás campos del JSON
+    private const long WebChatMaxImageBodyBytes = 7 * 1024 * 1024 + 32 * 1024;
     private static readonly JsonSerializerOptions WebChatJsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -3939,7 +3945,8 @@ public class Program
         {
             Titulo = config.Titulo,
             Color = config.ColorSeguro,
-            MensajeBienvenida = config.MensajeBienvenida
+            MensajeBienvenida = config.MensajeBienvenida,
+            PermiteImagenes = config.PermiteImagenes
         });
     }
 
@@ -4009,6 +4016,98 @@ public class Program
         {
             return Results.BadRequest(new { error = "No se pudo registrar el mensaje." });
         }
+    }
+
+    /// <summary>
+    /// Imagen del visitante (botón de clip o Ctrl+V en el widget): JSON con la imagen en base64.
+    /// Límite propio de cuerpo (la imagen es de hasta 5 MB) y la misma resolución de base y control
+    /// de dominios que los mensajes de texto.
+    /// </summary>
+    private static async Task<IResult> HandleWebChatPostImageAsync(
+        string siteKey,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+        DisableWebhookCaching(response);
+
+        var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (bodySize is { IsReadOnly: false })
+            bodySize.MaxRequestBodySize = WebChatMaxImageBodyBytes;
+        if (request.ContentLength is > WebChatMaxImageBodyBytes)
+            return Results.Json(new { error = "La imagen es muy grande (máximo 5 MB)." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+
+        WebChatImagenEntranteRequest? body;
+        try
+        {
+            body = await JsonSerializer.DeserializeAsync<WebChatImagenEntranteRequest>(request.Body, WebChatJsonOptions, ct);
+        }
+        catch (Exception ex) when (ex is JsonException or BadHttpRequestException)
+        {
+            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+        }
+
+        if (body is null)
+            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+
+        var mensaje = body.ToMensajeRequest();
+        if (!mensaje.TryNormalize(out _))
+            return Results.BadRequest(new { error = "No se pudo leer la imagen." });
+
+        if (!WebChatImagenes.TryLeer(body.ImagenBase64, body.NombreArchivo, out var imagen, out var errorImagen))
+            return Results.BadRequest(new { error = errorImagen });
+
+        var config = await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct);
+        if (config is null)
+            return Results.NotFound();
+        if (!config.PermiteImagenes)
+            return Results.BadRequest(new { error = "Este chat no recibe imágenes." });
+
+        try
+        {
+            return Results.Json(await svc.RegistrarImagenEntranteWebChatAsync(mensaje, imagen!, ct));
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.BadRequest(new { error = "No se pudo registrar la imagen." });
+        }
+    }
+
+    /// <summary>
+    /// Imagen de la conversación para el widget. El visitorId (aleatorio, solo lo conoce el
+    /// navegador del visitante) limita a sus propias conversaciones.
+    /// </summary>
+    private static async Task<IResult> HandleWebChatGetAttachmentAsync(
+        string siteKey,
+        long idAdjunto,
+        HttpRequest request,
+        HttpResponse response,
+        IWebChatSiteKeyService siteKeys,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        ApplyWebChatCors(request, response);
+
+        var visitorId = request.Query["visitorId"].ToString();
+        if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId))
+            return Results.BadRequest();
+
+        if (await TryOpenWebChatAsync(siteKey, request, siteKeys, configService, ct) is null)
+            return Results.NotFound();
+
+        var adjunto = await svc.ObtenerAdjuntoWebChatAsync(visitorId, idAdjunto, ct);
+        if (adjunto is null)
+            return Results.NotFound();
+
+        response.Headers.CacheControl = "private, max-age=3600";
+        response.Headers.XContentTypeOptions = "nosniff";
+        response.Headers.ContentDisposition = "inline";
+        return Results.File(adjunto.Bytes, adjunto.MimeType);
     }
 
     private static void DisableWebhookCaching(HttpResponse response)

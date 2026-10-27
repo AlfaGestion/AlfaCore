@@ -4992,8 +4992,24 @@ public sealed partial class ConversacionesService(
         }, "No se pudo procesar el webhook de Instagram.", ct);
 
     public Task<WebChatMensajeEntranteResultDto> RegistrarMensajeEntranteWebChatAsync(WebChatMensajeEntranteRequest request, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Conversaciones", "RegistrarMensajeEntranteWebChat", async token =>
-        {
+        => ExecuteLoggedAsync("Conversaciones", "RegistrarMensajeEntranteWebChat",
+            token => RegistrarEntranteWebChatCoreAsync(request, imagen: null, token),
+            "No se pudo registrar el mensaje del chat del sitio web.", ct);
+
+    public Task<WebChatMensajeEntranteResultDto> RegistrarImagenEntranteWebChatAsync(WebChatMensajeEntranteRequest request, WebChatImagenEntrante imagen, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegistrarImagenEntranteWebChat",
+            token =>
+            {
+                ArgumentNullException.ThrowIfNull(imagen);
+                return RegistrarEntranteWebChatCoreAsync(request, imagen, token);
+            },
+            "No se pudo registrar la imagen del chat del sitio web.", ct);
+
+    private async Task<WebChatMensajeEntranteResultDto> RegistrarEntranteWebChatCoreAsync(
+        WebChatMensajeEntranteRequest request,
+        WebChatImagenEntrante? imagen,
+        CancellationToken token)
+    {
             ArgumentNullException.ThrowIfNull(request);
             if (!request.TryNormalize(out var error))
                 throw new InvalidOperationException(error);
@@ -5005,7 +5021,7 @@ public sealed partial class ConversacionesService(
             {
                 SenderId = request.VisitorId,
                 MessageId = request.ClientMessageId!,
-                MessageType = "TEXT",
+                MessageType = imagen is null ? "TEXT" : "IMAGE",
                 Timestamp = now,
                 Text = request.Texto,
                 RawJson = JsonSerializer.Serialize(new { request.PaginaUrl, request.Contexto, request.Nombre })
@@ -5013,6 +5029,23 @@ public sealed partial class ConversacionesService(
 
             var conversationId = await EnsureWebChatConversationAsync(request, now, token);
             var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+            // La imagen se graba antes de las respuestas automáticas: el asistente la lee del último
+            // mensaje entrante. En un reintento del widget (mismo clientMessageId) no se duplica.
+            if (imagen is not null && !await MessageAttachmentExistsAsync(storedMessage.MessageId, request.ClientMessageId!, token))
+            {
+                var rutaLocal = await SaveIncomingAttachmentAsync(conversationId, imagen.NombreArchivo, imagen.Bytes, token);
+                await InsertAttachmentRecordAsync(
+                    storedMessage.MessageId,
+                    "IMAGE",
+                    imagen.NombreArchivo,
+                    imagen.MimeType,
+                    rutaLocal,
+                    imagen.Bytes.LongLength,
+                    JsonSerializer.Serialize(new { MediaId = request.ClientMessageId, Origen = "WEBCHAT" }),
+                    imagen.Bytes,
+                    token);
+            }
 
             await RefreshConversationAsync(conversationId, now, request.Texto, token, reopenIfClosed: true);
             if (storedMessage.Created)
@@ -5038,7 +5071,48 @@ public sealed partial class ConversacionesService(
                 IdMensaje = storedMessage.MessageId,
                 Creado = storedMessage.Created
             };
-        }, "No se pudo registrar el mensaje del chat del sitio web.", ct);
+    }
+
+    public Task<WebChatAdjuntoDto?> ObtenerAdjuntoWebChatAsync(string visitorId, long idAdjunto, CancellationToken ct = default)
+        => ExecuteLoggedAsync<WebChatAdjuntoDto?>("Conversaciones", "ObtenerAdjuntoWebChat", async token =>
+        {
+            if (!WebChatMensajeEntranteRequest.IsValidVisitorId(visitorId) || idAdjunto <= 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var conContenido = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            // Solo adjuntos de una conversación WEBCHAT de este visitante, de mensajes que él ve.
+            var sql = $"""
+                SELECT TOP (1) ISNULL(a.RutaLocal, N''),
+                       {(conContenido ? "a.ArchivoContenido" : "CAST(NULL AS varbinary(max))")}
+                FROM dbo.CONV_ADJUNTOS a
+                INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
+                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE a.IdAdjunto = @IdAdjunto
+                  AND c.Canal = N'WEBCHAT'
+                  AND c.IdentificadorExternoContacto = @VisitorId
+                  AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+                  AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%';
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
+            cmd.Parameters.AddWithValue("@VisitorId", visitorId.Trim());
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return null;
+
+            var ruta = ToAbsoluteAttachmentPath(rd.GetString(0));
+            var bytes = !string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta)
+                ? await File.ReadAllBytesAsync(ruta, token)
+                : rd.IsDBNull(1) ? null : (byte[])rd.GetValue(1);
+
+            // El tipo se vuelve a decidir por el contenido: nunca se sirve algo que no sea imagen.
+            if (bytes is not { Length: > 0 } || !WebChatImagenes.TryDetectar(bytes, out var mime, out _))
+                return null;
+
+            return new WebChatAdjuntoDto(bytes, mime);
+        }, "No se pudo leer la imagen del chat del sitio web.", ct);
 
     public Task<WebChatMensajesResponseDto> ObtenerMensajesWebChatAsync(string visitorId, long desdeIdMensaje, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "ObtenerMensajesWebChat", async token =>
@@ -5071,9 +5145,13 @@ public sealed partial class ConversacionesService(
                   AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
                   AND m.MessageType <> N'SYSTEM'
                   AND ISNULL(m.EstadoEnvio, N'') <> N'ERROR_ENVIO'
-                  AND NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, N''))), N'') IS NOT NULL
+                  AND (NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, N''))), N'') IS NOT NULL
+                       OR EXISTS (SELECT 1 FROM dbo.CONV_ADJUNTOS a
+                                  WHERE a.IdMensaje = m.IdMensaje AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%'))
                 ORDER BY CASE WHEN @Desde = 0 THEN -m.IdMensaje ELSE m.IdMensaje END;
                 """;
+
+            var imagenesPorMensaje = new Dictionary<long, List<long>>();
 
             var mensajes = new List<WebChatMensajeDto>();
             await using (var cn = new SqlConnection(ConnectionString))
@@ -5084,14 +5162,49 @@ public sealed partial class ConversacionesService(
                 cmd.Parameters.AddWithValue("@Desde", desde);
                 cmd.Parameters.AddWithValue("@Top", desde == 0 ? 50 : 100);
                 await using var rd = await cmd.ExecuteReaderAsync(token);
+                var filas = new List<(long Id, string Texto, DateTime FechaHora, bool EsVisitante)>();
                 while (await rd.ReadAsync(token))
                 {
+                    filas.Add((rd.GetInt64(0), GetString(rd, 1), rd.GetDateTime(2),
+                        string.Equals(GetString(rd, 3), "ENTRANTE", StringComparison.OrdinalIgnoreCase)));
+                }
+                await rd.CloseAsync();
+
+                if (filas.Count > 0)
+                {
+                    // Imágenes de los mensajes devueltos (lista de ids con parámetros, sin STRING_SPLIT:
+                    // hay bases con compatibility level viejo).
+                    var nombres = filas.Select((_, i) => "@m" + i.ToString(CultureInfo.InvariantCulture)).ToList();
+                    await using var cmdImg = new SqlCommand($"""
+                        SELECT a.IdMensaje, a.IdAdjunto
+                        FROM dbo.CONV_ADJUNTOS a
+                        WHERE a.IdMensaje IN ({string.Join(",", nombres)})
+                          AND LOWER(ISNULL(a.MimeType, N'')) LIKE N'image/%'
+                        ORDER BY a.IdAdjunto;
+                        """, cn);
+                    for (var i = 0; i < filas.Count; i++)
+                        cmdImg.Parameters.AddWithValue(nombres[i], filas[i].Id);
+                    await using var rdImg = await cmdImg.ExecuteReaderAsync(token);
+                    while (await rdImg.ReadAsync(token))
+                    {
+                        var idMensaje = rdImg.GetInt64(0);
+                        if (!imagenesPorMensaje.TryGetValue(idMensaje, out var lista))
+                            imagenesPorMensaje[idMensaje] = lista = [];
+                        lista.Add(rdImg.GetInt64(1));
+                    }
+                }
+
+                foreach (var f in filas)
+                {
+                    var imagenes = imagenesPorMensaje.TryGetValue(f.Id, out var ids) ? ids : [];
                     mensajes.Add(new WebChatMensajeDto
                     {
-                        Id = rd.GetInt64(0),
-                        Texto = GetString(rd, 1),
-                        FechaHora = rd.GetDateTime(2),
-                        EsVisitante = string.Equals(GetString(rd, 3), "ENTRANTE", StringComparison.OrdinalIgnoreCase)
+                        Id = f.Id,
+                        // "[image]" es el marcador interno de imagen sin texto: el visitante ve solo la imagen.
+                        Texto = imagenes.Count > 0 && EsImagenSinTexto(f.Texto) ? string.Empty : f.Texto,
+                        FechaHora = f.FechaHora,
+                        EsVisitante = f.EsVisitante,
+                        Imagenes = imagenes
                     });
                 }
             }

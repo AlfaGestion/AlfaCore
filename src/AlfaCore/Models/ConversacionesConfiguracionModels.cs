@@ -241,6 +241,9 @@ public sealed class ConversacionWebChatConfigDto
     public string Titulo { get; set; } = DefaultTitulo;
     public string Color { get; set; } = DefaultColor;
 
+    /// <summary>El visitante puede mandar imágenes (CONV_WEBCHAT_IMAGENES; sin valor = sí).</summary>
+    public bool PermiteImagenes { get; set; } = true;
+
     /// <summary>Solo instalaciones no SaaS (CONV_WEBCHAT_SITE_KEY). En SaaS la clave está en la base central.</summary>
     public string SiteKey { get; set; } = string.Empty;
 
