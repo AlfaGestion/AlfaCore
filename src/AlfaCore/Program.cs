@@ -219,6 +219,18 @@ public class Program
             }
         });
 
+        if (serverOptions.RedirigirAHttps)
+        {
+            // El puerto va explícito: detrás de IIS in-process no hay un binding HTTPS que
+            // UseHttpsRedirection pueda descubrir solo, y sin puerto el middleware se limita
+            // a loguear una advertencia y dejar pasar el request sin redirigir.
+            builder.Services.AddHttpsRedirection(options =>
+            {
+                options.HttpsPort = serverOptions.PuertoHttpsPublico;
+                options.RedirectStatusCode = StatusCodes.Status301MovedPermanently;
+            });
+        }
+
         // Add services to the container.
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
@@ -452,6 +464,19 @@ public class Program
         if (!app.Environment.IsDevelopment())
         {
             app.UseExceptionHandler("/Error");
+        }
+
+        if (serverOptions.RedirigirAHttps)
+        {
+            // /.well-known queda fuera de la redirección: es el espacio de nombres público y sin
+            // autenticar (RFC 8615) por el que Let's Encrypt valida el dominio sobre HTTP simple.
+            // Redirigirlo complica la renovación del certificado, que es justamente lo que
+            // mantiene vivo el HTTPS al que estamos redirigiendo.
+            app.UseWhen(
+                context => !context.Request.Path.StartsWithSegments(
+                    "/.well-known",
+                    StringComparison.OrdinalIgnoreCase),
+                branch => branch.UseHttpsRedirection());
         }
 
         app.Use(async (context, next) =>
