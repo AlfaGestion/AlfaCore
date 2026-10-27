@@ -865,6 +865,33 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Empty(herramientas);
     }
 
+    [Theory]
+    [InlineData("Sí", true, false)]
+    [InlineData("si, soy yo", true, false)]
+    [InlineData("correcto", true, false)]
+    [InlineData("Soy yo", true, false)]
+    [InlineData("No", false, true)]
+    [InlineData("no, soy Juan de otra empresa", false, true)]
+    [InlineData("Te equivocaste de persona", false, true)]
+    [InlineData("cuánto debo?", false, false)]
+    public void Identidad_DetectaRespuestasSiYNo(string mensaje, bool esSi, bool esNo)
+    {
+        Assert.Equal(esSi, ConversacionesService.EsRespuestaIdentidadSi(mensaje));
+        Assert.Equal(esNo, ConversacionesService.EsRespuestaIdentidadNo(mensaje));
+    }
+
+    [Fact]
+    public void Identidad_SoloLasHerramientasDeLaCuentaPidenConfirmacion()
+    {
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("consultar_saldo_total"));
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("generar_link_portal"));
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("preparar_pedido"));
+        Assert.False(ConversacionesService.EsHerramientaConDatosPrivados("consultar_precio"));
+        Assert.False(ConversacionesService.EsHerramientaConDatosPrivados("generar_link_catalogo_publico"));
+        Assert.Equal("Antes de seguir, ¿me confirmás que escribís por Fernández SRL? Respondeme sí o no.",
+            ConversacionesService.PreguntaIdentidad(new ConversacionCuentaVinculadaDto("C001 ", CuentaComercialTipo.Cliente, " Fernández SRL ")));
+    }
+
     [Fact]
     public void Prompt_LineaFechaActualLlevaDiaYHora()
     {

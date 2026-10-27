@@ -35,10 +35,10 @@ public sealed class ConversacionAsistenteHerramientasService(
     IConversacionBotPedidosService botPedidosService) : IConversacionAsistenteHerramientasService
 {
     private const string ToolConsultarPrecio = "consultar_precio";
-    private const string ToolConsultarSaldoTotal = "consultar_saldo_total";
-    private const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
-    private const string ToolConsultarPedidos = "consultar_pedidos";
-    private const string ToolGenerarLinkPortal = "generar_link_portal";
+    internal const string ToolConsultarSaldoTotal = "consultar_saldo_total";
+    internal const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
+    internal const string ToolConsultarPedidos = "consultar_pedidos";
+    internal const string ToolGenerarLinkPortal = "generar_link_portal";
     private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
     internal const string ToolPrepararPedido = "preparar_pedido";
 
@@ -313,7 +313,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         return termino;
     }
 
-    private static string NormalizarTexto(string? texto)
+    internal static string NormalizarTexto(string? texto)
     {
         if (string.IsNullOrWhiteSpace(texto))
             return string.Empty;

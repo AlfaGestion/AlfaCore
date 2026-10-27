@@ -8992,6 +8992,51 @@ public sealed partial class ConversacionesService(
 
     internal const string TextoImagenSinTexto = "(El cliente mandó esta imagen sin escribir nada.)";
 
+    // Confirmación de identidad (CONV_ASISTENTE_CONFIRMA_IDENTIDAD). Las notas llevan la cuenta: si cambia la
+    // vinculación, lo confirmado o negado para la cuenta anterior no cuenta para la nueva.
+    private static readonly HashSet<string> HerramientasConDatosPrivados = new(StringComparer.Ordinal)
+    {
+        ConversacionAsistenteHerramientasService.ToolConsultarSaldoTotal,
+        ConversacionAsistenteHerramientasService.ToolConsultarSaldoDetalle,
+        ConversacionAsistenteHerramientasService.ToolConsultarPedidos,
+        ConversacionAsistenteHerramientasService.ToolGenerarLinkPortal,
+        ConversacionAsistenteHerramientasService.ToolPrepararPedido
+    };
+
+    internal const string RespuestaIdentidadNegada =
+        "Gracias por avisarnos. Por seguridad no te muestro datos de esa cuenta; un asesor va a revisar tus datos de contacto. ¿En qué más te puedo ayudar?";
+
+    internal static bool EsHerramientaConDatosPrivados(string nombreHerramienta) => HerramientasConDatosPrivados.Contains(nombreHerramienta);
+
+    private static string CuentaParaNota(ConversacionCuentaVinculadaDto cuenta)
+        => $"{cuenta.RazonSocial.Trim()} ({cuenta.Codigo.Trim()})";
+
+    internal static string PreguntaIdentidad(ConversacionCuentaVinculadaDto cuenta)
+        => $"Antes de seguir, ¿me confirmás que escribís por {cuenta.RazonSocial.Trim()}? Respondeme sí o no.";
+
+    private static string NotaIdentidadPreguntada(ConversacionCuentaVinculadaDto cuenta)
+        => $"🔐 El asistente le pidió al contacto confirmar que escribe por {CuentaParaNota(cuenta)}.";
+
+    private static string NotaIdentidadConfirmada(ConversacionCuentaVinculadaDto cuenta)
+        => $"✅ El contacto confirmó que escribe por {CuentaParaNota(cuenta)}.";
+
+    private static string NotaIdentidadNegada(ConversacionCuentaVinculadaDto cuenta)
+        => $"⚠️ Revisar vinculación: el contacto dijo que NO escribe por {CuentaParaNota(cuenta)}. Hoy el asistente no le muestra datos de esa cuenta.";
+
+    internal static bool EsRespuestaIdentidadSi(string? texto)
+    {
+        var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+        return ConversacionBotPedidosService.EsConfirmacion(texto)
+               || Regex.IsMatch(t, @"^(soy yo|si soy|exacto|asi es|efectivamente|claro|sip|obvio)\b");
+    }
+
+    internal static bool EsRespuestaIdentidadNo(string? texto)
+    {
+        var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+        return t.Length > 0 && t.Split(' ').Length <= 12
+               && Regex.IsMatch(t, @"^(no|nop|nada que ver|para nada)\b|\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b");
+    }
+
     /// <summary>Mensaje que es sólo una imagen, sin texto propio ("[image]").</summary>
     internal static bool EsImagenSinTexto(string? texto)
         => Regex.IsMatch((texto ?? string.Empty).Trim(), @"^\[image\](\s.*)?$", RegexOptions.IgnoreCase);
@@ -9313,10 +9358,50 @@ public sealed partial class ConversacionesService(
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
 
+                // Confirmación de identidad: antes del primer dato privado del día (saldo, pedidos, portal,
+                // pedido nuevo) se pregunta si escribe por la cuenta vinculada. Si dice que no, ese día se lo
+                // atiende como contacto sin cuenta y queda una nota para revisar la vinculación.
+                string? respuestaIdentidad = null;
+                var identidadPendiente = false;
+                var identidadRecienConfirmada = false;
+                if (config.AsistenteConfirmaIdentidad && cuentaVinculada is { EsAmbigua: false } cuentaAConfirmar)
+                {
+                    if (await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadNegada(cuentaAConfirmar), token).ConfigureAwait(false))
+                    {
+                        cuentaVinculada = null;
+                    }
+                    else if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadConfirmada(cuentaAConfirmar), token).ConfigureAwait(false))
+                    {
+                        var preguntada = await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadPreguntada(cuentaAConfirmar), token).ConfigureAwait(false);
+                        if (preguntada && EsRespuestaIdentidadNo(texto))
+                        {
+                            await AddInternalEventCoreAsync(idConversacion, NotaIdentidadNegada(cuentaAConfirmar), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                            cuentaVinculada = null;
+                            respuestaIdentidad = RespuestaIdentidadNegada;
+                        }
+                        else if (preguntada && EsRespuestaIdentidadSi(texto))
+                        {
+                            await AddInternalEventCoreAsync(idConversacion, NotaIdentidadConfirmada(cuentaAConfirmar), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                            identidadRecienConfirmada = true;
+                            // El "sí" no trae la consulta: se responde lo que había pedido antes de la pregunta.
+                            var consultaOriginal = ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
+                            if (!string.IsNullOrWhiteSpace(consultaOriginal))
+                                texto = consultaOriginal;
+                        }
+                        else
+                        {
+                            identidadPendiente = true;
+                        }
+                    }
+                }
+
+                if (cuentaVinculada is { EsAmbigua: false } cuentaParaSaludo)
+                    contextoCliente = $"{contextoCliente} Quien escribe está vinculado a la cuenta «{cuentaParaSaludo.RazonSocial.Trim()}». Si todavía no lo saludaste en esta charla, saludalo por ese nombre; si es una empresa, no supongas el nombre de la persona.".Trim();
+
                 // Pedido por chat (F05): confirmar o cancelar lo decide el texto literal del cliente
                 // contra el borrador guardado, nunca el modelo -- la IA sólo puede armar el borrador.
                 string? respuestaPedidoChat = null;
-                if (config.AsistenteHerramientaTomarPedidos && botPedidosService is not null
+                if (config.AsistenteHerramientaTomarPedidos && botPedidosService is not null && !identidadRecienConfirmada
                     && cuentaVinculada is { Tipo: CuentaComercialTipo.Cliente, EsAmbigua: false }
                     && (ConversacionBotPedidosService.EsConfirmacion(texto) || ConversacionBotPedidosService.EsCancelacion(texto))
                     && await botPedidosService.HayPendienteAsync(idConversacion, cuentaVinculada.Codigo, token).ConfigureAwait(false))
@@ -9343,9 +9428,19 @@ public sealed partial class ConversacionesService(
                         || (ultimaRespuestaFueAclaracion
                             && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
                             && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
+                var identidadPreguntadaAhora = false;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
-                    ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta)
+                    ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                    {
+                        if (identidadPendiente && cuentaVinculada is not null && EsHerramientaConDatosPrivados(nombreHerramienta))
+                        {
+                            if (!identidadPreguntadaAhora)
+                                await AddInternalEventCoreAsync(idConversacion, NotaIdentidadPreguntada(cuentaVinculada), null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
+                            identidadPreguntadaAhora = true;
+                            return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
+                        }
+                        return await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                    }
                     : null;
 
                 // Un saludo o un cierre/agradecimiento suelto no tiene nada que buscar -- consultarlo
@@ -9356,7 +9451,7 @@ public sealed partial class ConversacionesService(
                 // recibiría "[image]" y respondía "hay un problema con las imágenes" + DERIVA aunque el
                 // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
                 var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
-                var usaKnowledge = aclaracionMediaSinTexto is null && respuestaPedidoChat is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
+                var usaKnowledge = aclaracionMediaSinTexto is null && respuestaPedidoChat is null && respuestaIdentidad is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
                     && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
@@ -9387,9 +9482,9 @@ public sealed partial class ConversacionesService(
                     resueltoSoloPorKnowledge = false;
 
                 ConversacionAsistenteRespuesta? result;
-                if (respuestaPedidoChat is not null)
+                if (respuestaPedidoChat is not null || respuestaIdentidad is not null)
                 {
-                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = respuestaPedidoChat };
+                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = respuestaIdentidad ?? respuestaPedidoChat! };
                 }
                 else if (correccionDirecta is not null)
                 {
@@ -9452,6 +9547,10 @@ public sealed partial class ConversacionesService(
                         await AddInternalEventCoreAsync(idConversacion, $"🖼️ El asistente vio en la imagen: {Truncar(result!.ImagenDescripcion, 1500)}",
                             null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                     }
+
+                    // La pregunta de identidad la arma el servidor (no el modelo): texto fijo con la cuenta.
+                    if (identidadPreguntadaAhora && cuentaVinculada is not null)
+                        result = new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = PreguntaIdentidad(cuentaVinculada) };
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
                         && knowledgeContext.NeedsClarification
