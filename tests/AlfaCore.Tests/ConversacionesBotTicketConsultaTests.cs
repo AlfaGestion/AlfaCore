@@ -66,8 +66,25 @@ public sealed class ConversacionesBotTicketConsultaTests
     public void LaPreguntaDeIdentidadNoCuentaComoSegundaAclaracion()
     {
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
-        Assert.Contains("if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, \"ACLARA\"", source, StringComparison.Ordinal);
-        Assert.Contains("if (tipo == \"ACLARA\" && !identidadPreguntadaAhora)", source, StringComparison.Ordinal);
+        Assert.Contains("if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, \"ACLARA\"", source, StringComparison.Ordinal);
+        Assert.Contains("if (tipo == \"ACLARA\" && !identidadPreguntadaAhora && !pedidoPreparadoAhora)", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("no", true)]
+    [InlineData("mejor no, dejalo", true)]
+    [InlineData("no, cancelalo", true)]
+    [InlineData("no, mejor 4 aaa nomas", false)]
+    [InlineData("no, cambialo a 8", false)]
+    public void CancelacionDelPedido_NoConfundeUnCambio(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionBotPedidosService.EsCancelacion(texto));
+
+    [Fact]
+    public void ResumenDePedidoYReintentoPorInterbloqueo_EnElFlujoDelBot()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("!identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, \"ACLARA\"", source, StringComparison.Ordinal);
+        Assert.Contains("catch (SqlException ex) when (ex.Number == 1205 && intento < 3)", source, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -131,6 +148,10 @@ public sealed class ConversacionesBotTicketConsultaTests
     [InlineData("Le paso tu consulta a un asesor y te responde a la brevedad.", false)]
     [InlineData("Lo consulto con el equipo y te responden por acá.", false)]
     [InlineData("Te recomiendo consultar con un asesor si los precios incluyen IVA.", true)]
+    [InlineData("Te recomiendo que hables con un compañero del equipo.", true)]
+    [InlineData("Te recomiendo que contactes a un operador del equipo.", true)]
+    [InlineData("Te recomiendo que le pases tu consulta a un asesor.", true)]
+    [InlineData("Te paso tu consulta a un asesor y te responde a la brevedad.", false)]
     public void Contencion_QuePideContactarAOtro_SeDetecta(string respuesta, bool esperado)
         => Assert.Equal(esperado, ConversacionesService.PideContactarAOtro(respuesta));
 

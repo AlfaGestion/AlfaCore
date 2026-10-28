@@ -8884,7 +8884,26 @@ public sealed partial class ConversacionesService(
             var textoUltimoEntrante = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
             if (textoUltimoEntrante.Length > 0)
                 texto = textoUltimoEntrante;
-            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+            // Con varias conversaciones a la vez SQL Server puede elegir esta como víctima de un
+            // interbloqueo (1205) y el mensaje quedaba sin respuesta (batería 4264, 2026-10-28). Se
+            // reintenta: si la respuesta ya había salido, el chequeo de "ya respondido" corta el reintento.
+            async Task ResponderConReintentoAsync(string textoBot, long? automaticoYaConocido)
+            {
+                for (var intento = 1; ; intento++)
+                {
+                    try
+                    {
+                        await EjecutarRespuestaBotAsync(idConversacion, textoBot, config, ct, automaticoYaConocido).ConfigureAwait(false);
+                        return;
+                    }
+                    catch (SqlException ex) when (ex.Number == 1205 && intento < 3)
+                    {
+                        await Task.Delay(400 * intento, ct).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            await ResponderConReintentoAsync(texto, null).ConfigureAwait(false);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
                 // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
@@ -8900,7 +8919,7 @@ public sealed partial class ConversacionesService(
                 if (textoNuevo.Length == 0)
                     break;
 
-                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct, automaticoConocido).ConfigureAwait(false);
+                await ResponderConReintentoAsync(textoNuevo, automaticoConocido).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -9474,6 +9493,9 @@ public sealed partial class ConversacionesService(
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
                 var identidadPreguntadaAhora = false;
+                // El resumen de un pedido armado/actualizado ahora no es "otra aclaración": "agregale 2 aaa"
+                // con el pedido pendiente salía como contención + ticket (batería 4264, 2026-10-28).
+                var pedidoPreparadoAhora = false;
                 string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
@@ -9486,6 +9508,8 @@ public sealed partial class ConversacionesService(
                             return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
                         }
                         var resultadoHerramienta = await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolPrepararPedido)
+                            pedidoPreparadoAhora = true;
                         if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolConsultarPedidos
                             && resultadoHerramienta.Contains(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, StringComparison.Ordinal))
                             pedidosEncontrados = resultadoHerramienta.Replace(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, string.Empty).Trim();
@@ -9629,7 +9653,7 @@ public sealed partial class ConversacionesService(
                 // preguntar, pasa a un operador (contención estándar) en vez de insistir.
                 // La pregunta de identidad la arma el servidor y no cuenta: tras "¿cuál querés?" + "quiero 10
                 // azules" salía la contención en vez de "¿me confirmás que escribís por…?" (Base4271 2026-10-28).
-                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
                     result = null;
                 }
@@ -9874,7 +9898,7 @@ public sealed partial class ConversacionesService(
 
                 // La pregunta de identidad ya deja su propia nota (🔐) y no marca aclaración: si no, el
                 // "¿confirmás el pedido?" que sigue al "sí" caía en "dos aclaraciones seguidas".
-                if (tipo == "ACLARA" && !identidadPreguntadaAhora)
+                if (tipo == "ACLARA" && !identidadPreguntadaAhora && !pedidoPreparadoAhora)
                 {
                     // Además de informar al operador, es la marca persistida que usa
                     // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
@@ -10526,7 +10550,9 @@ public sealed partial class ConversacionesService(
 
     internal static bool PideContactarAOtro(string? respuesta)
         => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
-            @"\b(contact(es|a|ate|arte|ar)|comunic(ate|es|arte|arse)|consult(es|ale|arle|ar)|habl(es|a|ale|arle|ar)|llam(es|a|ale|arle|ar)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante)");
+               @"\bte (recomiendo|sugiero|aconsejo) (que )?(le |lo |la )?(contact|comunic|consult|habl|llam|escrib|pas|acud|dirij)\w*")
+           || Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\b(contact(es|a|ate|arte|ar)|comunic(ate|es|arte|arse)|consult(es|ale|arle|ar)|habl(es|a|ale|arle|ar)|llam(es|a|ale|arle|ar)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante|companer\w*|operador|tecnic\w*)");
 
     internal const string NotaPidioPersona ="🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
     internal const string RespuestaPidioPersona = "Entendido, te paso con alguien del equipo. En breve te responde por acá.";
