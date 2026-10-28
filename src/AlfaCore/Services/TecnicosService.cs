@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using AlfaCore.Common;
 using Microsoft.Data.SqlClient;
 using System.Security.Cryptography;
 using System.Text;
@@ -38,7 +39,11 @@ public sealed class TecnicosService(
                 _     => string.Empty
             };
 
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var paginacion = SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila");
             var sql = $"""
+                WITH Pagina (IdTecnico,Nombre,Cargo,Localidad,Telefono,CostoHora,OcultarCliente,UsuarioAsociado,Baja,Fila) AS (
                 SELECT
                     ISNULL(IdTecnico, ''),
                     ISNULL(Nombre, ''),
@@ -48,7 +53,8 @@ public sealed class TecnicosService(
                     CostoHora,
                     ISNULL(OcultarCliente, 0),
                     ISNULL(UsuarioAsociado, ''),
-                    ISNULL(Baja, 0)
+                    ISNULL(Baja, 0),
+                    ROW_NUMBER() OVER(ORDER BY ISNULL(Nombre, ''),IdTecnico)
                 FROM dbo.V_TA_Tecnicos
                 WHERE (
                     @TextoLike = ''
@@ -59,8 +65,9 @@ public sealed class TecnicosService(
                     OR ISNULL(Telefono, '') LIKE @TextoLike
                 )
                 {activoFilter}
-                ORDER BY ISNULL(Nombre, '')
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                )
+                SELECT IdTecnico,Nombre,Cargo,Localidad,Telefono,CostoHora,OcultarCliente,UsuarioAsociado,Baja
+                FROM Pagina {paginacion};
 
                 SELECT COUNT(*)
                 FROM dbo.V_TA_Tecnicos
@@ -76,8 +83,6 @@ public sealed class TecnicosService(
                 """;
 
             var rows = new List<TecnicoGridItemDto>();
-            await using var cn  = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Skip", skip);
@@ -331,8 +336,8 @@ public sealed class TecnicosService(
     public Task<string> GetNextIdTecnicoAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetNextId", async token =>
         {
-            const string sql = """
-                SELECT ISNULL(MAX(TRY_CAST(LTRIM(RTRIM(IdTecnico)) AS int)), 0) + 1
+            var sql = $"""
+                SELECT ISNULL(MAX({SqlServerCompatibilidad.EnteroONull("IdTecnico")}), 0) + 1
                 FROM dbo.V_TA_Tecnicos;
                 """;
 

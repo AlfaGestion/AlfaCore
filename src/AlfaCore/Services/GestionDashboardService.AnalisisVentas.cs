@@ -55,10 +55,18 @@ public sealed partial class GestionDashboardService
                 SELECT COUNT(*) FROM (SELECT Tc,IdComprobante FROM #VentasAnalisis
                     WHERE @Codigo IS NOT NULL AND Codigo=@Codigo GROUP BY Tc,IdComprobante) c;
 
-                SELECT MAX(Fecha) Fecha,Tc,IdComprobante,MAX(Cuenta) Cuenta,MAX(Cliente) Cliente,SUM(Total) Total
-                FROM #VentasAnalisis WHERE @Codigo IS NOT NULL AND Codigo=@Codigo
-                GROUP BY Tc,IdComprobante ORDER BY MAX(Fecha) DESC,Tc,IdComprobante
-                OFFSET @Skip ROWS FETCH NEXT 50 ROWS ONLY;
+                -- ROW_NUMBER conserva la paginación en servidores SQL Server 2008.
+                ;WITH Comprobantes AS (
+                    SELECT MAX(Fecha) Fecha,Tc,IdComprobante,MAX(Cuenta) Cuenta,MAX(Cliente) Cliente,SUM(Total) Total
+                    FROM #VentasAnalisis WHERE @Codigo IS NOT NULL AND Codigo=@Codigo
+                    GROUP BY Tc,IdComprobante
+                ), Pagina AS (
+                    SELECT *,ROW_NUMBER() OVER (ORDER BY Fecha DESC,Tc,IdComprobante) Fila
+                    FROM Comprobantes
+                )
+                SELECT Fecha,Tc,IdComprobante,Cuenta,Cliente,Total
+                FROM Pagina WHERE Fila > @Skip AND Fila <= CONVERT(bigint,@Skip) + 50
+                ORDER BY Fila;
                 DROP TABLE #VentasAnalisis;
                 """;
             static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

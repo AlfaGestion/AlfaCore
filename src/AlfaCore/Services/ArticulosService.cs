@@ -44,8 +44,10 @@ public sealed class ArticulosService(
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
             var orderByClause = BuildOrderByClause(filters.SortBy, filters.SortDescending, precioColumn);
+            var paginacion = SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila");
 
             var sql = $"""
+                WITH Pagina AS (
                 SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS Codigo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -70,7 +72,8 @@ public sealed class ArticulosService(
                     ISNULL(a.EXENTO, 0) AS Exento,
                     ISNULL(a.Pesable, 0) AS Pesable,
                     CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Activo,
-                    CASE WHEN ISNULL(a.ModificoImagen, '') = 'S' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada
+                    CASE WHEN ISNULL(a.ModificoImagen, '') = 'S' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada,
+                    ROW_NUMBER() OVER(ORDER BY {orderByClause}) Fila
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.v_ta_rubros r ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.v_ta_tipoArticulo t ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
@@ -84,9 +87,8 @@ public sealed class ArticulosService(
                   AND (@RubroCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @RubroCodigo)
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
-                ORDER BY
-                    {orderByClause}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                )
+                SELECT * FROM Pagina {paginacion};
 
                 SELECT COUNT(*)
                 FROM dbo.V_MA_ARTICULOS a
@@ -179,10 +181,10 @@ public sealed class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition($"""
                 SELECT ISNULL(MAX(v), 0) + 1
                 FROM (
-                    SELECT TRY_CAST(LTRIM(RTRIM(IDARTICULO)) AS BIGINT) AS v
+                    SELECT {SqlServerCompatibilidad.EnteroONull("IDARTICULO", bigint: true)} AS v
                     FROM dbo.V_MA_ARTICULOS
                 ) x
                 WHERE v IS NOT NULL;
@@ -521,7 +523,7 @@ public sealed class ArticulosService(
         var expression = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
         {
             ArticuloViewColumnKeys.Codigo =>
-                $"CASE WHEN TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) IS NULL THEN 1 ELSE 0 END {direction}, TRY_CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) {direction}",
+                $"CASE WHEN ({SqlServerCompatibilidad.EnteroONull("a.IDARTICULO", bigint: true)}) IS NULL THEN 1 ELSE 0 END {direction}, {SqlServerCompatibilidad.EnteroONull("a.IDARTICULO", bigint: true)} {direction}",
             ArticuloViewColumnKeys.CodigoBarra => $"LTRIM(RTRIM(a.CODIGOBARRA)) {direction}",
             ArticuloViewColumnKeys.Descripcion => $"ISNULL(a.DESCRIPCION, '') {direction}",
             ArticuloViewColumnKeys.Rubro => $"ISNULL(r.Descripcion, '') {direction}",
@@ -673,7 +675,7 @@ public sealed class ArticulosService(
             return existente;
 
         var maximo = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT ISNULL(MAX(TRY_CAST(LTRIM(RTRIM({idColumn})) AS INT)), 0) FROM dbo.{tableName};",
+            $"SELECT ISNULL(MAX({SqlServerCompatibilidad.EnteroONull(idColumn)}), 0) FROM dbo.{tableName};",
             cancellationToken: ct));
         var nuevoCodigo = (maximo + 1).ToString().PadLeft(4, '0');
 

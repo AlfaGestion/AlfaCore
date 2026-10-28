@@ -107,13 +107,13 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
             if (termino.Length<2) return [];
             var literal=termino.Replace("\\","\\\\").Replace("%","\\%").Replace("_","\\_").Replace("[","\\[");
             return (await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("""
-                SELECT LTRIM(RTRIM(CTACODIGO)) Codigo,MAX(RAZON_SOCIAL) Nombre
+                SELECT TOP (25) LTRIM(RTRIM(CTACODIGO)) Codigo,MAX(RAZON_SOCIAL) Nombre
                 FROM dbo.VT_CLIENTES
                 WHERE LTRIM(RTRIM(CTACODIGO)) LIKE @Busqueda ESCAPE '\'
                     OR RAZON_SOCIAL LIKE @Busqueda ESCAPE '\'
                 GROUP BY LTRIM(RTRIM(CTACODIGO))
                 ORDER BY CASE WHEN LTRIM(RTRIM(CTACODIGO))=@Texto THEN 0 ELSE 1 END,MAX(RAZON_SOCIAL),LTRIM(RTRIM(CTACODIGO))
-                OFFSET 0 ROWS FETCH NEXT 25 ROWS ONLY;
+                ;
                 """,new { Texto=termino,Busqueda="%"+literal+"%" },cancellationToken:ct))).ToList();
         },ct);
 
@@ -138,10 +138,13 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
         => EjecutarAsync(ventas,"Detalle",async cn=>
         {
             var sql=Libro(ventas)+$"SELECT COUNT(*) FROM Libro l {Filtro};"+Libro(ventas)+$"""
+                , Pagina AS (
                 SELECT l.FECHA Fecha,l.TC Tc,l.IdComprobante,l.Cuenta,l.RazonSocial,ISNULL(l.DESC_MOTIVO,'') DescMotivo,
                     l.NetoSignado Neto,l.IvaSignado Iva,ISNULL(l.IMPORTE,0) Total,ISNULL(l.USUARIO_LOGEADO,'') Usuario
-                FROM Libro l {Filtro} ORDER BY l.FECHA DESC,l.IdComprobante DESC,l.TC,l.Cuenta,l.NetoSignado,l.IvaSignado,l.IMPORTE
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                    ,ROW_NUMBER() OVER (ORDER BY l.FECHA DESC,l.IdComprobante DESC,l.TC,l.Cuenta,l.NetoSignado,l.IvaSignado,l.IMPORTE) Fila
+                FROM Libro l {Filtro})
+                SELECT Fecha,Tc,IdComprobante,Cuenta,RazonSocial,DescMotivo,Neto,Iva,Total,Usuario
+                FROM Pagina WHERE Fila>@Skip AND Fila<=CONVERT(bigint,@Skip)+@PageSize ORDER BY Fila;
                 """;
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,Parametros(f),commandTimeout:60,cancellationToken:ct));
             return new DetalleComprasResultDto { TotalRegistros=await r.ReadSingleAsync<int>(),Items=(await r.ReadAsync<DetalleComprasFilaDto>()).ToList(),PaginaActual=f.Pagina,TamanioPagina=f.TamanioPagina };

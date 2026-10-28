@@ -53,20 +53,32 @@ public sealed partial class ReporteComercialService
                 HAVING SUM(CASE WHEN @FechaDesde IS NULL OR m.FECHA>=@FechaDesde THEN 1 ELSE 0 END)>0
                     OR SUM(CASE WHEN @FechaDesde IS NOT NULL AND m.FECHA<@FechaDesde THEN m.Signado ELSE 0 END)<>0;
 
-                WITH Numerados AS (
-                    SELECT m.*,c.RazonSocial,c.SaldoInicial,c.SaldoFinal,
+                SELECT m.*,c.RazonSocial,c.SaldoInicial,c.SaldoFinal,
                         ROW_NUMBER() OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,
                             m.Asiento,m.SECUENCIA,m.Tc,m.SUCURSAL,m.NUMERO,m.LETRA,m.TIPO_REG,m.CuentaOriginal) Orden,
-                        COUNT(*) OVER(PARTITION BY m.Cuenta) Cantidad,
-                        SUM(m.Signado) OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,
-                            m.Asiento,m.SECUENCIA,m.Tc,m.SUCURSAL,m.NUMERO,m.LETRA,m.TIPO_REG,m.CuentaOriginal
-                            ROWS UNBOUNDED PRECEDING) Acumulado
+                        COUNT(*) OVER(PARTITION BY m.Cuenta) Cantidad
+                    INTO #NumeradosVentas
                     FROM #MovimientosVentas m JOIN #CuentasVentas c ON c.Cuenta=m.Cuenta
-                    WHERE @FechaDesde IS NULL OR m.FECHA>=@FechaDesde
+                    WHERE @FechaDesde IS NULL OR m.FECHA>=@FechaDesde;
+                CREATE UNIQUE CLUSTERED INDEX IX_NumeradosVentas ON #NumeradosVentas(Cuenta,Orden);
+                -- Recorrido por cuenta y orden, compatible con SQL Server 2008, antes de paginar.
+                WITH Acumulados AS (
+                    SELECT Cuenta,Orden,CONVERT(decimal(38,4),Signado) Acumulado
+                    FROM #NumeradosVentas WHERE Orden=1
+                    UNION ALL
+                    SELECT n.Cuenta,n.Orden,CONVERT(decimal(38,4),CONVERT(decimal(37,4),a.Acumulado)+n.Signado)
+                    FROM Acumulados a JOIN #NumeradosVentas n ON n.Cuenta=a.Cuenta AND n.Orden=a.Orden+1
+                )
+                SELECT Cuenta,Orden,Acumulado INTO #AcumuladosVentas FROM Acumulados OPTION(MAXRECURSION 0);
+                CREATE UNIQUE CLUSTERED INDEX IX_AcumuladosVentas ON #AcumuladosVentas(Cuenta,Orden);
+                WITH Numerados AS (
+                    SELECT n.*,a.Acumulado FROM #NumeradosVentas n
+                    JOIN #AcumuladosVentas a ON a.Cuenta=n.Cuenta AND a.Orden=n.Orden
                 )
                 SELECT Cuenta,RazonSocial,FECHA Fecha,Tc,SUCURSAL+NUMERO+LETRA IdComprobante,
                     DebeHaber,Importe,Signado ImporteSignado,SaldoInicial,
-                    SaldoInicial+Acumulado-Signado SaldoAnteriorLinea,SaldoInicial+Acumulado SaldoParcial,
+                    CONVERT(decimal(37,4),CONVERT(decimal(37,4),SaldoInicial)+CONVERT(decimal(37,4),Acumulado))-Signado SaldoAnteriorLinea,
+                    CONVERT(decimal(37,4),SaldoInicial)+CONVERT(decimal(37,4),Acumulado) SaldoParcial,
                     SaldoFinal SaldoFinalCuenta,CONVERT(bit,CASE WHEN Orden=Cantidad THEN 1 ELSE 0 END) UltimaLineaCuenta,
                     CONVERT(bit,0) EsSaldoInicial,Orden
                 INTO #LineasVentas FROM Numerados
@@ -85,7 +97,9 @@ public sealed partial class ReporteComercialService
                 SELECT ISNULL(SUM(c.SaldoInicial),0) SaldoInicialTotal,ISNULL(SUM(c.Movimiento),0) SaldoTotal,
                     ISNULL(SUM(c.SaldoFinal),0) SaldoFinalTotal FROM #CuentasVentas c
                     WHERE EXISTS(SELECT 1 FROM #LineasVentas l WHERE l.Cuenta=c.Cuenta);
-                SELECT * FROM #LineasVentas ORDER BY Cuenta,Orden OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                WITH Pagina AS (SELECT *,ROW_NUMBER() OVER(ORDER BY Cuenta,Orden) Fila FROM #LineasVentas)
+                SELECT * FROM Pagina WHERE Fila>@Skip AND Fila<=CONVERT(bigint,@Skip)+@PageSize ORDER BY Fila;
+                DROP TABLE #AcumuladosVentas; DROP TABLE #NumeradosVentas;
                 DROP TABLE #LineasVentas; DROP TABLE #CuentasVentas; DROP TABLE #MovimientosVentas;
                 """;
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,Parametros(f),commandTimeout:60,cancellationToken:ct));

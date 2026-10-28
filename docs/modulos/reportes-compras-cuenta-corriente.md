@@ -1,5 +1,17 @@
 # Compras — Cuenta corriente, Saldos, Resumida y Analítica
 
+## Compatibilidad con GENESIS — 28/10/2026
+
+En la base central 97, GENESIS, SQL Server 2008 con compatibilidad 80 rechazaba las cinco pestañas de Detalle, Cuenta corriente, Saldos, Resumida y Analítica. Se confirmaron en `AUX_ERR` los incidentes 7330, 7333, 7335, 7336 y 7337: sintaxis `OFFSET/FETCH`, `THROW` y acumulados con `ROWS UNBOUNDED PRECEDING`.
+
+El servicio compartido conserva la paginación en SQL mediante `ROW_NUMBER`. Los acumulados se calculan antes de paginar mediante CTE recursivas y temporales indexadas por cuenta/orden o documento/orden de aplicación; no se recorre toda la historia por cada renglón. `MAXRECURSION 0` permite cuentas con más de cien movimientos. Las conversiones decimales conservan cuatro decimales durante la suma y al calcular saldos parciales. El control de referencias duplicadas usa `RAISERROR` seguido de `RETURN`, manteniendo el rechazo y el logging centralizado. El autocompletado de clientes compartido con Ventas conserva el límite de 25 resultados con `TOP`.
+
+`ReportesCompatibilidadSqlTests` usa `ALFACORE_REPORTES_SQL` para pruebas de lectura explícitas en una base real: detalle y segunda página, cantidades contra resumen, continuidad y acumulados por renglón, saldos contra asientos H-D, resumida contra la fuente oficial, analítica con aplicaciones y filtros sin resultados. No modifica movimientos ni configuración. El cambio requiere publicar la aplicación; no necesita actualización de esquema ni cambio del nivel de compatibilidad.
+
+Verificación del cambio: tres pruebas aprobadas en GENESIS y las mismas tres en DISTRIWALTERP, sin omisiones. Regresión de Ventas en DISTRIWALTERP: cuatro pruebas de lectura aprobadas (apertura/acumulados, filtros de cartera/unidad, saldos y resumida/analítica). También se ejecutaron las pruebas de interfaz de reportes/Vendedores disponibles sin conexión (cinco aprobadas). Catálogo asistido: 107 rutinas, sin advertencias ni errores.
+
+## Verificación original — 16/10/2026
+
 Pasada del 2026-10-16. Implementación sobre `/compras/reportes`, incluyendo el prefijo SaaS. Única base de verificación SQL: **SERVER-ALFAVB6 / DISTRIWALTERP**, identidad comprobada con @@SERVERNAME/DB_NAME(). No se restauró la base ni se usaron otras bases para pruebas.
 
 ## Comportamiento entregado

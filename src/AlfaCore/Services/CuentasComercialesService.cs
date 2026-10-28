@@ -37,7 +37,14 @@ public sealed class CuentasComercialesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // SQL Server 2008 no admite OFFSET/FETCH; conservar la paginación en el servidor.
+            var paginacion = Version.Parse(cn.ServerVersion).Major < 11
+                ? "WHERE Fila > @Skip AND Fila <= CONVERT(bigint,@Skip) + @PageSize ORDER BY Fila;"
+                : "ORDER BY Fila OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;";
             var sql = $"""
+                WITH Pagina (Codigo,RazonSocial,Contacto,Localidad,ProvinciaCodigo,ProvinciaDescripcion,
+                    PaisCodigo,PaisDescripcion,Telefono,Mail,NumeroDocumento,IvaCodigo,IvaDescripcion,
+                    IdVendedor,NombreVendedor,IdLista,Bloqueado,Activo,Calle,Numero,Piso,Departamento,Fila) AS (
                 SELECT
                     ISNULL(base.CODIGO, ''),
                     ISNULL(base.RAZON_SOCIAL, ''),
@@ -60,7 +67,10 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.CALLE, ''),
                     ISNULL(base.NUMERO, ''),
                     ISNULL(base.PISO, ''),
-                    ISNULL(base.DEPARTAMENTO, '')
+                    ISNULL(base.DEPARTAMENTO, ''),
+                    ROW_NUMBER() OVER (ORDER BY
+                        CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN 0 ELSE 1 END,
+                        ISNULL(base.RAZON_SOCIAL, ''),ISNULL(base.CODIGO, ''))
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.TA_ESTADOS prov
                     ON UPPER(LTRIM(RTRIM(prov.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, ''))))
@@ -84,11 +94,11 @@ public sealed class CuentasComercialesService(
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
                   AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, '')))) = @ProvinciaCodigo)
                   AND (@PaisCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PAIS, '')))) = @PaisCodigo)
-                ORDER BY
-                    CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN 0 ELSE 1 END,
-                    ISNULL(base.RAZON_SOCIAL, ''),
-                    ISNULL(base.CODIGO, '')
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                )
+                SELECT Codigo,RazonSocial,Contacto,Localidad,ProvinciaCodigo,ProvinciaDescripcion,
+                    PaisCodigo,PaisDescripcion,Telefono,Mail,NumeroDocumento,IvaCodigo,IvaDescripcion,
+                    IdVendedor,NombreVendedor,IdLista,Bloqueado,Activo,Calle,Numero,Piso,Departamento
+                FROM Pagina {paginacion}
 
                 SELECT COUNT(*)
                 FROM dbo.{descriptor.ViewName} base

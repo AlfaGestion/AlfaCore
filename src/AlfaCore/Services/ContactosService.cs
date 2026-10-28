@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using AlfaCore.Common;
 using Microsoft.Data.SqlClient;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
@@ -62,20 +63,9 @@ public sealed class ContactosService(
             var pageConversationMatchSql = BuildConversationMatchSql("pageContacts");
             var advancedFilterSql = BuildAdvancedFilterSql(filters, filterConversationMatchSql);
             var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
+            var paginacion = SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila", ordenar: false);
             var sql = $"""
-                SELECT
-                    pageContacts.Id,
-                    pageContacts.NombreApellido,
-                    pageContacts.Localidad,
-                    pageContacts.ProvinciaCodigo,
-                    pageContacts.ProvinciaDescripcion,
-                    pageContacts.Telefono,
-                    pageContacts.Celular,
-                    pageContacts.Email,
-                    pageContacts.Cargo,
-                    pageContacts.Activo,
-                    conv.IdConversacion
-                FROM (
+                WITH ContactosFiltrados AS (
                     SELECT
                         c.id AS Id,
                         ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
@@ -87,7 +77,8 @@ public sealed class ContactosService(
                         ISNULL(c.Fax, '') AS Fax,
                         ISNULL(c.email, '') AS Email,
                         ISNULL(c.Cargo, '') AS Cargo,
-                        {activoExpr} AS Activo
+                        {activoExpr} AS Activo,
+                        ROW_NUMBER() OVER(ORDER BY {orderBySql}) Fila
                     FROM dbo.MA_CONTACTOS c
                     LEFT JOIN dbo.TA_ESTADOS e
                         ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
@@ -103,8 +94,21 @@ public sealed class ContactosService(
                       {activoFilterSql}
                       {advancedFilterSql}
                       {ruleFilterSql}
-                    ORDER BY {orderBySql}
-                    OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY
+                )
+                SELECT
+                    pageContacts.Id,
+                    pageContacts.NombreApellido,
+                    pageContacts.Localidad,
+                    pageContacts.ProvinciaCodigo,
+                    pageContacts.ProvinciaDescripcion,
+                    pageContacts.Telefono,
+                    pageContacts.Celular,
+                    pageContacts.Email,
+                    pageContacts.Cargo,
+                    pageContacts.Activo,
+                    conv.IdConversacion
+                FROM (
+                    SELECT * FROM ContactosFiltrados {paginacion}
                 ) pageContacts
                 OUTER APPLY (
                     SELECT TOP (1) cc.IdConversacion

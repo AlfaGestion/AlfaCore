@@ -1,5 +1,13 @@
 # Módulo Clientes y Proveedores
 
+## Compatibilidad del listado con SQL Server 2008
+
+El incidente 7617 de GENESIS (base central 97, 28/10/2026) confirmó que `Clientes.Search` fallaba por `OFFSET/FETCH`. `CuentasComercialesService.SearchAsync`, compartido con Proveedores, detecta la versión del motor desde la conexión abierta. En SQL Server 2008 usa `ROW_NUMBER` y límites de fila; desde SQL Server 2012 conserva `OFFSET/FETCH`. En ambos casos pagina en SQL, mantiene el orden por activo, razón social y código, y devuelve el total con los mismos filtros de búsqueda, activo, bloqueo, provincia y país.
+
+La corrección no modifica maestros, configuración ni esquema y requiere publicar AlfaCore. Las pruebas de lectura `CuentasComercialesCompatibilidadSqlTests`, habilitadas con `ALFACORE_REPORTES_SQL`, verifican ambos maestros, continuidad entre páginas, total contra la vista oficial, búsqueda, bajas, bloqueo, provincia, país y resultado vacío.
+
+Verificación: dos pruebas aprobadas en GENESIS (ruta SQL Server 2008) y las mismas dos en DISTRIWALTERP (ruta con `OFFSET/FETCH`), sin fallas ni omisiones. Catálogo asistido: 107 rutinas, sin advertencias ni errores.
+
 ## Objetivo
 
 Este módulo implementa el ABM web de cuentas comerciales de `Clientes` y `Proveedores` sobre la base actual de Alfa, reutilizando la lógica funcional relevada desde la versión VB6.

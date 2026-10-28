@@ -66,6 +66,7 @@ public sealed class PortalClienteService(
 
             var filas = await cn.QueryAsync<PedidoRow>(new CommandDefinition(
                 $"""
+                WITH Pedidos AS (
                 SELECT
                     ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(TC)), '') AS Tc,
@@ -73,11 +74,14 @@ public sealed class PortalClienteService(
                     FECHA AS Fecha,
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Total,
                     CAST(ISNULL(ANULADA, 0) AS bit) AS Anulada,
-                    CAST(ISNULL(COMENTARIOS, '') AS nvarchar(max)) AS Comentarios
+                    CAST(ISNULL(COMENTARIOS, '') AS nvarchar(max)) AS Comentarios,
+                    ROW_NUMBER() OVER (ORDER BY FECHA DESC, ID DESC) AS Fila
                 FROM dbo.V_MV_Cpte
                 WHERE {whereSql}
-                ORDER BY FECHA DESC, ID DESC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                )
+                SELECT IdComprobante,Tc,IdComprobanteTexto,Fecha,Total,Anulada,Comentarios
+                FROM Pedidos WHERE Fila>@Offset AND Fila<=CONVERT(bigint,@Offset)+@PageSize
+                ORDER BY Fila;
                 """,
                 parametros, cancellationToken: token));
 
