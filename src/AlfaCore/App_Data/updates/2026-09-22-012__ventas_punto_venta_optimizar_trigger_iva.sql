@@ -6,7 +6,10 @@
 */
 SET NOCOUNT ON;
 
+-- Opt-out por base: ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY = N (grupo SISTEMA) deja intactos los
+-- triggers del sistema legacy. Sin la clave, o con S, se aplica el parche.
 IF OBJECT_ID(N'dbo.FMT_V_MV_CPTE_ID', N'TR') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY' AND UPPER(LTRIM(RTRIM(VALOR))) = N'N')
 BEGIN
     EXEC(N'
 ALTER TRIGGER [dbo].[FMT_V_MV_CPTE_ID] ON [dbo].[V_MV_Cpte]

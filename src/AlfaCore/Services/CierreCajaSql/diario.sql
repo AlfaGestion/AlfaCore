@@ -18,8 +18,8 @@ CREATE TABLE #temp
 	DECLARE @fhHasta DATE
 	IF @esMensual = 1
 		BEGIN
-		SET @fhDesde = DATEFROMPARTS(YEAR(@fecha),MONTH(@fecha),1);
-		SET @fhHasta = EOMONTH(@fecha);
+		SET @fhDesde = DATEADD(month, DATEDIFF(month, 0, @fecha), 0); -- sin DATEFROMPARTS/EOMONTH: SQL 2008
+		SET @fhHasta = DATEADD(day, -1, DATEADD(month, DATEDIFF(month, 0, @fecha) + 1, 0));
 	END
 	ELSE
 		BEGIN

@@ -1091,6 +1091,13 @@ public sealed class PuntoVentaService(
 
             var rows = await cn.QueryAsync<PuntoVentaArticleRow>(new CommandDefinition(
                 $"""
+                -- ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
+                SELECT IdArticulo, CodigoBarra, Descripcion, Presentacion, Procedencia, IdFamilia, Familia, IdUnidad,
+                    TasaIva, Exento, NoControlaStock, Pesable, RutaImagen,
+                    PrecioBase1, PrecioBase2, PrecioBase3, PrecioBase4, PrecioBase5, PrecioBase6, PrecioBase7, PrecioBase8,
+                    PrecioLista1, PrecioLista2, PrecioLista3, PrecioLista4, PrecioLista5, PrecioLista6, PrecioLista7, PrecioLista8,
+                    PrecioOferta
+                FROM (
                 SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -1121,7 +1128,8 @@ public sealed class PuntoVentaService(
                     ISNULL(p.Precio6, 0) AS PrecioLista6,
                     ISNULL(p.Precio7, 0) AS PrecioLista7,
                     ISNULL(p.Precio8, 0) AS PrecioLista8,
-                    {ofertaSelect} AS PrecioOferta
+                    {ofertaSelect} AS PrecioOferta,
+                    ROW_NUMBER() OVER (ORDER BY a.DESCRIPCION, a.IDARTICULO) AS FilaPagina
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
@@ -1136,9 +1144,9 @@ public sealed class PuntoVentaService(
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
                   AND (@IdRubro = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @IdRubro)
                   {wordFilters}
-                ORDER BY a.DESCRIPCION, a.IDARTICULO
-                OFFSET @Skip ROWS
-                FETCH NEXT @Fetch ROWS ONLY;
+                ) pagina
+                WHERE FilaPagina > @Skip AND FilaPagina <= @Skip + @Fetch
+                ORDER BY FilaPagina;
                 """,
                 parameters,
                 cancellationToken: token));

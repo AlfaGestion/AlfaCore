@@ -7,6 +7,11 @@
 IF OBJECT_ID(N'dbo.MV_Asientos_ValidaFechas', N'TR') IS NULL
     RETURN;
 
+-- Opt-out por base: ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY = N (grupo SISTEMA) deja intactos los
+-- triggers del sistema legacy. Sin la clave, o con S, se aplica el parche.
+IF EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY' AND UPPER(LTRIM(RTRIM(VALOR))) = N'N')
+    RETURN;
+
 DECLARE @Definicion nvarchar(max) = OBJECT_DEFINITION(OBJECT_ID(N'dbo.MV_Asientos_ValidaFechas', N'TR'));
 IF @Definicion IS NULL
     RETURN;
@@ -14,7 +19,7 @@ IF @Definicion IS NULL
 DECLARE @PrimeraCursor int = CHARINDEX(N'DECLARE CRS_MV', @Definicion);
 DECLARE @SegundaCursor int = CHARINDEX(N'DECLARE CRS_MV', @Definicion, @PrimeraCursor + 1);
 IF @PrimeraCursor = 0 OR @SegundaCursor = 0
-    THROW 51000, 'No se encontraron las dos declaraciones de cursor de MV_Asientos_ValidaFechas.', 1;
+    BEGIN RAISERROR(N'No se encontraron las dos declaraciones de cursor de MV_Asientos_ValidaFechas.', 16, 1); RETURN; END;
 
 DECLARE @BloqueDeleted nvarchar(max) = LEFT(@Definicion, @SegundaCursor - 1);
 DECLARE @BloqueInserted nvarchar(max) = SUBSTRING(@Definicion, @SegundaCursor, LEN(@Definicion));

@@ -8,6 +8,10 @@ La actualización `2026-10-27-002` registra en CAJA `TARJETAS-PYTHON` (ejecutabl
 
 La detección de cuenta al seleccionar un PDF reutiliza `TARJETAS-IA-DIAS` para consultar las fechas de operación con margen, y `TARJETAS-TOLERANCIA` para la evidencia orientativa de bruto diario de lotes. No agrega claves ni usa IA en esa detección; los pares individuales se comparan por importe exacto. Las asociaciones recordadas se validan contra las cuentas TJ activas en pesos. La elección automática es una sugerencia revisable, no confirma conciliaciones.
 
+## Actualizaciones de base sobre triggers legacy
+
+`ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY` (SISTEMA, `S`/`N`): con `N`, las actualizaciones de Punto de Venta no modifican los triggers del sistema legacy de esa base (`MV_Asientos_ValidaFechas`, `FMT_V_MV_CPTE_ID`): scripts `2026-09-22-007`, `2026-09-22-012`, `2026-09-24-004` (parte del trigger), `2026-09-24-006` y `2026-09-24-007`. Sin la clave, o con `S`, se aplican como siempre. No la crea ningún script: se carga a mano solo en las bases donde el cliente no autorizó tocar sus triggers (por ejemplo GENESIS, desde el 28/10/2026).
+
 ## Base de demostración reiniciable
 
 `DEMO-BASE-REINICIABLE` (CAJA) identifica únicamente `ALFANET_DEMO` en `SERVER-ALFAVB6`. Su valor debe ser `ALFANET_DEMO`. La herramienta de restablecimiento exige esta marca además de validar servidor, nombre interno del respaldo y archivos físicos antes de cerrar conexiones o restaurar. No habilita un reinicio en otras bases ni se distribuye por el actualizador general. Ver [operación y respaldo de la demo](../tools/conciliacion_demo/README.md).

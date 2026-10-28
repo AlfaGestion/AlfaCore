@@ -20,7 +20,7 @@ DECLARE @ExpresionNueva nvarchar(4000) =
                          WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N''CUENTAVENTASDEFAULTINS''),';
 
 IF CHARINDEX(@ExpresionAnterior, @Definicion) = 0
-    THROW 51000, 'No se encontró V_DFI_CTAVTA en sp_web_CreaAsientoFactura para actualizarlo.', 1;
+    BEGIN RAISERROR(N'No se encontró V_DFI_CTAVTA en sp_web_CreaAsientoFactura para actualizarlo.', 16, 1); RETURN; END;
 
 SET @Definicion = REPLACE(@Definicion, @ExpresionAnterior, @ExpresionNueva);
 SET @Definicion = REPLACE(@Definicion, N'CREATE PROCEDURE', N'ALTER PROCEDURE');

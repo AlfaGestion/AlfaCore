@@ -121,11 +121,22 @@ public sealed class TicketsService(
             var skip = (pageNumber - 1) * pageSize;
             var orderBy = BuildTicketOrderBy(filters.OrdenarPor, filters.OrdenDescendente);
 
+            // ROW_NUMBER/TOP en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
                 {TicketListSelectSql()}
-                {TicketWhereSql()}
-                ORDER BY {orderBy}, t.IdTicket DESC
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                INNER JOIN (
+                    SELECT numbered.IdTicket, numbered.RowNumPagina
+                    FROM (
+                        SELECT
+                            t.IdTicket,
+                            ROW_NUMBER() OVER (ORDER BY {orderBy}, t.IdTicket DESC) AS RowNumPagina
+                        {TicketBaseFromSql(includeMessageCount: true)}
+                        {TicketWhereSql()}
+                    ) numbered
+                    WHERE numbered.RowNumPagina > @Skip
+                      AND numbered.RowNumPagina <= @Skip + @PageSize
+                ) pagina ON pagina.IdTicket = t.IdTicket
+                ORDER BY pagina.RowNumPagina;
 
                 SELECT COUNT(*)
                 {TicketBaseFromSql(includeMessageCount: false)}
@@ -186,10 +197,9 @@ public sealed class TicketsService(
             filters ??= new TicketsFilters();
             var limit = Math.Clamp(filters.PageSize <= 0 ? 120 : filters.PageSize, 25, 200);
             var sql = $"""
-                {TicketListSelectSql()}
+                {TicketListSelectSql("TOP (@Limit)")}
                 {TicketWhereSql()}
-                ORDER BY e.Orden, t.Prioridad DESC, t.FechaHoraAlta DESC, t.IdTicket DESC
-                OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY;
+                ORDER BY e.Orden, t.Prioridad DESC, t.FechaHoraAlta DESC, t.IdTicket DESC;
                 """;
 
             var rows = new List<TicketGridItemDto>();
@@ -939,9 +949,9 @@ public sealed class TicketsService(
             return detail;
         }, "No se pudo cargar el ticket seleccionado.", ct);
 
-    private static string TicketListSelectSql()
+    private static string TicketListSelectSql(string topSql = "")
         => $"""
-            SELECT
+            SELECT {topSql}
                 t.IdTicket,
                 t.Numero,
                 RIGHT('0000' + CONVERT(varchar(10), t.Numero), 4),

@@ -164,8 +164,13 @@ public sealed class ListaPreciosClienteService(
             : string.Empty;
         var categoriaSelect = tieneCategorias ? "ISNULL(cat.Descripcion, '')" : "''";
 
+        // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
         var sql = usarLista
             ? $"""
+            SELECT
+                pg.IdArticulo, pg.Descripcion, pg.Presentacion, pg.Marca, pg.Familia,
+                pg.Rubro, pg.Categoria, pg.TasaIva, pg.Precio, pg.TotalRows
+            FROM (
             SELECT
                 a.IDARTICULO AS IdArticulo,
                 ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
@@ -176,7 +181,8 @@ public sealed class ListaPreciosClienteService(
                 {categoriaSelect} AS Categoria,
                 ISNULL(a.TasaIVA, 0) AS TasaIva,
                 ISNULL(p.Precio{clase}, 0) AS Precio,
-                COUNT(1) OVER() AS TotalRows
+                COUNT(1) OVER() AS TotalRows,
+                ROW_NUMBER() OVER (ORDER BY {orderBy}) AS RowNum
             FROM dbo.V_MA_Precios p
             INNER JOIN dbo.V_MA_ARTICULOS a
                 ON a.IDARTICULO = p.IdArticulo
@@ -198,10 +204,15 @@ public sealed class ListaPreciosClienteService(
                     OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
                     OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                   )
-            ORDER BY {orderBy}
-            OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+            ) pg
+            WHERE pg.RowNum > @Skip AND pg.RowNum <= @Skip + @PageSize
+            ORDER BY pg.RowNum;
             """
             : $"""
+            SELECT
+                pg.IdArticulo, pg.Descripcion, pg.Presentacion, pg.Marca, pg.Familia,
+                pg.Rubro, pg.Categoria, pg.TasaIva, pg.Precio, pg.TotalRows
+            FROM (
             SELECT
                 a.IDARTICULO AS IdArticulo,
                 ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
@@ -212,7 +223,8 @@ public sealed class ListaPreciosClienteService(
                 {categoriaSelect} AS Categoria,
                 ISNULL(a.TasaIVA, 0) AS TasaIva,
                 ISNULL(a.Precio{clase}, 0) AS Precio,
-                COUNT(1) OVER() AS TotalRows
+                COUNT(1) OVER() AS TotalRows,
+                ROW_NUMBER() OVER (ORDER BY {orderBy}) AS RowNum
             FROM dbo.V_MA_ARTICULOS a
             LEFT JOIN dbo.V_TA_Rubros r
                 ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
@@ -230,8 +242,9 @@ public sealed class ListaPreciosClienteService(
                     OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
                     OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                   )
-            ORDER BY {orderBy}
-            OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+            ) pg
+            WHERE pg.RowNum > @Skip AND pg.RowNum <= @Skip + @PageSize
+            ORDER BY pg.RowNum;
             """;
 
         var rows = (await cn.QueryAsync<ArticuloRow>(new CommandDefinition(

@@ -3368,9 +3368,13 @@ public sealed class InterfacesService(
             WHERE ID = @ID;
 
             IF @@ROWCOUNT = 0
-                THROW 50000, 'No se encontrÃ³ el registro de procesamiento indicado.', 1;
+            BEGIN
+                RAISERROR(N'No se encontrÃ³ el registro de procesamiento indicado.', 16, 1);
+                RETURN;
+            END
             """;
 
+        // RAISERROR en vez de THROW: hay bases en SQL Server 2008 / compat 80.
         await using var cmd = new SqlCommand(updateSql, cn);
         cmd.Parameters.AddWithValue("@ID", id);
         cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));

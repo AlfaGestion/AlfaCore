@@ -821,7 +821,7 @@ public sealed class TareasService(
                     (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, UsuarioCreador, FechaHoraAlta, Activa)
                 SELECT
                     IdLista,
-                    CONCAT(Titulo, N' (copia)'),
+                    ISNULL(Titulo, N'') + N' (copia)',
                     Descripcion,
                     FechaVencimiento,
                     UsuarioAsignado,

@@ -34,6 +34,11 @@ BEGIN
     );
 
     CREATE NONCLUSTERED INDEX IX_COT_EMAIL_ENVIO_Version ON dbo.COT_EMAIL_ENVIO (IdVersion, FechaHoraEnvio DESC);
-    CREATE UNIQUE NONCLUSTERED INDEX IX_COT_EMAIL_ENVIO_Token ON dbo.COT_EMAIL_ENVIO (TrackingToken) WHERE TrackingToken IS NOT NULL;
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT);
+    -- ahí no se crea y la unicidad del token queda a cargo del servicio (lo genera como GUID).
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX IX_COT_EMAIL_ENVIO_Token ON dbo.COT_EMAIL_ENVIO (TrackingToken) WHERE TrackingToken IS NOT NULL;');
+    ELSE
+        CREATE NONCLUSTERED INDEX IX_COT_EMAIL_ENVIO_Token ON dbo.COT_EMAIL_ENVIO (TrackingToken);
 END;
 GO

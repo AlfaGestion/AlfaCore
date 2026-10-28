@@ -20,6 +20,20 @@ IF EXISTS (
       AND name = N'UQ_CONV_PLANTILLAS_NombreMeta_Idioma')
     ALTER TABLE dbo.CONV_PLANTILLAS DROP CONSTRAINT UQ_CONV_PLANTILLAS_NombreMeta_Idioma;
 
+-- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT).
+-- Ahí alcanza un único índice sin filtro: en un UNIQUE los NULL de WabaId cuentan como iguales,
+-- así que cubre las dos reglas (legacy sin WABA y por WABA).
+IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) < 90
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE object_id = OBJECT_ID(N'dbo.CONV_PLANTILLAS')
+          AND name = N'UX_CONV_PLANTILLAS_WabaId_NombreMeta_Idioma')
+        CREATE UNIQUE INDEX UX_CONV_PLANTILLAS_WabaId_NombreMeta_Idioma
+            ON dbo.CONV_PLANTILLAS (WabaId, NombreMeta, Idioma);
+END
+ELSE
+BEGIN
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes
     WHERE object_id = OBJECT_ID(N'dbo.CONV_PLANTILLAS')
@@ -37,5 +51,6 @@ IF NOT EXISTS (
         CREATE UNIQUE INDEX UX_CONV_PLANTILLAS_WabaId_NombreMeta_Idioma
             ON dbo.CONV_PLANTILLAS (WabaId, NombreMeta, Idioma)
             WHERE WabaId IS NOT NULL;');
+END;
 
 COMMIT TRANSACTION;

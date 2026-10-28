@@ -53,26 +53,22 @@ public sealed partial class ReporteComercialService
                 HAVING SUM(CASE WHEN @FechaDesde IS NULL OR m.FECHA>=@FechaDesde THEN 1 ELSE 0 END)>0
                     OR SUM(CASE WHEN @FechaDesde IS NOT NULL AND m.FECHA<@FechaDesde THEN m.Signado ELSE 0 END)<>0;
 
-                WITH Numerados AS (
-                    SELECT m.*,c.RazonSocial,c.SaldoInicial,c.SaldoFinal,
-                        ROW_NUMBER() OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,
-                            m.Asiento,m.SECUENCIA,m.Tc,m.SUCURSAL,m.NUMERO,m.LETRA,m.TIPO_REG,m.CuentaOriginal) Orden,
-                        COUNT(*) OVER(PARTITION BY m.Cuenta) Cantidad,
-                        SUM(m.Signado) OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,
-                            m.Asiento,m.SECUENCIA,m.Tc,m.SUCURSAL,m.NUMERO,m.LETRA,m.TIPO_REG,m.CuentaOriginal
-                            ROWS UNBOUNDED PRECEDING) Acumulado
-                    FROM #MovimientosVentas m JOIN #CuentasVentas c ON c.Cuenta=m.Cuenta
-                    WHERE @FechaDesde IS NULL OR m.FECHA>=@FechaDesde
-                )
+                -- Sin SUM() OVER(ORDER BY) ni OFFSET (SQL 2008 / compat 80): el acumulado se calcula solo para la página.
+                SELECT m.*,c.RazonSocial,c.SaldoInicial,c.SaldoFinal,
+                    ROW_NUMBER() OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,
+                        m.Asiento,m.SECUENCIA,m.Tc,m.SUCURSAL,m.NUMERO,m.LETRA,m.TIPO_REG,m.CuentaOriginal) Orden,
+                    COUNT(*) OVER(PARTITION BY m.Cuenta) Cantidad
+                INTO #NumeradosVentas FROM #MovimientosVentas m JOIN #CuentasVentas c ON c.Cuenta=m.Cuenta
+                WHERE @FechaDesde IS NULL OR m.FECHA>=@FechaDesde;
+
                 SELECT Cuenta,RazonSocial,FECHA Fecha,Tc,SUCURSAL+NUMERO+LETRA IdComprobante,
                     DebeHaber,Importe,Signado ImporteSignado,SaldoInicial,
-                    SaldoInicial+Acumulado-Signado SaldoAnteriorLinea,SaldoInicial+Acumulado SaldoParcial,
                     SaldoFinal SaldoFinalCuenta,CONVERT(bit,CASE WHEN Orden=Cantidad THEN 1 ELSE 0 END) UltimaLineaCuenta,
                     CONVERT(bit,0) EsSaldoInicial,Orden
-                INTO #LineasVentas FROM Numerados
+                INTO #LineasVentas FROM #NumeradosVentas
                 UNION ALL
                 SELECT c.Cuenta,c.RazonSocial,COALESCE(@FechaDesde,@FechaHasta,CONVERT(datetime,'19000101')),
-                    '', '', '', 0,0,c.SaldoInicial,c.SaldoInicial,c.SaldoInicial,c.SaldoFinal,CONVERT(bit,1),CONVERT(bit,1),0
+                    '', '', '', 0,0,c.SaldoInicial,c.SaldoFinal,CONVERT(bit,1),CONVERT(bit,1),0
                 FROM #CuentasVentas c WHERE NOT EXISTS(SELECT 1 FROM #MovimientosVentas m
                     WHERE m.Cuenta=c.Cuenta AND (@FechaDesde IS NULL OR m.FECHA>=@FechaDesde));
 
@@ -85,8 +81,17 @@ public sealed partial class ReporteComercialService
                 SELECT ISNULL(SUM(c.SaldoInicial),0) SaldoInicialTotal,ISNULL(SUM(c.Movimiento),0) SaldoTotal,
                     ISNULL(SUM(c.SaldoFinal),0) SaldoFinalTotal FROM #CuentasVentas c
                     WHERE EXISTS(SELECT 1 FROM #LineasVentas l WHERE l.Cuenta=c.Cuenta);
-                SELECT * FROM #LineasVentas ORDER BY Cuenta,Orden OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
-                DROP TABLE #LineasVentas; DROP TABLE #CuentasVentas; DROP TABLE #MovimientosVentas;
+                SELECT * INTO #PaginaVentas FROM (
+                    SELECT l.*,ROW_NUMBER() OVER(ORDER BY l.Cuenta,l.Orden) FilaPagina FROM #LineasVentas l) p
+                WHERE FilaPagina>@Skip AND FilaPagina<=@Skip+@PageSize;
+                SELECT p.Cuenta,p.RazonSocial,p.Fecha,p.Tc,p.IdComprobante,p.DebeHaber,p.Importe,p.ImporteSignado,p.SaldoInicial,
+                    p.SaldoInicial+ISNULL(a.Acumulado,0)-p.ImporteSignado SaldoAnteriorLinea,p.SaldoInicial+ISNULL(a.Acumulado,0) SaldoParcial,
+                    p.SaldoFinalCuenta,p.UltimaLineaCuenta,p.EsSaldoInicial,p.Orden
+                FROM #PaginaVentas p
+                LEFT JOIN (SELECT x.FilaPagina,SUM(n.Signado) Acumulado FROM #PaginaVentas x
+                    JOIN #NumeradosVentas n ON n.Cuenta=x.Cuenta AND n.Orden<=x.Orden GROUP BY x.FilaPagina) a ON a.FilaPagina=p.FilaPagina
+                ORDER BY p.FilaPagina;
+                DROP TABLE #PaginaVentas; DROP TABLE #LineasVentas; DROP TABLE #NumeradosVentas; DROP TABLE #CuentasVentas; DROP TABLE #MovimientosVentas;
                 """;
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,Parametros(f),commandTimeout:60,cancellationToken:ct));
             var count=await r.ReadSingleAsync<int>();

@@ -20,6 +20,9 @@ BEGIN
     );
 END;
 GO
+-- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT);
+-- ahí no se crea y la unicidad por movimiento queda a cargo de CobranzasService.
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID(N'dbo.ALFACORE_COBRANZA_OPERACION') AND name=N'UX_ALFACORE_COBRANZA_Movimiento')
+   AND (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
     CREATE UNIQUE INDEX UX_ALFACORE_COBRANZA_Movimiento ON dbo.ALFACORE_COBRANZA_OPERACION(MovimientoId) WHERE MovimientoId IS NOT NULL;
 GO

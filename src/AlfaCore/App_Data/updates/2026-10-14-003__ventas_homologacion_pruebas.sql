@@ -13,6 +13,9 @@ BEGIN
         FechaCreacion datetime2 NOT NULL CONSTRAINT DF_ALFACORE_VENTAS_HOMO_FECHA DEFAULT SYSUTCDATETIME(),
         FechaActualizacion datetime2 NOT NULL CONSTRAINT DF_ALFACORE_VENTAS_HOMO_ACTUALIZACION DEFAULT SYSUTCDATETIME()
     );
-    CREATE UNIQUE INDEX UX_ALFACORE_VENTAS_HOMO_NUMERO
-        ON dbo.ALFACORE_VENTAS_HOMO_PRUEBA(Cuit,PuntoVenta,TipoComprobante,Numero) WHERE Numero IS NOT NULL;
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT);
+    -- ahí no se crea y la unicidad del número queda a cargo del servicio.
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        CREATE UNIQUE INDEX UX_ALFACORE_VENTAS_HOMO_NUMERO
+            ON dbo.ALFACORE_VENTAS_HOMO_PRUEBA(Cuit,PuntoVenta,TipoComprobante,Numero) WHERE Numero IS NOT NULL;
 END;

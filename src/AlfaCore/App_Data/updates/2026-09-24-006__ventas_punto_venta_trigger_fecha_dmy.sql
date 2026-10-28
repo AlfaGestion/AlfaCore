@@ -7,6 +7,11 @@
 IF OBJECT_ID(N'dbo.MV_Asientos_ValidaFechas', N'TR') IS NULL
     RETURN;
 
+-- Opt-out por base: ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY = N (grupo SISTEMA) deja intactos los
+-- triggers del sistema legacy. Sin la clave, o con S, se aplica el parche.
+IF EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY' AND UPPER(LTRIM(RTRIM(VALOR))) = N'N')
+    RETURN;
+
 DECLARE @Definicion nvarchar(max) = OBJECT_DEFINITION(OBJECT_ID(N'dbo.MV_Asientos_ValidaFechas', N'TR'));
 IF @Definicion IS NULL
     RETURN;

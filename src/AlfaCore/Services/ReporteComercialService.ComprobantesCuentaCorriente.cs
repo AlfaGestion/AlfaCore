@@ -39,8 +39,12 @@ public sealed partial class ReporteComercialService
                 AND (@Analitico=1 OR v.SALDO>0);
             DELETE FROM #DocumentosCC WHERE @Proveedor IS NOT NULL
                 AND Cuenta NOT LIKE @Busqueda ESCAPE '\' AND RazonSocial NOT LIKE @Busqueda ESCAPE '\';
+            -- RAISERROR+RETURN, ROW_NUMBER y suma correlativa: hay bases en SQL Server 2008 / compat 80.
             IF EXISTS(SELECT 1 FROM #DocumentosCC GROUP BY Cuenta,Tc,SUCURSAL,NUMERO,LETRA HAVING COUNT(*)>1)
-                THROW 50001,'Hay comprobantes con referencias contables duplicadas. Revisar antes de analizar sus aplicaciones.',1;
+            BEGIN
+                RAISERROR(N'Hay comprobantes con referencias contables duplicadas. Revisar antes de analizar sus aplicaciones.',16,1);
+                RETURN;
+            END;
 
             SELECT COUNT(*) TotalRegistros,COUNT(DISTINCT Cuenta) CantidadClientes,
                 ISNULL(SUM(Importe),0) ImporteTotal,ISNULL(SUM(Aplicado),0) AplicadoTotal,
@@ -51,7 +55,7 @@ public sealed partial class ReporteComercialService
             )
             SELECT CONVERT(int,Orden) Orden,Cuenta,RazonSocial,Fecha,Vencimiento,Tc,SUCURSAL,NUMERO,LETRA,IdComprobante,
                 Importe,Aplicado,Pendiente,PendienteCliente INTO #PaginaCC
-            FROM Numerados ORDER BY Orden OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+            FROM Numerados WHERE Orden>@Skip AND Orden<=@Skip+@PageSize ORDER BY Orden;
 
             -- Las referencias se resuelven una sola vez por clave. Nunca se multiplican
             -- los importes aplicados por contrapartidas o renglones del asiento.
@@ -78,21 +82,25 @@ public sealed partial class ReporteComercialService
                 CASE WHEN e.EsOrigen=1 THEN e.SUCURSAL+e.NUMERO+e.LETRA
                     ELSE e.SUCURSAL_ORIGEN+e.NUMERO_ORIGEN+e.LETRA_ORIGEN END IdComprobante,
                 r.Fecha,CONVERT(bit,CASE WHEN ISNULL(r.Cantidad,0)<>1 THEN 1 ELSE 0 END) ReferenciaAmbigua,
-                e.ImporteAplicado Importe,
-                e.Importe-SUM(e.ImporteAplicado) OVER(PARTITION BY e.OrdenDocumento ORDER BY
-                    CASE WHEN r.Fecha IS NULL THEN 1 ELSE 0 END,r.Fecha,e.IdAplicacion ROWS UNBOUNDED PRECEDING) SaldoRestante
-            INTO #AplicacionesCC FROM #EnlacesCC e LEFT JOIN #ReferenciasCC r ON r.Cuenta=e.Cuenta
+                e.ImporteAplicado Importe,e.Importe ImporteDocumento,
+                ROW_NUMBER() OVER(PARTITION BY e.OrdenDocumento ORDER BY
+                    CASE WHEN r.Fecha IS NULL THEN 1 ELSE 0 END,r.Fecha,e.IdAplicacion) Secuencia
+            INTO #AplicacionesBaseCC FROM #EnlacesCC e LEFT JOIN #ReferenciasCC r ON r.Cuenta=e.Cuenta
                 AND r.Tc=LTRIM(RTRIM(CASE WHEN e.EsOrigen=1 THEN e.TC ELSE e.TCO_ORIGEN END))
                 AND r.SUCURSAL=CASE WHEN e.EsOrigen=1 THEN e.SUCURSAL ELSE e.SUCURSAL_ORIGEN END
                 AND r.NUMERO=CASE WHEN e.EsOrigen=1 THEN e.NUMERO ELSE e.NUMERO_ORIGEN END
                 AND r.LETRA=CASE WHEN e.EsOrigen=1 THEN e.LETRA ELSE e.LETRA_ORIGEN END;
+            SELECT b.OrdenDocumento,b.IdAplicacion,b.Tc,b.IdComprobante,b.Fecha,b.ReferenciaAmbigua,b.Importe,
+                b.ImporteDocumento-(SELECT SUM(x.Importe) FROM #AplicacionesBaseCC x
+                    WHERE x.OrdenDocumento=b.OrdenDocumento AND x.Secuencia<=b.Secuencia) SaldoRestante
+            INTO #AplicacionesCC FROM #AplicacionesBaseCC b;
             SELECT p.Orden,p.Cuenta,p.RazonSocial,p.Fecha,p.Vencimiento,p.Tc,p.IdComprobante,
                 p.Importe,p.Aplicado,p.Pendiente,p.PendienteCliente,
                 CASE WHEN @Analitico=1 THEN p.Aplicado-ISNULL((SELECT SUM(a.Importe) FROM #AplicacionesCC a WHERE a.OrdenDocumento=p.Orden),0)
                     ELSE CONVERT(decimal(38,4),0) END DiferenciaAplicaciones
             FROM #PaginaCC p ORDER BY p.Orden;
             SELECT * FROM #AplicacionesCC ORDER BY OrdenDocumento,CASE WHEN Fecha IS NULL THEN 1 ELSE 0 END,Fecha,IdAplicacion;
-            DROP TABLE #AplicacionesCC; DROP TABLE #EnlacesCC; DROP TABLE #ReferenciasCC; DROP TABLE #PaginaCC; DROP TABLE #DocumentosCC;
+            DROP TABLE #AplicacionesCC; DROP TABLE #AplicacionesBaseCC; DROP TABLE #EnlacesCC; DROP TABLE #ReferenciasCC; DROP TABLE #PaginaCC; DROP TABLE #DocumentosCC;
             """;
         using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,parametros,transaction,60,cancellationToken:ct));
         var t=await r.ReadSingleAsync<ComprobantesCuentaCorrienteResultDto>();

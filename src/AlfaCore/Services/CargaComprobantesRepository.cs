@@ -152,8 +152,11 @@ public sealed class CargaComprobantesRepository
             CREATE UNIQUE CLUSTERED INDEX IX_CC_Pendientes ON #CC_Pendientes(Tc,Comprobante);
             SELECT c.ID INTO #CC_Ids FROM dbo.V_MV_CPTE c JOIN #CC_Pendientes p
                 ON p.Tc=LTRIM(RTRIM(c.TC)) AND p.Comprobante=LTRIM(RTRIM(c.IDCOMPROBANTE)) WHERE {where};
-            SELECT {ListColumns} FROM dbo.V_MV_CPTE c JOIN #CC_Ids p ON p.ID=c.ID
-                ORDER BY c.FECHA DESC,c.ID DESC OFFSET @Skip ROWS FETCH NEXT @Size ROWS ONLY;
+            -- ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
+            SELECT Id,Tc,Comprobante,Fecha,Cuenta,Cliente,UnidadNegocio,Deposito,Lista,Moneda,Importe FROM (
+                SELECT {ListColumns},ROW_NUMBER() OVER (ORDER BY c.FECHA DESC,c.ID DESC) CC_Fila
+                FROM dbo.V_MV_CPTE c JOIN #CC_Ids p ON p.ID=c.ID) paginado
+                WHERE CC_Fila>@Skip AND CC_Fila<=@Skip+@Size ORDER BY CC_Fila;
             SELECT COUNT(*) FROM #CC_Ids;
             DROP TABLE #CC_Ids; DROP TABLE #CC_Pendientes;
             """,

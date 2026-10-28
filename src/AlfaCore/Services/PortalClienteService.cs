@@ -64,8 +64,12 @@ public sealed class PortalClienteService(
                 $"SELECT COUNT(*) FROM dbo.V_MV_Cpte WHERE {whereSql};",
                 parametros, cancellationToken: token));
 
+            // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var filas = await cn.QueryAsync<PedidoRow>(new CommandDefinition(
                 $"""
+                SELECT
+                    pg.IdComprobante, pg.Tc, pg.IdComprobanteTexto, pg.Fecha, pg.Total, pg.Anulada, pg.Comentarios
+                FROM (
                 SELECT
                     ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(TC)), '') AS Tc,
@@ -73,11 +77,13 @@ public sealed class PortalClienteService(
                     FECHA AS Fecha,
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Total,
                     CAST(ISNULL(ANULADA, 0) AS bit) AS Anulada,
-                    CAST(ISNULL(COMENTARIOS, '') AS nvarchar(max)) AS Comentarios
+                    CAST(ISNULL(COMENTARIOS, '') AS nvarchar(max)) AS Comentarios,
+                    ROW_NUMBER() OVER (ORDER BY FECHA DESC, ID DESC) AS RowNum
                 FROM dbo.V_MV_Cpte
                 WHERE {whereSql}
-                ORDER BY FECHA DESC, ID DESC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) pg
+                WHERE pg.RowNum > @Offset AND pg.RowNum <= @Offset + @PageSize
+                ORDER BY pg.RowNum;
                 """,
                 parametros, cancellationToken: token));
 

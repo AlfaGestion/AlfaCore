@@ -1221,21 +1221,19 @@ public sealed class AuditoriaService(
                     'C_MV_Cpte',
                     '',
                     d.SucursalesDetectadas,
-                    CONCAT(COALESCE(AsientoStats.ConAsiento, 0), '/', d.CantidadComprobantes, ' comprobante(s) con asiento'),
+                    CONVERT(varchar(12), COALESCE(AsientoStats.ConAsiento, 0)) + '/' + ISNULL(CONVERT(varchar(12), d.CantidadComprobantes), '') + ' comprobante(s) con asiento',
                     '',
                     CASE
                         WHEN d.CantidadSucursales > 1 THEN 'Mismo proveedor, mismo número e importe con sucursales distintas.'
                         ELSE 'Mismo proveedor, mismo número e importe cargado más de una vez. Requiere revisión humana.'
                     END,
-                    CONCAT(
-                        'Se comparó C_MV_Cpte por proveedor, TC exacto, número normalizado e importe. ',
-                        'MV_ASIENTOS se usa solo para informar impacto contable. Score: ', CONVERT(nvarchar(10), Score.ScoreTotal), '.'
-                    ),
+                    'Se comparó C_MV_Cpte por proveedor, TC exacto, número normalizado e importe. '
+                        + 'MV_ASIENTOS se usa solo para informar impacto contable. Score: ' + ISNULL(CONVERT(nvarchar(10), Score.ScoreTotal), N'') + '.',
                     DATEDIFF(day, d.FechaMinima, d.FechaMaxima),
                     d.NUMERO_NORMALIZADO,
                     d.SucursalesDetectadas,
                     d.UsuariosDetectados,
-                    CONCAT(COALESCE(AsientoStats.ConAsiento, 0), '/', d.CantidadComprobantes, ' con asiento'),
+                    CONVERT(varchar(12), COALESCE(AsientoStats.ConAsiento, 0)) + '/' + ISNULL(CONVERT(varchar(12), d.CantidadComprobantes), '') + ' con asiento',
                     d.CantidadComprobantes,
                     COALESCE(AsientoStats.ConAsiento, 0),
                     d.DetalleGrupo
@@ -1392,6 +1390,11 @@ public sealed class AuditoriaService(
                     ComprobantesInvolucrados,
                     ContablesDuplicados,
                     DetalleGrupo
+                FROM
+                (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY {orderBy}) AS RowNumPagina
                 FROM #AuditUser
                 WHERE (@Usuario = '' OR Usuario = @Usuario)
                   AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
@@ -1416,8 +1419,10 @@ public sealed class AuditoriaService(
                         OR UsuariosDetectados LIKE '%' + @Texto + '%'
                         OR ImpactoContable LIKE '%' + @Texto + '%'
                       )
-                ORDER BY {orderBy}
-                OFFSET @Offset ROWS FETCH NEXT @Tamanio ROWS ONLY;
+                ) pagina
+                WHERE pagina.RowNumPagina > @Offset
+                  AND pagina.RowNumPagina <= @Offset + @Tamanio
+                ORDER BY pagina.RowNumPagina;
                 """;
 
             var items = new List<AuditoriaUsuarioRowDto>();
@@ -1663,11 +1668,9 @@ public sealed class AuditoriaService(
                         WHEN (ISNULL(i.CantidadLineas, 0) + ISNULL(t.CantidadLineas, 0) + ISNULL(o.CantidadLineas, 0)) = 0 THEN 'La cabecera tiene importe pero no se encontraron líneas de detalle.'
                         ELSE 'La suma del detalle no coincide con el importe de cabecera.'
                     END,
-                    CONCAT(
-                        'Insumos: ', CONVERT(nvarchar(50), ROUND(ISNULL(i.TotalInsumos, 0), 2)),
-                        ' · Tareas: ', CONVERT(nvarchar(50), ROUND(ISNULL(t.TotalTareas, 0), 2)),
-                        ' · Observaciones: ', CONVERT(nvarchar(50), ROUND(ISNULL(o.TotalObserv, 0), 2))
-                    )
+                    'Insumos: ' + ISNULL(CONVERT(nvarchar(50), ROUND(ISNULL(i.TotalInsumos, 0), 2)), N'')
+                        + ' · Tareas: ' + ISNULL(CONVERT(nvarchar(50), ROUND(ISNULL(t.TotalTareas, 0), 2)), N'')
+                        + ' · Observaciones: ' + ISNULL(CONVERT(nvarchar(50), ROUND(ISNULL(o.TotalObserv, 0), 2)), N'')
                 FROM #VentasPeriodo v
                 LEFT JOIN #InsumosAgg i
                     ON i.TC = UPPER(LTRIM(RTRIM(v.TC)))
@@ -1700,6 +1703,11 @@ public sealed class AuditoriaService(
                     CantidadOcurrencias,
                     Motivo,
                     Observaciones
+                FROM
+                (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY {orderBy}) AS RowNumPagina
                 FROM #AlertasCmp
                 WHERE (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
                   AND (@Riesgo = '' OR Riesgo = @Riesgo)
@@ -1718,8 +1726,10 @@ public sealed class AuditoriaService(
                         OR Motivo LIKE '%' + @Texto + '%'
                         OR Observaciones LIKE '%' + @Texto + '%'
                       )
-                ORDER BY {orderBy}
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) pagina
+                WHERE pagina.RowNumPagina > @Offset
+                  AND pagina.RowNumPagina <= @Offset + @PageSize
+                ORDER BY pagina.RowNumPagina;
 
                 SELECT
                     COUNT(*) AS TotalAlertas,
@@ -1824,6 +1834,7 @@ public sealed class AuditoriaService(
             var offset = (pagina - 1) * tamanio;
             var orderBy = ResolveUserAuditOrderBy(filter.OrdenCampo, filter.OrdenDireccion);
 
+            // ROW_NUMBER y "+" en vez de OFFSET/FETCH y CONCAT: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
                 IF OBJECT_ID('tempdb..#ActividadUsuario') IS NOT NULL DROP TABLE #ActividadUsuario;
                 IF OBJECT_ID('tempdb..#ActividadUsuarioDepurada') IS NOT NULL DROP TABLE #ActividadUsuarioDepurada;
@@ -2224,7 +2235,7 @@ public sealed class AuditoriaService(
                     '',
                     '',
                     'Movimiento de stock sin cabecera comercial asociada.',
-                    CONCAT('Artículo: ', ISNULL(st.IDArticulo, ''), ' · Secuencia: ', CONVERT(nvarchar(10), st.SECUENCIA)),
+                    'Artículo: ' + ISNULL(CONVERT(nvarchar(max), ISNULL(st.IDArticulo, '')), N'') + ' · Secuencia: ' + ISNULL(CONVERT(nvarchar(10), st.SECUENCIA), N''),
                     0,
                     '',
                     '',
@@ -2395,6 +2406,11 @@ public sealed class AuditoriaService(
                     ComprobantesInvolucrados,
                     ContablesDuplicados,
                     DetalleGrupo
+                FROM
+                (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY {orderBy}) AS RowNumPagina
                 FROM #ActividadUsuarioDepurada
                 WHERE (@Usuario = '' OR Usuario = @Usuario)
                   AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
@@ -2414,8 +2430,10 @@ public sealed class AuditoriaService(
                         OR Descripcion LIKE '%' + @Texto + '%'
                         OR Observaciones LIKE '%' + @Texto + '%'
                       )
-                ORDER BY {orderBy}
-                OFFSET @Offset ROWS FETCH NEXT @Tamanio ROWS ONLY;
+                ) pagina
+                WHERE pagina.RowNumPagina > @Offset
+                  AND pagina.RowNumPagina <= @Offset + @Tamanio
+                ORDER BY pagina.RowNumPagina;
                 """;
 
             var items = new List<AuditoriaUsuarioRowDto>();

@@ -1,7 +1,7 @@
 SET XACT_ABORT ON;
 GO
 IF OBJECT_ID(N'dbo.BK_ExtractoMovimiento',N'U') IS NULL
-    THROW 50001,'Instalá primero la actualización de conciliación bancaria.',1;
+    BEGIN RAISERROR(N'Instalá primero la actualización de conciliación bancaria.', 16, 1); RETURN; END;
 GO
 BEGIN TRANSACTION;
 IF OBJECT_ID(N'dbo.BK_Conciliacion',N'U') IS NULL
@@ -17,7 +17,10 @@ BEGIN
         MovimientoId bigint NOT NULL REFERENCES dbo.BK_ExtractoMovimiento(MovimientoId),
         Fecha date NOT NULL, Importe decimal(19,4) NOT NULL, Detalle nvarchar(500) NOT NULL,
         Huella varchar(64) NOT NULL, Activa bit NOT NULL DEFAULT 1);
-    CREATE UNIQUE INDEX UX_BK_ConciliacionBanco_Activa ON dbo.BK_ConciliacionBanco(MovimientoId) WHERE Activa=1;
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT);
+    -- ahí no se crean los dos únicos de vínculos activos y la regla queda a cargo del servicio.
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        CREATE UNIQUE INDEX UX_BK_ConciliacionBanco_Activa ON dbo.BK_ConciliacionBanco(MovimientoId) WHERE Activa=1;
     CREATE TABLE dbo.BK_ConciliacionAlfa(
         Id bigint IDENTITY PRIMARY KEY, ConciliacionId bigint NOT NULL REFERENCES dbo.BK_Conciliacion(Id),
         Cuenta nvarchar(15) NOT NULL, Periodo nvarchar(6) NOT NULL, Mes tinyint NOT NULL,
@@ -25,8 +28,9 @@ BEGIN
         Fecha datetime NOT NULL, Importe decimal(19,4) NOT NULL, Detalle nvarchar(200) NOT NULL,
         Comprobante nvarchar(30) NOT NULL, Unidad nvarchar(4) NOT NULL,
         Huella varchar(64) NOT NULL, Activa bit NOT NULL DEFAULT 1);
-    CREATE UNIQUE INDEX UX_BK_ConciliacionAlfa_Activa ON dbo.BK_ConciliacionAlfa
-        (Cuenta,Periodo,Mes,Asiento,TipoRegistro,Secuencia) WHERE Activa=1;
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        CREATE UNIQUE INDEX UX_BK_ConciliacionAlfa_Activa ON dbo.BK_ConciliacionAlfa
+            (Cuenta,Periodo,Mes,Asiento,TipoRegistro,Secuencia) WHERE Activa=1;
 END;
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.BK_ConciliacionBanco') AND name='IX_BK_ConciliacionBanco_Historial')
     CREATE INDEX IX_BK_ConciliacionBanco_Historial ON dbo.BK_ConciliacionBanco(MovimientoId,ConciliacionId);

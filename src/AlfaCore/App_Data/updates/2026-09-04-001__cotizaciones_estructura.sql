@@ -123,7 +123,11 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.COT_V
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.COT_VERSION') AND name = N'IX_COT_VERSION_PublicToken')
-    CREATE NONCLUSTERED INDEX IX_COT_VERSION_PublicToken ON dbo.COT_VERSION (PublicToken) WHERE PublicToken IS NOT NULL;
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT).
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        EXEC(N'CREATE NONCLUSTERED INDEX IX_COT_VERSION_PublicToken ON dbo.COT_VERSION (PublicToken) WHERE PublicToken IS NOT NULL;');
+    ELSE
+        CREATE NONCLUSTERED INDEX IX_COT_VERSION_PublicToken ON dbo.COT_VERSION (PublicToken);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.COT_SECCION') AND name = N'IX_COT_SECCION_Version')

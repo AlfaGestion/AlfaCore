@@ -18,7 +18,7 @@ DECLARE @FechaAnterior nvarchar(4000) = N'@Fecha = FECHA,';
 DECLARE @FechaNueva nvarchar(4000) = N'@Fecha = TRY_CONVERT(datetime, FECHA, 103),';
 
 IF CHARINDEX(@FechaAnterior, @Definicion) = 0
-    THROW 51000, 'No se encontró la asignación de FECHA en sp_web_CreaAsientoFactura.', 1;
+    BEGIN RAISERROR(N'No se encontró la asignación de FECHA en sp_web_CreaAsientoFactura.', 16, 1); RETURN; END;
 
 SET @Definicion = REPLACE(@Definicion, @FechaAnterior, @FechaNueva);
 SET @Definicion = REPLACE(@Definicion,

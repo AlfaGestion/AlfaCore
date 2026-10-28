@@ -118,6 +118,7 @@ public sealed class AppAuditRepository(
         pageSize = Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 100);
         var offset = (pageNumber - 1) * pageSize;
 
+        // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
         const string eventsSql = """
             SELECT COUNT_BIG(1)
             FROM dbo.SYS_EventosAplicacion
@@ -127,19 +128,33 @@ public sealed class AppAuditRepository(
 
             SELECT
                 Id,
-                ISNULL(EntidadTipo, N'') AS EntityType,
-                ISNULL(EntidadId, N'') AS RecordId,
-                Accion AS Operation,
-                ISNULL(Usuario, N'Sistema') AS UserName,
-                FechaHora AS CreatedAt,
-                ISNULL(Mensaje, N'') AS Message,
-                ISNULL(DataJson, N'') AS MetadataJson
-            FROM dbo.SYS_EventosAplicacion
-            WHERE Tipo = N'Audit'
-              AND EntidadTipo = @EntityType
-              AND EntidadId = @RecordId
-            ORDER BY FechaHora DESC, Id DESC
-            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                EntityType,
+                RecordId,
+                Operation,
+                UserName,
+                CreatedAt,
+                Message,
+                MetadataJson
+            FROM
+            (
+                SELECT
+                    Id,
+                    ISNULL(EntidadTipo, N'') AS EntityType,
+                    ISNULL(EntidadId, N'') AS RecordId,
+                    Accion AS Operation,
+                    ISNULL(Usuario, N'Sistema') AS UserName,
+                    FechaHora AS CreatedAt,
+                    ISNULL(Mensaje, N'') AS Message,
+                    ISNULL(DataJson, N'') AS MetadataJson,
+                    ROW_NUMBER() OVER (ORDER BY FechaHora DESC, Id DESC) AS RowNumPagina
+                FROM dbo.SYS_EventosAplicacion
+                WHERE Tipo = N'Audit'
+                  AND EntidadTipo = @EntityType
+                  AND EntidadId = @RecordId
+            ) pagina
+            WHERE RowNumPagina > @Offset
+              AND RowNumPagina <= @Offset + @PageSize
+            ORDER BY RowNumPagina;
             """;
 
         const string changesSql = """

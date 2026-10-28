@@ -65,7 +65,8 @@ public sealed class CierreCajaTests
         Assert.DoesNotContain("sp_web_", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("EXEC(", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("NW_RECONS", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY", sql);
+        Assert.Contains("AlfaCoreFilaPagina > @Offset", sql);
+        Assert.DoesNotContain("OFFSET @Offset ROWS", sql); // SQL 2008 / compat 80 no tiene OFFSET/FETCH
         var declared = Regex.Matches(sql, @"DECLARE\s+(@\w+)", RegexOptions.IgnoreCase)
             .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var name in args.ParameterNames) Assert.DoesNotContain("@" + name, declared);

@@ -5,7 +5,7 @@ IF OBJECT_ID(N'dbo.TA_MENU',N'U') IS NULL RETURN;
 IF COL_LENGTH(N'dbo.ALFACORE_MENU_WEB',N'NombreWeb') IS NULL
     ALTER TABLE dbo.ALFACORE_MENU_WEB ADD NombreWeb nvarchar(150) NULL;
 IF EXISTS(SELECT 1 FROM dbo.TA_MENU WHERE Clave=N'D75-CONCILIA-IA' AND ISNULL(Proceso,N'')<>N'ConciliacionBancaria')
-    THROW 50001,N'La clave D75-CONCILIA-IA ya pertenece a otra opción. Revisar antes de instalar.',1;
+    BEGIN RAISERROR(N'La clave D75-CONCILIA-IA ya pertenece a otra opción. Revisar antes de instalar.', 16, 1); RETURN; END;
 DECLARE @Creada bit=0;
 IF NOT EXISTS(SELECT 1 FROM dbo.TA_MENU WHERE Clave=N'D75-CONCILIA-IA')
 BEGIN

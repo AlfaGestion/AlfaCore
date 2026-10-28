@@ -100,9 +100,17 @@ public sealed class CarritoComprasService(
 
             var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition(countSql, parametros, cancellationToken: token));
 
+            // ROW_NUMBER en vez de OFFSET/FETCH y sin CONCAT: hay bases en SQL Server 2008 / compat 80.
             var rowsSql = $"""
                 WITH Datos AS (
                 {sourceSql}
+                ),
+                Paginado AS (
+                    SELECT
+                        Datos.*,
+                        ROW_NUMBER() OVER (ORDER BY OrdenTipo, Nombre, IdReferencia) AS RowNum
+                    FROM Datos
+                    WHERE {whereSql}
                 )
                 SELECT
                     IdReferencia,
@@ -117,10 +125,9 @@ public sealed class CarritoComprasService(
                     Precios,
                     Activo,
                     OrdenTipo
-                FROM Datos
-                WHERE {whereSql}
-                ORDER BY OrdenTipo, Nombre, IdReferencia
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                FROM Paginado
+                WHERE RowNum > @Offset AND RowNum <= @Offset + @PageSize
+                ORDER BY RowNum;
                 """;
 
             var rows = await cn.QueryAsync<CarritoResumenRow>(new CommandDefinition(rowsSql, parametros, cancellationToken: token));
@@ -1077,14 +1084,13 @@ public sealed class CarritoComprasService(
                     CAST(NULL AS int) AS IdCarrito,
                     N'catalogo' AS TipoClave,
                     N'Catálogo' AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), N''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo)))) AS Nombre,
+                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), N''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IdCatalogo), N''))) AS Nombre,
                     CASE
                         WHEN MIN(c.FechaDesde) IS NULL AND MAX(c.FechaHasta) IS NULL THEN N'Sin vigencia'
-                        ELSE CONCAT(
-                            ISNULL(CONVERT(nvarchar(10), MIN(c.FechaDesde), 103), N''),
-                            CASE WHEN MIN(c.FechaDesde) IS NOT NULL OR MAX(c.FechaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
-                            ISNULL(CONVERT(nvarchar(10), MAX(c.FechaHasta), 103), N'')
-                        )
+                        ELSE
+                            ISNULL(CONVERT(nvarchar(10), MIN(c.FechaDesde), 103), N'')
+                            + CASE WHEN MIN(c.FechaDesde) IS NOT NULL OR MAX(c.FechaHasta) IS NOT NULL THEN N' - ' ELSE N'' END
+                            + ISNULL(CONVERT(nvarchar(10), MAX(c.FechaHasta), 103), N'')
                     END AS Vigencia,
                     CASE
                         WHEN MAX(CASE WHEN ISNULL(c.Anulado, 0) = 0
@@ -1116,14 +1122,13 @@ public sealed class CarritoComprasService(
                     CAST(NULL AS int) AS IdCarrito,
                     N'catalogo' AS TipoClave,
                     N'Catálogo' AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), N''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), N''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IDINSERT), N''))) AS Nombre,
                     CASE
                         WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
-                        ELSE CONCAT(
-                            ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N''),
-                            CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
-                            ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
-                        )
+                        ELSE
+                            ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N'')
+                            + CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END
+                            + ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
                     END AS Vigencia,
                     CASE
                         WHEN MAX(CASE WHEN ISNULL(c.FINALIZADO, 0) = 0 THEN 1 ELSE 0 END) = 1 THEN N'Activo'
@@ -1153,8 +1158,8 @@ public sealed class CarritoComprasService(
                     COUNT(d.IdArticulo) AS CantidadArticulos,
                     CASE
                         WHEN g.OrigenPrecios = N'segun-cliente' THEN N'Según cliente'
-                        WHEN g.OrigenPrecios = N'lista-fija' THEN CONCAT(N'Lista fija', CASE WHEN ISNULL(g.IdListaPrecios, N'') <> N'' THEN CONCAT(N' ', g.IdListaPrecios) ELSE N'' END, CASE WHEN g.ClasePrecio IS NOT NULL THEN CONCAT(N' / Clase ', CONVERT(nvarchar(10), g.ClasePrecio)) ELSE N'' END)
-                        WHEN g.OrigenPrecios = N'maestro' THEN CONCAT(N'Maestro', CASE WHEN g.ClasePrecio IS NOT NULL THEN CONCAT(N' / Clase ', CONVERT(nvarchar(10), g.ClasePrecio)) ELSE N'' END)
+                        WHEN g.OrigenPrecios = N'lista-fija' THEN N'Lista fija' + CASE WHEN ISNULL(g.IdListaPrecios, N'') <> N'' THEN N' ' + g.IdListaPrecios ELSE N'' END + CASE WHEN g.ClasePrecio IS NOT NULL THEN N' / Clase ' + CONVERT(nvarchar(10), g.ClasePrecio) ELSE N'' END
+                        WHEN g.OrigenPrecios = N'maestro' THEN N'Maestro' + CASE WHEN g.ClasePrecio IS NOT NULL THEN N' / Clase ' + CONVERT(nvarchar(10), g.ClasePrecio) ELSE N'' END
                         ELSE N'Según cliente'
                     END AS Precios,
                     CAST(ISNULL(g.Activo, 0) AS bit) AS Activo,

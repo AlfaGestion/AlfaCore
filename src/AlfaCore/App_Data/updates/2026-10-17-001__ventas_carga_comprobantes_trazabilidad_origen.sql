@@ -1,8 +1,11 @@
 -- Conserva el cálculo histórico y evita aplicar todos los artículos de una factura a cada origen.
 -- Solo adapta las dos definiciones legacy relevadas; conserva su tratamiento de PR/RM.
+-- Si no se aplica, avisa y sigue (no frena las actualizaciones siguientes): CargaComprobantesPlanificador
+-- detecta que falta y solo bloquea la consolidación de varios orígenes.
+-- Sin THROW: SQL 2008 / compat 80 no lo reconoce; se usa PRINT/RAISERROR + RETURN.
 SET XACT_ABORT ON;
 IF OBJECT_ID(N'dbo.VT_V_MV_INSUMOS_APLICACION',N'V') IS NULL
-    THROW 50000,N'Falta la vista oficial de aplicaciones de artículos. Revisar antes de habilitar consolidaciones.',1;
+    BEGIN PRINT N'AVISO: falta la vista oficial de aplicaciones de artículos. No se instaló la trazabilidad por renglón.'; RETURN; END;
 DECLARE @Actual nvarchar(max)=OBJECT_DEFINITION(OBJECT_ID(N'dbo.VT_V_MV_INSUMOS_APLICACION'));
 IF CHARINDEX(N'ALFACORE_VENTAS_CARGA_ORIGEN_LINEA',UPPER(@Actual))>0 RETURN;
 DECLARE @Esperada nvarchar(max)=N'CREATE VIEW [dbo].[VT_V_MV_INSUMOS_APLICACION]
@@ -25,7 +28,7 @@ SELECT @Actual=LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@Ac
        @Esperada=LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@Esperada,N'[',N''),N']',N''),CHAR(13),N''),CHAR(10),N''),CHAR(9),N''),N' ',N'')),
        @EsperadaSinFiltro=LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@EsperadaSinFiltro,N'[',N''),N']',N''),CHAR(13),N''),CHAR(10),N''),CHAR(9),N''),N' ',N''));
 IF @Actual IS NULL OR (@Actual<>@Esperada AND @Actual<>@EsperadaSinFiltro)
-    THROW 50000,N'La vista de aplicaciones de artículos tiene una variante no relevada. No se modificó: adaptar y verificar la trazabilidad para esta base.',1;
+    BEGIN PRINT N'AVISO: la vista de aplicaciones de artículos tiene una variante no relevada. No se modificó: adaptar y verificar la trazabilidad para esta base.'; RETURN; END;
 DECLARE @ExcluirPrRm bit=CASE WHEN @Actual=@Esperada THEN 1 ELSE 0 END;
 BEGIN TRY
     BEGIN TRANSACTION;
@@ -71,5 +74,6 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
     IF @@TRANCOUNT>0 ROLLBACK TRANSACTION;
-    THROW;
+    DECLARE @Error nvarchar(4000)=ERROR_MESSAGE();
+    RAISERROR(N'%s',16,1,@Error);
 END CATCH;

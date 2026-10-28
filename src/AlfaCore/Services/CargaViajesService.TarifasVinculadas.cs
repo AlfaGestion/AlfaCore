@@ -117,14 +117,15 @@ public sealed partial class CargaViajesService
 
             if (vinculadosUpper.Count > 0)
             {
-                var inexistentes = (await cn.QueryAsync<string>(new CommandDefinition("""
-                    SELECT v.Codigo
-                    FROM (SELECT value AS Codigo FROM STRING_SPLIT(@Codigos, '|')) v
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM dbo.Vt_Clientes c
-                        WHERE UPPER(LTRIM(RTRIM(c.CODIGO))) = v.Codigo
-                    );
-                    """, new { Codigos = string.Join('|', vinculadosUpper) }, cancellationToken: token))).ToList();
+                // Lista Dapper (IN @Codigos) en vez de STRING_SPLIT: hay bases en SQL Server 2008 / compat 80.
+                var existentes = (await cn.QueryAsync<string>(new CommandDefinition("""
+                    SELECT DISTINCT UPPER(LTRIM(RTRIM(c.CODIGO)))
+                    FROM dbo.Vt_Clientes c
+                    WHERE UPPER(LTRIM(RTRIM(c.CODIGO))) IN @Codigos;
+                    """, new { Codigos = vinculadosUpper }, cancellationToken: token))).ToList();
+                var inexistentes = vinculadosUpper
+                    .Where(codigo => !existentes.Contains(codigo, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
                 if (inexistentes.Count > 0)
                     throw new InvalidOperationException($"No existen los clientes: {string.Join(", ", inexistentes)}.");
 

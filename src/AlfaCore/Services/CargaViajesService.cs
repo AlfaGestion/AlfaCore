@@ -120,7 +120,14 @@ public sealed partial class CargaViajesService(
                     ["id"] = $"v.ID {{dir}}"
                 },
                 "v.FECHA DESC, v.ID DESC");
+            // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
+                SELECT
+                    paged.Id, paged.Tc, paged.IdComprobante, paged.Fecha, paged.ClienteCodigo, paged.ClienteNombre,
+                    paged.DestinoCodigo, paged.DestinoDescripcion, paged.ChoferCodigo, paged.ChoferNombre,
+                    paged.TipoVehiculoCodigo, paged.TipoVehiculoDescripcion, paged.TotalCliente, paged.TotalFletero,
+                    paged.Estado, paged.Usuario, paged.FechaHoraAlta
+                FROM (
                 SELECT
                     v.ID AS Id,
                     ISNULL(v.TC, @Tc) AS Tc,
@@ -138,7 +145,8 @@ public sealed partial class CargaViajesService(
                     {totalFleteExpr} AS TotalFletero,
                     {estadoExpr} AS Estado,
                     {usuarioExpr} AS Usuario,
-                    {altaExpr} AS FechaHoraAlta
+                    {altaExpr} AS FechaHoraAlta,
+                    ROW_NUMBER() OVER (ORDER BY {WindowSafeOrderBy(viajesOrderBy)}) AS PagedRowNum
                 FROM dbo.{viajeTable} v
                 {clienteJoin}
                 {destinoJoin}
@@ -157,8 +165,9 @@ public sealed partial class CargaViajesService(
                   AND (@Estado = '' OR UPPER(LTRIM(RTRIM({estadoExpr}))) = @Estado)
                   AND (@Usuario = '' OR UPPER(LTRIM(RTRIM({usuarioExpr}))) = @Usuario)
                   AND (@IdComprobante = '' OR {idComprobanteExpr} = @IdComprobante)
-                ORDER BY {viajesOrderBy}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) paged
+                WHERE paged.PagedRowNum > @Skip AND paged.PagedRowNum <= @Skip + @PageSize
+                ORDER BY paged.PagedRowNum;
 
                 SELECT COUNT(*)
                 FROM dbo.{viajeTable} v
@@ -274,7 +283,7 @@ public sealed partial class CargaViajesService(
             var listaNombreExpr = $"""
                 CASE
                     WHEN ISNULL(lista.Nombre, '') = '' THEN {listaExpr}
-                    ELSE CONCAT({listaExpr}, ' - ', LTRIM(RTRIM(lista.Nombre)))
+                    ELSE {listaExpr} + ' - ' + LTRIM(RTRIM(lista.Nombre))
                 END
                 """;
             var peajeExpr = $"ISNULL(v.{peajeColumn}, 0)";
@@ -909,8 +918,8 @@ public sealed partial class CargaViajesService(
                 )
                 SELECT *
                 FROM base_rows
-                ORDER BY RowNum
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                WHERE RowNum > @Skip AND RowNum <= @Skip + @PageSize
+                ORDER BY RowNum;
 
                 SELECT COUNT(*)
                 {searchFromClause}
@@ -1660,23 +1669,27 @@ public sealed partial class CargaViajesService(
                 {
                     ["codigo"] = $"{codigoExpr} {{dir}}",
                     ["nombre"] = $"{nombreExpr} {{dir}}, {codigoExpr} {{dir}}",
-                    ["activo"] = $"{activoExpr} {{dir}}, {nombreExpr} {{dir}}",
+                    ["activo"] = $"{(activoColumn is not null ? activoExpr : codigoExpr)} {{dir}}, {nombreExpr} {{dir}}",
                     ["disponible"] = $"ISNULL({(disponibleColumn is not null ? disponibleColumn : "0")}, 0) {{dir}}, {nombreExpr} {{dir}}",
                     ["esfletero"] = $"ISNULL({(esFleteroColumn is not null ? esFleteroColumn : "0")}, 0) {{dir}}, {nombreExpr} {{dir}}"
                 },
                 $"{nombreExpr} ASC, {codigoExpr} ASC");
 
             var sql = $"""
+                SELECT paged.Codigo, paged.Nombre, paged.Activo, paged.Disponible, paged.EsFletero
+                FROM (
                 SELECT
                     {codigoExpr} AS Codigo,
                     {nombreExpr} AS Nombre,
                     CAST({activoExpr} AS bit) AS Activo,
                     {(disponibleColumn is not null ? "ISNULL(DISPONIBLE, 0)" : "CAST(0 AS bit)")} AS Disponible,
-                    {(esFleteroColumn is not null ? "ISNULL(ES_FLETERO, 0)" : "CAST(0 AS bit)")} AS EsFletero
+                    {(esFleteroColumn is not null ? "ISNULL(ES_FLETERO, 0)" : "CAST(0 AS bit)")} AS EsFletero,
+                    ROW_NUMBER() OVER (ORDER BY {WindowSafeOrderBy(orderBy)}) AS PagedRowNum
                 FROM dbo.{table}
                 WHERE {string.Join(Environment.NewLine + "  AND ", whereClauses)}
-                ORDER BY {orderBy}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) paged
+                WHERE paged.PagedRowNum > @Skip AND paged.PagedRowNum <= @Skip + @PageSize
+                ORDER BY paged.PagedRowNum;
 
                 SELECT COUNT(*)
                 FROM dbo.{table}
@@ -1847,14 +1860,17 @@ public sealed partial class CargaViajesService(
                 {
                     ["codigo"] = "LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
                     ["descripcion"] = "LTRIM(RTRIM(ISNULL(Descripcion, ''))) {dir}, LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
-                    ["activo"] = $"{activoExpr} {{dir}}, LTRIM(RTRIM(ISNULL(Descripcion, ''))) {{dir}}"
+                    ["activo"] = $"{(hasActivo ? activoExpr : "LTRIM(RTRIM(ISNULL(CODIGO, '')))")} {{dir}}, LTRIM(RTRIM(ISNULL(Descripcion, ''))) {{dir}}"
                 },
                 "LTRIM(RTRIM(ISNULL(Descripcion, ''))) ASC, LTRIM(RTRIM(ISNULL(CODIGO, ''))) ASC");
             var sql = $"""
+                SELECT paged.Codigo, paged.Descripcion, paged.Activo
+                FROM (
                 SELECT
-                    LTRIM(RTRIM(ISNULL({codeColumn}, ''))),
-                    LTRIM(RTRIM(ISNULL(Descripcion, ''))),
-                    {activoSelect}
+                    LTRIM(RTRIM(ISNULL({codeColumn}, ''))) AS Codigo,
+                    LTRIM(RTRIM(ISNULL(Descripcion, ''))) AS Descripcion,
+                    {activoSelect} AS Activo,
+                    ROW_NUMBER() OVER (ORDER BY {WindowSafeOrderBy(orderBy)}) AS PagedRowNum
                 FROM dbo.{table}
                 WHERE (
                         @TextoLike = ''
@@ -1862,8 +1878,9 @@ public sealed partial class CargaViajesService(
                         OR Descripcion COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )
                   AND (@Activo IS NULL OR {activoExpr} = @Activo)
-                ORDER BY {orderBy}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) paged
+                WHERE paged.PagedRowNum > @Skip AND paged.PagedRowNum <= @Skip + @PageSize
+                ORDER BY paged.PagedRowNum;
 
                 SELECT COUNT(*)
                 FROM dbo.{table}
@@ -2003,14 +2020,17 @@ public sealed partial class CargaViajesService(
                 {
                     ["codigo"] = "LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
                     ["descripcion"] = "LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) {dir}, LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
-                    ["activo"] = $"{activoExpr} {{dir}}, LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) {{dir}}"
+                    ["activo"] = $"{(hasActivo ? activoExpr : "LTRIM(RTRIM(ISNULL(CODIGO, '')))")} {{dir}}, LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) {{dir}}"
                 },
                 "LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) ASC, LTRIM(RTRIM(ISNULL(CODIGO, ''))) ASC");
             var sql = $"""
+                SELECT paged.Codigo, paged.Descripcion, paged.Activo
+                FROM (
                 SELECT
                     LTRIM(RTRIM(ISNULL(CODIGO, ''))) AS Codigo,
                     LTRIM(RTRIM(ISNULL(DESCRIPCION, ''))) AS Descripcion,
-                    {activoSelect} AS Activo
+                    {activoSelect} AS Activo,
+                    ROW_NUMBER() OVER (ORDER BY {WindowSafeOrderBy(orderBy)}) AS PagedRowNum
                 FROM dbo.TA_TIPOVEHICULO
                 WHERE (
                         @TextoLike = ''
@@ -2018,8 +2038,9 @@ public sealed partial class CargaViajesService(
                         OR DESCRIPCION COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )
                   AND (@Activo IS NULL OR {activoExpr} = @Activo)
-                ORDER BY {orderBy}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) paged
+                WHERE paged.PagedRowNum > @Skip AND paged.PagedRowNum <= @Skip + @PageSize
+                ORDER BY paged.PagedRowNum;
 
                 SELECT COUNT(*)
                 FROM dbo.TA_TIPOVEHICULO
@@ -2366,12 +2387,11 @@ public sealed partial class CargaViajesService(
                          AND ISNULL(ch.NOMBRES, '') = ''
                          AND ISNULL(d.DESCRIPCION, '') = ''
                          AND ISNULL(tv.DESCRIPCION, '') = '' THEN ''
-                        ELSE CONCAT(
-                            CASE WHEN ISNULL(cli.RAZON_SOCIAL, '') = '' THEN '' ELSE LTRIM(RTRIM(cli.RAZON_SOCIAL)) END,
-                            CASE WHEN ISNULL(ch.NOMBRES, '') = '' THEN '' ELSE CONCAT(' | ', LTRIM(RTRIM(ch.NOMBRES))) END,
-                            CASE WHEN ISNULL(d.DESCRIPCION, '') = '' THEN '' ELSE CONCAT(' | ', LTRIM(RTRIM(d.DESCRIPCION))) END,
-                            CASE WHEN ISNULL(tv.DESCRIPCION, '') = '' THEN '' ELSE CONCAT(' | ', LTRIM(RTRIM(tv.DESCRIPCION))) END
-                        )
+                        ELSE
+                            CASE WHEN ISNULL(cli.RAZON_SOCIAL, '') = '' THEN '' ELSE LTRIM(RTRIM(cli.RAZON_SOCIAL)) END
+                            + CASE WHEN ISNULL(ch.NOMBRES, '') = '' THEN '' ELSE ' | ' + LTRIM(RTRIM(ch.NOMBRES)) END
+                            + CASE WHEN ISNULL(d.DESCRIPCION, '') = '' THEN '' ELSE ' | ' + LTRIM(RTRIM(d.DESCRIPCION)) END
+                            + CASE WHEN ISNULL(tv.DESCRIPCION, '') = '' THEN '' ELSE ' | ' + LTRIM(RTRIM(tv.DESCRIPCION)) END
                     END AS Subtitulo
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(ISNULL(cli.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(t.{clienteColumn}, ''))))
@@ -5624,6 +5644,12 @@ public sealed partial class CargaViajesService(
             : string.IsNullOrWhiteSpace(alias)
                 ? $"ISNULL({column}, 0)"
                 : $"ISNULL({alias}.{column}, 0)";
+
+    private static string WindowSafeOrderBy(string orderBy)
+        => orderBy
+            .Replace("CAST('' AS nvarchar(100))", "(SELECT CAST('' AS nvarchar(100)))", StringComparison.Ordinal)
+            .Replace("CAST(0 AS money)", "(SELECT CAST(0 AS money))", StringComparison.Ordinal)
+            .Replace("CAST(NULL AS datetime)", "(SELECT CAST(NULL AS datetime))", StringComparison.Ordinal);
 
     private static async Task EnsureSchemaColumnAsync(SqlConnection cn, SqlTransaction tx, string tableName, string columnName, string columnDefinition, ICollection<string> createdColumns, CancellationToken ct)
     {

@@ -59,30 +59,32 @@ BEGIN TRY
     WHERE NULLIF(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, N''))), N'') IS NULL
        OR UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, N'')))) IN (N'SYSTEM_USER', N'DBO');
 
-    IF NOT EXISTS
-    (
-        SELECT 1
-        FROM sys.indexes
-        WHERE name = N'UX_ALFACORE_TAREAS_COMPARTIDOS_PUBLICO'
-          AND object_id = OBJECT_ID(N'dbo.ALFACORE_TAREAS_COMPARTIDOS')
-    )
+    -- Índices filtrados solo en compat >= 90: en compat 80 el CREATE falla (10611) y, aunque se
+    -- creara, todo INSERT/UPDATE desde SqlClient (ARITHABORT OFF) fallaría con 1934. En esas bases
+    -- la unicidad queda a cargo del servicio. Se usa SQL dinámico para que el lote compile en 80.
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
     BEGIN
-        CREATE UNIQUE INDEX UX_ALFACORE_TAREAS_COMPARTIDOS_PUBLICO
-            ON dbo.ALFACORE_TAREAS_COMPARTIDOS (TipoObjeto, IdObjeto, EsPublico)
-            WHERE EsPublico = 1 AND Activa = 1;
-    END;
+        IF NOT EXISTS
+        (
+            SELECT 1
+            FROM sys.indexes
+            WHERE name = N'UX_ALFACORE_TAREAS_COMPARTIDOS_PUBLICO'
+              AND object_id = OBJECT_ID(N'dbo.ALFACORE_TAREAS_COMPARTIDOS')
+        )
+            EXEC(N'CREATE UNIQUE INDEX UX_ALFACORE_TAREAS_COMPARTIDOS_PUBLICO
+                ON dbo.ALFACORE_TAREAS_COMPARTIDOS (TipoObjeto, IdObjeto, EsPublico)
+                WHERE EsPublico = 1 AND Activa = 1;');
 
-    IF NOT EXISTS
-    (
-        SELECT 1
-        FROM sys.indexes
-        WHERE name = N'UX_ALFACORE_TAREAS_COMPARTIDOS_USUARIO'
-          AND object_id = OBJECT_ID(N'dbo.ALFACORE_TAREAS_COMPARTIDOS')
-    )
-    BEGIN
-        CREATE UNIQUE INDEX UX_ALFACORE_TAREAS_COMPARTIDOS_USUARIO
-            ON dbo.ALFACORE_TAREAS_COMPARTIDOS (TipoObjeto, IdObjeto, UsuarioDestino)
-            WHERE EsPublico = 0 AND Activa = 1;
+        IF NOT EXISTS
+        (
+            SELECT 1
+            FROM sys.indexes
+            WHERE name = N'UX_ALFACORE_TAREAS_COMPARTIDOS_USUARIO'
+              AND object_id = OBJECT_ID(N'dbo.ALFACORE_TAREAS_COMPARTIDOS')
+        )
+            EXEC(N'CREATE UNIQUE INDEX UX_ALFACORE_TAREAS_COMPARTIDOS_USUARIO
+                ON dbo.ALFACORE_TAREAS_COMPARTIDOS (TipoObjeto, IdObjeto, UsuarioDestino)
+                WHERE EsPublico = 0 AND Activa = 1;');
     END;
 
     IF NOT EXISTS

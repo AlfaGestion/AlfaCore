@@ -26,12 +26,23 @@ public sealed class PartesHorasService(
 
             await using var cn = new SqlConnection(ConnectionString);
             var args = BuildFilterArgs(filters, skip, pageSize);
+            // ROW_NUMBER y "+" en vez de OFFSET/FETCH y CONCAT: hay bases en SQL Server 2008 / compat 80.
             var rows = (await cn.QueryAsync<ParteHoraGridItemDto>(new CommandDefinition($"""
                 {SelectGridSql()}
                 {BaseFromSql()}
-                {WhereSql()}
-                ORDER BY p.Fecha DESC, p.IdParteHora DESC
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                INNER JOIN (
+                    SELECT numbered.IdParteHora, numbered.RowNumPagina
+                    FROM (
+                        SELECT
+                            p.IdParteHora,
+                            ROW_NUMBER() OVER (ORDER BY p.Fecha DESC, p.IdParteHora DESC) AS RowNumPagina
+                        {BaseFromSql()}
+                        {WhereSql()}
+                    ) numbered
+                    WHERE numbered.RowNumPagina > @Skip
+                      AND numbered.RowNumPagina <= @Skip + @PageSize
+                ) pagina ON pagina.IdParteHora = p.IdParteHora
+                ORDER BY pagina.RowNumPagina;
                 """, args, cancellationToken: token))).ToList();
 
             var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition($"""
@@ -286,7 +297,7 @@ public sealed class PartesHorasService(
                 SELECT TOP (25)
                     CODIGO AS Codigo,
                     RAZON_SOCIAL AS Titulo,
-                    CONCAT(ISNULL(LOCALIDAD, ''), CASE WHEN ISNULL(PROVINCIA, '') = '' THEN '' ELSE ' - ' + PROVINCIA END) AS Subtitulo
+                    ISNULL(LOCALIDAD, '') + ISNULL(CASE WHEN ISNULL(PROVINCIA, '') = '' THEN '' ELSE ' - ' + PROVINCIA END, '') AS Subtitulo
                 FROM dbo.VT_CLIENTES
                 WHERE @Search = '%%'
                    OR CODIGO COLLATE Latin1_General_CI_AI LIKE @Search
@@ -316,10 +327,8 @@ public sealed class PartesHorasService(
                     ISNULL(c.Celular, '') AS Celular,
                     ISNULL(contactoCuenta.Cuenta, '') AS ClienteCodigo,
                     ISNULL(contactoCuenta.RazonSocial, '') AS ClienteNombre,
-                    CONCAT(
-                        ISNULL(contactoCuenta.Localidad, ''),
-                        CASE WHEN ISNULL(contactoCuenta.Provincia, '') = '' THEN '' ELSE ' - ' + contactoCuenta.Provincia END
-                    ) AS Direccion
+                    ISNULL(contactoCuenta.Localidad, '')
+                        + ISNULL(CASE WHEN ISNULL(contactoCuenta.Provincia, '') = '' THEN '' ELSE ' - ' + contactoCuenta.Provincia END, '') AS Direccion
                 FROM dbo.MA_CONTACTOS c
                 OUTER APPLY (
                     SELECT TOP (1)

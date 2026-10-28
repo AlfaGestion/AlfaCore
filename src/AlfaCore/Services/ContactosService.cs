@@ -62,6 +62,7 @@ public sealed class ContactosService(
             var pageConversationMatchSql = BuildConversationMatchSql("pageContacts");
             var advancedFilterSql = BuildAdvancedFilterSql(filters, filterConversationMatchSql);
             var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
+            // ROW_NUMBER en vez de OFFSET/FETCH y LAG/LEAD: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
                 SELECT
                     pageContacts.Id,
@@ -76,6 +77,8 @@ public sealed class ContactosService(
                     pageContacts.Activo,
                     conv.IdConversacion
                 FROM (
+                    SELECT numbered.*
+                    FROM (
                     SELECT
                         c.id AS Id,
                         ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
@@ -87,7 +90,8 @@ public sealed class ContactosService(
                         ISNULL(c.Fax, '') AS Fax,
                         ISNULL(c.email, '') AS Email,
                         ISNULL(c.Cargo, '') AS Cargo,
-                        {activoExpr} AS Activo
+                        {activoExpr} AS Activo,
+                        ROW_NUMBER() OVER (ORDER BY {orderBySql}) AS RowNumPagina
                     FROM dbo.MA_CONTACTOS c
                     LEFT JOIN dbo.TA_ESTADOS e
                         ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
@@ -103,8 +107,9 @@ public sealed class ContactosService(
                       {activoFilterSql}
                       {advancedFilterSql}
                       {ruleFilterSql}
-                    ORDER BY {orderBySql}
-                    OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY
+                    ) numbered
+                    WHERE numbered.RowNumPagina > @Skip
+                      AND numbered.RowNumPagina <= @Skip + @PageSize
                 ) pageContacts
                 OUTER APPLY (
                     SELECT TOP (1) cc.IdConversacion
@@ -254,15 +259,25 @@ public sealed class ContactosService(
                     WHERE choice.UsesFilteredContext = 0
                        OR EXISTS (SELECT 1 FROM FilteredIds f WHERE f.Id = b.Id)
                 ),
-                OrderedContacts AS
+                NumberedContacts AS
                 (
                     SELECT
                         n.Id,
-                        LAG(n.Id) OVER (ORDER BY {fullNavigationOrderSql}) AS PreviousId,
-                        LEAD(n.Id) OVER (ORDER BY {fullNavigationOrderSql}) AS NextId,
                         ROW_NUMBER() OVER (ORDER BY {fullNavigationOrderSql}) AS Position,
                         COUNT(*) OVER () AS Total
                     FROM NavigationSet n
+                ),
+                OrderedContacts AS
+                (
+                    SELECT
+                        cur.Id,
+                        prev.Id AS PreviousId,
+                        nxt.Id AS NextId,
+                        cur.Position,
+                        cur.Total
+                    FROM NumberedContacts cur
+                    LEFT JOIN NumberedContacts prev ON prev.Position = cur.Position - 1
+                    LEFT JOIN NumberedContacts nxt ON nxt.Position = cur.Position + 1
                 )
                 SELECT
                     ordered.PreviousId,

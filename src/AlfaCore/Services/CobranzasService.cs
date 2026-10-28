@@ -271,9 +271,10 @@ public sealed class CobranzasService(ISessionService sessions, IAppUserSessionSe
         var total=ValidarImportes(solicitud);
         var aplicaciones=ResolverAplicaciones(solicitud,total);
         var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(solicitud))));
+        // RAISERROR en vez de THROW: hay bases en SQL Server 2008 / compat 80.
         await cn.ExecuteAsync(Q("""
             DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource='ALFACORE_COBRANZAS',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=30000;
-            IF @r<0 THROW 50001,'Hay otra cobranza en proceso. Volvé a intentar.',1;
+            IF @r<0 BEGIN RAISERROR(N'Hay otra cobranza en proceso. Volvé a intentar.',16,1); RETURN; END
             """));
         var previo=await cn.QuerySingleOrDefaultAsync<OperacionGuardada>(Q("""
             SELECT Operacion,CobranzaId,Comprobante,NumeroAsiento,Importe,SolicitudHash,Unidad

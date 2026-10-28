@@ -10,7 +10,10 @@ SET NOCOUNT ON;
 DECLARE @definicion nvarchar(max);
 SET @definicion = OBJECT_DEFINITION(OBJECT_ID(N'dbo.FMT_V_MV_CPTE_ID', N'TR'));
 
+-- Opt-out por base: ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY = N (grupo SISTEMA) deja intactos los
+-- triggers del sistema legacy. Sin la clave, o con S, se aplica el parche.
 IF @definicion IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'ACTUALIZACIONES-PARCHES-TRIGGERS-LEGACY' AND UPPER(LTRIM(RTRIM(VALOR))) = N'N')
    AND @definicion LIKE N'%CONVERT%GETDATE()%103%'
 BEGIN
     SET @definicion = REPLACE(@definicion, N'CREATE TRIGGER', N'ALTER TRIGGER');

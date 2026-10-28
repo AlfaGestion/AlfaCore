@@ -27,7 +27,10 @@ IF OBJECT_ID('dbo.TJ_VinculoDetalle','U') IS NULL
 BEGIN
  CREATE TABLE dbo.TJ_VinculoDetalle(VinculoId bigint NOT NULL REFERENCES dbo.TJ_Vinculo(Id),DetalleId bigint NOT NULL REFERENCES dbo.TJ_Detalle(Id),Activo bit NOT NULL,PRIMARY KEY(VinculoId,DetalleId));
 END;
+-- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT);
+-- ahí no se crean los dos únicos de vínculos activos y la regla queda a cargo del servicio.
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.TJ_VinculoDetalle') AND name='UX_TJ_Detalle_Activo')
+ AND (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
  CREATE UNIQUE INDEX UX_TJ_Detalle_Activo ON dbo.TJ_VinculoDetalle(DetalleId) WHERE Activo=1;
 IF OBJECT_ID('dbo.TJ_VinculoAlfa','U') IS NULL
 BEGIN
@@ -35,6 +38,7 @@ BEGIN
  Clave varchar(200) NOT NULL,Huella char(64) NOT NULL,Importe decimal(19,2) NOT NULL,Activo bit NOT NULL,PRIMARY KEY(VinculoId,Clave));
 END;
 IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.TJ_VinculoAlfa') AND name='UX_TJ_Alfa_Activo')
+ AND (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
  CREATE UNIQUE INDEX UX_TJ_Alfa_Activo ON dbo.TJ_VinculoAlfa(Cuenta,Clave) WHERE Activo=1;
 IF OBJECT_ID('dbo.TA_CONFIGURACION','U') IS NOT NULL
 BEGIN

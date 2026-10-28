@@ -45,26 +45,31 @@ public sealed class UsuariosService(
                 ? $"{activoExpr} DESC, NOMBRE ASC"
                 : "NOMBRE ASC";
 
+            // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80 (GENESIS).
             var sql = $"""
-                SELECT
-                    ISNULL(NOMBRE, ''),
-                    ISNULL(email_de, ''),
-                    ISNULL(EsGrupo, 0),
-                    ISNULL(CambiarProximoInicio, 0),
-                    {activoExpr},
-                    FechaHora_Grabacion,
-                    FechaHora_Modificacion
-                FROM dbo.TA_USUARIOS
-                WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
-                  AND (
-                        @TextoLike = ''
-                        OR ISNULL(NOMBRE, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(email_de, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                      )
-                  {activoFilterSql}
-                  AND (@EsGrupo IS NULL OR ISNULL(EsGrupo, 0) = @EsGrupo)
-                ORDER BY {orderBySql}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                SELECT Nombre, Email, EsGrupo, CambiarProximoInicio, Activo, FechaHora_Grabacion, FechaHora_Modificacion
+                FROM (
+                    SELECT
+                        ISNULL(NOMBRE, '') AS Nombre,
+                        ISNULL(email_de, '') AS Email,
+                        ISNULL(EsGrupo, 0) AS EsGrupo,
+                        ISNULL(CambiarProximoInicio, 0) AS CambiarProximoInicio,
+                        {activoExpr} AS Activo,
+                        FechaHora_Grabacion,
+                        FechaHora_Modificacion,
+                        ROW_NUMBER() OVER (ORDER BY {orderBySql}) AS Fila
+                    FROM dbo.TA_USUARIOS
+                    WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
+                      AND (
+                            @TextoLike = ''
+                            OR ISNULL(NOMBRE, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(email_de, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                          )
+                      {activoFilterSql}
+                      AND (@EsGrupo IS NULL OR ISNULL(EsGrupo, 0) = @EsGrupo)
+                ) Paginado
+                WHERE Fila > @Skip AND Fila <= @Skip + @PageSize
+                ORDER BY Fila;
 
                 SELECT COUNT(*)
                 FROM dbo.TA_USUARIOS
@@ -883,8 +888,8 @@ public sealed class UsuariosService(
             }
 
             const string nextIdSql = """
-                SELECT ISNULL(MAX(TRY_CAST(LTRIM(RTRIM(IdTecnico)) AS int)), 0) + 1
-                FROM dbo.V_TA_Tecnicos;
+                SELECT ISNULL(MAX(CASE WHEN t.Codigo NOT LIKE '%[^0-9]%' AND LEN(t.Codigo) BETWEEN 1 AND 9 THEN CAST(t.Codigo AS int) END), 0) + 1
+                FROM (SELECT LTRIM(RTRIM(IdTecnico)) AS Codigo FROM dbo.V_TA_Tecnicos) t;
                 """;
             string nextId;
             await using (var nextIdCmd = new SqlCommand(nextIdSql, cn, tx))

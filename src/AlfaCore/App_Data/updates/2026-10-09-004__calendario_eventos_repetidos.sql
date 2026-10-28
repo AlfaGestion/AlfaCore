@@ -19,7 +19,14 @@ GO
 IF OBJECT_ID(N'dbo.CAL_EVENTOS', N'U') IS NOT NULL
    AND COL_LENGTH(N'dbo.CAL_EVENTOS', N'IdSerie') IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CAL_EVENTOS_IdSerie' AND object_id = OBJECT_ID(N'dbo.CAL_EVENTOS'))
-    CREATE NONCLUSTERED INDEX IX_CAL_EVENTOS_IdSerie
-        ON dbo.CAL_EVENTOS (IdSerie, FechaInicio)
-        WHERE IdSerie IS NOT NULL;
+BEGIN
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT).
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        CREATE NONCLUSTERED INDEX IX_CAL_EVENTOS_IdSerie
+            ON dbo.CAL_EVENTOS (IdSerie, FechaInicio)
+            WHERE IdSerie IS NOT NULL;
+    ELSE
+        CREATE NONCLUSTERED INDEX IX_CAL_EVENTOS_IdSerie
+            ON dbo.CAL_EVENTOS (IdSerie, FechaInicio);
+END;
 GO

@@ -29,10 +29,16 @@ IF OBJECT_ID(N'dbo.IA_Compras_CAB', N'U') IS NOT NULL
          AND object_id = OBJECT_ID(N'dbo.IA_Compras_CAB')
    )
 BEGIN
-    CREATE NONCLUSTERED INDEX IX_IA_Compras_CAB_Pendientes
-        ON dbo.IA_Compras_CAB (FechaHora_Proceso ASC, ID ASC)
-        INCLUDE (IdComprobanteRecibido, IdAdjuntoFuente, SolicitarCancelacion, Intentos)
-        WHERE Estado = N'PENDIENTE_LECTURA';
+    -- Compat 80: un índice filtrado hace fallar los INSERT/UPDATE de SqlClient (1934, ARITHABORT).
+    IF (SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()) >= 90
+        EXEC(N'CREATE NONCLUSTERED INDEX IX_IA_Compras_CAB_Pendientes
+            ON dbo.IA_Compras_CAB (FechaHora_Proceso ASC, ID ASC)
+            INCLUDE (IdComprobanteRecibido, IdAdjuntoFuente, SolicitarCancelacion, Intentos)
+            WHERE Estado = N''PENDIENTE_LECTURA'';');
+    ELSE
+        CREATE NONCLUSTERED INDEX IX_IA_Compras_CAB_Pendientes
+            ON dbo.IA_Compras_CAB (FechaHora_Proceso ASC, ID ASC)
+            INCLUDE (IdComprobanteRecibido, IdAdjuntoFuente, SolicitarCancelacion, Intentos);
 END;
 GO
 

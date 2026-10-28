@@ -191,8 +191,14 @@ public sealed class InterfacesCatalogosService(
                 ? "AND UPPER(LTRIM(RTRIM(a.IDARTICULO))) NOT IN @ExcludedIds"
                 : string.Empty;
 
+            // ROW_NUMBER en vez de OFFSET/FETCH y sin CONCAT: hay bases en SQL Server 2008 / compat 80.
             var sql = usarLista
                 ? $"""
+                SELECT
+                    pg.IdArticulo, pg.DescripcionArticulo, pg.CodigoBarra, pg.RutaImagen, pg.Presentacion,
+                    pg.Marca, pg.Rubro, pg.Familia, pg.ListaPrecio, pg.NombreListaPrecio,
+                    pg.Precio, pg.PrecioOferta, pg.TotalRows
+                FROM (
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
@@ -218,7 +224,8 @@ public sealed class InterfacesCatalogosService(
                          AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN p.Precio{ofertaClase}
                         ELSE NULL
                     END AS PrecioOferta,
-                    COUNT(1) OVER() AS TotalRows
+                    COUNT(1) OVER() AS TotalRows,
+                    ROW_NUMBER() OVER (ORDER BY a.DESCRIPCION, a.IDARTICULO) AS RowNum
                 FROM dbo.V_MA_Precios p
                 INNER JOIN dbo.V_MA_ARTICULOS a
                     ON a.IDARTICULO = p.IdArticulo
@@ -244,10 +251,16 @@ public sealed class InterfacesCatalogosService(
                         OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                       )
                   {exclusionFilter}
-                ORDER BY a.DESCRIPCION, a.IDARTICULO
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) pg
+                WHERE pg.RowNum > @Skip AND pg.RowNum <= @Skip + @PageSize
+                ORDER BY pg.RowNum;
                 """
                 : $"""
+                SELECT
+                    pg.IdArticulo, pg.DescripcionArticulo, pg.CodigoBarra, pg.RutaImagen, pg.Presentacion,
+                    pg.Marca, pg.Rubro, pg.Familia, pg.ListaPrecio, pg.NombreListaPrecio,
+                    pg.Precio, pg.PrecioOferta, pg.TotalRows
+                FROM (
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
@@ -268,7 +281,8 @@ public sealed class InterfacesCatalogosService(
                     N'' AS NombreListaPrecio,
                     ISNULL(a.Precio{clasePrecio}, 0) AS Precio,
                     CAST(NULL AS decimal(18, 4)) AS PrecioOferta,
-                    COUNT(1) OVER() AS TotalRows
+                    COUNT(1) OVER() AS TotalRows,
+                    ROW_NUMBER() OVER (ORDER BY a.DESCRIPCION, a.IDARTICULO) AS RowNum
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_Rubros r
                     ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
@@ -290,8 +304,9 @@ public sealed class InterfacesCatalogosService(
                         OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                       )
                   {exclusionFilter}
-                ORDER BY a.DESCRIPCION, a.IDARTICULO
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) pg
+                WHERE pg.RowNum > @Skip AND pg.RowNum <= @Skip + @PageSize
+                ORDER BY pg.RowNum;
                 """;
 
             var rows = (await cn.QueryAsync<CatalogosArticuloBusquedaPageRowDto>(new CommandDefinition(
@@ -747,14 +762,13 @@ public sealed class InterfacesCatalogosService(
                             WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
                             ELSE N'Con vigencia'
                         END AS Tipo,
-                        ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                        ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IdCatalogo), N'')) AS Nombre,
                         CASE
                             WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Sin vigencia'
-                            ELSE CONCAT(
-                                ISNULL(CONVERT(nvarchar(10), c.FechaDesde, 103), N''),
-                                CASE WHEN c.FechaDesde IS NOT NULL OR c.FechaHasta IS NOT NULL THEN N' - ' ELSE N'' END,
-                                ISNULL(CONVERT(nvarchar(10), c.FechaHasta, 103), N'')
-                            )
+                            ELSE
+                                ISNULL(CONVERT(nvarchar(10), c.FechaDesde, 103), N'')
+                                + CASE WHEN c.FechaDesde IS NOT NULL OR c.FechaHasta IS NOT NULL THEN N' - ' ELSE N'' END
+                                + ISNULL(CONVERT(nvarchar(10), c.FechaHasta, 103), N'')
                         END AS Vigencia,
                         c.FechaDesde AS VigenciaDesde,
                         c.FechaHasta AS VigenciaHasta,
@@ -810,14 +824,13 @@ public sealed class InterfacesCatalogosService(
                             WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
                             ELSE N'Con vigencia'
                         END AS Tipo,
-                        MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                        MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IDINSERT), N''))) AS Nombre,
                         CASE
                             WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
-                            ELSE CONCAT(
-                                ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N''),
-                                CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
-                                ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
-                            )
+                            ELSE
+                                ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N'')
+                                + CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END
+                                + ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
                         END AS Vigencia,
                         MIN(c.VigenciaDesde) AS VigenciaDesde,
                         MAX(c.VigenciaHasta) AS VigenciaHasta,
@@ -857,6 +870,14 @@ public sealed class InterfacesCatalogosService(
                     FROM SourceRows
                 )
                 SELECT
+                    pg.IdInsert, pg.IdCatalogo, pg.Tipo, pg.Nombre, pg.Vigencia, pg.Estado,
+                    pg.VigenciaDesde, pg.VigenciaHasta, pg.FechaDesde, pg.FechaHasta, pg.IdLista,
+                    pg.Grupo, pg.Observaciones, pg.FechaCarga, pg.FechaHoraAlta, pg.FechaHoraModificacion,
+                    pg.FechaHoraFinalizado, pg.FechaHoraAnulado, pg.Usuario, pg.UsuarioModificacion,
+                    pg.UsuarioFinalizado, pg.UsuarioAnulado, pg.DtoGeneral, pg.CantidadArticulos,
+                    pg.Finalizado, pg.Anulado, pg.UsaModeloNuevo, pg.TotalFiltrados
+                FROM (
+                SELECT
                     IdInsert,
                     IdCatalogo,
                     Tipo,
@@ -884,7 +905,8 @@ public sealed class InterfacesCatalogosService(
                     Finalizado,
                     Anulado,
                     UsaModeloNuevo,
-                    COUNT(1) OVER() AS TotalFiltrados
+                    COUNT(1) OVER() AS TotalFiltrados,
+                    ROW_NUMBER() OVER (ORDER BY FechaCarga DESC, IdInsert DESC) AS RowNum
                 FROM (
                     SELECT
                         IdInsert,
@@ -948,8 +970,9 @@ public sealed class InterfacesCatalogosService(
                             AND (VigenciaHasta IS NULL OR CONVERT(date, VigenciaHasta) >= @FechaFiltro)
                         )
                     )
-                ORDER BY FechaCarga DESC, IdInsert DESC
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ) pg
+                WHERE pg.RowNum > @Skip AND pg.RowNum <= @Skip + @PageSize
+                ORDER BY pg.RowNum;
                 """;
 
             var items = (await cn.QueryAsync<CatalogosCatalogoResumenDto>(new CommandDefinition(
@@ -2963,7 +2986,7 @@ public sealed class InterfacesCatalogosService(
                     WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
                     ELSE N'Con vigencia'
                 END AS Tipo,
-                ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IdCatalogo), N'')) AS Nombre,
                 ISNULL(LTRIM(RTRIM(c.IdLista)), '') AS IdLista,
                 ISNULL(LTRIM(RTRIM(c.Nombre)), '') AS Grupo,
                 CAST(N'' AS nvarchar(250)) AS Observaciones,
@@ -3097,7 +3120,7 @@ public sealed class InterfacesCatalogosService(
                      AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
                     ELSE N'Con vigencia'
                 END AS Tipo,
-                MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), N'Catálogo ' + ISNULL(CONVERT(nvarchar(20), c.IDINSERT), N''))) AS Nombre,
                 MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
                 MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
                 MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,

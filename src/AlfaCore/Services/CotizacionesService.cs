@@ -38,6 +38,7 @@ public sealed class CotizacionesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var rows = (await cn.QueryAsync<CotizacionListRow>(new CommandDefinition("""
                 ;WITH Filtered AS
                 (
@@ -66,9 +67,18 @@ public sealed class CotizacionesService(
                       AND (@SoloVencidas IS NULL
                            OR (c.Estado NOT IN ('ACEPTADA', 'RECHAZADA', 'ANULADA') AND v.FechaVencimiento < CAST(GETDATE() AS date)))
                 )
-                SELECT * FROM Filtered
-                ORDER BY Fecha DESC, IdCotizacion DESC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                , Paged AS
+                (
+                    SELECT Filtered.*, ROW_NUMBER() OVER (ORDER BY Fecha DESC, IdCotizacion DESC) AS RowNum
+                    FROM Filtered
+                )
+                SELECT
+                    IdCotizacion, Numero, TC, Estado, IdOportunidad, CodigoCliente,
+                    IdVersion, NumeroVersion, Fecha, FechaVencimiento, EmpresaProspecto,
+                    ContactoNombre, CodigoMoneda, Total, TotalRows
+                FROM Paged
+                WHERE RowNum > @Offset AND RowNum <= @Offset + @PageSize
+                ORDER BY RowNum;
                 """, new
             {
                 Estado = estado,

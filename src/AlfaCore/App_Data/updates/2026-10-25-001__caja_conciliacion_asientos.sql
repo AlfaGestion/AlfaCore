@@ -1,6 +1,6 @@
 SET XACT_ABORT ON;
 IF OBJECT_ID(N'dbo.BK_Conciliacion',N'U') IS NULL
-    THROW 50001,'Instalá primero los vínculos de conciliación.',1;
+    BEGIN RAISERROR(N'Instalá primero los vínculos de conciliación.', 16, 1); RETURN; END;
 IF OBJECT_ID(N'dbo.BK_AsientoOperacion',N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.BK_AsientoOperacion(

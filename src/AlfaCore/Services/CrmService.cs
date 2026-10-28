@@ -88,12 +88,23 @@ public sealed class CrmService(
             var pageNumber = Math.Max(1, filters.PageNumber);
             var skip = (pageNumber - 1) * pageSize;
             var orderBy = BuildOrderBy(filters.OrdenarPor, filters.OrdenDescendente);
+            // ROW_NUMBER/TOP en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
                 {OpportunitySelectSql()}
                 {OpportunityFromSql()}
-                {OpportunityWhereSql()}
-                ORDER BY {orderBy}, o.IdOportunidad DESC
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                INNER JOIN (
+                    SELECT numbered.IdOportunidad, numbered.RowNumPagina
+                    FROM (
+                        SELECT
+                            o.IdOportunidad,
+                            ROW_NUMBER() OVER (ORDER BY {orderBy}, o.IdOportunidad DESC) AS RowNumPagina
+                        {OpportunityFromSql()}
+                        {OpportunityWhereSql()}
+                    ) numbered
+                    WHERE numbered.RowNumPagina > @Skip
+                      AND numbered.RowNumPagina <= @Skip + @PageSize
+                ) pagina ON pagina.IdOportunidad = o.IdOportunidad
+                ORDER BY pagina.RowNumPagina;
 
                 SELECT COUNT(*)
                 {OpportunityFromSql()}
@@ -126,11 +137,10 @@ public sealed class CrmService(
             filters ??= new CrmFilters();
             var limit = Math.Clamp(filters.PageSize <= 0 ? 160 : filters.PageSize, 25, 240);
             var sql = $"""
-                {OpportunitySelectSql()}
+                {OpportunitySelectSql("TOP (@Limit)")}
                 {OpportunityFromSql()}
                 {OpportunityWhereSql()}
-                ORDER BY e.Orden, o.Prioridad DESC, o.FechaHoraAlta DESC, o.IdOportunidad DESC
-                OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY;
+                ORDER BY e.Orden, o.Prioridad DESC, o.FechaHoraAlta DESC, o.IdOportunidad DESC;
                 """;
 
             var args = BuildFilterParameters(filters);
@@ -844,8 +854,8 @@ public sealed class CrmService(
                 """, new { Grupo = ConfigGroup, Clave = BuildViewConfigKey(userName), Json = json }, cancellationToken: token));
         }, "No se pudo guardar la configuración de vista de CRM.", ct);
 
-    private static string OpportunitySelectSql() => """
-        SELECT
+    private static string OpportunitySelectSql(string topSql = "") => $"""
+        SELECT {topSql}
             o.IdOportunidad,
             o.Numero,
             RIGHT('0000' + CONVERT(varchar(10), o.Numero), 4) AS CodigoVisible,

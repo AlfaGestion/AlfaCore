@@ -75,9 +75,13 @@ public sealed class CierreCajaService(IConfiguration configuration, ISessionServ
             using var scopeReader = new StreamReader(scope);
             alcance = scopeReader.ReadToEnd();
         }
+        // ROW_NUMBER en vez de OFFSET/FETCH (SQL 2008 / compat 80); la columna auxiliar se quita antes del SELECT *.
         return alcance + reader.ReadToEnd() + $"\nSELECT COUNT(*) AS TotalCount{totals} FROM #Reporte;\n"
-            + $"SELECT * FROM #Reporte ORDER BY {section.Orden}"
-            + (exportar ? ";" : " OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;");
+            + (exportar ? $"SELECT * FROM #Reporte ORDER BY {section.Orden};"
+                : $"SELECT * INTO #ReportePagina FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY {section.Orden}) AS AlfaCoreFilaPagina FROM #Reporte) p\n"
+                + "WHERE AlfaCoreFilaPagina > @Offset AND AlfaCoreFilaPagina <= @Offset + @PageSize;\n"
+                + "ALTER TABLE #ReportePagina DROP COLUMN AlfaCoreFilaPagina;\n"
+                + $"SELECT * FROM #ReportePagina ORDER BY {section.Orden};");
     }
 
     internal static DynamicParameters BuildParameters(CierreCajaFiltros filtros, CierreCajaSeccion section, int pagina, int pageSize)
