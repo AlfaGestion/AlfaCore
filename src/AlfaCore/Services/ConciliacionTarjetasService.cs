@@ -124,18 +124,10 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
     }
     public Task<long> ConfirmarAsync(TarjetasConfirmar solicitud,CancellationToken ct=default)=>Ejecutar("Confirmar",async(c,t)=>
     {
-        if(solicitud.Detalles.Count is 0 or >2000||solicitud.Movimientos.Count is 0 or >2000||solicitud.Motivo.Length>500)throw new InvalidOperationException("Seleccioná hasta 2.000 operaciones de cada lado.");
         var session=sessions.GetActiveSession()!.Id;using var tx=c.BeginTransaction(IsolationLevel.Serializable);
         var actual=await Comparar(c,solicitud.Filtro with{Estado="Todos",Buscar=""},t,tx);
-        if(!actual.Importacion.DetalleCompleto)throw new InvalidOperationException("El detalle del PDF no coincide con el bruto. Requiere revisión antes de confirmar.");
-        var ds=solicitud.Detalles.Distinct().Select(id=>actual.Detalles.SingleOrDefault(x=>x.Id==id)??throw new InvalidOperationException("La liquidación cambió. Compará nuevamente.")).ToList();
-        var ms=solicitud.Movimientos.Select(s=>actual.Movimientos.SingleOrDefault(x=>x.Clave==s.Clave&&x.Huella==s.Huella)??throw new InvalidOperationException("El movimiento cambió o dejó de estar autorizado. Compará nuevamente.")).ToList();
-        if(ds.Count!=solicitud.Detalles.Count||ms.Select(x=>x.Clave).Distinct().Count()!=ms.Count||ds.Any(x=>x.Vinculo!=null)||ms.Any(x=>x.Vinculo!=null||x.LegacyLiquidado||x.Alterado))throw new InvalidOperationException("Hay operaciones repetidas, modificadas o conciliadas. Actualizá la comparación.");
-        var total=ds.Sum(x=>x.Importe);var alfa=ms.Sum(x=>x.Importe);
-        ValidarDiferencia(total,alfa,actual.Tolerancia,solicitud.Motivo);
-        var id=await c.ExecuteScalarAsync<long>(Cmd("INSERT dbo.TJ_Vinculo(ImportacionId,ImporteResumen,ImporteAlfa,Motivo,Usuario) OUTPUT INSERTED.Id VALUES(@import,@total,@alfa,@motivo,@usuario)",new{import=actual.Importacion.Id,total,alfa,motivo=solicitud.Motivo.Trim(),usuario=users.GetCurrentUserName()},t,tx));
-        foreach(var d in ds)await c.ExecuteAsync(Cmd("INSERT dbo.TJ_VinculoDetalle(VinculoId,DetalleId,Activo) VALUES(@id,@detalle,1)",new{id,detalle=d.Id},t,tx));
-        foreach(var m in ms)await c.ExecuteAsync(Cmd("INSERT dbo.TJ_VinculoAlfa(VinculoId,Cuenta,Clave,Huella,Importe,Activo) VALUES(@id,@cuenta,@Clave,@Huella,@Importe,1)",new{id,cuenta=actual.Importacion.Cuenta,m.Clave,m.Huella,m.Importe},t,tx));
+        var grupo=ResolverConfirmacion(actual,solicitud);
+        var id=await InsertarVinculo(c,tx,actual,grupo,solicitud.Motivo,t);
         AntesDeGrabar(session,t);tx.Commit();return id;
     },ct);
     public static void ValidarDiferencia(decimal resumen,decimal alfa,decimal tolerancia,string motivo)

@@ -68,6 +68,34 @@ public sealed class TarjetasProgresoUiTests
             if(resultado=="error")Assert.NotNull(typeof(ConciliacionTarjetas).GetField("_feedback",Flags)!.GetValue(capture.Page));
         });
     }
+    [Theory]
+    [InlineData(false,false,"Sin pendientes para proponer")]
+    [InlineData(true,false,"Sin coincidencias únicas")]
+    [InlineData(true,true,"Selección propuesta")]
+    public async Task ProponerDesdeLaBarraGlobalRenderizaSiempreSuResultado(bool datos,bool coincide,string titulo)
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var sessions=Proxy<ISessionService>((_,_)=>null);var users=Proxy<IAppUserSessionService>((_,_)=>null);
+        var service=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,null!);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(service);services.AddSingleton(sessions);services.AddSingleton(users);
+        services.AddSingleton(runtime.Events);services.AddSingleton<IPageHeaderService,PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService,AppUiOperationService>();services.AddSingleton<NavigationManager,CargaComprobantesUiTests.TestNavigation>();
+        services.AddSingleton(Proxy<IRouteContextService>((_,_)=>null));services.AddSingleton(Proxy<IJSRuntime>((_,_)=>null));
+        var capture=new Captura();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            typeof(ConciliacionTarjetas).GetField("_comparacion",Flags)!.SetValue(capture.Page,new TarjetasComparacion(new(){Id=1,DetalleCompleto=true},
+                datos?[new(){Id=1,Fecha=new(2026,4,1),Importe=100}]:[],
+                datos?[new(){Clave="A",Fecha=new(2026,4,1),Importe=coincide?100:200}]:[],1));
+            typeof(ConciliacionTarjetas).GetMethod("Header",Flags)!.Invoke(capture.Page,[]);
+            var header=provider.GetRequiredService<IPageHeaderService>();
+            await header.Current.Actions.Single(a=>a.Key=="proponer").OnClick!();
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.Contains(titulo,html);Assert.Contains("role=\"status\"",html);Assert.Contains("alfa-feedback-panel",html);
+        });
+    }
     public sealed class PaginaSinCarga:ConciliacionTarjetas
     {
         protected override void OnInitialized()

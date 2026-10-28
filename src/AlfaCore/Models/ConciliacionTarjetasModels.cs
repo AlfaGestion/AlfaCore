@@ -80,8 +80,15 @@ public sealed class TarjetasBusqueda : GestionDateFilterBase
     public string Buscar {get;set;}="";
 }
 public sealed record TarjetasConfirmar(TarjetasFiltro Filtro,IReadOnlyList<long> Detalles,IReadOnlyList<TarjetasSeleccion> Movimientos,string Motivo="");
+public sealed record TarjetasIaSeleccion(IReadOnlyList<long> Detalles,IReadOnlyList<TarjetasSeleccion> Movimientos,string Evidencia);
+public sealed record TarjetasConfirmarVarias(TarjetasFiltro Filtro,IReadOnlyList<TarjetasIaSeleccion> Propuestas,bool AceptarDiferencias,string Motivo);
 public sealed record TarjetasIaPropuesta(string Confianza,string Motivo,IReadOnlyList<TarjetasDetalle> Detalles,IReadOnlyList<TarjetasMovimiento> Movimientos)
 {
     public decimal Diferencia=>Detalles.Sum(x=>x.Importe)-Movimientos.Sum(x=>x.Importe);
 }
-public sealed record TarjetasIaResultado(string Modelo,int DetallesAnalizados,int MovimientosAnalizados,int Descartadas,int Dias,IReadOnlyList<TarjetasIaPropuesta> Propuestas);
+public sealed record TarjetasIaResultado(string Modelo,int DetallesAnalizados,int MovimientosAnalizados,int Descartadas,int Dias,IReadOnlyList<TarjetasIaPropuesta> Propuestas)
+{
+    public int LotesAnalizados {get;init;}=1;
+    public int DetallesSinCandidatosPorFecha {get;init;}
+    public int MovimientosSinCandidatosPorFecha {get;init;}
+}

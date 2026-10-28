@@ -54,6 +54,7 @@ public sealed class ConciliacionIaTests
     {
         public HttpStatusCode Estado=HttpStatusCode.OK;
         public string Finish="stop";
+        public string? Refusal;
         public string? Payload;
         public Action? AlResponder;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct) {
@@ -62,7 +63,7 @@ public sealed class ConciliacionIaTests
             Payload=await request.Content!.ReadAsStringAsync(ct);
             AlResponder?.Invoke();
             return new(Estado){Content=new StringContent(JsonSerializer.Serialize(new{model="modelo-ensayo",usage=new{prompt_tokens=10,completion_tokens=2},
-                choices=new[]{new{finish_reason=Finish,message=new{content="{\"grupos\":[],\"orientaciones\":[]}"}}}}))};
+                choices=new[]{new{finish_reason=Finish,message=new{content="{\"grupos\":[],\"orientaciones\":[]}",refusal=Refusal}}}}))};
         }
     }
     [Fact]
@@ -74,7 +75,15 @@ public sealed class ConciliacionIaTests
         var respuesta=await modelo.AnalizarConClaveAsync(Contexto(),"modelo-ensayo","clave-de-ensayo",default);
         Assert.Equal("modelo-ensayo",respuesta.Modelo);Assert.Equal(1,consumos);
         using var p=JsonDocument.Parse(handler.Payload!);Assert.False(p.RootElement.GetProperty("store").GetBoolean());
-        Assert.Equal("json_object",p.RootElement.GetProperty("response_format").GetProperty("type").GetString());
+        var formato=p.RootElement.GetProperty("response_format");
+        Assert.Equal("json_schema",formato.GetProperty("type").GetString());
+        Assert.True(formato.GetProperty("json_schema").GetProperty("strict").GetBoolean());
+        var esquema=formato.GetProperty("json_schema").GetProperty("schema");
+        Assert.False(esquema.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(new[]{"grupos","orientaciones"},esquema.GetProperty("required").EnumerateArray().Select(v=>v.GetString()));
+        var grupo=esquema.GetProperty("properties").GetProperty("grupos").GetProperty("items");
+        Assert.Equal("integer",grupo.GetProperty("properties").GetProperty("alfa").GetProperty("items").GetProperty("type").GetString());
+        Assert.False(grupo.GetProperty("additionalProperties").GetBoolean());
         handler.Finish="length";await Assert.ThrowsAsync<InvalidOperationException>(()=>modelo.AnalizarConClaveAsync(Contexto(),"modelo-ensayo","clave-de-ensayo",default));
         Assert.Equal(2,consumos);
         handler.Estado=HttpStatusCode.TooManyRequests;await Assert.ThrowsAsync<InvalidOperationException>(()=>modelo.AnalizarConClaveAsync(Contexto(),"modelo-ensayo","clave-de-ensayo",default));
@@ -135,6 +144,27 @@ public sealed class ConciliacionIaTests
         var invalido=ConciliacionIaModelo.ErrorApi(HttpStatusCode.BadRequest,"HTML ilegible", "ensayo",1,1,"");
         Assert.Contains("HTTP 400",invalido.Message);
         Assert.DoesNotContain("HTML ilegible",invalido.Message);
+    }
+
+    [Theory]
+    [InlineData("{\"grupos\":{},\"orientaciones\":[]}")]
+    [InlineData("{\"grupos\":[{\"banco\":[\"0\"],\"alfa\":[0],\"confianza\":\"Alta\",\"motivo\":\"CLIENTE PRIVADO\"}],\"orientaciones\":[]}")]
+    [InlineData("{\"error\":\"CLIENTE PRIVADO\"}")]
+    public void FormatoIncompatibleDejaDiagnosticoSinGuardarContenidoNiAceptarListasOmitidas(string json)
+    {
+        var error=Assert.Throws<InvalidOperationException>(()=>ConciliacionBancariaService.ValidarRespuestaIa(Contexto(),json));
+        Assert.Contains("formato incompatible",error.Message);
+        Assert.IsType<FormatException>(error.InnerException);
+        Assert.Contains("SHA256=",error.InnerException!.Message);Assert.Contains("longitud=",error.InnerException.Message);
+        Assert.DoesNotContain("CLIENTE PRIVADO",error.ToString());
+    }
+    [Fact]
+    public async Task RechazoExplicitoDelModeloNoSeInterpretaComoJsonNiSeMuestraContenido()
+    {
+        var handler=new Handler{Refusal="CONTENIDO PRIVADO"};var sesion=new SessionDto();
+        var modelo=new ConciliacionIaModelo(Proxy<IHttpClientFactory>((_,_)=>new HttpClient(handler,false)),Proxy<IIaUsoRecorder>((_,_)=>null),Proxy<ISessionService>((_,_)=>sesion));
+        var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>modelo.AnalizarConClaveAsync(Contexto(),"modelo-ensayo","clave-de-ensayo",default));
+        Assert.Contains("selección manual",error.Message);Assert.DoesNotContain("CONTENIDO PRIVADO",error.ToString());
     }
 
     private sealed class IaLiveFactAttribute : FactAttribute

@@ -61,7 +61,7 @@ public sealed class ConciliacionIaModelo(IHttpClientFactory http,IIaUsoRecorder 
         instrucciones+="\nLos registros se envían como filas compactas: columnasBanco y columnasAlfa definen el orden de sus valores. El primer valor es siempre el índice original; usalo en la respuesta. No confundas la posición de una fila con su índice.";
         var datos=DatosCompactos(c);
         var payload=new {model=modelo,store=false,max_completion_tokens=12000,
-            response_format=new{type="json_object"},messages=new[]{new{role="system",content=instrucciones},new{role="user",content=datos}}};
+            response_format=ConciliacionIaFormato.Respuesta,messages=new[]{new{role="system",content=instrucciones},new{role="user",content=datos}}};
         using var request=new HttpRequestMessage(HttpMethod.Post,"https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",clave);
         request.Content=new StringContent(JsonSerializer.Serialize(payload),Encoding.UTF8,"application/json");
@@ -77,7 +77,10 @@ public sealed class ConciliacionIaModelo(IHttpClientFactory http,IIaUsoRecorder 
         uso.Registrar(IaUsoFunciones.Conciliacion,doc.RootElement,modelo);
         var choice=doc.RootElement.GetProperty("choices")[0];
         if(choice.GetProperty("finish_reason").GetString()!="stop")throw new InvalidOperationException("La IA no terminó la respuesta. Reducí el período o filtrá por clasificación y reintentá.");
-        var json=choice.GetProperty("message").GetProperty("content").GetString();
+        var message=choice.GetProperty("message");
+        if(message.TryGetProperty("refusal",out var rechazo)&&rechazo.ValueKind==JsonValueKind.String&&!string.IsNullOrWhiteSpace(rechazo.GetString()))
+            throw new InvalidOperationException("La IA no pudo analizar este contenido. No se generaron propuestas; revisá los datos o continuá con la selección manual.");
+        var json=message.GetProperty("content").GetString();
         if(string.IsNullOrWhiteSpace(json))throw new InvalidOperationException("La IA no devolvió una propuesta legible. Reintentá el análisis.");
         return new(doc.RootElement.GetProperty("model").GetString() ?? modelo,json);
     }
@@ -114,6 +117,7 @@ public sealed class ConciliacionIaModelo(IHttpClientFactory http,IIaUsoRecorder 
         if(detalle.Length>2000)detalle=detalle[..2000];
         var mensaje=codigo=="context_length_exceeded"||detalle.Contains("maximum context",StringComparison.OrdinalIgnoreCase)
             ? "La consulta supera la capacidad del modelo de IA configurado. Reducí el período de Alfa o elegí un modelo con mayor capacidad. Se conservó la selección."
+            : parametro.StartsWith("response_format",StringComparison.OrdinalIgnoreCase)?"El proveedor rechazó el formato estructurado de conciliación. Revisá que el modelo configurado admita respuestas con esquema JSON; se registró el detalle para soporte."
             : codigo=="model_not_found"?"El modelo de IA configurado no está disponible para esta conexión. Revisá el modelo en la configuración del servidor."
             : status==System.Net.HttpStatusCode.Unauthorized?"La conexión de IA fue rechazada. Revisá la credencial configurada en el servidor."
             : status==System.Net.HttpStatusCode.TooManyRequests?"La IA alcanzó el límite de consumo o de solicitudes. Reintentá más tarde o revisá el cupo del servidor."

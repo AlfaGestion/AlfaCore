@@ -47,3 +47,5 @@
 .tarjetas-deteccion p{margin:6px 0}
 .tarjetas-deteccion small{color:var(--alfa-text-secondary)}
 .tarjetas-deteccion .tarjetas-scroll{max-height:260px;margin:8px 0}
+
+.tarjetas-ia-seleccion{position:sticky;top:0;z-index:3;padding:12px;background:var(--alfa-bg-surface);border:1px solid var(--alfa-border-default);border-radius:var(--alfa-radius-sm);display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}

@@ -60,6 +60,8 @@ echo Preserva en el servidor:
 echo   - appsettings.json ^(actual^), appsettings.Production.json ^(legacy^), .env, web.config
 echo   - App_Data local ^(uploads, sesiones, historicos, diagnosticos, etc.^) y wwwroot\uploads
 echo.
+echo Tambien actualiza los lectores PDF ^(App_Data\extractos y App_Data\tarjetas^), sin borrar otros archivos.
+echo.
 echo Recomendacion: hacer backup de carpeta y base de datos antes de actualizar.
 echo.
 exit /b 0
@@ -97,6 +99,23 @@ if not exist "%SOURCE_DIR_FULL%" (
   echo ===============================================
   pause
   exit /b 1
+)
+
+rem Los lectores PDF son codigo del release, no datos locales. Validar antes de copiar binarios.
+for %%F in (extractos tarjetas) do (
+  for %%A in ("%SOURCE_DIR_FULL%\App_Data\%%F\leer_pdf.py") do set "PDF_ATTRIBUTES=%%~aA"
+  if "!PDF_ATTRIBUTES:~0,1!"=="d" (
+    echo El lector App_Data\%%F\leer_pdf.py debe ser un archivo, no una carpeta.
+    pause
+    exit /b 1
+  )
+  if not exist "%SOURCE_DIR_FULL%\App_Data\%%F\leer_pdf.py" (
+    echo.
+    echo Falta App_Data\%%F\leer_pdf.py en la publicacion.
+    echo Ejecuta scripts\publicar_release.bat nuevamente antes de actualizar.
+    pause
+    exit /b 1
+  )
 )
 
 echo.
@@ -192,13 +211,14 @@ echo Paso 3/4: copiando archivos actualizados...
 echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(legacy^), .env y web.config
 echo - Se preservan App_Data y wwwroot\uploads del servidor
 echo - Se actualizan los binarios y JSON del runtime
+echo - Se actualizan los lectores PDF de App_Data\extractos y App_Data\tarjetas
 echo - Se actualiza App_Data\updates
 echo - Se actualiza App_Data\novedades-sistema ^(notas de version^)
 echo.
 echo Destino detectado: %DEST_DIR_FULL%
 echo.
 
-robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "App_Data" "wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
+robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "%SOURCE_DIR_FULL%\App_Data" "%SOURCE_DIR_FULL%\wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
 set "ROOT_COPY_EXIT=%ERRORLEVEL%"
 
 if %ROOT_COPY_EXIT% GEQ 8 (
@@ -209,6 +229,34 @@ if %ROOT_COPY_EXIT% GEQ 8 (
   echo No inicies el sitio/servicio hasta repetir la actualizacion completa.
   pause
   exit /b %ROOT_COPY_EXIT%
+)
+
+rem Copiar solo codigo Python; nunca purgar carpetas ni copiar datos locales de App_Data.
+for %%F in (extractos tarjetas) do (
+  robocopy "%SOURCE_DIR_FULL%\App_Data\%%F" "%DEST_DIR_FULL%\App_Data\%%F" *.py /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+  set "PDF_COPY_EXIT=!ERRORLEVEL!"
+  if !PDF_COPY_EXIT! GEQ 8 (
+    echo.
+    echo La copia del lector PDF de %%F fallo con codigo !PDF_COPY_EXIT!.
+    echo No inicies el sitio/servicio hasta repetir la actualizacion completa.
+    pause
+    exit /b !PDF_COPY_EXIT!
+  )
+  rem Comprobar atributos: IF EXIST archivo\ puede dar verdadero para archivos en rutas UNC.
+  for %%A in ("%DEST_DIR_FULL%\App_Data\%%F\leer_pdf.py") do set "PDF_ATTRIBUTES=%%~aA"
+  if "!PDF_ATTRIBUTES:~0,1!"=="d" (
+    echo El destino del lector PDF de %%F es una carpeta, no un archivo.
+    echo No inicies el sitio/servicio hasta corregir el destino y repetir la actualizacion.
+    pause
+    exit /b 1
+  )
+  if not exist "%DEST_DIR_FULL%\App_Data\%%F\leer_pdf.py" (
+    echo.
+    echo No se encontro el lector PDF de %%F en el destino tras la copia.
+    echo No inicies el sitio/servicio hasta repetir la actualizacion completa.
+    pause
+    exit /b 1
+  )
 )
 
 if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
@@ -263,6 +311,7 @@ echo Resumen:
 echo   - Binarios actualizados desde publish\AlfaCoreLAN
 echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env / web.config^)
 echo   - Datos locales preservados ^(App_Data y wwwroot\uploads^)
+echo   - Lectores PDF actualizados en App_Data\extractos y App_Data\tarjetas
 echo   - Scripts SQL publicados en App_Data\updates
 echo   - Launcher actualizado a iniciar_AlfaCore.bat
 if defined REMOTE_HOST (

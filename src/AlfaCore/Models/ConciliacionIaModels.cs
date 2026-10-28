@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AlfaCore.Models;
 
 public sealed record ConciliacionIaPropuesta(Guid Id,string Origen,string Confianza,string Motivo,
@@ -23,8 +25,8 @@ public sealed record ConciliacionIaRespuesta(string Modelo,string Json);
 // Los índices de la respuesta se resuelven exclusivamente contra el contexto autorizado.
 public sealed class ConciliacionIaSalida
 {
-    public List<ConciliacionIaGrupo> Grupos { get; set; }=[];
-    public List<ConciliacionIaConsejo> Orientaciones { get; set; }=[];
+    [JsonRequired] public List<ConciliacionIaGrupo> Grupos { get; set; }=[];
+    [JsonRequired] public List<ConciliacionIaConsejo> Orientaciones { get; set; }=[];
 }
 public sealed class ConciliacionIaGrupo
 {

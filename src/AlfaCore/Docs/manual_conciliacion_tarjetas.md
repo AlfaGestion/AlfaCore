@@ -47,7 +47,7 @@ Cada lista tiene **Seleccionar todo**, **Invertir** y **Limpiar**. Seleccionar t
 
 Usá **Solo seleccionados** para revisar lo marcado. Podés elegir 50 o 100 filas por página sin perder la selección. **Limpiar ambos lados** quita todas las marcas y vuelve a mostrar el resultado. Si se supera el máximo de 2.000 registros por lado, se conserva la selección anterior y podés continuar por página.
 
-Los indicadores distinguen los totales consultados de la diferencia de selección. Para confirmar, ambos lados deben tener registros y la diferencia debe estar dentro de la tolerancia. La selección manual completa se guarda como **un único vínculo**; revisá los registros antes de confirmar. Para generar vínculos separados, revisá las propuestas de IA individualmente.
+Los indicadores distinguen los totales consultados de la diferencia de selección. Para confirmar, ambos lados deben tener registros y la diferencia debe estar dentro de la tolerancia. La selección manual completa se guarda como **un único vínculo**; revisá los registros antes de confirmar. Para generar vínculos separados, podés revisar las propuestas de IA individualmente o seleccionarlas y confirmarlas juntas desde el cuadro de IA.
 
 ## Qué hace cada acción
 
@@ -64,9 +64,9 @@ En **Conciliar tarjetas**, elegí **Asistir con IA** en la barra superior. Se co
 
 La IA puede proponer pares individuales y grupos de ventas que suman un lote, comparando importes brutos, fechas y referencias de cupón/presentación. La fecha de pago es informativa. No se compara el neto con ventas brutas ni se descuentan comisiones para forzar una coincidencia. Los casos ambiguos pueden quedar pendientes.
 
-Cada propuesta muestra confianza orientativa, explicación, registros de ambos lados y diferencia. Pulsá **Revisar esta propuesta** y verificá la selección antes de **Confirmar**. El motivo precargado identifica la asistencia IA y podés ampliarlo; una diferencia aceptada conserva los importes originales. La confirmación vuelve a controlar permisos, huellas, pendientes y tolerancia. El cuadro solo se cierra con la X o **Cerrar**; al cerrarlo no se confirma nada.
+Cada propuesta muestra confianza orientativa, explicación, registros de ambos lados y diferencia. Podés marcar varias, usar **Seleccionar todas** o **Solo sin diferencias**, y pulsar **Revisar y confirmar N propuestas**. También se conserva **Revisar esta propuesta** para tratar una sola. El motivo precargado identifica la asistencia IA y podés ampliarlo; una diferencia aceptada conserva los importes originales. La confirmación vuelve a controlar permisos, huellas, pendientes y tolerancia. El cuadro solo se cierra con la X o **Cerrar**; al cerrarlo no se confirma nada.
 
-El margen inicial es de 3 días, con hasta 2.000 pendientes por lado. El administrador puede configurarlos en los parámetros de tarjetas. Si hay más registros no se analiza una muestra parcial. Si la IA no está configurada, falla o no propone coincidencias verificables, podés seguir con la selección manual y **Proponer selección**. Un error de IA conserva la selección previa. No se generan LT, asientos ni libro de IVA.
+El margen inicial es de 3 días, con hasta 2.000 pendientes por lado en cada petición. Si el período tiene más registros, el sistema organiza lotes por fechas y muestra **lote X de Y**. Cada lote incluye todos los candidatos dentro del margen, sin recortar una muestra. Si un solo día supera ese límite se indica la fecha y se pide filtrar por sucursal o conciliar parte de ese día. La consulta general conserva su límite de 10.000 movimientos. El administrador puede configurar los límites de cada petición en los parámetros de tarjetas. Si la IA no está configurada, falla o no propone coincidencias verificables, podés seguir con la selección manual y **Proponer selección**. Un error de IA conserva la selección previa. No se generan LT, asientos ni libro de IVA.
 
 ## Corregir una conciliación
 
@@ -104,3 +104,25 @@ Si todavía estás en la vista previa, **Descartar archivo seleccionado** quita 
 Para un archivo ya importado, en **Importación** buscá su fila y pulsá **Eliminar**. Revisá el nombre y la cuenta, escribí un motivo y confirmá **Eliminar importación**. Se eliminan el PDF guardado y sus operaciones importadas; después podés importar nuevamente el archivo correcto. No modifica asientos contables, el archivo de tu computadora ni las asociaciones de cuenta recordadas.
 
 Solo se permite si la importación nunca tuvo conciliaciones. Tener todos los movimientos pendientes no garantiza esa condición: puede haber vínculos anulados en el historial. Si tiene historia, se conserva y podés revisar/deshacer sus vínculos desde **Ver conciliados**. La eliminación requiere confirmación explícita y queda auditada.
+
+
+### Resultado visible de las propuestas
+
+**Proponer selección** muestra un aviso persistente en la página: informa cuántos pendientes hay en cada lado, si faltan registros, si no hay coincidencias únicas o cuántos pares marcó. El botón de la barra superior actualiza ese aviso inmediatamente.
+
+**Asistir con IA** informa el progreso por lotes cuando el período supera el tamaño de una petición. Al terminar muestra cuántos registros distintos envió, cuántos lotes analizó y cuántas propuestas resultaron válidas. Los movimientos sin candidatos dentro de las ventanas de fechas se cuentan aparte y siguen pendientes. Se descartan propuestas de distintos lotes que compiten por un mismo movimiento. Las agrupaciones que cruzan límites entre lotes pueden necesitar revisión manual; una propuesta no prueba que todos los pendientes estén liquidados. Si una petición falla, no se presentan resultados parciales como un análisis completo ni se confirma ninguna conciliación.
+
+
+### Si aparece un error de formato de IA
+
+El análisis exige ahora una respuesta estructurada con los campos y tipos esperados. Si aun así no puede interpretarse, se muestra un error con código de soporte y se conserva la selección anterior; no se confirman propuestas ni se modifican movimientos. El administrador puede consultar ese código en el registro para distinguir un problema de formato de una respuesta sin coincidencias. El modelo configurado debe admitir respuestas con esquema JSON.
+
+
+### Aceptar varias propuestas de IA juntas
+
+1. En el cuadro de IA, marcá las propuestas o pulsá **Seleccionar todas**. **Solo sin diferencias** elige únicamente las que tienen importes exactamente iguales.
+2. Pulsá **Revisar y confirmar N propuestas**. El resumen muestra los importes y la diferencia de cada grupo. Cada propuesta genera su propio vínculo, aunque se confirmen juntas.
+3. Si hay diferencias, marcá **Acepto las diferencias indicadas sin modificar los importes originales** y escribí el motivo. La tolerancia se comprueba por propuesta: diferencias de signo contrario no se compensan para el control.
+4. Pulsá **Confirmar N propuestas**. La evidencia de IA y el motivo quedan guardados en cada conciliación. Si algún movimiento cambió, ya fue conciliado o no cumple los controles, no se guarda ninguna de las elegidas.
+
+**Volver a las propuestas** conserva las marcas para corregir la selección. La selección masiva solo confirma vínculos de conciliación: no genera LT, asientos ni IVA.
