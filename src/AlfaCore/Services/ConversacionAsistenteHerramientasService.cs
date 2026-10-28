@@ -348,8 +348,8 @@ public sealed class ConversacionAsistenteHerramientasService(
             {
                 Nombre = ToolConsultarPrecio,
                 Descripcion = esCliente
-                    ? "Busca el precio real de un artículo para el Cliente identificado. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
-                    : "Busca el precio real de consumidor final usando la fuente/lista real configurada en AlfaCore. No inventar precios.",
+                    ? "Busca artículos de la empresa por nombre, marca o código: sirve para saber si lo tienen, qué opciones hay y el precio para el Cliente identificado. Usala SIEMPRE que pregunten por un producto (\"¿tenés X?\", \"¿qué X tienen?\", \"¿cuánto sale X?\") antes de responder o de repreguntar. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
+                    : "Busca artículos de la empresa por nombre, marca o código: sirve para saber si lo tienen, qué opciones hay y el precio de consumidor final. Usala SIEMPRE que pregunten por un producto (\"¿tenés X?\", \"¿qué X tienen?\", \"¿cuánto sale X?\") antes de responder o de repreguntar. No inventar precios.",
                 ParametrosJsonSchema = """
                     {"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos clave cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila AA', 'pila duracell AA'. No incluir palabras como precio o cuánto."}},"required":["articulo"]}
                     """

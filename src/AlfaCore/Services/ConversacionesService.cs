@@ -8887,6 +8887,10 @@ public sealed partial class ConversacionesService(
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
+                // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
+                // respondido ("hola" + "¿tenés biromes?", Base4271 2026-10-28): se le pasa el último
+                // automático conocido para que sólo corte si respondió otro proceso después.
+                var automaticoConocido = (await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false)).UltimoAutomaticoId;
                 var ultimo = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
                 if (ultimo <= ultimoAtendido)
                     break;
@@ -8896,7 +8900,7 @@ public sealed partial class ConversacionesService(
                 if (textoNuevo.Length == 0)
                     break;
 
-                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct).ConfigureAwait(false);
+                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct, automaticoConocido).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -9187,7 +9191,8 @@ public sealed partial class ConversacionesService(
     // automática encima. La política del asistente decide qué pasa cuando la info no alcanza; si no
     // puede resolver, escala a humano. Se llama tanto al llegar el mensaje (sin espera configurada)
     // como desde el job de espera, ya con todos los chequeos de activación resueltos.
-    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct,
+        long? automaticoYaConocido = null)
     {
         await RunWithConversationAutomationLockAsync(
             idConversacion,
@@ -9235,12 +9240,12 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
-                var (botCount, yaRespondioEsteMensaje, humanoYaRespondio) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
+                var (botCount, yaRespondioEsteMensaje, humanoYaRespondio, ultimoAutomaticoId) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
                 {
                     return;
                 }
-                if (yaRespondioEsteMensaje)
+                if (yaRespondioEsteMensaje && !(automaticoYaConocido is long conocido && ultimoAutomaticoId <= conocido))
                 {
                     return;
                 }
@@ -11626,7 +11631,7 @@ public sealed partial class ConversacionesService(
     /// para siempre (ver comentario en el llamador) -- y si un humano ya respondió manualmente el
     /// último entrante (mismo criterio por <c>IdMensaje</c>, ver <see cref="AutomatedOutgoingSistemaAutorSqlList"/>).
     /// </summary>
-    private async Task<(int Count, bool YaRespondioUltimoEntrante, bool HumanoYaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    private async Task<(int Count, bool YaRespondioUltimoEntrante, bool HumanoYaRespondioUltimoEntrante, long UltimoAutomaticoId)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
     {
         var sql = $"""
             SELECT
@@ -11656,9 +11661,9 @@ public sealed partial class ConversacionesService(
             var ultimoEntranteId = rd.IsDBNull(1) ? 0L : rd.GetInt64(1);
             var ultimoAutomaticoId = rd.IsDBNull(2) ? 0L : rd.GetInt64(2);
             var ultimoHumanoId = rd.IsDBNull(3) ? 0L : rd.GetInt64(3);
-            return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);
+            return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);
         }
-        return (0, false, false);
+        return (0, false, false, 0);
     }
 
     private async Task TryNotifyUrgencyTechniciansAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)

@@ -982,7 +982,13 @@ public sealed class TicketsService(
         return $"""
             FROM dbo.TICK_TICKETS t
             INNER JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
-            LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
+            -- VT_CLIENTES repite el cliente si tiene más de una fila en MA_CUENTAS_AUTOCPTES (una por
+            -- sucursal): con un JOIN el ticket salía duplicado y la búsqueda de relacionados fallaba.
+            OUTER APPLY (
+                SELECT TOP (1) cliUno.RAZON_SOCIAL
+                FROM dbo.VT_CLIENTES cliUno
+                WHERE cliUno.CODIGO = t.ClienteCodigo
+            ) cli
             LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = t.IdContacto
             OUTER APPLY (
                 SELECT TOP (1)

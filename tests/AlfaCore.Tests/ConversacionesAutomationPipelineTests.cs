@@ -342,7 +342,7 @@ public sealed class ConversacionesAutomationPipelineTests
         var asignado = ServiceSource.IndexOf("if (config.BotSoloSinAsignar)", method, StringComparison.Ordinal);
         var ventana = ServiceSource.IndexOf("if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token)", method, StringComparison.Ordinal);
         var maxReplies = ServiceSource.IndexOf("if (botCount >= Math.Max(1, config.BotMaxRespuestas))", method, StringComparison.Ordinal);
-        var yaRespondio = ServiceSource.IndexOf("if (yaRespondioEsteMensaje)", method, StringComparison.Ordinal);
+        var yaRespondio = ServiceSource.IndexOf("if (yaRespondioEsteMensaje &&", method, StringComparison.Ordinal);
         var humano = ServiceSource.IndexOf("if (humanoYaRespondio)", method, StringComparison.Ordinal);
         var soloFueraHorario = ServiceSource.IndexOf("if (config.BotSoloFueraHorario && !fueraDeHorario)", method, StringComparison.Ordinal);
 
@@ -456,7 +456,7 @@ public sealed class ConversacionesAutomationPipelineTests
         // yaRespondioEsteMensaje) -- NO "alguna vez hubo un humano en la conversación", para no
         // dejar al bot mudo para siempre tras la primera intervención humana si el cliente vuelve
         // a escribir más tarde sin que nadie responda de nuevo.
-        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);", ServiceSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -517,7 +517,7 @@ public sealed class ConversacionesAutomationPipelineTests
         // El fix del bot (GetBotReplyStatsAsync, commit 66dc7046) sigue exactamente igual: misma
         // consulta SQL, mismo return -- este trabajo no lo tocó, solo unificó de dónde sale
         // AutomatedOutgoingSistemaAutorSqlList. Ver también Handoff_Fix_* más arriba.
-        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);", ServiceSource, StringComparison.Ordinal);
     }
 
     [Fact]
