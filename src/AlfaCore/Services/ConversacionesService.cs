@@ -9416,7 +9416,9 @@ public sealed partial class ConversacionesService(
                         texto = "¿Hay novedades de mi consulta?";
                 }
 
-                if (cuentaVinculada is { EsAmbigua: false } cuentaParaSaludo)
+                // Una cuenta genérica ("Consumidor Final") no es el nombre de nadie: no se saluda con ella.
+                if (cuentaVinculada is { EsAmbigua: false } cuentaParaSaludo
+                    && !cuentaParaSaludo.RazonSocial.Contains("consumidor final", StringComparison.OrdinalIgnoreCase))
                     contextoCliente = $"{contextoCliente} Quien escribe está vinculado a la cuenta «{cuentaParaSaludo.RazonSocial.Trim()}». Si todavía no lo saludaste en esta charla, saludalo por ese nombre; si es una empresa, no supongas el nombre de la persona.".Trim();
 
                 // Pedido por chat (F05): confirmar o cancelar lo decide el texto literal del cliente

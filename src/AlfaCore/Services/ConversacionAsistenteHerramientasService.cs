@@ -103,7 +103,15 @@ public sealed class ConversacionAsistenteHerramientasService(
             return true;
 
         var unArticulo = Regex.Match(texto, @"\b(quiero|quisiera|necesito|busco|me\s+llevo)\s+(un|una|unos|unas)\s+([a-z]+)");
-        return unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value);
+        if (unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value))
+            return true;
+
+        // "¿Tenés biromes?" (Base4271, 2026-10-28): sin esto no se buscaba el artículo y, con un ticket
+        // abierto, el modelo lo tomaba como seguimiento. "¿Tenés tiempo?" o "¿hay novedades?" no cuentan.
+        var sinSaludo = Regex.Replace(texto, @"^(hola|buenas\s+tardes|buenas\s+noches|buenos\s+dias|buen\s+dia|buenas)\W*", string.Empty).TrimStart();
+        var tenes = Regex.Match(sinSaludo, @"^(tenes|tienen|tendras|tendran|hay|trabajan|manejan|venden)\s+(?:(?:un|una|unos|unas|el|la|los|las|algun|alguna)\s+)?([a-z]+)");
+        return tenes.Success && texto.Split(' ').Length <= 10
+               && !NoSonArticulos.Contains(tenes.Groups[2].Value) && !NoSonArticulosEnPregunta.Contains(tenes.Groups[2].Value);
     }
 
     /// <summary>
@@ -122,6 +130,15 @@ public sealed class ConversacionAsistenteHerramientasService(
     }
 
     // Lo que sigue a "necesito un/una ..." en consultas de soporte o atención, no de compra.
+    private static readonly HashSet<string> NoSonArticulosEnPregunta = new(StringComparer.Ordinal)
+    {
+        "novedad", "novedades", "tiempo", "horario", "horarios", "algo", "alguien", "envios", "promo", "promos",
+        "promocion", "promociones", "oferta", "ofertas", "cuotas", "local", "locales", "sucursal", "sucursales",
+        "abierto", "lugar", "problema", "problemas", "error", "errores", "tarjeta", "transferencia", "efectivo",
+        "mercadopago", "que", "como", "donde", "cuando", "idea", "lista", "catalogo", "precios", "web",
+        "pagina", "whatsapp", "mail", "email", "telefono", "estacionamiento", "delivery", "retiro", "gente"
+    };
+
     private static readonly HashSet<string> NoSonArticulos = new(StringComparer.Ordinal)
     {
         "mano", "ayuda", "consulta", "pregunta", "duda", "tecnico", "persona", "asesor", "operador", "vendedor",

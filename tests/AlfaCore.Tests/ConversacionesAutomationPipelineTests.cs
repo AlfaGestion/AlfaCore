@@ -1319,6 +1319,16 @@ public sealed class ConversacionesAutomationPipelineTests
     // Caso real Base4264 (2026-10-26): "Quiero 10 pilas duracell AA" no habilitaba herramientas y el
     // modelo contestó "No vendemos pilas Duracell" con el artículo cargado.
     [Theory]
+    [InlineData("Tenés biromes?", true)]
+    [InlineData("hola, tienen resaltadores?", true)]
+    [InlineData("hay cartuchos HP 664?", true)]
+    [InlineData("tenés tiempo?", false)]
+    [InlineData("hay novedades?", false)]
+    [InlineData("tienen envíos?", false)]
+    public void MensajePideArticulo_DetectaTenesX(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideArticulo(mensaje));
+
+    [Theory]
     [InlineData("Quiero 10 pilas duracell AA", true)]
     [InlineData("necesito dos cables usb", true)]
     [InlineData("¿Venden cargadores?", true)]
