@@ -9440,17 +9440,11 @@ public sealed partial class ConversacionesService(
                 var mensajePrevioCliente = EsMensajeSocial(texto)
                     ? null
                     : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
-                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto, mensajePrevioCliente);
+                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
                 var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada, texto, mensajePrevioCliente);
                 // Si el bot ya repreguntó (ACLARA) y el cliente contesta, ese mensaje completa la
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
-                var forzarConsultarPrecio = !precioRequiereIdentificacion
-                    && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
-                        || ConversacionAsistenteHerramientasService.MensajePideArticulo(texto)
-                        || (ultimaRespuestaFueAclaracion
-                            && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
-                            && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
                 var identidadPreguntadaAhora = false;
                 string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
@@ -9565,7 +9559,6 @@ public sealed partial class ConversacionesService(
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync,
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
-                        forzarConsultarPrecio: forzarConsultarPrecio,
                         linkCatalogoParaLead: linkCatalogoParaLead,
                         imagenesDataUri: imagenesBot,
                         ct: token).ConfigureAwait(false);

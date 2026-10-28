@@ -34,7 +34,7 @@ public sealed class ConversacionAsistenteHerramientasService(
     IPortalClienteAutoLoginService portalAutoLoginService,
     IConversacionBotPedidosService botPedidosService) : IConversacionAsistenteHerramientasService
 {
-    private const string ToolConsultarPrecio = "consultar_precio";
+    internal const string ToolConsultarPrecio = "consultar_precio";
     internal const string ToolConsultarSaldoTotal = "consultar_saldo_total";
     internal const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
     internal const string ToolConsultarPedidos = "consultar_pedidos";
@@ -54,34 +54,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
-
-    // Palabras que indican que el mensaje puede necesitar alguna herramienta. Filtro deliberadamente
-    // amplio (mejor un falso positivo que uno negativo) -- el objetivo NO es adivinar la intención con
-    // precisión, es evitar mandarle la lista de 5 herramientas a OpenAI en TODOS los mensajes. Con
-    // gpt-4o-mini se comprobó en producción que ofrecer tool-calling en cada respuesta lo vuelve
-    // sobre-cauteloso incluso para un simple "hola" (deriva a un humano en vez de saludar), aunque el
-    // prompt le aclare que las herramientas son opcionales -- es una limitación real del modelo
-    // combinando function-calling con el JSON forzado, no un tema de instrucciones. Reducir cuándo se
-    // ofrecen las herramientas restaura el comportamiento normal para la charla común.
-    private static readonly string[] PalabrasClaveHerramientas =
-    [
-        "precio", "precios", "cuesta", "cuesto", "cuánto sale", "cuanto sale", "vale", "valen", "cotiz",
-        "saldo", "deuda", "debo", "cuenta corriente", "cta cte", "cta.cte", "cuánto debo", "cuanto debo",
-        "pendiente de pago", "factura pendiente", "cobranza", "cobranzas",
-        "pedido", "pedidos", "nota de pedido", "np-",
-        "portal", "autogestión", "autogestion", "acceso online", "ver mi cuenta", "cuenta online",
-        "catálogo", "catalogo", "producto", "productos", "comprar", "compra"
-    ];
-
-    private static bool MensajeNecesitaHerramientas(string mensajeCliente)
-    {
-        var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
-        // Una imagen sin texto (ej. foto de una birome) suele ser "¿tienen esto?": sin herramientas el bot derivaba.
-        if (string.Equals(mensajeCliente, ConversacionesService.TextoImagenSinTexto, StringComparison.Ordinal))
-            return true;
-        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente)
-                                    || MensajePideCantidadDeArticulo(mensajeCliente));
-    }
 
     /// <summary>
     /// Quiere artículos puntuales sin decir "precio" ni "pedido" ("Quiero 10 pilas AA", "necesito dos
@@ -239,8 +211,7 @@ public sealed class ConversacionAsistenteHerramientasService(
     /// <summary>
     /// Intención explícita de precio ("precio", "cuánto sale/cuesta/vale", "a cuánto", "valor",
     /// "cotización"). Se usa para decidir la respuesta a un contacto sin identificar cuando la empresa
-    /// no informa precios a leads -- no para ofrecer herramientas (eso sigue siendo
-    /// MensajeNecesitaHerramientas).
+    /// no informa precios a leads.
     /// </summary>
     internal static bool MensajePidePrecio(string? mensajeCliente)
     {
@@ -292,21 +263,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         var palabras = texto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var conEspacio = string.Join(' ', palabras) + " ";
         return palabras.Length <= 6 && !InicioPreguntaNueva.Any(conEspacio.StartsWith);
-    }
-
-    private static bool MensajePideCatalogo(string mensajeCliente)
-    {
-        var texto = NormalizarTexto(mensajeCliente);
-        if (texto.Length == 0)
-            return false;
-
-        return texto.Contains("catalogo", StringComparison.Ordinal)
-            || texto.Contains("ver productos", StringComparison.Ordinal)
-            || texto.Contains("ver los productos", StringComparison.Ordinal)
-            || texto.Contains("mostrar productos", StringComparison.Ordinal)
-            || texto.Contains("pasame productos", StringComparison.Ordinal)
-            || texto.Contains("pasar productos", StringComparison.Ordinal)
-            || texto.Contains("lista de productos", StringComparison.Ordinal);
     }
 
     // Palabras que el cliente/modelo suele incluir pero nunca forman parte de la descripción de un
@@ -370,16 +326,11 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
-        ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente,
-        string? mensajePrevioCliente = null)
+        ConversacionCuentaVinculadaDto? cuenta)
     {
-        // El seguimiento ("Pila duracell AA" después de "Que precio tienen las pilas?") no trae
-        // palabra clave propia: sin el mensaje previo quedaba sin herramientas y el bot derivaba. El
-        // previo sólo habilita la lista; catálogo forzado/ofrecido sigue dependiendo del mensaje actual.
-        if (!MensajeNecesitaHerramientas(mensajeCliente) && !MensajeNecesitaHerramientas(mensajePrevioCliente ?? string.Empty))
-            return [];
-
+        // Se ofrecen siempre las herramientas que la empresa habilitó para esta cuenta y la IA decide
+        // cuál usar (2026-10-28). Antes un filtro por palabras clave decidía si había herramientas: lo que
+        // no estaba en la lista ("¿Tenés biromes?") quedaba sin poder buscar y el bot adivinaba.
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
         const string sinParametros = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
 
@@ -390,7 +341,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         var esCliente = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Cliente;
         var esProveedor = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Proveedor;
         var puedeInformarPrecio = !esAmbigua && (esCliente || config.CatalogoMuestraPrecioConsumidor);
-        var pideCatalogo = MensajePideCatalogo(mensajeCliente);
 
         if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
@@ -458,12 +408,13 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
-        if (!esCliente || pideCatalogo)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolGenerarLinkCatalogoPublico,
-                Descripcion = puedeInformarPrecio
+                Descripcion = esCliente
+                    ? "Genera el link al catálogo público de la empresa (fotos y artículos). Usala SOLO si el cliente pide el catálogo o ver los productos; para su lista de precios o su cuenta usá el Portal Cliente."
+                    : puedeInformarPrecio
                     ? "Genera el link al catálogo público/consumidor final de la empresa actual. Puede acompañarse con precios solo si se consulta la tool de precios."
                     : "Genera el link al catálogo público de la empresa actual. No informa precios: si el comprador quiere avanzar, debe identificarse o registrarse por el flujo existente.",
                 ParametrosJsonSchema = sinParametros

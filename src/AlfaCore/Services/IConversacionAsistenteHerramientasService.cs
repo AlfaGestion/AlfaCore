@@ -22,9 +22,7 @@ public interface IConversacionAsistenteHerramientasService
     /// </summary>
     IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
-        ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente,
-        string? mensajePrevioCliente = null);
+        ConversacionCuentaVinculadaDto? cuenta);
 
     /// <summary>
     /// Ejecuta una herramienta por nombre. La cuenta viene resuelta server-side (nunca del modelo);
