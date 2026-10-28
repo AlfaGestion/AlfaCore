@@ -50,6 +50,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // ni de la información del negocio, ni de la charla.
         var textoConRespaldo = new StringBuilder();
         var reintentoPorPrecioSinRespaldo = false;
+        var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
         var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
 
@@ -117,7 +118,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                object? toolChoice = herramientaForzadaSiguienteRonda is null ? null
+                // En la última ronda tiene que responder: si pedía otra herramienta quedaba sin texto y salía
+                // la contención genérica ("quiero 10 pilas AA, ¿cuánto me sale?", Base4264 2026-10-28).
+                object? toolChoice = tools is null ? null
+                    : ronda == MaxRondasHerramientas ? "none"
+                    : herramientaForzadaSiguienteRonda is null ? null
                     : new { type = "function", function = new { name = herramientaForzadaSiguienteRonda } };
                 herramientaForzadaSiguienteRonda = null;
                 var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools, toolChoice);
@@ -158,8 +163,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     var texto = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
                     var respuestaParseada = ParseRespuesta(texto);
 
-                    if (hayPrecioEntreHerramientas && !reintentoPorPrecioSinRespaldo && ejecutarHerramientaAsync is not null
-                        && ronda < MaxRondasHerramientas
+                    // Sólo si no buscó nada: con herramientas usadas, un total calculado (10 x $ 2.500) no es inventado.
+                    if (hayPrecioEntreHerramientas && !reintentoPorPrecioSinRespaldo && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
+                        && ronda + 2 <= MaxRondasHerramientas
                         && MontosSinRespaldo(respuestaParseada?.Respuesta, textoConRespaldo.ToString()).Count > 0)
                     {
                         reintentoPorPrecioSinRespaldo = true;
@@ -219,6 +225,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
                     messages.Add(new { role = "tool", tool_call_id = callId, content = resultado });
                     textoConRespaldo.AppendLine(resultado);
+                    seUsoAlgunaHerramienta = true;
                 }
             }
 
@@ -445,6 +452,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
+        sb.AppendLine("- Lo mismo con los servicios (reparaciones, instalaciones, etc.): si no figuran en la información, no digas que no se ofrecen. Decile que lo consultás con el equipo (tipo DERIVA) sin afirmar nada.");
         sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
             sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
