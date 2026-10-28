@@ -70,6 +70,28 @@ public sealed class ConversacionesBotTicketConsultaTests
         Assert.Contains("if (tipo == \"ACLARA\" && !identidadPreguntadaAhora)", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("no", true)]
+    [InlineData("No.", true)]
+    [InlineData("no, te equivocaste de empresa", true)]
+    [InlineData("no soy yo", true)]
+    [InlineData("nada que ver", true)]
+    [InlineData("no, mejor 4 aaa nomas", false)]
+    [InlineData("no, cancelalo", false)]
+    [InlineData("no, quiero 3 nada mas", false)]
+    [InlineData("si", false)]
+    public void RespuestaIdentidadNo_NoConfundeCambiosDelPedido(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.EsRespuestaIdentidadNo(texto));
+
+    [Theory]
+    [InlineData("Te recomiendo que contactes a un asesor para que te ayude.", true)]
+    [InlineData("Te recomiendo que consultes directamente con un asesor.", true)]
+    [InlineData("Comunicate con nuestro equipo de ventas.", true)]
+    [InlineData("Le paso tu consulta a un asesor y te responde a la brevedad.", false)]
+    [InlineData("Lo consulto con el equipo y te responden por acá.", false)]
+    public void Contencion_QuePideContactarAOtro_SeDetecta(string respuesta, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.PideContactarAOtro(respuesta));
+
     [Fact]
     public void SiPideHablarConUnaPersonaSeLeAvisaUnaVezYQuedaNota()
     {

@@ -9042,8 +9042,14 @@ public sealed partial class ConversacionesService(
     internal static bool EsRespuestaIdentidadNo(string? texto)
     {
         var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
-        return t.Length > 0 && t.Split(' ').Length <= 12
-               && Regex.IsMatch(t, @"^(no|nop|nada que ver|para nada)\b|\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b");
+        if (t.Length == 0 || t.Split(' ').Length > 12)
+            return false;
+        if (Regex.IsMatch(t, @"\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b|\bnada que ver\b"))
+            return true;
+        // "no, mejor 4 aaa nomás" / "no, cancelalo" contestan sobre el pedido, no sobre quién escribe
+        // (batería 4264, 2026-10-28): con eso se negaba la identidad y se cortaba la compra.
+        return Regex.IsMatch(t, @"^(no|nop|para nada)\b")
+               && !Regex.IsMatch(t, @"\d|\b(mejor|cancel\w*|cambi\w*|agreg\w*|sac\w*|quit\w*|solo|nomas|pedido|quiero|unidades?)\b");
     }
 
     /// <summary>Mensaje que es sólo una imagen, sin texto propio ("[image]").</summary>
@@ -9777,6 +9783,10 @@ public sealed partial class ConversacionesService(
                     : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
                 if (usoFallbackBot)
                     tipo = "DERIVA";
+                // La regla del prompt no alcanza con gpt-4o-mini: "te recomiendo que contactes a un asesor"
+                // (batería 4264, 2026-10-28). Somos la empresa: la consulta ya le llega al equipo por acá.
+                if (tipo == "DERIVA" && PideContactarAOtro(respuesta))
+                    respuesta = ContencionDerivaEstandar;
 
                 // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
                 // pista en el timeline interno para que el humano que retome sepa que hay
@@ -10475,7 +10485,13 @@ public sealed partial class ConversacionesService(
                 || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
     }
 
-    internal const string NotaPidioPersona = "🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
+    internal const string ContencionDerivaEstandar = "Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad.";
+
+    internal static bool PideContactarAOtro(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\b(contact(es|a|ate|arte)|comunic(ate|es|arte)|consult(es|ale|arle)|habl(es|a|ale|arle)|llam(es|a|ale|arle)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante)");
+
+    internal const string NotaPidioPersona ="🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
     internal const string RespuestaPidioPersona = "Perfecto, te paso con alguien del equipo. En breve te responde por acá.";
 
     internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
