@@ -63,6 +63,14 @@ public sealed class ConversacionesBotTicketConsultaTests
     }
 
     [Fact]
+    public void LaPreguntaDeIdentidadNoCuentaComoSegundaAclaracion()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, \"ACLARA\"", source, StringComparison.Ordinal);
+        Assert.Contains("if (tipo == \"ACLARA\" && !identidadPreguntadaAhora)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ElBotNoDerivaNiAbreTicketAnteUnMensajeDePrueba()
     {
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));

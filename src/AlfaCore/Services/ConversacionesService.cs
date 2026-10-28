@@ -9604,7 +9604,9 @@ public sealed partial class ConversacionesService(
 
                 // Nunca dos aclaraciones seguidas: si el bot ya repreguntó y vuelve a necesitar
                 // preguntar, pasa a un operador (contención estándar) en vez de insistir.
-                if (ultimaRespuestaFueAclaracion && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                // La pregunta de identidad la arma el servidor y no cuenta: tras "¿cuál querés?" + "quiero 10
+                // azules" salía la contención en vez de "¿me confirmás que escribís por…?" (Base4271 2026-10-28).
+                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
                     result = null;
                 }
@@ -9820,7 +9822,9 @@ public sealed partial class ConversacionesService(
                         null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                 }
 
-                if (tipo == "ACLARA")
+                // La pregunta de identidad ya deja su propia nota (🔐) y no marca aclaración: si no, el
+                // "¿confirmás el pedido?" que sigue al "sí" caía en "dos aclaraciones seguidas".
+                if (tipo == "ACLARA" && !identidadPreguntadaAhora)
                 {
                     // Además de informar al operador, es la marca persistida que usa
                     // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
