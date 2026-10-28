@@ -39,6 +39,9 @@ public interface IInterfacesCatalogosService
     Task SetCatalogoPredeterminadoAsync(string userName, int idInsert, CancellationToken ct = default);
     Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default);
     Task<CatalogoPedidoResultDto> ConfirmarPedidoCarritoAsync(CatalogoPedidoConfirmarRequestDto request, CancellationToken ct = default);
+
+    /// <summary>Aplica el precio del cliente identificado a artículos de catálogo (paga el menor con el publicado). Devuelve copias.</summary>
+    Task<IReadOnlyList<CatalogosCatalogoItemDto>> AplicarPrecioClienteAsync(IReadOnlyList<CatalogosCatalogoItemDto> articulos, string? codigoCliente, int? expectedBaseId = null, CancellationToken ct = default);
     Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default);
     Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default);
     Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default);

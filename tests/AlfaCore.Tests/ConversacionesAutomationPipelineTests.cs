@@ -342,7 +342,7 @@ public sealed class ConversacionesAutomationPipelineTests
         var asignado = ServiceSource.IndexOf("if (config.BotSoloSinAsignar)", method, StringComparison.Ordinal);
         var ventana = ServiceSource.IndexOf("if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token)", method, StringComparison.Ordinal);
         var maxReplies = ServiceSource.IndexOf("if (botCount >= Math.Max(1, config.BotMaxRespuestas))", method, StringComparison.Ordinal);
-        var yaRespondio = ServiceSource.IndexOf("if (yaRespondioEsteMensaje)", method, StringComparison.Ordinal);
+        var yaRespondio = ServiceSource.IndexOf("if (yaRespondioEsteMensaje &&", method, StringComparison.Ordinal);
         var humano = ServiceSource.IndexOf("if (humanoYaRespondio)", method, StringComparison.Ordinal);
         var soloFueraHorario = ServiceSource.IndexOf("if (config.BotSoloFueraHorario && !fueraDeHorario)", method, StringComparison.Ordinal);
 
@@ -456,7 +456,7 @@ public sealed class ConversacionesAutomationPipelineTests
         // yaRespondioEsteMensaje) -- NO "alguna vez hubo un humano en la conversación", para no
         // dejar al bot mudo para siempre tras la primera intervención humana si el cliente vuelve
         // a escribir más tarde sin que nadie responda de nuevo.
-        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);", ServiceSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -517,7 +517,7 @@ public sealed class ConversacionesAutomationPipelineTests
         // El fix del bot (GetBotReplyStatsAsync, commit 66dc7046) sigue exactamente igual: misma
         // consulta SQL, mismo return -- este trabajo no lo tocó, solo unificó de dónde sale
         // AutomatedOutgoingSistemaAutorSqlList. Ver también Handoff_Fix_* más arriba.
-        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);", ServiceSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -855,14 +855,91 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
-    public void Tools_NoToolsAreOfferedWhenTheMessageHasNoKeywordSignal()
+    public void Tools_SeOfrecenSiempreLasHabilitadasParaLaCuenta()
     {
+        // 2026-10-28: ya no dependen de palabras del mensaje; la IA decide cuál usar.
         var service = CreateToolsService();
 
         var herramientas = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"), "hola, como estas?");
+            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
-        Assert.Empty(herramientas);
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_saldo_total");
+    }
+
+    [Theory]
+    [InlineData("Sí", true, false)]
+    [InlineData("si, soy yo", true, false)]
+    [InlineData("correcto", true, false)]
+    [InlineData("Soy yo", true, false)]
+    [InlineData("No", false, true)]
+    [InlineData("no, soy Juan de otra empresa", false, true)]
+    [InlineData("Te equivocaste de persona", false, true)]
+    [InlineData("cuánto debo?", false, false)]
+    public void Identidad_DetectaRespuestasSiYNo(string mensaje, bool esSi, bool esNo)
+    {
+        Assert.Equal(esSi, ConversacionesService.EsRespuestaIdentidadSi(mensaje));
+        Assert.Equal(esNo, ConversacionesService.EsRespuestaIdentidadNo(mensaje));
+    }
+
+    [Fact]
+    public void Identidad_SoloLasHerramientasDeLaCuentaPidenConfirmacion()
+    {
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("consultar_saldo_total"));
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("generar_link_portal"));
+        Assert.True(ConversacionesService.EsHerramientaConDatosPrivados("preparar_pedido"));
+        Assert.False(ConversacionesService.EsHerramientaConDatosPrivados("consultar_precio"));
+        Assert.False(ConversacionesService.EsHerramientaConDatosPrivados("generar_link_catalogo_publico"));
+        Assert.Equal("Antes de seguir, ¿me confirmás que escribís por Fernández SRL? Respondeme sí o no.",
+            ConversacionesService.PreguntaIdentidad(new ConversacionCuentaVinculadaDto("C001 ", CuentaComercialTipo.Cliente, " Fernández SRL ")));
+    }
+
+    [Theory]
+    [InlineData("NP 999900000001X", true)]
+    [InlineData("hay novedades sobre mi pedido?", true)]
+    [InlineData("pedido de soporte", false)]
+    public void MensajeConsultaPedidos_AceptaNumeroConLetraFinal(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    [Theory]
+    [InlineData("que paso con el pedido del ticket 3?", false)]
+    [InlineData("mi pedido por el problema del sistema", false)]
+    [InlineData("como viene mi pedido?", true)]
+    public void MensajeConsultaPedidos_ExcluyeTemasDeSoporte(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensaje));
+
+    [Fact]
+    public void PedidoOTicket_SoloLosPedidosEnCursoCompitenConElTicket()
+    {
+        const string terminados = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0002X del 02/10/2026: Anulado — $ 500,00";
+        const string enCurso = "- Pedido 0001X del 01/10/2026: Finalizado — $ 1.000,00\n- Pedido 0003X del 27/10/2026: Aprobado (en preparación) — $ 7.000,00";
+
+        Assert.Null(ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(terminados));
+        Assert.Equal("0003X", ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(enCurso));
+        Assert.True(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("NP 999900000001X"));
+        Assert.False(ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido("como viene mi pedido?"));
+        Assert.Equal("¿Me preguntás por tu pedido 0003X o por tu consulta en curso (ticket #1)?",
+            ConversacionesService.PreguntaPedidoOTicket("0003X", 1));
+    }
+
+    [Fact]
+    public void Prompt_LineaFechaActualLlevaDiaYHora()
+    {
+        var linea = ConversacionAsistenteService.LineaFechaActual(new DateTime(2026, 11, 1, 9, 5, 0));
+
+        Assert.Contains("domingo 1 de noviembre de 2026, 09:05", linea);
+    }
+
+    [Fact]
+    public void Tools_UnaImagenSinTextoOfreceHerramientas()
+    {
+        // Foto de una birome sin texto (Base4271, 2026-10-27): sin herramientas el bot derivaba.
+        var service = CreateToolsService();
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
+
+        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
     }
 
     [Fact]
@@ -871,10 +948,10 @@ public sealed class ConversacionesAutomationPipelineTests
         var service = CreateToolsService();
 
         var paraCliente = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"), "cual es mi saldo?");
+            ToolsConfig(), new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
         var paraProveedor = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(), new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"), "cual es mi saldo?");
-        var sinCuenta = service.ObtenerHerramientasDisponibles(ToolsConfig(), null, "cual es mi saldo?");
+            ToolsConfig(), new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"));
+        var sinCuenta = service.ObtenerHerramientasDisponibles(ToolsConfig(), null);
 
         Assert.Contains(paraCliente, h => h.Nombre == "consultar_saldo_total");
         Assert.Contains(paraProveedor, h => h.Nombre == "consultar_saldo_total");
@@ -889,12 +966,12 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
-            "quiero precio y portal");
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
         Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
-        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+        // El catálogo también se ofrece: la descripción le indica a la IA que para precios use el portal.
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico" && h.Descripcion.Contains("Portal Cliente"));
     }
 
     [Fact]
@@ -904,8 +981,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
-            "Quiero comprar pilas, tienen catálogo?");
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
         Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
@@ -919,8 +995,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            null,
-            "quiero precio del catalogo");
+            null);
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
@@ -933,8 +1008,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            null,
-            "cuanto salen las pilas?");
+            null);
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
@@ -998,35 +1072,6 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("", "")]
     public void NormalizarBusquedaArticulo_GeneraTerminosTolerantes(string entrada, string esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.NormalizarBusquedaArticulo(entrada));
-
-    [Fact]
-    public void Tools_FollowUpWithoutKeyword_UsesPreviousPriceMessage()
-    {
-        var service = CreateToolsService();
-        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
-
-        var conPrevio = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Que precio tienen las pilas doble A?");
-        var sinPrevio = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA");
-
-        Assert.Contains(conPrevio, h => h.Nombre == "consultar_precio");
-        // El previo sólo habilita la lista: el catálogo sigue dependiendo del mensaje actual.
-        Assert.DoesNotContain(conPrevio, h => h.Nombre == "generar_link_catalogo_publico");
-        Assert.Empty(sinPrevio);
-    }
-
-    [Fact]
-    public void Tools_FollowUpAfterNonToolMessage_StaysWithoutTools()
-    {
-        var service = CreateToolsService();
-        var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
-
-        var herramientas = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(precioConsumidor: false), cliente, "Pila duracell AA", "Hola, buen día");
-
-        Assert.Empty(herramientas);
-    }
 
     [Fact]
     public void MensajePrevioCliente_WithinWindow_SkipsCurrentMessageAndReturnsPrevious()
@@ -1135,7 +1180,7 @@ public sealed class ConversacionesAutomationPipelineTests
             var toolsService = CreateToolsService(crm: crm);
             var cliente = new ConversacionCuentaVinculadaDto("112010002", CuentaComercialTipo.Cliente, "AlfaNet");
             const string mensaje = "Que precio tienen las pilas doble A?";
-            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cliente, mensaje);
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cliente);
             var toolResults = new List<string>();
             var handler = new QueueHttpHandler(
                 """
@@ -1244,6 +1289,16 @@ public sealed class ConversacionesAutomationPipelineTests
     // Caso real Base4264 (2026-10-26): "Quiero 10 pilas duracell AA" no habilitaba herramientas y el
     // modelo contestó "No vendemos pilas Duracell" con el artículo cargado.
     [Theory]
+    [InlineData("Tenés biromes?", true)]
+    [InlineData("hola, tienen resaltadores?", true)]
+    [InlineData("hay cartuchos HP 664?", true)]
+    [InlineData("tenés tiempo?", false)]
+    [InlineData("hay novedades?", false)]
+    [InlineData("tienen envíos?", false)]
+    public void MensajePideArticulo_DetectaTenesX(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideArticulo(mensaje));
+
+    [Theory]
     [InlineData("Quiero 10 pilas duracell AA", true)]
     [InlineData("necesito dos cables usb", true)]
     [InlineData("¿Venden cargadores?", true)]
@@ -1322,6 +1377,10 @@ public sealed class ConversacionesAutomationPipelineTests
     [InlineData("anotame 3 resmas", true)]
     [InlineData("¿Venden cargadores?", false)]
     [InlineData("quiero una pila AAA", false)]
+    [InlineData("Hola, buen día. Te quiero encargar diez biromes negras.", true)]
+    [InlineData("Mejor agregale 2 resaltadores", true)]
+    [InlineData("necesito comprar 5 cuadernos", true)]
+    [InlineData("quiero comprar una impresora", false)]
     public void MensajePideCantidadDeArticulo_DetectaPedidosConCantidad(string mensaje, bool esperado)
         => Assert.Equal(esperado, ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensaje));
 
@@ -1362,9 +1421,9 @@ public sealed class ConversacionesAutomationPipelineTests
         config.AsistenteHerramientaTomarPedidos = true;
         var cliente = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
 
-        Assert.Contains(service.ObtenerHerramientasDisponibles(config, cliente, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
-        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, null, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
-        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(ToolsConfig(), cliente, "Quiero 10 pilas AA"), h => h.Nombre == "preparar_pedido");
+        Assert.Contains(service.ObtenerHerramientasDisponibles(config, cliente), h => h.Nombre == "preparar_pedido");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(config, null), h => h.Nombre == "preparar_pedido");
+        Assert.DoesNotContain(service.ObtenerHerramientasDisponibles(ToolsConfig(), cliente), h => h.Nombre == "preparar_pedido");
     }
 
     [Theory]
@@ -1414,8 +1473,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
-            "Quiero 10 pilas duracell AA");
+            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
         Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_portal");
@@ -1460,14 +1518,17 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("INFORMACIÓN DEL NEGOCIO", result);
         Assert.Contains("RESUELVE", result);
         Assert.Contains("ACLARA", result);
+        // Artículo concreto que no está ("biromes"): se deriva sin preguntar la marca ni decir que no se vende.
+        Assert.Contains("DERIVA", result);
+        Assert.Contains("ni le preguntes la marca", result);
     }
 
+    // 2026-10-28: la IA decide qué herramienta usar; ninguna palabra del mensaje fuerza una.
     [Theory]
-    [InlineData(true, true, false, "consultar_precio")]
-    [InlineData(true, false, false, null)]
-    [InlineData(false, true, false, null)]
-    [InlineData(true, true, true, "required")]
-    public async Task Assistant_ForzarConsultarPrecio_ToolChoiceEnRondaCero(bool forzar, bool ofrecida, bool pideCatalogo, string? esperado)
+    [InlineData("¿Cuánto salen las pilas?")]
+    [InlineData("¿Cuánto salen las pilas? ¿Tienen catálogo?")]
+    [InlineData("¿Cómo viene mi pedido?")]
+    public async Task Assistant_NoFuerzaHerramientasPorPalabrasDelMensaje(string mensaje)
     {
         var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
@@ -1482,35 +1543,69 @@ public sealed class ConversacionesAutomationPipelineTests
             var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
             var tools = new List<ConversacionAsistenteHerramientaDefinicionDto>
             {
-                new() { Nombre = "generar_link_catalogo_publico", Descripcion = "Catálogo.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}" }
+                new() { Nombre = "generar_link_catalogo_publico", Descripcion = "Catálogo.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}" },
+                new() { Nombre = "consultar_precio", Descripcion = "Precio.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}" },
+                new() { Nombre = "consultar_pedidos", Descripcion = "Pedidos.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{},\"required\":[]}" }
             };
-            if (ofrecida)
-                tools.Add(new() { Nombre = "consultar_precio", Descripcion = "Precio.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}" });
 
             await service.ResponderAsync(
                 "Sos un asistente comercial.",
                 "Info real.",
                 "GENERAL_AVISA",
-                pideCatalogo ? "¿Cuánto salen las pilas? ¿Tienen catálogo?" : "¿Cuánto salen las pilas?",
+                mensaje,
                 [],
                 herramientas: tools,
-                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("ok"),
-                forzarConsultarPrecio: forzar);
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("ok"));
 
             using var payload = JsonDocument.Parse(handler.RequestBodies.Single());
-            var hasChoice = payload.RootElement.TryGetProperty("tool_choice", out var choice);
-            if (esperado is null)
+            Assert.False(payload.RootElement.TryGetProperty("tool_choice", out _));
+            Assert.Equal(3, payload.RootElement.GetProperty("tools").GetArrayLength());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+            Environment.SetEnvironmentVariable("OPENAI_MODEL", previousModel);
+        }
+    }
+
+    // Red de seguridad: un precio que no salió de ninguna herramienta ni de la información obliga a buscarlo.
+    [Fact]
+    public async Task Assistant_PrecioSinRespaldo_ReintentaForzandoConsultarPrecio()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        Environment.SetEnvironmentVariable("OPENAI_MODEL", "gpt-4o-mini");
+        try
+        {
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"La birome sale $ 999.\"}"}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"consultar_precio","arguments":"{\"articulo\":\"birome\"}"}}]}}]}
+                """,
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"RESUELVE\",\"puede_responder\":true,\"respuesta\":\"La birome Bic sale $ 350,00.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var tools = new List<ConversacionAsistenteHerramientaDefinicionDto>
             {
-                Assert.False(hasChoice);
-            }
-            else if (esperado == "required")
-            {
-                Assert.Equal("required", choice.GetString());
-            }
-            else
-            {
-                Assert.Equal(esperado, choice.GetProperty("function").GetProperty("name").GetString());
-            }
+                new() { Nombre = "consultar_precio", Descripcion = "Precio.", ParametrosJsonSchema = "{\"type\":\"object\",\"properties\":{\"articulo\":{\"type\":\"string\"}},\"required\":[\"articulo\"]}" }
+            };
+
+            var result = await service.ResponderAsync(
+                "Sos un asistente comercial.",
+                "Envío en la zona: $ 2.500.",
+                "GENERAL_AVISA",
+                "¿Tenés biromes?",
+                [],
+                herramientas: tools,
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("BIROME BIC AZUL: $ 350,00"));
+
+            using var segundo = JsonDocument.Parse(handler.RequestBodies[1]);
+            Assert.Equal("consultar_precio", segundo.RootElement.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString());
+            Assert.Equal("La birome Bic sale $ 350,00.", result?.Respuesta);
         }
         finally
         {
@@ -1554,7 +1649,7 @@ public sealed class ConversacionesAutomationPipelineTests
                 "¿Cuánto salen las pilas?",
                 [],
                 herramientas: tools,
-                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("2 coincidencias. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA..."),
+                ejecutarHerramientaAsync: (_, _, _) => Task.FromResult("2 coincidencias. PILA AA $ 2.500,00 / PILA AAA $ 2.000,00. Si el cliente no especificó cuál de estas quiere, respondé tipo ACLARA..."),
                 traceDiagAsync: (paso, _) =>
                 {
                     traces.Add(paso);
@@ -1850,8 +1945,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: true),
-            null,
-            "cuanto sale el tornillo?");
+            null);
         var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo","codigo_cliente":"C999"}""", null);
 
         Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
@@ -1895,27 +1989,12 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"),
-            "quiero portal, pedidos y precio");
+            new ConversacionCuentaVinculadaDto("P001", CuentaComercialTipo.Proveedor, "Proveedor Uno"));
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
-    }
-
-    [Fact]
-    public void Tools_IdentifiedClient_PriceOnlyQuestion_DoesNotOfferPublicCatalog()
-    {
-        var service = CreateToolsService();
-
-        var herramientas = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(precioConsumidor: false),
-            new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"),
-            "cuánto salen las pilas?");
-
-        Assert.Contains(herramientas, h => h.Nombre == "consultar_precio");
-        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
     }
 
     [Fact]
@@ -1925,8 +2004,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: false),
-            null,
-            "quiero saldo, pedidos, portal y catalogo");
+            null);
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
@@ -1945,8 +2023,7 @@ public sealed class ConversacionesAutomationPipelineTests
 
         var herramientas = service.ObtenerHerramientasDisponibles(
             ToolsConfig(precioConsumidor: true),
-            ambigua,
-            "quiero precio, saldo, pedidos y portal");
+            ambigua);
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
@@ -1995,7 +2072,7 @@ public sealed class ConversacionesAutomationPipelineTests
         var config = ToolsConfig(precioConsumidor: false);
 
         Assert.False(config.CatalogoMuestraPrecioConsumidor);
-        var herramientas = service.ObtenerHerramientasDisponibles(config, null, "precio del producto");
+        var herramientas = service.ObtenerHerramientasDisponibles(config, null);
 
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
     }
@@ -2121,7 +2198,7 @@ public sealed class ConversacionesAutomationPipelineTests
         var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
 
         var herramientas = service.ObtenerHerramientasDisponibles(
-            ToolsConfig(precioConsumidor: true), ambigua, "precio, saldo, pedidos, portal y catalogo");
+            ToolsConfig(precioConsumidor: true), ambigua);
 
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
@@ -2137,7 +2214,7 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
-    public async Task Assistant_ExplicitCatalogIntent_ForcesCatalogToolBeforeFinalAnswer()
+    public async Task Assistant_CatalogIntent_TheModelChoosesTheCatalogTool()
     {
         var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
@@ -2184,9 +2261,8 @@ public sealed class ConversacionesAutomationPipelineTests
                 });
 
             using var firstPayload = JsonDocument.Parse(handler.RequestBodies[0]);
-            var forcedTool = firstPayload.RootElement.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString();
-
-            Assert.Equal("generar_link_catalogo_publico", forcedTool);
+            // La IA elige la herramienta: no se fuerza por la palabra "catálogo".
+            Assert.False(firstPayload.RootElement.TryGetProperty("tool_choice", out _));
             Assert.Equal(["generar_link_catalogo_publico"], executedTools);
             Assert.Equal("RESUELVE", result?.Tipo);
             Assert.Contains(traces, t => t == "BotToolCall|tool=generar_link_catalogo_publico");
@@ -2332,7 +2408,7 @@ public sealed class ConversacionesAutomationPipelineTests
                 publicLinks: new FakeCentralPublicLinkService(),
                 session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
             const string mensaje = "Quiero comprar pilas, tienen catalogo?";
-            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cuenta, mensaje);
+            var herramientas = toolsService.ObtenerHerramientasDisponibles(ToolsConfig(precioConsumidor: false), cuenta);
             var executedTools = new List<string>();
             var toolResults = new List<string>();
             var handler = new QueueHttpHandler(
@@ -2747,6 +2823,9 @@ public sealed class ConversacionesAutomationPipelineTests
     private class FakeInterfacesCatalogosService : IInterfacesCatalogosService
     {
         public CatalogosCatalogoDetalleDto? Catalogo { get; set; } = new() { IdInsert = 123, Nombre = "Catálogo público" };
+
+        public Task<IReadOnlyList<CatalogosCatalogoItemDto>> AplicarPrecioClienteAsync(IReadOnlyList<CatalogosCatalogoItemDto> articulos, string? codigoCliente, int? expectedBaseId = null, CancellationToken ct = default)
+            => Task.FromResult(articulos);
         public int? LastPublicExpectedBaseId { get; private set; }
 
         public virtual Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)

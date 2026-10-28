@@ -245,7 +245,13 @@ public sealed class CarritoComprasService(
         {
             var connectionString = ResolveConnectionString(expectedBaseId, "CarritoCompras.GetPublicCart");
             if (idInsert > 0)
-                return await catalogosService.GetCatalogoPublicoAsync(idInsert, expectedBaseId, token);
+            {
+                // Cliente identificado: ve en el carrito el mismo precio que se le va a grabar en el pedido.
+                var catalogo = await catalogosService.GetCatalogoPublicoAsync(idInsert, expectedBaseId, token);
+                if (catalogo is not null && !string.IsNullOrWhiteSpace(codigoCliente))
+                    catalogo.Articulos = await catalogosService.AplicarPrecioClienteAsync(catalogo.Articulos, codigoCliente, expectedBaseId, token);
+                return catalogo;
+            }
 
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);

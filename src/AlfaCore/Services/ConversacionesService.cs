@@ -8845,6 +8845,11 @@ public sealed partial class ConversacionesService(
         {
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
             {
+                // Sólo si el bot está prendido en la base (si lo apagaron a propósito no hay nada que avisar),
+                // una vez por día por conversación.
+                var configBot = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+                if (configBot.BotActivo && !await ExisteNotaInternaHoyAsync(idConversacion, NotaModuloAutomatizacionesInactivo, ct).ConfigureAwait(false))
+                    await AddInternalEventCoreAsync(idConversacion, NotaModuloAutomatizacionesInactivo, null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
                 return;
             }
 
@@ -8872,9 +8877,20 @@ public sealed partial class ConversacionesService(
             // Al terminar, si entró uno nuevo se responde el último (con todo el historial), como el
             // job de espera; el lock y los chequeos de "ya respondido" siguen evitando duplicados.
             var ultimoAtendido = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
+            // "hola" y "cuánto sale el mouse?" con 1 s de diferencia (Base4271, 2026-10-27): cuando este
+            // llamado arranca, el segundo ya está grabado y su propio llamado choca con el lock. Se
+            // respondía el "hola" (sin herramientas) y la respuesta, posterior a los dos, hacía que el
+            // mouse figurara como respondido. Se responde el último entrante, con todo el historial.
+            var textoUltimoEntrante = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
+            if (textoUltimoEntrante.Length > 0)
+                texto = textoUltimoEntrante;
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
+                // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
+                // respondido ("hola" + "¿tenés biromes?", Base4271 2026-10-28): se le pasa el último
+                // automático conocido para que sólo corte si respondió otro proceso después.
+                var automaticoConocido = (await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false)).UltimoAutomaticoId;
                 var ultimo = await GetLastIncomingIdAsync(idConversacion, ct).ConfigureAwait(false);
                 if (ultimo <= ultimoAtendido)
                     break;
@@ -8884,7 +8900,7 @@ public sealed partial class ConversacionesService(
                 if (textoNuevo.Length == 0)
                     break;
 
-                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct).ConfigureAwait(false);
+                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct, automaticoConocido).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -8979,6 +8995,56 @@ public sealed partial class ConversacionesService(
     private const int MaxRespuestasBotEncadenadas = 3;
 
     internal const string TextoImagenSinTexto = "(El cliente mandó esta imagen sin escribir nada.)";
+
+    // Confirmación de identidad (CONV_ASISTENTE_CONFIRMA_IDENTIDAD). Las notas llevan la cuenta: si cambia la
+    // vinculación, lo confirmado o negado para la cuenta anterior no cuenta para la nueva.
+    private static readonly HashSet<string> HerramientasConDatosPrivados = new(StringComparer.Ordinal)
+    {
+        ConversacionAsistenteHerramientasService.ToolConsultarSaldoTotal,
+        ConversacionAsistenteHerramientasService.ToolConsultarSaldoDetalle,
+        ConversacionAsistenteHerramientasService.ToolConsultarPedidos,
+        ConversacionAsistenteHerramientasService.ToolGenerarLinkPortal,
+        ConversacionAsistenteHerramientasService.ToolPrepararPedido
+    };
+
+    internal const string RespuestaIdentidadNegada =
+        "Gracias por avisarnos. Por seguridad no te muestro datos de esa cuenta; un asesor va a revisar tus datos de contacto. ¿En qué más te puedo ayudar?";
+
+    internal static bool EsHerramientaConDatosPrivados(string nombreHerramienta) => HerramientasConDatosPrivados.Contains(nombreHerramienta);
+
+    internal const string PrefijoPreguntaPedidoOTicket = "¿Me preguntás por tu pedido ";
+
+    internal static string PreguntaPedidoOTicket(string pedido, int numeroTicket)
+        => $"{PrefijoPreguntaPedidoOTicket}{pedido} o por tu consulta en curso (ticket #{numeroTicket})?";
+
+    private static string CuentaParaNota(ConversacionCuentaVinculadaDto cuenta)
+        => $"{cuenta.RazonSocial.Trim()} ({cuenta.Codigo.Trim()})";
+
+    internal static string PreguntaIdentidad(ConversacionCuentaVinculadaDto cuenta)
+        => $"Antes de seguir, ¿me confirmás que escribís por {cuenta.RazonSocial.Trim()}? Respondeme sí o no.";
+
+    private static string NotaIdentidadPreguntada(ConversacionCuentaVinculadaDto cuenta)
+        => $"🔐 El asistente le pidió al contacto confirmar que escribe por {CuentaParaNota(cuenta)}.";
+
+    private static string NotaIdentidadConfirmada(ConversacionCuentaVinculadaDto cuenta)
+        => $"✅ El contacto confirmó que escribe por {CuentaParaNota(cuenta)}.";
+
+    private static string NotaIdentidadNegada(ConversacionCuentaVinculadaDto cuenta)
+        => $"⚠️ Revisar vinculación: el contacto dijo que NO escribe por {CuentaParaNota(cuenta)}. Hoy el asistente no le muestra datos de esa cuenta.";
+
+    internal static bool EsRespuestaIdentidadSi(string? texto)
+    {
+        var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+        return ConversacionBotPedidosService.EsConfirmacion(texto)
+               || Regex.IsMatch(t, @"^(soy yo|si soy|exacto|asi es|efectivamente|claro|sip|obvio)\b");
+    }
+
+    internal static bool EsRespuestaIdentidadNo(string? texto)
+    {
+        var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+        return t.Length > 0 && t.Split(' ').Length <= 12
+               && Regex.IsMatch(t, @"^(no|nop|nada que ver|para nada)\b|\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b");
+    }
 
     /// <summary>Mensaje que es sólo una imagen, sin texto propio ("[image]").</summary>
     internal static bool EsImagenSinTexto(string? texto)
@@ -9125,7 +9191,8 @@ public sealed partial class ConversacionesService(
     // automática encima. La política del asistente decide qué pasa cuando la info no alcanza; si no
     // puede resolver, escala a humano. Se llama tanto al llegar el mensaje (sin espera configurada)
     // como desde el job de espera, ya con todos los chequeos de activación resueltos.
-    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct,
+        long? automaticoYaConocido = null)
     {
         await RunWithConversationAutomationLockAsync(
             idConversacion,
@@ -9150,6 +9217,23 @@ public sealed partial class ConversacionesService(
 
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
                 {
+                    // Antes cortaba en silencio: el cliente quedaba sin respuesta y el equipo sin aviso
+                    // ("necesito hablar con una persona", batería 4264 2026-10-28). Se avisa una vez por día.
+                    if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaPidioPersona, token).ConfigureAwait(false)
+                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))
+                    {
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = idConversacion,
+                            Texto = RespuestaPidioPersona,
+                            MessageType = "TEXT",
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "BOT"
+                        }, token).ConfigureAwait(false);
+                        await AddInternalEventCoreAsync(idConversacion, NotaPidioPersona, null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        if (!esUrgente)
+                            await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
                     return;
                 }
 
@@ -9173,12 +9257,12 @@ public sealed partial class ConversacionesService(
                     return;
                 }
 
-                var (botCount, yaRespondioEsteMensaje, humanoYaRespondio) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
+                var (botCount, yaRespondioEsteMensaje, humanoYaRespondio, ultimoAutomaticoId) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
                 {
                     return;
                 }
-                if (yaRespondioEsteMensaje)
+                if (yaRespondioEsteMensaje && !(automaticoYaConocido is long conocido && ultimoAutomaticoId <= conocido))
                 {
                     return;
                 }
@@ -9301,10 +9385,68 @@ public sealed partial class ConversacionesService(
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
 
+                // Confirmación de identidad: antes del primer dato privado del día (saldo, pedidos, portal,
+                // pedido nuevo) se pregunta si escribe por la cuenta vinculada. Si dice que no, ese día se lo
+                // atiende como contacto sin cuenta y queda una nota para revisar la vinculación.
+                string? respuestaIdentidad = null;
+                var identidadPendiente = false;
+                var identidadRecienConfirmada = false;
+                if (config.AsistenteConfirmaIdentidad && cuentaVinculada is { EsAmbigua: false } cuentaAConfirmar)
+                {
+                    if (await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadNegada(cuentaAConfirmar), token).ConfigureAwait(false))
+                    {
+                        cuentaVinculada = null;
+                    }
+                    else if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadConfirmada(cuentaAConfirmar), token).ConfigureAwait(false))
+                    {
+                        var preguntada = await ExisteNotaInternaHoyAsync(idConversacion, NotaIdentidadPreguntada(cuentaAConfirmar), token).ConfigureAwait(false);
+                        if (preguntada && EsRespuestaIdentidadNo(texto))
+                        {
+                            await AddInternalEventCoreAsync(idConversacion, NotaIdentidadNegada(cuentaAConfirmar), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                            cuentaVinculada = null;
+                            respuestaIdentidad = RespuestaIdentidadNegada;
+                        }
+                        else if (preguntada && EsRespuestaIdentidadSi(texto))
+                        {
+                            await AddInternalEventCoreAsync(idConversacion, NotaIdentidadConfirmada(cuentaAConfirmar), null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                            identidadRecienConfirmada = true;
+                            // El "sí" no trae la consulta: se responde lo que había pedido antes de la pregunta.
+                            var consultaOriginal = ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
+                            if (!string.IsNullOrWhiteSpace(consultaOriginal))
+                                texto = consultaOriginal;
+                        }
+                        else
+                        {
+                            identidadPendiente = true;
+                        }
+                    }
+                }
+
+                // Respuesta a "¿Me preguntás por tu pedido ... o por tu consulta en curso (ticket #N)?".
+                var eligioPedido = false;
+                var eligioTicket = false;
+                var ultimaSaliente = mensajes.Where(m => string.Equals(m.Direction, "SALIENTE", StringComparison.Ordinal))
+                    .OrderByDescending(m => m.FechaHora).FirstOrDefault();
+                if (ultimaSaliente?.Texto?.StartsWith(PrefijoPreguntaPedidoOTicket, StringComparison.Ordinal) == true)
+                {
+                    var eleccion = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+                    eligioTicket = Regex.IsMatch(eleccion, @"\b(ticket|consulta|soporte|reclamo|problema|lo otro|la otra|lo segundo|la segunda)\b");
+                    eligioPedido = !eligioTicket && Regex.IsMatch(eleccion, @"\b(pedido|np|compra|nota|lo primero|el primero)\b");
+                    if (eligioPedido)
+                        texto = "¿Cómo está mi pedido?";
+                    else if (eligioTicket)
+                        texto = "¿Hay novedades de mi consulta?";
+                }
+
+                // Una cuenta genérica ("Consumidor Final") no es el nombre de nadie: no se saluda con ella.
+                if (cuentaVinculada is { EsAmbigua: false } cuentaParaSaludo
+                    && !cuentaParaSaludo.RazonSocial.Contains("consumidor final", StringComparison.OrdinalIgnoreCase))
+                    contextoCliente = $"{contextoCliente} Quien escribe está vinculado a la cuenta «{cuentaParaSaludo.RazonSocial.Trim()}». Si todavía no lo saludaste en esta charla, saludalo por ese nombre; si es una empresa, no supongas el nombre de la persona.".Trim();
+
                 // Pedido por chat (F05): confirmar o cancelar lo decide el texto literal del cliente
                 // contra el borrador guardado, nunca el modelo -- la IA sólo puede armar el borrador.
                 string? respuestaPedidoChat = null;
-                if (config.AsistenteHerramientaTomarPedidos && botPedidosService is not null
+                if (config.AsistenteHerramientaTomarPedidos && botPedidosService is not null && !identidadRecienConfirmada
                     && cuentaVinculada is { Tipo: CuentaComercialTipo.Cliente, EsAmbigua: false }
                     && (ConversacionBotPedidosService.EsConfirmacion(texto) || ConversacionBotPedidosService.EsCancelacion(texto))
                     && await botPedidosService.HayPendienteAsync(idConversacion, cuentaVinculada.Codigo, token).ConfigureAwait(false))
@@ -9320,20 +9462,29 @@ public sealed partial class ConversacionesService(
                 var mensajePrevioCliente = EsMensajeSocial(texto)
                     ? null
                     : ObtenerMensajePrevioCliente(mensajes, texto, BusinessNow(), VentanaMensajePrevioHerramientas);
-                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto, mensajePrevioCliente);
+                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
                 var precioRequiereIdentificacion = PrecioRequiereIdentificacion(config, cuentaVinculada, texto, mensajePrevioCliente);
                 // Si el bot ya repreguntó (ACLARA) y el cliente contesta, ese mensaje completa la
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
-                var forzarConsultarPrecio = !precioRequiereIdentificacion
-                    && (ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(texto)
-                        || ConversacionAsistenteHerramientasService.MensajePideArticulo(texto)
-                        || (ultimaRespuestaFueAclaracion
-                            && ConversacionAsistenteHerramientasService.PuedeCompletarAclaracion(texto)
-                            && ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente)));
+                var identidadPreguntadaAhora = false;
+                string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
-                    ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta)
+                    ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                    {
+                        if (identidadPendiente && cuentaVinculada is not null && EsHerramientaConDatosPrivados(nombreHerramienta))
+                        {
+                            if (!identidadPreguntadaAhora)
+                                await AddInternalEventCoreAsync(idConversacion, NotaIdentidadPreguntada(cuentaVinculada), null, null, "AlfaCore", "BOT", ctHerramienta).ConfigureAwait(false);
+                            identidadPreguntadaAhora = true;
+                            return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
+                        }
+                        var resultadoHerramienta = await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolConsultarPedidos
+                            && resultadoHerramienta.Contains(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, StringComparison.Ordinal))
+                            pedidosEncontrados = resultadoHerramienta.Replace(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, string.Empty).Trim();
+                        return resultadoHerramienta;
+                    }
                     : null;
 
                 // Un saludo o un cierre/agradecimiento suelto no tiene nada que buscar -- consultarlo
@@ -9344,7 +9495,7 @@ public sealed partial class ConversacionesService(
                 // recibiría "[image]" y respondía "hay un problema con las imágenes" + DERIVA aunque el
                 // archivo estuviera sano. Se repregunta qué necesita (ACLARA) sin llamar al modelo.
                 var aclaracionMediaSinTexto = ConstruirAclaracionMediaSinTexto(texto);
-                var usaKnowledge = aclaracionMediaSinTexto is null && respuestaPedidoChat is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
+                var usaKnowledge = aclaracionMediaSinTexto is null && respuestaPedidoChat is null && respuestaIdentidad is null && !EsMensajeSocial(texto) && texto != TextoImagenSinTexto
                     && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
@@ -9375,9 +9526,9 @@ public sealed partial class ConversacionesService(
                     resueltoSoloPorKnowledge = false;
 
                 ConversacionAsistenteRespuesta? result;
-                if (respuestaPedidoChat is not null)
+                if (respuestaPedidoChat is not null || respuestaIdentidad is not null)
                 {
-                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = respuestaPedidoChat };
+                    result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = respuestaIdentidad ?? respuestaPedidoChat! };
                 }
                 else if (correccionDirecta is not null)
                 {
@@ -9430,7 +9581,6 @@ public sealed partial class ConversacionesService(
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync,
                         precioRequiereIdentificacion: precioRequiereIdentificacion,
-                        forzarConsultarPrecio: forzarConsultarPrecio,
                         linkCatalogoParaLead: linkCatalogoParaLead,
                         imagenesDataUri: imagenesBot,
                         ct: token).ConfigureAwait(false);
@@ -9440,6 +9590,10 @@ public sealed partial class ConversacionesService(
                         await AddInternalEventCoreAsync(idConversacion, $"🖼️ El asistente vio en la imagen: {Truncar(result!.ImagenDescripcion, 1500)}",
                             null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                     }
+
+                    // La pregunta de identidad la arma el servidor (no el modelo): texto fijo con la cuenta.
+                    if (identidadPreguntadaAhora && cuentaVinculada is not null)
+                        result = new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = PreguntaIdentidad(cuentaVinculada) };
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
                         && knowledgeContext.NeedsClarification
@@ -9467,7 +9621,9 @@ public sealed partial class ConversacionesService(
 
                 // Nunca dos aclaraciones seguidas: si el bot ya repreguntó y vuelve a necesitar
                 // preguntar, pasa a un operador (contención estándar) en vez de insistir.
-                if (ultimaRespuestaFueAclaracion && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                // La pregunta de identidad la arma el servidor y no cuenta: tras "¿cuál querés?" + "quiero 10
+                // azules" salía la contención en vez de "¿me confirmás que escribís por…?" (Base4271 2026-10-28).
+                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
                     result = null;
                 }
@@ -9538,6 +9694,44 @@ public sealed partial class ConversacionesService(
 
                     await ResponderTemaResueltoAsync(idConversacion, pendienteResuelto, texto, token).ConfigureAwait(false);
                     return;
+                }
+
+                // "Mi pedido" puede ser una compra o un tema de soporte. Con número de NP (o si ya eligió
+                // "el pedido") es la compra; si sólo tiene pedidos terminados y un ticket abierto, es el ticket;
+                // si tiene pedidos en curso y ticket abierto, se le pregunta cuál.
+                if (eligioTicket && result is not null)
+                    result.Tipo = "SEGUIMIENTO";
+                if (pedidosEncontrados is not null && result is not null)
+                {
+                    TemaPendiente? temaAbierto = null;
+                    if (!eligioPedido && !ConversacionAsistenteHerramientasService.MensajeTraeNumeroDePedido(texto))
+                    {
+                        try
+                        {
+                            temaAbierto = await BuscarTemaPendienteAsync(idConversacion, token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            await _appEvents.LogErrorAsync("Conversaciones", "BotPedidoOTicket", ex,
+                                "No se pudo buscar el ticket abierto; se respondió con los pedidos.",
+                                new { idConversacion }, AppEventSeverity.Warning, token).ConfigureAwait(false);
+                        }
+                    }
+
+                    var pedidoEnCurso = ConversacionAsistenteHerramientasService.PrimerPedidoEnCurso(pedidosEncontrados);
+                    if (temaAbierto?.NumeroTicket is not int numeroTicket)
+                    {
+                        if (!string.Equals(result.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase))
+                            result = new ConversacionAsistenteRespuesta { Tipo = "RESUELVE", PuedeResponder = true, Respuesta = $"Estos son tus pedidos:\n{pedidosEncontrados.Replace("- Pedido", "• Pedido")}" };
+                    }
+                    else if (pedidoEnCurso is not null)
+                    {
+                        result = new ConversacionAsistenteRespuesta { Tipo = "ACLARA", PuedeResponder = false, Respuesta = PreguntaPedidoOTicket(pedidoEnCurso, numeroTicket) };
+                    }
+                    else
+                    {
+                        result.Tipo = "SEGUIMIENTO";
+                    }
                 }
 
                 var omitirTicket = false;
@@ -9645,7 +9839,9 @@ public sealed partial class ConversacionesService(
                         null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
                 }
 
-                if (tipo == "ACLARA")
+                // La pregunta de identidad ya deja su propia nota (🔐) y no marca aclaración: si no, el
+                // "¿confirmás el pedido?" que sigue al "sí" caía en "dos aclaraciones seguidas".
+                if (tipo == "ACLARA" && !identidadPreguntadaAhora)
                 {
                     // Además de informar al operador, es la marca persistida que usa
                     // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
@@ -10279,7 +10475,10 @@ public sealed partial class ConversacionesService(
                 || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
     }
 
-    internal const string NotaBotAclaracion = "🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
+    internal const string NotaPidioPersona = "🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
+    internal const string RespuestaPidioPersona = "Perfecto, te paso con alguien del equipo. En breve te responde por acá.";
+
+    internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
     private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
 
     /// <summary>
@@ -10289,6 +10488,9 @@ public sealed partial class ConversacionesService(
     /// nota y da false.
     /// </summary>
     internal const string NotaTopeCreditosIa = "🤖⛔ Se alcanzó el tope mensual de créditos de IA: el asistente no responde. Requiere que un operador lo tome.";
+
+    // Sin esta nota el bot callaba sin rastro con el módulo suspendido (prueba vencida, Base4271 2026-10-27).
+    internal const string NotaModuloAutomatizacionesInactivo = "🤖⛔ El asistente no respondió: el módulo Automatizaciones no está activo para esta empresa (Administrar → Módulos). Requiere que un operador lo tome.";
 
     /// <summary>Ya se dejó hoy esta nota interna en la conversación (evita repetirla en cada mensaje).</summary>
     internal const string NotaBotPidioDatosWeb = "🤖🪪 El asistente le pidió al visitante del chat web su WhatsApp y la razón social.";
@@ -11453,7 +11655,7 @@ public sealed partial class ConversacionesService(
     /// para siempre (ver comentario en el llamador) -- y si un humano ya respondió manualmente el
     /// último entrante (mismo criterio por <c>IdMensaje</c>, ver <see cref="AutomatedOutgoingSistemaAutorSqlList"/>).
     /// </summary>
-    private async Task<(int Count, bool YaRespondioUltimoEntrante, bool HumanoYaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    private async Task<(int Count, bool YaRespondioUltimoEntrante, bool HumanoYaRespondioUltimoEntrante, long UltimoAutomaticoId)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
     {
         var sql = $"""
             SELECT
@@ -11483,9 +11685,9 @@ public sealed partial class ConversacionesService(
             var ultimoEntranteId = rd.IsDBNull(1) ? 0L : rd.GetInt64(1);
             var ultimoAutomaticoId = rd.IsDBNull(2) ? 0L : rd.GetInt64(2);
             var ultimoHumanoId = rd.IsDBNull(3) ? 0L : rd.GetInt64(3);
-            return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);
+            return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId, ultimoAutomaticoId);
         }
-        return (0, false, false);
+        return (0, false, false, 0);
     }
 
     private async Task TryNotifyUrgencyTechniciansAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
@@ -17134,7 +17336,7 @@ public sealed partial class ConversacionesService(
         return DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
     }
 
-    private static DateTime BusinessNow()
+    internal static DateTime BusinessNow()
         => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ResolveBusinessTimeZone());
 
     private static string ConversationMessageVisibleDateSql(string alias)

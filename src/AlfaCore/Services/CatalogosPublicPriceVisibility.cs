@@ -35,6 +35,20 @@ public static class CatalogosPublicPriceVisibility
         return copia;
     }
 
+    /// <summary>
+    /// Copia del catálogo con otros artículos (ej. con el precio del cliente identificado, ver
+    /// IInterfacesCatalogosService.AplicarPrecioClienteAsync). Nunca modifica <paramref name="catalogo"/>.
+    /// </summary>
+    public static CatalogosCatalogoDetalleDto ConArticulos(CatalogosCatalogoDetalleDto catalogo, IReadOnlyList<CatalogosCatalogoItemDto> articulos)
+    {
+        ArgumentNullException.ThrowIfNull(catalogo);
+
+        var copia = JsonSerializer.Deserialize<CatalogosCatalogoDetalleDto>(JsonSerializer.Serialize(catalogo))
+            ?? throw new InvalidOperationException("No se pudo copiar el catálogo.");
+        copia.Articulos = articulos;
+        return copia;
+    }
+
     /// <summary>Catálogo a mostrar a quien lo pide: completo si los precios se pueden mostrar o si el
     /// visitante está autenticado como cliente; si no, sin precios.</summary>
     public static CatalogosCatalogoDetalleDto ParaVisitante(CatalogosCatalogoDetalleDto catalogo, bool muestraPreciosConsumidorFinal, bool visitanteAutenticado)

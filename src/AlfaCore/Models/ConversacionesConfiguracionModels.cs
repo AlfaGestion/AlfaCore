@@ -484,6 +484,8 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool AsistentePortalAccesoDirecto { get; set; }
     /// <summary>Arma Notas de Pedido desde el chat con artículos del catálogo web; se graban solo si el cliente confirma.</summary>
     public bool AsistenteHerramientaTomarPedidos { get; set; }
+    /// <summary>Antes de dar datos privados (saldo, pedidos, portal, pedido nuevo) pregunta una vez por día si escribe por la cuenta vinculada.</summary>
+    public bool AsistenteConfirmaIdentidad { get; set; } = true;
     /// <summary>
     /// Permite que el bot informe precios a consumidores finales/leads usando la fuente real de
     /// AlfaCore (CUENTACONSUMIDORFINAL/lista/clase). Default seguro: false.

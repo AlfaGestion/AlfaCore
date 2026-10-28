@@ -133,6 +133,44 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
         return result;
     }
 
+    public async Task<IReadOnlyDictionary<string, decimal>> GetPreciosConIvaAsync(SqlConnection cn, CrmCotizacionPricingContextDto pricing, IReadOnlyCollection<string> idArticulos, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        var resultado = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var ids = idArticulos.Select(x => (x ?? string.Empty).Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (ids.Count == 0)
+            return resultado;
+
+        var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
+        var sql = $"""
+            SELECT
+                LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                ISNULL(CAST(a.TasaIVA AS decimal(9,4)), 0) AS TasaIva,
+                ISNULL(a.PRECIO{clase}, 0) AS PrecioMaestro,
+                ISNULL(p.Precio{clase}, 0) AS PrecioLista
+            FROM dbo.V_MA_ARTICULOS a
+            LEFT JOIN dbo.V_MA_Precios p
+                ON p.IdArticulo = a.IDARTICULO
+               AND p.IdLista = @IdLista
+               AND p.TipoLista = 'V'
+            WHERE LTRIM(RTRIM(a.IDARTICULO)) IN @Ids;
+            """;
+
+        // Lotes de 500: SQL Server admite hasta 2100 parámetros por consulta.
+        foreach (var lote in ids.Chunk(500))
+        {
+            var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, new { IdLista = pricing.IdLista, Ids = lote }, tx, cancellationToken: ct));
+            foreach (var row in rows)
+            {
+                var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
+                var (_, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
+                if (conIva > 0)
+                    resultado[row.IdArticulo] = conIva;
+            }
+        }
+
+        return resultado;
+    }
+
     public static (decimal neto, decimal conIva) SplitPrice(decimal bruto, decimal tasa, bool preciosConIva)
     {
         var factor = 1m + tasa / 100m;

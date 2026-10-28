@@ -34,11 +34,11 @@ public sealed class ConversacionAsistenteHerramientasService(
     IPortalClienteAutoLoginService portalAutoLoginService,
     IConversacionBotPedidosService botPedidosService) : IConversacionAsistenteHerramientasService
 {
-    private const string ToolConsultarPrecio = "consultar_precio";
-    private const string ToolConsultarSaldoTotal = "consultar_saldo_total";
-    private const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
-    private const string ToolConsultarPedidos = "consultar_pedidos";
-    private const string ToolGenerarLinkPortal = "generar_link_portal";
+    internal const string ToolConsultarPrecio = "consultar_precio";
+    internal const string ToolConsultarSaldoTotal = "consultar_saldo_total";
+    internal const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
+    internal const string ToolConsultarPedidos = "consultar_pedidos";
+    internal const string ToolGenerarLinkPortal = "generar_link_portal";
     private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
     internal const string ToolPrepararPedido = "preparar_pedido";
 
@@ -54,30 +54,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
-
-    // Palabras que indican que el mensaje puede necesitar alguna herramienta. Filtro deliberadamente
-    // amplio (mejor un falso positivo que uno negativo) -- el objetivo NO es adivinar la intención con
-    // precisión, es evitar mandarle la lista de 5 herramientas a OpenAI en TODOS los mensajes. Con
-    // gpt-4o-mini se comprobó en producción que ofrecer tool-calling en cada respuesta lo vuelve
-    // sobre-cauteloso incluso para un simple "hola" (deriva a un humano en vez de saludar), aunque el
-    // prompt le aclare que las herramientas son opcionales -- es una limitación real del modelo
-    // combinando function-calling con el JSON forzado, no un tema de instrucciones. Reducir cuándo se
-    // ofrecen las herramientas restaura el comportamiento normal para la charla común.
-    private static readonly string[] PalabrasClaveHerramientas =
-    [
-        "precio", "precios", "cuesta", "cuesto", "cuánto sale", "cuanto sale", "vale", "valen", "cotiz",
-        "saldo", "deuda", "debo", "cuenta corriente", "cta cte", "cta.cte", "cuánto debo", "cuanto debo",
-        "pendiente de pago", "factura pendiente", "cobranza", "cobranzas",
-        "pedido", "pedidos", "nota de pedido", "np-",
-        "portal", "autogestión", "autogestion", "acceso online", "ver mi cuenta", "cuenta online",
-        "catálogo", "catalogo", "producto", "productos", "comprar", "compra"
-    ];
-
-    private static bool MensajeNecesitaHerramientas(string mensajeCliente)
-    {
-        var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
-        return texto.Length > 0 && (PalabrasClaveHerramientas.Any(texto.Contains) || MensajePideArticulo(mensajeCliente));
-    }
 
     /// <summary>
     /// Quiere artículos puntuales sin decir "precio" ni "pedido" ("Quiero 10 pilas AA", "necesito dos
@@ -99,7 +75,15 @@ public sealed class ConversacionAsistenteHerramientasService(
             return true;
 
         var unArticulo = Regex.Match(texto, @"\b(quiero|quisiera|necesito|busco|me\s+llevo)\s+(un|una|unos|unas)\s+([a-z]+)");
-        return unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value);
+        if (unArticulo.Success && !NoSonArticulos.Contains(unArticulo.Groups[3].Value))
+            return true;
+
+        // "¿Tenés biromes?" (Base4271, 2026-10-28): sin esto no se buscaba el artículo y, con un ticket
+        // abierto, el modelo lo tomaba como seguimiento. "¿Tenés tiempo?" o "¿hay novedades?" no cuentan.
+        var sinSaludo = Regex.Replace(texto, @"^(hola|buenas\s+tardes|buenas\s+noches|buenos\s+dias|buen\s+dia|buenas)\W*", string.Empty).TrimStart();
+        var tenes = Regex.Match(sinSaludo, @"^(tenes|tienen|tendras|tendran|hay|trabajan|manejan|venden)\s+(?:(?:un|una|unos|unas|el|la|los|las|algun|alguna)\s+)?([a-z]+)");
+        return tenes.Success && texto.Split(' ').Length <= 10
+               && !NoSonArticulos.Contains(tenes.Groups[2].Value) && !NoSonArticulosEnPregunta.Contains(tenes.Groups[2].Value);
     }
 
     /// <summary>
@@ -108,13 +92,25 @@ public sealed class ConversacionAsistenteHerramientasService(
     /// </summary>
     internal static bool MensajePideCantidadDeArticulo(string? mensajeCliente)
     {
+        // "te quiero encargar diez biromes" (audio transcripto, 2026-10-27) y "agregale 2 resaltadores": el verbo
+        // de compra puede venir entre el "quiero" y la cantidad, y "agregale/sumale" también es pedir.
         var texto = NormalizarTexto(mensajeCliente);
         return texto.Length > 0 && Regex.IsMatch(texto,
-            @"\b(quiero|quisiera|necesito|mandame|pasame|encargo|me\s+llevo|anotame|agregame|sumame)\s+"
+            @"\b(quiero|quisiera|necesito|mandame|pasame|encargo|me\s+llevo|anotame|agregame|agregale|agrega|sumame|sumale|suma|poneme|ponele)\s+"
+            + @"(?:(?:encargar|encargarte|pedir|pedirte|comprar|comprarte|llevar|llevarme|ordenar|agregar|sumar)\s+)?"
             + @"(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|veinte|cien|media\s+docena|una\s+docena|docenas?)\b");
     }
 
     // Lo que sigue a "necesito un/una ..." en consultas de soporte o atención, no de compra.
+    private static readonly HashSet<string> NoSonArticulosEnPregunta = new(StringComparer.Ordinal)
+    {
+        "novedad", "novedades", "tiempo", "horario", "horarios", "algo", "alguien", "envios", "promo", "promos",
+        "promocion", "promociones", "oferta", "ofertas", "cuotas", "local", "locales", "sucursal", "sucursales",
+        "abierto", "lugar", "problema", "problemas", "error", "errores", "tarjeta", "transferencia", "efectivo",
+        "mercadopago", "que", "como", "donde", "cuando", "idea", "lista", "catalogo", "precios", "web",
+        "pagina", "whatsapp", "mail", "email", "telefono", "estacionamiento", "delivery", "retiro", "gente"
+    };
+
     private static readonly HashSet<string> NoSonArticulos = new(StringComparer.Ordinal)
     {
         "mano", "ayuda", "consulta", "pregunta", "duda", "tecnico", "persona", "asesor", "operador", "vendedor",
@@ -143,8 +139,12 @@ public sealed class ConversacionAsistenteHerramientasService(
             return false;
         if (Regex.IsMatch(texto, @"\bpedidos?\s+de\s+(soporte|ayuda|asistencia|servicio|visita|presupuesto)\b"))
             return false;
+        // "el pedido del ticket 3", "mi pedido por el problema del sistema": habla del tema de soporte.
+        if (Regex.IsMatch(texto, @"\b(ticket|tickets|reclamo|reclamos|soporte|problema|error|falla)\b"))
+            return false;
 
-        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+\b|\bnota\s+de\s+pedido\b")
+        // "NP 999900000001X": el número de comprobante puede terminar en letra.
+        return Regex.IsMatch(texto, @"\bnp\s*-?\s*\d+[a-z]?\b|\bnota\s+de\s+pedido\b")
             || (Regex.IsMatch(texto, @"\bpedidos?\b")
                 && Regex.IsMatch(texto, @"\b(mi|mis|estado|como|donde|cuando|llego|llegaron|llega|llegan|sale|salen|salio|salieron|novedad|novedades|ultimo|numero)\b"));
     }
@@ -168,6 +168,23 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     // Con número de pedido no hay ambigüedad venta/soporte: sin esta instrucción el modelo lo tomó como
     // seguimiento de un tema viejo y avisó al operador (Base4264, 2026-10-26, "¿Llegó mi pedido NP-999?").
+    // Con pedidos encontrados la consulta es de venta, no el seguimiento de un ticket de soporte abierto
+    // (Base4271, 2026-10-27: "¿hay novedades sobre mi pedido?" con un ticket abierto respondía "ya pedí novedades").
+    internal const string InstruccionPedidosEncontrados =
+        "(Respondé tipo RESUELVE con el estado de estos pedidos. No es un seguimiento de soporte.)";
+
+    internal static bool MensajeTraeNumeroDePedido(string? mensajeCliente)
+        => Regex.IsMatch(NormalizarTexto(mensajeCliente), @"\bnp\s*-?\s*\d+[a-z]?\b");
+
+    /// <summary>Primer pedido pendiente o en preparación del resultado de consultar_pedidos; null si todos
+    /// están finalizados o anulados (un pedido viejo no compite con un ticket abierto).</summary>
+    internal static string? PrimerPedidoEnCurso(string? resultadoPedidos)
+    {
+        var m = Regex.Match(resultadoPedidos ?? string.Empty,
+            @"^- Pedido (.+?) del \d{2}/\d{2}/\d{4}: (Pendiente|Aprobado \(en preparación\)) —", RegexOptions.Multiline);
+        return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
+
     internal const string ResultadoPedidoNoEncontrado =
         "No encontré ningún pedido con ese número asociado a su cuenta. Respondé tipo RESUELVE: decile que no encontraste ese pedido en su cuenta y pedile que revise el número. No es un seguimiento de soporte.";
 
@@ -194,8 +211,7 @@ public sealed class ConversacionAsistenteHerramientasService(
     /// <summary>
     /// Intención explícita de precio ("precio", "cuánto sale/cuesta/vale", "a cuánto", "valor",
     /// "cotización"). Se usa para decidir la respuesta a un contacto sin identificar cuando la empresa
-    /// no informa precios a leads -- no para ofrecer herramientas (eso sigue siendo
-    /// MensajeNecesitaHerramientas).
+    /// no informa precios a leads.
     /// </summary>
     internal static bool MensajePidePrecio(string? mensajeCliente)
     {
@@ -249,21 +265,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         return palabras.Length <= 6 && !InicioPreguntaNueva.Any(conEspacio.StartsWith);
     }
 
-    private static bool MensajePideCatalogo(string mensajeCliente)
-    {
-        var texto = NormalizarTexto(mensajeCliente);
-        if (texto.Length == 0)
-            return false;
-
-        return texto.Contains("catalogo", StringComparison.Ordinal)
-            || texto.Contains("ver productos", StringComparison.Ordinal)
-            || texto.Contains("ver los productos", StringComparison.Ordinal)
-            || texto.Contains("mostrar productos", StringComparison.Ordinal)
-            || texto.Contains("pasame productos", StringComparison.Ordinal)
-            || texto.Contains("pasar productos", StringComparison.Ordinal)
-            || texto.Contains("lista de productos", StringComparison.Ordinal);
-    }
-
     // Palabras que el cliente/modelo suele incluir pero nunca forman parte de la descripción de un
     // artículo. Van sin tildes (se comparan contra el texto ya normalizado).
     private static readonly HashSet<string> PalabrasVaciasBusqueda = new(StringComparer.Ordinal)
@@ -306,7 +307,7 @@ public sealed class ConversacionAsistenteHerramientasService(
         return termino;
     }
 
-    private static string NormalizarTexto(string? texto)
+    internal static string NormalizarTexto(string? texto)
     {
         if (string.IsNullOrWhiteSpace(texto))
             return string.Empty;
@@ -325,16 +326,11 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
-        ConversacionCuentaVinculadaDto? cuenta,
-        string mensajeCliente,
-        string? mensajePrevioCliente = null)
+        ConversacionCuentaVinculadaDto? cuenta)
     {
-        // El seguimiento ("Pila duracell AA" después de "Que precio tienen las pilas?") no trae
-        // palabra clave propia: sin el mensaje previo quedaba sin herramientas y el bot derivaba. El
-        // previo sólo habilita la lista; catálogo forzado/ofrecido sigue dependiendo del mensaje actual.
-        if (!MensajeNecesitaHerramientas(mensajeCliente) && !MensajeNecesitaHerramientas(mensajePrevioCliente ?? string.Empty))
-            return [];
-
+        // Se ofrecen siempre las herramientas que la empresa habilitó para esta cuenta y la IA decide
+        // cuál usar (2026-10-28). Antes un filtro por palabras clave decidía si había herramientas: lo que
+        // no estaba en la lista ("¿Tenés biromes?") quedaba sin poder buscar y el bot adivinaba.
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
         const string sinParametros = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
 
@@ -345,7 +341,6 @@ public sealed class ConversacionAsistenteHerramientasService(
         var esCliente = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Cliente;
         var esProveedor = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Proveedor;
         var puedeInformarPrecio = !esAmbigua && (esCliente || config.CatalogoMuestraPrecioConsumidor);
-        var pideCatalogo = MensajePideCatalogo(mensajeCliente);
 
         if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
@@ -353,8 +348,8 @@ public sealed class ConversacionAsistenteHerramientasService(
             {
                 Nombre = ToolConsultarPrecio,
                 Descripcion = esCliente
-                    ? "Busca el precio real de un artículo para el Cliente identificado. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
-                    : "Busca el precio real de consumidor final usando la fuente/lista real configurada en AlfaCore. No inventar precios.",
+                    ? "Busca artículos de la empresa por nombre, marca o código: sirve para saber si lo tienen, qué opciones hay y el precio para el Cliente identificado. Usala SIEMPRE que pregunten por un producto (\"¿tenés X?\", \"¿qué X tienen?\", \"¿cuánto sale X?\") antes de responder o de repreguntar. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
+                    : "Busca artículos de la empresa por nombre, marca o código: sirve para saber si lo tienen, qué opciones hay y el precio de consumidor final. Usala SIEMPRE que pregunten por un producto (\"¿tenés X?\", \"¿qué X tienen?\", \"¿cuánto sale X?\") antes de responder o de repreguntar. No inventar precios.",
                 ParametrosJsonSchema = """
                     {"type":"object","properties":{"articulo":{"type":"string","description":"Código o términos clave cortos del artículo (tipo, marca, medida), en singular. Ej.: 'pila AA', 'pila duracell AA'. No incluir palabras como precio o cuánto."}},"required":["articulo"]}
                     """
@@ -413,12 +408,13 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
-        if (!esCliente || pideCatalogo)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolGenerarLinkCatalogoPublico,
-                Descripcion = puedeInformarPrecio
+                Descripcion = esCliente
+                    ? "Genera el link al catálogo público de la empresa (fotos y artículos). Usala SOLO si el cliente pide el catálogo o ver los productos; para su lista de precios o su cuenta usá el Portal Cliente."
+                    : puedeInformarPrecio
                     ? "Genera el link al catálogo público/consumidor final de la empresa actual. Puede acompañarse con precios solo si se consulta la tool de precios."
                     : "Genera el link al catálogo público de la empresa actual. No informa precios: si el comprador quiere avanzar, debe identificarse o registrarse por el flujo existente.",
                 ParametrosJsonSchema = sinParametros
@@ -508,7 +504,9 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (resultados.Count == 0)
             // "¿Cuánto sale el envío?" o "¿qué es el código X?" no son artículos: si la información del
             // negocio (texto, bloques o archivos) lo responde, se usa eso en vez de repreguntar (2026-10-06).
-            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si no, respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
+            // Con un artículo concreto ("biromes", "resma A4") preguntar la marca no sirve: tampoco va a
+            // aparecer (batería 4264, 2026-10-28). Se deriva sin afirmar que no se vende.
+            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si el cliente nombró un artículo concreto, respondé tipo DERIVA: decile que no lo encontraste en la lista de artículos y que alguien del equipo le confirma si lo pueden conseguir (no digas que no lo venden ni le preguntes la marca). Sólo si la consulta era muy general (\"¿qué tienen?\", \"algo para la oficina\") respondé tipo ACLARA con UNA pregunta sobre qué artículo busca.";
 
         var hayMas = resultados.Count > MaxOpcionesPrecio;
         var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();
@@ -655,6 +653,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             var estado = p.Anulada ? "Anulado" : p.Finalizada ? "Finalizado" : p.Aprobado ? "Aprobado (en preparación)" : "Pendiente";
             sb.AppendLine($"- Pedido {p.IdComprobanteTexto} del {p.Fecha:dd/MM/yyyy}: {estado} — $ {p.Total.ToString("N2", cultura)}");
         }
+        sb.Append(InstruccionPedidosEncontrados);
         return sb.ToString().Trim();
     }
 
@@ -684,11 +683,10 @@ public sealed class ConversacionAsistenteHerramientasService(
             return urlPortal;
 
         // Acceso directo: mismo token que usa Conversaciones → "Invitar al portal" (un solo uso, 60
-        // minutos). La identidad sale de VT_CLIENTES de la cuenta ya vinculada, nunca del chat.
+        // minutos). La identidad sale de la cuenta ya vinculada al contacto, nunca del chat. El email
+        // sólo completa el formulario de ingreso: sin email cargado el link igual entra directo (antes
+        // mandaba el portal pelado y le pedía usuario y clave, Base4271 2026-10-27).
         var email = await LeerEmailClienteAsync(cuenta.Codigo, ct);
-        if (string.IsNullOrWhiteSpace(email))
-            return $"{urlPortal}\n(El cliente no tiene email cargado, así que el link pide ingresar con usuario y clave. Si no los tiene, ofrecele que un asesor le habilita el acceso.)";
-
         var urlAutoLogin = await portalAutoLoginService.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
         {
             CodigoCliente = cuenta.Codigo,
@@ -696,10 +694,12 @@ public sealed class ConversacionAsistenteHerramientasService(
             Email = email,
             IdWeb = idWeb,
             IdBase = idBase,
-            UrlBasePortal = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(urlPortal, "email", email)
+            UrlBasePortal = string.IsNullOrWhiteSpace(email)
+                ? urlPortal
+                : Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(urlPortal, "email", email)
         }, ct);
 
-        return $"{urlAutoLogin}\n(Link de acceso directo a su cuenta: pasáselo tal cual y aclarale que es personal, sirve una sola vez y vence en 60 minutos.)";
+        return $"{urlAutoLogin}\n(Link de acceso directo a su cuenta, entra sin usuario ni clave: pasáselo tal cual, solo en su línea y sin signos pegados, y aclarale que es personal, que no lo comparta, que sirve una sola vez y vence en 60 minutos; si se le vence, que te pida otro.)";
     }
 
     private async Task<string> LeerEmailClienteAsync(string codigoCliente, CancellationToken ct)

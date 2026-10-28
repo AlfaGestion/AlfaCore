@@ -269,6 +269,7 @@ public class Program
         builder.Services.AddScoped<ICentralPublicLinkService, CentralPublicLinkService>();
         builder.Services.AddScoped<ICatalogoClienteLinkService, CatalogoClienteLinkService>();
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
+        builder.Services.AddScoped<IMonitorClientesService, MonitorClientesService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
         builder.Services.AddScoped<IPlanesService, PlanesService>();
@@ -405,6 +406,7 @@ public class Program
         builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();
         builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
+        ConfigurarLlavesDataProtection(builder);
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppAuditActorAccessor, AppAuditActorAccessor>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
@@ -531,6 +533,7 @@ public class Program
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+            builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
         }
 
         var app = builder.Build();
@@ -2003,6 +2006,59 @@ public class Program
             }
         });
 
+        // Monitor de Clientes (2026-10-28): el sistema legacy manda cada tanto el estado de sus
+        // controles (envío/recepción de PDV, backup, tareas automáticas). Misma clave que backup-status.
+        // Form: licenciaPrincipal, dbServidor, dbNombre, hostCliente, versionSistema,
+        // fechaHoraCliente (yyyy-MM-dd HH:mm:ss) e items, una línea por control:
+        // TIPO|DESTINO|ULTIMO_OK|ULTIMO_INTENTO|RESULTADO|MENSAJE. Responde "OK <grabados> <ignorados>".
+        app.MapPost("/api/vb6/monitor-estado", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            var reporte = new MonitorReporteRequest
+            {
+                LicenciaPrincipal = form["licenciaPrincipal"].ToString(),
+                DbServidor = form["dbServidor"].ToString(),
+                DbNombre = form["dbNombre"].ToString(),
+                HostCliente = NullIfEmpty(form["hostCliente"]),
+                VersionSistema = NullIfEmpty(form["versionSistema"]),
+                FechaHoraCliente = MonitorClientesService.ParsearFecha(form["fechaHoraCliente"].ToString()),
+                Items = MonitorClientesService.ParsearItems(form["items"].ToString())
+            };
+
+            try
+            {
+                var resultado = await monitorSvc.RegistrarReporteAsync(reporte, ct);
+                return Results.Text($"OK {resultado.ItemsGrabados} {resultado.ItemsIgnorados}", "text/plain; charset=utf-8");
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
         app.MapGet("/api/vb6/cliente-por-licencia", async (
             HttpRequest request,
             ICentralClientesService clientesSvc,
@@ -3220,7 +3276,10 @@ public class Program
                 request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            if (hasSqlContent)
+            // Si está en disco se sirve de ahí (más rápido). Ambos caminos aceptan Range: sin 206, Chrome no
+            // puede leer el final de un .ogg para saber la duración y los audios tardaban más de un minuto
+            // en quedar listos (2026-10-27).
+            if (hasSqlContent && !hasLocalFile)
             {
                 var fechaArchivo = adjunto.FechaHoraModificacion?.ToUniversalTime() ?? DateTime.UtcNow;
                 var lastModifiedSql = new DateTimeOffset(fechaArchivo, TimeSpan.Zero);
@@ -3231,7 +3290,7 @@ public class Program
                     fileDownloadName: servePolicy.FileDownloadName,
                     lastModified: lastModifiedSql,
                     entityTag: entityTagSql,
-                    enableRangeProcessing: false);
+                    enableRangeProcessing: true);
             }
 
             var fileInfo = new FileInfo(adjunto.RutaLocal);
@@ -3581,6 +3640,38 @@ public class Program
             ".txt" => "text/plain",
             _ => "application/octet-stream"
         };
+    }
+
+    /// <summary>
+    /// Llaves de Data Protection de la app (tokens de usuario de AppUserSessionStore, antiforgery). Sin esto,
+    /// en IIS el App Pool no tiene perfil cargado y .NET las deja en memoria: cada reciclado (inactividad,
+    /// noche, deploy) invalidaba todos los tokens y Conversaciones dejaba de cargar imágenes hasta volver a
+    /// entrar (visto en SERVER-ALFACENTRAL y SERVER-ALFAWEB, 2026-10-27). Ruta por defecto App_Data (el deploy
+    /// la conserva); se puede cambiar con DataProtection:KeysPath. Si no se puede escribir, sigue como antes.
+    /// Distinta del key ring del vault de WhatsApp (WhatsAppEmbeddedSignupDataProtection), que es aparte.
+    /// </summary>
+    private static void ConfigurarLlavesDataProtection(WebApplicationBuilder builder)
+    {
+        var ruta = builder.Configuration["DataProtection:KeysPath"];
+        if (string.IsNullOrWhiteSpace(ruta))
+            ruta = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys");
+
+        var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore");
+        try
+        {
+            var carpeta = Directory.CreateDirectory(ruta);
+            var prueba = Path.Combine(carpeta.FullName, ".escritura");
+            File.WriteAllText(prueba, DateTime.UtcNow.ToString("O"));
+            File.Delete(prueba);
+
+            dataProtection.PersistKeysToFileSystem(carpeta);
+            if (OperatingSystem.IsWindows())
+                dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"AlfaCore: no se pudo usar '{ruta}' para las llaves de Data Protection ({ex.Message}); quedan en memoria y los usuarios se desconectan en cada reinicio.");
+        }
     }
 
     internal static bool TryActivateAuthorizedAttachmentBase(
