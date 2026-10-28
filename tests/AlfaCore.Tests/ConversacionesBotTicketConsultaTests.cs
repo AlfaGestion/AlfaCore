@@ -71,6 +71,15 @@ public sealed class ConversacionesBotTicketConsultaTests
     }
 
     [Fact]
+    public void SiPideHablarConUnaPersonaSeLeAvisaUnaVezYQuedaNota()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        Assert.Contains("ExisteNotaInternaHoyAsync(idConversacion, NotaPidioPersona, token)", source, StringComparison.Ordinal);
+        Assert.Contains("Texto = RespuestaPidioPersona", source, StringComparison.Ordinal);
+        Assert.Contains("te paso con alguien del equipo", ConversacionesService.RespuestaPidioPersona, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ElBotNoDerivaNiAbreTicketAnteUnMensajeDePrueba()
     {
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));

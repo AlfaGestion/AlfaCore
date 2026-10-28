@@ -504,7 +504,9 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (resultados.Count == 0)
             // "¿Cuánto sale el envío?" o "¿qué es el código X?" no son artículos: si la información del
             // negocio (texto, bloques o archivos) lo responde, se usa eso en vez de repreguntar (2026-10-06).
-            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si no, respondé tipo ACLARA con UNA sola pregunta pidiendo la marca o la medida del artículo (no derives y no digas que no tenés el precio).";
+            // Con un artículo concreto ("biromes", "resma A4") preguntar la marca no sirve: tampoco va a
+            // aparecer (batería 4264, 2026-10-28). Se deriva sin afirmar que no se vende.
+            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si el cliente nombró un artículo concreto, respondé tipo DERIVA: decile que no lo encontraste en la lista de artículos y que alguien del equipo le confirma si lo pueden conseguir (no digas que no lo venden ni le preguntes la marca). Sólo si la consulta era muy general (\"¿qué tienen?\", \"algo para la oficina\") respondé tipo ACLARA con UNA pregunta sobre qué artículo busca.";
 
         var hayMas = resultados.Count > MaxOpcionesPrecio;
         var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();

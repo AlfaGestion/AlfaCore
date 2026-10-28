@@ -1518,6 +1518,9 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.Contains("INFORMACIÓN DEL NEGOCIO", result);
         Assert.Contains("RESUELVE", result);
         Assert.Contains("ACLARA", result);
+        // Artículo concreto que no está ("biromes"): se deriva sin preguntar la marca ni decir que no se vende.
+        Assert.Contains("DERIVA", result);
+        Assert.Contains("ni le preguntes la marca", result);
     }
 
     // 2026-10-28: la IA decide qué herramienta usar; ninguna palabra del mensaje fuerza una.

@@ -9217,6 +9217,23 @@ public sealed partial class ConversacionesService(
 
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
                 {
+                    // Antes cortaba en silencio: el cliente quedaba sin respuesta y el equipo sin aviso
+                    // ("necesito hablar con una persona", batería 4264 2026-10-28). Se avisa una vez por día.
+                    if (!await ExisteNotaInternaHoyAsync(idConversacion, NotaPidioPersona, token).ConfigureAwait(false)
+                        && config.BotRespondeEnCanal(await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false)))
+                    {
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = idConversacion,
+                            Texto = RespuestaPidioPersona,
+                            MessageType = "TEXT",
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "BOT"
+                        }, token).ConfigureAwait(false);
+                        await AddInternalEventCoreAsync(idConversacion, NotaPidioPersona, null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        if (!esUrgente)
+                            await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
                     return;
                 }
 
@@ -10458,7 +10475,10 @@ public sealed partial class ConversacionesService(
                 || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
     }
 
-    internal const string NotaBotAclaracion = "🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
+    internal const string NotaPidioPersona = "🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
+    internal const string RespuestaPidioPersona = "Perfecto, te paso con alguien del equipo. En breve te responde por acá.";
+
+    internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
     private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
 
     /// <summary>
