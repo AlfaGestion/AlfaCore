@@ -71,6 +71,31 @@ public sealed class ConversacionesBotTicketConsultaTests
     }
 
     [Theory]
+    [InlineData("si", true)]
+    [InlineData("Sí", true)]
+    [InlineData("no", true)]
+    [InlineData("jaja", true)]
+    [InlineData("si, quiero 3 aa", false)]
+    [InlineData("no me anda el sistema", false)]
+    public void RespuestaSuelta_NoEsConsultaParaTicket(string texto, bool suelta)
+    {
+        Assert.Equal(suelta, ConversacionesService.EsRespuestaSuelta(texto));
+        Assert.Equal(!suelta, ConversacionesService.EsConsultaParaTicket(texto));
+    }
+
+    [Fact]
+    public void InformacionConTextosDePlantillaSinCompletar_NoLlegaComoDato()
+    {
+        var info = "- Soporte: [días y horario, ej: lunes a viernes de 9 a 18 hs].\n- WhatsApp: [número].\nManual: [ver acá](https://x.com/m) y código [A1].";
+        var limpio = ConversacionAsistenteService.QuitarTextosSinCompletar(info);
+        Assert.DoesNotContain("lunes a viernes", limpio);
+        Assert.Contains("- Soporte: (sin dato cargado).", limpio);
+        Assert.Contains("- WhatsApp: (sin dato cargado).", limpio);
+        Assert.Contains("[ver acá](https://x.com/m)", limpio);
+        Assert.Contains("[A1]", limpio);
+    }
+
+    [Theory]
     [InlineData("no", true)]
     [InlineData("No.", true)]
     [InlineData("no, te equivocaste de empresa", true)]
@@ -89,8 +114,23 @@ public sealed class ConversacionesBotTicketConsultaTests
     [InlineData("Comunicate con nuestro equipo de ventas.", true)]
     [InlineData("Le paso tu consulta a un asesor y te responde a la brevedad.", false)]
     [InlineData("Lo consulto con el equipo y te responden por acá.", false)]
+    [InlineData("Te recomiendo consultar con un asesor si los precios incluyen IVA.", true)]
     public void Contencion_QuePideContactarAOtro_SeDetecta(string respuesta, bool esperado)
         => Assert.Equal(esperado, ConversacionesService.PideContactarAOtro(respuesta));
+
+    [Theory]
+    [InlineData("No vendo resmas de papel.", true)]
+    [InlineData("No vendemos ese producto.", true)]
+    [InlineData("No lo encontré en la lista de artículos.", false)]
+    public void Respuesta_QueAfirmaQueNoSeVende_SeDetecta(string respuesta, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.AfirmaQueNoSeVende(respuesta));
+
+    [Theory]
+    [InlineData("Le paso tu consulta a un asesor.", true)]
+    [InlineData("Un compañero te responde a la brevedad.", true)]
+    [InlineData("Parece que tu mensaje se cortó. ¿Me contás qué necesitás?", false)]
+    public void Derivacion_MencionaAlEquipo(string respuesta, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.MencionaAlEquipo(respuesta));
 
     [Fact]
     public void SiPideHablarConUnaPersonaSeLeAvisaUnaVezYQuedaNota()

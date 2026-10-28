@@ -379,7 +379,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolConsultarPedidos,
-                Descripcion = "Consulta el estado de Notas de Pedido (pendiente/aprobado/finalizado/anulado). Sin número trae los últimos pedidos; con número busca uno puntual.",
+                Descripcion = "Consulta el estado de Notas de Pedido (pendiente/aprobado/finalizado/anulado). Usala cuando pregunten por su pedido, si ya salió o cuándo se lo entregan (\"¿cómo viene mi pedido?\", \"¿ya salió?\", \"¿cuándo me entregan?\"). Sin número trae los últimos pedidos; con número busca uno puntual.",
                 ParametrosJsonSchema = """
                     {"type":"object","properties":{"numero_pedido":{"type":"string","description":"Número de comprobante puntual a buscar (opcional)"}},"required":[]}
                     """
@@ -506,7 +506,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             // negocio (texto, bloques o archivos) lo responde, se usa eso en vez de repreguntar (2026-10-06).
             // Con un artículo concreto ("biromes", "resma A4") preguntar la marca no sirve: tampoco va a
             // aparecer (batería 4264, 2026-10-28). Se deriva sin afirmar que no se vende.
-            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si el cliente nombró un artículo concreto, respondé tipo DERIVA: decile que no lo encontraste en la lista de artículos y que alguien del equipo le confirma si lo pueden conseguir (no digas que no lo venden ni le preguntes la marca). Sólo si la consulta era muy general (\"¿qué tienen?\", \"algo para la oficina\") respondé tipo ACLARA con UNA pregunta sobre qué artículo busca.";
+            return $"Sin coincidencias para \"{articuloPedido}\" entre los artículos. Si la INFORMACIÓN DEL NEGOCIO responde la consulta (por ejemplo envíos, servicios, promociones, códigos o condiciones), respondé con esa información tipo RESUELVE. Si el cliente nombró un artículo concreto, respondé tipo DERIVA: decile que no lo encontraste en la lista de artículos y que alguien del equipo le confirma si lo pueden conseguir (no digas que no lo venden ni le preguntes la marca). Sólo si la consulta era muy general (\"¿qué tienen?\", \"algo para la oficina\") respondé tipo ACLARA con UNA pregunta sobre qué artículo busca. Si pidió varios artículos y sólo falta este, seguí con los que sí encontraste (precio o pedido) y avisale que este no lo encontraste.";
 
         var hayMas = resultados.Count > MaxOpcionesPrecio;
         var candidatos = resultados.Take(MaxOpcionesPrecio).ToList();

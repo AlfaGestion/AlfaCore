@@ -370,8 +370,20 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         => string.IsNullOrWhiteSpace(model)
            || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
+    internal const string DatoSinCargar = "(sin dato cargado)";
+
+    /// <summary>
+    /// La plantilla de información trae textos guía entre corchetes ("Soporte: [días y horario, ej: lunes
+    /// a viernes de 9 a 18 hs]"). Si la empresa no los completó, el modelo los tomaba como dato (ALFA NET,
+    /// 2026-10-28). Se reemplazan antes de mandarlos; los links Markdown [texto](url) quedan igual.
+    /// </summary>
+    internal static string QuitarTextosSinCompletar(string? informacion)
+        => Regex.Replace(informacion ?? string.Empty, @"\[(?=[^\]\r\n]*\p{L})[^\]\r\n]{3,300}\](?!\()", DatoSinCargar);
+
     internal static string LineaFechaActual(DateTime ahora)
-        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h. "
+        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h "
+           // A las 17:38 gpt-4o-mini contestó "ya pasaron las 18 h" (batería 4264, 2026-10-28).
+           + $"(ya pasaron las {ahora.Hour:00}:00 y todavía no son las {(ahora.Hour + 1) % 24:00}:00; para saber si el negocio está abierto, comparala con su horario). "
            + "Usala para fechas y plazos: no ofrezcas una promoción que ya venció o que todavía no empezó, y calculá horarios de corte y entregas desde ahora.";
 
     /// <summary>
@@ -420,12 +432,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine(cliente);
         }
 
-        var info = (informacion ?? string.Empty).Trim();
+        var info = QuitarTextosSinCompletar(informacion).Trim();
         if (info.Length > 0)
         {
             sb.AppendLine();
             sb.AppendLine("INFORMACIÓN DEL NEGOCIO (tu fuente de verdad; priorizala sobre cualquier suposición):");
             sb.AppendLine(info);
+            if (info.Contains(DatoSinCargar, StringComparison.Ordinal))
+                sb.AppendLine($"Donde dice {DatoSinCargar} la empresa todavía no cargó ese dato: no lo sabés. No lo inventes ni des un ejemplo; si la consulta depende de eso, tipo DERIVA.");
         }
 
         var conocimiento = (conocimientoBase ?? string.Empty).Trim();

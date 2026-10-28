@@ -9666,6 +9666,17 @@ public sealed partial class ConversacionesService(
                 if (EsMensajeSinContenido(texto) && ultimaRespuestaFueAclaracion)
                     return;
 
+                if (EsRespuestaSuelta(texto) && !ultimaRespuestaFueAclaracion
+                    && (result is null || result.Tipo.ToUpperInvariant() is "DERIVA" or "SEGUIMIENTO"))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = true,
+                        Respuesta = "Contame qué necesitás y te ayudo."
+                    };
+                }
+
                 if (EsMensajeSinContenido(texto)
                     && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase)
                     && !string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
@@ -9787,6 +9798,18 @@ public sealed partial class ConversacionesService(
                 // (batería 4264, 2026-10-28). Somos la empresa: la consulta ya le llega al equipo por acá.
                 if (tipo == "DERIVA" && PideContactarAOtro(respuesta))
                     respuesta = ContencionDerivaEstandar;
+                // "No vendo resmas" aunque la regla lo prohíbe: eso sólo lo sabe el equipo (batería 4264).
+                if (!usoFallbackBot && AfirmaQueNoSeVende(respuesta))
+                {
+                    respuesta = RespuestaArticuloNoEncontrado;
+                    tipo = "DERIVA";
+                }
+                // Un "DERIVA" que no menciona a nadie del equipo no deriva ("parece que tu mensaje se cortó,
+                // contame…", "no hay problema"): abría un ticket por nada (batería 4264, 2026-10-28).
+                // Sólo si le pregunta algo: "lo reviso y te aviso" sin nombrar a nadie sigue siendo DERIVA para
+                // que el operador se entere.
+                if (tipo == "DERIVA" && !usoFallbackBot && !MencionaAlEquipo(respuesta) && respuesta.Contains('?'))
+                    tipo = "ACLARA";
 
                 // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
                 // pista en el timeline interno para que el humano que retome sepa que hay
@@ -10487,12 +10510,22 @@ public sealed partial class ConversacionesService(
 
     internal const string ContencionDerivaEstandar = "Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad.";
 
+    internal const string RespuestaArticuloNoEncontrado = "No lo encontré en nuestra lista de artículos. Alguien del equipo te confirma por acá si lo podemos conseguir.";
+
+    internal static bool AfirmaQueNoSeVende(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\bno (vendo|vendemos|manejamos|comercializamos|trabajamos con|trabajamos esa|tenemos ese tipo)\b");
+
+    internal static bool MencionaAlEquipo(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\b(equipo|asesor\w*|companer\w*|persona|tecnic\w*|vendedor\w*|operador\w*|alguien|te respond\w*|te contact\w*|te van a|derivo|derivar|paso tu|paso la|ticket)\b");
+
     internal static bool PideContactarAOtro(string? respuesta)
         => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
-            @"\b(contact(es|a|ate|arte)|comunic(ate|es|arte)|consult(es|ale|arle)|habl(es|a|ale|arle)|llam(es|a|ale|arle)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante)");
+            @"\b(contact(es|a|ate|arte|ar)|comunic(ate|es|arte|arse)|consult(es|ale|arle|ar)|habl(es|a|ale|arle|ar)|llam(es|a|ale|arle|ar)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante)");
 
     internal const string NotaPidioPersona ="🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
-    internal const string RespuestaPidioPersona = "Perfecto, te paso con alguien del equipo. En breve te responde por acá.";
+    internal const string RespuestaPidioPersona = "Entendido, te paso con alguien del equipo. En breve te responde por acá.";
 
     internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
     private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
@@ -11145,7 +11178,7 @@ public sealed partial class ConversacionesService(
                "Lo registró el asistente; el ticket sigue abierto hasta que alguien del equipo lo cierre.";
     }
 
-    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
+    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente con el equipo. Ya les aviso que escribiste para que te respondan por acá a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
     internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
@@ -11365,7 +11398,23 @@ public sealed partial class ConversacionesService(
 
     /// <summary>Sólo se abre un ticket automático cuando el mensaje es una consulta real.</summary>
     internal static bool EsConsultaParaTicket(string texto)
-        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto) && !EsMensajeSinContenido(texto);
+        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto) && !EsMensajeSinContenido(texto)
+           && !EsRespuestaSuelta(texto);
+
+    private static readonly HashSet<string> PalabrasRespuestaSuelta = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "si", "sip", "sii", "no", "nop", "bueno", "claro", "aja", "ja", "jaja", "jajaja", "jeje", "mmm", "ah", "oh"
+    };
+
+    /// <summary>
+    /// "sí", "no", "bueno", "jaja" sin nada más: no es una consulta. Si el modelo la deriva, abría un ticket
+    /// ("hola" + "si", batería 4264 2026-10-28). No reemplaza al modelo cuando la entiende (RESUELVE/ACLARA).
+    /// </summary>
+    internal static bool EsRespuestaSuelta(string texto)
+    {
+        var palabras = Regex.Matches(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[a-z]+").Select(m => m.Value).ToArray();
+        return palabras.Length is > 0 and <= 2 && palabras.All(PalabrasRespuestaSuelta.Contains);
+    }
 
     internal static bool EsMensajeSocial(string texto)
     {
