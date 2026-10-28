@@ -1,0 +1,368 @@
+@page "/admin/monitor-clientes"
+@page "/{idweb}/{idbase:int}/admin/monitor-clientes"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@using AlfaCore.Services
+@implements IDisposable
+@inject IAppUserSessionService AppUserSession
+@inject IMonitorClientesService MonitorSvc
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<PageTitle>Monitor de Clientes | AlfaNet</PageTitle>
+
+@* Administrar → Monitor de Clientes (2026-10-28): estado del sistema legacy de cada cliente. Los datos
+   los manda el Timer de cada cliente (POST /api/vb6/monitor-estado); acá solo se muestran, ya evaluados
+   con los límites de MON_CONTROL_TIPO / MON_CONTROL_CLIENTE (ALFANET2007). *@
+
+<div class="mon-page">
+    <div class="mon">
+        <header class="mon__header">
+            <div>
+                <h2>Monitor de Clientes</h2>
+                <p>Estado del sistema de escritorio de cada cliente: envíos y recepciones de puntos de venta, backup y tareas automáticas. Se actualiza solo cada minuto.</p>
+            </div>
+            @if (_tablero is not null)
+            {
+                <span class="mon__hint">Actualizado @_tablero.FechaHora.ToString("HH:mm:ss", Es)</span>
+            }
+        </header>
+
+        @if (AppUserSession.CurrentUser?.SuperAdmin != true)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo los superadmin pueden ver esta sección." />
+        }
+        else if (!MonitorSvc.Disponible)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Sin conexión central" Message="Esta instalación no tiene configurada la conexión a ALFANET2007 (ConnectionStrings:AlfaGestion)." />
+        }
+        else if (_error is not null && _tablero is null)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar el monitor" Message="@_error" />
+        }
+        else if (_tablero is null)
+        {
+            <p class="mon__hint">Cargando…</p>
+        }
+        else
+        {
+            <section class="mon__kpis" aria-label="Resumen">
+                <button type="button" class="mon__kpi mon__kpi--critico @(_filtroEstado == "critico" ? "is-active" : null)" @onclick='() => _filtroEstado = "critico"'>
+                    <span>Críticos</span>
+                    <strong>@Contar(MonitorEstado.Critico)</strong>
+                    <small>@ClientesCon(MonitorEstado.Critico)</small>
+                </button>
+                <button type="button" class="mon__kpi mon__kpi--aviso @(_filtroEstado == "aviso" ? "is-active" : null)" @onclick='() => _filtroEstado = "aviso"'>
+                    <span>Avisos</span>
+                    <strong>@Contar(MonitorEstado.Aviso)</strong>
+                    <small>@ClientesCon(MonitorEstado.Aviso)</small>
+                </button>
+                <button type="button" class="mon__kpi mon__kpi--sindatos @(_filtroEstado == "sindatos" ? "is-active" : null)" @onclick='() => _filtroEstado = "sindatos"'>
+                    <span>Sin datos</span>
+                    <strong>@Contar(MonitorEstado.SinDatos)</strong>
+                    <small>@ClientesCon(MonitorEstado.SinDatos)</small>
+                </button>
+                <button type="button" class="mon__kpi mon__kpi--ok @(_filtroEstado == "ok" ? "is-active" : null)" @onclick='() => _filtroEstado = "ok"'>
+                    <span>OK</span>
+                    <strong>@Contar(MonitorEstado.Ok)</strong>
+                    <small>@SistemasReportando sistema(s) reportando</small>
+                </button>
+            </section>
+
+            <section class="mon__card">
+                <div class="mon__filtros">
+                    <AlfaSelect Id="mon-estado" Label="Estado" Options="EstadoOptions" Value="@_filtroEstado" ValueChanged="@((string? v) => _filtroEstado = v ?? "problemas")" />
+                    <AlfaSelect Id="mon-prioridad" Label="Prioridad" Options="PrioridadOptions" Value="@_filtroPrioridad" ValueChanged="@((string? v) => _filtroPrioridad = v ?? string.Empty)" />
+                    <AlfaSelect Id="mon-control" Label="Control" Options="ControlOptions" Value="@_filtroControl" ValueChanged="@((string? v) => _filtroControl = v ?? string.Empty)" />
+                    <AlfaInput Id="mon-buscar" Label="Buscar" Placeholder="Cliente, código, base o equipo" Value="@_buscar" ValueChanged="@((string? v) => _buscar = v ?? string.Empty)" />
+                </div>
+
+                @if (_error is not null)
+                {
+                    <p class="mon__hint is-warning">No se pudo actualizar: @_error</p>
+                }
+
+                @if (_tablero.Filas.Count == 0)
+                {
+                    <AlfaEmptyState Title="Todavía no reporta ningún sistema" Message="Los datos aparecen cuando el Timer de un cliente manda su primer reporte a AlfaCore." />
+                }
+                else if (FilasFiltradas.Count == 0)
+                {
+                    <AlfaEmptyState Title="@(_filtroEstado == "problemas" ? "Sin problemas" : "Sin resultados")"
+                                    Message="@(_filtroEstado == "problemas" ? "Ningún control está en aviso, crítico o sin datos con estos filtros." : "Probá con otros filtros.")" />
+                }
+                else
+                {
+                    <div class="mon__table-wrap">
+                        <table class="mon__table">
+                            <thead>
+                                <tr>
+                                    <th>Estado</th>
+                                    <th>Cliente</th>
+                                    <th>Base</th>
+                                    <th>Control</th>
+                                    <th>Último OK</th>
+                                    <th>Detalle</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var f in FilasFiltradas)
+                                {
+                                    <tr class="mon__row mon__row--@EstadoClase(f.Estado)">
+                                        <td class="is-nowrap"><AlfaTag Tone="@EstadoTone(f.Estado)">@EstadoTexto(f.Estado)</AlfaTag></td>
+                                        <td>
+                                            <div class="mon__cliente">
+                                                @if (!string.IsNullOrEmpty(f.PrioridadCodigo))
+                                                {
+                                                    <span class="mon__prio mon__prio--@PrioridadClase(f.PrioridadCodigo)" title="@($"Prioridad P{f.PrioridadCodigo} · {f.PrioridadDescripcion}")">P@(f.PrioridadCodigo)</span>
+                                                }
+                                                <span>
+                                                    <strong>@f.RazonSocial</strong>
+                                                    <small>@f.ClienteCodigo</small>
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span>@f.DbNombre</span>
+                                            <small>@f.DbServidor@(string.IsNullOrWhiteSpace(f.HostCliente) ? string.Empty : $" · {f.HostCliente}")</small>
+                                        </td>
+                                        <td>
+                                            <span>@f.TipoNombre</span>
+                                            @if (!string.IsNullOrWhiteSpace(f.Destino))
+                                            {
+                                                <small>@f.Destino</small>
+                                            }
+                                        </td>
+                                        <td class="is-nowrap">
+                                            @if (f.UltimoOk is { } ok)
+                                            {
+                                                <span>@ok.ToString("dd/MM HH:mm", Es)</span>
+                                            }
+                                            else
+                                            {
+                                                <span>—</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span>@f.Motivo</span>
+                                            @if (!string.IsNullOrWhiteSpace(f.Mensaje))
+                                            {
+                                                <small>@f.Mensaje</small>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="alfa-data-view-footer">
+                        <span class="alfa-data-view-footer__summary">@(FilasFiltradas.Count == 1 ? "1 control" : $"{FilasFiltradas.Count} controles")</span>
+                    </footer>
+                }
+            </section>
+
+            <details class="mon__help">
+                <summary><i class="bi bi-question-circle" aria-hidden="true"></i> Cómo funciona</summary>
+                <ol>
+                    <li>El Timer de cada cliente manda cada tanto a AlfaCore el último OK de cada control. Si un sistema deja de mandar datos (servidor apagado, Timer cerrado, sin internet), su fila <strong>Reporte del sistema</strong> pasa a aviso o crítico y el resto de sus controles quedan <strong>sin datos</strong>.</li>
+                    <li>Límites por defecto:
+                        @foreach (var t in _tablero.Tipos.Where(t => t.Activo))
+                        {
+                            <span class="mon__limite"><strong>@t.Nombre</strong>: @LimiteTexto(t)</span>
+                        }
+                    </li>
+                    <li>Un cliente puede tener límites propios o un control desactivado en <code>MON_CONTROL_CLIENTE</code> (ALFANET2007).</li>
+                    <li>La prioridad P1 a P4 es la clasificación del cliente (la misma de Conversaciones).</li>
+                </ol>
+            </details>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private static readonly TimeSpan Refresco = TimeSpan.FromMinutes(1);
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private MonitorTableroDto? _tablero;
+    private string? _error;
+    private string _filtroEstado = "problemas";
+    private string _filtroPrioridad = string.Empty;
+    private string _filtroControl = string.Empty;
+    private string _buscar = string.Empty;
+    private System.Threading.Timer? _timer;
+    private bool _cargando;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadoOptions =
+    [
+        new("problemas", "Con problemas"),
+        new("critico", "Críticos"),
+        new("aviso", "Avisos"),
+        new("sindatos", "Sin datos"),
+        new("ok", "OK"),
+        new("todos", "Todos")
+    ];
+
+    private IReadOnlyList<AlfaSelectOption> PrioridadOptions
+        => new[] { new AlfaSelectOption(string.Empty, "Todas"), new AlfaSelectOption("1,2", "P1 y P2") }
+            .Concat((_tablero?.Filas ?? [])
+                .Where(f => !string.IsNullOrEmpty(f.PrioridadCodigo))
+                .GroupBy(f => f.PrioridadCodigo)
+                .OrderBy(g => int.TryParse(g.Key, out var n) ? n : int.MaxValue)
+                .Select(g => new AlfaSelectOption(g.Key, $"P{g.Key} · {g.First().PrioridadDescripcion}")))
+            .ToList();
+
+    private IReadOnlyList<AlfaSelectOption> ControlOptions
+        => new[] { new AlfaSelectOption(string.Empty, "Todos") }
+            .Concat((_tablero?.Tipos ?? []).Where(t => t.Activo).Select(t => new AlfaSelectOption(t.Codigo, t.Nombre)))
+            .ToList();
+
+    private IReadOnlyList<MonitorFilaDto> FilasFiltradas
+    {
+        get
+        {
+            IEnumerable<MonitorFilaDto> q = _tablero?.Filas ?? [];
+            q = _filtroEstado switch
+            {
+                "critico" => q.Where(f => f.Estado == MonitorEstado.Critico),
+                "aviso" => q.Where(f => f.Estado == MonitorEstado.Aviso),
+                "sindatos" => q.Where(f => f.Estado == MonitorEstado.SinDatos),
+                "ok" => q.Where(f => f.Estado == MonitorEstado.Ok),
+                "todos" => q,
+                _ => q.Where(f => f.Estado != MonitorEstado.Ok)
+            };
+            if (!string.IsNullOrEmpty(_filtroPrioridad))
+            {
+                var prioridades = _filtroPrioridad.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                q = q.Where(f => prioridades.Contains(f.PrioridadCodigo, StringComparer.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrEmpty(_filtroControl))
+                q = q.Where(f => string.Equals(f.TipoCodigo, _filtroControl, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(_buscar))
+            {
+                var t = _buscar.Trim();
+                q = q.Where(f => Contiene(f.RazonSocial, t) || Contiene(f.ClienteCodigo, t) || Contiene(f.DbNombre, t)
+                    || Contiene(f.DbServidor, t) || Contiene(f.HostCliente, t) || Contiene(f.Destino, t));
+            }
+            return q.ToList();
+        }
+    }
+
+    private int SistemasReportando
+        => (_tablero?.Filas ?? []).Where(f => f.TipoCodigo == "REPORTE" && f.Estado == MonitorEstado.Ok).Select(f => f.IdOrigen).Distinct().Count();
+
+    private int Contar(MonitorEstado estado) => (_tablero?.Filas ?? []).Count(f => f.Estado == estado);
+
+    private string ClientesCon(MonitorEstado estado)
+    {
+        var n = (_tablero?.Filas ?? []).Where(f => f.Estado == estado).Select(f => f.ClienteCodigo).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        return n == 1 ? "1 cliente" : $"{n} clientes";
+    }
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AppUserSession.CurrentUser?.SuperAdmin != true || !MonitorSvc.Disponible)
+            return;
+
+        await CargarAsync();
+        _timer = new System.Threading.Timer(_ => _ = InvokeAsync(async () =>
+        {
+            await CargarAsync();
+            StateHasChanged();
+        }), null, Refresco, Refresco);
+    }
+
+    private async Task CargarAsync()
+    {
+        if (_cargando)
+            return;
+        _cargando = true;
+        try
+        {
+            _tablero = await MonitorSvc.GetTableroAsync();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AppUserFacingException uf ? uf.UserMessage : ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private static bool Contiene(string? valor, string termino)
+        => !string.IsNullOrEmpty(valor) && valor.Contains(termino, StringComparison.CurrentCultureIgnoreCase);
+
+    private static AlfaTagTone EstadoTone(MonitorEstado e) => e switch
+    {
+        MonitorEstado.Critico => AlfaTagTone.Danger,
+        MonitorEstado.Aviso => AlfaTagTone.Warning,
+        MonitorEstado.Ok => AlfaTagTone.Success,
+        _ => AlfaTagTone.Neutral
+    };
+
+    private static string EstadoTexto(MonitorEstado e) => e switch
+    {
+        MonitorEstado.Critico => "Crítico",
+        MonitorEstado.Aviso => "Aviso",
+        MonitorEstado.SinDatos => "Sin datos",
+        _ => "OK"
+    };
+
+    private static string EstadoClase(MonitorEstado e) => e switch
+    {
+        MonitorEstado.Critico => "critico",
+        MonitorEstado.Aviso => "aviso",
+        MonitorEstado.SinDatos => "sindatos",
+        _ => "ok"
+    };
+
+    private static string PrioridadClase(string codigo)
+        => codigo is "1" or "2" or "3" or "4" ? codigo : "otra";
+
+    private static string LimiteTexto(MonitorTipoControlDto t)
+    {
+        if (string.Equals(t.Medida, "RESULTADO", StringComparison.OrdinalIgnoreCase))
+            return "error = crítico, advertencia = aviso";
+        var partes = new List<string>();
+        if (t.AvisoMinutos is > 0)
+            partes.Add($"aviso a las {MonitorDuracion(t.AvisoMinutos.Value)}");
+        if (t.CriticoMinutos is > 0)
+            partes.Add($"crítico a las {MonitorDuracion(t.CriticoMinutos.Value)}");
+        return partes.Count == 0 ? "sin límite" : string.Join(", ", partes);
+    }
+
+    private static string MonitorDuracion(int minutos)
+        => minutos % 60 == 0 ? $"{minutos / 60} h" : minutos < 60 ? $"{minutos} min" : $"{minutos / 60} h {minutos % 60} min";
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        Title = "Monitor de Clientes",
+        Breadcrumb = ["Administrar", "Monitor de Clientes"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "admin",
+        TopNavigationItems = ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "monitor-clientes"),
+        Actions =
+        [
+            new PageHeaderAction { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => InvokeAsync(async () => { await CargarAsync(); StateHasChanged(); }) }
+        ]
+    });
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+}

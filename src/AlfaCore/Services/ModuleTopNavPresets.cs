@@ -230,6 +230,7 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("clientes", "Clientes", "/admin"),
+            ("monitor-clientes", "Monitor de Clientes", "/admin/monitor-clientes"),
             ("modulos", "Módulos", "/admin/modulos"),
             ("cargos", "Cargos", "/admin/cargos"),
             ("pagos", "Pagos", "/admin/pagos"),
