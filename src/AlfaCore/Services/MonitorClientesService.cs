@@ -210,20 +210,238 @@ public sealed class MonitorClientesService(
             FROM dbo.MON_ESTADO e
             INNER JOIN dbo.MON_ORIGEN o ON o.IdOrigen = e.IdOrigen
             WHERE o.Desactivado = 0;
+
+            SELECT IdOrigen, LTRIM(RTRIM(TipoCodigo)) AS TipoCodigo, Destino, TomadoPor, TomadoFecha, SilenciadoHasta, SilenciadoPor, Nota
+            FROM dbo.MON_SEGUIMIENTO;
             """, cancellationToken: ct)).ConfigureAwait(false);
 
         var tipos = (await multi.ReadAsync<MonitorTipoControlDto>().ConfigureAwait(false)).ToList();
         var limites = (await multi.ReadAsync<LimiteCliente>().ConfigureAwait(false)).ToList();
         var origenes = (await multi.ReadAsync<OrigenFila>().ConfigureAwait(false)).ToList();
         var estados = (await multi.ReadAsync<EstadoFila>().ConfigureAwait(false)).ToList();
+        var seguimientos = (await multi.ReadAsync<SeguimientoFila>().ConfigureAwait(false)).ToList();
 
         var ahora = DateTime.Now;
+        var filas = Evaluar(ahora, tipos, limites, origenes, estados);
+        AplicarSeguimiento(filas, seguimientos, ahora);
         return new MonitorTableroDto
         {
             FechaHora = ahora,
             Tipos = tipos.OrderBy(t => t.Orden).ToList(),
-            Filas = Evaluar(ahora, tipos, limites, origenes, estados)
+            Filas = filas
         };
+    }
+
+    public async Task GuardarSeguimientoAsync(MonitorSeguimientoRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.IdOrigen <= 0 || string.IsNullOrWhiteSpace(request.TipoCodigo))
+            throw new InvalidOperationException("Falta la fila del monitor.");
+        var usuario = Recortar(request.Usuario, 80);
+        if (usuario.Length == 0)
+            throw new InvalidOperationException("Falta el usuario.");
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF NOT EXISTS (SELECT 1 FROM dbo.MON_SEGUIMIENTO WITH (UPDLOCK, HOLDLOCK)
+                           WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino)
+                INSERT INTO dbo.MON_SEGUIMIENTO (IdOrigen, TipoCodigo, Destino, UsuarioModificacion)
+                VALUES (@IdOrigen, @TipoCodigo, @Destino, @Usuario);
+
+            UPDATE dbo.MON_SEGUIMIENTO
+            SET TomadoPor = CASE WHEN @Tomar IS NULL THEN TomadoPor WHEN @Tomar = 1 THEN @Usuario ELSE NULL END,
+                TomadoFecha = CASE WHEN @Tomar IS NULL THEN TomadoFecha WHEN @Tomar = 1 THEN GETDATE() ELSE NULL END,
+                SilenciadoHasta = CASE WHEN @CambiarSilencio = 1 THEN @SilenciarHasta ELSE SilenciadoHasta END,
+                SilenciadoPor = CASE WHEN @CambiarSilencio = 1 THEN CASE WHEN @SilenciarHasta IS NULL THEN NULL ELSE @Usuario END ELSE SilenciadoPor END,
+                Nota = CASE WHEN @CambiarNota = 1 THEN @Nota ELSE Nota END,
+                FechaModificacion = GETDATE(),
+                UsuarioModificacion = @Usuario
+            WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino;
+
+            DELETE FROM dbo.MON_SEGUIMIENTO
+            WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino
+              AND TomadoPor IS NULL AND Nota IS NULL AND (SilenciadoHasta IS NULL OR SilenciadoHasta <= GETDATE());
+            """,
+            new
+            {
+                request.IdOrigen,
+                TipoCodigo = Recortar(request.TipoCodigo, 30).ToUpperInvariant(),
+                Destino = Recortar(request.Destino, 120),
+                Usuario = usuario,
+                request.Tomar,
+                CambiarSilencio = request.CambiarSilencio,
+                request.SilenciarHasta,
+                CambiarNota = request.CambiarNota,
+                Nota = NullSiVacio(Recortar(request.Nota, 500))
+            }, cancellationToken: ct)).ConfigureAwait(false);
+
+        await appEvents.LogAuditAsync("MonitorClientes", "Seguimiento", "MON_SEGUIMIENTO",
+            MonitorClave.Armar(request.IdOrigen, request.TipoCodigo, request.Destino), "Seguimiento del monitor actualizado.",
+            new { request.Tomar, request.CambiarSilencio, request.SilenciarHasta, request.CambiarNota, Usuario = usuario }, ct).ConfigureAwait(false);
+    }
+
+    public async Task<int> LimpiarSeguimientosAsync(MonitorTableroDto tablero, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(tablero);
+        var conProblema = tablero.Filas
+            .Where(f => f.Estado != MonitorEstado.Ok)
+            .Select(f => f.Clave)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        var seguimientos = (await cn.QueryAsync<SeguimientoFila>(new CommandDefinition(
+            "SELECT IdOrigen, LTRIM(RTRIM(TipoCodigo)) AS TipoCodigo, Destino, TomadoPor, TomadoFecha, SilenciadoHasta, SilenciadoPor, Nota FROM dbo.MON_SEGUIMIENTO;",
+            cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
+        var tocados = 0;
+        foreach (var s in seguimientos)
+        {
+            var resuelta = !conProblema.Contains(MonitorClave.Armar(s.IdOrigen, s.TipoCodigo, s.Destino));
+            var silencioVencido = s.SilenciadoHasta is null || s.SilenciadoHasta <= tablero.FechaHora;
+            var parametros = new { s.IdOrigen, s.TipoCodigo, s.Destino };
+
+            if (resuelta && silencioVencido)
+            {
+                tocados += await cn.ExecuteAsync(new CommandDefinition(
+                    "DELETE FROM dbo.MON_SEGUIMIENTO WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino;",
+                    parametros, cancellationToken: ct)).ConfigureAwait(false);
+            }
+            else if (resuelta && (s.TomadoPor is not null || s.Nota is not null))
+            {
+                tocados += await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.MON_SEGUIMIENTO SET TomadoPor = NULL, TomadoFecha = NULL, Nota = NULL, FechaModificacion = GETDATE()
+                    WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino;
+                    """, parametros, cancellationToken: ct)).ConfigureAwait(false);
+            }
+            else if (!resuelta && silencioVencido && s.SilenciadoHasta is not null && s.TomadoPor is null && s.Nota is null)
+            {
+                tocados += await cn.ExecuteAsync(new CommandDefinition(
+                    "DELETE FROM dbo.MON_SEGUIMIENTO WHERE IdOrigen = @IdOrigen AND TipoCodigo = @TipoCodigo AND Destino = @Destino;",
+                    parametros, cancellationToken: ct)).ConfigureAwait(false);
+            }
+        }
+
+        return tocados;
+    }
+
+    public async Task<MonitorAvisoConfigDto> GetAvisoConfigAsync(CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        var valores = (await cn.QueryAsync<(string Clave, string? Valor)>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(Clave)), Valor FROM dbo.MON_CONFIG;", cancellationToken: ct)).ConfigureAwait(false))
+            .ToDictionary(x => x.Clave, x => (x.Valor ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase);
+
+        string V(string clave) => valores.TryGetValue(clave, out var v) ? v : string.Empty;
+
+        return new MonitorAvisoConfigDto
+        {
+            Activo = !string.Equals(V("AVISO_ACTIVO"), "NO", StringComparison.OrdinalIgnoreCase),
+            Prioridades = V("AVISO_PRIORIDADES"),
+            RepetirMinutos = int.TryParse(V("AVISO_REPETIR_MINUTOS"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r) && r >= 0 ? r : 120,
+            UsuariosPush = V("AVISO_USUARIOS_PUSH"),
+            IdHilo = long.TryParse(V("AVISO_ID_HILO"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var h) && h > 0 ? h : null,
+            UltimoEnvio = ParsearFecha(V("AVISO_ULTIMO_ENVIO")),
+            UltimaFirma = V("AVISO_ULTIMA_FIRMA"),
+            Forzar = V("AVISO_FORZAR") == "1"
+        };
+    }
+
+    public async Task GuardarAvisoConfigAsync(MonitorAvisoConfigDto config, string usuario, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var prioridades = string.Join(",", config.PrioridadesLista.Select(p => Recortar(p, 10)).Distinct(StringComparer.OrdinalIgnoreCase));
+        var usuarios = string.Join(",", config.UsuariosPushLista.Select(u => Recortar(u, 80)).Distinct(StringComparer.OrdinalIgnoreCase));
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        await GrabarConfigAsync(cn, new Dictionary<string, string>
+        {
+            ["AVISO_ACTIVO"] = config.Activo ? "SI" : "NO",
+            ["AVISO_PRIORIDADES"] = prioridades,
+            ["AVISO_REPETIR_MINUTOS"] = Math.Clamp(config.RepetirMinutos, 0, 10080).ToString(CultureInfo.InvariantCulture),
+            ["AVISO_USUARIOS_PUSH"] = usuarios
+        }, Recortar(usuario, 80), ct).ConfigureAwait(false);
+
+        await appEvents.LogAuditAsync("MonitorClientes", "AvisoConfig", "MON_CONFIG", "AVISO",
+            "Configuración de avisos del monitor actualizada.",
+            new { config.Activo, Prioridades = prioridades, config.RepetirMinutos, UsuariosPush = usuarios, Usuario = usuario }, ct).ConfigureAwait(false);
+    }
+
+    public async Task GuardarAvisoEstadoAsync(MonitorAvisoConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        await GrabarConfigAsync(cn, new Dictionary<string, string>
+        {
+            ["AVISO_ID_HILO"] = config.IdHilo?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            ["AVISO_ULTIMO_ENVIO"] = config.UltimoEnvio?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty,
+            ["AVISO_ULTIMA_FIRMA"] = config.UltimaFirma.Length > 1000 ? config.UltimaFirma[..1000] : config.UltimaFirma,
+            ["AVISO_FORZAR"] = config.Forzar ? "1" : "0"
+        }, "MONITOR", ct).ConfigureAwait(false);
+    }
+
+    public async Task SolicitarAvisoAhoraAsync(string usuario, CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        await GrabarConfigAsync(cn, new Dictionary<string, string> { ["AVISO_FORZAR"] = "1" }, Recortar(usuario, 80), ct).ConfigureAwait(false);
+    }
+
+    private static async Task GrabarConfigAsync(SqlConnection cn, IReadOnlyDictionary<string, string> valores, string usuario, CancellationToken ct)
+    {
+        foreach (var (clave, valor) in valores)
+        {
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.MON_CONFIG SET Valor = @Valor, FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario WHERE Clave = @Clave;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.MON_CONFIG (Clave, Valor, UsuarioModificacion) VALUES (@Clave, @Valor, @Usuario);
+                """, new { Clave = clave, Valor = valor, Usuario = usuario }, cancellationToken: ct)).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<SqlConnection> AbrirAsync(CancellationToken ct)
+    {
+        if (!Disponible)
+            throw new InvalidOperationException("Esta instalación no tiene configurada la conexión AlfaGestion.");
+        var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await AsegurarEsquemaAsync(cn, ct).ConfigureAwait(false);
+        return cn;
+    }
+
+    internal sealed class SeguimientoFila
+    {
+        public int IdOrigen { get; init; }
+        public string TipoCodigo { get; init; } = string.Empty;
+        public string Destino { get; init; } = string.Empty;
+        public string? TomadoPor { get; init; }
+        public DateTime? TomadoFecha { get; init; }
+        public DateTime? SilenciadoHasta { get; init; }
+        public string? SilenciadoPor { get; init; }
+        public string? Nota { get; init; }
+    }
+
+    internal static void AplicarSeguimiento(IReadOnlyList<MonitorFilaDto> filas, IReadOnlyList<SeguimientoFila> seguimientos, DateTime ahora)
+    {
+        var porClave = seguimientos
+            .GroupBy(s => MonitorClave.Armar(s.IdOrigen, s.TipoCodigo, s.Destino), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var f in filas)
+        {
+            if (!porClave.TryGetValue(f.Clave, out var s))
+                continue;
+            f.TomadoPor = NullSiVacio(s.TomadoPor?.Trim());
+            f.TomadoFecha = f.TomadoPor is null ? null : s.TomadoFecha;
+            f.Nota = NullSiVacio(s.Nota?.Trim());
+            if (s.SilenciadoHasta is { } hasta && hasta > ahora)
+            {
+                f.Silenciado = true;
+                f.SilenciadoHasta = hasta;
+                f.SilenciadoPor = s.SilenciadoPor;
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

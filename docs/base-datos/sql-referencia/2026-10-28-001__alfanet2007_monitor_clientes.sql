@@ -6,6 +6,8 @@
 -- MON_CONTROL_CLIENTE: límites propios de un cliente (NULL = usa el del tipo) o control desactivado.
 -- MON_ORIGEN: cada sistema que reporta (cliente + servidor SQL + base), con la hora del último reporte.
 -- MON_ESTADO: último dato de cada control de cada origen (una fila por tipo + destino, ej. un PDV).
+-- MON_SEGUIMIENTO: quién tomó una alerta, hasta cuándo está silenciada y una nota (fase 2).
+-- MON_CONFIG: configuración de los avisos al chat de soporte (clave / valor).
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
@@ -91,5 +93,50 @@ BEGIN
         CONSTRAINT FK_MON_ESTADO_ORIGEN FOREIGN KEY (IdOrigen) REFERENCES dbo.MON_ORIGEN (IdOrigen) ON DELETE CASCADE
     );
 END;
+
+IF OBJECT_ID(N'dbo.MON_SEGUIMIENTO', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.MON_SEGUIMIENTO
+    (
+        IdOrigen int NOT NULL,
+        TipoCodigo nvarchar(30) NOT NULL,
+        Destino nvarchar(120) NOT NULL CONSTRAINT DF_MON_SEGUIMIENTO_Destino DEFAULT (N''),
+        TomadoPor nvarchar(80) NULL,
+        TomadoFecha datetime NULL,
+        SilenciadoHasta datetime NULL,
+        SilenciadoPor nvarchar(80) NULL,
+        Nota nvarchar(500) NULL,
+        FechaModificacion datetime NOT NULL CONSTRAINT DF_MON_SEGUIMIENTO_Fecha DEFAULT (GETDATE()),
+        UsuarioModificacion nvarchar(80) NULL,
+        CONSTRAINT PK_MON_SEGUIMIENTO PRIMARY KEY CLUSTERED (IdOrigen, TipoCodigo, Destino),
+        CONSTRAINT FK_MON_SEGUIMIENTO_ORIGEN FOREIGN KEY (IdOrigen) REFERENCES dbo.MON_ORIGEN (IdOrigen) ON DELETE CASCADE
+    );
+END;
+
+IF OBJECT_ID(N'dbo.MON_CONFIG', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.MON_CONFIG
+    (
+        Clave nvarchar(50) NOT NULL,
+        Valor nvarchar(1000) NULL,
+        FechaModificacion datetime NOT NULL CONSTRAINT DF_MON_CONFIG_Fecha DEFAULT (GETDATE()),
+        UsuarioModificacion nvarchar(80) NULL,
+        CONSTRAINT PK_MON_CONFIG PRIMARY KEY CLUSTERED (Clave)
+    );
+END;
+
+INSERT INTO dbo.MON_CONFIG (Clave, Valor)
+SELECT v.Clave, v.Valor
+FROM (VALUES
+    (N'AVISO_ACTIVO', N'SI'),
+    (N'AVISO_PRIORIDADES', N'1,2'),
+    (N'AVISO_REPETIR_MINUTOS', N'120'),
+    (N'AVISO_USUARIOS_PUSH', N''),
+    (N'AVISO_ID_HILO', N''),
+    (N'AVISO_ULTIMO_ENVIO', N''),
+    (N'AVISO_ULTIMA_FIRMA', N''),
+    (N'AVISO_FORZAR', N'0')
+) AS v (Clave, Valor)
+WHERE NOT EXISTS (SELECT 1 FROM dbo.MON_CONFIG c WHERE c.Clave = v.Clave);
 
 COMMIT TRANSACTION;

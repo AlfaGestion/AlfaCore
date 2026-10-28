@@ -80,6 +80,27 @@ public sealed class MonitorFilaDto
 
     /// <summary>Por qué quedó en ese estado, en palabras (ej. "Sin envío hace 3 h 20 min; límite 3 h").</summary>
     public string Motivo { get; init; } = string.Empty;
+
+    // Seguimiento (MON_SEGUIMIENTO). Se completan después de evaluar.
+    public string? TomadoPor { get; set; }
+    public DateTime? TomadoFecha { get; set; }
+    public DateTime? SilenciadoHasta { get; set; }
+    public string? SilenciadoPor { get; set; }
+    public string? Nota { get; set; }
+
+    /// <summary>True si está silenciada en el momento en que se armó el tablero.</summary>
+    public bool Silenciado { get; set; }
+
+    public bool Tomado => !string.IsNullOrWhiteSpace(TomadoPor);
+
+    /// <summary>Identifica la fila entre reportes: origen + tipo + destino.</summary>
+    public string Clave => MonitorClave.Armar(IdOrigen, TipoCodigo, Destino);
+}
+
+public static class MonitorClave
+{
+    public static string Armar(int idOrigen, string tipoCodigo, string? destino)
+        => $"{idOrigen}|{(tipoCodigo ?? string.Empty).Trim().ToUpperInvariant()}|{(destino ?? string.Empty).Trim().ToUpperInvariant()}";
 }
 
 public sealed class MonitorTableroDto
@@ -87,4 +108,58 @@ public sealed class MonitorTableroDto
     public DateTime FechaHora { get; init; }
     public IReadOnlyList<MonitorFilaDto> Filas { get; init; } = [];
     public IReadOnlyList<MonitorTipoControlDto> Tipos { get; init; } = [];
+}
+
+/// <summary>Cambio de seguimiento de una fila desde el tablero.</summary>
+public sealed class MonitorSeguimientoRequest
+{
+    public int IdOrigen { get; init; }
+    public string TipoCodigo { get; init; } = string.Empty;
+    public string Destino { get; init; } = string.Empty;
+
+    /// <summary>Usuario que hace el cambio.</summary>
+    public string Usuario { get; init; } = string.Empty;
+
+    /// <summary>True = lo toma el usuario; false = queda libre; null = no cambia.</summary>
+    public bool? Tomar { get; init; }
+
+    /// <summary>Si <see cref="CambiarSilencio"/> es true: hasta cuándo queda silenciada (null = quita el silencio).</summary>
+    public DateTime? SilenciarHasta { get; init; }
+    public bool CambiarSilencio { get; init; }
+
+    /// <summary>Si <see cref="CambiarNota"/> es true: la nota nueva (vacía = la borra).</summary>
+    public string? Nota { get; init; }
+    public bool CambiarNota { get; init; }
+}
+
+/// <summary>Configuración de los avisos al chat de soporte (MON_CONFIG).</summary>
+public sealed class MonitorAvisoConfigDto
+{
+    public bool Activo { get; set; } = true;
+
+    /// <summary>Códigos de prioridad que avisan, separados por coma (ej. "1,2"). Vacío = todas.</summary>
+    public string Prioridades { get; set; } = "1,2";
+
+    /// <summary>Cada cuánto se repite el aviso si siguen las mismas alertas. 0 = solo cuando aparece una nueva.</summary>
+    public int RepetirMinutos { get; set; } = 120;
+
+    /// <summary>Usuarios que además reciben un push, separados por coma.</summary>
+    public string UsuariosPush { get; set; } = string.Empty;
+
+    /// <summary>Hilo interno de Conversaciones (ALFANET2007) donde se publican los avisos. Se crea solo.</summary>
+    public long? IdHilo { get; set; }
+
+    public DateTime? UltimoEnvio { get; set; }
+
+    /// <summary>Claves de las alertas que había en el último ciclo, ordenadas y separadas por ";".</summary>
+    public string UltimaFirma { get; set; } = string.Empty;
+
+    /// <summary>Pedido de "Enviar aviso ahora" desde el tablero; el proceso lo atiende en el próximo minuto.</summary>
+    public bool Forzar { get; set; }
+
+    public IReadOnlyList<string> PrioridadesLista
+        => Prioridades.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public IReadOnlyList<string> UsuariosPushLista
+        => UsuariosPush.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

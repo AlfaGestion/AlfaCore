@@ -533,6 +533,7 @@ public class Program
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+            builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
         }
 
         var app = builder.Build();

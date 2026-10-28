@@ -2,7 +2,7 @@
 
 Administrar → Monitor de Clientes (`/admin/monitor-clientes`, solo superadmin). Muestra el estado del
 sistema de escritorio (Alfa Gestión VB6) de cada cliente: envíos y recepciones de puntos de venta,
-backup y tareas automáticas. Creado el 28/10/2026 (fase 1: solo tablero, sin avisos por chat).
+backup y tareas automáticas. Creado el 28/10/2026 (fase 1: tablero; fase 2: seguimiento y avisos al chat de soporte).
 
 ## Cómo funciona
 
@@ -78,17 +78,45 @@ bases de clientes.
 - `MON_ORIGEN`: cada sistema que reporta (cliente + servidor + base), con su último reporte.
   `Desactivado = 1` lo saca del tablero.
 - `MON_ESTADO`: último dato de cada control (origen + tipo + destino).
+- `MON_SEGUIMIENTO` (fase 2): quién tomó una fila, hasta cuándo está silenciada y una nota. Misma clave
+  que `MON_ESTADO` (también sirve para la fila calculada `REPORTE`, con destino vacío).
+- `MON_CONFIG` (fase 2): configuración y estado de los avisos (`AVISO_*`, ver abajo).
+
+## Seguimiento y avisos al chat de soporte (fase 2, 28/10/2026)
+
+Cada fila con problema tiene un menú: **Lo tomo** / **Soltar**, **Silenciar** (1 h, 4 h, hasta las 8,
+24 h, 7 días), **Quitar silencio** y **Nota**. Cuando el control vuelve a OK, la fila queda libre sola (se
+borran el tomado y la nota); el silencio sigue hasta que vence. El filtro "Críticos y avisos sin tomar"
+muestra lo que nadie está mirando.
+
+`MonitorClientesAvisosHostedService` (cada 5 minutos; al minuto si se tocó **Enviar aviso ahora**):
+
+1. Evalúa el tablero y libera el seguimiento de lo que se normalizó.
+2. Pendientes = filas en **crítico**, de clientes con prioridad `AVISO_PRIORIDADES` (por defecto `1,2`),
+   sin tomar y sin silenciar. Los avisos (amarillo) no van al chat.
+3. Publica **un solo mensaje** con todas las pendientes en el hilo interno **Monitor de Clientes** de
+   Conversaciones de ALFANET2007 (lo crea solo; su id queda en `AVISO_ID_HILO`), cuando:
+   - aparece una pendiente nueva (se marca "(nueva)");
+   - siguen las mismas y pasaron `AVISO_REPETIR_MINUTOS` (por defecto 120; 0 = no repetir);
+   - se vaciaron las que se habían avisado (mensaje "se normalizaron").
+4. Si hay usuarios en `AVISO_USUARIOS_PUSH`, les manda además un push que abre el tablero (el mensaje en un
+   hilo interno no genera push por sí mismo).
+
+Se configura desde el tablero (sección "Avisos al chat de soporte"). `AVISO_ACTIVO = NO` apaga los
+avisos automáticos (el botón "Enviar aviso ahora" igual funciona). Corre sin sesión, contra la conexión
+`AlfaGestion`; se apaga con `ProcesosSegundoPlano:Deshabilitados` y en SaaS solo corre en el servidor que
+tiene los workers (`IWorkerAssignmentService`). Las reglas están en `MonitorClientesAvisos` (sin base de
+datos, probadas en `MonitorClientesAvisosTests`).
 
 ## Código
 
 - `Services/MonitorClientesService.cs` (+ interfaz), `Services/MonitorClientesSchema.cs`,
   `Models/MonitorClientesModels.cs`.
+- `Services/MonitorClientesAvisos.cs` (reglas del aviso) y `Services/MonitorClientesAvisosHostedService.cs`.
 - `Components/Pages/AdminMonitorClientes.razor` (+ `.css`); entrada en `ModuleTopNavPresets.BuildAdministrar`.
 - Endpoint en `Program.cs`, junto a `/api/vb6/backup-status`.
 
 ## Pendiente (fases siguientes)
 
-- Incidentes ("lo tomo", silenciar hasta) y aviso por chat o push solo para clientes P1/P2 en crítico,
-  agrupado para no llenar el soporte.
-- Pantalla para editar límites por cliente.
+- Pantalla para editar límites por cliente (hoy, directo en `MON_CONTROL_CLIENTE`).
 - Más controles: certificado ARCA, comprobantes sin CAE, disco, tamaño de base, versión del sistema.

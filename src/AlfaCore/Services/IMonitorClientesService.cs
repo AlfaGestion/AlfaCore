@@ -17,6 +17,26 @@ public interface IMonitorClientesService
     /// existe en ALFA_CENTRAL e <see cref="InvalidOperationException"/> si faltan datos.</summary>
     Task<MonitorReporteResultado> RegistrarReporteAsync(MonitorReporteRequest request, CancellationToken ct = default);
 
-    /// <summary>Todas las filas del tablero ya evaluadas, de peor a mejor estado.</summary>
+    /// <summary>Todas las filas del tablero ya evaluadas, de peor a mejor estado, con su seguimiento.</summary>
     Task<MonitorTableroDto> GetTableroAsync(CancellationToken ct = default);
+
+    /// <summary>Tomar / soltar, silenciar o anotar una fila del tablero.</summary>
+    Task GuardarSeguimientoAsync(MonitorSeguimientoRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Las filas que volvieron a OK o que ya no existen quedan libres (sin tomar ni nota); los silencios
+    /// siguen hasta que vencen. Borra los seguimientos que quedaron vacíos. Devuelve cuántos tocó.
+    /// </summary>
+    Task<int> LimpiarSeguimientosAsync(MonitorTableroDto tablero, CancellationToken ct = default);
+
+    Task<MonitorAvisoConfigDto> GetAvisoConfigAsync(CancellationToken ct = default);
+
+    /// <summary>Graba lo que se edita desde el tablero (activo, prioridades, repetir, usuarios push).</summary>
+    Task GuardarAvisoConfigAsync(MonitorAvisoConfigDto config, string usuario, CancellationToken ct = default);
+
+    /// <summary>Graba lo que actualiza el proceso de avisos (hilo, último envío, firma, forzar).</summary>
+    Task GuardarAvisoEstadoAsync(MonitorAvisoConfigDto config, CancellationToken ct = default);
+
+    /// <summary>Pide al proceso de avisos que mande el aviso en su próximo ciclo (cada minuto).</summary>
+    Task SolicitarAvisoAhoraAsync(string usuario, CancellationToken ct = default);
 }

@@ -104,6 +104,8 @@
                                     <th>Control</th>
                                     <th>Último OK</th>
                                     <th>Detalle</th>
+                                    <th>Seguimiento</th>
+                                    <th><span class="visually-hidden">Acciones</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -151,6 +153,28 @@
                                                 <small>@f.Mensaje</small>
                                             }
                                         </td>
+                                        <td>
+                                            <div class="mon__seg">
+                                                @if (f.Tomado)
+                                                {
+                                                    <AlfaTag Tone="AlfaTagTone.Accent">Tomado: @f.TomadoPor</AlfaTag>
+                                                }
+                                                @if (f.Silenciado && f.SilenciadoHasta is { } hasta)
+                                                {
+                                                    <AlfaTag Tone="AlfaTagTone.Neutral">Silenciado hasta @hasta.ToString("dd/MM HH:mm", Es)</AlfaTag>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(f.Nota))
+                                                {
+                                                    <small title="@f.Nota">@f.Nota</small>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td class="is-nowrap">
+                                            @if (f.Estado != MonitorEstado.Ok || f.Tomado || f.Silenciado || !string.IsNullOrWhiteSpace(f.Nota))
+                                            {
+                                                <AlfaActionMenu Items="@MenuFila(f)" TriggerLabel="Seguimiento" MenuLabel="Seguimiento de la alerta" Disabled="@_guardando" />
+                                            }
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -159,6 +183,48 @@
                     <footer class="alfa-data-view-footer">
                         <span class="alfa-data-view-footer__summary">@(FilasFiltradas.Count == 1 ? "1 control" : $"{FilasFiltradas.Count} controles")</span>
                     </footer>
+                }
+            </section>
+
+            <section class="mon__card mon__avisos" aria-labelledby="mon-avisos-titulo">
+                <div class="mon__avisos-head">
+                    <div>
+                        <h3 id="mon-avisos-titulo">Avisos al chat de soporte</h3>
+                        <p class="mon__hint">
+                            Un solo mensaje agrupado en el hilo interno <strong>Monitor de Clientes</strong> de Conversaciones, con las alertas críticas
+                            que nadie tomó ni silenció. Se manda cuando aparece una nueva, se repite si siguen pendientes y avisa cuando se normalizan.
+                        </p>
+                    </div>
+                    @if (_aviso is not null)
+                    {
+                        <span class="mon__hint">
+                            @(_aviso.UltimoEnvio is { } ue ? $"Último aviso {ue.ToString("dd/MM HH:mm", Es)}" : "Todavía no se mandó ningún aviso")
+                            @(_aviso.IdHilo is { } hilo ? $" · hilo #{hilo}" : string.Empty)
+                            @(_aviso.Forzar ? " · aviso pedido, sale en el próximo minuto" : string.Empty)
+                        </span>
+                    }
+                </div>
+
+                @if (_aviso is null)
+                {
+                    <p class="mon__hint">@(_avisoError ?? "Cargando…")</p>
+                }
+                else
+                {
+                    <div class="mon__avisos-form">
+                        <AlfaCheckbox Value="@_aviso.Activo" ValueChanged="@((bool? v) => _aviso.Activo = v == true)">Avisar al chat de soporte</AlfaCheckbox>
+                        <AlfaSelect Id="mon-aviso-prioridad" Label="Clientes" Options="AvisoPrioridadOptions" Value="@_aviso.Prioridades" ValueChanged="@((string? v) => _aviso.Prioridades = v ?? string.Empty)" />
+                        <AlfaSelect Id="mon-aviso-repetir" Label="Si siguen pendientes, repetir" Options="RepetirOptions" Value="@_aviso.RepetirMinutos.ToString(System.Globalization.CultureInfo.InvariantCulture)" ValueChanged="@((string? v) => _aviso.RepetirMinutos = int.TryParse(v, out var n) ? n : 120)" />
+                        <AlfaInput Id="mon-aviso-push" Label="Además, push a los usuarios" Placeholder="usuario1, usuario2" HelpText="Usuarios de AlfaCore separados por coma. Vacío = sin push." Value="@_aviso.UsuariosPush" ValueChanged="@((string? v) => _aviso.UsuariosPush = v ?? string.Empty)" />
+                    </div>
+                    @if (_avisoError is not null)
+                    {
+                        <p class="mon__hint is-warning">@_avisoError</p>
+                    }
+                    <div class="mon__avisos-acciones">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi-check2" Loading="@_guardando" Disabled="@_guardando" OnClick="GuardarAvisoAsync">Guardar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi-send" Disabled="@_guardando" OnClick="AvisarAhoraAsync">Enviar aviso ahora</AlfaButton>
+                    </div>
                 }
             </section>
 
@@ -174,11 +240,23 @@
                     </li>
                     <li>Un cliente puede tener límites propios o un control desactivado en <code>MON_CONTROL_CLIENTE</code> (ALFANET2007).</li>
                     <li>La prioridad P1 a P4 es la clasificación del cliente (la misma de Conversaciones).</li>
+                    <li>Con el menú de cada fila: <strong>Lo tomo</strong> la saca del aviso al chat; <strong>Silenciar</strong> la saca por un tiempo (por ejemplo, un PDV que se apaga de noche). Cuando el control vuelve a OK, la alerta queda libre sola y la nota se borra.</li>
                 </ol>
             </details>
         }
     </div>
 </div>
+
+<AlfaDialog Open="@(_notaFila is not null)" Title="Nota de seguimiento" Description="@(_notaFila is null ? null : $"{_notaFila.RazonSocial} · {_notaFila.TipoNombre} {_notaFila.Destino}")"
+            Size="AlfaDialogSize.Sm" Loading="@_guardando" OnClose="() => _notaFila = null">
+    <ChildContent>
+        <AlfaInput Id="mon-nota" Label="Nota" Placeholder="Ej.: hablé con el cliente, reinician el servidor a la tarde" MaxLength="500" Value="@_notaTexto" ValueChanged="@((string? v) => _notaTexto = v ?? string.Empty)" />
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="() => _notaFila = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@_guardando" OnClick="GuardarNotaAsync">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 @code {
     private static readonly System.Globalization.CultureInfo Es = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
@@ -193,10 +271,33 @@
     private string _buscar = string.Empty;
     private System.Threading.Timer? _timer;
     private bool _cargando;
+    private bool _guardando;
+    private MonitorAvisoConfigDto? _aviso;
+    private string? _avisoError;
+    private MonitorFilaDto? _notaFila;
+    private string _notaTexto = string.Empty;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> AvisoPrioridadOptions =
+    [
+        new("1,2", "P1 y P2"),
+        new("1", "Solo P1"),
+        new("1,2,3", "P1 a P3"),
+        new(string.Empty, "Todos")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> RepetirOptions =
+    [
+        new("60", "Cada 1 h"),
+        new("120", "Cada 2 h"),
+        new("240", "Cada 4 h"),
+        new("480", "Cada 8 h"),
+        new("0", "No repetir (solo alertas nuevas)")
+    ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> EstadoOptions =
     [
         new("problemas", "Con problemas"),
+        new("sintomar", "Críticos y avisos sin tomar"),
         new("critico", "Críticos"),
         new("aviso", "Avisos"),
         new("sindatos", "Sin datos"),
@@ -225,6 +326,7 @@
             IEnumerable<MonitorFilaDto> q = _tablero?.Filas ?? [];
             q = _filtroEstado switch
             {
+                "sintomar" => q.Where(f => f.Estado is MonitorEstado.Critico or MonitorEstado.Aviso && !f.Tomado && !f.Silenciado),
                 "critico" => q.Where(f => f.Estado == MonitorEstado.Critico),
                 "aviso" => q.Where(f => f.Estado == MonitorEstado.Aviso),
                 "sindatos" => q.Where(f => f.Estado == MonitorEstado.SinDatos),
@@ -293,11 +395,153 @@
         }
         catch (Exception ex)
         {
-            _error = ex is AppUserFacingException uf ? uf.UserMessage : ex.Message;
+            _error = Texto(ex);
+        }
+
+        // La configuración se recarga solo si no se está editando (para no pisar lo que se escribe).
+        try
+        {
+            var aviso = await MonitorSvc.GetAvisoConfigAsync();
+            if (_aviso is null)
+                _aviso = aviso;
+            else
+            {
+                _aviso.IdHilo = aviso.IdHilo;
+                _aviso.UltimoEnvio = aviso.UltimoEnvio;
+                _aviso.Forzar = aviso.Forzar;
+            }
+            _avisoError = null;
+        }
+        catch (Exception ex)
+        {
+            _avisoError = Texto(ex);
         }
         finally
         {
             _cargando = false;
+        }
+    }
+
+    private string UsuarioActual => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
+
+    private static string Texto(Exception ex) => ex is AppUserFacingException uf ? uf.UserMessage : ex.Message;
+
+    private IReadOnlyList<AlfaActionMenuItem> MenuFila(MonitorFilaDto f)
+    {
+        var items = new List<AlfaActionMenuItem>();
+        if (f.Tomado)
+            items.Add(new AlfaActionMenuItem { Key = "soltar", Label = "Soltar", Icon = "bi bi-person-dash", SecondaryText = $"La tiene {f.TomadoPor}", OnClick = () => SeguimientoAsync(f, tomar: false) });
+        else
+            items.Add(new AlfaActionMenuItem { Key = "tomar", Label = "Lo tomo", Icon = "bi bi-person-check", OnClick = () => SeguimientoAsync(f, tomar: true) });
+
+        var ahora = DateTime.Now;
+        var manana8 = ahora.Date.AddDays(ahora.Hour < 8 ? 0 : 1).AddHours(8);
+        items.Add(new AlfaActionMenuItem { Key = "sil1", Label = "Silenciar 1 h", Icon = "bi bi-bell-slash", SeparatorBefore = true, OnClick = () => SeguimientoAsync(f, silenciarHasta: ahora.AddHours(1), cambiarSilencio: true) });
+        items.Add(new AlfaActionMenuItem { Key = "sil4", Label = "Silenciar 4 h", Icon = "bi bi-bell-slash", OnClick = () => SeguimientoAsync(f, silenciarHasta: ahora.AddHours(4), cambiarSilencio: true) });
+        items.Add(new AlfaActionMenuItem { Key = "sil8", Label = $"Silenciar hasta las 8 ({manana8.ToString("dd/MM", Es)})", Icon = "bi bi-moon", OnClick = () => SeguimientoAsync(f, silenciarHasta: manana8, cambiarSilencio: true) });
+        items.Add(new AlfaActionMenuItem { Key = "sil24", Label = "Silenciar 24 h", Icon = "bi bi-bell-slash", OnClick = () => SeguimientoAsync(f, silenciarHasta: ahora.AddHours(24), cambiarSilencio: true) });
+        items.Add(new AlfaActionMenuItem { Key = "sil7d", Label = "Silenciar 7 días", Icon = "bi bi-bell-slash", OnClick = () => SeguimientoAsync(f, silenciarHasta: ahora.AddDays(7), cambiarSilencio: true) });
+        if (f.Silenciado)
+            items.Add(new AlfaActionMenuItem { Key = "nosil", Label = "Quitar silencio", Icon = "bi bi-bell", OnClick = () => SeguimientoAsync(f, silenciarHasta: null, cambiarSilencio: true) });
+
+        items.Add(new AlfaActionMenuItem
+        {
+            Key = "nota",
+            Label = string.IsNullOrWhiteSpace(f.Nota) ? "Agregar nota" : "Editar nota",
+            Icon = "bi bi-pencil",
+            SeparatorBefore = true,
+            OnClick = () =>
+            {
+                _notaFila = f;
+                _notaTexto = f.Nota ?? string.Empty;
+                return Task.CompletedTask;
+            }
+        });
+        return items;
+    }
+
+    private async Task SeguimientoAsync(MonitorFilaDto f, bool? tomar = null, DateTime? silenciarHasta = null, bool cambiarSilencio = false,
+        string? nota = null, bool cambiarNota = false)
+    {
+        if (_guardando)
+            return;
+        _guardando = true;
+        try
+        {
+            await MonitorSvc.GuardarSeguimientoAsync(new MonitorSeguimientoRequest
+            {
+                IdOrigen = f.IdOrigen,
+                TipoCodigo = f.TipoCodigo,
+                Destino = f.Destino,
+                Usuario = UsuarioActual,
+                Tomar = tomar,
+                SilenciarHasta = silenciarHasta,
+                CambiarSilencio = cambiarSilencio,
+                Nota = nota,
+                CambiarNota = cambiarNota
+            });
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = Texto(ex);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    private async Task GuardarNotaAsync()
+    {
+        if (_notaFila is not { } f)
+            return;
+        await SeguimientoAsync(f, nota: _notaTexto, cambiarNota: true);
+        _notaFila = null;
+    }
+
+    private async Task GuardarAvisoAsync()
+    {
+        if (_aviso is null || _guardando)
+            return;
+        _guardando = true;
+        try
+        {
+            await MonitorSvc.GuardarAvisoConfigAsync(_aviso, UsuarioActual);
+            _aviso = await MonitorSvc.GetAvisoConfigAsync();
+            _avisoError = null;
+        }
+        catch (Exception ex)
+        {
+            _avisoError = Texto(ex);
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    private async Task AvisarAhoraAsync()
+    {
+        if (_aviso is null || _guardando)
+            return;
+        _guardando = true;
+        try
+        {
+            await MonitorSvc.SolicitarAvisoAhoraAsync(UsuarioActual);
+            _aviso.Forzar = true;
+            _avisoError = null;
+        }
+        catch (Exception ex)
+        {
+            _avisoError = Texto(ex);
+        }
+        finally
+        {
+            _guardando = false;
         }
     }
 
