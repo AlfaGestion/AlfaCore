@@ -71,6 +71,22 @@ public sealed class ConversacionesBotTicketConsultaTests
     }
 
     [Theory]
+    [InlineData("necesito hablar con una persona", true)]
+    [InlineData("quiero hablar con personas", true)]
+    [InlineData("hacen capacitaciones para el personal?", false)]
+    [InlineData("tengo el sistema caído", true)]
+    public void PalabrasDeEscalado_ComparanPalabrasCompletasSinTildes(string texto, bool esperado)
+        => Assert.Equal(esperado, ConversacionesService.ContienePalabraEscalado(texto, "humano, persona, reclamo, sistema caido"));
+
+    [Fact]
+    public void MailQueNoFiguraEnNingunLado_SeDetecta()
+    {
+        Assert.Equal(["soporte@alfagestion.com"],
+            ConversacionAsistenteService.MailsSinRespaldo("El mail de soporte es soporte@alfagestion.com.", "Mail: (sin dato cargado)"));
+        Assert.Empty(ConversacionAsistenteService.MailsSinRespaldo("Escribinos a ventas@x.com", "CANALES: ventas@x.com"));
+    }
+
+    [Theory]
     [InlineData("si", true)]
     [InlineData("Sí", true)]
     [InlineData("no", true)]

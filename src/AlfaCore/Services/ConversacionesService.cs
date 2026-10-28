@@ -9791,7 +9791,7 @@ public sealed partial class ConversacionesService(
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
-                    : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+                    : "Gracias por tu mensaje. Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad 🙂";
                 if (usoFallbackBot)
                     tipo = "DERIVA";
                 // La regla del prompt no alcanza con gpt-4o-mini: "te recomiendo que contactes a un asesor"
@@ -10425,14 +10425,18 @@ public sealed partial class ConversacionesService(
         return acciones;
     }
 
-    private static bool ContienePalabraEscalado(string texto, string? palabras)
+    internal static bool ContienePalabraEscalado(string texto, string? palabras)
     {
         if (string.IsNullOrWhiteSpace(palabras))
             return false;
-        var lower = texto.ToLowerInvariant();
+        // Palabra o frase completa (admite plural), sin tildes: "persona" no debe saltar con "personal"
+        // ("¿hacen capacitaciones para el personal?", batería 2026-10-28) y "caído" = "caido".
+        var normalizado = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
         return palabras
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(p => lower.Contains(p.ToLowerInvariant()));
+            .Select(ConversacionAsistenteHerramientasService.NormalizarTexto)
+            .Where(p => p.Length > 0)
+            .Any(p => Regex.IsMatch(normalizado, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(p)}(?:s|es)?(?![\p{{L}}\p{{N}}])"));
     }
 
     private static string Truncar(string? texto, int max)
@@ -11180,7 +11184,7 @@ public sealed partial class ConversacionesService(
 
     internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente con el equipo. Ya les aviso que escribiste para que te respondan por acá a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
-    internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
+    internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís? Así se la paso a quien corresponde.";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
 
     private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado, long? IdTicket = null)

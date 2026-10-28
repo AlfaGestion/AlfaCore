@@ -193,6 +193,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                         ct);
                     await TraceDiagAsync(traceDiagAsync, $"BotOpenAiResponse|finishReason={SanitizeDiag(finishReason)}|tipo={SanitizeDiag(respuestaParseada?.Tipo)}", ct);
 
+                    // Mail inventado ("soporte@alfagestion.com" con la plantilla sin completar, 2026-10-28): no
+                    // se manda un dato de contacto que no figura en ningún lado; se pasa al equipo.
+                    if (respuestaParseada is not null && MailsSinRespaldo(respuestaParseada.Respuesta, textoConRespaldo.ToString()).Count > 0)
+                    {
+                        await TraceDiagAsync(traceDiagAsync, "BotMailSinRespaldo|deriva", ct);
+                        return new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty };
+                    }
+
                     return respuestaParseada;
                 }
 
@@ -390,6 +398,17 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     /// Montos ("$ 350", "$1.234,50") de la respuesta que no aparecen en ningún texto de respaldo
     /// (información del negocio, charla, resultados de herramientas). Se compara la parte entera.
     /// </summary>
+    internal static IReadOnlyList<string> MailsSinRespaldo(string? respuesta, string respaldo)
+    {
+        if (string.IsNullOrWhiteSpace(respuesta))
+            return [];
+        return Regex.Matches(respuesta, @"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+            .Select(m => m.Value.TrimEnd('.'))
+            .Where(m => (respaldo ?? string.Empty).IndexOf(m, StringComparison.OrdinalIgnoreCase) < 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     internal static IReadOnlyList<string> MontosSinRespaldo(string? respuesta, string respaldo)
     {
         if (string.IsNullOrWhiteSpace(respuesta))
@@ -467,6 +486,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
         sb.AppendLine("- Lo mismo con los servicios (reparaciones, instalaciones, etc.): si no figuran en la información, no digas que no se ofrecen. Decile que lo consultás con el equipo (tipo DERIVA) sin afirmar nada.");
+        // Batería "empresa de servicios" (ALFA NET, 2026-10-28): inventó un mail de soporte, que el sistema
+        // "funciona en Mac" y pasos de menú ("buscá 'Actualizaciones'") que no estaban en ningún lado.
+        sb.AppendLine("- Nunca inventes datos de contacto (mails, teléfonos, direcciones, CBU, horarios), pasos o menús de un sistema, compatibilidades ni funciones: sólo los que figuran tal cual en la información o en los resultados de las herramientas. Si te piden algo de eso y no está, decile que se lo pasás a alguien del equipo (tipo DERIVA).");
         sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
             sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. Si ya dijo qué artículo y cuántos (\"quiero 10 pilas AA\", \"mandame 5 AAA y 3 AA\"), llamá preparar_pedido directamente: no le preguntes antes \"¿querés que arme el pedido?\", el resumen ya le pide la confirmación. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
