@@ -167,6 +167,41 @@ public sealed class MonitorClientesTests
     public void Duracion_EnPalabras(double minutos, string esperado)
         => Assert.Equal(esperado, MonitorClientesService.Duracion(TimeSpan.FromMinutes(minutos)));
 
+    [Theory]
+    [InlineData(400, MonitorEstado.Ok)]          // faltan 400 días
+    [InlineData(20, MonitorEstado.Aviso)]        // dentro de los 30 días
+    [InlineData(5, MonitorEstado.Critico)]       // dentro de los 7 días
+    [InlineData(-2, MonitorEstado.Critico)]      // vencido
+    public void PorVencimiento_SegunLoQueFalta(int dias, MonitorEstado esperado)
+    {
+        var (estado, motivo) = MonitorClientesService.PorVencimiento(Ahora.AddDays(dias), "OK", Ahora, 43200, 10080);
+        Assert.Equal(esperado, estado);
+        Assert.Contains(Ahora.AddDays(dias).ToString("dd/MM/yyyy"), motivo);
+        Assert.StartsWith(dias < 0 ? "Venció" : "Vence", motivo);
+    }
+
+    [Fact]
+    public void PorVencimiento_SinFechaOConError_QuedaEnAviso()
+    {
+        Assert.Equal(MonitorEstado.Aviso, MonitorClientesService.PorVencimiento(null, "OK", Ahora, 43200, 10080).Item1);
+        Assert.Equal(MonitorEstado.Aviso, MonitorClientesService.PorVencimiento(Ahora.AddDays(400), "ERROR", Ahora, 43200, 10080).Item1);
+    }
+
+    [Fact]
+    public void Evaluar_CertificadoUsaLaMedidaVencimiento()
+    {
+        var tipos = Tipos.Append(new MonitorTipoControlDto
+        {
+            Codigo = "CERT_ARCA", Nombre = "Certificado ARCA", Medida = "VENCE", AvisoMinutos = 43200, CriticoMinutos = 10080, Orden = 60, Activo = true
+        }).ToList();
+        var filas = MonitorClientesService.Evaluar(Ahora, tipos, [], [Origen(1, "112010001", "1", Ahora.AddMinutes(-5))],
+            [Estado("CERT_ARCA", "30707388850 / cert.crt", Ahora.AddDays(3), "OK")]);
+
+        var cert = Assert.Single(filas, f => f.TipoCodigo == "CERT_ARCA");
+        Assert.Equal(MonitorEstado.Critico, cert.Estado);
+        Assert.True(cert.EsVencimiento);
+    }
+
     private static IReadOnlyList<MonitorFilaDto> Evaluar(
         IReadOnlyList<MonitorClientesService.EstadoFila> estados,
         DateTime? ultimoReporte = null,

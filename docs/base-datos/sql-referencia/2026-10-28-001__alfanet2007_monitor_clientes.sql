@@ -26,8 +26,18 @@ BEGIN
         Orden int NOT NULL CONSTRAINT DF_MON_CONTROL_TIPO_Orden DEFAULT (100),
         Activo bit NOT NULL CONSTRAINT DF_MON_CONTROL_TIPO_Activo DEFAULT (1),
         CONSTRAINT PK_MON_CONTROL_TIPO PRIMARY KEY CLUSTERED (Codigo),
-        CONSTRAINT CK_MON_CONTROL_TIPO_Medida CHECK (Medida IN (N'EDAD', N'RESULTADO'))
+        CONSTRAINT CK_MON_CONTROL_TIPO_Medida CHECK (Medida IN (N'EDAD', N'RESULTADO', N'VENCE'))
     );
+END;
+
+-- VENCE (certificado ARCA, 2026-10-28): UltimoOk trae la fecha de vencimiento y los límites son
+-- minutos ANTES de vencer. Las bases creadas con la primera versión tienen el CHECK sin VENCE.
+IF EXISTS (SELECT 1 FROM sys.check_constraints
+           WHERE name = N'CK_MON_CONTROL_TIPO_Medida' AND parent_object_id = OBJECT_ID(N'dbo.MON_CONTROL_TIPO')
+             AND definition NOT LIKE N'%VENCE%')
+BEGIN
+    ALTER TABLE dbo.MON_CONTROL_TIPO DROP CONSTRAINT CK_MON_CONTROL_TIPO_Medida;
+    ALTER TABLE dbo.MON_CONTROL_TIPO ADD CONSTRAINT CK_MON_CONTROL_TIPO_Medida CHECK (Medida IN (N'EDAD', N'RESULTADO', N'VENCE'));
 END;
 
 INSERT INTO dbo.MON_CONTROL_TIPO (Codigo, Nombre, Descripcion, Medida, AvisoMinutos, CriticoMinutos, Orden)
@@ -37,7 +47,8 @@ FROM (VALUES
     (N'ENVIO_PDV', N'Envío a punto de venta', N'Último envío correcto de artículos y precios a cada punto de venta (NETCPV).', N'EDAD', 120, 180, 20),
     (N'RECEPCION_PDV', N'Recepción de punto de venta', N'Última recepción correcta de movimientos de cada punto de venta (NETCPV).', N'EDAD', 60, 120, 30),
     (N'BACKUP', N'Backup diario', N'Último backup correcto de la base.', N'EDAD', 1560, 2160, 40),
-    (N'TAREA', N'Tarea automática', N'Resultado de la última ejecución de cada tarea automática del Timer (ERROR = crítico, ADVERTENCIA = aviso).', N'RESULTADO', NULL, NULL, 50)
+    (N'TAREA', N'Tarea automática', N'Resultado de la última ejecución de cada tarea automática del Timer (ERROR = crítico, ADVERTENCIA = aviso).', N'RESULTADO', NULL, NULL, 50),
+    (N'CERT_ARCA', N'Certificado ARCA', N'Vencimiento del certificado de factura electrónica de cada CUIT (aviso 30 días antes, crítico 7 días antes o vencido).', N'VENCE', 43200, 10080, 60)
 ) AS v (Codigo, Nombre, Descripcion, Medida, AvisoMinutos, CriticoMinutos, Orden)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.MON_CONTROL_TIPO t WHERE t.Codigo = v.Codigo);
 
