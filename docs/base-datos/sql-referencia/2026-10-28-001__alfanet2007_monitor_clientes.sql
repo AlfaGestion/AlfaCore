@@ -8,6 +8,7 @@
 -- MON_ESTADO: último dato de cada control de cada origen (una fila por tipo + destino, ej. un PDV).
 -- MON_SEGUIMIENTO: quién tomó una alerta, hasta cuándo está silenciada y una nota (fase 2).
 -- MON_CONFIG: configuración de los avisos al chat de soporte (clave / valor).
+-- MON_ACTUALIZACION: versiones de AlfaActualizacion_Monitor y a quién se liberan.
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
@@ -48,7 +49,8 @@ FROM (VALUES
     (N'RECEPCION_PDV', N'Recepción de punto de venta', N'Última recepción correcta de movimientos de cada punto de venta (NETCPV).', N'EDAD', 60, 120, 30),
     (N'BACKUP', N'Backup diario', N'Último backup correcto de la base.', N'EDAD', 1560, 2160, 40),
     (N'TAREA', N'Tarea automática', N'Resultado de la última ejecución de cada tarea automática del Timer (ERROR = crítico, ADVERTENCIA = aviso).', N'RESULTADO', NULL, NULL, 50),
-    (N'CERT_ARCA', N'Certificado ARCA', N'Vencimiento del certificado de factura electrónica de cada CUIT (aviso 30 días antes, crítico 7 días antes o vencido).', N'VENCE', 43200, 10080, 60)
+    (N'CERT_ARCA', N'Certificado ARCA', N'Vencimiento del certificado de factura electrónica de cada CUIT (aviso 30 días antes, crítico 7 días antes o vencido).', N'VENCE', 43200, 10080, 60),
+    (N'ACTUALIZACION', N'Actualización del sistema', N'Versión de AlfaActualizacion_Monitor instalada y resultado de la última actualización automática (ERROR = crítico).', N'RESULTADO', NULL, NULL, 70)
 ) AS v (Codigo, Nombre, Descripcion, Medida, AvisoMinutos, CriticoMinutos, Orden)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.MON_CONTROL_TIPO t WHERE t.Codigo = v.Codigo);
 
@@ -149,5 +151,31 @@ FROM (VALUES
     (N'AVISO_FORZAR', N'0')
 ) AS v (Clave, Valor)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.MON_CONFIG c WHERE c.Clave = v.Clave);
+
+-- MON_ACTUALIZACION: versiones de AlfaActualizacion_Monitor (setup que actualiza Timer, EM_Backup,
+-- NETCPV y ControlBase). El archivo está en AlfaArchivos; Liberacion dice a quién le llega:
+-- NADIE (pausada), PRUEBA (solo ClientesPrueba), P1P2 (prioridad 1 y 2) o TODOS. Los clientes de
+-- prueba la reciben en cualquier liberación salvo NADIE.
+IF OBJECT_ID(N'dbo.MON_ACTUALIZACION', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.MON_ACTUALIZACION
+    (
+        IdVersion int IDENTITY(1,1) NOT NULL,
+        Version nvarchar(30) NOT NULL,
+        ArchivoRemoto nvarchar(300) NOT NULL,
+        Sha256 nvarchar(64) NOT NULL,
+        TamanioBytes bigint NOT NULL,
+        Notas nvarchar(500) NULL,
+        Liberacion nvarchar(10) NOT NULL CONSTRAINT DF_MON_ACTUALIZACION_Liberacion DEFAULT (N'NADIE'),
+        ClientesPrueba nvarchar(500) NULL,
+        FechaAlta datetime NOT NULL CONSTRAINT DF_MON_ACTUALIZACION_Alta DEFAULT (GETDATE()),
+        UsuarioAlta nvarchar(80) NULL,
+        FechaLiberacion datetime NULL,
+        UsuarioLiberacion nvarchar(80) NULL,
+        CONSTRAINT PK_MON_ACTUALIZACION PRIMARY KEY CLUSTERED (IdVersion),
+        CONSTRAINT UQ_MON_ACTUALIZACION_Version UNIQUE (Version),
+        CONSTRAINT CK_MON_ACTUALIZACION_Liberacion CHECK (Liberacion IN (N'NADIE', N'PRUEBA', N'P1P2', N'TODOS'))
+    );
+END;
 
 COMMIT TRANSACTION;
