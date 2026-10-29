@@ -82,6 +82,23 @@ public sealed class TarjetasBusqueda : GestionDateFilterBase
 public sealed record TarjetasConfirmar(TarjetasFiltro Filtro,IReadOnlyList<long> Detalles,IReadOnlyList<TarjetasSeleccion> Movimientos,string Motivo="");
 public sealed record TarjetasIaSeleccion(IReadOnlyList<long> Detalles,IReadOnlyList<TarjetasSeleccion> Movimientos,string Evidencia);
 public sealed record TarjetasConfirmarVarias(TarjetasFiltro Filtro,IReadOnlyList<TarjetasIaSeleccion> Propuestas,bool AceptarDiferencias,string Motivo);
+public sealed class TarjetasVinculoDeshacer
+{
+    public long Id {get;set;}
+    public string Usuario {get;set;}="";
+    public DateTime FechaUtc {get;set;}
+    public DateTime? Desde {get;set;}
+    public DateTime? Hasta {get;set;}
+    public decimal ImporteResumen {get;set;}
+    public decimal ImporteAlfa {get;set;}
+    public int Detalles {get;set;}
+    public int DetallesValidos {get;set;}
+    public int Movimientos {get;set;}
+    public int Autorizados {get;set;}
+    public bool PuedeDeshacer=>Detalles>0&&DetallesValidos==Detalles&&Movimientos>0&&Autorizados==Movimientos;
+}
+public sealed record TarjetasVistaDeshacer(long Importacion,string Cuenta,IReadOnlyList<TarjetasVinculoDeshacer> Vinculos);
+public sealed record TarjetasDeshacerVarias(long Importacion,string Cuenta,IReadOnlyList<long> Vinculos,string Motivo);
 public sealed record TarjetasIaPropuesta(string Confianza,string Motivo,IReadOnlyList<TarjetasDetalle> Detalles,IReadOnlyList<TarjetasMovimiento> Movimientos)
 {
     public decimal Diferencia=>Detalles.Sum(x=>x.Importe)-Movimientos.Sum(x=>x.Importe);

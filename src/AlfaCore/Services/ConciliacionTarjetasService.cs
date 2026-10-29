@@ -135,18 +135,6 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         if(Math.Abs(resumen-alfa)>tolerancia)throw new InvalidOperationException("La diferencia supera la tolerancia configurada.");
         if(resumen!=alfa&&string.IsNullOrWhiteSpace(motivo))throw new InvalidOperationException("Escribí el motivo para aceptar la diferencia sin cambiar importes.");
     }
-    public Task<bool> DesconciliarAsync(long id,TarjetasFiltro filtro,string motivo,CancellationToken ct=default)=>Ejecutar("Desconciliar",async(c,t)=>
-    {
-        if(string.IsNullOrWhiteSpace(motivo)||motivo.Length>500)throw new InvalidOperationException("Escribí un motivo de hasta 500 caracteres.");
-        var session=sessions.GetActiveSession()!.Id;using var tx=c.BeginTransaction(IsolationLevel.Serializable);
-        var actual=await Comparar(c,filtro with{Estado="Todos",Buscar=""},t,tx);
-        if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Vinculo WHERE Id=@id AND ImportacionId=@import AND Activo=1",new{id,import=filtro.Importacion},t,tx))!=1)
-            throw new InvalidOperationException("El vínculo no pertenece a esta importación o ya fue anulado.");
-        var vinculados=await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_VinculoAlfa WHERE VinculoId=@id AND Activo=1",new{id},t,tx));
-        if(vinculados==0||actual.Movimientos.Count(x=>x.Vinculo==id)!=vinculados)throw new InvalidOperationException("Consultá todas las fechas y sucursales del vínculo, con permisos sobre sus unidades, antes de desconciliar.");
-        await c.ExecuteAsync(Cmd("UPDATE dbo.TJ_Vinculo SET Activo=0,UsuarioAnulacion=@usuario,FechaAnulacion=SYSUTCDATETIME(),MotivoAnulacion=@motivo WHERE Id=@id AND ImportacionId=@import; UPDATE dbo.TJ_VinculoDetalle SET Activo=0 WHERE VinculoId=@id; UPDATE dbo.TJ_VinculoAlfa SET Activo=0 WHERE VinculoId=@id",new{id,import=filtro.Importacion,motivo=motivo.Trim(),usuario=users.GetCurrentUserName()},t,tx));
-        AntesDeGrabar(session,t);tx.Commit();return true;
-    },ct);
     private sealed record Asociacion(string Banco,string Comercio,string Tarjeta,string Cuenta,string Sucursal);
     private sealed class Original {public string Nombre{get;set;}="";public byte[] Contenido{get;set;}=[];public string Hash{get;set;}="";}
 }

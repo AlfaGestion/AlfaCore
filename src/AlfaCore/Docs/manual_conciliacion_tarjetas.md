@@ -70,7 +70,11 @@ El margen inicial es de 3 días, con hasta 2.000 pendientes por lado en cada pet
 
 ## Corregir una conciliación
 
-Pulsá **Ver conciliados** junto a **Cambiar cuenta** y **Documento original**. También podés elegir **Conciliados** o **Todos** en el filtro general. En cualquier fila del grupo, pulsá **Deshacer #…**, escribí un motivo y confirmá **Deshacer conciliación completa**. Se libera todo ese vínculo (todos sus registros de ambos lados), no solo la fila donde hiciste clic. Después se muestran los pendientes para seleccionarlos en otra conciliación. Consultá todas las fechas y sucursales del vínculo y conservá permisos sobre sus unidades. La reversión mantiene el historial; no borra el PDF ni modifica asientos. Los movimientos alterados después de confirmar se señalan para revisión.
+Pulsá **Ver conciliados** junto a **Cambiar cuenta** y **Documento original**. También podés elegir **Conciliados** o **Todos** en el filtro general. En cualquier fila del grupo, pulsá **Deshacer #…**, escribí un motivo y confirmá **Deshacer conciliación completa**. Se libera todo ese vínculo (todos sus registros de ambos lados), no solo la fila donde hiciste clic. Después se muestran los pendientes para seleccionarlos en otra conciliación. Se consulta el vínculo completo sin exigir ampliar las fechas o sucursales de la pantalla; necesitás permisos sobre todas sus unidades. La reversión mantiene el historial; no borra el PDF ni modifica asientos. Los movimientos alterados después de confirmar se señalan para revisión.
+
+Para corregir varias juntas, pulsá **Deshacer varias**. Se abre una ventana con todas las conciliaciones activas de la importación, incluso las que los filtros generales o rápidos no muestran. Allí sí podés tildarlas, usar **Seleccionar todas** o limpiar la selección. La selección abarca todas las páginas y admite hasta 1.000 conciliaciones por operación. Las casillas de las listas principales siguen reservadas para conciliar movimientos pendientes.
+
+Revisá los números de vínculo, los registros e importes, escribí un motivo, marcá la confirmación y pulsá **Deshacer N conciliaciones**. Cada grupo se libera completo. Si alguna conciliación cambió, ya fue anulada o no se pueden identificar y autorizar todos sus movimientos, se rechaza la operación entera: no se deshace una parte del lote. Los grupos con problemas aparecen deshabilitados para revisión. La acción solo anula los vínculos propios de tarjetas, no cambia `MV_ASIENTOS` ni las marcas de liquidación del escritorio.
 
 ## Requisitos
 

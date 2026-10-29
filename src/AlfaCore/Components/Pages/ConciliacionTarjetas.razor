@@ -85,6 +85,7 @@
             <div><strong>@c.Importacion.Banco · @c.Importacion.Tarjeta</strong><small>Cuenta @c.Importacion.Cuenta · Comercio @c.Importacion.Comercio · @c.Importacion.Nombre</small></div>
             <div class="tarjetas-contexto-acciones">
                 <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Icon="bi-arrow-counterclockwise" Disabled="_busy" OnClick="VerConciliados">@(_aplicado?.Estado=="Conciliados"?"Ver pendientes":"Ver conciliados")</AlfaButton>
+                <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Icon="bi-arrow-counterclockwise" Disabled="_busy" OnClick="AbrirDeshacerVarias">Deshacer varias</AlfaButton>
                 <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="()=>AbrirCambioCuenta(c.Importacion)">Cambiar cuenta</AlfaButton>
                 <AlfaButton Size="AlfaSize.Sm" Variant="AlfaButtonVariant.Secondary" Icon="bi-file-earmark-pdf" Disabled="_busy" OnClick="()=>Original(c.Importacion.Id)">Documento original</AlfaButton>
             </div>
@@ -173,7 +174,7 @@
     <ChildContent>
         <AlfaFeedbackPanel Message="_feedback" />
         @if(_desconciliar is null){<p>Resumen @Dinero(TotalResumen) · Alfa @Dinero(TotalAlfa). La coincidencia por importe o agrupación no identifica por sí sola cada cupón. Confirmá después de revisar el original.</p>}
-        else{<p>Se deshará <strong>toda la conciliación #@_desconciliar</strong>, incluyendo todos sus registros de liquidación y de Alfa, aunque los filtros rápidos oculten algunos. Quedarán pendientes para vincularlos nuevamente.</p><p>Se conserva el historial con usuario, fecha y motivo. No se borran el PDF ni los asientos. El filtro general debe incluir todas las fechas y sucursales del vínculo y debés tener permisos sobre sus unidades.</p>}
+        else{<p>Se deshará <strong>toda la conciliación #@_desconciliar</strong>, incluyendo todos sus registros de liquidación y de Alfa, aunque los filtros oculten algunos. Quedarán pendientes para vincularlos nuevamente.</p><p>Se conserva el historial con usuario, fecha y motivo. No se borran el PDF ni los asientos. Se consulta el vínculo completo y se verifican los permisos sobre todas sus unidades, independientemente de las fechas y sucursales de la pantalla.</p>}
         <AlfaInput MaxLength="500" Label="Motivo (obligatorio para diferencias y desconciliación)" Value="@_motivo" ValueChanged="v=>_motivo=v??string.Empty" Disabled="_busy" />
     </ChildContent>
     <Footer><AlfaButton Disabled="_busy" OnClick="CerrarConfirmacion">Cancelar</AlfaButton><AlfaButton Disabled="@(_busy||(_desconciliar.HasValue&&string.IsNullOrWhiteSpace(_motivo)))" Variant="AlfaButtonVariant.Primary" OnClick="Guardar">@(_desconciliar.HasValue?"Deshacer conciliación completa":"Confirmar")</AlfaButton></Footer>
@@ -234,6 +235,52 @@
         <p class="tarjetas-ayuda">Se revalidan permisos, pendientes, importes y huellas antes de guardar. Si alguna propuesta cambió o no cumple los controles, no se guarda ninguna. La evidencia de IA y el motivo quedan en cada conciliación.</p>
     </ChildContent>
     <Footer><AlfaButton Disabled="_busy" OnClick="VolverAPropuestasIa">Volver a las propuestas</AlfaButton><AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy||!PuedeConfirmarVariasIa)" OnClick="GuardarVariasIa">Confirmar @PropuestasIaElegidas.Count propuestas</AlfaButton></Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="_mostrarDeshacerVarias" Title="Deshacer conciliaciones de tarjetas" CloseOnBackdrop="false" Size="AlfaDialogSize.Lg" OnClose="CerrarDeshacerVarias" Loading="_busy">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="_feedback" />
+        <p>Elegí las conciliaciones a deshacer de esta importación. Cada selección libera el grupo completo de liquidación y Alfa, aunque tenga movimientos fuera de las fechas o sucursales de la pantalla.</p>
+        <p>Solo se anulan los vínculos de tarjetas. Se conservan el PDF y el historial; los asientos y las marcas del sistema de escritorio no se modifican.</p>
+        @if (_vistaDeshacer is {} vista)
+        {
+            <p><strong>Cuenta @vista.Cuenta · @vista.Vinculos.Count conciliaciones activas · @_deshacerElegidos.Count seleccionadas</strong></p>
+            <div class="tarjetas-herramientas">
+                <AlfaButton Disabled="@(_busy || !vista.Vinculos.Any(v => v.PuedeDeshacer))" OnClick="SeleccionarTodasDeshacer">Seleccionar todas</AlfaButton>
+                <AlfaButton Disabled="@(_busy || _deshacerElegidos.Count == 0)" OnClick="LimpiarDeshacer">Limpiar selección</AlfaButton>
+            </div>
+            <div class="tarjetas-deshacer-scroll">
+                <table class="tarjetas-tabla">
+                    <thead><tr><th>Elegir</th><th>Conciliación</th><th>Liquidación</th><th>Registros</th><th>Bruto / Alfa</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        @foreach (var grupo in vista.Vinculos.Skip((_paginaDeshacer - 1) * 50).Take(50))
+                        {
+                            <tr @key="grupo.Id">
+                                <td><AlfaCheckbox AriaLabel="@($"Deshacer conciliación {grupo.Id}")" Value="_deshacerElegidos.Contains(grupo.Id)" ValueChanged="v => ElegirDeshacer(grupo.Id, v == true)" Disabled="@(_busy || !grupo.PuedeDeshacer)" /></td>
+                                <td>#@grupo.Id<br/><small>@grupo.Usuario · @grupo.FechaUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
+                                <td>@grupo.Desde?.ToString("dd/MM/yyyy")<br/>@grupo.Hasta?.ToString("dd/MM/yyyy")</td>
+                                <td>@grupo.Detalles liquidación / @grupo.Movimientos Alfa</td>
+                                <td class="numero">@Dinero(grupo.ImporteResumen)<br/>@Dinero(grupo.ImporteAlfa)</td>
+                                <td>@(grupo.PuedeDeshacer ? "Lista para deshacer" : "Revisar permisos o identidad de movimientos")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (vista.Vinculos.Count == 0){<AlfaEmptyState Title="Sin conciliaciones activas" Message="Esta importación no tiene vínculos activos para deshacer." />}
+            <div class="tarjetas-herramientas">
+                <span>Página @_paginaDeshacer / @PaginasDeshacer · 50 por página</span>
+                <AlfaButton Disabled="@(_busy || _paginaDeshacer <= 1)" OnClick="() => _paginaDeshacer--">Anterior</AlfaButton>
+                <AlfaButton Disabled="@(_busy || _paginaDeshacer >= PaginasDeshacer)" OnClick="() => _paginaDeshacer++">Siguiente</AlfaButton>
+            </div>
+            <AlfaInput Label="Motivo de la desconciliación" MaxLength="500" Value="_motivoDeshacerVarias" ValueChanged="v => _motivoDeshacerVarias = v ?? string.Empty" Disabled="_busy" />
+            <AlfaCheckbox Value="_aceptarDeshacerVarias" ValueChanged="v => _aceptarDeshacerVarias = v == true" Disabled="_busy">Confirmo deshacer las @_deshacerElegidos.Count conciliaciones seleccionadas y liberar todos sus movimientos.</AlfaCheckbox>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Disabled="_busy" OnClick="CerrarDeshacerVarias">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _deshacerElegidos.Count == 0 || !_aceptarDeshacerVarias || string.IsNullOrWhiteSpace(_motivoDeshacerVarias))" OnClick="GuardarDeshacerVarias">Deshacer @_deshacerElegidos.Count conciliaciones</AlfaButton>
+    </Footer>
 </AlfaDialog>
 
 @code {
@@ -303,7 +350,7 @@
     private string _ultimoHeader="";
     private string EstadoHeader()=>$"{_tab}|{_busy}|{_prepararAlImportar}|{_cuenta}|{_lectura?.Detalles.Count}|{_comparacion?.Importacion.Id}|{_comparacion?.Importacion.DetalleCompleto}|{_detalles.Count}|{_movimientos.Count}|{_filtro.FechaDesde}|{_filtro.FechaHasta}|{_filtro.Sucursal}|{_filtro.Estado}|{_filtro.Buscar}|{_paginaImport}|{_importaciones.Count}";
     protected override void OnAfterRender(bool firstRender){if(firstRender||EstadoHeader()!=_ultimoHeader)Header();}
-    private void CambioSesion(){if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;_lifetime.Cancel();_progreso=null;_accionEnCurso="";_corregirCuenta=null;_eliminarImportacion=null;_motivoEliminar="";_archivo=null;_lectura=null;_comparacion=null;_ia=null;_mostrarIa=false;LimpiarIa();_cuentas=[];_importaciones=[];LimpiarSeleccion();_confirmar=false;_feedback=AppUiMessage.Info("La sesión cambió","Volvé a abrir el módulo en la base activa.");_ = InvokeAsync(StateHasChanged);}
+    private void CambioSesion(){if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;_lifetime.Cancel();_mostrarDeshacerVarias=false;_vistaDeshacer=null;_deshacerElegidos.Clear();_progreso=null;_accionEnCurso="";_corregirCuenta=null;_eliminarImportacion=null;_motivoEliminar="";_archivo=null;_lectura=null;_comparacion=null;_ia=null;_mostrarIa=false;LimpiarIa();_cuentas=[];_importaciones=[];LimpiarSeleccion();_confirmar=false;_feedback=AppUiMessage.Info("La sesión cambió","Volvé a abrir el módulo en la base activa.");_ = InvokeAsync(StateHasChanged);}
     private async Task Operar(Func<CancellationToken,Task> work,AppUiMessage? progreso=null,string accion="")
     {
         if(_busy||_disposed||_lifetime.IsCancellationRequested)return;_busy=true;_accionEnCurso=accion;

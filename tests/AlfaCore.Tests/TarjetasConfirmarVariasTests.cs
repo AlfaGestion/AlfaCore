@@ -58,7 +58,22 @@ public sealed class TarjetasConfirmarVariasTests
         var tag="ENSAYO_VARIAS_"+Guid.NewGuid().ToString("N");long id=0;
         try
         {
-            var origen=await cn.QueryFirstAsync<(string Cuenta,DateTime Desde,DateTime Hasta)>("SELECT TOP(1) Cuenta,Desde,Hasta FROM dbo.TJ_Importacion ORDER BY Id DESC",transaction:tx);
+            var origen=await cn.QueryFirstOrDefaultAsync<(string Cuenta,DateTime Desde,DateTime Hasta)>("SELECT TOP(1) Cuenta,Desde,Hasta FROM dbo.TJ_Importacion ORDER BY Id DESC",transaction:tx);
+            if(string.IsNullOrWhiteSpace(origen.Cuenta))
+            {
+                // El ensayo no depende de que el operador conserve importaciones de prueba.
+                // Solo se lee la contabilidad para elegir la fecha/cuenta del lote sintético.
+                origen=await cn.QueryFirstAsync<(string Cuenta,DateTime Desde,DateTime Hasta)>("""
+                    SELECT TOP(1) LTRIM(RTRIM(a.CUENTA)) Cuenta,a.FECHA Desde,a.FECHA Hasta
+                    FROM dbo.MV_ASIENTOS a
+                    WHERE a.[DEBE-HABER]='D' AND a.IMPORTE>0 AND LTRIM(RTRIM(a.MONEDA))='1'
+                      AND ISNULL(a.EsResumen,0)=0 AND ISNULL(a.EsCierre,0)=0 AND ISNULL(a.ES_SALDO_APERTURA,0)=0
+                      AND EXISTS(SELECT 1 FROM dbo.MA_CUENTAS m WHERE LTRIM(RTRIM(m.CODIGO))=LTRIM(RTRIM(a.CUENTA))
+                        AND LTRIM(RTRIM(m.MEDIODEPAGO))='TJ' AND ISNULL(m.TITULO,0)=0 AND ISNULL(m.Dada_De_Baja,0)=0)
+                      AND EXISTS(SELECT 1 FROM dbo.V_TA_Cpte t WHERE LTRIM(RTRIM(t.Codigo))=LTRIM(RTRIM(a.TC)) AND LTRIM(RTRIM(t.SISTEMA))='Ventas')
+                    ORDER BY a.FECHA DESC;
+                    """,transaction:tx);
+            }
             var cuenta=origen.Cuenta;
             var args=new{cuenta,desde=origen.Desde.Date.AddDays(-3),hasta=origen.Hasta.Date.AddDays(3),sucursal="",usuario="SISTEMAS"};
             var antes=(await cn.QueryAsync<TarjetasMovimiento>(ConciliacionTarjetasService.MovimientosAlfaSql,args,tx)).AsList();
@@ -91,6 +106,18 @@ public sealed class TarjetasConfirmarVariasTests
             {
                 Assert.Equal(1,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_VinculoDetalle WHERE VinculoId=@vinculo",new{vinculo},tx));
                 Assert.Equal(1,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_VinculoAlfa WHERE VinculoId=@vinculo",new{vinculo},tx));
+            }
+            var deshacer=new TarjetasDeshacerVarias(id,cuenta,ids,"Revertir vínculos sintéticos del ensayo");
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>service.DesconciliarEnTransaccion(cn,tx,
+                deshacer with{Vinculos=[ids[0],long.MaxValue]},default));
+            Assert.Equal(2,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_Vinculo WHERE ImportacionId=@id AND Activo=1",new{id},tx));
+            Assert.Equal(2,await service.DesconciliarEnTransaccion(cn,tx,deshacer,default));
+            Assert.Equal(0,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_Vinculo WHERE ImportacionId=@id AND Activo=1",new{id},tx));
+            Assert.Equal(2,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_Vinculo WHERE ImportacionId=@id AND Activo=0 AND FechaAnulacion IS NOT NULL AND UsuarioAnulacion='SISTEMAS' AND MotivoAnulacion=@motivo",new{id,motivo=deshacer.Motivo},tx));
+            foreach(var vinculo in ids)
+            {
+                Assert.Equal(0,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_VinculoDetalle WHERE VinculoId=@vinculo AND Activo=1",new{vinculo},tx));
+                Assert.Equal(0,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.TJ_VinculoAlfa WHERE VinculoId=@vinculo AND Activo=1",new{vinculo},tx));
             }
             var despues=await cn.QueryAsync<TarjetasMovimiento>(ConciliacionTarjetasService.MovimientosAlfaSql,args,tx);
             Assert.Equal(antes.Select(m=>m.Huella),despues.Select(m=>m.Huella));

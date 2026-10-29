@@ -1,5 +1,24 @@
 # Conciliación de tarjetas: etapa inicial
 
+## Desconciliación individual y por lote (29/10/2026)
+
+`ConciliacionTarjetasService.Desconciliar.cs` sustituye la dependencia anterior de `Comparar` al
+desconciliar. Consulta el vínculo completo de la importación sin filtros de fecha, sucursal, búsqueda,
+estado ni elegibilidad de nuevos candidatos. Los permisos sobre las unidades de **todos** los
+renglones se verifican directamente contra `MV_ASIENTOS` y `TA_USUARIOS`, con el mismo criterio de
+AdminCentral/unidad. La clave contable completa, la clave antigua y la huella se comparten con el SQL
+de comparación; una clave antigua exige huella exacta y una identidad ambigua o ausente bloquea la
+anulación. No se relajan permisos para eludir un filtro.
+
+`VinculosParaDeshacerAsync` devuelve cabeceras, cantidades, importes y habilitación por integridad y
+permisos. **Deshacer varias** abre una selección propia con páginas de 50, selección entre páginas y
+confirmación explícita con motivo. No reutiliza las casillas de pendientes de las listas principales.
+`DesconciliarVariasAsync` acepta hasta 1.000 IDs únicos de una misma importación/cuenta; en una
+transacción Serializable bloquea las cabeceras activas, relee todos los miembros y valida todos los
+grupos antes del primer UPDATE. La API individual reutiliza el mismo procedimiento. Solo cambia
+Activo y auditoría de anulación en `TJ_Vinculo`, `TJ_VinculoDetalle` y `TJ_VinculoAlfa`. Conserva PDF,
+contabilidad y marcas legacy. No requiere migración. Un fallo revierte el lote completo.
+
 Ruta `/caja-bancos/conciliacion-tarjetas`, clave `D75-TARJETAS-IA`, ModuleKey `caja-bancos`, ya incluido en MainLayout. Reutiliza AlfaDesign/Smart Search/Tabs/Dialog/Checkbox/Notification. Diálogo sin cierre por backdrop; tablas con scroll y encabezados fijos. Es una operación de conciliación, no un ABM; no se incluye configuración de columnas. Paginadores independientes por lista, como el comparador bancario. Sin accesos a otros módulos en modo directo.
 
 ## Originales bancarios
