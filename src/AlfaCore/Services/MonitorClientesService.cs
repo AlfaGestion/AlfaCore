@@ -232,6 +232,39 @@ public sealed class MonitorClientesService(
         };
     }
 
+    internal const string ClientesSinReporteSql = """
+        SELECT DISTINCT LTRIM(RTRIM(c.CODIGO)) AS ClienteCodigo,
+               ISNULL(LTRIM(RTRIM(c.RAZON_SOCIAL)), N'') AS RazonSocial,
+               ISNULL(LTRIM(RTRIM(c.Clasificacion)), N'') AS Clasificacion,
+               ISNULL(LTRIM(RTRIM(cl.Descripcion)), N'') AS ClasificacionDescripcion
+        FROM dbo.VT_CLIENTES c
+        LEFT JOIN dbo.TA_CLASIFICACIONES cl ON LTRIM(RTRIM(cl.Codigo)) = LTRIM(RTRIM(c.Clasificacion))
+        WHERE ISNULL(c.Dada_De_Baja, 0) = 0 AND ISNULL(c.TITULO, 0) = 0
+          AND LTRIM(RTRIM(ISNULL(c.CODIGO, N''))) <> N''
+          AND NOT EXISTS (
+              SELECT 1 FROM dbo.MON_ORIGEN o
+              WHERE LTRIM(RTRIM(o.ClienteCodigo)) = LTRIM(RTRIM(c.CODIGO))
+          )
+        ORDER BY RazonSocial, ClienteCodigo;
+        """;
+
+    public async Task<IReadOnlyList<MonitorClienteSinReporteDto>> GetClientesSinReporteAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+            return (await cn.QueryAsync<MonitorClienteSinReporteDto>(new CommandDefinition(
+                ClientesSinReporteSql, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync("MonitorClientes", "ClientesSinReporte", ex,
+                "No se pudieron consultar los clientes sin reporte del monitor.", ct: ct).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     public async Task GuardarSeguimientoAsync(MonitorSeguimientoRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -346,6 +379,38 @@ public sealed class MonitorClientesService(
             UltimaFirma = V("AVISO_ULTIMA_FIRMA"),
             Forzar = V("AVISO_FORZAR") == "1"
         };
+    }
+
+    public async Task<IReadOnlyList<string>> GetUsuariosPushAsync(string sistema, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sistema)) return [];
+        try
+        {
+            await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+            // Las bases antiguas pueden no tener Activo o EsGrupo.
+            var columnas = (await cn.QueryAsync<string>(new CommandDefinition(
+                "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS');",
+                cancellationToken: ct)).ConfigureAwait(false)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (columnas.Count == 0) return [];
+            var sql = $"""
+                SELECT DISTINCT LTRIM(RTRIM(NOMBRE))
+                FROM dbo.TA_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
+                  AND LTRIM(RTRIM(ISNULL(NOMBRE, N''))) <> N''
+                  {(columnas.Contains("Activo") ? "AND ISNULL(Activo, 1) = 1" : string.Empty)}
+                  {(columnas.Contains("EsGrupo") ? "AND ISNULL(EsGrupo, 0) = 0" : string.Empty)}
+                ORDER BY 1;
+                """;
+            return (await cn.QueryAsync<string>(new CommandDefinition(sql,
+                new { Sistema = sistema.Trim().ToUpperInvariant() }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync("MonitorClientes", "UsuariosPush", ex,
+                "No se pudieron cargar los usuarios centrales para los avisos push.", ct: ct).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task GuardarAvisoConfigAsync(MonitorAvisoConfigDto config, string usuario, CancellationToken ct = default)

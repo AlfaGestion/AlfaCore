@@ -16,6 +16,21 @@ backup y tareas automáticas. Creado el 28/10/2026 (fase 1: tablero; fase 2: seg
 Si un sistema deja de reportar, su fila **Reporte del sistema** pasa a aviso o crítico y el resto de
 sus controles quedan como **Sin datos**: así se detecta también un servidor apagado o un Timer cerrado.
 
+### Clientes que todavía no reportaron
+
+La acción **Clientes sin reporte** abre una consulta independiente para superadmin. Consulta en la
+conexión central `AlfaGestion` el padrón oficial `VT_CLIENTES` (sin bajas, títulos ni códigos vacíos),
+con clasificación de `TA_CLASIFICACIONES`, y excluye cualquier código que ya exista en `MON_ORIGEN`.
+También excluye orígenes desactivados del monitor: haberlos desactivado no significa que nunca
+reportaron. No modifica clientes, orígenes ni versiones. Los clientes sin licencia asociada también
+pueden aparecer; es un listado para revisar instalación/configuración, no una prueba de versión vieja.
+
+El diálogo permite buscar por código o razón social, filtrar por clasificación individual, **P1 y P2**
+o **Sin clasificación**, y muestra 50 clientes por página. Cada apertura y **Actualizar lista** vuelve
+a consultar la base, para retirar a los clientes que ya comenzaron a reportar. Un error se muestra
+como error, sin presentar una lista vacía como si no hubiera pendientes. Los sistemas que reportaron
+y dejaron de hacerlo siguen en el tablero de alertas, no en este listado.
+
 ## Endpoint
 
 `POST /api/vb6/monitor-estado`, `application/x-www-form-urlencoded`, header `X-Api-Key` = `BackupStatus:ApiKey`
@@ -111,6 +126,14 @@ avisos automáticos (el botón "Enviar aviso ahora" igual funciona). Corre sin s
 `AlfaGestion`; se apaga con `ProcesosSegundoPlano:Deshabilitados` y en SaaS solo corre en el servidor que
 tiene los workers (`IWorkerAssignmentService`). Las reglas están en `MonitorClientesAvisos` (sin base de
 datos, probadas en `MonitorClientesAvisosTests`).
+
+Los destinatarios push se eligen desde un combo de usuarios activos de `TA_USUARIOS` en la conexión
+central `AlfaGestion`, filtrados por el sistema del operador y excluyendo grupos. Se pueden agregar
+varios y quitar individualmente; se conserva `AVISO_USUARIOS_PUSH` con nombres separados por coma.
+Una selección antigua que ya no esté disponible permanece visible hasta que se quite expresamente.
+Son los nombres de inicio de sesión de AlfaCore, compartidos con Conversaciones; no son correos ni
+contactos externos. La entrega requiere una suscripción push activa y notificaciones habilitadas por
+el usuario en su navegador. No se envía ningún aviso al seleccionar o guardar destinatarios.
 
 ## Código
 

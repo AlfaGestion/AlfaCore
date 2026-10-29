@@ -20,6 +20,9 @@ public interface IMonitorClientesService
     /// <summary>Todas las filas del tablero ya evaluadas, de peor a mejor estado, con su seguimiento.</summary>
     Task<MonitorTableroDto> GetTableroAsync(CancellationToken ct = default);
 
+    /// <summary>Clientes activos e imputables del padrón central que nunca reportaron al monitor.</summary>
+    Task<IReadOnlyList<MonitorClienteSinReporteDto>> GetClientesSinReporteAsync(CancellationToken ct = default);
+
     /// <summary>Tomar / soltar, silenciar o anotar una fila del tablero.</summary>
     Task GuardarSeguimientoAsync(MonitorSeguimientoRequest request, CancellationToken ct = default);
 
@@ -30,6 +33,9 @@ public interface IMonitorClientesService
     Task<int> LimpiarSeguimientosAsync(MonitorTableroDto tablero, CancellationToken ct = default);
 
     Task<MonitorAvisoConfigDto> GetAvisoConfigAsync(CancellationToken ct = default);
+
+    /// <summary>Usuarios activos de la base central, donde se entregan los avisos push.</summary>
+    Task<IReadOnlyList<string>> GetUsuariosPushAsync(string sistema, CancellationToken ct = default);
 
     /// <summary>Graba lo que se edita desde el tablero (activo, prioridades, repetir, usuarios push).</summary>
     Task GuardarAvisoConfigAsync(MonitorAvisoConfigDto config, string usuario, CancellationToken ct = default);

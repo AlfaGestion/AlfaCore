@@ -115,6 +115,15 @@ public sealed class MonitorTableroDto
     public IReadOnlyList<MonitorTipoControlDto> Tipos { get; init; } = [];
 }
 
+/// <summary>Cliente activo del padrón central sin ningún origen registrado en el monitor.</summary>
+public sealed class MonitorClienteSinReporteDto
+{
+    public string ClienteCodigo { get; init; } = string.Empty;
+    public string RazonSocial { get; init; } = string.Empty;
+    public string Clasificacion { get; init; } = string.Empty;
+    public string ClasificacionDescripcion { get; init; } = string.Empty;
+}
+
 /// <summary>Cambio de seguimiento de una fila desde el tablero.</summary>
 public sealed class MonitorSeguimientoRequest
 {

@@ -219,7 +219,27 @@
                         <AlfaCheckbox Value="@_aviso.Activo" ValueChanged="@((bool? v) => _aviso.Activo = v == true)">Avisar al chat de soporte</AlfaCheckbox>
                         <AlfaSelect Id="mon-aviso-prioridad" Label="Clientes" Options="AvisoPrioridadOptions" Value="@_aviso.Prioridades" ValueChanged="@((string? v) => _aviso.Prioridades = v ?? string.Empty)" />
                         <AlfaSelect Id="mon-aviso-repetir" Label="Si siguen pendientes, repetir" Options="RepetirOptions" Value="@_aviso.RepetirMinutos.ToString(System.Globalization.CultureInfo.InvariantCulture)" ValueChanged="@((string? v) => _aviso.RepetirMinutos = int.TryParse(v, out var n) ? n : 120)" />
-                        <AlfaInput Id="mon-aviso-push" Label="Además, push a los usuarios" Placeholder="usuario1, usuario2" HelpText="Usuarios de AlfaCore separados por coma. Vacío = sin push." Value="@_aviso.UsuariosPush" ValueChanged="@((string? v) => _aviso.UsuariosPush = v ?? string.Empty)" />
+                        <div class="mon__push">
+                            <AlfaSelect Id="mon-aviso-push" Label="Además, push a los usuarios" Placeholder="Seleccionar usuario…" Value="@string.Empty" Options="UsuariosPushOptions" ValueChanged="AgregarUsuarioPush" Disabled="@(_guardando || _usuariosPush is null)" />
+                            <p class="mon__hint">Usuarios de AlfaCore de la base central (los mismos de Conversaciones). No se ingresa un correo. Cada usuario debe activar las notificaciones en su navegador. Sin seleccionados = sin push.</p>
+                            @if (_usuariosPushError is not null)
+                            {
+                                <p class="mon__hint is-warning">@_usuariosPushError</p>
+                            }
+                            @if (_aviso.UsuariosPushLista.Count > 0)
+                            {
+                                <div class="mon__push-elegidos">
+                                    @foreach (var usuario in _aviso.UsuariosPushLista)
+                                    {
+                                        <AlfaButton Size="AlfaSize.Sm" Icon="bi-x-lg" Disabled="@_guardando" OnClick="() => QuitarUsuarioPush(usuario)">@usuario@(_usuariosPush is not null && !_usuariosPush.Contains(usuario, StringComparer.OrdinalIgnoreCase) ? " (no disponible)" : "")</AlfaButton>
+                                    }
+                                </div>
+                            }
+                            else if (_usuariosPush?.Count == 0)
+                            {
+                                <p class="mon__hint">No hay usuarios activos disponibles en la base central para este sistema.</p>
+                            }
+                        </div>
                     </div>
                     @if (_avisoError is not null)
                     {
@@ -259,6 +279,50 @@
     <Footer>
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="() => _notaFila = null">Cancelar</AlfaButton>
         <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@_guardando" OnClick="GuardarNotaAsync">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@(_mostrarSinReporte && AppUserSession.CurrentUser?.SuperAdmin == true)" Title="Clientes sin reporte del monitor"
+            Size="AlfaDialogSize.Lg" CloseOnBackdrop="false" OnClose="CerrarSinReporte">
+    <ChildContent>
+        <p class="mon__hint">Clientes activos del padrón que nunca enviaron un reporte. Revisalos para instalar o configurar el monitor. Esta lista no confirma por sí sola que falte actualizar el programa. Los que reportaron y dejaron de hacerlo aparecen en el tablero.</p>
+        <div class="mon__sin-reporte-filtros">
+            <AlfaSelect Id="mon-sin-reporte-clasificacion" Label="Clasificación" Options="ClasificacionesSinReporte" Value="@_clasificacionSinReporte" ValueChanged="v => { _clasificacionSinReporte = v ?? string.Empty; _paginaSinReporte = 1; }" />
+            <AlfaInput Id="mon-sin-reporte-buscar" Label="Buscar cliente" Placeholder="Código o razón social" Value="@_buscarSinReporte" ValueChanged="v => { _buscarSinReporte = v ?? string.Empty; _paginaSinReporte = 1; }" />
+            <AlfaButton Icon="bi-arrow-clockwise" Loading="_cargandoSinReporte" OnClick="CargarSinReporteAsync">Actualizar lista</AlfaButton>
+        </div>
+        @if (_cargandoSinReporte)
+        {
+            <p role="status" aria-live="polite">Consultando clientes sin reporte…</p>
+        }
+        else if (_errorSinReporte is not null)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar la lista" Message="@_errorSinReporte" />
+        }
+        else if (ClientesSinReporteFiltrados.Count == 0)
+        {
+            <AlfaEmptyState Title="Sin clientes pendientes con estos filtros" Message="Probá otra clasificación o búsqueda. La consulta incluye solo clientes activos que nunca reportaron al monitor." />
+        }
+        else
+        {
+            <div class="mon__table-wrap">
+                <table class="mon__table">
+                    <thead><tr><th>Código</th><th>Cliente</th><th>Clasificación</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        @foreach (var cliente in ClientesSinReporteFiltrados.Skip((_paginaSinReporte - 1) * 50).Take(50))
+                        {
+                            <tr><td>@cliente.ClienteCodigo</td><td>@cliente.RazonSocial</td><td>@TextoClasificacion(cliente.Clasificacion, cliente.ClasificacionDescripcion)</td><td>Sin reporte del monitor</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <span class="mon__hint">@ClientesSinReporteFiltrados.Count de @_clientesSinReporte.Count clientes · Página @_paginaSinReporte de @PaginasSinReporte</span>
+        <AlfaButton Disabled="@(_cargandoSinReporte || _paginaSinReporte <= 1)" OnClick="() => _paginaSinReporte--">Anterior</AlfaButton>
+        <AlfaButton Disabled="@(_cargandoSinReporte || _paginaSinReporte >= PaginasSinReporte)" OnClick="() => _paginaSinReporte++">Siguiente</AlfaButton>
+        <AlfaButton OnClick="CerrarSinReporte">Cerrar</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -402,6 +466,19 @@
             _error = Texto(ex);
         }
 
+        if (_usuariosPush is null)
+        {
+            try
+            {
+                _usuariosPush = await MonitorSvc.GetUsuariosPushAsync(AppUserSession.CurrentUser?.SystemCode ?? string.Empty);
+                _usuariosPushError = null;
+            }
+            catch (Exception ex)
+            {
+                _usuariosPushError = "No se pudo cargar la lista de usuarios. " + Texto(ex);
+            }
+        }
+
         // La configuración se recarga solo si no se está editando (para no pisar lo que se escribe).
         try
         {
@@ -424,6 +501,26 @@
         {
             _cargando = false;
         }
+    }
+
+    private IReadOnlyList<string>? _usuariosPush;
+    private string? _usuariosPushError;
+    private IReadOnlyList<AlfaSelectOption> UsuariosPushOptions => (_usuariosPush ?? [])
+        .Where(u => _aviso?.UsuariosPushLista.Contains(u, StringComparer.OrdinalIgnoreCase) != true)
+        .Select(u => new AlfaSelectOption(u, u)).ToList();
+
+    private void AgregarUsuarioPush(string? usuario)
+    {
+        if (_guardando || _aviso is null || string.IsNullOrWhiteSpace(usuario)
+            || _usuariosPush?.Contains(usuario, StringComparer.OrdinalIgnoreCase) != true) return;
+        _aviso.UsuariosPush = string.Join(",", _aviso.UsuariosPushLista.Append(usuario).Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private Task QuitarUsuarioPush(string usuario)
+    {
+        if (!_guardando && _aviso is not null)
+            _aviso.UsuariosPush = string.Join(",", _aviso.UsuariosPushLista.Where(u => !string.Equals(u, usuario, StringComparison.OrdinalIgnoreCase)));
+        return Task.CompletedTask;
     }
 
     private string UsuarioActual => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
@@ -616,6 +713,7 @@
         TopNavigationItems = ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "monitor-clientes"),
         Actions =
         [
+            new PageHeaderAction { Key = "sin-reporte", Label = "Clientes sin reporte", Icon = "bi-person-exclamation", Disabled = AppUserSession.CurrentUser?.SuperAdmin != true, OnClick = () => InvokeAsync(AbrirSinReporteAsync) },
             new PageHeaderAction { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => InvokeAsync(async () => { await CargarAsync(); StateHasChanged(); }) }
         ]
     });

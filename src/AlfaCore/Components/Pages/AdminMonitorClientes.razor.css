@@ -255,6 +255,20 @@
     gap: var(--alfa-space-8, 8px);
 }
 
+.mon__push { min-width: 0; }
+.mon__sin-reporte-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--alfa-space-12, 12px);
+    margin: var(--alfa-space-16, 16px) 0;
+}
+.mon__push-elegidos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-8, 8px);
+}
+
 @media (max-width: 1000px) {
     .mon__kpis {
         grid-template-columns: repeat(2, minmax(0, 1fr));
