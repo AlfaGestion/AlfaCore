@@ -11,7 +11,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
-    private const int MaxRondasHerramientas = 2;
+    // 3: buscar, probar otro nombre común si no aparece (lapicera/birome) y responder (2026-10-29).
+    private const int MaxRondasHerramientas = 3;
 
     public async Task<ConversacionAsistenteRespuesta?> ResponderAsync(
         string comportamiento,
@@ -50,6 +51,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // ni de la información del negocio, ni de la charla.
         var textoConRespaldo = new StringBuilder();
         var reintentoPorPrecioSinRespaldo = false;
+        var reintentoPorDerivarSinBuscar = false;
         var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
         var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
@@ -172,6 +174,20 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                         herramientaForzadaSiguienteRonda = ConversacionAsistenteHerramientasService.ToolConsultarPrecio;
                         messages.Add(new { role = "system", content = "Tu respuesta tenía un precio que no salió de ninguna herramienta. Buscalo con consultar_precio antes de responder; nunca escribas un precio de memoria." });
                         await TraceDiagAsync(traceDiagAsync, "BotPrecioSinRespaldo|reintento=consultar_precio", ct);
+                        continue;
+                    }
+
+                    // "Tengo una papelera... necesitaría lapiceras, ¿ustedes venden?" (audio, Base4271 2026-10-29):
+                    // derivó sin buscar teniendo consultar_precio. Si pregunta por un producto, primero se busca.
+                    if (hayPrecioEntreHerramientas && !reintentoPorDerivarSinBuscar && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
+                        && ronda + 2 <= MaxRondasHerramientas
+                        && string.Equals(respuestaParseada?.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase)
+                        && PreguntaPorProducto(mensajeCliente))
+                    {
+                        reintentoPorDerivarSinBuscar = true;
+                        herramientaForzadaSiguienteRonda = ConversacionAsistenteHerramientasService.ToolConsultarPrecio;
+                        messages.Add(new { role = "system", content = "Antes de derivar, buscá con consultar_precio el artículo que pide el cliente; derivá sólo si no lo tenemos." });
+                        await TraceDiagAsync(traceDiagAsync, "BotDerivaSinBuscar|reintento=consultar_precio", ct);
                         continue;
                     }
 
@@ -398,6 +414,13 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     /// Montos ("$ 350", "$1.234,50") de la respuesta que no aparecen en ningún texto de respaldo
     /// (información del negocio, charla, resultados de herramientas). Se compara la parte entera.
     /// </summary>
+    private static readonly Regex PreguntaPorProductoRegex = new(
+        @"\b(vend\w*|ten[eé]s|tienen|tendr[aá]n|hay|precio\w*|cu[aá]nto|sale|salen|cuesta\w*|stock|conseg\w*|lista|cat[aá]logo|busco|necesit\w*|comprar|manejan|trabajan)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>El cliente pregunta si tienen o cuánto sale algo ("¿ustedes venden?", "necesitaría lapiceras").</summary>
+    internal static bool PreguntaPorProducto(string? mensaje) => PreguntaPorProductoRegex.IsMatch(mensaje ?? string.Empty);
+
     internal static IReadOnlyList<string> MailsSinRespaldo(string? respuesta, string respaldo)
     {
         if (string.IsNullOrWhiteSpace(respuesta))

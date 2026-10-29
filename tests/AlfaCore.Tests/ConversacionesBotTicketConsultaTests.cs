@@ -104,6 +104,16 @@ public sealed class ConversacionesBotTicketConsultaTests
     }
 
     [Theory]
+    [InlineData("Tengo una papelera en Avellaneda y necesitaría sumar lapiceras. ¿Ustedes venden?", true)]
+    [InlineData("¿Tenés resmas A4?", true)]
+    [InlineData("cuánto sale el cartucho 664", true)]
+    [InlineData("¿Manejan pilas recargables?", true)]
+    [InlineData("Quiero hacer un reclamo por la entrega de ayer", false)]
+    [InlineData("hola, buen día", false)]
+    public void PreguntaPorProducto_DetectaConsultasDeArticulos(string mensaje, bool esperado)
+        => Assert.Equal(esperado, ConversacionAsistenteService.PreguntaPorProducto(mensaje));
+
+    [Theory]
     [InlineData("si", true)]
     [InlineData("Sí", true)]
     [InlineData("no", true)]
