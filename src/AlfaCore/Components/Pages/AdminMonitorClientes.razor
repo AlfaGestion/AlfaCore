@@ -252,6 +252,78 @@
                 }
             </section>
 
+            <section class="mon__card" aria-labelledby="mon-act-titulo">
+                <div class="mon__avisos-head">
+                    <div>
+                        <h3 id="mon-act-titulo">Actualizaciones (AlfaActualizacion_Monitor)</h3>
+                        <p class="mon__hint">
+                            Cada versión se arma y se sube con <code>Herramientas\ArmarActualizacion.py</code> y queda <strong>sin liberar</strong>.
+                            El Timer de cada cliente pregunta cada hora y la instala solo en su horario permitido (por defecto de 21 a 7 h).
+                            Los clientes de prueba la reciben en cualquier liberación salvo "Nadie (pausada)".
+                        </p>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-arrow-clockwise" Disabled="@_guardando" OnClick="RecargarVersionesAsync">Recargar</AlfaButton>
+                </div>
+
+                @if (_versionesError is not null)
+                {
+                    <p class="mon__hint is-warning">@_versionesError</p>
+                }
+                @if (_versiones is null)
+                {
+                    <p class="mon__hint">Cargando…</p>
+                }
+                else if (_versiones.Count == 0)
+                {
+                    <AlfaEmptyState Title="Todavía no hay versiones publicadas" Message="Se publican con Herramientas\ArmarActualizacion.py desde la PC de desarrollo." />
+                }
+                else
+                {
+                    <div class="mon__table-wrap">
+                        <table class="mon__table">
+                            <thead>
+                                <tr>
+                                    <th>Versión</th>
+                                    <th>Publicada</th>
+                                    <th>Instalada en</th>
+                                    <th>Liberar a</th>
+                                    <th>Clientes de prueba</th>
+                                    <th><span class="visually-hidden">Acciones</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in _versiones)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@v.Version</strong>
+                                            <small>@($"{v.TamanioBytes / 1048576.0:0.0} MB")@(string.IsNullOrWhiteSpace(v.Notas) ? string.Empty : $" · {v.Notas}")</small>
+                                        </td>
+                                        <td class="is-nowrap">
+                                            <span>@v.FechaAlta.ToString("dd/MM HH:mm", Es)</span>
+                                            @if (v.FechaLiberacion is { } fl)
+                                            {
+                                                <small>Liberación: @fl.ToString("dd/MM HH:mm", Es) @v.UsuarioLiberacion</small>
+                                            }
+                                        </td>
+                                        <td class="is-nowrap">@(v.Instalaciones == 1 ? "1 sistema" : $"{v.Instalaciones} sistemas")</td>
+                                        <td>
+                                            <AlfaSelect Id="@($"mon-lib-{v.IdVersion}")" Options="LiberacionOptions" Value="@v.Liberacion" ValueChanged="@((string? x) => v.Liberacion = x ?? MonitorLiberacion.Nadie)" />
+                                        </td>
+                                        <td>
+                                            <AlfaInput Id="@($"mon-prueba-{v.IdVersion}")" Placeholder="112010760, 112010001" Value="@v.ClientesPrueba" ValueChanged="@((string? x) => v.ClientesPrueba = x)" />
+                                        </td>
+                                        <td class="is-nowrap">
+                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi-check2" Disabled="@_guardando" OnClick="() => GuardarLiberacionAsync(v)">Guardar</AlfaButton>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
             <details class="mon__help">
                 <summary><i class="bi bi-question-circle" aria-hidden="true"></i> Cómo funciona</summary>
                 <ol>
@@ -500,6 +572,56 @@
         finally
         {
             _cargando = false;
+        }
+
+        // Las versiones solo se cargan la primera vez (y al guardar o "Recargar"), para no pisar lo que se edita.
+        if (_versiones is null)
+            await RecargarVersionesAsync();
+    }
+
+    private List<MonitorActualizacionDto>? _versiones;
+    private string? _versionesError;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LiberacionOptions =
+    [
+        new(MonitorLiberacion.Nadie, "Nadie (pausada)"),
+        new(MonitorLiberacion.Prueba, "Solo clientes de prueba"),
+        new(MonitorLiberacion.P1P2, "P1 y P2"),
+        new(MonitorLiberacion.Todos, "Todos")
+    ];
+
+    private async Task RecargarVersionesAsync()
+    {
+        try
+        {
+            _versiones = (await MonitorSvc.GetActualizacionesAsync()).ToList();
+            _versionesError = null;
+        }
+        catch (Exception ex)
+        {
+            _versionesError = Texto(ex);
+            _versiones ??= [];
+        }
+    }
+
+    private async Task GuardarLiberacionAsync(MonitorActualizacionDto v)
+    {
+        if (_guardando)
+            return;
+        _guardando = true;
+        try
+        {
+            await MonitorSvc.CambiarLiberacionAsync(v.IdVersion, v.Liberacion, v.ClientesPrueba, UsuarioActual);
+            _versionesError = null;
+            await RecargarVersionesAsync();
+        }
+        catch (Exception ex)
+        {
+            _versionesError = Texto(ex);
+        }
+        finally
+        {
+            _guardando = false;
         }
     }
 

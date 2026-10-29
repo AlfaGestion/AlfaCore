@@ -177,3 +177,51 @@ public sealed class MonitorAvisoConfigDto
     public IReadOnlyList<string> UsuariosPushLista
         => UsuariosPush.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
+
+/// <summary>Una versión de AlfaActualizacion_Monitor (MON_ACTUALIZACION).</summary>
+public sealed class MonitorActualizacionDto
+{
+    public int IdVersion { get; init; }
+    public string Version { get; init; } = string.Empty;
+
+    /// <summary>Ruta del setup dentro de AlfaArchivos (ej. ACTUALIZACIONES/20261029-01/AlfaActualizacion_Monitor_20261029-01.exe).</summary>
+    public string ArchivoRemoto { get; init; } = string.Empty;
+    public string Sha256 { get; init; } = string.Empty;
+    public long TamanioBytes { get; init; }
+    public string? Notas { get; init; }
+
+    /// <summary>NADIE (pausada), PRUEBA, P1P2 o TODOS.</summary>
+    public string Liberacion { get; set; } = MonitorLiberacion.Nadie;
+
+    /// <summary>Códigos de cliente separados por coma que la reciben en cualquier liberación salvo NADIE.</summary>
+    public string? ClientesPrueba { get; set; }
+    public DateTime FechaAlta { get; init; }
+    public string? UsuarioAlta { get; init; }
+    public DateTime? FechaLiberacion { get; init; }
+    public string? UsuarioLiberacion { get; init; }
+
+    /// <summary>Sistemas que informan esta versión instalada (con la última actualización OK).</summary>
+    public int Instalaciones { get; init; }
+
+    public IReadOnlyList<string> ClientesPruebaLista
+        => (ClientesPrueba ?? string.Empty).Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+public static class MonitorLiberacion
+{
+    public const string Nadie = "NADIE";
+    public const string Prueba = "PRUEBA";
+    public const string P1P2 = "P1P2";
+    public const string Todos = "TODOS";
+
+    public static readonly IReadOnlyList<string> Valores = [Nadie, Prueba, P1P2, Todos];
+}
+
+/// <summary>Versión que le toca instalar a un sistema (GET /api/vb6/actualizacion-pendiente).</summary>
+public sealed class MonitorActualizacionPendienteDto
+{
+    public string Version { get; init; } = string.Empty;
+    public string ArchivoRemoto { get; init; } = string.Empty;
+    public string Sha256 { get; init; } = string.Empty;
+    public long TamanioBytes { get; init; }
+}

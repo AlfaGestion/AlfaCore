@@ -452,6 +452,140 @@ public sealed class MonitorClientesService(
         await GrabarConfigAsync(cn, new Dictionary<string, string> { ["AVISO_FORZAR"] = "1" }, Recortar(usuario, 80), ct).ConfigureAwait(false);
     }
 
+    // ---- AlfaActualizacion_Monitor ---------------------------------------------------------
+
+    public async Task<int> PublicarActualizacionAsync(string version, string archivoRemoto, string sha256, long tamanioBytes,
+        string? notas, string usuario, CancellationToken ct = default)
+    {
+        var v = Recortar(version, 30);
+        var archivo = Recortar(archivoRemoto, 300).Replace('\\', '/');
+        var hash = Recortar(sha256, 64).ToLowerInvariant();
+        if (!EsVersionValida(v))
+            throw new InvalidOperationException("La versión tiene que tener el formato AAAAMMDD-NN (ej. 20261029-01).");
+        if (archivo.Length == 0 || archivo.Contains("..", StringComparison.Ordinal))
+            throw new InvalidOperationException("Falta la ruta del archivo en AlfaArchivos.");
+        if (hash.Length != 64 || !hash.All(Uri.IsHexDigit))
+            throw new InvalidOperationException("El SHA-256 tiene que tener 64 caracteres hexadecimales.");
+        if (tamanioBytes <= 0)
+            throw new InvalidOperationException("Falta el tamaño del archivo.");
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        var id = await cn.QuerySingleAsync<int>(new CommandDefinition(
+            """
+            UPDATE dbo.MON_ACTUALIZACION
+            SET ArchivoRemoto = @Archivo, Sha256 = @Hash, TamanioBytes = @Tamanio, Notas = @Notas
+            WHERE Version = @Version;
+            IF @@ROWCOUNT = 0
+                INSERT INTO dbo.MON_ACTUALIZACION (Version, ArchivoRemoto, Sha256, TamanioBytes, Notas, UsuarioAlta)
+                VALUES (@Version, @Archivo, @Hash, @Tamanio, @Notas, @Usuario);
+            SELECT IdVersion FROM dbo.MON_ACTUALIZACION WHERE Version = @Version;
+            """,
+            new { Version = v, Archivo = archivo, Hash = hash, Tamanio = tamanioBytes, Notas = NullSiVacio(Recortar(notas, 500)), Usuario = Recortar(usuario, 80) },
+            cancellationToken: ct)).ConfigureAwait(false);
+
+        await appEvents.LogAuditAsync("MonitorClientes", "PublicarActualizacion", "MON_ACTUALIZACION", id.ToString(CultureInfo.InvariantCulture),
+            "Versión de AlfaActualizacion_Monitor publicada.", new { Version = v, Archivo = archivo, TamanioBytes = tamanioBytes }, ct).ConfigureAwait(false);
+        return id;
+    }
+
+    public async Task<IReadOnlyList<MonitorActualizacionDto>> GetActualizacionesAsync(CancellationToken ct = default)
+    {
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        return (await cn.QueryAsync<MonitorActualizacionDto>(new CommandDefinition(
+            """
+            SELECT a.IdVersion, a.Version, a.ArchivoRemoto, a.Sha256, a.TamanioBytes, a.Notas, a.Liberacion, a.ClientesPrueba,
+                   a.FechaAlta, a.UsuarioAlta, a.FechaLiberacion, a.UsuarioLiberacion,
+                   (SELECT COUNT(*) FROM dbo.MON_ESTADO e INNER JOIN dbo.MON_ORIGEN o ON o.IdOrigen = e.IdOrigen
+                    WHERE o.Desactivado = 0 AND e.TipoCodigo = N'ACTUALIZACION' AND e.Destino = a.Version) AS Instalaciones
+            FROM dbo.MON_ACTUALIZACION a
+            ORDER BY a.Version DESC;
+            """, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+    }
+
+    public async Task CambiarLiberacionAsync(int idVersion, string liberacion, string? clientesPrueba, string usuario, CancellationToken ct = default)
+    {
+        var lib = (liberacion ?? string.Empty).Trim().ToUpperInvariant();
+        if (!MonitorLiberacion.Valores.Contains(lib))
+            throw new InvalidOperationException("Liberación inválida.");
+        var prueba = string.Join(",", (clientesPrueba ?? string.Empty)
+            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(c => Recortar(c, 15))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        if (lib == MonitorLiberacion.Prueba && prueba.Length == 0)
+            throw new InvalidOperationException("Para liberar a prueba hay que indicar al menos un código de cliente.");
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        var filas = await cn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE dbo.MON_ACTUALIZACION
+            SET Liberacion = @Liberacion, ClientesPrueba = @Prueba, FechaLiberacion = GETDATE(), UsuarioLiberacion = @Usuario
+            WHERE IdVersion = @IdVersion;
+            """, new { IdVersion = idVersion, Liberacion = lib, Prueba = NullSiVacio(Recortar(prueba, 500)), Usuario = Recortar(usuario, 80) },
+            cancellationToken: ct)).ConfigureAwait(false);
+        if (filas == 0)
+            throw new InvalidOperationException("La versión no existe.");
+
+        await appEvents.LogAuditAsync("MonitorClientes", "LiberarActualizacion", "MON_ACTUALIZACION", idVersion.ToString(CultureInfo.InvariantCulture),
+            "Liberación de AlfaActualizacion_Monitor cambiada.", new { Liberacion = lib, ClientesPrueba = prueba, Usuario = usuario }, ct).ConfigureAwait(false);
+    }
+
+    public async Task<MonitorActualizacionPendienteDto?> GetActualizacionPendienteAsync(string licenciaPrincipal, string? versionInstalada, CancellationToken ct = default)
+    {
+        var licencia = (licenciaPrincipal ?? string.Empty).Trim();
+        if (licencia.Length == 0)
+            throw new InvalidOperationException("Falta licenciaPrincipal.");
+        var cliente = await centralClientes.GetByLicenciaPrincipalAsync(licencia, ct).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("licencia-inexistente");
+        var codigo = Recortar(cliente.IdCliente, 15);
+
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        var prioridad = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+            "SELECT TOP (1) LTRIM(RTRIM(Clasificacion)) FROM dbo.VT_CLIENTES WHERE LTRIM(RTRIM(CODIGO)) = @Codigo;",
+            new { Codigo = codigo }, cancellationToken: ct)).ConfigureAwait(false);
+        var versiones = (await cn.QueryAsync<MonitorActualizacionDto>(new CommandDefinition(
+            """
+            SELECT IdVersion, Version, ArchivoRemoto, Sha256, TamanioBytes, Liberacion, ClientesPrueba
+            FROM dbo.MON_ACTUALIZACION WHERE Liberacion <> N'NADIE';
+            """, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
+        var elegida = ElegirActualizacion(versiones, codigo, prioridad, versionInstalada);
+        return elegida is null
+            ? null
+            : new MonitorActualizacionPendienteDto
+            {
+                Version = elegida.Version,
+                ArchivoRemoto = elegida.ArchivoRemoto,
+                Sha256 = elegida.Sha256,
+                TamanioBytes = elegida.TamanioBytes
+            };
+    }
+
+    /// <summary>Formato de versión: AAAAMMDD-NN. Así el orden alfabético es el orden de publicación.</summary>
+    internal static bool EsVersionValida(string? version)
+        => version is { Length: 11 } v && v[8] == '-' && v[..8].All(char.IsAsciiDigit) && v[9..].All(char.IsAsciiDigit);
+
+    /// <summary>La versión más nueva que le corresponde al cliente y que es posterior a la instalada.</summary>
+    internal static MonitorActualizacionDto? ElegirActualizacion(IEnumerable<MonitorActualizacionDto> versiones,
+        string clienteCodigo, string? prioridad, string? versionInstalada)
+    {
+        var instalada = EsVersionValida(versionInstalada?.Trim()) ? versionInstalada!.Trim() : string.Empty;
+        var esPrioritario = prioridad?.Trim() is "1" or "2";
+        return versiones
+            .Where(v => EsVersionValida(v.Version))
+            .Where(v => string.CompareOrdinal(v.Version, instalada) > 0)
+            .Where(v =>
+            {
+                var lib = (v.Liberacion ?? string.Empty).Trim().ToUpperInvariant();
+                if (lib == MonitorLiberacion.Nadie)
+                    return false;
+                if (v.ClientesPruebaLista.Contains(clienteCodigo.Trim(), StringComparer.OrdinalIgnoreCase))
+                    return true;
+                return lib == MonitorLiberacion.Todos || (lib == MonitorLiberacion.P1P2 && esPrioritario);
+            })
+            .OrderByDescending(v => v.Version, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
     private static async Task GrabarConfigAsync(SqlConnection cn, IReadOnlyDictionary<string, string> valores, string usuario, CancellationToken ct)
     {
         foreach (var (clave, valor) in valores)

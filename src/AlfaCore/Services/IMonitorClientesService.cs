@@ -45,4 +45,22 @@ public interface IMonitorClientesService
 
     /// <summary>Pide al proceso de avisos que mande el aviso en su próximo ciclo (cada minuto).</summary>
     Task SolicitarAvisoAhoraAsync(string usuario, CancellationToken ct = default);
+
+    // ---- AlfaActualizacion_Monitor ---------------------------------------------------------
+
+    /// <summary>Registra (o actualiza, si ya existe) una versión publicada en AlfaArchivos. Queda en NADIE.</summary>
+    Task<int> PublicarActualizacionAsync(string version, string archivoRemoto, string sha256, long tamanioBytes,
+        string? notas, string usuario, CancellationToken ct = default);
+
+    /// <summary>Todas las versiones, de la más nueva a la más vieja, con cuántos sistemas la tienen.</summary>
+    Task<IReadOnlyList<MonitorActualizacionDto>> GetActualizacionesAsync(CancellationToken ct = default);
+
+    /// <summary>Cambia a quién se libera una versión.</summary>
+    Task CambiarLiberacionAsync(int idVersion, string liberacion, string? clientesPrueba, string usuario, CancellationToken ct = default);
+
+    /// <summary>
+    /// La versión más nueva liberada para el sistema de esa licencia y posterior a <paramref name="versionInstalada"/>,
+    /// o null si no hay nada. Lanza <see cref="KeyNotFoundException"/> si la licencia no existe.
+    /// </summary>
+    Task<MonitorActualizacionPendienteDto?> GetActualizacionPendienteAsync(string licenciaPrincipal, string? versionInstalada, CancellationToken ct = default);
 }

@@ -2059,6 +2059,75 @@ public class Program
             }
         });
 
+        // AlfaActualizacion_Monitor (2026-10-29). El Timer de cada cliente pregunta cada hora si tiene una
+        // versión liberada: responde "NADA" o "ACTUALIZAR|version|archivoRemoto|sha256|tamanio" (el archivo
+        // se baja de AlfaArchivos). Misma clave que backup-status.
+        app.MapGet("/api/vb6/actualizacion-pendiente", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            try
+            {
+                var pendiente = await monitorSvc.GetActualizacionPendienteAsync(
+                    request.Query["licenciaPrincipal"].ToString(), request.Query["version"].ToString(), ct);
+                var texto = pendiente is null
+                    ? "NADA"
+                    : $"ACTUALIZAR|{pendiente.Version}|{pendiente.ArchivoRemoto}|{pendiente.Sha256}|{pendiente.TamanioBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                return Results.Text(texto, "text/plain; charset=utf-8");
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        // Lo usa Herramientas\ArmarActualizacion.py después de subir el setup a AlfaArchivos. La versión queda
+        // registrada sin liberar (NADIE): se libera desde Administrar → Monitor de Clientes.
+        app.MapPost("/api/vb6/actualizacion-publicar", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            try
+            {
+                var id = await monitorSvc.PublicarActualizacionAsync(
+                    form["version"].ToString(),
+                    form["archivoRemoto"].ToString(),
+                    form["sha256"].ToString(),
+                    long.TryParse(form["tamanio"].ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var tam) ? tam : 0,
+                    NullIfEmpty(form["notas"]),
+                    form["usuario"].ToString() is { Length: > 0 } u ? u : "ArmarActualizacion",
+                    ct);
+                return Results.Text($"OK {id}", "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
         app.MapGet("/api/vb6/cliente-por-licencia", async (
             HttpRequest request,
             ICentralClientesService clientesSvc,

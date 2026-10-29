@@ -135,6 +135,29 @@ Son los nombres de inicio de sesión de AlfaCore, compartidos con Conversaciones
 contactos externos. La entrega requiere una suscripción push activa y notificaciones habilitadas por
 el usuario en su navegador. No se envía ningún aviso al seleccionar o guardar destinatarios.
 
+## Actualizaciones: AlfaActualizacion_Monitor (29/10/2026)
+
+Setup (Inno Setup) que actualiza en el cliente TimerLiquidacion, EM_Backup, NETCPV y ControlBase.
+Fuentes en `NMC_CONT_DEV\Instalador\AlfaActualizacion_Monitor.iss`.
+
+1. **Publicar** (PC de desarrollo): `python NMC_CONT_DEV\Herramientas\ArmarActualizacion.py --notas "..."`.
+   Junta los exes de DEV, compila el setup con versión `AAAAMMDD-NN` y lo sube a AlfaArchivos en
+   `ACTUALIZACIONES/<versión>/`; después lo vuelve a bajar para comparar el SHA-256 y lo registra con
+   `POST /api/vb6/actualizacion-publicar` (misma clave que backup-status). Queda **sin liberar** (`NADIE`).
+2. **Liberar** en este tablero (sección "Actualizaciones"): `PRUEBA` (solo los códigos de cliente indicados),
+   `P1P2`, `TODOS` o `NADIE` (pausa). Los clientes de prueba la reciben en cualquier liberación salvo `NADIE`.
+3. **En el cliente**, la tarea `ACTUALIZACION_ALFA` del Timer (cada 60 min, la crea el Timer solo) llama a
+   `GET /api/vb6/actualizacion-pendiente?licenciaPrincipal=&version=`, que responde `NADA` o
+   `ACTUALIZAR|versión|archivo|sha256|tamaño`. Dentro de `ACTUALIZACION_HORARIO` (por defecto 21 a 7 h) y sin
+   tareas en curso, la baja, verifica tamaño y SHA-256 y corre el setup con `/VERYSILENT /AUTO`.
+   El setup no corta un backup en curso (queda "postergada"); cierra los programas, guarda los exes anteriores en
+   `_respaldo_actualizacion\<versión>\`, copia y vuelve a abrir cada Timer con su misma línea de comandos.
+4. **Resultado**: el Timer informa el tipo `ACTUALIZACION` (destino = versión instalada; ERROR = crítico) y la
+   versión dentro de `VersionSistema`. La columna "Instalada en" cuenta los sistemas con esa versión.
+
+Tabla `MON_ACTUALIZACION` (ALFANET2007). La elección de versión está en
+`MonitorClientesService.ElegirActualizacion` (probada en `MonitorActualizacionTests`).
+
 ## Código
 
 - `Services/MonitorClientesService.cs` (+ interfaz), `Services/MonitorClientesSchema.cs`,
