@@ -178,16 +178,15 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     }
 
                     // "Tengo una papelera... necesitaría lapiceras, ¿ustedes venden?" (audio, Base4271 2026-10-29):
-                    // derivó sin buscar teniendo consultar_precio. Si pregunta por un producto, primero se busca.
+                    // derivó sin buscar teniendo consultar_precio. No se decide por palabras: se le pide a la IA que
+                    // lo revise una vez; ella interpreta si es un artículo (y lo busca) o si derivar estaba bien.
                     if (hayPrecioEntreHerramientas && !reintentoPorDerivarSinBuscar && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
                         && ronda + 2 <= MaxRondasHerramientas
-                        && string.Equals(respuestaParseada?.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase)
-                        && PreguntaPorProducto(mensajeCliente))
+                        && string.Equals(respuestaParseada?.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
                     {
                         reintentoPorDerivarSinBuscar = true;
-                        herramientaForzadaSiguienteRonda = ConversacionAsistenteHerramientasService.ToolConsultarPrecio;
-                        messages.Add(new { role = "system", content = "Antes de derivar, buscá con consultar_precio el artículo que pide el cliente; derivá sólo si no lo tenemos." });
-                        await TraceDiagAsync(traceDiagAsync, "BotDerivaSinBuscar|reintento=consultar_precio", ct);
+                        messages.Add(new { role = "system", content = "Antes de derivar, revisá: si el cliente pregunta por algún artículo o producto (aunque lo diga con otras palabras), buscalo primero con consultar_precio. Si no es sobre artículos, devolvé la misma respuesta." });
+                        await TraceDiagAsync(traceDiagAsync, "BotDerivaSinBuscar|revisa", ct);
                         continue;
                     }
 
@@ -414,13 +413,6 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     /// Montos ("$ 350", "$1.234,50") de la respuesta que no aparecen en ningún texto de respaldo
     /// (información del negocio, charla, resultados de herramientas). Se compara la parte entera.
     /// </summary>
-    private static readonly Regex PreguntaPorProductoRegex = new(
-        @"\b(vend\w*|ten[eé]s|tienen|tendr[aá]n|hay|precio\w*|cu[aá]nto|sale|salen|cuesta\w*|stock|conseg\w*|lista|cat[aá]logo|busco|necesit\w*|comprar|manejan|trabajan)\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    /// <summary>El cliente pregunta si tienen o cuánto sale algo ("¿ustedes venden?", "necesitaría lapiceras").</summary>
-    internal static bool PreguntaPorProducto(string? mensaje) => PreguntaPorProductoRegex.IsMatch(mensaje ?? string.Empty);
-
     internal static IReadOnlyList<string> MailsSinRespaldo(string? respuesta, string respaldo)
     {
         if (string.IsNullOrWhiteSpace(respuesta))
