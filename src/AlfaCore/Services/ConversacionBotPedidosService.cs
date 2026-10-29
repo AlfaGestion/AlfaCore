@@ -166,8 +166,10 @@ public sealed class ConversacionBotPedidosService(
     internal static bool EsCancelacion(string? texto)
     {
         var t = Normalizar(texto);
+        // "no, mejor 4 aaa nomás" cambia el pedido, no lo cancela (batería 4264, 2026-10-28): lo rearma el modelo.
         return t.Length > 0 && t.Split(' ').Length <= 8
-            && Regex.IsMatch(t, @"^(no|mejor no|cancela\w*|anula\w*|dejalo|olvidalo|no gracias)\b");
+            && Regex.IsMatch(t, @"^(no|mejor no|cancela\w*|anula\w*|dejalo|olvidalo|no gracias)\b")
+            && !Regex.IsMatch(t, @"\d|\b(cambi\w*|agreg\w*|sum\w*|sac\w*|quit\w*|en vez|en lugar)\b");
     }
 
     internal static IReadOnlyList<CatalogosCatalogoItemDto> BuscarEnCatalogo(IReadOnlyList<CatalogosCatalogoItemDto> articulos, string pedido)

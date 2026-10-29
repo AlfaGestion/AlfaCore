@@ -47,10 +47,13 @@ sus controles quedan como **Sin datos**: así se detecta también un servidor ap
 | `RECEPCION_PDV` | Última recepción correcta de cada PDV | 1 h | 2 h |
 | `BACKUP` | Último backup correcto | 26 h | 36 h |
 | `TAREA` | Resultado de la última ejecución de cada tarea del Timer | ADVERTENCIA | ERROR |
+| `CERT_ARCA` | Vencimiento del certificado de factura electrónica de cada CUIT | 30 días antes | 7 días antes o vencido |
 
 - Medida `EDAD`: el estado sale de la antigüedad de `UltimoOk`. Si nunca hubo un OK es crítico. Si el
   OK está dentro del límite pero el último intento dio `ERROR`, queda en aviso.
 - Medida `RESULTADO`: el estado sale de `Resultado`.
+- Medida `VENCE` (28/10/2026): `UltimoOk` trae la **fecha de vencimiento** y los límites son minutos *antes*
+  de esa fecha. Vencido es crítico. Si el sistema no pudo leer el archivo (`Resultado = ERROR`) queda en aviso.
 - Límites propios de un cliente, o un control desactivado: `MON_CONTROL_CLIENTE` (NULL = el del tipo).
 - Para agregar un control nuevo (por ejemplo, vencimiento del certificado ARCA) alcanza con una fila
   nueva en `MON_CONTROL_TIPO` y que el VB6 mande ese tipo.
@@ -63,6 +66,7 @@ sus controles quedan como **Sin datos**: así se detecta también un servidor ap
 | `ENVIO_PDV` | `MA_NOVEDADES_ENVIO_PDV`: la `FECHA_LECTURA` más vieja de cada destino |
 | `RECEPCION_PDV` | `MA_RECEPCION_PDV_ESTADO`: NETCPV la crea y graba el resultado de cada PDV al recibir (automático o manual; no los PDV por FTP ni las franquicias). Se omiten los PDV dados de baja en `V_TA_TPV` |
 | `TAREA` | `TA_TAREAS_AUTOMATICAS` habilitadas que no son manuales |
+| `CERT_ARCA` | Archivos de `TA_CONFIGURACION` `RUTA_CRT` y `RUTA_CRT_2`, y `RUTA_CRT` de cada `V_TA_UNIDADNEGOCIO` con `USAEFC`. Lee la fecha `NotAfter` con crypt32 (PEM o DER). Destino `CUIT / archivo.crt`; el mensaje trae la ruta |
 
 Un PDV que queda desconectado no se intenta recibir, así que su último OK envejece y pasa a crítico. Si un
 cliente apaga los PDV de noche, conviene subirle el límite de `RECEPCION_PDV` en `MON_CONTROL_CLIENTE`.
@@ -119,4 +123,4 @@ datos, probadas en `MonitorClientesAvisosTests`).
 ## Pendiente (fases siguientes)
 
 - Pantalla para editar límites por cliente (hoy, directo en `MON_CONTROL_CLIENTE`).
-- Más controles: certificado ARCA, comprobantes sin CAE, disco, tamaño de base, versión del sistema.
+- Más controles: comprobantes sin CAE, disco, tamaño de base, versión del sistema.

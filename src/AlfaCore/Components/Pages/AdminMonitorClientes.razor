@@ -21,7 +21,7 @@
         <header class="mon__header">
             <div>
                 <h2>Monitor de Clientes</h2>
-                <p>Estado del sistema de escritorio de cada cliente: envíos y recepciones de puntos de venta, backup y tareas automáticas. Se actualiza solo cada minuto.</p>
+                <p>Estado del sistema de escritorio de cada cliente: envíos y recepciones de puntos de venta, backup, tareas automáticas y certificados ARCA. Se actualiza solo cada minuto.</p>
             </div>
             @if (_tablero is not null)
             {
@@ -137,7 +137,11 @@
                                             }
                                         </td>
                                         <td class="is-nowrap">
-                                            @if (f.UltimoOk is { } ok)
+                                            @if (f.EsVencimiento && f.UltimoOk is { } vence)
+                                            {
+                                                <span title="Fecha de vencimiento">Vence @vence.ToString("dd/MM/yyyy", Es)</span>
+                                            }
+                                            else if (f.UltimoOk is { } ok)
                                             {
                                                 <span>@ok.ToString("dd/MM HH:mm", Es)</span>
                                             }
@@ -579,6 +583,16 @@
     {
         if (string.Equals(t.Medida, "RESULTADO", StringComparison.OrdinalIgnoreCase))
             return "error = crítico, advertencia = aviso";
+        if (string.Equals(t.Medida, "VENCE", StringComparison.OrdinalIgnoreCase))
+        {
+            var antes = new List<string>();
+            if (t.AvisoMinutos is > 0)
+                antes.Add($"aviso {MonitorDuracion(t.AvisoMinutos.Value)} antes de vencer");
+            if (t.CriticoMinutos is > 0)
+                antes.Add($"crítico {MonitorDuracion(t.CriticoMinutos.Value)} antes");
+            antes.Add("vencido = crítico");
+            return string.Join(", ", antes);
+        }
         var partes = new List<string>();
         if (t.AvisoMinutos is > 0)
             partes.Add($"aviso a las {MonitorDuracion(t.AvisoMinutos.Value)}");
@@ -588,7 +602,10 @@
     }
 
     private static string MonitorDuracion(int minutos)
-        => minutos % 60 == 0 ? $"{minutos / 60} h" : minutos < 60 ? $"{minutos} min" : $"{minutos / 60} h {minutos % 60} min";
+        => minutos >= 2880 && minutos % 1440 == 0 ? $"{minutos / 1440} días"
+            : minutos % 60 == 0 ? $"{minutos / 60} h"
+            : minutos < 60 ? $"{minutos} min"
+            : $"{minutos / 60} h {minutos % 60} min";
 
     private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
     {

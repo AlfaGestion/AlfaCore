@@ -529,6 +529,11 @@ public sealed class MonitorClientesService(
                 {
                     (estado, motivo) = PorResultado(e.Resultado, e.UltimoIntento, ahora);
                 }
+                else if (string.Equals(tipo.Medida, "VENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (aviso, critico) = Limites(limitesPorClave, origen.ClienteCodigo, tipo);
+                    (estado, motivo) = PorVencimiento(e.UltimoOk, e.Resultado, ahora, aviso, critico);
+                }
                 else
                 {
                     var (aviso, critico) = Limites(limitesPorClave, origen.ClienteCodigo, tipo);
@@ -585,6 +590,7 @@ public sealed class MonitorClientesService(
             TipoCodigo = tipo.Codigo,
             TipoNombre = tipo.Nombre,
             TipoOrden = tipo.Orden,
+            Medida = tipo.Medida,
             Destino = destino,
             UltimoOk = ultimoOk,
             UltimoIntento = ultimoIntento,
@@ -620,6 +626,26 @@ public sealed class MonitorClientesService(
         if (string.Equals(resultado, "ADVERTENCIA", StringComparison.OrdinalIgnoreCase))
             return (MonitorEstado.Aviso, $"La última ejecución terminó con advertencias{cuando}");
         return (MonitorEstado.Ok, ultimoIntento is null ? "Sin ejecuciones registradas" : $"Última ejecución correcta{cuando}");
+    }
+
+    /// <summary>
+    /// Certificados y similares: <paramref name="vence"/> es la fecha de vencimiento y los límites son
+    /// minutos antes de esa fecha. Si el sistema no pudo leerlo (sin archivo, ilegible) queda en aviso.
+    /// </summary>
+    internal static (MonitorEstado, string) PorVencimiento(DateTime? vence, string? resultado, DateTime ahora, int? avisoMinutos, int? criticoMinutos)
+    {
+        if (vence is null || EsError(resultado))
+            return (MonitorEstado.Aviso, "No se pudo leer la fecha de vencimiento");
+
+        var fecha = vence.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+        var falta = vence.Value - ahora;
+        if (falta <= TimeSpan.Zero)
+            return (MonitorEstado.Critico, $"Venció el {fecha} (hace {Duracion(-falta)})");
+        if (criticoMinutos is > 0 && falta.TotalMinutes <= criticoMinutos.Value)
+            return (MonitorEstado.Critico, $"Vence el {fecha} (en {Duracion(falta)})");
+        if (avisoMinutos is > 0 && falta.TotalMinutes <= avisoMinutos.Value)
+            return (MonitorEstado.Aviso, $"Vence el {fecha} (en {Duracion(falta)})");
+        return (MonitorEstado.Ok, $"Vence el {fecha} (en {Duracion(falta)})");
     }
 
     private static bool EsError(string? resultado)

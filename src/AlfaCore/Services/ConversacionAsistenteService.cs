@@ -193,6 +193,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                         ct);
                     await TraceDiagAsync(traceDiagAsync, $"BotOpenAiResponse|finishReason={SanitizeDiag(finishReason)}|tipo={SanitizeDiag(respuestaParseada?.Tipo)}", ct);
 
+                    // Mail inventado ("soporte@alfagestion.com" con la plantilla sin completar, 2026-10-28): no
+                    // se manda un dato de contacto que no figura en ningún lado; se pasa al equipo.
+                    if (respuestaParseada is not null && MailsSinRespaldo(respuestaParseada.Respuesta, textoConRespaldo.ToString()).Count > 0)
+                    {
+                        await TraceDiagAsync(traceDiagAsync, "BotMailSinRespaldo|deriva", ct);
+                        return new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty };
+                    }
+
                     return respuestaParseada;
                 }
 
@@ -370,14 +378,37 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         => string.IsNullOrWhiteSpace(model)
            || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
+    internal const string DatoSinCargar = "(sin dato cargado)";
+
+    /// <summary>
+    /// La plantilla de información trae textos guía entre corchetes ("Soporte: [días y horario, ej: lunes
+    /// a viernes de 9 a 18 hs]"). Si la empresa no los completó, el modelo los tomaba como dato (ALFA NET,
+    /// 2026-10-28). Se reemplazan antes de mandarlos; los links Markdown [texto](url) quedan igual.
+    /// </summary>
+    internal static string QuitarTextosSinCompletar(string? informacion)
+        => Regex.Replace(informacion ?? string.Empty, @"\[(?=[^\]\r\n]*\p{L})[^\]\r\n]{3,300}\](?!\()", DatoSinCargar);
+
     internal static string LineaFechaActual(DateTime ahora)
-        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h. "
+        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h "
+           // A las 17:38 gpt-4o-mini contestó "ya pasaron las 18 h" (batería 4264, 2026-10-28).
+           + $"(ya pasaron las {ahora.Hour:00}:00 y todavía no son las {(ahora.Hour + 1) % 24:00}:00; para saber si el negocio está abierto, comparala con su horario). "
            + "Usala para fechas y plazos: no ofrezcas una promoción que ya venció o que todavía no empezó, y calculá horarios de corte y entregas desde ahora.";
 
     /// <summary>
     /// Montos ("$ 350", "$1.234,50") de la respuesta que no aparecen en ningún texto de respaldo
     /// (información del negocio, charla, resultados de herramientas). Se compara la parte entera.
     /// </summary>
+    internal static IReadOnlyList<string> MailsSinRespaldo(string? respuesta, string respaldo)
+    {
+        if (string.IsNullOrWhiteSpace(respuesta))
+            return [];
+        return Regex.Matches(respuesta, @"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+            .Select(m => m.Value.TrimEnd('.'))
+            .Where(m => (respaldo ?? string.Empty).IndexOf(m, StringComparison.OrdinalIgnoreCase) < 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     internal static IReadOnlyList<string> MontosSinRespaldo(string? respuesta, string respaldo)
     {
         if (string.IsNullOrWhiteSpace(respuesta))
@@ -420,12 +451,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine(cliente);
         }
 
-        var info = (informacion ?? string.Empty).Trim();
+        var info = QuitarTextosSinCompletar(informacion).Trim();
         if (info.Length > 0)
         {
             sb.AppendLine();
             sb.AppendLine("INFORMACIÓN DEL NEGOCIO (tu fuente de verdad; priorizala sobre cualquier suposición):");
             sb.AppendLine(info);
+            if (info.Contains(DatoSinCargar, StringComparison.Ordinal))
+                sb.AppendLine($"Donde dice {DatoSinCargar} la empresa todavía no cargó ese dato: no lo sabés. No lo inventes ni des un ejemplo; si la consulta depende de eso, tipo DERIVA.");
         }
 
         var conocimiento = (conocimientoBase ?? string.Empty).Trim();
@@ -453,9 +486,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
         sb.AppendLine("- Lo mismo con los servicios (reparaciones, instalaciones, etc.): si no figuran en la información, no digas que no se ofrecen. Decile que lo consultás con el equipo (tipo DERIVA) sin afirmar nada.");
+        // Batería "empresa de servicios" (ALFA NET, 2026-10-28): inventó un mail de soporte, que el sistema
+        // "funciona en Mac" y pasos de menú ("buscá 'Actualizaciones'") que no estaban en ningún lado.
+        sb.AppendLine("- Nunca inventes datos de contacto (mails, teléfonos, direcciones, CBU, horarios), pasos o menús de un sistema, compatibilidades ni funciones: sólo los que figuran tal cual en la información o en los resultados de las herramientas. Si te piden algo de eso y no está, decile que se lo pasás a alguien del equipo (tipo DERIVA).");
         sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
-            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
+            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. Si ya dijo qué artículo y cuántos (\"quiero 10 pilas AA\", \"mandame 5 AAA y 3 AA\"), llamá preparar_pedido directamente: no le preguntes antes \"¿querés que arme el pedido?\", el resumen ya le pide la confirmación. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
         else
             sb.AppendLine("- No ofrezcas armar ni tomar el pedido por este chat: si quiere comprar, indicale cómo hacerlo según la información del negocio (local, catálogo o portal).");
         if (hayPortalEntreHerramientas)
@@ -509,7 +545,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
         sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
-        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal.");
+        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal. Si pregunta por un pedido o una entrega (\"¿cuándo me entregan?\", \"¿ya salió?\") y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
         sb.AppendLine("- Si el cliente AVISA que su tema ya se resolvió o agradece cerrando (\"ya está arreglado\", \"ya anda\", \"lo pude solucionar\", \"gracias, ya está\"): NO es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 

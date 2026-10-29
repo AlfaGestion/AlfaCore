@@ -71,6 +71,11 @@ public sealed class MonitorFilaDto
     public string TipoCodigo { get; init; } = string.Empty;
     public string TipoNombre { get; init; } = string.Empty;
     public int TipoOrden { get; init; }
+
+    /// <summary>EDAD, RESULTADO o VENCE. En VENCE, <see cref="UltimoOk"/> es la fecha en que vence.</summary>
+    public string Medida { get; init; } = "EDAD";
+
+    public bool EsVencimiento => string.Equals(Medida, "VENCE", StringComparison.OrdinalIgnoreCase);
     public string Destino { get; init; } = string.Empty;
     public DateTime? UltimoOk { get; init; }
     public DateTime? UltimoIntento { get; init; }

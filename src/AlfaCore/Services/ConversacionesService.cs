@@ -8884,7 +8884,26 @@ public sealed partial class ConversacionesService(
             var textoUltimoEntrante = (await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false)).Trim();
             if (textoUltimoEntrante.Length > 0)
                 texto = textoUltimoEntrante;
-            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+            // Con varias conversaciones a la vez SQL Server puede elegir esta como víctima de un
+            // interbloqueo (1205) y el mensaje quedaba sin respuesta (batería 4264, 2026-10-28). Se
+            // reintenta: si la respuesta ya había salido, el chequeo de "ya respondido" corta el reintento.
+            async Task ResponderConReintentoAsync(string textoBot, long? automaticoYaConocido)
+            {
+                for (var intento = 1; ; intento++)
+                {
+                    try
+                    {
+                        await EjecutarRespuestaBotAsync(idConversacion, textoBot, config, ct, automaticoYaConocido).ConfigureAwait(false);
+                        return;
+                    }
+                    catch (SqlException ex) when (ex.Number == 1205 && intento < 3)
+                    {
+                        await Task.Delay(400 * intento, ct).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            await ResponderConReintentoAsync(texto, null).ConfigureAwait(false);
             for (var vuelta = 0; vuelta < MaxRespuestasBotEncadenadas; vuelta++)
             {
                 // La respuesta recién mandada es posterior al mensaje nuevo y lo haría figurar como
@@ -8900,7 +8919,7 @@ public sealed partial class ConversacionesService(
                 if (textoNuevo.Length == 0)
                     break;
 
-                await EjecutarRespuestaBotAsync(idConversacion, textoNuevo, config, ct, automaticoConocido).ConfigureAwait(false);
+                await ResponderConReintentoAsync(textoNuevo, automaticoConocido).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -9042,8 +9061,14 @@ public sealed partial class ConversacionesService(
     internal static bool EsRespuestaIdentidadNo(string? texto)
     {
         var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
-        return t.Length > 0 && t.Split(' ').Length <= 12
-               && Regex.IsMatch(t, @"^(no|nop|nada que ver|para nada)\b|\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b");
+        if (t.Length == 0 || t.Split(' ').Length > 12)
+            return false;
+        if (Regex.IsMatch(t, @"\bno soy\b|\bequivoc|\bincorrect|\bno es mi\b|\bnada que ver\b"))
+            return true;
+        // "no, mejor 4 aaa nomás" / "no, cancelalo" contestan sobre el pedido, no sobre quién escribe
+        // (batería 4264, 2026-10-28): con eso se negaba la identidad y se cortaba la compra.
+        return Regex.IsMatch(t, @"^(no|nop|para nada)\b")
+               && !Regex.IsMatch(t, @"\d|\b(mejor|cancel\w*|cambi\w*|agreg\w*|sac\w*|quit\w*|solo|nomas|pedido|quiero|unidades?)\b");
     }
 
     /// <summary>Mensaje que es sólo una imagen, sin texto propio ("[image]").</summary>
@@ -9468,6 +9493,9 @@ public sealed partial class ConversacionesService(
                 // consulta anterior: se fuerza consultar_precio también en el seguimiento ("AA").
                 var ultimaRespuestaFueAclaracion = await UltimaRespuestaBotFueAclaracionAsync(idConversacion, token).ConfigureAwait(false);
                 var identidadPreguntadaAhora = false;
+                // El resumen de un pedido armado/actualizado ahora no es "otra aclaración": "agregale 2 aaa"
+                // con el pedido pendiente salía como contención + ticket (batería 4264, 2026-10-28).
+                var pedidoPreparadoAhora = false;
                 string? pedidosEncontrados = null;
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? async (nombreHerramienta, argumentosJson, ctHerramienta) =>
@@ -9480,6 +9508,8 @@ public sealed partial class ConversacionesService(
                             return "Dato privado: antes de darlo hay que confirmar quién escribe. No des ningún dato de la cuenta; el servidor le hace la pregunta.";
                         }
                         var resultadoHerramienta = await asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, texto, idConversacion, ctHerramienta).ConfigureAwait(false);
+                        if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolPrepararPedido)
+                            pedidoPreparadoAhora = true;
                         if (nombreHerramienta == ConversacionAsistenteHerramientasService.ToolConsultarPedidos
                             && resultadoHerramienta.Contains(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, StringComparison.Ordinal))
                             pedidosEncontrados = resultadoHerramienta.Replace(ConversacionAsistenteHerramientasService.InstruccionPedidosEncontrados, string.Empty).Trim();
@@ -9623,7 +9653,7 @@ public sealed partial class ConversacionesService(
                 // preguntar, pasa a un operador (contención estándar) en vez de insistir.
                 // La pregunta de identidad la arma el servidor y no cuenta: tras "¿cuál querés?" + "quiero 10
                 // azules" salía la contención en vez de "¿me confirmás que escribís por…?" (Base4271 2026-10-28).
-                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
+                if (ultimaRespuestaFueAclaracion && !identidadPreguntadaAhora && !pedidoPreparadoAhora && string.Equals(result?.Tipo, "ACLARA", StringComparison.OrdinalIgnoreCase))
                 {
                     result = null;
                 }
@@ -9659,6 +9689,17 @@ public sealed partial class ConversacionesService(
                 // ya se le pidió (nunca dos aclaraciones seguidas), no se contesta ni se deriva.
                 if (EsMensajeSinContenido(texto) && ultimaRespuestaFueAclaracion)
                     return;
+
+                if (EsRespuestaSuelta(texto) && !ultimaRespuestaFueAclaracion
+                    && (result is null || result.Tipo.ToUpperInvariant() is "DERIVA" or "SEGUIMIENTO"))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = true,
+                        Respuesta = "Contame qué necesitás y te ayudo."
+                    };
+                }
 
                 if (EsMensajeSinContenido(texto)
                     && !string.Equals(result?.Tipo, "RESUELVE", StringComparison.OrdinalIgnoreCase)
@@ -9774,9 +9815,25 @@ public sealed partial class ConversacionesService(
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
-                    : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+                    : "Gracias por tu mensaje. Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad 🙂";
                 if (usoFallbackBot)
                     tipo = "DERIVA";
+                // La regla del prompt no alcanza con gpt-4o-mini: "te recomiendo que contactes a un asesor"
+                // (batería 4264, 2026-10-28). Somos la empresa: la consulta ya le llega al equipo por acá.
+                if (tipo == "DERIVA" && PideContactarAOtro(respuesta))
+                    respuesta = ContencionDerivaEstandar;
+                // "No vendo resmas" aunque la regla lo prohíbe: eso sólo lo sabe el equipo (batería 4264).
+                if (!usoFallbackBot && AfirmaQueNoSeVende(respuesta))
+                {
+                    respuesta = RespuestaArticuloNoEncontrado;
+                    tipo = "DERIVA";
+                }
+                // Un "DERIVA" que no menciona a nadie del equipo no deriva ("parece que tu mensaje se cortó,
+                // contame…", "no hay problema"): abría un ticket por nada (batería 4264, 2026-10-28).
+                // Sólo si le pregunta algo: "lo reviso y te aviso" sin nombrar a nadie sigue siendo DERIVA para
+                // que el operador se entere.
+                if (tipo == "DERIVA" && !usoFallbackBot && !MencionaAlEquipo(respuesta) && respuesta.Contains('?'))
+                    tipo = "ACLARA";
 
                 // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
                 // pista en el timeline interno para que el humano que retome sepa que hay
@@ -9841,7 +9898,7 @@ public sealed partial class ConversacionesService(
 
                 // La pregunta de identidad ya deja su propia nota (🔐) y no marca aclaración: si no, el
                 // "¿confirmás el pedido?" que sigue al "sí" caía en "dos aclaraciones seguidas".
-                if (tipo == "ACLARA" && !identidadPreguntadaAhora)
+                if (tipo == "ACLARA" && !identidadPreguntadaAhora && !pedidoPreparadoAhora)
                 {
                     // Además de informar al operador, es la marca persistida que usa
                     // UltimaRespuestaBotFueAclaracionAsync para no repreguntar dos veces seguidas.
@@ -10392,14 +10449,18 @@ public sealed partial class ConversacionesService(
         return acciones;
     }
 
-    private static bool ContienePalabraEscalado(string texto, string? palabras)
+    internal static bool ContienePalabraEscalado(string texto, string? palabras)
     {
         if (string.IsNullOrWhiteSpace(palabras))
             return false;
-        var lower = texto.ToLowerInvariant();
+        // Palabra o frase completa (admite plural), sin tildes: "persona" no debe saltar con "personal"
+        // ("¿hacen capacitaciones para el personal?", batería 2026-10-28) y "caído" = "caido".
+        var normalizado = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
         return palabras
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(p => lower.Contains(p.ToLowerInvariant()));
+            .Select(ConversacionAsistenteHerramientasService.NormalizarTexto)
+            .Where(p => p.Length > 0)
+            .Any(p => Regex.IsMatch(normalizado, $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(p)}(?:s|es)?(?![\p{{L}}\p{{N}}])"));
     }
 
     private static string Truncar(string? texto, int max)
@@ -10475,8 +10536,26 @@ public sealed partial class ConversacionesService(
                 || ConversacionAsistenteHerramientasService.MensajePidePrecioArticulo(mensajePrevioCliente));
     }
 
-    internal const string NotaPidioPersona = "🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
-    internal const string RespuestaPidioPersona = "Perfecto, te paso con alguien del equipo. En breve te responde por acá.";
+    internal const string ContencionDerivaEstandar = "Le paso tu consulta a alguien del equipo y te responde por acá a la brevedad.";
+
+    internal const string RespuestaArticuloNoEncontrado = "No lo encontré en nuestra lista de artículos. Alguien del equipo te confirma por acá si lo podemos conseguir.";
+
+    internal static bool AfirmaQueNoSeVende(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\bno (vendo|vendemos|manejamos|comercializamos|trabajamos con|trabajamos esa|tenemos ese tipo)\b");
+
+    internal static bool MencionaAlEquipo(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\b(equipo|asesor\w*|companer\w*|persona|tecnic\w*|vendedor\w*|operador\w*|alguien|te respond\w*|te contact\w*|te van a|derivo|derivar|paso tu|paso la|ticket)\b");
+
+    internal static bool PideContactarAOtro(string? respuesta)
+        => Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+               @"\bte (recomiendo|sugiero|aconsejo) (que )?(le |lo |la )?(contact|comunic|consult|habl|llam|escrib|pas|acud|dirij)\w*")
+           || Regex.IsMatch(ConversacionAsistenteHerramientasService.NormalizarTexto(respuesta),
+            @"\b(contact(es|a|ate|arte|ar)|comunic(ate|es|arte|arse)|consult(es|ale|arle|ar)|habl(es|a|ale|arle|ar)|llam(es|a|ale|arle|ar)|escrib(as|ile|irle))\s+(directamente\s+)?(a|con)\s+(un|una|el|la|nuestro|nuestra)?\s*(asesor|vendedor|equipo|atencion|soporte|representante|companer\w*|operador|tecnic\w*)");
+
+    internal const string NotaPidioPersona ="🙋 El contacto pidió hablar con una persona. Requiere que un operador lo tome.";
+    internal const string RespuestaPidioPersona = "Entendido, te paso con alguien del equipo. En breve te responde por acá.";
 
     internal const string NotaBotAclaracion ="🤖❓ El asistente le pidió una aclaración al cliente para poder resolver.";
     private static readonly TimeSpan VentanaUltimaAclaracion = TimeSpan.FromMinutes(30);
@@ -11129,9 +11208,9 @@ public sealed partial class ConversacionesService(
                "Lo registró el asistente; el ticket sigue abierto hasta que alguien del equipo lo cierre.";
     }
 
-    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente. Dejame que reviso si hay novedades y te aviso a la brevedad.";
+    internal const string RespuestaSeguimiento = "Veo que tenés un tema pendiente con el equipo. Ya les aviso que escribiste para que te respondan por acá a la brevedad.";
     internal const string RespuestaSeguimientoRepetida = "Ya pedí novedades de tu tema al equipo. Apenas tengamos una respuesta te escribimos.";
-    internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís así lo reviso?";
+    internal const string AclaracionSeguimientoSinTema = "¿Me contás a qué consulta te referís? Así se la paso a quien corresponde.";
     internal const string ObservacionAsignacionSeguimiento = "Pide novedades de un tema pendiente";
 
     private sealed record TemaPendiente(int? NumeroTicket, bool HuboRespuestaDelEquipo, string? IdTecnico, string Contacto, string? IdTecnicoAsignado, long? IdTicket = null)
@@ -11349,7 +11428,23 @@ public sealed partial class ConversacionesService(
 
     /// <summary>Sólo se abre un ticket automático cuando el mensaje es una consulta real.</summary>
     internal static bool EsConsultaParaTicket(string texto)
-        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto) && !EsMensajeSinContenido(texto);
+        => !string.IsNullOrWhiteSpace(texto) && !EsMensajeSocial(texto) && !EsMensajeDePrueba(texto) && !EsMensajeSinContenido(texto)
+           && !EsRespuestaSuelta(texto);
+
+    private static readonly HashSet<string> PalabrasRespuestaSuelta = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "si", "sip", "sii", "no", "nop", "bueno", "claro", "aja", "ja", "jaja", "jajaja", "jeje", "mmm", "ah", "oh"
+    };
+
+    /// <summary>
+    /// "sí", "no", "bueno", "jaja" sin nada más: no es una consulta. Si el modelo la deriva, abría un ticket
+    /// ("hola" + "si", batería 4264 2026-10-28). No reemplaza al modelo cuando la entiende (RESUELVE/ACLARA).
+    /// </summary>
+    internal static bool EsRespuestaSuelta(string texto)
+    {
+        var palabras = Regex.Matches(RemoveDiacritics(texto ?? string.Empty).ToLowerInvariant(), "[a-z]+").Select(m => m.Value).ToArray();
+        return palabras.Length is > 0 and <= 2 && palabras.All(PalabrasRespuestaSuelta.Contains);
+    }
 
     internal static bool EsMensajeSocial(string texto)
     {
