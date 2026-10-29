@@ -94,6 +94,16 @@ public sealed class TarjetasProgresoUiTests
             await header.Current.Actions.Single(a=>a.Key=="proponer").OnClick!();
             var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
             Assert.Contains(titulo,html);Assert.Contains("role=\"status\"",html);Assert.Contains("alfa-feedback-panel",html);
+            if(datos&&coincide)
+            {
+                Assert.DoesNotContain("Confirmar conciliación de tarjetas",html);
+                var conciliar=header.Current.Actions.Single(a=>a.Key=="conciliar");
+                Assert.False(conciliar.Disabled);
+                await conciliar.OnClick!();
+                html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+                Assert.Contains("Confirmar conciliación de tarjetas",html);
+                Assert.Contains("Confirmá después de revisar el original",html);
+            }
         });
     }
     public sealed class PaginaSinCarga:ConciliacionTarjetas

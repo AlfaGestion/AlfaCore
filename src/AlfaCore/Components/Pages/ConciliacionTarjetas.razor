@@ -365,7 +365,13 @@
             _resultadoPropuesta=AppUiMessage.Info("Sin coincidencias únicas",$"Se revisaron {pendientesResumen} pendientes de liquidación y {pendientesAlfa} de Alfa con los filtros actuales. No hay pares únicos con la misma fecha e importe. Para lotes o fechas diferentes usá Asistir con IA, o seleccioná manualmente.");
     }
 
-    private Task PedirConfirmar(){if(!PuedeConciliar)return Task.CompletedTask;_motivo="";_desconciliar=null;_confirmar=true;return Task.CompletedTask;}
+    private Task PedirConfirmar()
+    {
+        if(_busy||!PuedeConciliar)return Task.CompletedTask;
+        _motivo="";_desconciliar=null;_confirmar=true;
+        // La barra global ejecuta el callback fuera del árbol de eventos de esta página.
+        return InvokeAsync(StateHasChanged);
+    }
     private Task AsistirIa()=>Operar(async ct=>{
         if(_comparacion is null)return;
         var filtro=new TarjetasFiltro(_comparacion.Importacion.Id,_filtro.FechaDesde??DateTime.Today,_filtro.FechaHasta??DateTime.Today,_filtro.Sucursal,"Pendientes",_filtro.Buscar);
