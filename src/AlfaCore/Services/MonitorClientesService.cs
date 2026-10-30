@@ -502,6 +502,29 @@ public sealed class MonitorClientesService(
             """, cancellationToken: ct)).ConfigureAwait(false)).ToList();
     }
 
+    public async Task<IReadOnlyList<MonitorInstalacionDto>> GetInstalacionesAsync(string version, CancellationToken ct = default)
+    {
+        var ver = (version ?? string.Empty).Trim();
+        if (ver.Length == 0) return [];
+        await using var cn = await AbrirAsync(ct).ConfigureAwait(false);
+        return (await cn.QueryAsync<MonitorInstalacionDto>(new CommandDefinition(
+            """
+            SELECT LTRIM(RTRIM(o.ClienteCodigo)) AS ClienteCodigo,
+                   ISNULL(LTRIM(RTRIM(c.RAZON_SOCIAL)), N'') AS RazonSocial,
+                   o.LicenciaPrincipal, o.DbServidor, o.DbNombre, o.HostCliente,
+                   e.Resultado, e.FechaReporte
+            FROM dbo.MON_ESTADO e
+            INNER JOIN dbo.MON_ORIGEN o ON o.IdOrigen = e.IdOrigen
+            OUTER APPLY (
+                SELECT TOP (1) v.RAZON_SOCIAL
+                FROM dbo.VT_CLIENTES v
+                WHERE LTRIM(RTRIM(v.CODIGO)) = LTRIM(RTRIM(o.ClienteCodigo))
+            ) c
+            WHERE o.Desactivado = 0 AND e.TipoCodigo = N'ACTUALIZACION' AND e.Destino = @Version
+            ORDER BY e.FechaReporte DESC;
+            """, new { Version = ver }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+    }
+
     public async Task CambiarLiberacionAsync(int idVersion, string liberacion, string? clientesPrueba, string usuario, CancellationToken ct = default)
     {
         var lib = (liberacion ?? string.Empty).Trim().ToUpperInvariant();
