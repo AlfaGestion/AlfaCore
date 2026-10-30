@@ -23,7 +23,7 @@ public sealed partial class ConciliacionTarjetasService
     {
         var session=sessions.GetActiveSession()!.Id;motivo=motivo.Trim();
         if(motivo.Length is <3 or >200)throw new InvalidOperationException("Escribí un motivo de entre 3 y 200 caracteres para anular la importación.");
-        if(!await TieneAnulacionAsync(c,ct,tx))throw new InvalidOperationException("Aplicá la actualización 2026-10-30-001 desde Actualizaciones antes de anular importaciones de tarjetas.");
+        if(!await TieneAnulacionAsync(c,ct,tx))throw new InvalidOperationException("Aplicá la actualización 2026-10-30-004 desde Actualizaciones antes de anular importaciones de tarjetas.");
         var origen=await c.QuerySingleOrDefaultAsync<TarjetasImportacion>(Cmd("SELECT Id,Nombre,Cuenta,Anulada FROM dbo.TJ_Importacion WITH(UPDLOCK,HOLDLOCK) WHERE Id=@id",new{id},ct,tx))
             ??throw new InvalidOperationException("La importación ya no está disponible. Actualizá la lista.");
         if(origen.Anulada)throw new InvalidOperationException("La importación ya está anulada. Actualizá la lista.");

@@ -304,6 +304,8 @@ public sealed class ActualizacionesService(
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, string> ScriptsRenombrados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["2026-10-30-001__caja_tarjetas_anular_importacion.sql"] = "2026-10-30-004__caja_tarjetas_anular_importacion.sql",
+        ["2026-10-30-001__caja_conciliaciones_asistidas_ia_menu_web.sql"] = "2026-10-30-003__caja_conciliaciones_asistidas_ia_menu_web.sql",
         ["2026-10-22-002__caja_conciliacion_asientos.sql"] = "2026-10-25-001__caja_conciliacion_asientos.sql",
         ["2026-10-19-001__conversaciones_encuestas_satisfaccion.sql"] = "2026-10-20-004__conversaciones_encuestas_satisfaccion.sql",
         ["2026-10-15-001__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",

@@ -126,7 +126,9 @@ Se reutilizan TARJETAS-IA-DIAS y TARJETAS-TOLERANCIA, sin nuevas claves ni migra
 
 ### Anulación de importaciones sin conciliaciones activas (2026-10-30)
 
-La interfaz usa `AnularAsync` en lugar de la eliminación física. `2026-10-30-001__caja_tarjetas_anular_importacion.sql` agrega Anulada, UsuarioAnulacion, FechaAnulacion y MotivoAnulacion a TJ_Importacion, e ImportacionActiva a TJ_Detalle. Sustituye las restricciones globales de Hash/Cuenta y Huella por índices únicos filtrados para importaciones activas, permitiendo reimportar sin perder el original ni la historia anterior.
+La numeración corregida usa `2026-10-30-004` para anulación y `2026-10-30-003` para nombres del menú: ambos habían circulado como `2026-10-30-001`. Se conservan los alias de nombres en ActualizacionesService, que solo omite una copia vieja coexistente si su SQL coincide con el reemplazo. Las nuevas versiones permiten completar ambos cambios en bases que ya habían consumido el número anterior. Los scripts siguen siendo idempotentes.
+
+La interfaz usa `AnularAsync` en lugar de la eliminación física. `2026-10-30-004__caja_tarjetas_anular_importacion.sql` agrega Anulada, UsuarioAnulacion, FechaAnulacion y MotivoAnulacion a TJ_Importacion, e ImportacionActiva a TJ_Detalle. Sustituye las restricciones globales de Hash/Cuenta y Huella por índices únicos filtrados para importaciones activas, permitiendo reimportar sin perder el original ni la historia anterior.
 
 La anulación transaccional Serializable bloquea la cabecera y los rangos de vínculos, valida motivo y cuenta esperada y rechaza cualquier vínculo o miembro aún activo, incluso inconsistencias entre sus marcas. Los vínculos anulados no impiden anular. WriteAuditAsync comparte la transacción; si falla, no se anula. No escribe MV_ASIENTOS, maestros ni asociaciones recordadas.
 

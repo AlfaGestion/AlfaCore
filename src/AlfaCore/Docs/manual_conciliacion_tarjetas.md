@@ -116,7 +116,7 @@ Se permite cuando no quedan conciliaciones activas, aunque haya vínculos ya des
 
 **Mostrar también importaciones anuladas** permite consultar su estado y descargar el original. No pueden conciliarse ni cambiar de cuenta. Para trabajar nuevamente, importá el archivo como una nueva importación.
 
-Requiere aplicar la actualización **2026-10-30-001** desde **Actualizaciones** en la base activa. El motivo de anulación, los motivos de desconciliación y los filtros rápidos conservan los valores ingresados al redibujarse la pantalla.
+Requiere aplicar la actualización **2026-10-30-004** desde **Actualizaciones** en la base activa. El motivo de anulación, los motivos de desconciliación y los filtros rápidos conservan los valores ingresados al redibujarse la pantalla.
 
 ### Resultado visible de las propuestas
 

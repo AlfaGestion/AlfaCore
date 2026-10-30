@@ -22,9 +22,9 @@ public sealed class TarjetasAnularImportacionTests
         var connection=Environment.GetEnvironmentVariable("TARJETAS_VARIAS_TEST_SQL")!;
         Assert.Contains(new SqlConnectionStringBuilder(connection).InitialCatalog,new[]{"ELBOLSON2011_PRUEBAS","PRUEBAS02122025"});
         var root=new DirectoryInfo(AppContext.BaseDirectory);
-        while(root is not null&&!File.Exists(Path.Combine(root.FullName,"src/AlfaCore/App_Data/updates/2026-10-30-001__caja_tarjetas_anular_importacion.sql")))root=root.Parent;
+        while(root is not null&&!File.Exists(Path.Combine(root.FullName,"src/AlfaCore/App_Data/updates/2026-10-30-004__caja_tarjetas_anular_importacion.sql")))root=root.Parent;
         Assert.NotNull(root);
-        var script=await File.ReadAllTextAsync(Path.Combine(root!.FullName,"src/AlfaCore/App_Data/updates/2026-10-30-001__caja_tarjetas_anular_importacion.sql"));
+        var script=await File.ReadAllTextAsync(Path.Combine(root!.FullName,"src/AlfaCore/App_Data/updates/2026-10-30-004__caja_tarjetas_anular_importacion.sql"));
         await using var cn=new SqlConnection(connection);await cn.OpenAsync();using var tx=cn.BeginTransaction(IsolationLevel.Serializable);
         var sesion=new SessionDto();var auditorias=new List<AuditWriteRequest>();var fallarAuditoria=false;
         var eventos=Proxy<IAppEventService>((m,args)=>

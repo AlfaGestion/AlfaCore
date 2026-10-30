@@ -74,7 +74,12 @@ public sealed class ActualizacionesScriptsTests
             .Select(nombre => Formato.Match(nombre!))
             .Where(m => m.Success)
             .GroupBy(m => m.Groups["version"].Value, StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Count() > 1 && !ChoquesHistoricos.Contains(g.Key))
+            .Where(g => g.Count() > 1 && !ChoquesHistoricos.Contains(g.Key)
+                // Un choque resuelto solo se admite si TODOS sus nombres viejos se retiraron
+                // y tienen reemplazos oficiales presentes. Reusar ese número con otro archivo sigue fallando.
+                && !g.All(m => !actuales.Contains(m.Value)
+                    && AlfaCore.Services.ActualizacionesService.ScriptsRenombrados.TryGetValue(m.Value, out var nuevo)
+                    && actuales.Contains(nuevo)))
             .Select(g => $"{g.Key}: {string.Join(", ", g.Select(m => m.Value))}")
             .ToList();
 
