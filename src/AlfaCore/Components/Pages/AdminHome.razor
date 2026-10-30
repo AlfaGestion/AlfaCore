@@ -538,12 +538,15 @@
         <div class="adm-section">
             <h4>Licencia del sistema de escritorio</h4>
             <div class="adm-grid">
-                <AlfaInput Label="Licencia"
-                           Value="@_clientForm.LicenciaPrincipal"
-                           ValueChanged="v => _clientForm.LicenciaPrincipal = v ?? string.Empty"
-                           MaxLength="20"
-                           Placeholder="@(string.IsNullOrWhiteSpace(_clientForm.IdCliente) ? "Igual a la cuenta" : _clientForm.IdCliente)"
-                           HelpText="Se carga en Propiedades de consola → Registro. Vacía = igual a la cuenta." />
+                <div class="adm-password-field">
+                    <AlfaInput Label="Licencia"
+                               Value="@_clientForm.LicenciaPrincipal"
+                               ValueChanged="v => _clientForm.LicenciaPrincipal = v ?? string.Empty"
+                               MaxLength="20"
+                               Placeholder="@(string.IsNullOrWhiteSpace(_clientForm.IdCliente) ? "Igual a la cuenta" : _clientForm.IdCliente)"
+                               HelpText="Se carga en Propiedades de consola → Registro. Vacía = igual a la cuenta." />
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="_ => SugerirLicencia()">Sugerir</AlfaButton>
+                </div>
                 <AlfaInput Label="Servidor FTP" Value="@_clientForm.FtpServer" ValueChanged="v => _clientForm.FtpServer = v ?? string.Empty" />
                 <AlfaInput Label="Usuario FTP" Value="@_clientForm.FtpUsuario" ValueChanged="v => _clientForm.FtpUsuario = v ?? string.Empty" />
                 <AlfaInput Label="Clave FTP"
@@ -1568,6 +1571,22 @@
         }
 
         _clientForm.PasswordInicial = password;
+        _error = string.Empty;
+    }
+
+    // "Proponer una licencia": usa el codigo de cuenta como licencia (es unico -es la clave- y
+    // facil de dictar). Es el mismo valor que el backend toma por defecto cuando queda vacia.
+    private void SugerirLicencia()
+    {
+        var cuenta = _clientForm.IdCliente?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(cuenta))
+        {
+            _error = "Cargá primero el ID del cliente o seleccioná una cuenta de VT_CLIENTES.";
+            _message = string.Empty;
+            return;
+        }
+
+        _clientForm.LicenciaPrincipal = cuenta.Length > 20 ? cuenta[..20] : cuenta;
         _error = string.Empty;
     }
 
