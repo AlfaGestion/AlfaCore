@@ -39,7 +39,8 @@ public sealed class ConversacionesUrgencyAlertTests
         Assert.True(urgentBlock >= 0);
         Assert.True(escaladoReturn >= 0);
         Assert.True(urgentBlock < escaladoReturn, "La detección+alerta de urgencia debe evaluarse antes del corte de escalado.");
-        Assert.Matches(@"if \(ContienePalabraEscalado\(texto, config\.BotPalabrasEscalado\)\)\s*\{\s*return;", method); // el handoff sigue existiendo tal cual
+        // El handoff sigue cortando al bot; desde 2026-10-28 antes avisa una vez al cliente y deja nota.
+        Assert.Matches(@"if \(ContienePalabraEscalado\(texto, config\.BotPalabrasEscalado\)\)\s*\{[^}]*NotaPidioPersona[\s\S]*?\}\s*return;\s*\}", method);
     }
 
     [Fact]
@@ -136,6 +137,18 @@ public sealed class ConversacionesUrgencyAlertTests
         Assert.Contains("CONV_ASISTENTE_URGENCIA_TECNICOS", ConfigSource, StringComparison.Ordinal);
         Assert.Contains("Técnicos que reciben alertas de urgencia", ConfigPageSource, StringComparison.Ordinal);
         Assert.Contains("AlternarTecnico", ConfigPageSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Webhooks_UnMensajeYaGrabado_NoSeCortaSiMetaCancelaLaRequest()
+    {
+        // Audio de 23 s de proceso: Meta cortó, el primer intento se canceló antes del bot y el reenvío
+        // vio el mensaje ya grabado (no nuevo) y tampoco respondió (Base4271, 2026-10-29).
+        Assert.DoesNotContain("NotifyIncomingMessageAsync(conversationId, messageId, token)", ServiceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token)", ServiceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token)", ServiceSource, StringComparison.Ordinal);
+        // Sólo queda con el token de la request el eco de mensajes que mandó la app de WhatsApp Business.
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(ServiceSource, @"incoming\.Text, token, reopenIfClosed: true"));
     }
 
     private static string ExtractMethodBody(string source, string signature)

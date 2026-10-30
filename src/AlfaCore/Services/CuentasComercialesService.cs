@@ -37,38 +37,38 @@ public sealed class CuentasComercialesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // SQL Server 2008 no admite OFFSET/FETCH; conservar la paginación en el servidor.
+            var paginacion = AlfaCore.Common.SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila") + ";";
             var sql = $"""
-                -- ROW_NUMBER en vez de OFFSET/FETCH (SQL 2008 / compat 80); columnas leídas por posición.
-                SELECT C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11,
-                    C12, C13, C14, C15, C16, C17, C18, C19, C20, C21, C22
-                FROM (
+                WITH Pagina (Codigo,RazonSocial,Contacto,Localidad,ProvinciaCodigo,ProvinciaDescripcion,
+                    PaisCodigo,PaisDescripcion,Telefono,Mail,NumeroDocumento,IvaCodigo,IvaDescripcion,
+                    IdVendedor,NombreVendedor,IdLista,Bloqueado,Activo,Calle,Numero,Piso,Departamento,Fila) AS (
                 SELECT
-                    ISNULL(base.CODIGO, '') AS C01,
-                    ISNULL(base.RAZON_SOCIAL, '') AS C02,
-                    ISNULL(base.CONTACTO, '') AS C03,
-                    ISNULL(base.LOCALIDAD, '') AS C04,
-                    ISNULL(base.PROVINCIA, '') AS C05,
-                    ISNULL(prov.DESCRIPCION, '') AS C06,
-                    ISNULL(base.PAIS, '') AS C07,
-                    ISNULL(pai.DESCRIPCION, '') AS C08,
-                    ISNULL(base.TELEFONO, '') AS C09,
-                    ISNULL(base.MAIL, '') AS C10,
-                    ISNULL(base.NUMERO_DOCUMENTO, '') AS C11,
-                    ISNULL(base.IVA, '') AS C12,
-                    ISNULL(iva.DESCRIPCION, '') AS C13,
-                    ISNULL(base.IdVendedor, '') AS C14,
-                    ISNULL(vd.Nombre, '') AS C15,
-                    ISNULL(base.IdLista, '') AS C16,
-                    ISNULL(base.BLOQUEO, 0) AS C17,
-                    CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS C18,
-                    ISNULL(base.CALLE, '') AS C19,
-                    ISNULL(base.NUMERO, '') AS C20,
-                    ISNULL(base.PISO, '') AS C21,
-                    ISNULL(base.DEPARTAMENTO, '') AS C22,
+                    ISNULL(base.CODIGO, ''),
+                    ISNULL(base.RAZON_SOCIAL, ''),
+                    ISNULL(base.CONTACTO, ''),
+                    ISNULL(base.LOCALIDAD, ''),
+                    ISNULL(base.PROVINCIA, ''),
+                    ISNULL(prov.DESCRIPCION, ''),
+                    ISNULL(base.PAIS, ''),
+                    ISNULL(pai.DESCRIPCION, ''),
+                    ISNULL(base.TELEFONO, ''),
+                    ISNULL(base.MAIL, ''),
+                    ISNULL(base.NUMERO_DOCUMENTO, ''),
+                    ISNULL(base.IVA, ''),
+                    ISNULL(iva.DESCRIPCION, ''),
+                    ISNULL(base.IdVendedor, ''),
+                    ISNULL(vd.Nombre, ''),
+                    ISNULL(base.IdLista, ''),
+                    ISNULL(base.BLOQUEO, 0),
+                    CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END,
+                    ISNULL(base.CALLE, ''),
+                    ISNULL(base.NUMERO, ''),
+                    ISNULL(base.PISO, ''),
+                    ISNULL(base.DEPARTAMENTO, ''),
                     ROW_NUMBER() OVER (ORDER BY
                         CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN 0 ELSE 1 END,
-                        ISNULL(base.RAZON_SOCIAL, ''),
-                        ISNULL(base.CODIGO, '')) AS FilaPagina
+                        ISNULL(base.RAZON_SOCIAL, ''),ISNULL(base.CODIGO, ''))
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.TA_ESTADOS prov
                     ON UPPER(LTRIM(RTRIM(prov.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, ''))))
@@ -92,9 +92,11 @@ public sealed class CuentasComercialesService(
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
                   AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, '')))) = @ProvinciaCodigo)
                   AND (@PaisCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PAIS, '')))) = @PaisCodigo)
-                ) pagina
-                WHERE FilaPagina > @Skip AND FilaPagina <= @Skip + @PageSize
-                ORDER BY FilaPagina;
+                )
+                SELECT Codigo,RazonSocial,Contacto,Localidad,ProvinciaCodigo,ProvinciaDescripcion,
+                    PaisCodigo,PaisDescripcion,Telefono,Mail,NumeroDocumento,IvaCodigo,IvaDescripcion,
+                    IdVendedor,NombreVendedor,IdLista,Bloqueado,Activo,Calle,Numero,Piso,Departamento
+                FROM Pagina {paginacion}
 
                 SELECT COUNT(*)
                 FROM dbo.{descriptor.ViewName} base
@@ -1149,10 +1151,7 @@ public sealed class CuentasComercialesService(
                 WHERE c.id = @ContactoId;
 
                 IF @IdContacto IS NULL
-                BEGIN
-                    RAISERROR(N'El contacto seleccionado ya no existe en la base activa.', 16, 1);
-                    RETURN;
-                END;
+                    BEGIN RAISERROR(N'El contacto seleccionado ya no existe en la base activa.', 16, 1); RETURN; END;
 
                 DELETE FROM dbo.MA_CONTACTOS_CUENTAS
                 WHERE IdContacto = @IdContacto
@@ -1178,10 +1177,7 @@ public sealed class CuentasComercialesService(
                 END;
 
                 IF @Removidas = 0
-                BEGIN
-                    RAISERROR(N'El contacto seleccionado ya no está vinculado a este cliente.', 16, 1);
-                    RETURN;
-                END;
+                    BEGIN RAISERROR(N'El contacto seleccionado ya no está vinculado a este cliente.', 16, 1); RETURN; END;
 
                 SELECT @IdContacto;
                 """;

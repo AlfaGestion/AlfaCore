@@ -77,7 +77,13 @@ public sealed partial class ConciliacionBancariaService
     {
         ConciliacionIaSalida salida;
         try { salida=json.Length<=500000 ? JsonSerializer.Deserialize<ConciliacionIaSalida>(json,IaJson) ?? throw new JsonException() : throw new JsonException(); }
-        catch(JsonException) { throw new InvalidOperationException("La IA devolvió una respuesta que no se pudo validar. Reintentá el análisis."); }
+        catch(JsonException ex)
+        {
+            // Diagnóstico reproducible sin conservar el JSON, nombres, importes ni instrucciones del modelo.
+            var huella=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json)));
+            var diagnostico=$"Formato IA inválido; longitud={json.Length}; ruta={ex.Path}; línea={ex.LineNumber}; posición={ex.BytePositionInLine}; SHA256={huella}";
+            throw new InvalidOperationException("La IA devolvió una respuesta con un formato incompatible. No se generaron propuestas; se registró el detalle para soporte.",new FormatException(diagnostico));
+        }
         if(salida.Grupos is null||salida.Orientaciones is null||salida.Grupos.Count>1000||salida.Orientaciones.Count>1000)
             throw new InvalidOperationException("La respuesta de IA excede el alcance permitido.");
         var validas=new List<ConciliacionIaPropuesta>();var descartadas=0;

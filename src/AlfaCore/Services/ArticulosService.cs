@@ -44,15 +44,10 @@ public sealed class ArticulosService(
             await cn.OpenAsync(token);
             var precioColumn = await ResolvePrecioVentaColumnAsync(cn, token);
             var orderByClause = BuildOrderByClause(filters.SortBy, filters.SortDescending, precioColumn);
+            var paginacion = SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila");
 
-            // ROW_NUMBER en vez de OFFSET/FETCH y sin TRY_CAST: hay bases en SQL Server 2008 / compat 80.
             var sql = $"""
-                SELECT
-                    p.Codigo, p.CodigoBarra, p.Descripcion, p.RubroCodigo, p.RubroDescripcion,
-                    p.MarcaCodigo, p.MarcaDescripcion, p.UnidadCodigo, p.UnidadDescripcion, p.Costo,
-                    p.Precio1, p.Precio2, p.Precio3, p.Precio4, p.Precio5, p.Precio6, p.Precio7, p.Precio8,
-                    p.Precio, p.TasaIva, p.Exento, p.Pesable, p.Activo, p.ImagenModificada
-                FROM (
+                WITH Pagina AS (
                 SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS Codigo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -78,8 +73,7 @@ public sealed class ArticulosService(
                     ISNULL(a.Pesable, 0) AS Pesable,
                     CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Activo,
                     CASE WHEN ISNULL(a.ModificoImagen, '') = 'S' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada,
-                    ROW_NUMBER() OVER (ORDER BY
-                    {orderByClause}) AS RowNum
+                    ROW_NUMBER() OVER(ORDER BY {orderByClause}) Fila
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.v_ta_rubros r ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.v_ta_tipoArticulo t ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
@@ -93,9 +87,8 @@ public sealed class ArticulosService(
                   AND (@RubroCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @RubroCodigo)
                   AND (@MarcaCodigo = '' OR LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = @MarcaCodigo)
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
-                ) p
-                WHERE p.RowNum > @Skip AND p.RowNum <= @Skip + @PageSize
-                ORDER BY p.RowNum;
+                )
+                SELECT * FROM Pagina {paginacion};
 
                 SELECT COUNT(*)
                 FROM dbo.V_MA_ARTICULOS a
@@ -188,11 +181,10 @@ public sealed class ArticulosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+            var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition($"""
                 SELECT ISNULL(MAX(v), 0) + 1
                 FROM (
-                    SELECT CASE WHEN LTRIM(RTRIM(IDARTICULO)) COLLATE Latin1_General_BIN NOT LIKE '%[^0-9]%' AND LEN(LTRIM(RTRIM(IDARTICULO))) <= 18
-                                THEN CAST(LTRIM(RTRIM(IDARTICULO)) AS BIGINT) END AS v
+                    SELECT {SqlServerCompatibilidad.EnteroONull("IDARTICULO", bigint: true)} AS v
                     FROM dbo.V_MA_ARTICULOS
                 ) x
                 WHERE v IS NOT NULL;
@@ -525,16 +517,13 @@ public sealed class ArticulosService(
     /// <summary>Arma el ORDER BY del listado a partir de la columna en la que el usuario hizo clic
     /// (ver ArticuloViewColumnKeys) -- lista blanca fija, nunca concatena SortBy directo al SQL. Sin
     /// columna reconocida, mantiene el orden por defecto (activos primero, por descripción).</summary>
-    private const string IdArticuloBigIntSql =
-        "CASE WHEN LTRIM(RTRIM(a.IDARTICULO)) COLLATE Latin1_General_BIN NOT LIKE '%[^0-9]%' AND LEN(LTRIM(RTRIM(a.IDARTICULO))) <= 18 THEN CAST(LTRIM(RTRIM(a.IDARTICULO)) AS BIGINT) END";
-
     private static string BuildOrderByClause(string? sortBy, bool descending, string precioColumn)
     {
         var direction = descending ? "DESC" : "ASC";
         var expression = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
         {
             ArticuloViewColumnKeys.Codigo =>
-                $"CASE WHEN {IdArticuloBigIntSql} IS NULL THEN 1 ELSE 0 END {direction}, {IdArticuloBigIntSql} {direction}",
+                $"CASE WHEN ({SqlServerCompatibilidad.EnteroONull("a.IDARTICULO", bigint: true)}) IS NULL THEN 1 ELSE 0 END {direction}, {SqlServerCompatibilidad.EnteroONull("a.IDARTICULO", bigint: true)} {direction}",
             ArticuloViewColumnKeys.CodigoBarra => $"LTRIM(RTRIM(a.CODIGOBARRA)) {direction}",
             ArticuloViewColumnKeys.Descripcion => $"ISNULL(a.DESCRIPCION, '') {direction}",
             ArticuloViewColumnKeys.Rubro => $"ISNULL(r.Descripcion, '') {direction}",
@@ -686,7 +675,7 @@ public sealed class ArticulosService(
             return existente;
 
         var maximo = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-            $"SELECT ISNULL(MAX(CASE WHEN LTRIM(RTRIM({idColumn})) COLLATE Latin1_General_BIN NOT LIKE '%[^0-9]%' AND LEN(LTRIM(RTRIM({idColumn}))) <= 9 THEN CAST(LTRIM(RTRIM({idColumn})) AS INT) END), 0) FROM dbo.{tableName};",
+            $"SELECT ISNULL(MAX({SqlServerCompatibilidad.EnteroONull(idColumn)}), 0) FROM dbo.{tableName};",
             cancellationToken: ct));
         var nuevoCodigo = (maximo + 1).ToString().PadLeft(4, '0');
 

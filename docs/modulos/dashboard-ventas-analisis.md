@@ -8,4 +8,6 @@ Los filtros de período, cliente, usuario, unidades y tipo se aplican al libro. 
 
 La comparación gráfica muestra hasta 15 participantes; la tabla incluye todos. Ver detalle abre la evolución mensual y comprobantes paginados de a 50, hasta el visor existente. Ranking, evolución y documentos provienen de una misma tabla temporal filtrada. No se recalculan signos ni se graban movimientos. Se conserva `directo=1` y el retorno desde el visor incluye selección y página.
 
-Los errores de consulta pasan por el servicio central de eventos (`AUX_ERR`). La pantalla conserva filtros y datos en memoria ante fallos y ofrece reintento. Pruebas de UI cubren ambas dimensiones, selección sin asignar, paginación, filtros y navegación directa. Falta la validación visual y SQL en una base real.
+Los errores de consulta pasan por el servicio central de eventos (`AUX_ERR`). La pantalla conserva filtros y datos en memoria ante fallos y ofrece reintento. Pruebas de UI cubren ambas dimensiones, selección sin asignar, paginación, filtros y navegación directa.
+
+El 28/10/2026 se verificó el incidente 7244 de GENESIS (base central 97): SQL Server 2008, compatibilidad 80, rechaza `OFFSET/FETCH`. El detalle analítico usa ahora `ROW_NUMBER`, con el mismo orden por fecha descendente, tipo e identificador y páginas de 50. Se ejecutaron las consultas de ambas dimensiones y las páginas 1 y 2 en esa base. La validación visual queda pendiente de publicar la aplicación.

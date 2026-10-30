@@ -25,6 +25,7 @@ public sealed class CompatibilidadSql2008Tests
         "ConciliacionBancariaService.Vinculos.cs",
         "ConciliacionTarjetasService.Cuenta.cs",
         "ConciliacionTarjetasService.Movimientos.cs",
+        "ConciliacionTarjetasService.Desconciliar.cs",
         "CargaComprobantesPlanificador.cs",         // FOR JSON para la foto previa a grabar
         "CargaComprobantesAsociadoPreparador.cs",
         "BillingService.cs",                        // corren contra ALFA_CENTRAL (SQL 2016)

@@ -202,6 +202,32 @@
             micTime = el("span", "ac-mic-time");
             micTime.hidden = true;
         }
+        // Emojis (2026-10-29): boton que abre una franja con los mas usados; el elegido se inserta
+        // donde esta el cursor. Son caracteres de texto: viajan como cualquier mensaje.
+        var emojiPanel = el("div", "ac-emojis");
+        emojiPanel.hidden = true;
+        emojiPanel.setAttribute("role", "group");
+        emojiPanel.setAttribute("aria-label", "Emojis");
+        EMOJIS.forEach(function (em) {
+            var op = el("button", "ac-emoji-op");
+            op.type = "button";
+            op.textContent = em;
+            op.setAttribute("aria-label", em);
+            op.addEventListener("click", function () { insertarEnInput(input, em); });
+            emojiPanel.appendChild(op);
+        });
+        var emojiBtn = el("button", "ac-emoji");
+        emojiBtn.type = "button";
+        emojiBtn.title = "Emojis";
+        emojiBtn.setAttribute("aria-label", "Agregar un emoji");
+        emojiBtn.setAttribute("aria-expanded", "false");
+        emojiBtn.appendChild(svgIcon("M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"));
+        emojiBtn.addEventListener("click", function () {
+            emojiPanel.hidden = !emojiPanel.hidden;
+            emojiBtn.setAttribute("aria-expanded", emojiPanel.hidden ? "false" : "true");
+            if (emojiPanel.hidden) input.focus();
+        });
+        form.appendChild(emojiBtn);
         form.appendChild(input);
         if (mic) {
             form.appendChild(micTime);
@@ -218,12 +244,14 @@
         panel.appendChild(list);
         panel.appendChild(status);
         panel.appendChild(nameRow);
+        panel.appendChild(emojiPanel);
         panel.appendChild(form);
         root.appendChild(panel);
         if (!modoVentana) root.appendChild(bubble);
         document.body.appendChild(host);
 
         ui = { bubble: bubble, panel: panel, list: list, input: input, nameInput: nameInput, status: status, bienvenida: config.mensajeBienvenida || "",
+               emojiPanel: emojiPanel, emojiBtn: emojiBtn,
                mic: mic, micCancel: micCancel, micTime: micTime };
 
         if (!modoVentana) panel.addEventListener("keydown", function (e) { if (e.key === "Escape") toggle(); });
@@ -270,6 +298,7 @@
         var texto = ui.input.value.trim();
         if (!texto) return;
         ui.input.value = "";
+        if (ui.emojiPanel && !ui.emojiPanel.hidden) { ui.emojiPanel.hidden = true; ui.emojiBtn.setAttribute("aria-expanded", "false"); }
         var item = { clientMessageId: randomId(20), texto: texto, node: null, visitorId: visitorId, generation: state.generation };
         item.node = appendMessage(ui.list, { texto: texto, esVisitante: true, pendiente: true });
         state.pending.push(item);
@@ -599,6 +628,22 @@
         ui.status.hidden = !text;
     }
 
+    // Los mas usados en soporte. Escritos como \u para que se vean bien aunque la pagina del
+    // cliente no sea UTF-8.
+    var EMOJIS = ["\uD83D\uDE00", "\uD83D\uDE03", "\uD83D\uDE0A", "\uD83D\uDE42", "\uD83D\uDE09", "\uD83D\uDE0D", "\uD83D\uDE0E", "\uD83E\uDD14", "\uD83D\uDE05", "\uD83D\uDE02", "\uD83D\uDE4F", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83D\uDC4F", "\uD83D\uDE4C", "\uD83D\uDCAA", "\uD83D\uDC4C", "\uD83E\uDD1D", "\uD83D\uDC4B", "\u2764\uFE0F", "\u2705", "\u274C", "\u26A0\uFE0F", "\u2753", "\u2757", "\uD83D\uDD25", "\u2B50", "\uD83C\uDF89", "\uD83D\uDCCE", "\uD83D\uDCDE", "\uD83D\uDCBB", "\uD83D\uDDA8\uFE0F", "\uD83D\uDCC4", "\uD83D\uDCB0", "\uD83D\uDD50", "\uD83D\uDE80"];
+
+    // Inserta el texto donde esta el cursor (o reemplaza lo seleccionado), respetando el maximo.
+    function insertarEnInput(input, texto) {
+        var ini = typeof input.selectionStart === "number" ? input.selectionStart : input.value.length;
+        var fin = typeof input.selectionEnd === "number" ? input.selectionEnd : ini;
+        var nuevo = input.value.slice(0, ini) + texto + input.value.slice(fin);
+        if (input.maxLength > 0 && nuevo.length > input.maxLength) return;
+        input.value = nuevo;
+        var pos = ini + texto.length;
+        input.focus();
+        try { input.setSelectionRange(pos, pos); } catch (e) { /* navegadores viejos */ }
+    }
+
     function el(tag, className) {
         var node = document.createElement(tag);
         if (className) node.className = className;
@@ -655,6 +700,13 @@
             ".ac-attach{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
             ".ac-attach:hover{color:" + color + ";border-color:" + color + "}",
             ".ac-attach svg{width:18px;height:18px}",
+            ".ac-emoji{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
+            ".ac-emoji:hover,.ac-emoji[aria-expanded=true]{color:" + color + ";border-color:" + color + "}",
+            ".ac-emoji svg{width:20px;height:20px}",
+            ".ac-emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(36px,1fr));gap:2px;padding:8px 12px;border-top:1px solid #e5e7eb;max-height:128px;overflow-y:auto;background:#fff}",
+            ".ac-emojis[hidden]{display:none}",
+            ".ac-emoji-op{border:0;background:transparent;font-size:22px;line-height:1;height:36px;border-radius:8px;cursor:pointer;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif}",
+            ".ac-emoji-op:hover,.ac-emoji-op:focus-visible{background:#f1f5f9;outline:none}",
             ".ac-mic{width:40px;height:40px;border-radius:50%;border:1px solid #d1d5db;background:#fff;color:#4b5563;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}",
             ".ac-mic:hover{color:" + color + ";border-color:" + color + "}",
             ".ac-mic svg{width:18px;height:18px}",

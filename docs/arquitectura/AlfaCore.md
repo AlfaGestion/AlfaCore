@@ -318,14 +318,23 @@ Tarea de inicio que abre el navegador automáticamente (configurable).
 5. `instalar_servicio.bat` como admin
 
 ### Actualización
+
+Usar el actualizador para publicar y copiar una instalación existente:
+
 ```batch
-robocopy publish\AlfaCoreLAN "C:\ruta\instalacion" /MIR /XF appsettings.Production.json *.log
-sc stop AlfaCore && sc start AlfaCore
+scripts\actualizar_instalacion.bat "C:\ruta\instalacion"
 ```
 
-Opción recomendada para actualizar sin reinstalar:
+Sin destino, el script permite elegirlo. Conserva `appsettings.json`, `appsettings.Production.json`, `.env`, `web.config`, los datos locales de `App_Data` y `wwwroot/uploads`. Para destinos remotos indica cuándo detener y volver a iniciar el sitio/servicio.
+
+Los recursos de aplicación dentro de `App_Data` se actualizan de manera específica: `updates`, `novedades-sistema` y los lectores Python de `extractos` y `tarjetas`. Para estos lectores copia solo `*.py`, sin purgar sus carpetas. Se valida que ambos `leer_pdf.py` existan en la publicación antes de reemplazar binarios, y se aborta si falla su copia. Esto evita el error «Falta el lector PDF en el servidor» al importar extractos o liquidaciones.
+
+`/nopublish` reutiliza una publicación ya creada y exige los mismos lectores. Si falta alguno, volver a ejecutar sin ese argumento para publicar de nuevo. El actualizador no instala Python ni pypdf: se utiliza el intérprete configurado en el servidor.
+
+Validación del BAT sobre carpetas temporales, sin desplegar a servidores:
+
 ```batch
-scripts\actualizar_instalacion.bat
+python tests\scripts\test_actualizar_instalacion.py -v
 ```
 
 Para iniciar manualmente sin servicio en una instalación publicada:

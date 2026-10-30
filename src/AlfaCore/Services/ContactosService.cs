@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using AlfaCore.Common;
 using Microsoft.Data.SqlClient;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
@@ -62,23 +63,9 @@ public sealed class ContactosService(
             var pageConversationMatchSql = BuildConversationMatchSql("pageContacts");
             var advancedFilterSql = BuildAdvancedFilterSql(filters, filterConversationMatchSql);
             var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
-            // ROW_NUMBER en vez de OFFSET/FETCH y LAG/LEAD: hay bases en SQL Server 2008 / compat 80.
+            var paginacion = SqlServerCompatibilidad.Paginar(cn.ServerVersion, "Fila", ordenar: false);
             var sql = $"""
-                SELECT
-                    pageContacts.Id,
-                    pageContacts.NombreApellido,
-                    pageContacts.Localidad,
-                    pageContacts.ProvinciaCodigo,
-                    pageContacts.ProvinciaDescripcion,
-                    pageContacts.Telefono,
-                    pageContacts.Celular,
-                    pageContacts.Email,
-                    pageContacts.Cargo,
-                    pageContacts.Activo,
-                    conv.IdConversacion
-                FROM (
-                    SELECT numbered.*
-                    FROM (
+                WITH ContactosFiltrados AS (
                     SELECT
                         c.id AS Id,
                         ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
@@ -91,7 +78,7 @@ public sealed class ContactosService(
                         ISNULL(c.email, '') AS Email,
                         ISNULL(c.Cargo, '') AS Cargo,
                         {activoExpr} AS Activo,
-                        ROW_NUMBER() OVER (ORDER BY {orderBySql}) AS RowNumPagina
+                        ROW_NUMBER() OVER(ORDER BY {orderBySql}) Fila
                     FROM dbo.MA_CONTACTOS c
                     LEFT JOIN dbo.TA_ESTADOS e
                         ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
@@ -107,9 +94,21 @@ public sealed class ContactosService(
                       {activoFilterSql}
                       {advancedFilterSql}
                       {ruleFilterSql}
-                    ) numbered
-                    WHERE numbered.RowNumPagina > @Skip
-                      AND numbered.RowNumPagina <= @Skip + @PageSize
+                )
+                SELECT
+                    pageContacts.Id,
+                    pageContacts.NombreApellido,
+                    pageContacts.Localidad,
+                    pageContacts.ProvinciaCodigo,
+                    pageContacts.ProvinciaDescripcion,
+                    pageContacts.Telefono,
+                    pageContacts.Celular,
+                    pageContacts.Email,
+                    pageContacts.Cargo,
+                    pageContacts.Activo,
+                    conv.IdConversacion
+                FROM (
+                    SELECT * FROM ContactosFiltrados {paginacion}
                 ) pageContacts
                 OUTER APPLY (
                     SELECT TOP (1) cc.IdConversacion
@@ -259,6 +258,7 @@ public sealed class ContactosService(
                     WHERE choice.UsesFilteredContext = 0
                        OR EXISTS (SELECT 1 FROM FilteredIds f WHERE f.Id = b.Id)
                 ),
+                -- SQL Server 2008 no tiene LAG ni LEAD: anterior y siguiente salen de ROW_NUMBER con self-join.
                 NumberedContacts AS
                 (
                     SELECT

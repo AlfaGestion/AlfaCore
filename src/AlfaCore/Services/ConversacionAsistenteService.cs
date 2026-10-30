@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AlfaCore.Models;
 
 namespace AlfaCore.Services;
@@ -10,7 +11,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
-    private const int MaxRondasHerramientas = 2;
+    // 3: buscar, probar otro nombre común si no aparece (lapicera/birome) y responder (2026-10-29).
+    private const int MaxRondasHerramientas = 3;
 
     public async Task<ConversacionAsistenteRespuesta?> ResponderAsync(
         string comportamiento,
@@ -27,7 +29,6 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
         Func<string, CancellationToken, Task>? traceDiagAsync = null,
         bool precioRequiereIdentificacion = false,
-        bool forzarConsultarPrecio = false,
         string? linkCatalogoParaLead = null,
         IReadOnlyList<string>? imagenesDataUri = null,
         CancellationToken ct = default)
@@ -42,38 +43,22 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
         var haySaldoEntreHerramientas = herramientas?.Any(h => h.Nombre.StartsWith("consultar_saldo", StringComparison.Ordinal)) ?? false;
         var hayCatalogoEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_catalogo_publico", StringComparison.Ordinal)) ?? false;
-        var debeForzarCatalogo = hayCatalogoEntreHerramientas && MensajePideCatalogo(mensajeCliente);
         var hayPrecioEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_precio", StringComparison.Ordinal)) ?? false;
-        // La intención de precio la decide el llamador (incluye el seguimiento de una aclaración);
-        // acá sólo se verifica que la tool realmente se ofreció.
-        var debeForzarPrecio = forzarConsultarPrecio && hayPrecioEntreHerramientas;
         var hayPortalEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "generar_link_portal", StringComparison.Ordinal)) ?? false;
-        // Toma de pedidos por chat activa: "quiero 10 pilas" se arma como pedido (preparar_pedido) en vez
-        // de forzar sólo el precio, y "quiero hacer un pedido" no se manda directo al portal (se pregunta qué).
         var hayPrepararPedido = herramientas?.Any(h => string.Equals(h.Nombre, ConversacionAsistenteHerramientasService.ToolPrepararPedido, StringComparison.Ordinal)) ?? false;
-        var debeForzarPrepararPedido = hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePideCantidadDeArticulo(mensajeCliente);
-        if (debeForzarPrepararPedido)
-            debeForzarPrecio = false;
-        var debeForzarPortal = hayPortalEntreHerramientas
-            && (ConversacionAsistenteHerramientasService.MensajePideListaDePrecios(mensajeCliente)
-                || (!hayPrepararPedido && ConversacionAsistenteHerramientasService.MensajePidePortal(mensajeCliente)));
-        // Con la tool de pedidos ofrecida (la empresa usa Notas de Pedido) "¿cómo están mis pedidos?"
-        // se consulta siempre; si no tiene pedidos, el resultado lo deriva al seguimiento del tema pendiente.
-        var hayPedidosEntreHerramientas = herramientas?.Any(h => string.Equals(h.Nombre, "consultar_pedidos", StringComparison.Ordinal)) ?? false;
-        var debeForzarPedidos = hayPedidosEntreHerramientas && ConversacionAsistenteHerramientasService.MensajeConsultaPedidos(mensajeCliente);
-        var herramientasForzadas = new List<string>();
-        if (debeForzarPedidos)
-            herramientasForzadas.Add("consultar_pedidos");
-        if (debeForzarCatalogo)
-            herramientasForzadas.Add("generar_link_catalogo_publico");
-        if (debeForzarPrecio)
-            herramientasForzadas.Add("consultar_precio");
-        if (debeForzarPortal)
-            herramientasForzadas.Add("generar_link_portal");
-        if (debeForzarPrepararPedido)
-            herramientasForzadas.Add(ConversacionAsistenteHerramientasService.ToolPrepararPedido);
+        // La IA decide qué herramienta usar (2026-10-28). La única que se fuerza es consultar_precio,
+        // y sólo como red de seguridad: si la respuesta trae un monto que no salió de ninguna herramienta,
+        // ni de la información del negocio, ni de la charla.
+        var textoConRespaldo = new StringBuilder();
+        var reintentoPorPrecioSinRespaldo = false;
+        var reintentoPorDerivarSinBuscar = false;
+        var seUsoAlgunaHerramienta = false;
+        string? herramientaForzadaSiguienteRonda = null;
         var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
 
+        textoConRespaldo.AppendLine(systemPrompt);
+        foreach (var m in historial)
+            textoConRespaldo.AppendLine(m.Texto);
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         string? ultimaRespuestaAutomatica = null;
         foreach (var m in historial
@@ -135,11 +120,13 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                // Ronda 0: catálogo, precio, portal y/o pedidos explícitos → se fuerza la tool (o cualquiera si
-                // piden más de una). Desde la ronda 1, auto: el modelo decide con el resultado en mano.
-                object? toolChoice = ronda != 0 || herramientasForzadas.Count == 0 ? null
-                    : herramientasForzadas.Count > 1 ? "required"
-                    : new { type = "function", function = new { name = herramientasForzadas[0] } };
+                // En la última ronda tiene que responder: si pedía otra herramienta quedaba sin texto y salía
+                // la contención genérica ("quiero 10 pilas AA, ¿cuánto me sale?", Base4264 2026-10-28).
+                object? toolChoice = tools is null ? null
+                    : ronda == MaxRondasHerramientas ? "none"
+                    : herramientaForzadaSiguienteRonda is null ? null
+                    : new { type = "function", function = new { name = herramientaForzadaSiguienteRonda } };
+                herramientaForzadaSiguienteRonda = null;
                 var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools, toolChoice);
 
                 using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -178,6 +165,31 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     var texto = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
                     var respuestaParseada = ParseRespuesta(texto);
 
+                    // Sólo si no buscó nada: con herramientas usadas, un total calculado (10 x $ 2.500) no es inventado.
+                    if (hayPrecioEntreHerramientas && !reintentoPorPrecioSinRespaldo && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
+                        && ronda + 2 <= MaxRondasHerramientas
+                        && MontosSinRespaldo(respuestaParseada?.Respuesta, textoConRespaldo.ToString()).Count > 0)
+                    {
+                        reintentoPorPrecioSinRespaldo = true;
+                        herramientaForzadaSiguienteRonda = ConversacionAsistenteHerramientasService.ToolConsultarPrecio;
+                        messages.Add(new { role = "system", content = "Tu respuesta tenía un precio que no salió de ninguna herramienta. Buscalo con consultar_precio antes de responder; nunca escribas un precio de memoria." });
+                        await TraceDiagAsync(traceDiagAsync, "BotPrecioSinRespaldo|reintento=consultar_precio", ct);
+                        continue;
+                    }
+
+                    // "Tengo una papelera... necesitaría lapiceras, ¿ustedes venden?" (audio, Base4271 2026-10-29):
+                    // derivó sin buscar teniendo consultar_precio. No se decide por palabras: se le pide a la IA que
+                    // lo revise una vez; ella interpreta si es un artículo (y lo busca) o si derivar estaba bien.
+                    if (hayPrecioEntreHerramientas && !reintentoPorDerivarSinBuscar && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
+                        && ronda + 2 <= MaxRondasHerramientas
+                        && string.Equals(respuestaParseada?.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        reintentoPorDerivarSinBuscar = true;
+                        messages.Add(new { role = "system", content = "Antes de derivar, revisá: si el cliente pregunta por algún artículo o producto (aunque lo diga con otras palabras), buscalo primero con consultar_precio. Si no es sobre artículos, devolvé la misma respuesta." });
+                        await TraceDiagAsync(traceDiagAsync, "BotDerivaSinBuscar|revisa", ct);
+                        continue;
+                    }
+
                     // Mismo diagnóstico temporal: acá vemos qué modelo respondió realmente (confirma si
                     // OPENAI_MODEL se está tomando), si había herramientas ofrecidas, y el JSON crudo que
                     // mandó el modelo -- sin esto solo veíamos el resultado final ya parseado.
@@ -195,6 +207,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                         },
                         ct);
                     await TraceDiagAsync(traceDiagAsync, $"BotOpenAiResponse|finishReason={SanitizeDiag(finishReason)}|tipo={SanitizeDiag(respuestaParseada?.Tipo)}", ct);
+
+                    // Mail inventado ("soporte@alfagestion.com" con la plantilla sin completar, 2026-10-28): no
+                    // se manda un dato de contacto que no figura en ningún lado; se pasa al equipo.
+                    if (respuestaParseada is not null && MailsSinRespaldo(respuestaParseada.Respuesta, textoConRespaldo.ToString()).Count > 0)
+                    {
+                        await TraceDiagAsync(traceDiagAsync, "BotMailSinRespaldo|deriva", ct);
+                        return new ConversacionAsistenteRespuesta { Tipo = "DERIVA", PuedeResponder = false, Respuesta = string.Empty };
+                    }
 
                     return respuestaParseada;
                 }
@@ -227,6 +247,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                     await TraceDiagAsync(traceDiagAsync, $"BotToolResult|tool={SanitizeDiag(nombreHerramienta)}|status={ClasificarResultadoTool(resultado)}", ct);
 
                     messages.Add(new { role = "tool", tool_call_id = callId, content = resultado });
+                    textoConRespaldo.AppendLine(resultado);
+                    seUsoAlgunaHerramienta = true;
                 }
             }
 
@@ -371,9 +393,53 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         => string.IsNullOrWhiteSpace(model)
            || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
+    internal const string DatoSinCargar = "(sin dato cargado)";
+
+    /// <summary>
+    /// La plantilla de información trae textos guía entre corchetes ("Soporte: [días y horario, ej: lunes
+    /// a viernes de 9 a 18 hs]"). Si la empresa no los completó, el modelo los tomaba como dato (ALFA NET,
+    /// 2026-10-28). Se reemplazan antes de mandarlos; los links Markdown [texto](url) quedan igual.
+    /// </summary>
+    internal static string QuitarTextosSinCompletar(string? informacion)
+        => Regex.Replace(informacion ?? string.Empty, @"\[(?=[^\]\r\n]*\p{L})[^\]\r\n]{3,300}\](?!\()", DatoSinCargar);
+
     internal static string LineaFechaActual(DateTime ahora)
-        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h. "
+        => $"FECHA Y HORA ACTUAL: {ahora.ToString("dddd d 'de' MMMM 'de' yyyy, HH:mm", CultureInfo.GetCultureInfo("es-AR"))} h "
+           // A las 17:38 gpt-4o-mini contestó "ya pasaron las 18 h" (batería 4264, 2026-10-28).
+           + $"(ya pasaron las {ahora.Hour:00}:00 y todavía no son las {(ahora.Hour + 1) % 24:00}:00; para saber si el negocio está abierto, comparala con su horario). "
            + "Usala para fechas y plazos: no ofrezcas una promoción que ya venció o que todavía no empezó, y calculá horarios de corte y entregas desde ahora.";
+
+    /// <summary>
+    /// Montos ("$ 350", "$1.234,50") de la respuesta que no aparecen en ningún texto de respaldo
+    /// (información del negocio, charla, resultados de herramientas). Se compara la parte entera.
+    /// </summary>
+    internal static IReadOnlyList<string> MailsSinRespaldo(string? respuesta, string respaldo)
+    {
+        if (string.IsNullOrWhiteSpace(respuesta))
+            return [];
+        return Regex.Matches(respuesta, @"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+            .Select(m => m.Value.TrimEnd('.'))
+            .Where(m => (respaldo ?? string.Empty).IndexOf(m, StringComparison.OrdinalIgnoreCase) < 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    internal static IReadOnlyList<string> MontosSinRespaldo(string? respuesta, string respaldo)
+    {
+        if (string.IsNullOrWhiteSpace(respuesta))
+            return [];
+
+        static string Entero(string monto) => new(monto.Split(',')[0].Where(char.IsDigit).ToArray());
+
+        var conRespaldo = Regex.Matches(respaldo ?? string.Empty, @"\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?")
+            .Select(m => Entero(m.Value))
+            .ToHashSet(StringComparer.Ordinal);
+        return Regex.Matches(respuesta, @"\$\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)")
+            .Select(m => Entero(m.Groups[1].Value))
+            .Where(m => m.Length > 0 && !conRespaldo.Contains(m))
+            .Distinct()
+            .ToList();
+    }
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? sugerenciaKnowledge,
@@ -400,12 +466,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine(cliente);
         }
 
-        var info = (informacion ?? string.Empty).Trim();
+        var info = QuitarTextosSinCompletar(informacion).Trim();
         if (info.Length > 0)
         {
             sb.AppendLine();
             sb.AppendLine("INFORMACIÓN DEL NEGOCIO (tu fuente de verdad; priorizala sobre cualquier suposición):");
             sb.AppendLine(info);
+            if (info.Contains(DatoSinCargar, StringComparison.Ordinal))
+                sb.AppendLine($"Donde dice {DatoSinCargar} la empresa todavía no cargó ese dato: no lo sabés. No lo inventes ni des un ejemplo; si la consulta depende de eso, tipo DERIVA.");
         }
 
         var conocimiento = (conocimientoBase ?? string.Empty).Trim();
@@ -432,9 +500,15 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
         sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
         sb.AppendLine("- Nunca digas que la empresa no vende, no tiene o no trabaja un producto, ni ofrezcas otra marca en su lugar: eso solo se sabe consultando los artículos con la herramienta de precios. Si no podés consultarlo, preguntá qué necesita o derivá.");
+        sb.AppendLine("- Lo mismo con los servicios (reparaciones, instalaciones, etc.): si no figuran en la información, no digas que no se ofrecen. Decile que lo consultás con el equipo (tipo DERIVA) sin afirmar nada.");
+        // Batería "empresa de servicios" (ALFA NET, 2026-10-28): inventó un mail de soporte, que el sistema
+        // "funciona en Mac" y pasos de menú ("buscá 'Actualizaciones'") que no estaban en ningún lado.
+        sb.AppendLine("- Nunca inventes datos de contacto (mails, teléfonos, direcciones, CBU, horarios), pasos o menús de un sistema, compatibilidades ni funciones: sólo los que figuran tal cual en la información o en los resultados de las herramientas. Si te piden algo de eso y no está, decile que se lo pasás a alguien del equipo (tipo DERIVA).");
         sb.AppendLine("- Escribí texto plano, sin ningún formato Markdown: nada de **negritas**, # títulos ni [texto](link). Los links van como la URL completa: en WhatsApp ese formato no se ve.");
         if (hayPrepararPedido)
-            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
+            sb.AppendLine("- PEDIDOS POR CHAT: si el cliente quiere comprar artículos, armá el pedido con preparar_pedido (artículos y cantidades) y mostrale el resumen que devuelve. Si ya dijo qué artículo y cuántos (\"quiero 10 pilas AA\", \"mandame 5 AAA y 3 AA\"), llamá preparar_pedido directamente: no le preguntes antes \"¿querés que arme el pedido?\", el resumen ya le pide la confirmación. El pedido se registra SOLO cuando el cliente responde que confirma: nunca digas que está registrado, ni lo des por hecho. Si quiere hacer un pedido sin decir qué, preguntale qué artículos y cuántos. Si pide cambiar algo, volvé a llamar preparar_pedido con el pedido completo. Un pedido ya registrado (confirmado) no se modifica por chat: si después quiere agregar o sumar artículos, armale un pedido NUEVO con preparar_pedido sólo con lo que agrega y aclaráselo; no lo derives por esto.");
+        else
+            sb.AppendLine("- No ofrezcas armar ni tomar el pedido por este chat: si quiere comprar, indicale cómo hacerlo según la información del negocio (local, catálogo o portal).");
         if (hayPortalEntreHerramientas)
             sb.AppendLine(hayPrepararPedido
                 ? "- PORTAL CLIENTE: si el cliente pide su lista de precios, usá generar_link_portal y pasale el link (ahí ve los precios de su cuenta). También podés ofrecerlo como alternativa para cargar pedidos. No lo derives a un asesor por esto."
@@ -443,8 +517,11 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine("- Si el cliente pide explícitamente catálogo o ver productos y está disponible la herramienta generar_link_catalogo_publico, tenés que usar esa herramienta antes de derivar. No reemplaces catálogo por Portal Cliente: son funciones distintas.");
         if (hayPrecioEntreHerramientas)
         {
-            sb.AppendLine("- PRECIOS: ante una consulta de precio usá consultar_precio con términos cortos del artículo (si el mensaje actual completa una aclaración anterior, combiná ambos: \"pila\" + \"AA\" → \"pila AA\"). El resultado de la herramienta trae la instrucción de qué tipo responder (RESUELVE o ACLARA): seguila. No derives una consulta de precio porque falte un dato que el cliente puede darte: preguntá.");
-            sb.AppendLine("- CANTIDADES: los precios de las herramientas son por unidad. Nunca supongas que un artículo viene por paquete, caja o docena ni cuántas unidades trae: si el cliente pide \"un paquete\" o \"una caja\", decile el precio unitario y preguntale cuántas unidades quiere.");
+            sb.AppendLine("- PRODUCTOS Y PRECIOS: ante cualquier consulta por un producto (si lo tienen, qué opciones hay o cuánto sale) buscalo primero con consultar_precio, aunque la consulta sea general (\"¿tenés biromes?\" → \"birome\"). Si encuentra varias opciones, mostrale algunas con su precio y preguntale cuál quiere; no le preguntes \"¿qué tipo buscás?\" sin haber buscado. Usá términos cortos del artículo (si el mensaje actual completa una aclaración anterior, combiná ambos: \"pila\" + \"AA\" → \"pila AA\"). El resultado de la herramienta trae la instrucción de qué tipo responder (RESUELVE o ACLARA): seguila. No derives una consulta de precio porque falte un dato que el cliente puede darte: preguntá.");
+            // "Tengo una distribuidora de papelería... busco biromes, ¿trabajan algo?" (Base4271, 2026-10-29):
+            // derivaba sin buscar, como si un comercio que revende necesitara sí o sí un asesor.
+            sb.AppendLine("- Vale igual si quien escribe es un comercio, empresa o distribuidor que quiere revender: primero buscá lo que pide y contale qué tienen y el precio que da la herramienta. Si pide condiciones o precios mayoristas, además ofrecele que alguien del equipo lo contacte para eso; no lo derives sin haber buscado.");
+            sb.AppendLine("- CANTIDADES: los precios de las herramientas son por unidad. Nunca supongas que un artículo viene por paquete, caja o docena ni cuántas unidades trae: si el cliente pide \"un paquete\" o \"una caja\", decile el precio unitario y preguntale cuántas unidades quiere. Si dice cuántas unidades quiere, decile también el total (precio unitario por cantidad).");
             sb.AppendLine("- Nunca repitas una pregunta de aclaración que ya le hiciste en esta conversación (mirá tus mensajes anteriores).");
         }
         if (precioRequiereIdentificacion)
@@ -485,8 +562,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("CUANDO NO PODÉS RESOLVER (nunca dejes al cliente sin respuesta):");
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
-        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución.");
-        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal.");
+        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
+        sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal. Si pregunta por un pedido o una entrega (\"¿cuándo me entregan?\", \"¿ya salió?\") y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
         sb.AppendLine("- Si el cliente AVISA que su tema ya se resolvió o agradece cerrando (\"ya está arreglado\", \"ya anda\", \"lo pude solucionar\", \"gracias, ya está\"): NO es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
@@ -523,38 +600,6 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     {
         var t = texto ?? string.Empty;
         return t.Length <= maxLength ? t : t[..maxLength] + "…";
-    }
-
-    private static bool MensajePideCatalogo(string? mensajeCliente)
-    {
-        var texto = NormalizarTexto(mensajeCliente);
-        if (texto.Length == 0)
-            return false;
-
-        return texto.Contains("catalogo", StringComparison.Ordinal)
-            || texto.Contains("ver productos", StringComparison.Ordinal)
-            || texto.Contains("ver los productos", StringComparison.Ordinal)
-            || texto.Contains("mostrar productos", StringComparison.Ordinal)
-            || texto.Contains("pasame productos", StringComparison.Ordinal)
-            || texto.Contains("pasar productos", StringComparison.Ordinal)
-            || texto.Contains("lista de productos", StringComparison.Ordinal);
-    }
-
-    private static string NormalizarTexto(string? texto)
-    {
-        if (string.IsNullOrWhiteSpace(texto))
-            return string.Empty;
-
-        var normalized = texto.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(normalized.Length);
-        foreach (var ch in normalized)
-        {
-            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
-            if (category != System.Globalization.UnicodeCategory.NonSpacingMark)
-                sb.Append(ch);
-        }
-
-        return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 
     private static Task TraceDiagAsync(Func<string, CancellationToken, Task>? traceDiagAsync, string paso, CancellationToken ct)

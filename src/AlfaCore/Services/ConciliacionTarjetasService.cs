@@ -124,18 +124,10 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
     }
     public Task<long> ConfirmarAsync(TarjetasConfirmar solicitud,CancellationToken ct=default)=>Ejecutar("Confirmar",async(c,t)=>
     {
-        if(solicitud.Detalles.Count is 0 or >2000||solicitud.Movimientos.Count is 0 or >2000||solicitud.Motivo.Length>500)throw new InvalidOperationException("Seleccioná hasta 2.000 operaciones de cada lado.");
         var session=sessions.GetActiveSession()!.Id;using var tx=c.BeginTransaction(IsolationLevel.Serializable);
         var actual=await Comparar(c,solicitud.Filtro with{Estado="Todos",Buscar=""},t,tx);
-        if(!actual.Importacion.DetalleCompleto)throw new InvalidOperationException("El detalle del PDF no coincide con el bruto. Requiere revisión antes de confirmar.");
-        var ds=solicitud.Detalles.Distinct().Select(id=>actual.Detalles.SingleOrDefault(x=>x.Id==id)??throw new InvalidOperationException("La liquidación cambió. Compará nuevamente.")).ToList();
-        var ms=solicitud.Movimientos.Select(s=>actual.Movimientos.SingleOrDefault(x=>x.Clave==s.Clave&&x.Huella==s.Huella)??throw new InvalidOperationException("El movimiento cambió o dejó de estar autorizado. Compará nuevamente.")).ToList();
-        if(ds.Count!=solicitud.Detalles.Count||ms.Select(x=>x.Clave).Distinct().Count()!=ms.Count||ds.Any(x=>x.Vinculo!=null)||ms.Any(x=>x.Vinculo!=null||x.LegacyLiquidado||x.Alterado))throw new InvalidOperationException("Hay operaciones repetidas, modificadas o conciliadas. Actualizá la comparación.");
-        var total=ds.Sum(x=>x.Importe);var alfa=ms.Sum(x=>x.Importe);
-        ValidarDiferencia(total,alfa,actual.Tolerancia,solicitud.Motivo);
-        var id=await c.ExecuteScalarAsync<long>(Cmd("INSERT dbo.TJ_Vinculo(ImportacionId,ImporteResumen,ImporteAlfa,Motivo,Usuario) OUTPUT INSERTED.Id VALUES(@import,@total,@alfa,@motivo,@usuario)",new{import=actual.Importacion.Id,total,alfa,motivo=solicitud.Motivo.Trim(),usuario=users.GetCurrentUserName()},t,tx));
-        foreach(var d in ds)await c.ExecuteAsync(Cmd("INSERT dbo.TJ_VinculoDetalle(VinculoId,DetalleId,Activo) VALUES(@id,@detalle,1)",new{id,detalle=d.Id},t,tx));
-        foreach(var m in ms)await c.ExecuteAsync(Cmd("INSERT dbo.TJ_VinculoAlfa(VinculoId,Cuenta,Clave,Huella,Importe,Activo) VALUES(@id,@cuenta,@Clave,@Huella,@Importe,1)",new{id,cuenta=actual.Importacion.Cuenta,m.Clave,m.Huella,m.Importe},t,tx));
+        var grupo=ResolverConfirmacion(actual,solicitud);
+        var id=await InsertarVinculo(c,tx,actual,grupo,solicitud.Motivo,t);
         AntesDeGrabar(session,t);tx.Commit();return id;
     },ct);
     public static void ValidarDiferencia(decimal resumen,decimal alfa,decimal tolerancia,string motivo)
@@ -143,18 +135,6 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         if(Math.Abs(resumen-alfa)>tolerancia)throw new InvalidOperationException("La diferencia supera la tolerancia configurada.");
         if(resumen!=alfa&&string.IsNullOrWhiteSpace(motivo))throw new InvalidOperationException("Escribí el motivo para aceptar la diferencia sin cambiar importes.");
     }
-    public Task<bool> DesconciliarAsync(long id,TarjetasFiltro filtro,string motivo,CancellationToken ct=default)=>Ejecutar("Desconciliar",async(c,t)=>
-    {
-        if(string.IsNullOrWhiteSpace(motivo)||motivo.Length>500)throw new InvalidOperationException("Escribí un motivo de hasta 500 caracteres.");
-        var session=sessions.GetActiveSession()!.Id;using var tx=c.BeginTransaction(IsolationLevel.Serializable);
-        var actual=await Comparar(c,filtro with{Estado="Todos",Buscar=""},t,tx);
-        if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Vinculo WHERE Id=@id AND ImportacionId=@import AND Activo=1",new{id,import=filtro.Importacion},t,tx))!=1)
-            throw new InvalidOperationException("El vínculo no pertenece a esta importación o ya fue anulado.");
-        var vinculados=await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_VinculoAlfa WHERE VinculoId=@id AND Activo=1",new{id},t,tx));
-        if(vinculados==0||actual.Movimientos.Count(x=>x.Vinculo==id)!=vinculados)throw new InvalidOperationException("Consultá todas las fechas y sucursales del vínculo, con permisos sobre sus unidades, antes de desconciliar.");
-        await c.ExecuteAsync(Cmd("UPDATE dbo.TJ_Vinculo SET Activo=0,UsuarioAnulacion=@usuario,FechaAnulacion=SYSUTCDATETIME(),MotivoAnulacion=@motivo WHERE Id=@id AND ImportacionId=@import; UPDATE dbo.TJ_VinculoDetalle SET Activo=0 WHERE VinculoId=@id; UPDATE dbo.TJ_VinculoAlfa SET Activo=0 WHERE VinculoId=@id",new{id,import=filtro.Importacion,motivo=motivo.Trim(),usuario=users.GetCurrentUserName()},t,tx));
-        AntesDeGrabar(session,t);tx.Commit();return true;
-    },ct);
     private sealed record Asociacion(string Banco,string Comercio,string Tarjeta,string Cuenta,string Sucursal);
     private sealed class Original {public string Nombre{get;set;}="";public byte[] Contenido{get;set;}=[];public string Hash{get;set;}="";}
 }

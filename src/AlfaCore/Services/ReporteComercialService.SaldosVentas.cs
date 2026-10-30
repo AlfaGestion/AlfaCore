@@ -61,10 +61,8 @@ public sealed partial class ReporteComercialService
             SELECT COUNT(*) TotalRegistros,ISNULL(SUM(Saldo),0) SaldoTotal,ISNULL(SUM(SaldoGlobal),0) SaldoGlobalTotal,
                 ISNULL(SUM(LimiteCredito),0) LimiteTotal,ISNULL(SUM(CreditoDisponible),0) DisponibleTotal,
                 ISNULL(SUM(Exceso),0) ExcesoTotal FROM #SaldosVentas;
-            -- ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
-            SELECT Cuenta,RazonSocial,Saldo,SaldoGlobal,LimiteCredito,CreditoDisponible,Exceso FROM (
-                SELECT *,ROW_NUMBER() OVER(ORDER BY Cuenta) FilaPagina FROM #SaldosVentas) p
-            WHERE FilaPagina>@Skip AND FilaPagina<=@Skip+@PageSize ORDER BY FilaPagina;
+            WITH Pagina AS (SELECT *,ROW_NUMBER() OVER(ORDER BY Cuenta) Fila FROM #SaldosVentas)
+            SELECT * FROM Pagina WHERE Fila>@Skip AND Fila<=CONVERT(bigint,@Skip)+@PageSize ORDER BY Fila;
             DROP TABLE #SaldosVentas; DROP TABLE #SaldoMovimientos; DROP TABLE #BaseSaldo;
             """;
         using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,parametros,transaction,60,cancellationToken:ct));

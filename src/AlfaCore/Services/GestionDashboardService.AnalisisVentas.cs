@@ -55,13 +55,18 @@ public sealed partial class GestionDashboardService
                 SELECT COUNT(*) FROM (SELECT Tc,IdComprobante FROM #VentasAnalisis
                     WHERE @Codigo IS NOT NULL AND Codigo=@Codigo GROUP BY Tc,IdComprobante) c;
 
-                -- ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
-                SELECT Fecha,Tc,IdComprobante,Cuenta,Cliente,Total FROM (
-                    SELECT MAX(Fecha) Fecha,Tc,IdComprobante,MAX(Cuenta) Cuenta,MAX(Cliente) Cliente,SUM(Total) Total,
-                        ROW_NUMBER() OVER(ORDER BY MAX(Fecha) DESC,Tc,IdComprobante) FilaPagina
+                -- ROW_NUMBER conserva la paginación en servidores SQL Server 2008.
+                ;WITH Comprobantes AS (
+                    SELECT MAX(Fecha) Fecha,Tc,IdComprobante,MAX(Cuenta) Cuenta,MAX(Cliente) Cliente,SUM(Total) Total
                     FROM #VentasAnalisis WHERE @Codigo IS NOT NULL AND Codigo=@Codigo
-                    GROUP BY Tc,IdComprobante) p
-                WHERE FilaPagina>@Skip AND FilaPagina<=@Skip+50 ORDER BY FilaPagina;
+                    GROUP BY Tc,IdComprobante
+                ), Pagina AS (
+                    SELECT *,ROW_NUMBER() OVER (ORDER BY Fecha DESC,Tc,IdComprobante) Fila
+                    FROM Comprobantes
+                )
+                SELECT Fecha,Tc,IdComprobante,Cuenta,Cliente,Total
+                FROM Pagina WHERE Fila > @Skip AND Fila <= CONVERT(bigint,@Skip) + 50
+                ORDER BY Fila;
                 DROP TABLE #VentasAnalisis;
                 """;
             static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

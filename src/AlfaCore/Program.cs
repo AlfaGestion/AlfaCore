@@ -269,6 +269,7 @@ public class Program
         builder.Services.AddScoped<ICentralPublicLinkService, CentralPublicLinkService>();
         builder.Services.AddScoped<ICatalogoClienteLinkService, CatalogoClienteLinkService>();
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
+        builder.Services.AddScoped<IMonitorClientesService, MonitorClientesService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
         builder.Services.AddScoped<IPlanesService, PlanesService>();
@@ -532,6 +533,7 @@ public class Program
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+            builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
         }
 
         var app = builder.Build();
@@ -2001,6 +2003,128 @@ public class Program
             catch (Exception ex)
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        // Monitor de Clientes (2026-10-28): el sistema legacy manda cada tanto el estado de sus
+        // controles (envío/recepción de PDV, backup, tareas automáticas). Misma clave que backup-status.
+        // Form: licenciaPrincipal, dbServidor, dbNombre, hostCliente, versionSistema,
+        // fechaHoraCliente (yyyy-MM-dd HH:mm:ss) e items, una línea por control:
+        // TIPO|DESTINO|ULTIMO_OK|ULTIMO_INTENTO|RESULTADO|MENSAJE. Responde "OK <grabados> <ignorados>".
+        app.MapPost("/api/vb6/monitor-estado", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            var reporte = new MonitorReporteRequest
+            {
+                LicenciaPrincipal = form["licenciaPrincipal"].ToString(),
+                DbServidor = form["dbServidor"].ToString(),
+                DbNombre = form["dbNombre"].ToString(),
+                HostCliente = NullIfEmpty(form["hostCliente"]),
+                VersionSistema = NullIfEmpty(form["versionSistema"]),
+                FechaHoraCliente = MonitorClientesService.ParsearFecha(form["fechaHoraCliente"].ToString()),
+                Items = MonitorClientesService.ParsearItems(form["items"].ToString())
+            };
+
+            try
+            {
+                var resultado = await monitorSvc.RegistrarReporteAsync(reporte, ct);
+                return Results.Text($"OK {resultado.ItemsGrabados} {resultado.ItemsIgnorados}", "text/plain; charset=utf-8");
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        // AlfaActualizacion_Monitor (2026-10-29). El Timer de cada cliente pregunta cada hora si tiene una
+        // versión liberada: responde "NADA" o "ACTUALIZAR|version|archivoRemoto|sha256|tamanio" (el archivo
+        // se baja de AlfaArchivos). Misma clave que backup-status.
+        app.MapGet("/api/vb6/actualizacion-pendiente", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            try
+            {
+                var pendiente = await monitorSvc.GetActualizacionPendienteAsync(
+                    request.Query["licenciaPrincipal"].ToString(), request.Query["version"].ToString(), ct);
+                var texto = pendiente is null
+                    ? "NADA"
+                    : $"ACTUALIZAR|{pendiente.Version}|{pendiente.ArchivoRemoto}|{pendiente.Sha256}|{pendiente.TamanioBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                return Results.Text(texto, "text/plain; charset=utf-8");
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Text("licencia-inexistente", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        // Lo usa Herramientas\ArmarActualizacion.py después de subir el setup a AlfaArchivos. La versión queda
+        // registrada sin liberar (NADIE): se libera desde Administrar → Monitor de Clientes.
+        app.MapPost("/api/vb6/actualizacion-publicar", async (
+            HttpRequest request,
+            IMonitorClientesService monitorSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            try
+            {
+                var id = await monitorSvc.PublicarActualizacionAsync(
+                    form["version"].ToString(),
+                    form["archivoRemoto"].ToString(),
+                    form["sha256"].ToString(),
+                    long.TryParse(form["tamanio"].ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var tam) ? tam : 0,
+                    NullIfEmpty(form["notas"]),
+                    form["usuario"].ToString() is { Length: > 0 } u ? u : "ArmarActualizacion",
+                    ct);
+                return Results.Text($"OK {id}", "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
             }
         });
 

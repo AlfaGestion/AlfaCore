@@ -1,5 +1,24 @@
 # Conciliación de tarjetas: etapa inicial
 
+## Desconciliación individual y por lote (29/10/2026)
+
+`ConciliacionTarjetasService.Desconciliar.cs` sustituye la dependencia anterior de `Comparar` al
+desconciliar. Consulta el vínculo completo de la importación sin filtros de fecha, sucursal, búsqueda,
+estado ni elegibilidad de nuevos candidatos. Los permisos sobre las unidades de **todos** los
+renglones se verifican directamente contra `MV_ASIENTOS` y `TA_USUARIOS`, con el mismo criterio de
+AdminCentral/unidad. La clave contable completa, la clave antigua y la huella se comparten con el SQL
+de comparación; una clave antigua exige huella exacta y una identidad ambigua o ausente bloquea la
+anulación. No se relajan permisos para eludir un filtro.
+
+`VinculosParaDeshacerAsync` devuelve cabeceras, cantidades, importes y habilitación por integridad y
+permisos. **Deshacer varias** abre una selección propia con páginas de 50, selección entre páginas y
+confirmación explícita con motivo. No reutiliza las casillas de pendientes de las listas principales.
+`DesconciliarVariasAsync` acepta hasta 1.000 IDs únicos de una misma importación/cuenta; en una
+transacción Serializable bloquea las cabeceras activas, relee todos los miembros y valida todos los
+grupos antes del primer UPDATE. La API individual reutiliza el mismo procedimiento. Solo cambia
+Activo y auditoría de anulación en `TJ_Vinculo`, `TJ_VinculoDetalle` y `TJ_VinculoAlfa`. Conserva PDF,
+contabilidad y marcas legacy. No requiere migración. Un fallo revierte el lote completo.
+
 Ruta `/caja-bancos/conciliacion-tarjetas`, clave `D75-TARJETAS-IA`, ModuleKey `caja-bancos`, ya incluido en MainLayout. Reutiliza AlfaDesign/Smart Search/Tabs/Dialog/Checkbox/Notification. Diálogo sin cierre por backdrop; tablas con scroll y encabezados fijos. Es una operación de conciliación, no un ABM; no se incluye configuración de columnas. Paginadores independientes por lista, como el comparador bancario. Sin accesos a otros módulos en modo directo.
 
 ## Originales bancarios
@@ -32,7 +51,7 @@ Hash de archivo/cuenta rechaza reimportaciones renombradas; huellas de operacion
 
 La acción **Asistir con IA** relee pendientes de la importación y movimientos autorizados por unidad/cuenta/moneda/sucursal/período. `ConciliacionTarjetasService.Ia.cs` reutiliza `IConciliacionIaModelo` con contexto de tarjetas y prompt específico: brutos, cupones, cantidades y agrupaciones, sin netear gastos, sin PDF ni operaciones contables. Se usa `OPENAI_MODEL` y consumo CONCILIACION existentes. `2026-10-27-004` incorpora los parámetros TARJETAS-IA-DIAS (3, 0..31) y TARJETAS-IA-MAX-FILAS (2000, 50..2000). No se envían muestras parciales. Las fechas de pago no sustituyen operación/presentación.
 
-`TarjetasIaPropuestas` adapta el contexto al transporte existente y reutiliza su validación de JSON/índices/límites/signos/tolerancia/fechas y descarte de todos los grupos superpuestos. Además rechaza cupones identificables contradictorios. No toma decisiones contables ni acepta orientaciones de cuentas/clasificación para tarjetas. La UI muestra evidencia de cada grupo y permite revisar uno por vez en la confirmación normal; nunca combina todas las propuestas en un único vínculo. El motivo identifica la asistencia y puede editarse. Se conserva el snapshot de huellas de la comparación y se revalidan estado/tolerancia/permisos en la confirmación existente. Un fallo conserva la selección previa; cambiar comparación/base invalida el análisis. El diálogo no cierra por backdrop.
+`TarjetasIaPropuestas` adapta el contexto al transporte existente y reutiliza su validación de JSON/índices/límites/signos/tolerancia/fechas y descarte de todos los grupos superpuestos. Además rechaza cupones identificables contradictorios. No toma decisiones contables ni acepta orientaciones de cuentas/clasificación para tarjetas. La UI muestra evidencia de cada grupo y permite revisión individual o selección múltiple con confirmación conjunta; nunca combina las propuestas en un único vínculo. El motivo identifica la asistencia y puede editarse. Se conserva el snapshot de huellas de la comparación y se revalidan estado/tolerancia/permisos en la confirmación existente. Un fallo conserva la selección previa; cambiar comparación/base invalida el análisis. El diálogo no cierra por backdrop.
 
 ## Validación
 
@@ -90,3 +109,26 @@ Se reutilizan TARJETAS-IA-DIAS y TARJETAS-TOLERANCIA, sin nuevas claves ni migra
 EliminarAsync utiliza el control común de sesión y permiso del módulo, y una transacción Serializable. Bloquea la cabecera y el rango de vínculos con UPDLOCK/HOLDLOCK; valida la cuenta esperada para rechazar solicitudes obsoletas. Rechaza cualquier TJ_Vinculo o miembro TJ_VinculoDetalle asociado, activo o anulado. Solo entonces elimina TJ_Detalle y TJ_Importacion, incluido su original; las huellas quedan libres para reimportar. No toca MV_ASIENTOS, maestros ni asociaciones recordadas.
 
 La auditoría central WriteAuditAsync usa la misma conexión/transacción y conserva id, nombre, cuenta y motivo, sin copiar el PDF. Si falla, la eliminación no se confirma. La UI exige motivo y confirmación, conserva el diálogo ante errores y actualiza listas/estado al completar. No requiere migración propia; utiliza el esquema de auditoría central vigente.
+
+
+### Propuestas visibles y análisis IA por lotes
+
+Proponer selección utiliza un resultado inline persistente y llama explícitamente a InvokeAsync(StateHasChanged), porque su callback pertenece a la barra global y el render automático de ese componente no actualiza la página consumidora. Se distinguen ausencia de comparación, ausencia de pendientes, ausencia de pares únicos y selección propuesta, con cantidades del subconjunto local. La preparación posterior a importar reutiliza ProponerCore y no depende de un render de la barra.
+
+TarjetasIaLotes.Preparar reemplaza el rechazo global por tamaño con un plan previo de fechas completas. Cada lote respeta TARJETAS-IA-MAX-FILAS por lado e incluye todos los candidatos de Alfa desde la primera operación menos TARJETAS-IA-DIAS hasta la última más ese margen, siempre dentro de la consulta autorizada. Las ventanas pueden superponerse para conservar los candidatos cercanos a sus límites. Si un día completo no cabe, se aborta antes de llamar al modelo con fecha y recomendación de filtro; nunca se usa Take para recortar candidatos. El límite general de comparación sigue siendo 10.000.
+
+El servicio llama secuencialmente al modelo, valida cada respuesta contra el subconjunto exacto que generó sus índices y comprueba sesión/cancelación antes y después de cada petición. El progreso asíncrono se comunica a la página como lote/total. La unión deduplica propuestas idénticas y elimina todos los grupos que compiten por un mismo id de detalle o clave contable entre lotes. Se cuentan los registros distintos enviados y los pendientes fuera de las ventanas. Una excepción no devuelve un resultado parcial como completo. El agrupamiento entre detalles de lotes de análisis diferentes puede requerir revisión manual; no se garantiza exhaustividad del matching ni se altera la confirmación transaccional.
+
+
+### Contrato estructurado de respuesta IA
+
+El transporte compartido de bancos y tarjetas solicita `response_format.type=json_schema` con `strict=true`, campos obligatorios e índices enteros. Sustituye el antiguo `json_object`, que solo aseguraba JSON sintácticamente válido, sin garantizar los campos y tipos que espera ConciliacionIaSalida. Contrato oficial: [Structured Outputs de OpenAI](https://developers.openai.com/api/docs/guides/structured-outputs). No cambia el modelo configurado, las credenciales ni los datos enviados.
+
+Se manejan explícitamente respuestas incompletas y rechazos del modelo. El servidor sigue validando índices, cupón, grupos competidores, signos, fecha, moneda y tolerancia. Los campos raíz grupos/orientaciones son obligatorios también al deserializar; una respuesta con otra estructura no se convierte silenciosamente en un resultado vacío. Un formato incompatible registra en AUX_ERR longitud, ruta JSON, posición y SHA-256, sin el contenido de la respuesta. El incidente 2081 confirmó el punto de fallo en la deserialización, pero el código anterior no conservaba esos diagnósticos, por lo que no permite reconstruir el campo concreto del intento histórico.
+
+
+### Confirmación conjunta de propuestas IA
+
+ConciliacionTarjetas.razor.IaSeleccion.cs conserva índices de propuestas elegidas, selección total, selección de diferencias cero y resumen previo. Cualquier diferencia exige aceptación explícita y motivo humano; se muestra la suma absoluta además del detalle, para no ocultar diferencias de signo contrario. Un nuevo análisis, comparación o cambio de sesión invalida las marcas.
+
+ConfirmarVariasAsync usa el permiso/sesión común y una única transacción Serializable. Relee la comparación autorizada una vez y prepara todos los grupos antes del primer INSERT. Reutiliza ResolverConfirmacion e InsertarVinculo con la confirmación individual, conservando huellas, permisos, pendientes, marcas legacy, integridad del PDF y tolerancia. Rechaza repeticiones entre grupos, más de 20 miembros por lado de una propuesta IA y solicitudes que excedan los 10.000 registros por lado de la comparación. Cada propuesta crea un TJ_Vinculo distinto, con usuario, fecha, evidencia y motivo; no hay compensación de diferencias entre propuestas. Si falla cualquier validación o escritura, no se confirma parcialmente. No cambia la contabilidad ni requiere migración.

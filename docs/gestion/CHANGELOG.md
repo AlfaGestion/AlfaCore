@@ -4,6 +4,19 @@ Formato: `[versión] — fecha — descripción`
 
 ---
 
+## [Sin versión] — 2026-10-28
+
+### Tableros — GENESIS (base 97)
+
+- Ventas: el incidente `AUX_ERR` 7244 se debía a `OFFSET/FETCH` en SQL Server 2008. Vendedores y Unidades de negocio conservan la paginación de 50 comprobantes mediante `ROW_NUMBER`.
+- Compras: actualización `2026-10-28-001__compras_vistas_dashboard_faltantes.sql`, que recupera las vistas de cabecera, detalle y jerarquía de familias omitidas por distribuirse en scripts sin versión. Solo crea vistas faltantes, sin reemplazar las existentes ni modificar movimientos.
+- Aplicada la creación de vistas en GENESIS y comprobada su idempotencia. Verificadas allí las consultas del tablero de Compras y el análisis de Ventas con detalle y segunda página; Ventas requiere publicar el cambio de aplicación.
+- Reportes de Compras: corregida la incompatibilidad con SQL Server 2008 en Detalle, Cuenta corriente, Saldos, Resumida y Analítica (incidentes 7330–7337). Paginación con `ROW_NUMBER`, acumulados mediante temporales indexadas y CTE recursivas, y rechazo de duplicados con `RAISERROR`/`RETURN`. Se conserva el servicio compartido con Ventas y se agregan pruebas SQL de lectura para contrastar saldos, páginas y aplicaciones. Requiere publicar AlfaCore.
+- Clientes/Proveedores: corregido el listado en SQL Server 2008 (incidente GENESIS 7617) mediante paginación por `ROW_NUMBER` según versión del motor. SQL Server 2012 o posterior conserva `OFFSET/FETCH`; se mantienen los filtros, el orden y los totales. Se agregan pruebas SQL de lectura para ambos maestros. Requiere publicar AlfaCore.
+- Portal Cliente, Pedidos: corregido el incidente GENESIS 7848 (`OFFSET/FETCH` no disponible en SQL Server 2008). `PortalClienteService.GetPedidosClienteAsync` pagina con `ROW_NUMBER`, manteniendo el orden fecha/ID descendente y el filtro de cuenta, NP, sucursal 9999, fechas y número. Se agregan pruebas SQL de lectura de páginas y filtros; no modifica pedidos ni esquema. Requiere publicar AlfaCore.
+- Archivos — Artículos, Técnicos y Contactos: corregidos los incidentes GENESIS 7865, 7893 y 7887 por paginación incompatible con SQL Server 2008. Se mantiene `OFFSET/FETCH` desde SQL Server 2012 y se usa rango de `ROW_NUMBER` en motores anteriores. Contactos pagina antes de resolver la conversación WhatsApp y conserva filtros/orden. Técnicos agrega el código como desempate de nombres iguales. `Common/SqlServerCompatibilidad.cs` reúne la paginación y la conversión segura de códigos enteros sin `TRY_CAST`, usada para ordenar artículos por código, proponer códigos de artículo/técnico y resolver referencias de artículos; descarta alfanuméricos y desbordes, con signos y ceros iniciales. Nuevas pruebas SQL de lectura para los tres maestros y límites numéricos. No modifica maestros ni esquema; requiere publicar AlfaCore.
+- Verificación de Archivos: cuatro pruebas aprobadas en GENESIS y las mismas cuatro en DISTRIWALTERP. Se contrastaron páginas, totales, búsquedas, activos/bajas, orden alternativo y próximos códigos; la conversión se contrastó con límites `int`/`bigint`, ceros iniciales, signos, alfanuméricos y desbordes. Catálogo: 107 rutinas, sin advertencias ni errores.
+
 ## [Sin versión] — 2026-10-26
 
 ### Carga de viajes — tarifas compartidas entre clientes
@@ -50,7 +63,7 @@ Formato: `[versión] — fecha — descripción`
 - Corregido: la primera condición de cada grupo `AND (...)` ya no incluye el `OR` espurio.
 
 **Ayuda.razor — encoding mojibake**
-- Ocho strings con caracteres españoles almacenados como secuencias Latin-1 (`Ã¡`, `Ã©`, `Ã³`, `Ã±`, etc.) corregidos a UTF-8 literal.
+- Ocho strings con caracteres españoles almacenados como secuencias Latin-1 (vocales acentuadas y eñe, entre otros) corregidos a UTF-8 literal.
 - Afectaba los títulos y subtítulos de los tópicos "Ayuda" y "Diseñador de Consultas".
 
 **AGENTS.md — regla de encoding UTF-8**

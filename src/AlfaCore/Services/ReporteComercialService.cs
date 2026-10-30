@@ -112,7 +112,8 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
                 WHERE LTRIM(RTRIM(CTACODIGO)) LIKE @Busqueda ESCAPE '\'
                     OR RAZON_SOCIAL LIKE @Busqueda ESCAPE '\'
                 GROUP BY LTRIM(RTRIM(CTACODIGO))
-                ORDER BY CASE WHEN LTRIM(RTRIM(CTACODIGO))=@Texto THEN 0 ELSE 1 END,MAX(RAZON_SOCIAL),LTRIM(RTRIM(CTACODIGO));
+                ORDER BY CASE WHEN LTRIM(RTRIM(CTACODIGO))=@Texto THEN 0 ELSE 1 END,MAX(RAZON_SOCIAL),LTRIM(RTRIM(CTACODIGO))
+                ;
                 """,new { Texto=termino,Busqueda="%"+literal+"%" },cancellationToken:ct))).ToList();
         },ct);
 
@@ -136,14 +137,14 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
     public Task<DetalleComprasResultDto> GetDetalleAsync(bool ventas,FiltrosReporteCompras f,CancellationToken ct=default)
         => EjecutarAsync(ventas,"Detalle",async cn=>
         {
-            // ROW_NUMBER en vez de OFFSET/FETCH: hay bases en SQL Server 2008 / compat 80.
             var sql=Libro(ventas)+$"SELECT COUNT(*) FROM Libro l {Filtro};"+Libro(ventas)+$"""
-                SELECT Fecha,Tc,IdComprobante,Cuenta,RazonSocial,DescMotivo,Neto,Iva,Total,Usuario FROM (
-                    SELECT l.FECHA Fecha,l.TC Tc,l.IdComprobante,l.Cuenta,l.RazonSocial,ISNULL(l.DESC_MOTIVO,'') DescMotivo,
-                        l.NetoSignado Neto,l.IvaSignado Iva,ISNULL(l.IMPORTE,0) Total,ISNULL(l.USUARIO_LOGEADO,'') Usuario,
-                        ROW_NUMBER() OVER(ORDER BY l.FECHA DESC,l.IdComprobante DESC,l.TC,l.Cuenta,l.NetoSignado,l.IvaSignado,l.IMPORTE) FilaPagina
-                    FROM Libro l {Filtro}) p
-                WHERE FilaPagina>@Skip AND FilaPagina<=@Skip+@PageSize ORDER BY FilaPagina;
+                , Pagina AS (
+                SELECT l.FECHA Fecha,l.TC Tc,l.IdComprobante,l.Cuenta,l.RazonSocial,ISNULL(l.DESC_MOTIVO,'') DescMotivo,
+                    l.NetoSignado Neto,l.IvaSignado Iva,ISNULL(l.IMPORTE,0) Total,ISNULL(l.USUARIO_LOGEADO,'') Usuario
+                    ,ROW_NUMBER() OVER (ORDER BY l.FECHA DESC,l.IdComprobante DESC,l.TC,l.Cuenta,l.NetoSignado,l.IvaSignado,l.IMPORTE) Fila
+                FROM Libro l {Filtro})
+                SELECT Fecha,Tc,IdComprobante,Cuenta,RazonSocial,DescMotivo,Neto,Iva,Total,Usuario
+                FROM Pagina WHERE Fila>@Skip AND Fila<=CONVERT(bigint,@Skip)+@PageSize ORDER BY Fila;
                 """;
             using var r=await cn.QueryMultipleAsync(new CommandDefinition(sql,Parametros(f),commandTimeout:60,cancellationToken:ct));
             return new DetalleComprasResultDto { TotalRegistros=await r.ReadSingleAsync<int>(),Items=(await r.ReadAsync<DetalleComprasFilaDto>()).ToList(),PaginaActual=f.Pagina,TamanioPagina=f.TamanioPagina };

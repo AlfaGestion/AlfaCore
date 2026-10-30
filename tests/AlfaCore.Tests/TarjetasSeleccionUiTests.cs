@@ -139,4 +139,22 @@ public sealed class TarjetasSeleccionUiTests
         Assert.NotNull(Field<TarjetasComparacion>(page,"_comparacion"));
     }
 
+    [Fact]
+    public void IaPermiteSeleccionarTodasSoloExactasYVolverSinPerderMarcas()
+    {
+        var page=Pantalla();
+        var exacta=new TarjetasIaPropuesta("Alta","Ensayo",[new(){Id=1,Importe=100}],[new(){Clave="A",Importe=100}]);
+        var distinta=new TarjetasIaPropuesta("Media","Ensayo",[new(){Id=2,Importe=200}],[new(){Clave="B",Importe=200.01m}]);
+        Set(page,"_ia",new TarjetasIaResultado("Ensayo",2,2,0,3,[exacta,distinta]));
+        Call(page,"SeleccionarIa",false);
+        Assert.Equal(2,Field<HashSet<int>>(page,"_iaElegidas").Count);Assert.True(Property<bool>(page,"HayDiferenciasIa"));
+        Assert.False(Property<bool>(page,"PuedeConfirmarVariasIa"));
+        Call(page,"PedirConfirmarVariasIa");Assert.True(Field<bool>(page,"_confirmarIaVarias"));
+        Set(page,"_aceptarDiferenciasIa",true);Assert.False(Property<bool>(page,"PuedeConfirmarVariasIa"));
+        Set(page,"_motivoIaVarias","Centavos aceptados");Assert.True(Property<bool>(page,"PuedeConfirmarVariasIa"));
+        Call(page,"VolverAPropuestasIa");Assert.True(Field<bool>(page,"_mostrarIa"));Assert.Equal(2,Field<HashSet<int>>(page,"_iaElegidas").Count);
+        Call(page,"SeleccionarIa",true);Assert.Equal(0,Assert.Single(Field<HashSet<int>>(page,"_iaElegidas")));Assert.False(Property<bool>(page,"HayDiferenciasIa"));
+        Call(page,"LimpiarIa");Assert.Empty(Field<HashSet<int>>(page,"_iaElegidas"));Assert.False(Field<bool>(page,"_confirmarIaVarias"));
+    }
+
 }
