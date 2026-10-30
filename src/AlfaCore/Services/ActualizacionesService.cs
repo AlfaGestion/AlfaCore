@@ -152,9 +152,9 @@ public sealed class ActualizacionesService(
                 var actor = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
                 var pc = NormalizeActor(request.PcAccion, Environment.MachineName, 100);
 
-                // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script:
-                // al terminar la tanda (bien o mal) se dejan como estaban (ver LegacyTablesUpdateGuard).
-                // No se restaura script por script porque algunos leen filas que creo uno anterior.
+                // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script: los scripts
+                // trabajan sobre copias (ALFACORE_SANDBOX_TA_*) y AlfaCore nunca escribe las reales (ver LegacyTablesUpdateGuard).
+                // Las copias duran toda la tanda: algunos scripts leen filas que creo uno anterior.
                 var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(cn, token);
                 try
                 {
@@ -168,7 +168,7 @@ public sealed class ActualizacionesService(
                             if (string.IsNullOrWhiteSpace(batch))
                                 continue;
 
-                            await using var cmd = new SqlCommand(batch, cn)
+                            await using var cmd = new SqlCommand(LegacyTablesUpdateGuard.Rewrite(batch), cn)
                             {
                                 CommandTimeout = 1200
                             };
@@ -487,7 +487,7 @@ public sealed class ActualizacionesService(
     }
 
     /// <summary>
-    /// Deja TA_MENU / TA_TAREAS como estaban antes de la tanda de scripts. Corre aunque la tanda
+    /// Pasa a ALFACORE_TAREAS_WEB los permisos de la copia de TA_TAREAS y borra las copias. Corre aunque la tanda
     /// haya fallado o se haya cancelado (por eso no usa el token del pedido).
     /// </summary>
     private async Task RestoreLegacyTablesAsync(LegacyTablesUpdateGuard guard, IReadOnlyList<string> applied)
@@ -520,7 +520,7 @@ public sealed class ActualizacionesService(
                 "Actualizaciones",
                 "ProtegerLegacy",
                 ex,
-                "No se pudo dejar TA_MENU / TA_TAREAS como estaban despues de las actualizaciones.",
+                "No se pudieron cerrar las copias de TA_MENU / TA_TAREAS despues de las actualizaciones.",
                 new { Scripts = applied },
                 AppEventSeverity.Error,
                 CancellationToken.None);

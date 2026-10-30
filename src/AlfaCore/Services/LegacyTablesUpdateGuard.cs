@@ -1,87 +1,107 @@
 using Microsoft.Data.SqlClient;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
 /// <summary>
-/// Protege las tablas del sistema legacy (Alfa Gestion VB6) mientras se corren los scripts de
+/// Aísla las tablas del sistema legacy (Alfa Gestion VB6) mientras se corren los scripts de
 /// App_Data/updates. El menu y los permisos del legacy (TA_MENU, TA_TAREAS) y los de AlfaCore
-/// (ALFACORE_MENU_WEB, ALFACORE_TAREAS_WEB) son independientes: ningun script de AlfaCore puede
-/// agregar, cambiar ni borrar opciones o permisos del legacy.
+/// (ALFACORE_MENU_WEB, ALFACORE_TAREAS_WEB) son independientes: AlfaCore NUNCA escribe en
+/// TA_MENU ni en TA_TAREAS.
 ///
-/// Muchos scripts viejos (y alguno publicado sin pasar por el repo) insertan la opcion web tambien
-/// en TA_MENU y se la dan a todos los usuarios en TA_TAREAS; eso aparecia en el menu y en la
-/// Autorizacion de Tareas del legacy sin que nadie lo pidiera. En vez de corregir script por script,
-/// el motor saca una foto de esas tablas antes de correr los scripts y al terminar la tanda las deja
-/// como estaban (no script por script: algunos leen filas que creo uno anterior). Los permisos que el script queria dar en TA_TAREAS pasan a ALFACORE_TAREAS_WEB
-/// (que es lo que lee el menu web), asi el comportamiento de la web no cambia.
+/// Muchos scripts viejos insertan la opcion web tambien en TA_MENU y se la dan a todos los usuarios
+/// en TA_TAREAS. En vez de corregir script por script:
+///   1) al empezar la tanda se copian TA_MENU y TA_TAREAS a tablas propias de AlfaCore
+///      (ALFACORE_SANDBOX_TA_MENU / ALFACORE_SANDBOX_TA_TAREAS);
+///   2) antes de ejecutar cada lote, <see cref="Rewrite"/> cambia en el texto del script las
+///      referencias a TA_MENU / TA_TAREAS por esas copias: los scripts leen y escriben la copia
+///      (los que insertan en ALFACORE_MENU_WEB leyendo la fila que crearon en TA_MENU siguen andando);
+///   3) al terminar, los permisos que los scripts quisieron dar en TA_TAREAS pasan a
+///      ALFACORE_TAREAS_WEB (que es lo que lee el menu web) y las copias se borran.
 ///
-/// Todo corre en la misma conexion que los scripts (las tablas temporales son de esa sesion).
+/// Las tablas reales no se leen para restaurar ni se escriben nunca, asi que tampoco se pisan los
+/// cambios que haga el legacy (ControlBase) mientras corren los scripts.
+/// Todo corre en la misma conexion que los scripts (la temporal de permisos es de esa sesion).
 /// </summary>
 internal sealed class LegacyTablesUpdateGuard
 {
     private const string MenuTable = "TA_MENU";
     private const string TareasTable = "TA_TAREAS";
-    private const string MenuSnap = "#AC_GuardTaMenu";
-    private const string TareasSnap = "#AC_GuardTaTareas";
+    internal const string SandboxPrefix = "ALFACORE_SANDBOX_";
     private const string WebPendientes = "#AC_GuardWebPendientes";
     private const string WebGrantsUser = "ALFACORE-UPDATES";
 
-    private readonly SqlConnection _cn;
-    private readonly TableInfo? _menu;
-    private readonly TableInfo? _tareas;
+    // TA_MENU / TA_TAREAS como nombre propio: no V_TA_TAREAS, ALFACORE_TAREAS_WEB, @TA_MENU, #TA_MENU, etc.
+    private static readonly Regex LegacyTableName = new(
+        @"(?<![\w#@$])(TA_MENU|TA_TAREAS)(?![\w$])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private LegacyTablesUpdateGuard(SqlConnection cn, TableInfo? menu, TableInfo? tareas)
+    private readonly SqlConnection _cn;
+    private readonly bool _hasMenu;
+    private readonly bool _hasTareas;
+
+    private LegacyTablesUpdateGuard(SqlConnection cn, bool hasMenu, bool hasTareas)
     {
         _cn = cn;
-        _menu = menu;
-        _tareas = tareas;
+        _hasMenu = hasMenu;
+        _hasTareas = hasTareas;
     }
 
     public static async Task<LegacyTablesUpdateGuard> BeginAsync(SqlConnection cn, CancellationToken ct)
     {
-        var menu = await ReadTableInfoAsync(cn, MenuTable, ct);
-        var tareas = await ReadTableInfoAsync(cn, TareasTable, ct);
-        var guard = new LegacyTablesUpdateGuard(cn, menu, tareas);
+        var hasMenu = await TableExistsAsync(cn, MenuTable, ct);
+        var hasTareas = await TableExistsAsync(cn, TareasTable, ct);
+        var guard = new LegacyTablesUpdateGuard(cn, hasMenu, hasTareas);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"IF OBJECT_ID('tempdb..{MenuSnap}') IS NOT NULL DROP TABLE {MenuSnap};");
-        sb.AppendLine($"IF OBJECT_ID('tempdb..{TareasSnap}') IS NOT NULL DROP TABLE {TareasSnap};");
+        sb.AppendLine(DropSandboxSql());
         sb.AppendLine($"IF OBJECT_ID('tempdb..{WebPendientes}') IS NOT NULL DROP TABLE {WebPendientes};");
         sb.AppendLine($"CREATE TABLE {WebPendientes} (Usuario nvarchar(100) NOT NULL, Sistema nvarchar(100) NOT NULL, Clave nvarchar(100) NOT NULL);");
-        if (menu is not null)
-            sb.AppendLine($"SELECT * INTO {MenuSnap} FROM dbo.{MenuTable};");
-        if (tareas is not null)
-            sb.AppendLine($"SELECT * INTO {TareasSnap} FROM dbo.{TareasTable};");
+        // Solo lectura de las reales: la copia es la que van a usar los scripts.
+        if (hasMenu)
+            sb.AppendLine($"SELECT * INTO dbo.{SandboxPrefix}{MenuTable} FROM dbo.{MenuTable};");
+        if (hasTareas)
+            sb.AppendLine($"SELECT * INTO dbo.{SandboxPrefix}{TareasTable} FROM dbo.{TareasTable};");
 
         await ExecAsync(cn, sb.ToString(), ct);
         return guard;
     }
 
-    /// <summary>Deja TA_MENU y TA_TAREAS como estaban al empezar. Devuelve un resumen ("" si no hubo cambios).</summary>
+    /// <summary>Cambia en el lote las referencias a TA_MENU / TA_TAREAS por las copias de AlfaCore.</summary>
+    public static string Rewrite(string batch)
+        => string.IsNullOrEmpty(batch)
+            ? batch
+            : LegacyTableName.Replace(batch, m => SandboxPrefix + m.Value.ToUpperInvariant());
+
+    /// <summary>
+    /// Pasa a ALFACORE_TAREAS_WEB los permisos que los scripts quisieron dar en TA_TAREAS y devuelve
+    /// un resumen de lo que los scripts intentaron cambiar en el legacy ("" si nada). No escribe en
+    /// TA_MENU ni en TA_TAREAS.
+    /// </summary>
     public async Task<string> RestoreAsync(CancellationToken ct)
     {
         var partes = new List<string>();
 
-        if (_menu is not null)
+        if (_hasMenu && await TableExistsAsync(_cn, SandboxPrefix + MenuTable, ct))
         {
-            var (nuevas, cambiadas, repuestas) = await RestoreTableAsync(_menu, MenuSnap, moveGrantsToWeb: false, ct);
-            if (nuevas + cambiadas + repuestas > 0)
-                partes.Add($"TA_MENU: {nuevas} agregada(s) quitada(s), {cambiadas} modificada(s) restaurada(s), {repuestas} borrada(s) repuesta(s)");
+            var (agregadas, quitadas) = await DiffAsync(MenuTable, ct);
+            if (agregadas + quitadas > 0)
+                partes.Add($"TA_MENU: {agregadas} fila(s) agregada(s)/modificada(s) y {quitadas} quitada(s) por los scripts, no aplicadas");
         }
 
-        if (_tareas is not null)
+        if (_hasTareas && await TableExistsAsync(_cn, SandboxPrefix + TareasTable, ct))
         {
-            var (nuevas, cambiadas, repuestas) = await RestoreTableAsync(_tareas, TareasSnap, moveGrantsToWeb: true, ct);
-            if (nuevas + cambiadas + repuestas > 0)
-                partes.Add($"TA_TAREAS: {nuevas} permiso(s) agregado(s) pasado(s) a ALFACORE_TAREAS_WEB, {repuestas} borrado(s) repuesto(s)");
+            var nuevos = await CollectNewGrantsAsync(ct);
+            if (nuevos > 0)
+                partes.Add($"TA_TAREAS: {nuevos} permiso(s) pasado(s) a ALFACORE_TAREAS_WEB en vez del legacy");
         }
 
         await FlushWebGrantsAsync(ct);
 
         return partes.Count == 0
             ? string.Empty
-            : "Legacy protegido (" + string.Join("; ", partes) + ").";
+            : "Legacy aislado (" + string.Join("; ", partes) + ").";
     }
 
     public async Task EndAsync(CancellationToken ct)
@@ -89,90 +109,65 @@ internal sealed class LegacyTablesUpdateGuard
         try
         {
             await FlushWebGrantsAsync(ct);
+        }
+        catch
+        {
+            // informativo
+        }
+
+        try
+        {
             await ExecAsync(_cn,
-                $"IF OBJECT_ID('tempdb..{MenuSnap}') IS NOT NULL DROP TABLE {MenuSnap};" +
-                $"IF OBJECT_ID('tempdb..{TareasSnap}') IS NOT NULL DROP TABLE {TareasSnap};" +
+                DropSandboxSql() +
                 $"IF OBJECT_ID('tempdb..{WebPendientes}') IS NOT NULL DROP TABLE {WebPendientes};", ct);
         }
         catch
         {
-            // Las temporales se borran solas al cerrar la conexion.
+            // La temporal se borra sola al cerrar la conexion; las copias se borran en la proxima tanda.
         }
     }
 
-    private async Task<(int Nuevas, int Cambiadas, int Repuestas)> RestoreTableAsync(
-        TableInfo table, string snap, bool moveGrantsToWeb, CancellationToken ct)
+    private static string DropSandboxSql()
+        => $"IF OBJECT_ID('dbo.{SandboxPrefix}{MenuTable}', 'U') IS NOT NULL DROP TABLE dbo.{SandboxPrefix}{MenuTable};" +
+           $"IF OBJECT_ID('dbo.{SandboxPrefix}{TareasTable}', 'U') IS NOT NULL DROP TABLE dbo.{SandboxPrefix}{TareasTable};";
+
+    /// <summary>Filas distintas entre la copia y la real (solo lectura de la real).</summary>
+    private async Task<(int Agregadas, int Quitadas)> DiffAsync(string table, CancellationToken ct)
     {
-        var cols = table.Columns;
-        var colList = string.Join(", ", cols.Select(c => Q(c.Name)));
-        string Cmp(string alias) => string.Join(", ", cols.Select(c => c.IsLob
-            ? $"CAST({alias}.{Q(c.Name)} AS nvarchar(max)) AS {Q(c.Name)}"
-            : $"{alias}.{Q(c.Name)}"));
-        var t = $"dbo.{Q(table.Name)}";
-
-        var sb = new StringBuilder();
-        sb.AppendLine("SET XACT_ABORT ON;");
-        sb.AppendLine("DECLARE @nuevas int = 0, @cambiadas int = 0, @repuestas int = 0;");
-        sb.AppendLine("BEGIN TRAN;");
-
-        if (moveGrantsToWeb)
-        {
-            // permisos que el script agrego: se guardan para ALFACORE_TAREAS_WEB antes de sacarlos
-            sb.AppendLine($"""
-                INSERT INTO {WebPendientes} (Usuario, Sistema, Clave)
-                SELECT n.USUARIO, n.SISTEMA, n.TAREA
-                  FROM (SELECT {Cmp("m")} FROM {t} m EXCEPT SELECT {Cmp("s")} FROM {snap} s) n
-                 WHERE ISNULL(n.TAREA, '') <> '';
-                """);
-        }
-
-        if (table.Identity is not null)
-        {
-            var id = Q(table.Identity);
-            // filas nuevas
-            sb.AppendLine($"DELETE m FROM {t} m WHERE NOT EXISTS (SELECT 1 FROM {snap} s WHERE s.{id} = m.{id}); SET @nuevas = @@ROWCOUNT;");
-            // filas modificadas
-            var setList = string.Join(", ", cols.Select(c => $"m.{Q(c.Name)} = s.{Q(c.Name)}"));
-            sb.AppendLine($"""
-                UPDATE m SET {setList}
-                  FROM {t} m INNER JOIN {snap} s ON s.{id} = m.{id}
-                 WHERE NOT EXISTS (SELECT {Cmp("m")} INTERSECT SELECT {Cmp("s")});
-                SET @cambiadas = @@ROWCOUNT;
-                """);
-            // filas borradas (con su id original)
-            sb.AppendLine($"""
-                IF EXISTS (SELECT 1 FROM {snap} s WHERE NOT EXISTS (SELECT 1 FROM {t} m WHERE m.{id} = s.{id}))
-                BEGIN
-                    SET IDENTITY_INSERT {t} ON;
-                    INSERT INTO {t} ({id}, {colList})
-                    SELECT s.{id}, {string.Join(", ", cols.Select(c => $"s.{Q(c.Name)}"))}
-                      FROM {snap} s WHERE NOT EXISTS (SELECT 1 FROM {t} m WHERE m.{id} = s.{id});
-                    SET @repuestas = @@ROWCOUNT;
-                    SET IDENTITY_INSERT {t} OFF;
-                END
-                """);
-        }
-        else
-        {
-            // sin clave: se compara la fila completa (una modificacion cuenta como borrada + agregada)
-            sb.AppendLine($"""
-                DELETE m FROM {t} m
-                 WHERE NOT EXISTS (SELECT 1 FROM {snap} s WHERE EXISTS (SELECT {Cmp("m")} INTERSECT SELECT {Cmp("s")}));
-                SET @nuevas = @@ROWCOUNT;
-                INSERT INTO {t} ({colList})
-                SELECT {colList} FROM (SELECT {Cmp("s")} FROM {snap} s EXCEPT SELECT {Cmp("m")} FROM {t} m) x;
-                SET @repuestas = @@ROWCOUNT;
-                """);
-        }
-
-        sb.AppendLine("COMMIT;");
-        sb.AppendLine("SELECT @nuevas, @cambiadas, @repuestas;");
-
-        await using var cmd = new SqlCommand(sb.ToString(), _cn) { CommandTimeout = 300 };
+        var cols = await ReadComparableColumnsAsync(_cn, table, ct);
+        if (cols.Count == 0)
+            return (0, 0);
+        var list = string.Join(", ", cols);
+        var real = $"dbo.{Q(table)}";
+        var copia = $"dbo.{Q(SandboxPrefix + table)}";
+        var sql = $"""
+            SELECT (SELECT COUNT(*) FROM (SELECT {list} FROM {copia} EXCEPT SELECT {list} FROM {real}) a),
+                   (SELECT COUNT(*) FROM (SELECT {list} FROM {real} EXCEPT SELECT {list} FROM {copia}) q);
+            """;
+        await using var cmd = new SqlCommand(sql, _cn) { CommandTimeout = 300 };
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
-            return (reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
-        return (0, 0, 0);
+            return (reader.GetInt32(0), reader.GetInt32(1));
+        return (0, 0);
+    }
+
+    /// <summary>Permisos que estan en la copia y no en TA_TAREAS: quedan pendientes para ALFACORE_TAREAS_WEB.</summary>
+    private async Task<int> CollectNewGrantsAsync(CancellationToken ct)
+    {
+        var sql = $"""
+            INSERT INTO {WebPendientes} (Usuario, Sistema, Clave)
+            SELECT n.USUARIO, n.SISTEMA, n.TAREA
+              FROM (SELECT CAST(USUARIO AS nvarchar(100)) AS USUARIO, CAST(SISTEMA AS nvarchar(100)) AS SISTEMA, CAST(TAREA AS nvarchar(100)) AS TAREA
+                      FROM dbo.{SandboxPrefix}{TareasTable}
+                    EXCEPT
+                    SELECT CAST(USUARIO AS nvarchar(100)), CAST(SISTEMA AS nvarchar(100)), CAST(TAREA AS nvarchar(100))
+                      FROM dbo.{TareasTable}) n
+             WHERE ISNULL(n.TAREA, '') <> '' AND n.USUARIO IS NOT NULL AND n.SISTEMA IS NOT NULL;
+            SELECT @@ROWCOUNT;
+            """;
+        await using var cmd = new SqlCommand(sql, _cn) { CommandTimeout = 300 };
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is int n ? n : 0;
     }
 
     /// <summary>
@@ -223,38 +218,36 @@ internal sealed class LegacyTablesUpdateGuard
         await ExecAsync(_cn, sql, ct);
     }
 
-    private sealed record ColumnInfo(string Name, bool IsLob);
+    private static async Task<bool> TableExistsAsync(SqlConnection cn, string table, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand("SELECT CASE WHEN OBJECT_ID(@t, 'U') IS NULL THEN 0 ELSE 1 END;", cn);
+        cmd.Parameters.AddWithValue("@t", "dbo." + table);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is int n && n == 1;
+    }
 
-    private sealed record TableInfo(string Name, string? Identity, IReadOnlyList<ColumnInfo> Columns);
-
-    private static async Task<TableInfo?> ReadTableInfoAsync(SqlConnection cn, string table, CancellationToken ct)
+    /// <summary>Columnas comparables con EXCEPT (los ntext/text/image/xml se pasan a nvarchar(max)).</summary>
+    private static async Task<List<string>> ReadComparableColumnsAsync(SqlConnection cn, string table, CancellationToken ct)
     {
         const string sql = """
-            SELECT c.name, c.is_identity,
-                   CASE WHEN ty.name IN ('ntext', 'text', 'image', 'xml') THEN 1 ELSE 0 END AS is_lob
+            SELECT c.name, CASE WHEN ty.name IN ('ntext', 'text', 'image', 'xml') THEN 1 ELSE 0 END AS is_lob
               FROM sys.columns c
                    INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
              WHERE c.object_id = OBJECT_ID(@t, 'U')
-               AND c.is_computed = 0
+               AND c.is_computed = 0 AND c.is_identity = 0
                AND ty.name NOT IN ('timestamp', 'rowversion')
              ORDER BY c.column_id;
             """;
-        string? identity = null;
-        var cols = new List<ColumnInfo>();
-        await using (var cmd = new SqlCommand(sql, cn))
+        var cols = new List<string>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@t", "dbo." + table);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
-            cmd.Parameters.AddWithValue("@t", "dbo." + table);
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                var name = reader.GetString(0);
-                if (reader.GetBoolean(1))
-                    identity = name;
-                else
-                    cols.Add(new ColumnInfo(name, reader.GetInt32(2) == 1));
-            }
+            var name = Q(reader.GetString(0));
+            cols.Add(reader.GetInt32(1) == 1 ? $"CAST({name} AS nvarchar(max)) AS {name}" : name);
         }
-        return cols.Count == 0 ? null : new TableInfo(table, identity, cols);
+        return cols;
     }
 
     private static async Task<HashSet<string>> ReadColumnNamesAsync(SqlConnection cn, string table, CancellationToken ct)

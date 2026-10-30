@@ -511,8 +511,8 @@ public sealed class CentralProvisioningService(
             ? scripts.Where(x => CompareScriptToVersion(x, currentVersion) > 0).ToList()
             : scripts;
 
-        // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script: al
-        // terminar la tanda se dejan como estaban (ver LegacyTablesUpdateGuard).
+        // El menu y los permisos del legacy (TA_MENU / TA_TAREAS) no los toca ningun script: los scripts
+        // trabajan sobre copias (ALFACORE_SANDBOX_TA_*) y AlfaCore nunca escribe las reales (ver LegacyTablesUpdateGuard).
         var legacyGuard = await LegacyTablesUpdateGuard.BeginAsync(target, ct);
         try
         {
@@ -524,7 +524,7 @@ public sealed class CentralProvisioningService(
                     if (string.IsNullOrWhiteSpace(batch))
                         continue;
 
-                    await target.ExecuteAsync(new CommandDefinition(batch, cancellationToken: ct, commandTimeout: 1200));
+                    await target.ExecuteAsync(new CommandDefinition(LegacyTablesUpdateGuard.Rewrite(batch), cancellationToken: ct, commandTimeout: 1200));
                 }
 
                 await SaveConfigValueAsync(target, detailColumn, FechaUpdateKey, script.VersionKey, ct);

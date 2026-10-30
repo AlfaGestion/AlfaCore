@@ -833,15 +833,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ActualizacionesService.cs`
 - Propósito: descubrir scripts, validar versiones y coordinar panel, historial y ejecución de actualizaciones de la base activa.
 - Datos que usa: `TA_CONFIGURACION` (TABLE), `AUX_ACTUALIZACION_HIST` (TABLE creada/verificada por el servicio), archivos SQL, `IAppEventService`, motor SQL y estado de ejecución.
-- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`. Corre cada script bajo `LegacyTablesUpdateGuard`.
+- Observaciones: rechaza versiones duplicadas y las registra en AUX_ERR; solo ignora alias antiguos explícitos si existe la nueva copia con idéntico SQL. Incidencia y límites en `docs/gestion/actualizaciones-colision-versiones-2026-10-15.md`. Corre cada script bajo `LegacyTablesUpdateGuard` (sobre copias de `TA_MENU` / `TA_TAREAS`).
 
 ### LegacyTablesUpdateGuard
 
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/LegacyTablesUpdateGuard.cs`
-- Propósito: mientras corren los scripts de `App_Data/updates`, deja `TA_MENU` y `TA_TAREAS` (menú y permisos del legacy VB6) exactamente como estaban: quita filas agregadas, restaura las modificadas y repone las borradas. Los permisos que un script quiera dar en `TA_TAREAS` los pasa a `ALFACORE_TAREAS_WEB`, solo a usuarios con permisos web explícitos.
-- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_TAREAS_WEB`; tablas temporales de la misma sesión de los scripts.
-- Observaciones: helper interno que usan `ActualizacionesService` y `CentralProvisioningService`. Restaura al terminar la tanda de scripts; el resumen queda en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Regla en AGENTS.md ("Menú y permisos web independientes del legacy").
+- Propósito: mientras corren los scripts de `App_Data/updates`, aísla `TA_MENU` y `TA_TAREAS` (menú y permisos del legacy VB6): las copia a `ALFACORE_SANDBOX_TA_MENU` / `ALFACORE_SANDBOX_TA_TAREAS` y `Rewrite` cambia en cada lote las referencias a esas tablas por las copias. Las reales solo se leen (para copiar y comparar), nunca se escriben. Los permisos que un script quiera dar en `TA_TAREAS` los pasa a `ALFACORE_TAREAS_WEB`, solo a usuarios con permisos web explícitos.
+- Datos que usa: `TA_MENU`, `TA_TAREAS` (solo lectura), `ALFACORE_SANDBOX_TA_MENU`, `ALFACORE_SANDBOX_TA_TAREAS` (se crean y borran en cada tanda), `ALFACORE_TAREAS_WEB`; una tabla temporal de la sesión.
+- Observaciones: helper interno que usan `ActualizacionesService` y `CentralProvisioningService`. Al terminar la tanda pasa los permisos a `ALFACORE_TAREAS_WEB` y borra las copias; el resumen queda en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Regla en AGENTS.md ("Menú y permisos web independientes del legacy").
 
 ## Stored Procedures usados
 

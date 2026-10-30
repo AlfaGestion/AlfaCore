@@ -188,8 +188,11 @@ Las opciones de AlfaCore que se quieran usar desde el legacy las agrega a mano e
 legacy, con su propia clave y el sufijo " (web)".
 
 Protección automática: `LegacyTablesUpdateGuard` (lo usan `ActualizacionesService` y
-`CentralProvisioningService`) saca una foto de `TA_MENU` y `TA_TAREAS` antes de correr los scripts y,
-al terminar la tanda (aunque falle), las deja como estaban. Los permisos que un script intente dar en `TA_TAREAS` los
+`CentralProvisioningService`) copia `TA_MENU` y `TA_TAREAS` a `ALFACORE_SANDBOX_TA_MENU` / `ALFACORE_SANDBOX_TA_TAREAS` al
+empezar la tanda y, antes de ejecutar cada lote, cambia en el texto del script las referencias a esas
+tablas por las copias: los scripts leen y escriben la copia y **las tablas reales no se escriben nunca**
+(tampoco se "restauran", así no se pisan cambios que haga el legacy mientras tanto). Al terminar se
+borran las copias. Lo controla el test `LegacyTablesUpdateGuardTests`. Los permisos que un script intente dar en `TA_TAREAS` los
 pasa a `ALFACORE_TAREAS_WEB` (solo a usuarios que ya tienen permisos web explícitos) y lo deja anotado
 en la auditoría (`Actualizaciones` / `ProtegerLegacy`). Esa protección es una red de seguridad: los scripts nuevos igual tienen
 que respetar esta regla.

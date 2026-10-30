@@ -20,7 +20,7 @@
 - **Seguridad:** nunca escribir contraseñas, tokens ni claves fiscales en código ni en archivos del repo. Para la base, usar un login de **solo lectura** salvo autorización explícita para escribir.
 - Stack fijo: Blazor Server + .NET 8 + SQL Server + **Dapper** (sin EF). Lógica de datos en vistas/SQL; la UI solo muestra.
 - Pantallas nuevas: shell AlfaDesign (ver AGENTS.md: `AlfaDesignManagedModules` + `ModuleKey`). Todo módulo nuevo lleva script en `src/AlfaCore/App_Data/updates/` (`AAAA-MM-DD-NNN__area_modulo_menu_web.sql`, idempotente). Tras un pull verificar que no haya dos scripts con la misma versión.
-- **Menú/permisos web independientes del legacy:** AlfaCore usa solo `ALFACORE_MENU_WEB` / `ALFACORE_TAREAS_WEB`; **nunca** escribe `TA_MENU` ni `TA_TAREAS` (menú y permisos de Alfa Gestión VB6). `LegacyTablesUpdateGuard` revierte lo que un script intente cambiar ahí. Detalle en AGENTS.md.
+- **Menú/permisos web independientes del legacy:** AlfaCore usa solo `ALFACORE_MENU_WEB` / `ALFACORE_TAREAS_WEB`; **nunca** escribe `TA_MENU` ni `TA_TAREAS` (menú y permisos de Alfa Gestión VB6). `LegacyTablesUpdateGuard` hace que los scripts de actualización trabajen sobre copias (`ALFACORE_SANDBOX_TA_*`), así las tablas reales nunca se escriben. Detalle en AGENTS.md.
 - Errores relevantes a `AUX_ERR` vía `IAppEventService`; al usuario, mensaje corto en español con código de incidente.
 - UTF-8 sin BOM. Al correr `.sql` a mano con `sqlcmd`, usar `-f i:65001`.
 - Antes de cerrar una tarea: `python tools/catalogo/check_catalogo.py`.
