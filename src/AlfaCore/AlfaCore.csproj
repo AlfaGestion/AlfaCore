@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AlfaCore</AssemblyName>
     <UserSecretsId>AlfaCore-Development</UserSecretsId>
-    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**;App_Data\servidor\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../docs/modulos/ventas-carga-comprobantes/configuracion-vb6.csv" LogicalName="AlfaCore.Ventas.ConfiguracionVb6.csv" />
@@ -38,6 +38,8 @@
 
   <ItemGroup>
     <Content Remove="App_Data\whatsapp-web\**" />
+    <Content Remove="App_Data\servidor\**" />
+    <None Remove="App_Data\servidor\**" />
     <None Remove="App_Data\whatsapp-web\**" />
     <!-- node_modules del worker de WhatsApp Web nunca se commitea (ver .gitignore); si un dev lo
          instaló localmente no queremos que MSBuild lo evalúe como item de proyecto en cada build. -->

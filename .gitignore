@@ -113,3 +113,7 @@ src/AlfaCore/Node/WhatsAppWebWorker/node_modules/
 *.zip
 *.rar
 .json
+
+# Configuración de la instalación, administrada en el servidor
+src/AlfaCore/App_Data/servidor/
+App_Data/servidor/

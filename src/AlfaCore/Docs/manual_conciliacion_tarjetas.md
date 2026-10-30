@@ -83,7 +83,7 @@ Revisá los números de vínculo, los registros e importes, escribí un motivo, 
 
 ## Requisitos
 
-El administrador debe ejecutar las actualizaciones. El servidor de AlfaCore necesita Python con `pypdf`. Tarjetas reutiliza el ejecutable configurado en Recepción documental; no hace falta cargar la ruta dos veces. Solo si necesitás otra instalación, indicá su ruta completa en `TARJETAS-PYTHON`. Vacío o `python` mantienen la configuración compartida; si tampoco existe esa configuración, se utiliza el Python disponible para el servicio. En esta etapa los PDF se procesan localmente, sin enviarlos a servicios de IA.
+El administrador debe ejecutar las actualizaciones. El servidor de AlfaCore necesita Python con `pypdf`. Python se configura una sola vez en **Administrar → Servidor**, con acceso de superadministrador, y se comparte entre todas las bases de esa instalación. Sin configuración común se conserva la ruta anterior de Recepción documental. Solo si necesitás otra instalación, indicá su ruta completa en `TARJETAS-PYTHON`. Vacío o `python` mantienen la configuración compartida del servidor; si tampoco existe esa configuración, se utiliza el Python disponible para el servicio. En esta etapa los PDF se procesan localmente, sin enviarlos a servicios de IA.
 
 
 ## Filtros rápidos por lista

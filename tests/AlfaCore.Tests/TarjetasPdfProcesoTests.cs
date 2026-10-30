@@ -45,7 +45,7 @@ public sealed class TarjetasPdfProcesoTests:IDisposable
     {
         await Script("print('prueba')");
         var ex=await Assert.ThrowsAsync<InvalidOperationException>(()=>Lector().LeerAsync(Pdf(),Path.Combine(_root,"python-inexistente.exe"),default));
-        Assert.Contains("TARJETAS-PYTHON",ex.Message);
+        Assert.Contains("Administrar → Servidor",ex.Message);
         Assert.NotNull(ex.InnerException);
     }
     [PythonProcesoFact]

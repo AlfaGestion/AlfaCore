@@ -13,7 +13,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed partial class ConciliacionBancariaService(ISessionService sessions, IAppUserSessionService users,
-    IPermissionService permissions, IAppEventService events, ConciliacionExtractoLector lector,IConciliacionIaModelo? iaModelo=null)
+    IPermissionService permissions, IAppEventService events, ConciliacionExtractoLector lector,IConciliacionIaModelo? iaModelo=null,LectoresServidorService? lectoresServidor=null)
 {
     public const string MenuKey = "D75-CONCILIA-IA";
 
@@ -64,7 +64,7 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 SELECT COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),ValorAux))
                 FROM dbo.TA_CONFIGURACION WHERE CLAVE='InterfacesIaComprasPythonExe';
                 """,cancellationToken:ct));
-            if(!string.IsNullOrWhiteSpace(configurado))python=configurado.Trim();
+            python=lectoresServidor?.Python(configurado)??(string.IsNullOrWhiteSpace(configurado)?"python":configurado.Trim());
         }
         return await Task.Run(()=>lector.LeerAsync(file,bank,ct,python),ct);
     }

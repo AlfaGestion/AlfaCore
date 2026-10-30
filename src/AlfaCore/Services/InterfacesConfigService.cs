@@ -9,7 +9,7 @@ namespace AlfaCore.Services;
 public sealed class InterfacesConfigService(
     ISessionService sessionService,
     ISaaSTenantRouteGuard tenantRouteGuard,
-    IAppEventService appEvents) : IInterfacesConfigService
+    IAppEventService appEvents,LectoresServidorService? lectoresServidor=null) : IInterfacesConfigService
 {
     private const string ConfigGroup = "INTERFACES";
     private const string DefaultDestinoTipo = "FTP";
@@ -301,15 +301,16 @@ public sealed class InterfacesConfigService(
                 values[key] = value;
             }
 
+            var servidor=lectoresServidor?.Leer()??new LectoresServidorConfiguracion();
             var defaultScriptPath = Path.Combine(DefaultIaFolder, DefaultIaScriptName);
             var defaultWorkDir = Directory.Exists(DefaultIaFolder) ? DefaultIaFolder : string.Empty;
 
             return new InterfacesCompraIaSettingsDto
             {
                 Habilitado = string.Equals(ReadValue(values, "INTERFACESIACOMPRASHABILITADO", "NO"), "SI", StringComparison.OrdinalIgnoreCase),
-                PythonExe = ReadValue(values, "INTERFACESIACOMPRASPYTHONEXE", string.Empty).Trim(),
-                ScriptPath = ReadValue(values, "INTERFACESIACOMPRASSCRIPTPATH", File.Exists(defaultScriptPath) ? defaultScriptPath : string.Empty).Trim(),
-                WorkDir = ReadValue(values, "INTERFACESIACOMPRASWORKDIR", defaultWorkDir).Trim(),
+                PythonExe = LectoresServidorService.ResolverPython(servidor.PythonExe,ReadValue(values, "INTERFACESIACOMPRASPYTHONEXE", string.Empty)),
+                ScriptPath = !string.IsNullOrWhiteSpace(servidor.ComprasScriptPath)?servidor.ComprasScriptPath:ReadValue(values, "INTERFACESIACOMPRASSCRIPTPATH", File.Exists(defaultScriptPath) ? defaultScriptPath : string.Empty).Trim(),
+                WorkDir = !string.IsNullOrWhiteSpace(servidor.ComprasWorkDir)?servidor.ComprasWorkDir:ReadValue(values, "INTERFACESIACOMPRASWORKDIR", defaultWorkDir).Trim(),
                 WorkerHabilitado = !string.Equals(ReadValue(values, "INTERFACESIACOMPRASWORKERHABILITADO", "SI"), "NO", StringComparison.OrdinalIgnoreCase),
                 WorkerMaxParalelo = ParsePositiveInt(ReadValue(values, "INTERFACESIACOMPRASWORKERMAXPARALELO", "1"), 1),
                 WorkerIntervaloSegundos = ParsePositiveInt(ReadValue(values, "INTERFACESIACOMPRASWORKERINTERVALOSEGUNDOS", "10"), 10)
@@ -367,9 +368,9 @@ public sealed class InterfacesConfigService(
                 new
                 {
                     normalized.Habilitado,
-                    normalized.PythonExe,
-                    normalized.ScriptPath,
-                    normalized.WorkDir
+                    normalized.WorkerHabilitado,
+                    normalized.WorkerMaxParalelo,
+                    normalized.WorkerIntervaloSegundos
                 },
                 token);
 
@@ -385,6 +386,9 @@ public sealed class InterfacesConfigService(
             if (!normalized.Habilitado)
                 throw new InvalidOperationException("La detección automática de compras está deshabilitada. Activala antes de probar la configuración.");
 
+            // Los ejecutables se obtienen de la configuración persistida, nunca del formulario de un operador.
+            var infraestructura=await GetCompraIaSettingsAsync(token);
+            normalized.PythonExe=infraestructura.PythonExe;normalized.ScriptPath=infraestructura.ScriptPath;normalized.WorkDir=infraestructura.WorkDir;
             var resolvedPython = ResolveExePath(normalized.PythonExe);
             if (resolvedPython is null)
                 throw new InvalidOperationException("No se encontró el ejecutable Python configurado. Verificá que la ruta sea correcta o que Python esté en el PATH del sistema.");
@@ -446,9 +450,6 @@ public sealed class InterfacesConfigService(
     private static IEnumerable<(string Key, string Value)> BuildItems(InterfacesCompraIaSettingsDto settings)
     {
         yield return ("InterfacesIaComprasHabilitado", settings.Habilitado ? "SI" : "NO");
-        yield return ("InterfacesIaComprasPythonExe", settings.PythonExe);
-        yield return ("InterfacesIaComprasScriptPath", settings.ScriptPath);
-        yield return ("InterfacesIaComprasWorkDir", settings.WorkDir);
         yield return ("InterfacesIaComprasWorkerHabilitado", settings.WorkerHabilitado ? "SI" : "NO");
         yield return ("InterfacesIaComprasWorkerMaxParalelo", settings.WorkerMaxParalelo.ToString());
         yield return ("InterfacesIaComprasWorkerIntervaloSegundos", settings.WorkerIntervaloSegundos.ToString());

@@ -235,7 +235,8 @@ public static class ModuleTopNavPresets
             ("cargos", "Cargos", "/admin/cargos"),
             ("pagos", "Pagos", "/admin/pagos"),
             ("consumo-ia", "Consumo IA", "/admin/consumo-ia"),
-            ("solicitudes", "Solicitudes", "/admin/solicitudes")
+            ("solicitudes", "Solicitudes", "/admin/solicitudes"),
+            ("servidor", "Servidor", "/admin/servidor")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildDocumentos(IRouteContextService routeContext, NavigationManager nav, string activeKey)

@@ -13,7 +13,7 @@ internal static class PdfPythonProceso
     {
         var script=Path.Combine(environment.ContentRootPath,"App_Data",carpeta,"leer_pdf.py");
         if(!File.Exists(script))throw new InvalidOperationException($"Falta el lector PDF en el servidor. Volvé a publicar AlfaCore incluyendo App_Data/{carpeta}/leer_pdf.py.");
-        if(string.IsNullOrWhiteSpace(python))throw new InvalidOperationException("Configurá el ejecutable Python de Recepción documental en el servidor de AlfaCore.");
+        if(string.IsNullOrWhiteSpace(python))throw new InvalidOperationException("Configurá el ejecutable Python en Administrar → Servidor.");
         var info=new ProcessStartInfo(python) {RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,UseShellExecute=false,CreateNoWindow=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
         info.Environment["PYTHONDONTWRITEBYTECODE"]="1";
         info.Environment["PYTHONUTF8"]="1";
@@ -44,14 +44,14 @@ internal static class PdfPythonProceso
     private static Process Iniciar(ProcessStartInfo info)
     {
         try{return Process.Start(info)??throw new InvalidOperationException("No se pudo iniciar el lector PDF.");}
-        catch(Win32Exception ex){throw new InvalidOperationException("No se pudo iniciar Python en el servidor de AlfaCore. Revisá el ejecutable de Recepción documental o TARJETAS-PYTHON y los permisos del servicio.",new Exception($"Python configurado: {info.FileName}. {ex.Message}",ex));}
+        catch(Win32Exception ex){throw new InvalidOperationException("No se pudo iniciar Python en el servidor de AlfaCore. Revisá el ejecutable en Administrar → Servidor y los permisos del servicio.",new Exception($"Python configurado: {info.FileName}. {ex.Message}",ex));}
     }
     internal static InvalidOperationException ErrorLector(string error,int salida,Exception? escritura=null)
     {
         var mensaje=error.Contains("pypdf",StringComparison.OrdinalIgnoreCase)&&error.Contains("ModuleNotFoundError",StringComparison.Ordinal)
-            ?"Falta instalar pypdf en el Python del servidor de AlfaCore. Instalalo con el mismo python.exe de Recepción documental configurado para este módulo."
+            ?"Falta instalar pypdf en el Python del servidor de AlfaCore. Instalalo con el mismo python.exe configurado en Administrar → Servidor."
             : error.Contains("Microsoft Store",StringComparison.OrdinalIgnoreCase)||salida==9009
-            ?"Python no está disponible para el servicio de AlfaCore. Revisá la ruta completa de python.exe configurada en Recepción documental o, para tarjetas, en TARJETAS-PYTHON."
+            ?"Python no está disponible para el servicio de AlfaCore. Revisá la ruta completa de python.exe en Administrar → Servidor."
             : error.Contains("Permission denied",StringComparison.OrdinalIgnoreCase)
             ?"El servicio de AlfaCore no tiene permiso para ejecutar el lector PDF. Revisá los permisos de Python y App_Data."
             : error.StartsWith("Extracto:",StringComparison.Ordinal)&&error.Length<400

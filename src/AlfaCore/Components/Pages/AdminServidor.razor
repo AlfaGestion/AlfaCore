@@ -1,0 +1,81 @@
+@page "/admin/servidor"
+@page "/{idweb}/{idbase:int}/admin/servidor"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Services
+@implements IDisposable
+@inject LectoresServidorService Lectores
+@inject IAppUserSessionService Usuario
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<PageTitle>Servidor | AlfaCore</PageTitle>
+<div class="gd-page gd gd-legacy">
+    <AlfaFeedbackPanel Message="@_feedback" />
+    @if(!EsAdministrador)
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="Acceso restringido" Message="Solo un superadministrador puede configurar esta instalación." />
+    }
+    else
+    {
+        <section class="panel-card">
+            <h2>Lectores documentales del servidor</h2>
+            <p>Se configura una vez en esta instalación de AlfaCore y se aplica a todas sus bases. No modifica appsettings.json ni .env.</p>
+            <AlfaInput Label="Ejecutable Python" Value="@_python" ValueChanged="v=>_python=v??string.Empty" Placeholder="C:\Python314\python.exe" HelpText="Ruta completa en el servidor donde corre AlfaCore, accesible para su servicio." Disabled="_busy" />
+            <AlfaInput Label="Script de recepción documental (opcional)" Value="@_script" ValueChanged="v=>_script=v??string.Empty" Placeholder="C:\dev\IA_ProcesarDocumentos\lector_facturas_to_json_v5.py" HelpText="Vacío conserva la configuración anterior de cada base. Los lectores de bancos y tarjetas vienen incluidos en AlfaCore." Disabled="_busy" />
+            <AlfaInput Label="Carpeta de trabajo de recepción documental (opcional)" Value="@_carpeta" ValueChanged="v=>_carpeta=v??string.Empty" Disabled="_busy" />
+            <p>La ruta común tiene prioridad sobre la configuración anterior de Recepción documental. Una ruta propia de TARJETAS-PYTHON sigue siendo una excepción explícita para esa base.</p>
+            <p>Probar verifica Python y pypdf con la misma identidad que ejecuta AlfaCore. No importa documentos ni modifica contabilidad.</p>
+        </section>
+    }
+</div>
+
+@code {
+    private string _python="",_script="",_carpeta="";
+    private bool _busy;
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _publicado;
+    private bool EsAdministrador=>Usuario.IsAuthenticated&&Usuario.CurrentUser?.SuperAdmin==true;
+    private LectoresServidorConfiguracion Config=>new(){PythonExe=_python,ComprasScriptPath=_script,ComprasWorkDir=_carpeta};
+    protected override async Task OnInitializedAsync()
+    {
+        Header();
+        if(!EsAdministrador)return;
+        await Ejecutar(async()=>
+        {
+            var config=await Lectores.ObtenerAsync();_python=config.PythonExe;_script=config.ComprasScriptPath;_carpeta=config.ComprasWorkDir;
+            _feedback=null;
+        });
+    }
+    protected override void OnAfterRender(bool firstRender){if(firstRender)Header();}
+    private Task Guardar()=>Ejecutar(async()=>
+    {
+        await Lectores.GuardarAsync(Config);
+        _feedback=AppUiMessage.Success("Configuración guardada","Las bases de esta instalación usarán el ejecutable común sin reiniciar AlfaCore.");
+    });
+    private Task Probar()=>Ejecutar(async()=>
+    {
+        var resultado=await Lectores.ProbarAsync(Config);
+        _feedback=AppUiMessage.Success("Lector disponible",resultado+". Guardá para aplicar esta configuración.");
+    });
+    private async Task Ejecutar(Func<Task> trabajo)
+    {
+        if(_busy)return;_busy=true;_feedback=AppUiMessage.InProgress("Procesando…","Verificando la configuración del servidor.");Header();await InvokeAsync(StateHasChanged);
+        try
+        {
+            var resultado=await UiOps.RunAsync(async()=>{await trabajo();return true;},"No se pudo completar la configuración del servidor.");
+            if(!resultado.Success)_feedback=resultado.Feedback;
+            else if(_feedback?.Severity==AppUiFeedbackSeverity.InProgress)_feedback=null;
+        }
+        finally{_busy=false;Header();await InvokeAsync(StateHasChanged);}
+    }
+    private void Header()=>PageHeader.Set(_publicado=new PageHeaderConfig
+    {
+        Title="Servidor",ModuleKey="admin",ShellMode=PageHeaderShellMode.AlfaDesignPilot,
+        Breadcrumb=["Administrar","Servidor"],TopNavigationItems=ModuleTopNavPresets.BuildAdministrar(RouteContext,Nav,"servidor"),
+        Actions=[new(){Key="guardar",Label="Guardar",Icon="bi-save",Style=PageHeaderActionStyle.Primary,Disabled=_busy||!EsAdministrador,OnClick=Guardar},
+                 new(){Key="probar",Label="Probar lector",Icon="bi-play-circle",Disabled=_busy||!EsAdministrador,OnClick=Probar}]
+    });
+    public void Dispose(){if(ReferenceEquals(PageHeader.Current,_publicado))PageHeader.Clear();}
+}

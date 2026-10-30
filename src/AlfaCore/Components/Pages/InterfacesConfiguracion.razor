@@ -136,33 +136,7 @@
                 </div>
 
                 <div class="field conv-config-fields__full">
-                    <label>Ejecutable Python</label>
-                    <div class="actions" style="gap:12px; align-items:center;">
-                        <input @bind="_compraIaConfig.PythonExe" placeholder="C:\Python311\python.exe  (o simplemente: python)" />
-                        <button type="button" class="btn btn--ghost" @onclick="BuscarPythonExeAsync" disabled="@(Loading || Saving)">
-                            <i class="bi bi-file-earmark-code"></i> Buscar
-                        </button>
-                    </div>
-                </div>
-
-                <div class="field conv-config-fields__full">
-                    <label>Script del lector</label>
-                    <div class="actions" style="gap:12px; align-items:center;">
-                        <input @bind="_compraIaConfig.ScriptPath" placeholder="C:\dev\IA_ProcesarDocumentos\lector_facturas_to_json_v5.py" />
-                        <button type="button" class="btn btn--ghost" @onclick="BuscarScriptAsync" disabled="@(Loading || Saving)">
-                            <i class="bi bi-file-earmark-code"></i> Buscar
-                        </button>
-                    </div>
-                </div>
-
-                <div class="field conv-config-fields__full">
-                    <label>Carpeta de trabajo</label>
-                    <div class="actions" style="gap:12px; align-items:center;">
-                        <input @bind="_compraIaConfig.WorkDir" placeholder="C:\dev\IA_ProcesarDocumentos" />
-                        <button type="button" class="btn btn--ghost" @onclick="BuscarWorkDirAsync" disabled="@(Loading || Saving)">
-                            <i class="bi bi-folder2-open"></i> Buscar carpeta
-                        </button>
-                    </div>
+                    <p>La instalación de Python y los lectores se administran una sola vez desde <strong>Administrar → Servidor</strong>. Las rutas no se editan desde esta configuración de la base.</p>
                 </div>
 
                 <div class="field">
@@ -186,7 +160,7 @@
 
             <div class="context-card">
                 <span class="context-card__label">Uso actual</span>
-                <strong>@GetCompraIaResumen()</strong>
+                <strong>@(_compraIaConfig.Habilitado ? "Lectura habilitada para esta base" : "Lectura deshabilitada para esta base")</strong>
                 <span class="context-card__muted">Si el script no está configurado, el botón <code>Detectar datos</code> va a fallar aunque el documento tenga adjuntos válidos.</span>
             </div>
 
@@ -195,7 +169,7 @@
                     <i class="bi bi-clipboard2-check"></i> Probar configuración
                 </button>
                 <button type="button" class="btn btn--primary" @onclick="SaveCompraIaAsync" disabled="@(Loading || Saving)">
-                    <i class="bi bi-cpu"></i> Guardar lector de compras
+                    <i class="bi bi-cpu"></i> Guardar opciones de lectura
                 </button>
             </div>
         </section>
@@ -373,45 +347,6 @@
 
         if (!string.IsNullOrWhiteSpace(result.Value))
             _config.RutaBase = result.Value;
-    }
-
-    private async Task BuscarPythonExeAsync()
-    {
-        _feedback = null;
-        var result = await UiOps.RunAsync(
-            () => ConfigSvc.BrowseLocalFileAsync("Ejecutable Python|python.exe|Ejecutables|*.exe|Todos|*.*"),
-            "No se pudo abrir el selector de archivos.");
-
-        if (!result.Success)
-            _feedback = result.Feedback;
-        else if (!string.IsNullOrWhiteSpace(result.Value))
-            _compraIaConfig.PythonExe = result.Value;
-    }
-
-    private async Task BuscarScriptAsync()
-    {
-        _feedback = null;
-        var result = await UiOps.RunAsync(
-            () => ConfigSvc.BrowseLocalFileAsync("Scripts Python|*.py|Todos|*.*"),
-            "No se pudo abrir el selector de archivos.");
-
-        if (!result.Success)
-            _feedback = result.Feedback;
-        else if (!string.IsNullOrWhiteSpace(result.Value))
-            _compraIaConfig.ScriptPath = result.Value;
-    }
-
-    private async Task BuscarWorkDirAsync()
-    {
-        _feedback = null;
-        var result = await UiOps.RunAsync(
-            () => ConfigSvc.BrowseLocalFolderAsync(),
-            "No se pudo abrir el selector de carpetas.");
-
-        if (!result.Success)
-            _feedback = result.Feedback;
-        else if (!string.IsNullOrWhiteSpace(result.Value))
-            _compraIaConfig.WorkDir = result.Value;
     }
 
     private async Task SaveCompraIaAsync()

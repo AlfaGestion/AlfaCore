@@ -423,6 +423,7 @@ public class Program
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<ConciliacionExtractoLector>();
         builder.Services.AddScoped<ConciliacionBancariaService>();
+        builder.Services.AddScoped<LectoresServidorService>();
         builder.Services.AddScoped<TarjetasPdfLector>();
         builder.Services.AddScoped<ConciliacionTarjetasService>();
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();

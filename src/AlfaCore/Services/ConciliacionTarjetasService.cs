@@ -10,7 +10,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed partial class ConciliacionTarjetasService(ISessionService sessions,IAppUserSessionService users,
-    IPermissionService permissions,IAppEventService events,TarjetasPdfLector lector,IConciliacionIaModelo? iaModelo=null)
+    IPermissionService permissions,IAppEventService events,TarjetasPdfLector lector,IConciliacionIaModelo? iaModelo=null,LectoresServidorService? lectoresServidor=null)
 {
     public const string MenuKey="D75-TARJETAS-IA";
     private async Task<T> Ejecutar<T>(string accion,Func<SqlConnection,CancellationToken,Task<T>> work,CancellationToken ct)
@@ -42,9 +42,13 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
     }
     private static async Task<string> Config(SqlConnection cn,string clave,CancellationToken ct,SqlTransaction? tx=null)
         => await cn.ExecuteScalarAsync<string?>(Cmd("SELECT COALESCE(NULLIF(RTRIM(VALOR),''),CONVERT(nvarchar(max),ValorAux)) FROM dbo.TA_CONFIGURACION WHERE CLAVE=@clave",new{clave},ct,tx)) ?? "";
-    private static async Task<string> PythonAsync(SqlConnection cn,CancellationToken ct)
-        => TarjetasPdfLector.ResolverPython(await Config(cn,"TARJETAS-PYTHON",ct),
-            await Config(cn,"InterfacesIaComprasPythonExe",ct));
+    private async Task<string> PythonAsync(SqlConnection cn,CancellationToken ct)
+    {
+        var propio=await Config(cn,"TARJETAS-PYTHON",ct);
+        if(!string.IsNullOrWhiteSpace(propio)&&!propio.Trim().Equals("python",StringComparison.OrdinalIgnoreCase))return propio.Trim();
+        var anterior=await Config(cn,"InterfacesIaComprasPythonExe",ct);
+        return lectoresServidor?.Python(anterior)??TarjetasPdfLector.ResolverPython(propio,anterior);
+    }
     public Task<IReadOnlyList<ConciliacionCuenta>> CuentasAsync(CancellationToken ct=default)=>Ejecutar<IReadOnlyList<ConciliacionCuenta>>("Cuentas",async(c,t)=>
         (await c.QueryAsync<ConciliacionCuenta>(Cmd(CuentasTarjetasSql,null,t))).AsList(),ct);
     public Task<TarjetasLectura> LeerAsync(ConciliacionArchivo archivo,CancellationToken ct=default)=>Ejecutar("LeerPDF",async(c,t)=>
