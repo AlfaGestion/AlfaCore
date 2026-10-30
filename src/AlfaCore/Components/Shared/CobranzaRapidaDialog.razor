@@ -97,10 +97,10 @@
                 else
                 {
                     <div class="cobranza-editor__medio">
-                        <AlfaSelect Label="Cuenta de ajuste" Options="OpcionesAjuste" Value="_cuentaAjuste" ValueChanged="v => _cuentaAjuste = v ?? string.Empty" Placeholder="Seleccionar cuenta de ajuste" Disabled="Busy" />
-                        <AlfaInput Label="Importe del ajuste (+ gasto / − diferencia a favor)" Type="number" Step="0.01" Value="_importeAjuste" ValueChanged="v => _importeAjuste = v ?? string.Empty" Disabled="Busy" />
-                        <AlfaInput Label="Motivo del ajuste" MaxLength="100" Value="_motivoAjuste" ValueChanged="v => _motivoAjuste = v ?? string.Empty" Disabled="Busy" />
-                        <AlfaCheckbox Value="_recordarAjuste" ValueChanged="v => _recordarAjuste = v == true" Disabled="Busy">Usar esta cuenta por defecto en próximas cobranzas</AlfaCheckbox>
+                        <AlfaSelect Label="Cuenta de ajuste" Options="OpcionesAjuste" Value="@_cuentaAjuste" ValueChanged="v => _cuentaAjuste = v ?? string.Empty" Placeholder="Seleccionar cuenta de ajuste" Disabled="Busy" />
+                        <AlfaInput Label="Importe del ajuste (+ gasto / − diferencia a favor)" Type="number" Step="0.01" Value="@_importeAjuste" ValueChanged="v => _importeAjuste = v ?? string.Empty" Disabled="Busy" />
+                        <AlfaInput Label="Motivo del ajuste" MaxLength="100" Value="@_motivoAjuste" ValueChanged="v => _motivoAjuste = v ?? string.Empty" Disabled="Busy" />
+                        <AlfaCheckbox Value="@_recordarAjuste" ValueChanged="v => _recordarAjuste = v == true" Disabled="Busy">Usar esta cuenta por defecto en próximas cobranzas</AlfaCheckbox>
                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="Busy" OnClick="QuitarAjuste">Quitar ajuste</AlfaButton>
                     </div>
                     <p class="cobranza-editor__sugerencia">El ajuste agrega una línea contable al recibo. El importe recibido en el banco se conserva. Revisá cuenta, signo e importe antes de confirmar.</p>

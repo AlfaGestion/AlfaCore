@@ -12,9 +12,9 @@
         <p>Coincidir en importe no identifica al pagador. Revisá CUIT, nombre, referencia y comprobante de transferencia. Asignar un cliente aquí no registra la cobranza ni recuerda nombres bancarios.</p>
         <AlfaFeedbackPanel Message="@(_error ?? Message)" />
         <div class="pagador-filtros">
-            <AlfaInput Label="Buscar cliente" Placeholder="Nombre, código o documento" MaxLength="100" Value="_buscar" ValueChanged="v => _buscar = v ?? string.Empty" Disabled="@(_cargando || Busy)" />
+            <AlfaInput Label="Buscar cliente" Placeholder="Nombre, código o documento" MaxLength="100" Value="@_buscar" ValueChanged="v => _buscar = v ?? string.Empty" Disabled="@(_cargando || Busy)" />
             <AlfaButton Icon="bi-search" Loading="_cargando" Disabled="Busy" OnClick="Cargar">Buscar</AlfaButton>
-            <AlfaCheckbox Value="_soloCoincidencias" ValueChanged="v => { _soloCoincidencias = v == true; _pagina = 1; }" Disabled="@(_cargando || Busy)">Solo coincidencias sugeridas</AlfaCheckbox>
+            <AlfaCheckbox Value="@_soloCoincidencias" ValueChanged="v => { _soloCoincidencias = v == true; _pagina = 1; }" Disabled="@(_cargando || Busy)">Solo coincidencias sugeridas</AlfaCheckbox>
         </div>
         @if (Busy){<p role="status" aria-live="polite">Asignando el cliente y preparando la cobranza para revisar…</p>}
         @if (_cargando){<p role="status" aria-live="polite">Consultando pendientes, totales y combinaciones de hasta cinco facturas…</p>}

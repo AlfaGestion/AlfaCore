@@ -38,6 +38,7 @@ public sealed class TarjetasDetalle
 }
 public sealed class TarjetasImportacion
 {
+    public bool Anulada {get;set;}
     public long Id {get;set;}
     public string Nombre {get;set;}="";
     public string Banco {get;set;}="";

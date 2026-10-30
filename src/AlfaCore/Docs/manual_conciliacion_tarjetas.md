@@ -74,6 +74,11 @@ Pulsá **Ver conciliados** junto a **Cambiar cuenta** y **Documento original**. 
 
 Para corregir varias juntas, pulsá **Deshacer varias**. Se abre una ventana con todas las conciliaciones activas de la importación, incluso las que los filtros generales o rápidos no muestran. Allí sí podés tildarlas, usar **Seleccionar todas** o limpiar la selección. La selección abarca todas las páginas y admite hasta 1.000 conciliaciones por operación. Las casillas de las listas principales siguen reservadas para conciliar movimientos pendientes.
 
+La ventana se abre mientras consulta y muestra el progreso. Si no puede terminar, el mensaje y el
+código quedan visibles allí; pulsá **Volver a consultar** para reintentar. **Seleccionar todas** elige
+solo las conciliaciones habilitadas. Las que requieran revisar permisos o identificar movimientos
+aparecen deshabilitadas con su estado; no se liberan sin superar esos controles.
+
 Revisá los números de vínculo, los registros e importes, escribí un motivo, marcá la confirmación y pulsá **Deshacer N conciliaciones**. Cada grupo se libera completo. Si alguna conciliación cambió, ya fue anulada o no se pueden identificar y autorizar todos sus movimientos, se rechaza la operación entera: no se deshace una parte del lote. Los grupos con problemas aparecen deshabilitados para revisión. La acción solo anula los vínculos propios de tarjetas, no cambia `MV_ASIENTOS` ni las marcas de liquidación del escritorio.
 
 ## Requisitos
@@ -101,14 +106,17 @@ Si hay una única candidata con coincidencias individuales, se precarga la cuent
 Si el período supera 10.000 movimientos entre las cuentas TJ, no se sugiere a partir de una muestra parcial: elegí la cuenta manualmente. La detección de pertenencia puede encontrar operaciones ya liquidadas; la preparación posterior solo marca las pendientes habilitadas.
 
 
-## Eliminar un archivo cargado por error
+## Anular un archivo cargado por error
 
 Si todavía estás en la vista previa, **Descartar archivo seleccionado** quita esa selección sin afectar las importaciones existentes.
 
-Para un archivo ya importado, en **Importación** buscá su fila y pulsá **Eliminar**. Revisá el nombre y la cuenta, escribí un motivo y confirmá **Eliminar importación**. Se eliminan el PDF guardado y sus operaciones importadas; después podés importar nuevamente el archivo correcto. No modifica asientos contables, el archivo de tu computadora ni las asociaciones de cuenta recordadas.
+Para un archivo ya importado, en **Importación** buscá su fila y pulsá **Anular**. Revisá el nombre y la cuenta, escribí un motivo de al menos tres caracteres y confirmá **Anular importación**. Se conservan el PDF original, las operaciones y el historial como testigo. La importación deja de aparecer entre las activas y podés importar nuevamente el archivo correcto.
 
-Solo se permite si la importación nunca tuvo conciliaciones. Tener todos los movimientos pendientes no garantiza esa condición: puede haber vínculos anulados en el historial. Si tiene historia, se conserva y podés revisar/deshacer sus vínculos desde **Ver conciliados**. La eliminación requiere confirmación explícita y queda auditada.
+Se permite cuando no quedan conciliaciones activas, aunque haya vínculos ya deshechos. Si todavía tiene conciliaciones, usá primero **Deshacer varias**. No modifica asientos, cuentas contables ni asociaciones recordadas. La anulación queda auditada con usuario, fecha y motivo.
 
+**Mostrar también importaciones anuladas** permite consultar su estado y descargar el original. No pueden conciliarse ni cambiar de cuenta. Para trabajar nuevamente, importá el archivo como una nueva importación.
+
+Requiere aplicar la actualización **2026-10-30-001** desde **Actualizaciones** en la base activa. El motivo de anulación, los motivos de desconciliación y los filtros rápidos conservan los valores ingresados al redibujarse la pantalla.
 
 ### Resultado visible de las propuestas
 

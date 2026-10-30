@@ -1,5 +1,25 @@
 # Conciliación de tarjetas: etapa inicial
 
+## Consulta de desconciliación: rendimiento y errores visibles (30/10/2026)
+
+**Deshacer varias** abre el diálogo antes de consultar, con progreso dentro de la ventana. Si falla,
+conserva el mensaje y código aun si se descarta la notificación exterior, y ofrece **Volver a
+consultar**. Las cancelaciones esperadas de sesión/navegación siguen siendo silenciosas; una
+interrupción inesperada se registra mediante el servicio central y muestra su código. La vista de
+conciliados aclara que las casillas principales son de pendientes y remite a la selección del diálogo.
+
+La autorización recibe claves estructuradas XML generadas en el servidor desde los vínculos
+almacenados. Busca por cuenta, secuencia, mes, asiento, período y tipo, más comprobante cuando la
+clave es completa. Conserva la comprobación de la clave textual y de la huella en claves antiguas,
+los permisos por unidad y el rechazo de identidades ambiguas. Para CUENTA admite los blancos
+iniciales legacy del campo de 15 caracteres mediante igualdades indexables; no recorre el historial
+comparando CONCAT por cada vínculo. Los miembros faltantes o con clave inválida permanecen contados
+y bloquean el grupo. No modifica MV_ASIENTOS ni requiere migración.
+
+Verificación: prueba de lectura con 100.000 movimientos temporales y presupuesto de lecturas
+lógicas, identidades actuales/antiguas, cuentas con relleno, movimientos ausentes y permisos. La
+prueba de anulación múltiple mantiene auditoría, idempotencia de confirmación y rollback del ensayo.
+
 ## Desconciliación individual y por lote (29/10/2026)
 
 `ConciliacionTarjetasService.Desconciliar.cs` sustituye la dependencia anterior de `Comparar` al
@@ -104,12 +124,15 @@ TarjetasDeteccionCuentas evalúa cupones normalizados únicos (excluye 0/1), mis
 Se reutilizan TARJETAS-IA-DIAS y TARJETAS-TOLERANCIA, sin nuevas claves ni migraciones. Esta detección no llama al proveedor IA ni envía el PDF. Al importar se aplica el margen de fechas y, si la opción está activa, se ejecuta el selector determinista existente sobre los pendientes autorizados de la cuenta elegida. Las sugerencias no son autorización de escritura: ImportarAsync relee el PDF y valida la cuenta; ConfirmarAsync sigue comprobando pendientes, huellas, permisos y tolerancia en su propia transacción.
 
 
-### Eliminación de importaciones sin historial
+### Anulación de importaciones sin conciliaciones activas (2026-10-30)
 
-EliminarAsync utiliza el control común de sesión y permiso del módulo, y una transacción Serializable. Bloquea la cabecera y el rango de vínculos con UPDLOCK/HOLDLOCK; valida la cuenta esperada para rechazar solicitudes obsoletas. Rechaza cualquier TJ_Vinculo o miembro TJ_VinculoDetalle asociado, activo o anulado. Solo entonces elimina TJ_Detalle y TJ_Importacion, incluido su original; las huellas quedan libres para reimportar. No toca MV_ASIENTOS, maestros ni asociaciones recordadas.
+La interfaz usa `AnularAsync` en lugar de la eliminación física. `2026-10-30-001__caja_tarjetas_anular_importacion.sql` agrega Anulada, UsuarioAnulacion, FechaAnulacion y MotivoAnulacion a TJ_Importacion, e ImportacionActiva a TJ_Detalle. Sustituye las restricciones globales de Hash/Cuenta y Huella por índices únicos filtrados para importaciones activas, permitiendo reimportar sin perder el original ni la historia anterior.
 
-La auditoría central WriteAuditAsync usa la misma conexión/transacción y conserva id, nombre, cuenta y motivo, sin copiar el PDF. Si falla, la eliminación no se confirma. La UI exige motivo y confirmación, conserva el diálogo ante errores y actualiza listas/estado al completar. No requiere migración propia; utiliza el esquema de auditoría central vigente.
+La anulación transaccional Serializable bloquea la cabecera y los rangos de vínculos, valida motivo y cuenta esperada y rechaza cualquier vínculo o miembro aún activo, incluso inconsistencias entre sus marcas. Los vínculos anulados no impiden anular. WriteAuditAsync comparte la transacción; si falla, no se anula. No escribe MV_ASIENTOS, maestros ni asociaciones recordadas.
 
+Las listas excluyen anuladas por defecto; Mostrar también importaciones anuladas habilita consultar el estado y descargar el original. Comparar/confirmar y cambiar cuenta rechazan importaciones anuladas. Importar y cambiar cuenta consideran solo duplicados activos. Las bases anteriores siguen pudiendo listar/importar, pero Anular indica aplicar la nueva actualización. El método físico EliminarAsync queda disponible internamente con sus guardas anteriores; la pantalla ya no lo invoca.
+
+Los parámetros string de AlfaInput y AlfaSelect usan expresiones Razor explícitas: sin `@`, el valor del campo se interpretaba como un literal y el render descartaba lo escrito. La prueba de UI reproduce escritura y redibujado del motivo. El ensayo SQL prueba migración idempotente, bloqueos, auditoría, conservación de PDF/historia y reimportación del mismo hash/huella, con rollback completo en una base de pruebas autorizada.
 
 ### Propuestas visibles y análisis IA por lotes
 

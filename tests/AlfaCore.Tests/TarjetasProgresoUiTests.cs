@@ -1,5 +1,6 @@
 using System.Reflection;
 using AlfaCore.Components.Pages;
+using AlfaCore.Components.Shared.AlfaDesign;
 using AlfaCore.Models;
 using AlfaCore.Services;
 using Microsoft.AspNetCore.Components;
@@ -106,6 +107,60 @@ public sealed class TarjetasProgresoUiTests
             }
         });
     }
+    [Fact]
+    public async Task DeshacerAbreLaVentanaAunqueFalleConsultaYConservaErrorAlDescartarNotificacion()
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var sessions=Proxy<ISessionService>((_,_)=>null);
+        var users=Proxy<IAppUserSessionService>((m,_)=>m.Name=="get_IsAuthenticated"?false:null);
+        var service=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,null!);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(service);services.AddSingleton(sessions);services.AddSingleton(users);
+        services.AddSingleton(runtime.Events);services.AddSingleton<IPageHeaderService,PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService,AppUiOperationService>();services.AddSingleton<NavigationManager,CargaComprobantesUiTests.TestNavigation>();
+        services.AddSingleton(Proxy<IRouteContextService>((_,_)=>null));services.AddSingleton(Proxy<IJSRuntime>((_,_)=>null));
+        var capture=new Captura();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            await (Task)typeof(ConciliacionTarjetas).GetMethod("AbrirDeshacerVarias",Flags)!.Invoke(capture.Page,null)!;
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.Contains("Deshacer conciliaciones de tarjetas",html);
+            Assert.Contains("Iniciá sesión en la base donde querés conciliar",html);
+            Assert.Contains("Volver a consultar",html);
+            Assert.NotNull(typeof(ConciliacionTarjetas).GetField("_errorDeshacer",Flags)!.GetValue(capture.Page));
+            typeof(ConciliacionTarjetas).GetField("_feedback",Flags)!.SetValue(capture.Page,null);
+            typeof(ComponentBase).GetMethod("StateHasChanged",Flags)!.Invoke(capture.Page,null);
+            Assert.Contains("Iniciá sesión en la base donde querés conciliar",System.Net.WebUtility.HtmlDecode(root.ToHtmlString()));
+        });
+    }
+
+    [Fact]
+    public async Task MotivoDeAnulacionConservaLoEscritoAlRedibujarLaVentana()
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var sessions=Proxy<ISessionService>((_,_)=>null);var users=Proxy<IAppUserSessionService>((_,_)=>null);
+        var service=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,null!);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(service);services.AddSingleton(sessions);services.AddSingleton(users);
+        services.AddSingleton(runtime.Events);services.AddSingleton<IPageHeaderService,PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService,AppUiOperationService>();services.AddSingleton<NavigationManager,CargaComprobantesUiTests.TestNavigation>();
+        services.AddSingleton(Proxy<IRouteContextService>((_,_)=>null));services.AddSingleton(Proxy<IJSRuntime>((_,_)=>null));
+        var capture=new Captura();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            typeof(ConciliacionTarjetas).GetMethod("PedirEliminar",Flags)!.Invoke(capture.Page,[new TarjetasImportacion{Id=1,Nombre="Ensayo.pdf",Cuenta="TJ"}]);
+            typeof(ComponentBase).GetMethod("StateHasChanged",Flags)!.Invoke(capture.Page,null);
+            var input=capture.Inputs.Single(i=>i.Label=="Motivo de la anulación");
+            Assert.Equal("",input.Value);Assert.False(input.Disabled);
+            await input.ValueChanged.InvokeAsync("Me equivoqué de archivo");
+            Assert.Equal("Me equivoqué de archivo",typeof(ConciliacionTarjetas).GetField("_motivoEliminar",Flags)!.GetValue(capture.Page));
+            Assert.Equal("Me equivoqué de archivo",input.Value);
+            Assert.DoesNotContain("value=\"_motivoEliminar\"",root.ToHtmlString());
+        });
+    }
+
     public sealed class PaginaSinCarga:ConciliacionTarjetas
     {
         protected override void OnInitialized()
@@ -119,10 +174,12 @@ public sealed class TarjetasProgresoUiTests
     private sealed class Captura:IComponentActivator
     {
         public PaginaSinCarga? Page {get;private set;}
+        public List<AlfaInput> Inputs {get;}=[];
         public IComponent CreateInstance(Type type)
         {
             var component=(IComponent)Activator.CreateInstance(type)!;
-            if(component is PaginaSinCarga page)Page=page;return component;
+            if(component is PaginaSinCarga page)Page=page;
+            if(component is AlfaInput input)Inputs.Add(input);return component;
         }
     }
 }

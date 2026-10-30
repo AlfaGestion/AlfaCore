@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Xml.Linq;
 using AlfaCore.Components.Pages;
 using AlfaCore.Models;
 using AlfaCore.Services;
@@ -12,6 +13,21 @@ public sealed class TarjetasDesconciliarTests
     {Id=id,Detalles=1,DetallesValidos=1,Movimientos=2,Autorizados=autorizados};
     private static TarjetasVistaDeshacer Vista(params TarjetasVinculoDeshacer[] grupos)=>new(5,"111030001",grupos);
     private static TarjetasDeshacerVarias Solicitud(params long[] ids)=>new(5,"111030001",ids,"Corrección revisada");
+
+    [Fact]
+    public void ClavesEstructuradasConservanIdentidadLegacyYEscapanXmlSinAceptarClavesInvalidas()
+    {
+        var xml=XDocument.Parse(ConciliacionTarjetasService.ClavesDeshacerXml([
+            new(1,"111030001","18|3|24|&<|1|CB|0001|00000002|X"),
+            new(2,"111030001","18|3|24||1"),
+            new(3,"111030001","18|x|24||1|CB|0001|00000002|X"),
+            new(4,"111030001","INEXISTENTE")]));
+        var filas=xml.Root!.Elements("c").ToList();
+        Assert.Equal("1",(string?)filas[0].Attribute("valida"));Assert.Equal("1",(string?)filas[0].Attribute("completa"));
+        Assert.Equal("&<",(string?)filas[0].Attribute("tipo"));Assert.Equal("CB",(string?)filas[0].Attribute("tc"));
+        Assert.Equal("1",(string?)filas[1].Attribute("valida"));Assert.Equal("0",(string?)filas[1].Attribute("completa"));
+        Assert.All(filas.Skip(2),fila=>Assert.Equal("0",(string?)fila.Attribute("valida")));
+    }
 
     [Fact]
     public void ValidaGruposCompletosSinDependerDeFiltrosDePantalla()

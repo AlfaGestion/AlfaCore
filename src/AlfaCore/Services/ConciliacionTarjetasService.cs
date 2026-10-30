@@ -63,7 +63,8 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         var ok=await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(CODIGO))=@cuenta AND LTRIM(RTRIM(MEDIODEPAGO))='TJ' AND ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 AND LTRIM(RTRIM(MONEDA))='1'",new{cuenta=cuenta.Trim()},t,tx));
         if(ok!=1)throw new InvalidOperationException("Elegí una cuenta activa de tarjetas (TJ) en pesos.");
         var hash=Convert.ToHexString(SHA256.HashData(archivo.Contenido));
-        if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Importacion WITH(UPDLOCK,HOLDLOCK) WHERE Hash=@hash AND Cuenta=@cuenta",new{hash,cuenta=cuenta.Trim()},t,tx))>0)
+        var admiteAnulacion=await TieneAnulacionAsync(c,t,tx);
+        if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Importacion WITH(UPDLOCK,HOLDLOCK) WHERE Hash=@hash AND Cuenta=@cuenta"+(admiteAnulacion?" AND Anulada=0":""),new{hash,cuenta=cuenta.Trim()},t,tx))>0)
             throw new InvalidOperationException("Este documento ya fue importado para la cuenta. Abrilo desde Importaciones.");
         var id=await c.ExecuteScalarAsync<long>(Cmd("""
             INSERT dbo.TJ_Importacion(Nombre,Original,Hash,Banco,Comercio,Tarjeta,Cuenta,Sucursal,Desde,Hasta,Bruto,Neto,DetalleCompleto,Avisos,Usuario)
@@ -75,7 +76,7 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
             var identidad=IdentidadDetalle(cuenta,lectura.Banco,lectura.Comercio,d);
             ocurrencias.TryGetValue(identidad,out var ordinal);ocurrencias[identidad]=++ordinal;
             var huella=Hash(identidad+"|"+ordinal);
-            if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Detalle WITH(UPDLOCK,HOLDLOCK) WHERE Huella=@huella",new{huella},t,tx))>0)
+            if(await c.ExecuteScalarAsync<int>(Cmd("SELECT COUNT(*) FROM dbo.TJ_Detalle WITH(UPDLOCK,HOLDLOCK) WHERE Huella=@huella"+(admiteAnulacion?" AND ImportacionActiva=1":""),new{huella},t,tx))>0)
                 throw new InvalidOperationException("El documento contiene operaciones ya importadas. No se duplicó ninguna: revisá las importaciones existentes.");
             await c.ExecuteAsync(Cmd("INSERT dbo.TJ_Detalle(ImportacionId,Fecha,FechaPago,Liquidacion,Lote,Cupon,Terminal,Nivel,Cantidad,Importe,Huella) VALUES(@id,@Fecha,@FechaPago,@Liquidacion,@Lote,@Cupon,@Terminal,@Nivel,@Cantidad,@Importe,@huella)",new{id,d.Fecha,d.FechaPago,d.Liquidacion,d.Lote,d.Cupon,d.Terminal,d.Nivel,d.Cantidad,d.Importe,huella},t,tx));
         }
@@ -88,8 +89,15 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
         }
         AntesDeGrabar(session,t);tx.Commit();return id;
     },ct);
-    public Task<IReadOnlyList<TarjetasImportacion>> ImportacionesAsync(CancellationToken ct=default)=>Ejecutar<IReadOnlyList<TarjetasImportacion>>("Importaciones",async(c,t)=>
-        (await c.QueryAsync<TarjetasImportacion>(Cmd("SELECT TOP(500) i.Id,i.Nombre,i.Banco,i.Comercio,i.Tarjeta,i.Cuenta,i.Sucursal,i.Desde,i.Hasta,i.Bruto,i.Neto,i.DetalleCompleto,i.Avisos,(SELECT COUNT(*) FROM dbo.TJ_Detalle d WHERE d.ImportacionId=i.Id AND NOT EXISTS(SELECT 1 FROM dbo.TJ_VinculoDetalle v WHERE v.DetalleId=d.Id AND v.Activo=1)) Pendientes FROM dbo.TJ_Importacion i ORDER BY i.Id DESC",null,t))).AsList(),ct);
+    public Task<IReadOnlyList<TarjetasImportacion>> ImportacionesAsync(CancellationToken ct=default)=>ImportacionesAsync(false,ct);
+    public Task<IReadOnlyList<TarjetasImportacion>> ImportacionesAsync(bool incluirAnuladas,CancellationToken ct=default)=>Ejecutar<IReadOnlyList<TarjetasImportacion>>("Importaciones",async(c,t)=>
+    {
+        var admiteAnulacion=await TieneAnulacionAsync(c,t);
+        return (await c.QueryAsync<TarjetasImportacion>(Cmd("SELECT TOP(500) i.Id,i.Nombre,i.Banco,i.Comercio,i.Tarjeta,i.Cuenta,i.Sucursal,i.Desde,i.Hasta,i.Bruto,i.Neto,i.DetalleCompleto,i.Avisos,"
+            +(admiteAnulacion?"i.Anulada,":"")
+            +"(SELECT COUNT(*) FROM dbo.TJ_Detalle d WHERE d.ImportacionId=i.Id AND NOT EXISTS(SELECT 1 FROM dbo.TJ_VinculoDetalle v WHERE v.DetalleId=d.Id AND v.Activo=1)) Pendientes FROM dbo.TJ_Importacion i"
+            +(admiteAnulacion&&!incluirAnuladas?" WHERE i.Anulada=0":"")+" ORDER BY i.Id DESC",null,t))).AsList();
+    },ct);
     public Task<ConciliacionArchivo> OriginalAsync(long id,CancellationToken ct=default)=>Ejecutar("Original",async(c,t)=>
     {
         var row=await c.QuerySingleOrDefaultAsync<Original>(Cmd("SELECT Nombre,Original Contenido,Hash FROM dbo.TJ_Importacion WHERE Id=@id",new{id},t))??throw new InvalidOperationException("No se encontró la importación.");
@@ -101,6 +109,7 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
     {
         if(f.Desde.Date>f.Hasta.Date||f.Sucursal.Length>10||f.Buscar.Length>200||f.Estado is not("Todos" or "Pendientes" or "Conciliados"))throw new InvalidOperationException("Revisá las fechas y los filtros.");
         var i=await c.QuerySingleOrDefaultAsync<TarjetasImportacion>(Cmd("SELECT * FROM dbo.TJ_Importacion WHERE Id=@Importacion",f,ct,tx))??throw new InvalidOperationException("No se encontró la importación.");
+        if(i.Anulada)throw new InvalidOperationException("La importación está anulada. Volvé a importar el documento para conciliarlo.");
         var detalles=(await c.QueryAsync<TarjetasDetalle>(Cmd("SELECT d.*,v.VinculoId Vinculo FROM dbo.TJ_Detalle d LEFT JOIN dbo.TJ_VinculoDetalle v ON v.DetalleId=d.Id AND v.Activo=1 WHERE d.ImportacionId=@Importacion ORDER BY d.Fecha,d.Id",f,ct,tx))).AsList();
         var movimientos=(await c.QueryAsync<TarjetasMovimiento>(Cmd(MovimientosAlfaSql,new{cuenta=i.Cuenta,desde=f.Desde.Date,hasta=f.Hasta.Date,sucursal=f.Sucursal.Trim(),usuario=users.GetCurrentUserName()},ct,tx))).AsList();
         if(movimientos.Count>10000)throw new InvalidOperationException("Acotá el período: hay más de 10.000 operaciones para revisar.");
