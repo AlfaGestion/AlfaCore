@@ -688,6 +688,17 @@
                                             Este cliente usa las tarifas de <strong>@BuildLookupDisplayText(_tarifaClientePrincipal)</strong>.
                                             Los cambios que se hagan en las tarifas de ese cliente se copian acá y reemplazan los de este cliente.
                                         </div>
+                                        <div class="carga-viajes-tarifa-editor__vinculados carga-viajes-tarifa-editor__vinculados--readonly">
+                                            <span class="carga-viajes-tarifa-editor__vinculado carga-viajes-tarifa-editor__vinculado--principal">
+                                                <span>Principal: @BuildLookupDisplayText(_tarifaClientePrincipal)</span>
+                                            </span>
+                                            @foreach (var vinculado in _tarifaClientesVinculados)
+                                            {
+                                                <span class="carga-viajes-tarifa-editor__vinculado">
+                                                    <span>Comparte: @BuildLookupDisplayText(vinculado)</span>
+                                                </span>
+                                            }
+                                        </div>
                                     }
                                     else
                                     {
@@ -2175,11 +2186,17 @@
                                                             <i class="bi bi-x-lg"></i>
                                                         </button>
                                                     </div>
+                                                    <div class="carga-viajes-viaje-tarifas__zero-filters">
+                                                        <label class="carga-viajes-viaje-tarifas__zero-toggle" title="Ocultar tarifas con importe cliente en cero">
+                                                            <input type="checkbox" @bind="_viajeTarifasIgnorarClienteCero" />
+                                                            <span>Ignorar cliente $0</span>
+                                                        </label>
+                                                        <label class="carga-viajes-viaje-tarifas__zero-toggle" title="Ocultar tarifas con importe fletero en cero">
+                                                            <input type="checkbox" @bind="_viajeTarifasIgnorarFleteroCero" />
+                                                            <span>Ignorar fletero $0</span>
+                                                        </label>
+                                                    </div>
                                                 </div>
-                                                <label class="carga-viajes-viaje-tarifas__zero-toggle">
-                                                    <input type="checkbox" @bind="_viajeTarifasIgnorarCero" />
-                                                    <span>Ignorar tarifas en $0</span>
-                                                </label>
 
                                                 @if (_viajeTarifasLoading)
                                                 {
@@ -2187,7 +2204,7 @@
                                                 }
                                                 else if (GetVisibleViajeTarifas().Count == 0)
                                                 {
-                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">@(_viajeTarifasIgnorarCero ? "No hay tarifas con importe mayor a cero para mostrar." : "No hay tarifas para mostrar con ese filtro.")</div>
+                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
                                                 }
                                                 else
                                                 {
@@ -2721,7 +2738,8 @@
     private bool _showViajeTarifasClientePanel;
     private bool _viajeTarifasLoading;
     private string _viajeTarifasSearch = string.Empty;
-    private bool _viajeTarifasIgnorarCero = true;
+    private bool _viajeTarifasIgnorarClienteCero = true;
+    private bool _viajeTarifasIgnorarFleteroCero = true;
     private string _viajeTarifasSelectionHint = string.Empty;
     private AppUiMessage? _viajeTarifasFeedback;
     private readonly List<CargaViajeTarifaClienteResumenDto> _viajeTarifasClienteRows = [];
@@ -7760,7 +7778,8 @@
         _viajeTarifasFeedback = null;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasSearch = string.Empty;
-        _viajeTarifasIgnorarCero = true;
+        _viajeTarifasIgnorarClienteCero = true;
+        _viajeTarifasIgnorarFleteroCero = true;
         _viajeTarifasLoading = true;
         await InvokeAsync(StateHasChanged);
 
@@ -7830,9 +7849,9 @@
             return [];
 
         var search = SearchTextHelper.Normalize(_viajeTarifasSearch);
-        var tarifasFiltradas = _viajeTarifasIgnorarCero
-            ? _viajeTarifasClienteRows.Where(tarifa => tarifa.ImporteCliente > 0m || tarifa.ImporteFletero > 0m)
-            : _viajeTarifasClienteRows.AsEnumerable();
+        var tarifasFiltradas = _viajeTarifasClienteRows.Where(tarifa =>
+            (!_viajeTarifasIgnorarClienteCero || tarifa.ImporteCliente > 0m)
+            && (!_viajeTarifasIgnorarFleteroCero || tarifa.ImporteFletero > 0m));
 
         if (search.Length == 0)
             return tarifasFiltradas.ToList();
@@ -10254,6 +10273,13 @@
         if (principal.Success && principal.Value is not null)
         {
             _tarifaClientePrincipal = principal.Value;
+            var vinculadosDelPrincipal = await UiOps.RunAsync(
+                () => CargaViajesSvc.GetClientesVinculadosTarifaAsync(principal.Value.Codigo),
+                "No se pudieron cargar los clientes que comparten la tarifa.");
+            if (vinculadosDelPrincipal.Success && vinculadosDelPrincipal.Value is not null)
+                _tarifaClientesVinculados = vinculadosDelPrincipal.Value.ToList();
+
+            _tarifaClientesVinculadosOriginal = BuildTarifaClientesVinculadosKey();
             return;
         }
 
@@ -11507,7 +11533,8 @@
         _viajeTarifasLoading = false;
         _viajeTarifasClienteRows.Clear();
         _viajeTarifasSearch = string.Empty;
-        _viajeTarifasIgnorarCero = true;
+        _viajeTarifasIgnorarClienteCero = true;
+        _viajeTarifasIgnorarFleteroCero = true;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasFeedback = null;
         _viajeTarifasPanelPositionPending = false;

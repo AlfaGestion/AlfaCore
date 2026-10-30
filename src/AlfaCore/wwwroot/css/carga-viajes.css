@@ -1417,6 +1417,12 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-tarifas__importe-cell 
     white-space: nowrap;
 }
 
+.carga-viajes-tarifa-editor__vinculado--principal {
+    border-color: color-mix(in srgb, var(--alfa-accent) 58%, transparent);
+    background: color-mix(in srgb, var(--alfa-accent) 14%, transparent);
+    font-weight: 700;
+}
+
 .carga-viajes-tarifa-editor__vinculado button {
     display: inline-flex;
     align-items: center;
