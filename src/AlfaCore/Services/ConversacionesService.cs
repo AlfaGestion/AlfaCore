@@ -4316,13 +4316,16 @@ public sealed partial class ConversacionesService(
                 {
                     try
                     {
+                        // Desde que el mensaje quedó grabado, nada usa el token de la request: Meta corta a los ~20 s y
+                        // reenvía; el reenvío ve el mensaje ya grabado y no corre el bot. Con un audio de 23 s de proceso
+                        // el primer intento se cancelaba antes de llegar al bot y nadie respondía (Base4271, 2026-10-29).
                         var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
-                            currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
+                            currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, CancellationToken.None);
                         whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
                         whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
                         whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
                         whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
-                        await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                        await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
@@ -4358,10 +4361,10 @@ public sealed partial class ConversacionesService(
                 }
                 else
                 {
-                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, CancellationToken.None, reopenIfClosed: true);
                     if (isNewMessage)
                     {
-                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, CancellationToken.None);
                         // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
                         // con un token propio, no el de la request del webhook: si quien llama (Meta u
                         // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
@@ -4698,10 +4701,10 @@ public sealed partial class ConversacionesService(
                 }
                 else
                 {
-                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, CancellationToken.None, reopenIfClosed: true);
                     if (isNewMessage)
                     {
-                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, CancellationToken.None);
                         // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
                         // con un token propio, no el de la request del webhook: si quien llama (Meta u
                         // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
@@ -4947,10 +4950,10 @@ public sealed partial class ConversacionesService(
                     var conversationId = await EnsureInstagramConversationAsync(incoming, profile, token);
                     var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
 
-                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, CancellationToken.None, reopenIfClosed: true);
                     if (storedMessage.Created)
                     {
-                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, CancellationToken.None);
                         // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
                         // con un token propio, no el de la request del webhook: si quien llama (Meta u
                         // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
@@ -5048,10 +5051,10 @@ public sealed partial class ConversacionesService(
                     token);
             }
 
-            await RefreshConversationAsync(conversationId, now, request.Texto, token, reopenIfClosed: true);
+            await RefreshConversationAsync(conversationId, now, request.Texto, CancellationToken.None, reopenIfClosed: true);
             if (storedMessage.Created)
             {
-                await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, CancellationToken.None);
                 // Token propio, como en los webhooks de Meta: si el visitante cierra la pestaña a
                 // mitad de la respuesta del bot, el request se cancela pero la respuesta tiene que
                 // quedar grabada igual para cuando vuelva (el widget la trae por polling).
@@ -5266,10 +5269,10 @@ public sealed partial class ConversacionesService(
                     var conversationId = await EnsureFacebookConversationAsync(incoming, profile, token);
                     var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
 
-                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, CancellationToken.None, reopenIfClosed: true);
                     if (storedMessage.Created)
                     {
-                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, CancellationToken.None);
                         // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
                         // con un token propio, no el de la request del webhook: si quien llama (Meta u
                         // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
@@ -5344,10 +5347,10 @@ public sealed partial class ConversacionesService(
                     var incoming = question.ToIncomingMessage();
                     var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
 
-                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, CancellationToken.None, reopenIfClosed: true);
                     if (storedMessage.Created)
                     {
-                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, CancellationToken.None);
                         // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
                         // con un token propio, no el de la request del webhook: si quien llama (Meta u
                         // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
@@ -5410,9 +5413,9 @@ public sealed partial class ConversacionesService(
                 var incoming = question.ToIncomingMessage();
                 var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
 
-                await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: !question.IsAnswered);
+                await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, CancellationToken.None, reopenIfClosed: !question.IsAnswered);
                 if (storedMessage.Created && !question.IsAnswered)
-                    await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                    await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, CancellationToken.None);
                 processed++;
             }
 

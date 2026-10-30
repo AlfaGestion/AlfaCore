@@ -139,6 +139,18 @@ public sealed class ConversacionesUrgencyAlertTests
         Assert.Contains("AlternarTecnico", ConfigPageSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Webhooks_UnMensajeYaGrabado_NoSeCortaSiMetaCancelaLaRequest()
+    {
+        // Audio de 23 s de proceso: Meta cortó, el primer intento se canceló antes del bot y el reenvío
+        // vio el mensaje ya grabado (no nuevo) y tampoco respondió (Base4271, 2026-10-29).
+        Assert.DoesNotContain("NotifyIncomingMessageAsync(conversationId, messageId, token)", ServiceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token)", ServiceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token)", ServiceSource, StringComparison.Ordinal);
+        // Sólo queda con el token de la request el eco de mensajes que mandó la app de WhatsApp Business.
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(ServiceSource, @"incoming\.Text, token, reopenIfClosed: true"));
+    }
+
     private static string ExtractMethodBody(string source, string signature)
     {
         var start = source.IndexOf(signature, StringComparison.Ordinal);

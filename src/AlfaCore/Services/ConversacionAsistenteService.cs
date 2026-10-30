@@ -11,7 +11,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
-    private const int MaxRondasHerramientas = 2;
+    // 3: buscar, probar otro nombre común si no aparece (lapicera/birome) y responder (2026-10-29).
+    private const int MaxRondasHerramientas = 3;
 
     public async Task<ConversacionAsistenteRespuesta?> ResponderAsync(
         string comportamiento,
@@ -50,6 +51,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         // ni de la información del negocio, ni de la charla.
         var textoConRespaldo = new StringBuilder();
         var reintentoPorPrecioSinRespaldo = false;
+        var reintentoPorDerivarSinBuscar = false;
         var seUsoAlgunaHerramienta = false;
         string? herramientaForzadaSiguienteRonda = null;
         var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, sugerenciaKnowledge, contextoCliente, haySaldoEntreHerramientas, hayCatalogoEntreHerramientas, precioRequiereIdentificacion, hayPrecioEntreHerramientas, linkCatalogoParaLead, hayPortalEntreHerramientas, hayPrepararPedido);
@@ -172,6 +174,19 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                         herramientaForzadaSiguienteRonda = ConversacionAsistenteHerramientasService.ToolConsultarPrecio;
                         messages.Add(new { role = "system", content = "Tu respuesta tenía un precio que no salió de ninguna herramienta. Buscalo con consultar_precio antes de responder; nunca escribas un precio de memoria." });
                         await TraceDiagAsync(traceDiagAsync, "BotPrecioSinRespaldo|reintento=consultar_precio", ct);
+                        continue;
+                    }
+
+                    // "Tengo una papelera... necesitaría lapiceras, ¿ustedes venden?" (audio, Base4271 2026-10-29):
+                    // derivó sin buscar teniendo consultar_precio. No se decide por palabras: se le pide a la IA que
+                    // lo revise una vez; ella interpreta si es un artículo (y lo busca) o si derivar estaba bien.
+                    if (hayPrecioEntreHerramientas && !reintentoPorDerivarSinBuscar && !seUsoAlgunaHerramienta && ejecutarHerramientaAsync is not null
+                        && ronda + 2 <= MaxRondasHerramientas
+                        && string.Equals(respuestaParseada?.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        reintentoPorDerivarSinBuscar = true;
+                        messages.Add(new { role = "system", content = "Antes de derivar, revisá: si el cliente pregunta por algún artículo o producto (aunque lo diga con otras palabras), buscalo primero con consultar_precio. Si no es sobre artículos, devolvé la misma respuesta." });
+                        await TraceDiagAsync(traceDiagAsync, "BotDerivaSinBuscar|revisa", ct);
                         continue;
                     }
 
@@ -503,6 +518,9 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (hayPrecioEntreHerramientas)
         {
             sb.AppendLine("- PRODUCTOS Y PRECIOS: ante cualquier consulta por un producto (si lo tienen, qué opciones hay o cuánto sale) buscalo primero con consultar_precio, aunque la consulta sea general (\"¿tenés biromes?\" → \"birome\"). Si encuentra varias opciones, mostrale algunas con su precio y preguntale cuál quiere; no le preguntes \"¿qué tipo buscás?\" sin haber buscado. Usá términos cortos del artículo (si el mensaje actual completa una aclaración anterior, combiná ambos: \"pila\" + \"AA\" → \"pila AA\"). El resultado de la herramienta trae la instrucción de qué tipo responder (RESUELVE o ACLARA): seguila. No derives una consulta de precio porque falte un dato que el cliente puede darte: preguntá.");
+            // "Tengo una distribuidora de papelería... busco biromes, ¿trabajan algo?" (Base4271, 2026-10-29):
+            // derivaba sin buscar, como si un comercio que revende necesitara sí o sí un asesor.
+            sb.AppendLine("- Vale igual si quien escribe es un comercio, empresa o distribuidor que quiere revender: primero buscá lo que pide y contale qué tienen y el precio que da la herramienta. Si pide condiciones o precios mayoristas, además ofrecele que alguien del equipo lo contacte para eso; no lo derives sin haber buscado.");
             sb.AppendLine("- CANTIDADES: los precios de las herramientas son por unidad. Nunca supongas que un artículo viene por paquete, caja o docena ni cuántas unidades trae: si el cliente pide \"un paquete\" o \"una caja\", decile el precio unitario y preguntale cuántas unidades quiere. Si dice cuántas unidades quiere, decile también el total (precio unitario por cantidad).");
             sb.AppendLine("- Nunca repitas una pregunta de aclaración que ya le hiciste en esta conversación (mirá tus mensajes anteriores).");
         }

@@ -55,6 +55,9 @@ public interface IMonitorClientesService
     /// <summary>Todas las versiones, de la más nueva a la más vieja, con cuántos sistemas la tienen.</summary>
     Task<IReadOnlyList<MonitorActualizacionDto>> GetActualizacionesAsync(CancellationToken ct = default);
 
+    /// <summary>Los sistemas (bases) que informan esa versión instalada, para ver quién actualizó.</summary>
+    Task<IReadOnlyList<MonitorInstalacionDto>> GetInstalacionesAsync(string version, CancellationToken ct = default);
+
     /// <summary>Cambia a quién se libera una versión.</summary>
     Task CambiarLiberacionAsync(int idVersion, string liberacion, string? clientesPrueba, string usuario, CancellationToken ct = default);
 

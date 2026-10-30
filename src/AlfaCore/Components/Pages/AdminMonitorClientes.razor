@@ -306,7 +306,16 @@
                                                 <small>Liberación: @fl.ToString("dd/MM HH:mm", Es) @v.UsuarioLiberacion</small>
                                             }
                                         </td>
-                                        <td class="is-nowrap">@(v.Instalaciones == 1 ? "1 sistema" : $"{v.Instalaciones} sistemas")</td>
+                                        <td class="is-nowrap">
+                                            @if (v.Instalaciones > 0)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi-list-ul" OnClick="() => VerInstalacionesAsync(v)">@(v.Instalaciones == 1 ? "1 sistema" : $"{v.Instalaciones} sistemas")</AlfaButton>
+                                            }
+                                            else
+                                            {
+                                                <span>0 sistemas</span>
+                                            }
+                                        </td>
                                         <td>
                                             <AlfaSelect Id="@($"mon-lib-{v.IdVersion}")" Options="LiberacionOptions" Value="@v.Liberacion" ValueChanged="@((string? x) => v.Liberacion = x ?? MonitorLiberacion.Nadie)" />
                                         </td>
@@ -351,6 +360,46 @@
     <Footer>
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="() => _notaFila = null">Cancelar</AlfaButton>
         <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@_guardando" OnClick="GuardarNotaAsync">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@(_instalVersion is not null)" Title="@($"Sistemas con la versión {_instalVersion}")"
+            Description="Bases que informaron esta versión instalada." Size="AlfaDialogSize.Lg" OnClose="CerrarInstalaciones">
+    <ChildContent>
+        @if (_cargandoInstal)
+        {
+            <p role="status" aria-live="polite">Consultando…</p>
+        }
+        else if (_instalError is not null)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error" Title="No se pudo cargar" Message="@_instalError" />
+        }
+        else if (_instalaciones is null || _instalaciones.Count == 0)
+        {
+            <AlfaEmptyState Title="Todavía ningún sistema reportó esta versión" Message="Aparecen acá cuando el cliente, ya actualizado, vuelve a reportar al monitor." />
+        }
+        else
+        {
+            <div class="mon__table-wrap">
+                <table class="mon__table">
+                    <thead><tr><th>Cliente</th><th>Base</th><th>Equipo</th><th>Último reporte</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in _instalaciones)
+                        {
+                            <tr>
+                                <td>@(string.IsNullOrWhiteSpace(i.RazonSocial) ? i.ClienteCodigo : $"{i.ClienteCodigo} · {i.RazonSocial}")</td>
+                                <td>@i.DbServidor / @i.DbNombre</td>
+                                <td>@(string.IsNullOrWhiteSpace(i.HostCliente) ? "—" : i.HostCliente)</td>
+                                <td class="is-nowrap">@i.FechaReporte.ToString("dd/MM HH:mm", Es)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CerrarInstalaciones">Cerrar</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -623,6 +672,38 @@
         {
             _guardando = false;
         }
+    }
+
+    private string? _instalVersion;
+    private IReadOnlyList<MonitorInstalacionDto>? _instalaciones;
+    private bool _cargandoInstal;
+    private string? _instalError;
+
+    private async Task VerInstalacionesAsync(MonitorActualizacionDto v)
+    {
+        _instalVersion = v.Version;
+        _instalaciones = null;
+        _instalError = null;
+        _cargandoInstal = true;
+        try
+        {
+            _instalaciones = await MonitorSvc.GetInstalacionesAsync(v.Version);
+        }
+        catch (Exception ex)
+        {
+            _instalError = Texto(ex);
+        }
+        finally
+        {
+            _cargandoInstal = false;
+        }
+    }
+
+    private void CerrarInstalaciones()
+    {
+        _instalVersion = null;
+        _instalaciones = null;
+        _instalError = null;
     }
 
     private IReadOnlyList<string>? _usuariosPush;

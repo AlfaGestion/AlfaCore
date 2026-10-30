@@ -207,6 +207,19 @@ public sealed class MonitorActualizacionDto
         => (ClientesPrueba ?? string.Empty).Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
 
+/// <summary>Un sistema (base) que informa una versión instalada, para ver quién actualizó.</summary>
+public sealed class MonitorInstalacionDto
+{
+    public string ClienteCodigo { get; init; } = string.Empty;
+    public string RazonSocial { get; init; } = string.Empty;
+    public string? LicenciaPrincipal { get; init; }
+    public string DbServidor { get; init; } = string.Empty;
+    public string DbNombre { get; init; } = string.Empty;
+    public string? HostCliente { get; init; }
+    public string? Resultado { get; init; }
+    public DateTime FechaReporte { get; init; }
+}
+
 public static class MonitorLiberacion
 {
     public const string Nadie = "NADIE";
