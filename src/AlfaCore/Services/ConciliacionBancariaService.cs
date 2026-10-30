@@ -25,7 +25,7 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
         try
         {
             if (!await permissions.HasAccessAsync(MenuKey, ct))
-                throw new InvalidOperationException("No tenés permiso para usar Conciliación bancaria inteligente.");
+                throw new InvalidOperationException("No tenés permiso para usar Conciliación bancaria asistida con IA.");
             VerificarSesion(session);
             await using var cn = new SqlConnection(connection);
             await cn.OpenAsync(ct);

@@ -17,7 +17,7 @@
 @inject Microsoft.JSInterop.IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Conciliación bancaria inteligente | Alfa Gestión</PageTitle>
+<PageTitle>Conciliación bancaria asistida con IA | Alfa Gestión</PageTitle>
 
 <div class="gd-page gd conciliacion-page @(_tab=="conciliar" ? "conciliacion-page--comparar" : null)">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
@@ -792,7 +792,7 @@
         PageHeader.Set(_header = new PageHeaderConfig {
             ResponsiveToolbar = true,
             ModuleKey = "caja-bancos", ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-            Title = "Conciliación bancaria inteligente", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria inteligente"],
+            Title = "Conciliación bancaria asistida con IA", Breadcrumb = ["Caja y Bancos", "Conciliación bancaria asistida con IA"],
             TopNavigationItems = Navegacion(),
             SearchContent = _tab=="conciliar" ? _busquedaConciliacion : _tab=="revisar" ? RenderBusquedaRevision() : null,
             Search = _tab=="conciliar" ? null : new PageHeaderSearchConfig

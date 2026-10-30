@@ -13,7 +13,7 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Conciliación de tarjetas | AlfaCore</PageTitle>
+<PageTitle>Conciliación de tarjetas asistida con IA | AlfaCore</PageTitle>
 <div class="gd-page gd tarjetas-page">
     <AlfaNotification Message="_feedback" OnDismiss="()=>_feedback=null" />
     <AlfaTabs Items="Tabs" ActiveKey="@_tab" ActiveKeyChanged="CambiarTab" AriaLabel="Conciliación de tarjetas" />
@@ -486,8 +486,8 @@
     {
         if(_disposed)return;
         _ultimoHeader=EstadoHeader();
-        PageHeader.Set(_header=new PageHeaderConfig{ModuleKey="caja-bancos",ShellMode=PageHeaderShellMode.AlfaDesignPilot,Title="Conciliación de tarjetas",ResponsiveToolbar=true,
-            TopNavigationItems=[new(){Key="tarjetas",Label="Conciliación de tarjetas",Active=true}],SearchContent=_tab=="conciliar"?Busqueda():null,
+        PageHeader.Set(_header=new PageHeaderConfig{ModuleKey="caja-bancos",ShellMode=PageHeaderShellMode.AlfaDesignPilot,Title="Conciliación de tarjetas asistida con IA",ResponsiveToolbar=true,
+            TopNavigationItems=[new(){Key="tarjetas",Label="Conciliación de tarjetas asistida con IA",Active=true}],SearchContent=_tab=="conciliar"?Busqueda():null,
             Actions=_tab=="importar" ? [new(){Key="importar",Label=_prepararAlImportar?"Importar y preparar":"Importar liquidación",Icon="bi-upload",Disabled=_busy||_lectura is null||_cuenta.Length==0,OnClick=Importar},new(){Key="actualizar",Label="Actualizar",Icon="bi-arrow-clockwise",Disabled=_busy,OnClick=()=>Operar(async ct=>_importaciones=await Servicio.ImportacionesAsync(_verAnuladas,ct))}]
                 :[new(){Key="conciliar",Label="Conciliar selección",Icon="bi-link",Disabled=_busy||!PuedeConciliar,OnClick=PedirConfirmar},new(){Key="proponer",Label="Proponer selección",Title="Marca pares únicos con la misma fecha e importe; no usa IA ni confirma vínculos.",Icon="bi-stars",Disabled=_busy||_comparacion is null,OnClick=Proponer},new(){Key="ia",Label=_busy&&_accionEnCurso=="ia"?"Analizando con IA…":"Asistir con IA",Title="Analiza pendientes y propone coincidencias o agrupaciones para revisar antes de confirmar.",Busy=_busy&&_accionEnCurso=="ia",Icon="bi-stars",Disabled=_busy||_comparacion?.Importacion.DetalleCompleto!=true,OnClick=AsistirIa},new(){Key="comparar",Label="Comparar",Title="Actualiza las listas con los filtros elegidos; no propone ni confirma conciliaciones.",Busy=_busy&&_accionEnCurso=="comparar",Icon="bi-arrow-repeat",Disabled=_busy||_comparacion is null,OnClick=Comparar}],
             Pagination=_tab=="importar"?new(){Label=$"{_importaciones.Count} importaciones",PageLabel=$"{_paginaImport} / {Math.Max(1,(_importaciones.Count+49)/50)}",HasPrevious=_paginaImport>1,HasNext=_paginaImport*50<_importaciones.Count,Disabled=_busy,OnPrevious=()=>{_paginaImport--;Header();return Task.CompletedTask;},OnNext=()=>{_paginaImport++;Header();return Task.CompletedTask;}}:null});

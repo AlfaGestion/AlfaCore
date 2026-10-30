@@ -1,6 +1,6 @@
-# Conciliación de tarjetas
+# Conciliación de tarjetas asistida con IA
 
-Desde **Caja y Bancos → Conciliación de tarjetas**, compará las tarjetas presentadas en Alfa con las operaciones incluidas en los resúmenes de liquidación. Esta etapa no genera LT, asientos ni libro de IVA. La acreditación bancaria efectiva se verifica por separado con los extractos bancarios.
+Desde **Caja y Bancos → Conciliación de tarjetas asistida con IA**, compará las tarjetas presentadas en Alfa con las operaciones incluidas en los resúmenes de liquidación. Esta etapa no genera LT, asientos ni libro de IVA. La acreditación bancaria efectiva se verifica por separado con los extractos bancarios.
 
 ## Importar el documento testigo
 

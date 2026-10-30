@@ -1,4 +1,4 @@
-# Conciliación bancaria inteligente
+# Conciliación bancaria asistida con IA
 
 ## Importar un extracto PDF
 
@@ -16,7 +16,7 @@ Las nuevas importaciones conservan el Excel, CSV o PDF original, sin modificarlo
 
 Abrí el icono **?** junto a las notificaciones. En **Guías** podés buscar una tarea; en **Preguntar a IA**, consultar cómo realizarla y abrir las secciones del manual que respaldan la respuesta. El chat explica los procedimientos documentados y no consulta ni modifica movimientos. Al cerrar la ayuda volvés a la operación con sus datos y selecciones.
 
-Ingresá a **Caja y Bancos → Conciliación bancaria inteligente** con la empresa y base donde querés trabajar.
+Ingresá a **Caja y Bancos → Conciliación bancaria asistida con IA** con la empresa y base donde querés trabajar.
 
 ## Asistir con IA
 
