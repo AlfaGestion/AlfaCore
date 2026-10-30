@@ -161,6 +161,7 @@
                                             <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>SeleccionarMovimiento(item)">Marcar como cobrado</AlfaButton>
                                             @if(item.TipoMatch!="CobranzaYaRegistrada" && !item.ConciliacionId.HasValue)
                                             {
+                                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="_busy" OnClick="() => { _feedback = null; _buscarPagadorMovimiento = item; }">Buscar pagador</AlfaButton>
                                                 <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy"
                                                     OnClick="() => string.IsNullOrWhiteSpace(item.Cliente) || item.AvisoPosibleDuplicado is not null ? SeleccionarMovimiento(item) : AbrirCobranza(item)">@(string.IsNullOrWhiteSpace(item.Cliente) ? "Asignar cliente" : item.AvisoPosibleDuplicado is not null ? "Revisar posible duplicado" : "Cobrar")</AlfaButton>
                                             }
@@ -358,6 +359,10 @@
         <ConciliacionCuentaCorrienteDialog @key="consulta.Id" MovimientoId="consulta.Id" Fecha="consulta.Fecha" Importe="consulta.Importe" Descripcion="@consulta.Descripcion" OnClose="()=>_consultaCuentaRevision=null" />
     }
     <ConciliacionAsientoConfigDialog Catalogo="@_asientoCatalogo" OnClose="()=>_asientoCatalogo=null" OnSaved="ConfiguracionAsientoGuardada" />
+    @if (_buscarPagadorMovimiento is {} pagador)
+    {
+        <BuscarPagadorDialog @key="pagador.Id" MovimientoId="pagador.Id" Descripcion="pagador.Descripcion" Busy="_busy" Message="_feedback" OnClose="() => _buscarPagadorMovimiento = null" OnElegir="UsarPagador" />
+    }
     <CobranzaRapidaDialog Preparacion="@_cobranza" Busy="@_busy" Error="@_errorCobranza" ComprobantePreferido="@_comprobantePreferido"
         OnClose="CerrarCobranza" OnConfirm="ConfirmarCobranza" />
     <AlfaConfirmDialog Open="@(_eliminar is not null)" Title="Eliminar importación"
@@ -836,7 +841,7 @@
         _seleccion = null; _eliminar = null; _detalle = []; _feedback = null; _filtro = null;
         _contexto=new([],[]);_comprobanteDetalleId=0;_categoriaRevision=_motivoRevision="";
         _clienteAsignar=null;_buscarCliente=_aliasCliente="";_recordarCliente=true;_detalleVersion=0;
-        _cobranza=null; _errorCobranza=null; _comprobantePreferido=null;
+        _cobranza=null; _errorCobranza=null; _comprobantePreferido=null;_buscarPagadorMovimiento=null;
         _banco = ""; _cuenta = ""; _paginaImport = _paginaMov = 1;
         _requiereBanco = false; _requiereFecha=false;_fechaReferencia=""; _buscar = _buscarAplicado = _clasificacion = _clasificacionAplicada = "";
         _buscarGlobal="";

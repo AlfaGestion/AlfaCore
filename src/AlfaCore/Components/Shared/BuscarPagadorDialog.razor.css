@@ -1,0 +1,6 @@
+.pagador-filtros { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:12px 0; }
+.pagador-scroll { max-height:35vh; overflow:auto; }
+.pagador-tabla { width:100%; border-collapse:collapse; }
+.pagador-tabla th,.pagador-tabla td { padding:8px; text-align:left; border-bottom:1px solid var(--alfa-border-default); }
+.pagador-tabla th { position:sticky; top:0; background:var(--alfa-bg-surface); }
+.pagador-tabla small { display:block; color:var(--alfa-text-secondary); }

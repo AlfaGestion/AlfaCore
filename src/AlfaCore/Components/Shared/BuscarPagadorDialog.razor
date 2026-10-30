@@ -1,0 +1,84 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using AlfaCore.Components.Shared.AlfaDesign
+@implements IDisposable
+@inject CobranzasService Cobranzas
+@inject IAppUiOperationService UiOps
+
+<AlfaDialog Open="true" Title="Buscar quién pagó" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" Loading="@(_cargando || Busy)" OnClose="OnClose">
+    <ChildContent>
+        <p><strong>@Descripcion</strong></p>
+        <p>Comprobantes pendientes actuales en pesos, emitidos hasta la fecha del depósito y de unidades autorizadas. Se agrupan por cliente y unidad: un recibo no mezcla unidades.</p>
+        <p>Coincidir en importe no identifica al pagador. Revisá CUIT, nombre, referencia y comprobante de transferencia. Asignar un cliente aquí no registra la cobranza ni recuerda nombres bancarios.</p>
+        <AlfaFeedbackPanel Message="@(_error ?? Message)" />
+        <div class="pagador-filtros">
+            <AlfaInput Label="Buscar cliente" Placeholder="Nombre, código o documento" MaxLength="100" Value="_buscar" ValueChanged="v => _buscar = v ?? string.Empty" Disabled="@(_cargando || Busy)" />
+            <AlfaButton Icon="bi-search" Loading="_cargando" Disabled="Busy" OnClick="Cargar">Buscar</AlfaButton>
+            <AlfaCheckbox Value="_soloCoincidencias" ValueChanged="v => { _soloCoincidencias = v == true; _pagina = 1; }" Disabled="@(_cargando || Busy)">Solo coincidencias sugeridas</AlfaCheckbox>
+        </div>
+        @if (Busy){<p role="status" aria-live="polite">Asignando el cliente y preparando la cobranza para revisar…</p>}
+        @if (_cargando){<p role="status" aria-live="polite">Consultando pendientes, totales y combinaciones de hasta cinco facturas…</p>}
+        else if (_resultado is {} resultado)
+        {
+            <p>Depósito: <strong>$ @Dinero(resultado.Importe)</strong> · @resultado.Fecha.ToString("dd/MM/yyyy") · Tolerancia orientativa: @Dinero(resultado.Tolerancia)</p>
+            @if (!Grupos.Any()){<AlfaEmptyState Title="Sin resultados con esta búsqueda" Message="Probá quitar el filtro de coincidencias o buscar otro nombre. Un pago parcial, con retenciones o sin facturas pendientes puede no coincidir por importe." />}
+            else
+            {
+                <div class="pagador-scroll"><table class="pagador-tabla">
+                    <thead><tr><th>Cliente / unidad</th><th>Facturas</th><th>Total pendiente</th><th>Coincidencia por importe</th><th>Acciones</th></tr></thead>
+                    <tbody>@foreach (var g in Grupos.Skip((_pagina - 1) * 50).Take(50))
+                    {
+                        <tr><td>@g.Nombre<br/><small>@g.Cliente · Unidad @g.Unidad</small></td><td>@g.Documentos.Count</td><td>@Dinero(g.TotalPendiente)</td>
+                            <td>@(g.Coincidentes.Count > 0 ? $"{g.Coincidentes.Count} factura(s): {Dinero(g.TotalCoincidente)} · Diferencia {Dinero(g.TotalCoincidente-resultado.Importe)}" : "Sin combinación sugerida")
+                                @if (!g.BusquedaCompleta){<small>Se alcanzó el límite de búsqueda de combinaciones. Revisá sus facturas.</small>}</td>
+                            <td><AlfaButton Size="AlfaSize.Sm" Disabled="Busy" OnClick="() => { _detalle = g; _paginaDocumentos = 1; }">Ver facturas</AlfaButton>
+                                <AlfaButton Size="AlfaSize.Sm" Disabled="Busy" OnClick="() => OnElegir.InvokeAsync(g)">Asignar y revisar cobranza</AlfaButton></td></tr>
+                    }</tbody>
+                </table></div>
+                <div class="pagador-filtros"><span>@Grupos.Count() clientes/unidades · Página @_pagina / @Paginas</span>
+                    <AlfaButton Disabled="@(Busy || _pagina <= 1)" OnClick="() => _pagina--">Anterior</AlfaButton><AlfaButton Disabled="@(Busy || _pagina >= Paginas)" OnClick="() => _pagina++">Siguiente</AlfaButton></div>
+            }
+            @if (_detalle is {} detalle)
+            {
+                <h3>@detalle.Nombre · Unidad @detalle.Unidad</h3>
+                <div class="pagador-scroll"><table class="pagador-tabla"><thead><tr><th>Fecha</th><th>Comprobante</th><th>Pendiente</th><th>Propuesta</th></tr></thead><tbody>
+                    @foreach (var d in detalle.Documentos.Skip((_paginaDocumentos - 1) * 50).Take(50))
+                    {<tr><td>@d.Fecha.ToString("dd/MM/yyyy")</td><td>@d.Tc @d.Comprobante</td><td>@Dinero(d.Saldo)</td><td>@(detalle.Coincidentes.Contains(d.Id) ? "Incluida en coincidencia sugerida" : "")</td></tr>}
+                </tbody></table></div>
+                <div class="pagador-filtros"><span>@detalle.Documentos.Count comprobantes</span><AlfaButton Disabled="@(Busy || _paginaDocumentos <= 1)" OnClick="() => _paginaDocumentos--">Anterior</AlfaButton>
+                    <AlfaButton Disabled="@(Busy || _paginaDocumentos * 50 >= detalle.Documentos.Count)" OnClick="() => _paginaDocumentos++">Siguiente</AlfaButton></div>
+            }
+        }
+    </ChildContent>
+    <Footer><AlfaButton Disabled="@(_cargando || Busy)" OnClick="OnClose">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public long MovimientoId { get; set; }
+    [Parameter] public string Descripcion { get; set; } = "";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public AppUiMessage? Message { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<CobranzaPagadorGrupo> OnElegir { get; set; }
+    private readonly CancellationTokenSource _lifetime = new();
+    private bool _cargando, _soloCoincidencias;
+    private string _buscar = "";
+    private AppUiMessage? _error;
+    private CobranzaPagadores? _resultado;
+    private CobranzaPagadorGrupo? _detalle;
+    private int _pagina = 1, _paginaDocumentos = 1;
+    private IEnumerable<CobranzaPagadorGrupo> Grupos => (_resultado?.Clientes ?? []).Where(g => !_soloCoincidencias || g.Coincidentes.Count > 0);
+    private int Paginas => Math.Max(1, (Grupos.Count() + 49) / 50);
+    private static string Dinero(decimal valor) => valor.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+    protected override Task OnInitializedAsync() => Cargar();
+    private async Task Cargar()
+    {
+        if (_cargando || Busy) return;
+        _cargando=true;_error=null;_resultado=null;_detalle=null;_pagina=1;
+        try { _resultado=await Cobranzas.BuscarPagadoresAsync(MovimientoId,_buscar,_lifetime.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _error=UiOps.BuildMessage(ex,"Buscar pagador"); }
+        finally { _cargando=false; }
+    }
+    public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
+}

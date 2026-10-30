@@ -88,6 +88,23 @@
                     </div>
                 }
                 <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _lineas.Count>=20)" OnClick="AgregarRetencion">Agregar retención</AlfaButton>
+                @if (!_ajusteActivo)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(Busy || _seleccionadas.Count == 0 || Preparacion.CuentasAjuste.Count == 0 || DiferenciaParaAjuste == 0 || Math.Abs(DiferenciaParaAjuste) > Preparacion.LimiteAjuste)" OnClick="AgregarAjuste">Agregar ajuste de centavos</AlfaButton>
+                    <p class="cobranza-editor__sugerencia">Ajuste opcional para cancelar el pendiente de las facturas seleccionadas. Límite: $ @Dinero(Preparacion.LimiteAjuste). No se registra como impuesto ni retención.</p>
+                    @if (Preparacion.CuentasAjuste.Count == 0){<p class="cobranza-editor__sugerencia">No hay cuentas activas de ajustes, redondeos o gastos en pesos, sin medio de pago, disponibles para esta opción.</p>}
+                }
+                else
+                {
+                    <div class="cobranza-editor__medio">
+                        <AlfaSelect Label="Cuenta de ajuste" Options="OpcionesAjuste" Value="_cuentaAjuste" ValueChanged="v => _cuentaAjuste = v ?? string.Empty" Placeholder="Seleccionar cuenta de ajuste" Disabled="Busy" />
+                        <AlfaInput Label="Importe del ajuste (+ gasto / − diferencia a favor)" Type="number" Step="0.01" Value="_importeAjuste" ValueChanged="v => _importeAjuste = v ?? string.Empty" Disabled="Busy" />
+                        <AlfaInput Label="Motivo del ajuste" MaxLength="100" Value="_motivoAjuste" ValueChanged="v => _motivoAjuste = v ?? string.Empty" Disabled="Busy" />
+                        <AlfaCheckbox Value="_recordarAjuste" ValueChanged="v => _recordarAjuste = v == true" Disabled="Busy">Usar esta cuenta por defecto en próximas cobranzas</AlfaCheckbox>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="Busy" OnClick="QuitarAjuste">Quitar ajuste</AlfaButton>
+                    </div>
+                    <p class="cobranza-editor__sugerencia">El ajuste agrega una línea contable al recibo. El importe recibido en el banco se conserva. Revisá cuenta, signo e importe antes de confirmar.</p>
+                }
                 <details class="cobranza-editor__opciones" open="@string.IsNullOrWhiteSpace(_talonario)">
                     <summary>3. Datos del recibo y comentario · @FechaResumen</summary>
                     <div class="cobranza-editor__cabecera">
@@ -104,11 +121,12 @@
     <Footer>
         <div class="cobranza-editor__totales">
             <span>Total CB: <strong>@Dinero(Total)</strong></span>
+            @if (_ajusteActivo){<span>Ajuste incluido: <strong>@Dinero(ParsearImporte(_importeAjuste))</strong></span>}
             <span>Aplicado: <strong>@Dinero(TotalAplicado)</strong> · Diferencia por aplicar: <strong>@Dinero(Total-TotalAplicado)</strong></span>
             <span>Pendiente en facturas seleccionadas: <strong>@Dinero(SaldoSeleccionado-TotalAplicado)</strong></span>
         </div>
         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@Busy" OnClick="() => OnClose.InvokeAsync()">Cancelar</AlfaButton>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || Documento is null || string.IsNullOrEmpty(_talonario) || _seleccionadas.Count==0 || Total!=TotalAplicado || AplicacionesActuales.Any(a=>a.Importe<=0))"
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || Documento is null || string.IsNullOrEmpty(_talonario) || _seleccionadas.Count==0 || Total!=TotalAplicado || AplicacionesActuales.Any(a=>a.Importe<=0) || (_ajusteActivo && (string.IsNullOrWhiteSpace(_cuentaAjuste) || string.IsNullOrWhiteSpace(_motivoAjuste) || ParsearImporte(_importeAjuste)==0 || Math.Abs(ParsearImporte(_importeAjuste))>(Preparacion?.LimiteAjuste??0))))"
             OnClick="Confirmar">@(Busy ? "Registrando…" : "Confirmar cobranza CB")</AlfaButton>
     </Footer>
 </AlfaDialog>
@@ -131,6 +149,10 @@
     private readonly HashSet<int> _seleccionadas=[];
     private readonly Dictionary<int,string> _importesManuales=[];
     private bool _seleccionSugerida;
+    private bool _ajusteActivo, _recordarAjuste = true;
+    private string _cuentaAjuste = "", _importeAjuste = "", _motivoAjuste = "Ajuste por redondeo";
+    private IReadOnlyList<AlfaSelectOption> OpcionesAjuste => Preparacion?.CuentasAjuste.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} · {c.Descripcion}")).ToList() ?? [];
+    private decimal DiferenciaParaAjuste => SaldoSeleccionado - _lineas.Where(l => !l.Sugerida).Sum(l => ParsearImporte(l.Importe));
     private static readonly System.Globalization.CultureInfo Invariante=System.Globalization.CultureInfo.InvariantCulture;
     private static string Dinero(decimal valor) => valor.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private CobranzaDocumento? Documento => Preparacion?.Documentos.SingleOrDefault(d=>d.Id.ToString()==_factura);
@@ -156,7 +178,7 @@
             return resultado;
         }
     }
-    private static decimal ParsearImporte(string texto) => decimal.TryParse(texto,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0;
+    private static decimal ParsearImporte(string texto) => decimal.TryParse(texto,System.Globalization.NumberStyles.AllowDecimalPoint|System.Globalization.NumberStyles.AllowLeadingSign,Invariante,out var n)?n:0;
     private IReadOnlyList<CobranzaTalonario> TalonariosUnidad
     {
         get
@@ -171,13 +193,14 @@
         .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Cuenta} — {m.Descripcion}")).ToList() ?? [];
     private IReadOnlyList<AlfaSelectOption> OpcionesRetenciones => Preparacion?.Medios.Where(m=>m.Tipo!="DB"&&m.Moneda=="1")
         .Select(m=>new AlfaSelectOption(m.Cuenta,$"{m.Descripcion} ({m.Tipo})")).ToList() ?? [];
-    private decimal Total => _lineas.Sum(l=>decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0);
+    private decimal Total => _lineas.Sum(l=>decimal.TryParse(l.Importe,System.Globalization.NumberStyles.AllowDecimalPoint,Invariante,out var n)?n:0)+(_ajusteActivo?ParsearImporte(_importeAjuste):0);
     private CobranzaRetencionSugerida? UltimaRetencion => Preparacion?.RetencionesSugeridas.FirstOrDefault(r=>
         r.Cliente==Documento?.Cliente && r.Unidad==Documento?.Unidad && OpcionesRetenciones.Any(o=>o.Value==r.Cuenta));
     protected override void OnParametersSet()
     {
         if(ReferenceEquals(_anterior,Preparacion)) return;
         _anterior=Preparacion; _error=null; _lineas.Clear(); _seleccionadas.Clear();_importesManuales.Clear();_seleccionSugerida=false;
+        _ajusteActivo=false;_cuentaAjuste=Preparacion?.CuentaAjustePredeterminada??"";_importeAjuste="";_recordarAjuste=true;_motivoAjuste="Ajuste por redondeo";
         _operacion=Guid.NewGuid(); _detalle=_detalleSugerido="";
         if(Preparacion is null) return;
         _fecha=Preparacion.Fecha.ToString("yyyy-MM-dd");
@@ -196,6 +219,7 @@
     }
     private void CambiarFactura(string? valor)
     {
+        _ajusteActivo=false;_importeAjuste="";
         var proponer=string.IsNullOrWhiteSpace(_detalle)||_detalle==_detalleSugerido;
         _factura=valor ?? ""; _talonario=TalonariosUnidad.FirstOrDefault()?.Talonario.ToString() ?? ""; _error=null;
         _seleccionadas.Clear();_importesManuales.Clear();_seleccionSugerida=false;
@@ -206,6 +230,7 @@
     }
     private void CambiarSeleccion(CobranzaDocumento documento,bool seleccionar)
     {
+        _ajusteActivo=false;_importeAjuste="";
         if(seleccionar) _seleccionadas.Add(documento.Id); else { _seleccionadas.Remove(documento.Id);_importesManuales.Remove(documento.Id); }
         _seleccionSugerida=false;_error=null;ActualizarRetencionSugerida();
     }
@@ -219,6 +244,19 @@
         Cuenta=UltimaRetencion?.Cuenta ?? "",
         Importe=SaldoSeleccionado>Total ? (SaldoSeleccionado-Total).ToString("0.00",Invariante) : ""
     });
+    private void AgregarAjuste()
+    {
+        if (Busy || Preparacion is null || _seleccionadas.Count == 0 || DiferenciaParaAjuste == 0 || Math.Abs(DiferenciaParaAjuste) > Preparacion.LimiteAjuste) return;
+        var diferencia = DiferenciaParaAjuste;
+        _lineas.RemoveAll(l => l.Sugerida);
+        _ajusteActivo = true; _importeAjuste = diferencia.ToString("0.00",Invariante);
+        foreach (var d in DocumentosUnidad.Where(d => _seleccionadas.Contains(d.Id))) _importesManuales[d.Id] = d.Saldo.ToString("0.00",Invariante);
+    }
+    private void QuitarAjuste()
+    {
+        if (Busy) return;
+        _ajusteActivo=false;_importeAjuste="";_importesManuales.Clear();
+    }
     private async Task Confirmar()
     {
         try
@@ -232,7 +270,8 @@
             var aplicaciones=AplicacionesActuales;
             if(aplicaciones.Count==0) throw new InvalidOperationException("Seleccioná al menos un comprobante a cobrar.");
             var solicitud=new CobranzaSolicitud(_operacion,aplicaciones[0].FacturaId,fecha,tal,pagos,Preparacion!.MovimientoId,_detalle,
-                aplicaciones.Count==1 && aplicaciones[0].Importe==Total ? null : aplicaciones);
+                aplicaciones.Count==1 && aplicaciones[0].Importe==Total ? null : aplicaciones,
+                _ajusteActivo?new(_cuentaAjuste,ParsearImporte(_importeAjuste),_motivoAjuste,_recordarAjuste):null);
             var total=CobranzasService.ValidarImportes(solicitud);
             if(aplicaciones.Any(a=>a.Importe>DocumentosUnidad.Single(d=>d.Id==a.FacturaId).Saldo))
                 throw new InvalidOperationException("El importe aplicado supera el saldo de un comprobante. Revisá los importes y las retenciones.");

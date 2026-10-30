@@ -10,6 +10,7 @@ public sealed class CobranzaDocumento
     public string Comprobante { get; set; } = "";
     public string Moneda { get; set; } = "";
     public decimal Saldo { get; set; }
+    public DateTime Fecha { get; set; }
     public string DetallePredeterminado => $"Cob. {Nombre.Trim()}";
     public string Display => $"{Tc} {Comprobante[..4]}-{Comprobante.Substring(4,8)} {Comprobante[^1]} · Saldo {Saldo.ToString("N2",System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}";
 }
@@ -47,6 +48,9 @@ public sealed class CobranzaPreparacion
     public IReadOnlyList<CobranzaTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CobranzaRetencionSugerida> RetencionesSugeridas { get; set; } = [];
     public IReadOnlyList<CobranzaAplicacion> AplicacionesSugeridas { get; set; } = [];
+    public IReadOnlyList<ConciliacionAsientoCuenta> CuentasAjuste { get; set; } = [];
+    public string CuentaAjustePredeterminada { get; set; } = "";
+    public decimal LimiteAjuste { get; set; } = 1m;
 }
 
 public sealed class CobranzaSaldoCliente
@@ -67,8 +71,18 @@ public sealed class CobranzaRetencionSugerida
 
 public sealed record CobranzaPago(string Cuenta, decimal Importe, string Certificado = "");
 public sealed record CobranzaAplicacion(int FacturaId, decimal Importe);
+public sealed record CobranzaAjuste(string Cuenta, decimal Importe, string Motivo, bool RecordarCuenta = true);
+public sealed record CobranzaPagadorGrupo(string Cliente,string Nombre,string Unidad,IReadOnlyList<CobranzaDocumento> Documentos,
+    IReadOnlyList<int> Coincidentes,bool BusquedaCompleta)
+{
+    public decimal TotalPendiente=>Documentos.Sum(d=>d.Saldo);
+    public decimal TotalCoincidente=>Documentos.Where(d=>Coincidentes.Contains(d.Id)).Sum(d=>d.Saldo);
+}
+public sealed record CobranzaPagadores(decimal Importe,DateTime Fecha,decimal Tolerancia,IReadOnlyList<CobranzaPagadorGrupo> Clientes);
 public sealed record CobranzaSolicitud(Guid Operacion, int FacturaId, DateTime Fecha, int Talonario,
     IReadOnlyList<CobranzaPago> Pagos, long? MovimientoId = null, string? Detalle = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<CobranzaAplicacion>? Aplicaciones = null);
+    IReadOnlyList<CobranzaAplicacion>? Aplicaciones = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    CobranzaAjuste? Ajuste = null);
 public sealed record CobranzaResultado(Guid Operacion, int CobranzaId, string Comprobante, int NumeroAsiento, decimal Importe);

@@ -58,6 +58,44 @@ La asociación se conserva en esta base y sirve para proponer el cliente en futu
 
 Si ese mismo nombre ya está asociado a otro cliente con distinto CUIT, aparece un aviso y no se reemplaza la asociación. Podés desmarcar **Recordar** para hacer una asignación individual. No se permite cambiar el cliente de un movimiento cobrado o conciliado.
 
+### Buscar quién pagó por sus facturas pendientes
+
+En un ingreso pendiente de **Revisión de movimientos**, pulsá **Buscar pagador**. La ventana muestra
+los pendientes actuales en pesos, emitidos hasta la fecha del depósito y de unidades autorizadas,
+agrupados por cliente y unidad. Podés buscar por nombre, código o documento y activar **Solo
+coincidencias sugeridas**. **Ver facturas** permite revisar sus comprobantes y saldos, con paginación.
+
+Se destacan facturas individuales, el total pendiente del grupo (hasta 50 facturas) o combinaciones
+de hasta cinco facturas cuyos saldos se acercan al depósito. Si se alcanza el límite de búsqueda de
+combinaciones se informa; eso no demuestra que no exista una coincidencia. Los pagos parciales,
+retenciones o facturas ya canceladas pueden no coincidir. Si hay más de 10.000 pendientes, el sistema
+pide buscar un cliente antes de continuar, sin presentar una muestra como si estuviera completa.
+
+Revisá también el CUIT, nombre, referencia y comprobante de transferencia: un mismo importe puede
+corresponder a varios clientes o a pagos de terceros. **Asignar y revisar cobranza** asigna el cliente
+solo a ese movimiento y abre la cobranza para que revises las facturas e importes; no graba el recibo
+ni recuerda automáticamente el nombre bancario. La búsqueda usa cálculos de importes; no envía datos
+a IA ni confirma la identidad del pagador.
+
+### Ajustar diferencias de centavos al cobrar
+
+En **Cobranza rápida**, marcá las facturas y pulsá **Agregar ajuste de centavos**. Por ejemplo, si el
+depósito fue de $1.000.000,00 y la factura tiene $1.000.000,39 pendientes, el ajuste de $0,39 permite
+cancelarla completa conservando $1.000.000,00 en el banco. Si se recibió de más, el ajuste puede ser
+negativo. La opción tiene un límite inicial de $1,00; no se aplica automáticamente.
+
+Elegí una cuenta de diferencias de redondeo o gastos habilitada y escribí el motivo. La primera vez
+no hay cuenta predeterminada. **Usar esta cuenta por defecto en próximas cobranzas** la recuerda al
+confirmar exitosamente el recibo; siempre podés cambiarla. El catálogo excluye clientes, proveedores,
+bancos, medios de pago e impuestos: los centavos no se convierten en una retención ni generan IVA.
+Si una retención estaba solo sugerida, agregar el ajuste la reemplaza; las retenciones elegidas
+manualmente se conservan.
+
+Revisá el total del recibo, el importe bancario y el ajuste antes de **Confirmar cobranza CB**. El
+ajuste genera su propia línea en el asiento del nuevo recibo y las aplicaciones cancelan los saldos
+seleccionados. **Quitar ajuste** vuelve a distribuir el importe sin esa diferencia. No modifica
+asientos anteriores ni cierra diferencias grandes mediante redondeos.
+
 ### Clientes distintos con el mismo CUIT
 
 El CUIT se compara usando únicamente sus dígitos: con guiones, puntos o espacios identifica al mismo titular. Si hay varias cuentas del cliente para ese CUIT, el sistema compara sus comprobantes pendientes con el importe bancario, dentro de la tolerancia configurada. Propone el cliente solo si una de esas cuentas tiene una coincidencia de importe. Si ninguna o varias coinciden, muestra **Varios clientes posibles** y requiere asignación manual; el importe por sí solo no busca clientes de todo el padrón.

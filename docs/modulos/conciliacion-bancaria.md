@@ -1,5 +1,24 @@
 # Conciliación bancaria inteligente
 
+## Ajustes de cobranza y búsqueda de pagador (29/10/2026)
+
+`CobranzasService.Ajustes.cs` valida el catálogo de contrapartidas y la configuración
+`CONCILIACION-COBRANZA-AJUSTE`. `CobranzaSolicitud.Ajuste` es opcional y se omite del JSON cuando es
+NULL para conservar los hashes idempotentes de solicitudes anteriores. El total CB/aplicado incluye
+el ajuste firmado, los pagos siguen siendo positivos y el banco debe coincidir exactamente con el
+extracto. Se registra la contrapartida con importe absoluto y D/H según signo; se conservan los
+controles de período, unidad, factura, saldos, cuenta activa, numeración y balance. Recordar cuenta
+se confirma en la misma transacción Serializable; fallos o reintentos no duplican recibos ni memoria.
+
+`BuscarPagadorDialog` reutiliza el motor de pendientes de Cobranzas, ahora agrupado por identidad de
+factura para sumar cuotas. La consulta respeta las unidades del usuario, moneda y fecha de emisión
+hasta el depósito; admite nombre/código/documento y rechaza más de 10.000 facturas sin truncar. Se
+agrupa por cliente/unidad y pagina de a 50 grupos/facturas. `CobranzaPagadoresCoincidencias` busca una
+factura, el total del grupo (hasta 50) o subconjuntos de hasta cinco sin mezclar clientes/unidades,
+con presupuesto de 20.000 pasos por grupo y aviso si no se agotó la búsqueda. Las coincidencias por
+importe son pistas. No invoca IA. Asignar utiliza la operación manual auditada existente sin guardar
+alias y prepara la cobranza con saldos reconsultados; el operador confirma el recibo por separado.
+
 ## Editor de asientos bancarios (2026-10-27)
 
 Se reutiliza la generación CC existente, con catálogo por base, talonarios, período abierto, numeración compartida con legacy, contrapartidas balanceadas, idempotencia y conciliación transaccional. El editor permite abrir Cuentas y conceptos sin descartar la fecha ni la imputación manual. Tras guardar se recarga el catálogo y se propone una regla única solo si la cuenta seguía vacía. Los borradores del plan de cuentas continúan inactivos hasta guardar la configuración.

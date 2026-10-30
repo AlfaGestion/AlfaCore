@@ -177,6 +177,104 @@ public sealed class CobranzaMultipleTests
         finally {tx.Rollback();}
     }
 
+    [ConciliacionSqlFact]
+    public async Task AjustesCancelanFacturaBalanceanYRecuerdanCuentaSoloEnTransaccionDeEnsayo()
+    {
+        var connection=Environment.GetEnvironmentVariable("CONCILIACION_TEST_SQL")!;
+        Assert.Equal("ALFANET2007_PRUEBAS",new SqlConnectionStringBuilder(connection).InitialCatalog);
+        using var runtime=new CargaComprobantesArcaRuntime();var session=new SessionDto();
+        var service=new CobranzasService(Proxy<ISessionService>((m,_)=>m.Name switch{"GetConnectionString"=>connection,"GetActiveSession"=>session,_=>null}),
+            Proxy<IAppUserSessionService>((m,_)=>m.Name switch{"get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>"Alberto",_=>null}),
+            Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events);
+        await using var cn=new SqlConnection(connection);await cn.OpenAsync();
+        var configAntes=await cn.ExecuteScalarAsync<string?>("SELECT CONVERT(nvarchar(max),ValorAux) FROM TA_CONFIGURACION WHERE CLAVE='CONCILIACION-COBRANZA-AJUSTE';");
+        using var tx=cn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        try
+        {
+            var doc=await cn.QueryFirstAsync<CobranzaDocumento>("""
+                SELECT TOP(1) f.ID Id,LTRIM(RTRIM(f.CUENTA)) Cliente,LTRIM(RTRIM(f.UNEGOCIO)) Unidad,
+                    LTRIM(RTRIM(f.TC)) Tc,f.IDCOMPROBANTE Comprobante,s.SALDO Saldo
+                FROM dbo.VE_CPTES_SALDOS_VENTAS s JOIN dbo.V_MV_CPTE f
+                    ON f.CUENTA=s.CUENTA AND f.TC=s.TC AND f.SUCURSAL=s.SUCURSAL AND f.NUMERO=s.NUMERO AND f.LETRA=s.LETRA
+                WHERE f.IDCOMPLEMENTO=0 AND s.SALDO>100 AND ISNULL(f.ANULADA,0)=0
+                    AND LTRIM(RTRIM(f.TC))='FC' AND LTRIM(RTRIM(f.MONEDA))='1'
+                ORDER BY f.ID;
+                """,transaction:tx);
+            var banco=await cn.QueryFirstAsync<string>("SELECT LTRIM(RTRIM(CODIGO)) FROM MA_CUENTAS WHERE LTRIM(RTRIM(MEDIODEPAGO))='DB' AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0 AND LTRIM(RTRIM(MONEDA))='1';",transaction:tx);
+            var cuenta=(await cn.QueryAsync<ConciliacionAsientoCuenta>(CobranzasService.CuentasAjusteSql,transaction:tx)).First().Codigo;
+            var tal=await cn.QueryFirstAsync<int>("SELECT Talonario FROM V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CB' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) IN ('','0',@Unidad) ORDER BY CASE WHEN LTRIM(RTRIM(UNEGOCIO))=@Unidad THEN 0 ELSE 1 END,Talonario;",doc,tx);
+            foreach(var delta in new[]{.39m,-.39m})
+            {
+                tx.Save("casoAjuste");
+                var recibido=doc.Saldo-delta;
+                var mov=await cn.ExecuteScalarAsync<long>("""
+                    INSERT BK_ImportacionExtracto(OrigenCodigo,ArchivoNombre,ArchivoRuta,FechaImportacionUtc,UsuarioImportacion,CantidadMovimientos,ImporteTotal,EstadoProceso,CuentaBanco)
+                    VALUES('Provincia','ENSAYO_AJUSTE','',SYSUTCDATETIME(),'ENSAYO',1,@recibido,'IMPORTED',@banco);
+                    DECLARE @i bigint=SCOPE_IDENTITY();
+                    INSERT BK_ExtractoMovimiento(ImportacionId,OrigenCodigo,FechaMovimiento,DescripcionOriginal,Importe,MonedaCodigo)
+                    VALUES(@i,'Provincia','20261019','ENSAYO_AJUSTE',@recibido,'ARS');
+                    DECLARE @m bigint=SCOPE_IDENTITY();
+                    INSERT BK_MovimientoClasificado(MovimientoId,TipoMovimiento,Confianza) VALUES(@m,'Cobranza',99);
+                    INSERT BK_MovimientoMatch(MovimientoId,TipoMatch,ClienteCodigo,Confianza,ResumenPropuesta) VALUES(@m,'Manual',@cliente,95,'ENSAYO');
+                    SELECT @m;
+                    """,new{recibido,banco,cliente=doc.Cliente},tx);
+                var solicitud=new CobranzaSolicitud(Guid.NewGuid(),doc.Id,new(2026,10,19),tal,[new(banco,recibido)],mov,
+                    "ENSAYO REDONDEO",Ajuste:new(cuenta,delta,"Diferencia de centavos",true));
+                // La cuenta bancaria no se admite como cuenta de ajuste.
+                await Assert.ThrowsAsync<InvalidOperationException>(()=>service.GrabarEnTransaccionAsync(cn,tx,
+                    solicitud with{Operacion=Guid.NewGuid(),Ajuste=new(banco,delta,"Motivo")},default));
+                var resultado=await service.GrabarEnTransaccionAsync(cn,tx,solicitud,default);
+                Assert.Equal(doc.Saldo,resultado.Importe);
+                var lineas=(await cn.QueryAsync<(string Cuenta,string Sentido,decimal Importe)>("""
+                    SELECT LTRIM(RTRIM(CUENTA)) Cuenta,[DEBE-HABER] Sentido,IMPORTE Importe FROM MV_ASIENTOS
+                    WHERE TC='CB' AND SUCURSAL=SUBSTRING(@Comprobante,1,4) AND NUMERO=SUBSTRING(@Comprobante,5,8) AND LETRA='X';
+                    """,resultado,tx)).ToList();
+                Assert.Equal(3,lineas.Count);Assert.Equal(0,lineas.Sum(l=>l.Sentido=="D"?l.Importe:-l.Importe));
+                Assert.Contains(lineas,l=>l.Cuenta==banco&&l.Importe==recibido&&l.Sentido=="D");
+                Assert.Contains(lineas,l=>l.Cuenta==cuenta&&l.Importe==.39m&&l.Sentido==(delta>0?"D":"H"));
+                Assert.Equal(doc.Saldo,await cn.ExecuteScalarAsync<decimal>("SELECT IMPORTE FROM MV_APLICACION WHERE TC='CB' AND IDCOMPROBANTE=@Comprobante;",resultado,tx));
+                var config=JsonSerializer.Deserialize<CobranzasService.AjusteConfig>((await cn.ExecuteScalarAsync<string>("SELECT CONVERT(nvarchar(max),ValorAux) FROM TA_CONFIGURACION WHERE CLAVE='CONCILIACION-COBRANZA-AJUSTE';",transaction:tx))!)!;
+                Assert.Equal(cuenta,config.Cuenta);
+                Assert.Equal(resultado,await service.GrabarEnTransaccionAsync(cn,tx,solicitud,default));
+                tx.Rollback("casoAjuste");
+            }
+        }
+        finally {tx.Rollback();}
+        Assert.Equal(configAntes,await cn.ExecuteScalarAsync<string?>("SELECT CONVERT(nvarchar(max),ValorAux) FROM TA_CONFIGURACION WHERE CLAVE='CONCILIACION-COBRANZA-AJUSTE';"));
+    }
+
+    [ConciliacionSqlFact]
+    public async Task BusquedaDePagadoresSoloConsultaPendientesAutorizadosHastaFechaDelBanco()
+    {
+        var connection=Environment.GetEnvironmentVariable("CONCILIACION_TEST_SQL")!;
+        Assert.Equal("ALFANET2007_PRUEBAS",new SqlConnectionStringBuilder(connection).InitialCatalog);
+        using var runtime=new CargaComprobantesArcaRuntime();var session=new SessionDto();
+        var service=new CobranzasService(Proxy<ISessionService>((m,_)=>m.Name switch{"GetConnectionString"=>connection,"GetActiveSession"=>session,_=>null}),
+            Proxy<IAppUserSessionService>((m,_)=>m.Name switch{"get_IsAuthenticated"=>true,"IsAuthorizedForSession"=>true,"GetCurrentUserName"=>"Alberto",_=>null}),
+            Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events);
+        await using var cn=new SqlConnection(connection);await cn.OpenAsync();
+        var id=await cn.ExecuteScalarAsync<long>("""
+            SELECT TOP(1) m.MovimientoId FROM BK_ExtractoMovimiento m
+            OUTER APPLY(SELECT TOP(1) TipoMovimiento FROM BK_MovimientoClasificado WHERE MovimientoId=m.MovimientoId ORDER BY ClasificacionId DESC)c
+            OUTER APPLY(SELECT TOP(1) TipoMatch FROM BK_MovimientoMatch WHERE MovimientoId=m.MovimientoId ORDER BY MatchId DESC)p
+            WHERE m.Importe>0 AND m.EstadoRevision<>'Cobrado' AND m.MonedaCodigo='ARS' AND c.TipoMovimiento='Cobranza'
+                AND ISNULL(p.TipoMatch,'')<>'CobranzaYaRegistrada'
+                AND NOT EXISTS(SELECT 1 FROM BK_ConciliacionBanco b WHERE b.MovimientoId=m.MovimientoId AND b.Activa=1)
+            ORDER BY m.FechaMovimiento DESC,m.MovimientoId DESC;
+            """);
+        Assert.True(id>0);
+        var antes=await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS;");
+        var resultado=await service.BuscarPagadoresAsync(id);
+        Assert.NotEmpty(resultado.Clientes);
+        foreach(var grupo in resultado.Clientes)
+        {
+            Assert.All(grupo.Documentos,d=>{Assert.Equal(grupo.Cliente,d.Cliente);Assert.Equal(grupo.Unidad,d.Unidad);Assert.Equal("1",d.Moneda);Assert.True(d.Fecha.Date<=resultado.Fecha.Date);Assert.True(d.Saldo>0);});
+            Assert.Equal(grupo.Documentos.Count,grupo.Documentos.Select(d=>d.Id).Distinct().Count());
+            if(grupo.Coincidentes.Count>0)Assert.True(Math.Abs(grupo.TotalCoincidente-resultado.Importe)<=resultado.Tolerancia);
+        }
+        Assert.Equal(antes,await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOS;"));
+    }
+
     private sealed class ActivatorDialog:IComponentActivator
     {
         public CobranzaRapidaDialog? Dialog {get;private set;}

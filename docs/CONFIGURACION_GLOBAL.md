@@ -18,6 +18,18 @@ El chat del icono **?** reutiliza `OPENAI_API_KEY` y `OPENAI_MODEL` del servidor
 
 ## Conciliación bancaria inteligente
 
+`CONCILIACION-COBRANZA-AJUSTE` (CAJA, ValorAux JSON) conserva `Cuenta` (vacía inicialmente) y `Limite`
+(inicial `1.00`, permitido 0..100 pesos, dos decimales; 0 deshabilita ajustes). Se incorpora por
+`2026-10-29-001__caja_cobranza_ajuste_centavos.sql` sin reemplazar valores existentes. La cobranza no
+activa ajustes automáticamente: el operador agrega uno y elige cuenta, importe con signo y motivo.
+Recordar cuenta se ejecuta únicamente al confirmar exitosamente la CB, en su misma transacción.
+Se ofrecen cuentas activas, imputables y en pesos, sin medio de pago ni pertenencia a clientes o
+proveedores, con nombres de ajustes/redondeos/diferencias/gastos/otros ingresos o egresos. Se excluyen
+impuestos, retenciones, IVA y diferencias de cambio. La configuración recordada nunca habilita una
+cuenta que dejó de cumplir el catálogo. Un importe positivo aumenta la cancelación del cliente
+contra débito de la cuenta de ajuste; uno negativo la reduce contra crédito. No modifica el importe
+del extracto ni genera libros fiscales. Requiere aceptación del operador al confirmar el recibo.
+
 La lectura de extractos PDF reutiliza `InterfacesIaComprasPythonExe` de Recepción documental en la base activa, con fallback a `python` del PATH del servicio si no hay ruta configurada. Requiere pypdf instalado en ese mismo intérprete. No agrega una clave propia ni usa TARJETAS-PYTHON como configuración bancaria; ambos lectores comparten el transporte local y conservan sus formatos y validaciones específicos.
 
 

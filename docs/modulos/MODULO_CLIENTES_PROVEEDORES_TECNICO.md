@@ -1,5 +1,18 @@
 # Módulo Clientes y Proveedores
 
+## Clasificación: lectura y códigos legacy (29/10/2026)
+
+La ficha lee `MA_CUENTASADIC.Clasificacion`, el mismo campo que graba, aunque una vista histórica de
+clientes o proveedores no lo exponga. La lectura del detalle y del catálogo devuelve códigos sin
+espacios exteriores para que coincidan con el valor del combo. Al guardar se resuelve el código real
+de `TA_CLASIFICACIONES` y se conserva su relleno legacy en la referencia de `MA_CUENTASADIC` (por
+ejemplo, `   1`), igual que con los otros catálogos. Sin clasificación se graba NULL. Se mantienen
+validación y auditoría existentes. No requiere cambiar vistas ni ejecutar una migración.
+
+Regresión: `CuentasComercialesClasificacionTests` verifica parámetros de clientes/proveedores y un
+ciclo de grabación/lectura con tablas temporales, incluyendo códigos numéricos y alfanuméricos con
+relleno y la eliminación de la clasificación. No modifica clientes reales.
+
 ## Compatibilidad del listado con SQL Server 2008
 
 El incidente 7617 de GENESIS (base central 97, 28/10/2026) confirmó que `Clientes.Search` fallaba por `OFFSET/FETCH`. `CuentasComercialesService.SearchAsync`, compartido con Proveedores, detecta la versión del motor desde la conexión abierta. En SQL Server 2008 usa `ROW_NUMBER` y límites de fila; desde SQL Server 2012 conserva `OFFSET/FETCH`. En ambos casos pagina en SQL, mantiene el orden por activo, razón social y código, y devuelve el total con los mismos filtros de búsqueda, activo, bloqueo, provincia y país.

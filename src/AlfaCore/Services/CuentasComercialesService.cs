@@ -181,12 +181,12 @@ public sealed class CuentasComercialesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var hasManualColumn = await ColumnExistsAsync(cn, null, "MA_CUENTAS", "MANUAL", token);
-            var hasClasificacionColumn = await ColumnExistsAsync(cn, null, descriptor.ViewName, "Clasificacion", token);
+            var hasClasificacionColumn = await ColumnExistsAsync(cn, null, "MA_CUENTASADIC", "Clasificacion", token);
             var manualSelect = hasManualColumn
                 ? "ISNULL(CAST(acc.MANUAL AS nvarchar(max)), '')"
                 : "CAST('' AS nvarchar(max))";
             var clasificacionSelect = hasClasificacionColumn
-                ? "ISNULL(base.Clasificacion, '')"
+                ? ClasificacionDetalleSql
                 : "CAST('' AS nvarchar(4))";
 
             var sql = $"""
@@ -348,9 +348,7 @@ public sealed class CuentasComercialesService(
                 SELECT ISNULL(CODIGO, ''), ISNULL(DESCRIPCION, '')
                 FROM dbo.TA_MONEDAS
                 ORDER BY DESCRIPCION, CODIGO;
-                SELECT ISNULL(Codigo, ''), ISNULL(Descripcion, '')
-                FROM dbo.TA_CLASIFICACIONES
-                ORDER BY Descripcion, Codigo;
+                {ClasificacionesLookupSql}
                 """;
 
             await using var cmd = new SqlCommand(sql, cn);
@@ -411,6 +409,8 @@ public sealed class CuentasComercialesService(
             var defaultPais = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_PAISES", "CODIGO", normalized.PaisCodigo, "1", token);
             var defaultProvincia = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_ESTADOS", "CODIGO", normalized.ProvinciaCodigo, "1", token);
             var defaultCond = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "V_TA_Cpra_Vta", "IDCond_Cpra_Vta", normalized.CondicionComercialCodigo, "1", token);
+            var defaultClasificacion = string.IsNullOrWhiteSpace(normalized.ClasificacionCodigo) ? string.Empty
+                : await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_CLASIFICACIONES", "Codigo", normalized.ClasificacionCodigo, string.Empty, token);
             var defaultClase = normalized.Clase ?? (tipo == CuentaComercialTipo.Cliente ? (short)1 : (short)0);
             var defaultMotivo = "1";
 
@@ -633,7 +633,7 @@ public sealed class CuentasComercialesService(
                     """;
 
                 await using var cmd = new SqlCommand(insertAdicSql, cn, (SqlTransaction)tx);
-                FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo);
+                FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo, defaultClasificacion);
                 await cmd.ExecuteNonQueryAsync(token);
             }
             else
@@ -679,7 +679,7 @@ public sealed class CuentasComercialesService(
                     """;
 
                 await using var cmd = new SqlCommand(updateAdicSql, cn, (SqlTransaction)tx);
-                FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo);
+                FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo, defaultClasificacion);
                 var affected = await cmd.ExecuteNonQueryAsync(token);
                 if (affected == 0)
                     throw new InvalidOperationException("No se pudo actualizar MA_CUENTASADIC para la cuenta indicada.");
@@ -1437,6 +1437,12 @@ public sealed class CuentasComercialesService(
                 .ToList()
         };
 
+    internal const string ClasificacionDetalleSql = "LTRIM(RTRIM(ISNULL(adic.Clasificacion, '')))";
+    internal const string ClasificacionesLookupSql = """
+        SELECT LTRIM(RTRIM(ISNULL(Codigo, ''))) AS Codigo, ISNULL(Descripcion, '') AS Descripcion
+        FROM dbo.TA_CLASIFICACIONES ORDER BY Descripcion, Codigo;
+        """;
+
     private static void FillCuentaAdicParameters(
         SqlCommand cmd,
         CuentaComercialSaveRequest request,
@@ -1447,7 +1453,8 @@ public sealed class CuentasComercialesService(
         string condicion,
         short clase,
         string motivoDefault,
-        CuentaComercialTipo tipo)
+        CuentaComercialTipo tipo,
+        string clasificacion)
     {
         cmd.Parameters.AddWithValue("@Codigo", request.Codigo.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Contacto", DbNullable(request.Contacto));
@@ -1482,7 +1489,9 @@ public sealed class CuentasComercialesService(
         cmd.Parameters.AddWithValue("@Web", DbNullable(request.Web));
         cmd.Parameters.AddWithValue("@ProveedorLocal", request.ProveedorLocal);
         cmd.Parameters.AddWithValue("@ProveedorCompartido", request.ProveedorCompartido);
-        cmd.Parameters.AddWithValue("@Clasificacion", DbNullable(request.ClasificacionCodigo));
+        // El combo compara códigos sin espacios; la FK conserva la representación del catálogo legacy.
+        cmd.Parameters.Add("@Clasificacion", System.Data.SqlDbType.NVarChar, 4).Value =
+            string.IsNullOrWhiteSpace(clasificacion) ? DBNull.Value : clasificacion;
     }
 
     private static async Task LoadCuentaObservacionesAsync(SqlConnection cn, CuentaComercialDetailDto detail, CancellationToken ct)
