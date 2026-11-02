@@ -161,6 +161,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
          + ".afip-box .letra{font-size:22pt;font-weight:700;line-height:1.1;padding:1mm 0}"
          + ".afip-box .codigo{border-top:1pt solid #172033;font-size:8pt;padding:0.8mm 0}"
          + ".header--afip{align-items:flex-start}"
+         + ".fiscal-emisor--empresa{display:none}.fiscal-emisor--meta{margin-top:2mm}"
          + ".cae-box{border:1px solid #d5dde5;background:" + theme.ColorFondoSuave + ";padding:3mm 4mm;margin-top:4mm;font-size:9pt}"
          + ".cae-barcode{margin-top:2mm;text-align:center;letter-spacing:.08em;font-family:monospace;font-size:8pt;overflow-wrap:anywhere}.cae-status{margin-top:2mm;text-align:center;font-weight:700}"
          + ".qr-box{margin-top:3mm;break-inside:avoid}.qr-box img{object-fit:contain}"
@@ -350,16 +351,26 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 sb.Append("<div class=\"company\">");
                 if (Shows(fields, "Nombre")) sb.Append("<h1>").Append(E(data.Empresa.Nombre)).Append("</h1>");
                 var empresaValues = new List<string>();
-                if (Shows(fields, "Cuit") && !string.IsNullOrWhiteSpace(data.Empresa.Cuit)) empresaValues.Add("CUIT: " + data.Empresa.Cuit);
                 if (Shows(fields, "Domicilio")) AddIf(empresaValues, data.Empresa.Domicilio);
                 if (Shows(fields, "Telefono")) AddIf(empresaValues, data.Empresa.Telefono);
                 if (!string.IsNullOrWhiteSpace(data.CondicionIvaEmisor)) AddIf(empresaValues, data.CondicionIvaEmisor);
-                if (!string.IsNullOrWhiteSpace(data.IngresosBrutosEmisor)) empresaValues.Add("Ingresos Brutos: " + data.IngresosBrutosEmisor);
-                if (data.InicioActividadesEmisor is { } inicio) empresaValues.Add("Inicio de Actividades: " + inicio.ToString("dd/MM/yyyy", CulturaAr));
+                // CUIT, Ingresos Brutos e Inicio de Actividades van a la derecha, bajo el número (formato
+                // habitual de ARCA en A4/Carta/A5). En el ticket de 80 mm se muestran en la columna única,
+                // debajo de la empresa: los dos lugares se escriben y el CSS de cada formato oculta uno.
+                var fiscales = new List<string>();
+                if (Shows(fields, "Cuit") && !string.IsNullOrWhiteSpace(data.Empresa.Cuit)) fiscales.Add("CUIT: " + data.Empresa.Cuit);
+                if (!string.IsNullOrWhiteSpace(data.IngresosBrutosEmisor)) fiscales.Add("Ingresos Brutos: " + data.IngresosBrutosEmisor);
+                if (data.InicioActividadesEmisor is { } inicio) fiscales.Add("Inicio de Actividades: " + inicio.ToString("dd/MM/yyyy", CulturaAr));
                 AppendMuted(sb, empresaValues);
+                if (fiscales.Count > 0)
+                {
+                    sb.Append("<div class=\"fiscal-emisor fiscal-emisor--empresa\">");
+                    AppendMuted(sb, fiscales);
+                    sb.Append("</div>");
+                }
                 sb.Append("</div>");
                 if (recuadroBlock is not null) AppendRecuadroTipo(sb, recuadroBlock, data.Comprobante);
-                AppendDocumentMetaFactura(sb, data.Comprobante, hasCompanyBlock ? fields : null, nombreDocumento);
+                AppendDocumentMetaFactura(sb, data.Comprobante, hasCompanyBlock ? fields : null, nombreDocumento, fiscales);
                 if (combinedLogo is not null && logoOnRight) AppendLogoSide(sb, combinedLogo, data.Empresa.Logo);
                 sb.Append("</section>");
                 break;
@@ -396,12 +407,19 @@ public sealed class DocumentRenderer : IDocumentRenderer
         sb.Append("</div>");
     }
 
-    private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields, string nombreDocumento)
+    private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields, string nombreDocumento,
+        IReadOnlyList<string>? fiscales = null)
     {
         sb.Append("<div class=\"doc-meta\">");
         sb.Append("<b>").Append(E(nombreDocumento.ToUpperInvariant())).Append(' ').Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
         sb.Append("<span class=\"muted\">Fecha: ").Append(comprobante.Fecha.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
         if (!string.IsNullOrWhiteSpace(comprobante.CondicionVenta)) sb.Append("<br><span class=\"muted\">Cond. venta: ").Append(E(comprobante.CondicionVenta)).Append("</span>");
+        if (fiscales is { Count: > 0 })
+        {
+            sb.Append("<div class=\"fiscal-emisor fiscal-emisor--meta\">");
+            foreach (var linea in fiscales) sb.Append("<span class=\"muted\">").Append(E(linea)).Append("</span><br>");
+            sb.Append("</div>");
+        }
         sb.Append("</div>");
     }
 

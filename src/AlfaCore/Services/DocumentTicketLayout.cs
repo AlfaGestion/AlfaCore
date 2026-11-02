@@ -17,7 +17,7 @@ internal static class DocumentTicketLayout
             .doc-content{page:auto;width:100%}.cover-page{display:none}
             .header,.header--split{display:flex;flex-direction:column;gap:2mm;padding:2mm 0;margin:0 0 3mm;border:0;border-bottom:1px solid #222;border-radius:0}
             .company{width:100%;text-align:center}.company h1{font-size:13pt}.muted{font-size:8pt}
-            .doc-meta{min-width:0;width:100%;text-align:center!important}.logo-side{align-self:center;max-width:100%}.logo{max-width:100%!important;max-height:20mm}
+            .doc-meta{min-width:0;width:100%;text-align:center!important}.fiscal-emisor--empresa{display:block!important}.fiscal-emisor--meta{display:none!important}.logo-side{align-self:center;max-width:100%}.logo{max-width:100%!important;max-height:20mm}
             .afip-box{align-self:center;margin:0}.afip-box .letra{font-size:16pt}
             .card{padding:2mm 0;border:0;border-bottom:1px dashed #444;background:white;margin:0 0 3mm}
             .items{display:block;width:100%;margin:2mm 0;font-size:9pt}.items colgroup,.items thead{display:none}

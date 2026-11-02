@@ -56,4 +56,27 @@ public sealed class DocumentEmisorTests
         Assert.DoesNotContain("Empresa general", html);
         if (papel == "Ticket80") Assert.Contains("ticket-footer\">Sucursal &lt;Uno&gt;", html);
     }
+
+    // A4/Carta: CUIT, IIBB e inicio de actividades a la derecha bajo el número; ticket: columna única bajo la empresa.
+    [Theory]
+    [InlineData("A4", false)]
+    [InlineData("Ticket80", true)]
+    public void DatosFiscalesDelEmisorVanBajoElNumeroSalvoEnTicket(string papel, bool ticket)
+    {
+        var definition = DocumentTemplateDefinition.CrearFacturaEstandar("C");
+        definition.Paper.Size = papel;
+        var html = new DocumentRenderer().RenderFactura(definition, new FacturaDocumentData
+        {
+            Empresa = new() { Nombre = "Emisor", Cuit = "27228073259" },
+            IngresosBrutosEmisor = "902-819418-9",
+            InicioActividadesEmisor = new DateTime(2020, 1, 1),
+            Comprobante = new() { TipoDocumento = TiposDocumentoCore.FacturaC, Letra = "C" }
+        });
+        var meta = html.IndexOf("fiscal-emisor fiscal-emisor--meta", StringComparison.Ordinal);
+        Assert.True(meta > html.IndexOf("class=\"doc-meta\"", StringComparison.Ordinal));
+        Assert.Contains("CUIT: 27228073259", html[meta..]);
+        Assert.Contains("Inicio de Actividades: 01/01/2020", html[meta..]);
+        Assert.Contains("fiscal-emisor--empresa{display:none}", html);
+        Assert.Equal(ticket, html.Contains("fiscal-emisor--meta{display:none!important}", StringComparison.Ordinal));
+    }
 }
