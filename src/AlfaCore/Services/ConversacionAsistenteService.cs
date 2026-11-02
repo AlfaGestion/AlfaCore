@@ -565,6 +565,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve que deje claro que le va a responder una persona del equipo (un asesor o un compañero), no vos: nada de \"voy a verificar\" ni \"te respondo en un momento\", porque vos no vas a volver a escribir con la respuesta. Ej.: \"Le paso tu consulta a un asesor y te responde a la brevedad\". Redactala con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución. Nunca le pidas que contacte o consulte a un asesor: vos ya sos la empresa y la consulta le llega al equipo por este mismo chat.");
         sb.AppendLine("- Si el cliente NO plantea nada nuevo y sólo pregunta por el estado de algo que ya consultó antes (\"¿pudieron ver algo?\", \"¿novedades?\", \"lo que pedimos ayer\", \"sigo esperando\", \"¿cómo va lo mío?\"): tipo=\"SEGUIMIENTO\", \"puede_responder\": false, y en \"respuesta\" una frase breve. Si además plantea un problema o pregunta nueva, NO es SEGUIMIENTO: tratalo como una consulta normal. Si pregunta por un pedido o una entrega (\"¿cuándo me entregan?\", \"¿ya salió?\") y tenés la herramienta de pedidos, usala: tampoco es SEGUIMIENTO.");
         sb.AppendLine("- Si el cliente AVISA que su tema ya se resolvió o agradece cerrando (\"ya está arreglado\", \"ya anda\", \"lo pude solucionar\", \"gracias, ya está\"): NO es SEGUIMIENTO ni DERIVA. tipo=\"RESUELVE\", \"puede_responder\": true, y en \"respuesta\" un agradecimiento breve que cierre la charla, sin hacer preguntas.");
+        sb.AppendLine("- Cuando derivás, decidí en \"abrir_ticket\" si hace falta registrar un ticket, leyendo el mensaje junto con toda la conversación. Un ticket es para un tema que el equipo tiene que trabajar y al que hay que hacerle seguimiento. Si con lo que hay en la charla basta con que una persona del equipo lo lea y le conteste por acá, no hace falta ticket: \"abrir_ticket\": false. Si dudás, true.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
         if (fueraDeHorario)
@@ -578,7 +579,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
 
         sb.AppendLine();
-        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"respuesta\": \"...\"}.");
+        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA|SEGUIMIENTO\", \"puede_responder\": true/false, \"abrir_ticket\": true/false,\"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -712,7 +713,10 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             var imagen = root.TryGetProperty("imagen", out var img) && img.ValueKind == JsonValueKind.String
                 ? (img.GetString() ?? string.Empty).Trim()
                 : string.Empty;
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen };
+            var abrirTicket = !(root.TryGetProperty("abrir_ticket", out var at)
+                && (at.ValueKind == JsonValueKind.False
+                    || (at.ValueKind == JsonValueKind.String && bool.TryParse(at.GetString(), out var bt) && !bt)));
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo, ImagenDescripcion = imagen, AbrirTicket = abrirTicket };
         }
         catch (JsonException)
         {

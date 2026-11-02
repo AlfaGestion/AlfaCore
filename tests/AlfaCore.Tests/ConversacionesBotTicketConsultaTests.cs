@@ -184,7 +184,7 @@ public sealed class ConversacionesBotTicketConsultaTests
         var source = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "AlfaCore", "Services", "ConversacionesService.cs"));
 
         Assert.Contains("if (EsMensajeDePrueba(texto) && !string.Equals(result?.Tipo, \"RESUELVE\"", source, StringComparison.Ordinal);
-        Assert.Contains("if (tipo == \"DERIVA\" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto))", source, StringComparison.Ordinal);
+        Assert.Contains("if (tipo == \"DERIVA\" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && abrirTicketSegunIa && EsConsultaParaTicket(texto))", source, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -212,7 +212,7 @@ public sealed class ConversacionesBotTicketConsultaTests
         Assert.DoesNotContain("{", ConversacionesService.RespuestaSeguimiento, StringComparison.Ordinal);
         Assert.Contains("tema pendiente", ConversacionesService.RespuestaSeguimiento, StringComparison.Ordinal);
         Assert.Matches(@"await ResponderSeguimientoAsync\(idConversacion, pendiente, token\)\.ConfigureAwait\(false\);\s*return;", source);
-        Assert.Contains("!omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto)", source, StringComparison.Ordinal);
+        Assert.Contains("!omitirTicket && !correccionSinTicket && abrirTicketSegunIa && EsConsultaParaTicket(texto)", source, StringComparison.Ordinal);
     }
 
     [Theory]

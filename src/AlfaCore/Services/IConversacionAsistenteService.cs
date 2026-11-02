@@ -57,6 +57,12 @@ public sealed class ConversacionAsistenteRespuesta
     /// </summary>
     public string Tipo { get; set; } = "RESUELVE";
 
+    /// <summary>
+    /// Si al derivar hace falta registrar un ticket. Lo decide la IA leyendo el mensaje y la conversación,
+    /// no una lista de palabras. Si el modelo no lo informa, se abre (comportamiento anterior).
+    /// </summary>
+    public bool AbrirTicket { get; set; } = true;
+
     /// <summary>Qué vio el asistente en la imagen del cliente (datos útiles para el operador); vacío si no hubo imagen.</summary>
     public string ImagenDescripcion { get; set; } = string.Empty;
 }

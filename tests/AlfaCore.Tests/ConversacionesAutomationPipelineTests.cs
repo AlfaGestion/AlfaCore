@@ -1168,6 +1168,41 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public async Task Assistant_DerivaSinTicket_LoDecideLaIa()
+    {
+        var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "test-key");
+        try
+        {
+            // "Necesito comunicarme con Favio" (base real, 2026-11-02): la IA decide que no hace falta ticket.
+            // Si no informa el campo, se abre como antes.
+            var handler = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"abrir_ticket\":false,\"respuesta\":\"Le paso tu mensaje a Favio.\"}"}}]}
+                """);
+            var handlerSinCampo = new QueueHttpHandler(
+                """
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"tipo\":\"DERIVA\",\"puede_responder\":false,\"respuesta\":\"Le paso tu consulta a un asesor.\"}"}}]}
+                """);
+            var service = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handler)), new FakeAppEventService());
+            var serviceSinCampo = new ConversacionAsistenteService(new SingleClientFactory(new HttpClient(handlerSinCampo)), new FakeAppEventService());
+
+            var sinTicket = await service.ResponderAsync("Sos un asistente.", "Info real.", "GENERAL_AVISA",
+                "Buenos dias.. necesito comunicarme con Favio. Estas por ahi ??", []);
+            var sinCampo = await serviceSinCampo.ResponderAsync("Sos un asistente.", "Info real.", "GENERAL_AVISA",
+                "No me imprime la factura", []);
+
+            Assert.False(sinTicket!.AbrirTicket);
+            Assert.Equal("DERIVA", sinTicket.Tipo);
+            Assert.True(sinCampo!.AbrirTicket);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_API_KEY", previousApiKey);
+        }
+    }
+
+    [Fact]
     public async Task Assistant_RealCase4264_PriceQuestion_ToolReturnsPriceThroughRealToolsService()
     {
         var previousApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");

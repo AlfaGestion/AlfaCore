@@ -9815,6 +9815,9 @@ public sealed partial class ConversacionesService(
                 }
 
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+                // "Necesito comunicarme con Favio" / "Buen día Marcos, ..." (base real, 2026-11-02): todo DERIVA
+                // abría ticket. Si hace falta lo decide la IA con el mensaje y la conversación, no una regla.
+                var abrirTicketSegunIa = result?.AbrirTicket != false;
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
                 var respuesta = !usoFallbackBot
                     ? result!.Respuesta.Trim()
@@ -9866,7 +9869,7 @@ public sealed partial class ConversacionesService(
                 if (correcciones.Count > 0)
                     await RegistrarUsoCorreccionesAsync(idConversacion, correcciones, correccionDirecta, token).ConfigureAwait(false);
 
-                if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && EsConsultaParaTicket(texto))
+                if (tipo == "DERIVA" && config.BotGeneraTicket && !omitirTicket && !correccionSinTicket && abrirTicketSegunIa && EsConsultaParaTicket(texto))
                 {
                     numeroTicketBot = await TryCrearTicketBotAsync(idConversacion, texto, token).ConfigureAwait(false);
                     if (numeroTicketBot is int numero)
