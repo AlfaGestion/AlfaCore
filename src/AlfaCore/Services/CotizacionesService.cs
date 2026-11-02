@@ -804,7 +804,8 @@ public sealed class CotizacionesService(
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
 
-    private const int LimiteMensualCuentaFallback = 200;
+    // Compartido con CorreoSalienteService (mismo contador EMAIL_FALLBACK_CONTADOR).
+    private int LimiteMensualCuentaFallback => CorreoSalienteService.LimiteMensualRespaldo(configuration);
     private const string ClaveContadorFallback = "EMAIL_FALLBACK_CONTADOR";
 
     /// <summary>Envíos ya hechos con la cuenta de rescate en el mes actual (el contador se guarda

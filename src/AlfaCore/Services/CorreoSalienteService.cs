@@ -15,8 +15,12 @@ namespace AlfaCore.Services;
 /// </summary>
 public sealed class CorreoSalienteService(IConfiguration configuration)
 {
-    private const int LimiteMensualCuentaRespaldo = 200;
+    private const int LimiteMensualRespaldoPorDefecto = 1000;
     private const string ClaveContadorRespaldo = "EMAIL_FALLBACK_CONTADOR";
+
+    /// <summary>Tope mensual de la cuenta de respaldo (RegistroPublico:EmailLimiteMensual, 1000 si no está).</summary>
+    public static int LimiteMensualRespaldo(IConfiguration configuration)
+        => int.TryParse(configuration["RegistroPublico:EmailLimiteMensual"], out var n) && n > 0 ? n : LimiteMensualRespaldoPorDefecto;
 
     public sealed record CuentaCorreo(string Server, int Port, string Login, string Password, bool Ssl,
         string Remitente, string? NombreRemitente, string? ResponderA, bool EsRespaldo);
@@ -64,8 +68,9 @@ public sealed class CorreoSalienteService(IConfiguration configuration)
             || !int.TryParse(configuration["RegistroPublico:EmailPort"], out var vPort) || vPort <= 0)
             throw new InvalidOperationException("No hay una cuenta de correo para enviar. Cargá tu cuenta en Usuarios (email del usuario) " +
                                                 "o la cuenta general en Configuración General → Email.");
-        if (await ContadorRespaldoAsync(cn, ct) >= LimiteMensualCuentaRespaldo)
-            throw new InvalidOperationException($"Se alcanzó el tope de {LimiteMensualCuentaRespaldo} mails del mes con la cuenta de envío de Alfa. " +
+        var limite = LimiteMensualRespaldo(configuration);
+        if (await ContadorRespaldoAsync(cn, ct) >= limite)
+            throw new InvalidOperationException($"Se alcanzó el tope de {limite} mails del mes con la cuenta de envío de Alfa. " +
                                                 "Cargá una cuenta de correo propia en tu usuario o en Configuración General → Email.");
         return new CuentaCorreo(vServer, vPort, vCuenta, vClave, EsSi(configuration["RegistroPublico:EmailSsl"]), vCuenta,
             nombre ?? "Envio Automatico", responderA, true);
