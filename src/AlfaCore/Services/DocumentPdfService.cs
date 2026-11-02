@@ -35,6 +35,8 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var appEvents = scope.ServiceProvider.GetRequiredService<IAppEventService>();
+            if (EsChromiumFaltante(ex))
+                throw await AvisoChromiumFaltanteAsync(appEvents, ex, ct);
             var incidentId = await appEvents.LogErrorAsync("Documentos", "PaginarDocumento", ex,
                 "No se pudo acomodar el cierre del documento en la última página.", ct: ct);
             throw new AppUserFacingException("No se pudo paginar el documento. Revisá el tamaño de los bloques o desactivá Totales al pie de página.", incidentId, ex);
@@ -73,9 +75,71 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var appEvents = scope.ServiceProvider.GetRequiredService<IAppEventService>();
+            if (EsChromiumFaltante(ex))
+                throw await AvisoChromiumFaltanteAsync(appEvents, ex, ct);
             var incidentId = await appEvents.LogErrorAsync("Documentos", "GenerarPdfPlaywright", ex, "No se pudo generar el PDF beta con Chromium.", ct: ct);
             throw new AppUserFacingException("No se pudo generar el PDF beta. Verificá la instalación de Chromium en el servidor.", incidentId, ex);
         }
+    }
+
+    // ── Chromium faltante: aviso claro e instalación automática ──────────────────────────────────
+    // Playwright usa un Chromium propio que se descarga aparte (la carpeta ms-playwright del perfil del
+    // usuario que corre AlfaCore). En un servidor nuevo falta y todos los PDF fallaban con un mensaje
+    // técnico. Ahora se instala solo una vez en segundo plano y el usuario recibe qué hacer.
+    private static readonly object InstalacionLock = new();
+    private static Task<int>? _instalacionChromium;
+
+    internal static bool EsChromiumFaltante(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+            if (e is PlaywrightException && (e.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("playwright.ps1 install", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        return false;
+    }
+
+    private Task<int> IniciarInstalacionChromium()
+    {
+        lock (InstalacionLock)
+        {
+            // Una sola descarga a la vez; si la anterior falló, se reintenta en el próximo pedido.
+            if (_instalacionChromium is { IsCompleted: false } enCurso) return enCurso;
+            if (_instalacionChromium is { IsCompletedSuccessfully: true, Result: 0 } lista) return lista;
+            _instalacionChromium = Task.Run(() =>
+            {
+                logger.LogWarning("Documentos: falta Chromium de Playwright; se inicia la instalación automática.");
+                try
+                {
+                    var codigo = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                    logger.LogWarning("Documentos: instalación de Chromium terminada con código {Codigo}.", codigo);
+                    return codigo;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Documentos: no se pudo instalar Chromium automáticamente.");
+                    return -1;
+                }
+            });
+            return _instalacionChromium;
+        }
+    }
+
+    private async Task<AppUserFacingException> AvisoChromiumFaltanteAsync(IAppEventService appEvents, Exception ex, CancellationToken ct)
+    {
+        var instalacion = IniciarInstalacionChromium();
+        // Unos segundos de margen: si la descarga es rápida, el usuario ya puede reintentar.
+        await Task.WhenAny(instalacion, Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None));
+        string mensaje;
+        if (instalacion.IsCompletedSuccessfully && instalacion.Result == 0)
+            mensaje = "El componente para generar PDF (Chromium) se acaba de instalar en el servidor. Volvé a intentar.";
+        else if (!instalacion.IsCompleted)
+            mensaje = "Falta el componente para generar PDF (Chromium) en el servidor y se está instalando automáticamente. " +
+                      "Volvé a intentar en uno o dos minutos.";
+        else
+            mensaje = "Falta el componente para generar PDF (Chromium) en el servidor y no se pudo instalar solo (por ejemplo, sin acceso a internet). " +
+                      "Pedile al administrador que, en la carpeta de AlfaCore del servidor, ejecute: pwsh playwright.ps1 install chromium";
+        var incidentId = await appEvents.LogErrorAsync("Documentos", "ChromiumFaltante", ex, mensaje, ct: ct);
+        return new AppUserFacingException(mensaje, incidentId, ex);
     }
 
     private static Task<bool> PrepareTicketAsync(IPage page) => page.EvaluateAsync<bool>("""
@@ -111,7 +175,7 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
         try
         {
             if (_browser is not null) return _browser;
-            _playwright = await Playwright.CreateAsync();
+            _playwright ??= await Playwright.CreateAsync();
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
             return _browser;
         }

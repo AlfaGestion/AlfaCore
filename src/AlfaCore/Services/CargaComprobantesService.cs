@@ -458,6 +458,8 @@ public sealed class CargaComprobantesService(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (CargaComprobantesReglaException) { throw; }
+        // Ya trae un mensaje para el usuario y su código (ej. falta Chromium para el PDF): no taparlo con el genérico.
+        catch (AppUserFacingException) { EnsureContext(sessionId, user, system); throw; }
         catch (Exception ex)
         {
             EnsureContext(sessionId, user, system);
