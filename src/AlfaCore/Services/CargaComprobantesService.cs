@@ -182,6 +182,57 @@ public sealed class CargaComprobantesService(
         => ExecuteAsync("BuscarFacturacionAutomatica", (cn, contexto, token) =>
             CargaComprobantesFacturacionAutomatica.BuscarAsync(cn, contexto, filtro, token), ct);
 
+    public Task<CargaComprobantesFacturacionAutomaticaResultado> PrevisualizarFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => ResultadoFacturacionAutomaticaAsync(cuenta, "PrevisualizarFacturacionAutomatica", async (cn, ctx, token) =>
+        {
+            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, fechaFacturacion.Date, token);
+            var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
+            return Resumen(plan, fila, talonario, "VALIDADA",
+                "Validada: se ensayó la grabación completa y se revirtió. No se pidió CAE ni se modificó la facturación automática.");
+        }, ct);
+
+    public Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => ResultadoFacturacionAutomaticaAsync(cuenta, "EmitirFacturacionAutomatica", async (cn, ctx, token) =>
+        {
+            var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token));
+            // La factura sale con la fecha del día (el motor no admite fechas anteriores o futuras):
+            // así la fecha de última factura y el período del concepto quedan coherentes.
+            if (fechaFacturacion.Date != hoy.Date)
+                throw new CargaComprobantesReglaException($"Para emitir, la fecha a facturar debe ser la de hoy ({hoy:dd/MM/yyyy}).");
+            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, hoy, token);
+            var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
+            var resultado = await emision.EmitirAsync(cn, ctx, 0, talonario, [], Guid.NewGuid(), plan.Huella,
+                () => EnsureContext(ctx.SesionId, ctx.Usuario, ctx.Sistema), token, borrador);
+            var resumen = Resumen(plan, fila, talonario, resultado.Estado == "GRABADA" ? "GRABADA" : "PENDIENTE",
+                resultado.Estado == "GRABADA" ? "Factura grabada en homologación; se actualizó la última factura y las cuotas."
+                    : $"{resultado.Estado}. {resultado.Mensaje} Recuperala desde Comprobantes de prueba antes de reintentar.");
+            resumen.Comprobante = resultado.Comprobante; resumen.Cae = resultado.Cae; resumen.Operacion = resultado.Operacion;
+            return resumen;
+        }, ct);
+
+    private static CargaComprobantesFacturacionAutomaticaResultado Resumen(CargaComprobantesPlanGrabacion plan,
+        CargaComprobantesFacturacionAutomaticaFila fila, int talonario, string estado, string mensaje)
+    {
+        var fiscal = CargaComprobantesDesgloseFiscal.Crear(plan.Liquidacion);
+        return new()
+        {
+            Cuenta = fila.Cuenta, Estado = estado, Letra = plan.Letra, PuntoVenta = plan.PuntoVenta, Talonario = talonario,
+            Total = fiscal.Total, Iva = fiscal.Iva, Concepto = plan.Origen.Observaciones, Mensaje = mensaje,
+            Lineas = plan.Liquidacion.Lineas.Select(l => new CargaComprobantesFacturacionAutomaticaLinea(
+                plan.Origen.Lineas.Single(x => x.Id == l.LineaId).Descripcion, l.Total)).ToList()
+        };
+    }
+
+    // Un error de un cliente no corta el lote: se devuelve como resultado ERROR con su motivo.
+    private async Task<CargaComprobantesFacturacionAutomaticaResultado> ResultadoFacturacionAutomaticaAsync(string cuenta, string accion,
+        Func<SqlConnection, CargaComprobantesContexto, CancellationToken, Task<CargaComprobantesFacturacionAutomaticaResultado>> operacion, CancellationToken ct)
+    {
+        try { return await ExecuteAsync(accion, operacion, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (CargaComprobantesReglaException ex) { return new() { Cuenta = cuenta, Estado = "ERROR", Mensaje = ex.Message }; }
+        catch (AppUserFacingException ex) { return new() { Cuenta = cuenta, Estado = "ERROR", Mensaje = ex.Message }; }
+    }
+
     public Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default)
         => ExecuteAsync("CargarOrigen", (cn, contexto, token) => repository.GetOrigenAsync(cn, contexto, id, token), ct);
 

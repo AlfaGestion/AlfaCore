@@ -28,8 +28,10 @@ public static class CargaComprobantesCalculador
         return pendientes;
     }
 
+    /// <param name="letraC">Factura C (emisor monotributista): no discrimina IVA; el importe final es neto gravado
+    /// para el libro y ARCA, como clsTotales con EsLetraC.</param>
     public static CargaComprobantesLiquidacion Calcular(CargaComprobantesOrigen origen,
-        CargaComprobantesContexto contexto, IReadOnlyList<CargaComprobantesCantidad> cantidades)
+        CargaComprobantesContexto contexto, IReadOnlyList<CargaComprobantesCantidad> cantidades, bool letraC = false)
     {
         // Comparte la validación de pertenencia, cantidades y alcance con la consulta.
         CargaComprobantesSimulador.ValidarSeleccion(origen, cantidades);
@@ -53,6 +55,16 @@ public static class CargaComprobantesCalculador
                 throw new CargaComprobantesReglaException("La cantidad seleccionada se reduce a cero con la precisión Currency del cálculo legacy.");
             // V_mv_vta:24809 aplica exención de artículos a FP cuando RobaIvaProforma=NO.
             // TotalizaLineaArticulos usa entonces AuxPrecioSinIVA, aunque la lista incluya IVA.
+            if (letraC)
+            {
+                // EsLetraC: se factura el precio final (con IVA incluido para artículos; el importe tal cual
+                // para otros conceptos) y todo va como neto gravado sin IVA discriminado.
+                var precioC = Currency((origenLinea.EsConcepto ? origenLinea.PrecioSinIva : origenLinea.Precio) * (1 - origenLinea.Descuento / 100));
+                var netoC = Currency(precioC * cantidad);
+                lineas.Add(new() { LineaId = item.LineaId, Cantidad = item.Cantidad, Neto = netoC, Total = netoC });
+                result.NetoGravado = Currency(result.NetoGravado + netoC);
+                continue;
+            }
             var exento = origenLinea.Exento || origen.ExentoIvaArticulos ||
                 (origen.Tc == "FP" && !contexto.RobaIvaProforma);
             var tasa = origenLinea.AlicuotaIva != 0 ? origenLinea.AlicuotaIva : contexto.AlicuotaGeneral;
@@ -69,7 +81,8 @@ public static class CargaComprobantesCalculador
             // IMPORTE guardado incluye internos con PreciosFinales; AcumulaInsumos los resta.
             var precioFinalSinInternos = Currency(origenLinea.Precio - origenLinea.ImpuestoInternoUnitario);
             var bruto = Currency(precioFinalSinInternos * cantidad);
-            if (!exento && origenLinea.Descuento <= 0 && Math.Abs(Currency(neto + iva - bruto)) > 0.001m)
+            // Otros conceptos se cargan por importe sin IVA: no hay precio final que conciliar.
+            if (!origenLinea.EsConcepto && !exento && origenLinea.Descuento <= 0 && Math.Abs(Currency(neto + iva - bruto)) > 0.001m)
             {
                 neto = Currency(bruto / (1 + tasa / 100));
                 iva = Currency(bruto - neto);

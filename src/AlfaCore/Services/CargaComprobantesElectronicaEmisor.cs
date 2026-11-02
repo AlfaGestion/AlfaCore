@@ -17,8 +17,8 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
         if (operacion == Guid.Empty) throw new CargaComprobantesReglaException("Falta la identidad de la operación de prueba.");
         var emisor = await config.ResolveEmisorAsync(cn, origen.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor electrónico.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, contexto.PuntoVentaElectronico);
-        if (emisor.CondicionIvaPropiaCodigo.Trim() != "1" || (cuitEsperado is not null && emisor.Cuit != cuitEsperado))
+        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, plan?.PuntoVenta ?? contexto.PuntoVentaElectronico);
+        if ((emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan?.Letra != "C") || (cuitEsperado is not null && emisor.Cuit != cuitEsperado))
             throw new CargaComprobantesReglaException("El emisor cambió o requiere un circuito fiscal distinto; no se envió la autorización.");
         var previo = await cn.QuerySingleOrDefaultAsync<CargaComprobantesElectronicaPrueba>(new CommandDefinition("""
             SELECT Operacion,OrigenId,Estado,PuntoVenta,TipoComprobante,Numero,Importe,Cae,Vencimiento
@@ -134,7 +134,8 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
             throw new CargaComprobantesReglaException("La operación pertenece a otra unidad de negocio.");
         var emisor = await config.ResolveEmisorAsync(cn, row.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor de la operación.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, contexto.PuntoVentaElectronico);
+        // El punto de la solicitud guardada (puede ser el de la unidad de negocio, no PV_EFACTURA).
+        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, row.PuntoVenta);
         if (emisor.Cuit != row.Cuit || emisor.PuntoVentaElectronico != row.PuntoVenta)
             throw new CargaComprobantesReglaException("El emisor cambió respecto de la solicitud guardada.");
         var solicitud = JsonSerializer.Deserialize<ArcaCaeSolicitudDto>(row.Solicitud)

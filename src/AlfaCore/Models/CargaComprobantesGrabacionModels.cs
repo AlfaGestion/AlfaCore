@@ -46,6 +46,9 @@ public sealed class CargaComprobantesPlanGrabacion
     public string CuentaCliente { get; set; } = "";
     public string CuentaVentas { get; set; } = "";
     public string CuentaIva { get; set; } = "";
+    /// <summary>Cuenta de ventas de otros conceptos (V_TA_INPUT_VENTAS.Otros); solo si hay renglones de concepto.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? CuentaOtros { get; set; }
     public string Huella { get; set; } = "";
     public string HuellaDatos { get; set; } = "";
     public string CuitEmisor { get; set; } = "";

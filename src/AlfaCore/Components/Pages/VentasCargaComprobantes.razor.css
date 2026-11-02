@@ -31,3 +31,10 @@
 .cc-sort i { font-size: 10px; color: var(--alfa-accent); }
 .cc-table th.cc-number .cc-sort { justify-content: flex-end; }
 .cc-table tr.cc-totals td { background: var(--alfa-bg-surface); border-top: 2px solid var(--alfa-border-default); }
+/* Facturación automática: resultado por cliente de la vista previa o la emisión. */
+.cc-fa-resultado { min-width: 220px; max-width: 420px; }
+.cc-fa-estado { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.cc-fa-estado.is-ok { background: var(--alfa-success-subtle, #e6f4ea); color: var(--alfa-success, #1e7e34); }
+.cc-fa-estado.is-info { background: var(--alfa-info-subtle, #e7f1fb); color: var(--alfa-info, #1d5fa8); }
+.cc-fa-estado.is-error { background: var(--alfa-danger-subtle, #fdecea); color: var(--alfa-danger, #b3261e); }
+.cc-table td small.cc-fa-lineas { white-space: normal; font-size: 11px; }

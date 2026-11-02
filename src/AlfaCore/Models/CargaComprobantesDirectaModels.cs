@@ -16,11 +16,25 @@ public sealed class CargaComprobantesDirecta
     public string Deposito { get; set; } = "";
     public string Observaciones { get; set; } = "";
     public List<CargaComprobantesDirectaLinea> Lineas { get; set; } = [];
+    /// <summary>
+    /// Factura generada por la facturación automática (MA_CUENTAS_AUTOCPTES): al grabar actualiza
+    /// FechaUltMov y suma una cuota, igual que v_FacturacionAutomatica.vbp. Null en las cargas comunes.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? FacturacionAutomaticaCuenta { get; set; }
 }
 
 public sealed class CargaComprobantesDirectaLinea
 {
+    /// <summary>Vacío en un renglón de "otros conceptos" (sin artículo): se usa <see cref="Concepto"/>.</summary>
     public string Articulo { get; set; } = "";
+    /// <summary>Texto de un renglón de otros conceptos (V_MV_CPTE_OBSERV); requiere PrecioUnitarioNeto.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Concepto { get; set; }
+    /// <summary>Otro concepto no gravado (AlicIVA = -1 en Alfa Gestión).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ConceptoNoGravado { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public bool EsConcepto => string.IsNullOrWhiteSpace(Articulo) && Concepto is not null;
     public decimal Cantidad { get; set; } = 1;
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public decimal? Bultos { get; set; }

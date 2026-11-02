@@ -16,6 +16,27 @@ public sealed class CargaComprobantesFiltro
     public int PageSize { get; set; } = 25;
 }
 
+/// <summary>Resultado de validar o emitir la factura automática de un cliente.</summary>
+public sealed class CargaComprobantesFacturacionAutomaticaResultado
+{
+    public string Cuenta { get; set; } = string.Empty;
+    /// <summary>VALIDADA (vista previa, nada grabado), GRABADA, PENDIENTE (requiere recuperar) o ERROR.</summary>
+    public string Estado { get; set; } = string.Empty;
+    public string Letra { get; set; } = string.Empty;
+    public int PuntoVenta { get; set; }
+    public int Talonario { get; set; }
+    public string? Comprobante { get; set; }
+    public string? Cae { get; set; }
+    public decimal Total { get; set; }
+    public decimal Iva { get; set; }
+    public string Concepto { get; set; } = string.Empty;
+    public string Mensaje { get; set; } = string.Empty;
+    public Guid? Operacion { get; set; }
+    public IReadOnlyList<CargaComprobantesFacturacionAutomaticaLinea> Lineas { get; set; } = [];
+}
+
+public sealed record CargaComprobantesFacturacionAutomaticaLinea(string Texto, decimal Importe);
+
 /// <summary>Cliente en condiciones de facturación automática a una fecha (consulta, como el VB6).</summary>
 public sealed class CargaComprobantesFacturacionAutomaticaFila
 {
@@ -156,6 +177,9 @@ public sealed class CargaComprobantesLineaOrigen
     public decimal KilosReferencia { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public decimal MetrosCubicosReferencia { get; set; }
+    /// <summary>Renglón de otros conceptos (sin artículo): se graba en V_MV_CPTE_OBSERV, sin stock.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EsConcepto { get; set; }
     public int Id { get; set; }
     public int Secuencia { get; set; }
     public string Articulo { get; set; } = string.Empty;

@@ -34,6 +34,11 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         var neto = fiscal.Neto;
         var total = fiscal.Total;
         var iva = fiscal.Iva;
+        // Otros conceptos (V_MV_CPTE_OBSERV) se separan de artículos en cabecera y asiento.
+        var idsConcepto = plan.Origen.Lineas.Where(x => x.EsConcepto).Select(x => x.Id).ToHashSet();
+        var netoOtros = idsConcepto.Count == 0 ? 0 : liquidacion.Lineas.All(x => idsConcepto.Contains(x.LineaId))
+            ? neto : Red(liquidacion.Lineas.Where(x => idsConcepto.Contains(x.LineaId)).Sum(x => x.Neto));
+        var netoInsumos = neto - netoOtros;
         var slots = fiscal.Alicuotas.Concat(Enumerable.Range(0,3).Select(_ => new CargaComprobantesLiquidacionIva())).Take(3).ToArray();
         var solicitudJson = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
             "SELECT Solicitud FROM dbo.ALFACORE_VENTAS_HOMO_PRUEBA WHERE Operacion=@Operacion;",
@@ -65,6 +70,8 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             ExentoCabecera = plan.Origen.ExentoIvaArticulos || (plan.Tc == "FP" && liquidacion.Iva == 0),
             DocTipo = solicitud?.DocTipo, DocNro = solicitud?.DocNro
         });
+        p.Add("NetoInsumos", netoInsumos);
+        p.Add("NetoOtros", netoOtros);
         p.Add("ClaseDirecta", plan.ClasePrecio);
         p.Add("ObservacionesDirecta", plan.Origen.Observaciones);
         p.Add("DepositoDirecta", CodigoPk.Format(plan.Origen.Deposito, 4));
@@ -89,9 +96,11 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             OUTPUT inserted.ID INTO @Insertado
             SELECT @Tc,@Comprobante,0,@Fecha,@Vencimiento,@Cuenta,cl.RAZON_SOCIAL,
                 LEFT(LTRIM(RTRIM(ISNULL(cl.CALLE,'')))+' '+LTRIM(RTRIM(ISNULL(cl.NUMERO,''))),50),
-                cl.TELEFONO,cl.LOCALIDAD,cl.PROVINCIA,cl.CPOSTAL,cl.DOCUMENTO_TIPO,LEFT(cl.NUMERO_DOCUMENTO,13),
+                -- Códigos de provincia con relleno legacy de 4 (FK a TA_ESTADOS): hay clientes grabados como '16'.
+                cl.TELEFONO,cl.LOCALIDAD,NULLIF(RIGHT(SPACE(4)+LTRIM(RTRIM(ISNULL(cl.PROVINCIA,''))),4),SPACE(4)),cl.CPOSTAL,
+                NULLIF(RIGHT(SPACE(4)+LTRIM(RTRIM(ISNULL(cl.DOCUMENTO_TIPO,''))),4),SPACE(4)),LEFT(cl.NUMERO_DOCUMENTO,13),
                 @CondicionIva,@CondicionVenta,c.CLASEPRECIO,c.OBSERVACIONES,
-                @TcOrigen,@CpteOrigen,0,@Total,@Neto,@Motivo,c.IdVendedor,@Neto,0,0,@Iva1,@NetoGravado,@NetoNoGravado,c.IdDeposito,
+                @TcOrigen,@CpteOrigen,0,@Total,@Neto,@Motivo,c.IdVendedor,@NetoInsumos,0,@NetoOtros,@Iva1,@NetoGravado,@NetoNoGravado,c.IdDeposito,
                 @MotivoStock,c.IdLista,@Alicuota,@Iva2,@Alicuota2,@Iva3,@Alicuota3,@Moneda,1,ISNULL(c.SucursalCuenta,0),@Sucursal,@Numero,@Letra,
                 @Unidad,@Usuario,@Unidad,GETDATE(),CONVERT(nvarchar(4),@TipoAfip),-999,@ExentoCabecera
             FROM {fuenteCabecera};
@@ -111,6 +120,18 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         foreach (var linea in liquidacion.Lineas)
         {
             var original = plan.Origen.Lineas.Single(x => x.Id == linea.LineaId);
+            if (original.EsConcepto)
+            {
+                // Igual que V_mv_vta (grilla "Otros"): TIPO_OBS 'OC', importe con y sin IVA, sin stock ni aplicación.
+                p.Add("Secuencia", ++secuencia); p.Add("Observacion", original.Descripcion);
+                p.Add("ImporteObs", plan.Letra == "C" ? linea.Total : decimal.Round(original.PrecioSinIva + (linea.Exento ? 0 : linea.Iva), 4, MidpointRounding.ToEven));
+                p.Add("ImporteObsSinIva", plan.Letra == "C" ? linea.Total : original.PrecioSinIva);
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO dbo.V_MV_CPTE_OBSERV(TC,IDCOMPROBANTE,IDCOMPLEMENTO,TIPO_OBS,OBSERVACION,IMPORTE,IMPORTE_S_IVA,Transmision,Recepcion,SECUENCIA)
+                    VALUES(@Tc,@Comprobante,0,'OC',@Observacion,@ImporteObs,@ImporteObsSinIva,0,0,@Secuencia);
+                    """, p, tx, cancellationToken: ct));
+                continue;
+            }
             var parteOrigen = plan.Directa is null ? plan.Partes.Single(x => x.Origen.Lineas.Any(l => l.Id == linea.LineaId)) : null;
             p.Add("TcOrigenLinea", parteOrigen is null ? plan.Asociado is null ? null : "FC" : parteOrigen.Origen.Tc.Trim());
             p.Add("CpteOrigenLinea", parteOrigen?.Origen.Comprobante ?? plan.AsociadoComprobante);
@@ -180,7 +201,8 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         var asientoSec = 0;
         var debeCliente = plan.SentidoContable != "H";
         foreach (var renglon in new[] { (plan.CuentaCliente, debeCliente ? "D" : "H", total),
-            (plan.CuentaIva, debeCliente ? "H" : "D", iva), (plan.CuentaVentas, debeCliente ? "H" : "D", neto) }.Where(x => x.Item3 != 0))
+            (plan.CuentaIva, debeCliente ? "H" : "D", iva), (plan.CuentaVentas, debeCliente ? "H" : "D", netoInsumos),
+            (plan.CuentaOtros ?? plan.CuentaVentas, debeCliente ? "H" : "D", netoOtros) }.Where(x => x.Item3 != 0))
         {
             p.Add("CuentaAsiento", renglon.Item1.Trim());
             p.Add("Dh", renglon.Item2); p.Add("ImpAsiento", renglon.Item3); p.Add("SecAsiento", ++asientoSec);
@@ -213,6 +235,17 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Subdiario AND [NUMERO ASIENTO]=@Asiento;
             """, p, tx, cancellationToken: ct));
         if (balance != 0) throw new CargaComprobantesReglaException("El asiento no balancea; se revierte toda la grabación.");
+        if (plan.Directa?.FacturacionAutomaticaCuenta is { Length: > 0 } cuentaAutomatica)
+        {
+            // Mismo efecto que V_mv_vta en v_FacturacionAutomatica: fecha de la última factura automática
+            // y una cuota más en los conceptos en cuotas que se facturaron (sucursal 0, cuota pendiente).
+            p.Add("CuentaAutomatica", cuentaAutomatica);
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.MA_CUENTAS_AUTOCPTES SET FechaUltMov=@Fecha WHERE Cuenta=@CuentaAutomatica;
+                UPDATE dbo.MA_CUENTAS_AUTOCPTESDET SET NroUltimaCuota=ISNULL(NroUltimaCuota,1)+1
+                WHERE Cuenta=@CuentaAutomatica AND ISNULL(SucursalCuenta,0)=0 AND ISNULL(Cuotas,0)>0 AND ISNULL(NroUltimaCuota,0)<=Cuotas;
+                """, p, tx, cancellationToken: ct));
+        }
         if (plan.Origenes is not null)
         {
             var aplicado = 0m;

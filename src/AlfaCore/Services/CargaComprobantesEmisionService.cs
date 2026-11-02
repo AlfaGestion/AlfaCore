@@ -19,7 +19,8 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico.");
         CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, plan.EsElectronico ? plan.PuntoVenta : emisor.PuntoVentaElectronico);
-        if (emisor.CondicionIvaPropiaCodigo.Trim() != "1")
+        // La factura C la emite un monotributista (talonario solo C); la condición global CONDIVA no refleja cada unidad.
+        if (emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan.Letra != "C")
             throw new CargaComprobantesReglaException("Este circuito inicial requiere un emisor responsable inscripto.");
         if (plan.Asociado is { } asociado && asociado.Cuit != emisor.Cuit)
             throw new CargaComprobantesReglaException("El emisor de la nota no coincide con el emisor de la factura asociada.");

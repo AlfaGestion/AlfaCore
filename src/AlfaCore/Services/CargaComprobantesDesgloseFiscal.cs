@@ -18,7 +18,8 @@ public sealed record CargaComprobantesDesgloseFiscal(decimal NetoGravado, decima
         foreach (var grupo in grupos) _ = ArcaCodigosAfip.ResolverIdAlicuotaIva(grupo.Alicuota);
         var exento = Red(liquidacion.NetoNoGravado);
         var total = Red(liquidacion.Total);
-        var neto = grupos.Sum(x => x.Neto);
+        // Factura C: neto gravado sin grupos de IVA (el calculador solo deja NetoGravado sin alícuotas en ese caso).
+        var neto = grupos.Count > 0 ? grupos.Sum(x => x.Neto) : Red(liquidacion.NetoGravado);
         var diferencia = total - neto - exento - grupos.Sum(x => x.Iva);
         if (total <= 0 || Math.Abs(diferencia) > .02m || (grupos.Count == 0 && diferencia != 0))
             throw new CargaComprobantesReglaException("El desglose de IVA y exentos no coincide con el total del comprobante.");

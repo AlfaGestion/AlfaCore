@@ -179,6 +179,13 @@
         SecondaryMessage="Se solicitará CAE y se grabarán factura, artículos, cuenta corriente, asiento, aplicación al origen y stock cuando corresponda. Estos cambios quedan en la base de pruebas."
         ConfirmLabel="Emitir y grabar" OnConfirm="GrabarFacturaAsync" OnCancel="() => _confirmarGrabacion = false" />
 }
+@if (_confirmarEmisionFa)
+{
+    <AlfaConfirmDialog Open="true" Title="Emitir facturación automática"
+        Message="@($"Se emitirán {_seleccionFa.Count} factura(s) por {Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
+        SecondaryMessage="Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
+        ConfirmLabel="Emitir" OnConfirm="EmitirFacturacionAutomaticaAsync" OnCancel="() => _confirmarEmisionFa = false" />
+}
 @if (_confirmarPrueba)
 {
     <AlfaConfirmDialog Open="true" Title="Emitir prueba en homologación"
@@ -258,6 +265,85 @@
     private IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila> _filasFa = [];
     private string _ordenFa = string.Empty;
     private bool _ordenFaDesc;
+    private readonly HashSet<string> _seleccionFa = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CargaComprobantesFacturacionAutomaticaResultado> _resultadosFa = new(StringComparer.OrdinalIgnoreCase);
+    private bool _confirmarEmisionFa;
+    private string _progresoFa = string.Empty;
+    private DateTime FechaFaAplicada => (_filtroAplicado.FechaFacturacion ?? DateTime.Today).Date;
+    // La factura sale con la fecha del día: solo se emite si la fecha a facturar es hoy.
+    private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaAplicada == DateTime.Today;
+
+    private void SeleccionarFa(string cuenta, bool valor)
+    {
+        if (valor) _seleccionFa.Add(cuenta); else _seleccionFa.Remove(cuenta);
+        UpdateHeader();
+    }
+
+    private void SeleccionarTodosFa(bool valor)
+    {
+        _seleccionFa.Clear();
+        if (valor) foreach (var f in _filasFa) _seleccionFa.Add(f.Cuenta);
+        UpdateHeader();
+    }
+
+    private Task PrevisualizarFacturacionAutomaticaAsync() => ProcesarFaAsync(false);
+    private Task EmitirFacturacionAutomaticaAsync() { _confirmarEmisionFa = false; return ProcesarFaAsync(true); }
+
+    // Lote secuencial: cada cliente se valida/emite por separado y su resultado queda en la fila.
+    private async Task ProcesarFaAsync(bool emitir)
+    {
+        if (_busy || _disposed || _seleccionFa.Count == 0) return;
+        var fecha = FechaFaAplicada;
+        var cuentas = FilasFaOrdenadas.Select(f => f.Cuenta).Where(_seleccionFa.Contains).ToList();
+        _busy = true; _feedback = null; UpdateHeader();
+        try
+        {
+            for (var i = 0; i < cuentas.Count && !_disposed; i++)
+            {
+                _progresoFa = $"{(emitir ? "Emitiendo" : "Validando")} {i + 1} de {cuentas.Count}…";
+                await InvokeAsync(StateHasChanged);
+                _resultadosFa[cuentas[i]] = emitir
+                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token)
+                    : await Service.PrevisualizarFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token);
+            }
+            var resultados = cuentas.Where(_resultadosFa.ContainsKey).Select(c => _resultadosFa[c]).ToList();
+            var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE");
+            var ok = resultados.Count - errores;
+            _feedback = errores == 0
+                ? AppUiMessage.Success(emitir ? "Facturas emitidas" : "Vista previa lista",
+                    emitir ? $"{ok} factura(s) grabadas en homologación por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
+                           : $"{ok} factura(s) validadas por {Moneda(resultados.Sum(r => r.Total))}. No se grabó nada.")
+                : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
+                    $"{ok} correcta(s) y {errores} con error. Revisá la columna Resultado de cada cliente.");
+            if (emitir) _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        finally
+        {
+            _busy = false; _progresoFa = string.Empty;
+            if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); }
+        }
+    }
+
+    private RenderFragment RenderResultadoFa(string cuenta) => __builder =>
+    {
+        if (!_resultadosFa.TryGetValue(cuenta, out var r)) return;
+        var clase = r.Estado switch { "GRABADA" => "is-ok", "VALIDADA" => "is-info", _ => "is-error" };
+        <span class="cc-fa-estado @clase">@(r.Estado switch { "GRABADA" => "Emitida", "VALIDADA" => "Validada", "PENDIENTE" => "Pendiente", _ => "Error" })</span>
+        @if (r.Estado is "GRABADA" or "VALIDADA")
+        {
+            <small>
+                @(r.Comprobante is { } cpte ? $"FC {cpte}" : $"Factura {r.Letra} · Punto {r.PuntoVenta:0000}")
+                · Total @Moneda(r.Total)@(r.Iva != 0 ? $" (IVA {Moneda(r.Iva)})" : "")
+                @if (r.Cae is { } cae) { <span> · CAE @cae</span> }
+            </small>
+            <small class="cc-fa-lineas">@string.Join(" · ", r.Lineas.Select(l => $"{l.Texto}: {Moneda(l.Importe)}"))</small>
+        }
+        else
+        {
+            <small>@r.Mensaje</small>
+        }
+    };
     private bool EsFacturacionAutomatica => _filtroAplicado.TipoOrigen == CargaComprobantesFacturacionAutomatica.TipoOrigen;
     private static bool EsFa(CargaComprobantesFiltro f) => f.TipoOrigen == CargaComprobantesFacturacionAutomatica.TipoOrigen;
 
@@ -268,6 +354,9 @@
             _filasFa = await Service.BuscarFacturacionAutomaticaAsync(consulta, _lifetime.Token);
             _result = null;
             _seleccionados.Clear();
+            // Al reconsultar se conserva la selección de los clientes que siguen en la lista; los resultados se limpian.
+            _seleccionFa.IntersectWith(_filasFa.Select(f => f.Cuenta));
+            _resultadosFa.Clear();
         }
         else
         {
@@ -338,15 +427,17 @@
             <div class="cc-table-scroll">
                 <table class="cc-table">
                     <thead><tr>
+                        <th><AlfaCheckbox Value="@(_seleccionFa.Count > 0 && _seleccionFa.Count == _filasFa.Count)" ValueChanged="v => SeleccionarTodosFa(v == true)" Disabled="@_busy">Todos</AlfaCheckbox></th>
                         @ThFa("codigo", "Código") @ThFa("cliente", "Cliente") @ThFa("concepto", "Concepto de la factura")
                         @ThFa("tc", "TC") @ThFa("periodicidad", "Periodicidad") @ThFa("ultima", "Última factura")
                         @ThFa("unidad", "U. negocio") @ThFa("vendedor", "Vendedor") @ThFa("conceptos", "Conceptos", true)
-                        @ThFa("importe", "Importe s/IVA", true) <th>Acción</th>
+                        @ThFa("importe", "Importe s/IVA", true) <th>Resultado</th> <th>Acción</th>
                     </tr></thead>
                     <tbody>
                     @foreach (var fila in FilasFaOrdenadas)
                     {
                         <tr @key="fila.Cuenta">
+                            <td><AlfaCheckbox Value="@_seleccionFa.Contains(fila.Cuenta)" ValueChanged="v => SeleccionarFa(fila.Cuenta, v == true)" Disabled="@_busy">@fila.CtaCodigo</AlfaCheckbox></td>
                             <td>@fila.CtaCodigo</td>
                             <td><strong>@fila.Cliente</strong></td>
                             <td>@fila.ConceptoFactura</td>
@@ -357,19 +448,21 @@
                             <td>@(string.IsNullOrWhiteSpace(fila.VendedorNombre) ? fila.Vendedor : fila.VendedorNombre)</td>
                             <td class="cc-number">@fila.Conceptos</td>
                             <td class="cc-number"><strong>@Moneda(fila.Importe)</strong></td>
+                            <td class="cc-fa-resultado">@RenderResultadoFa(fila.Cuenta)</td>
                             <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => AbrirClienteAsync(fila.Cuenta)">Ver ficha</AlfaButton></td>
                         </tr>
                     }
                     <tr class="cc-totals">
-                        <td colspan="8"><strong>Total · @_filasFa.Count cliente(s)</strong></td>
+                        <td colspan="9"><strong>Total · @_filasFa.Count cliente(s)</strong>@if (_seleccionFa.Count > 0) { <span> · @_seleccionFa.Count seleccionado(s) por @Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))</span> }</td>
                         <td class="cc-number">@_filasFa.Sum(f => f.Conceptos)</td>
                         <td class="cc-number"><strong>@Moneda(_filasFa.Sum(f => f.Importe))</strong></td>
-                        <td></td>
+                        <td colspan="2">@_progresoFa</td>
                     </tr>
                     </tbody>
                 </table>
             </div>
-            <footer class="cc-data-footer">Clientes en condiciones de facturar al @fecha.ToString("dd/MM/yyyy") · mismas reglas que Facturación Automática de Alfa Gestión · Solo consulta: la emisión se incorpora en la próxima etapa.</footer>
+            <footer class="cc-data-footer">Clientes en condiciones de facturar al @fecha.ToString("dd/MM/yyyy") · mismas reglas que Facturación Automática de Alfa Gestión ·
+                Vista previa valida sin grabar · Emitir (homologación) requiere que la fecha a facturar sea hoy.</footer>
         </section>
     };
     private static IReadOnlyList<AlfaSelectOption> Opciones(IReadOnlyList<CargaComprobantesOpcionFiltro> items)
@@ -586,7 +679,16 @@
         SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,
         Actions = _origen is null
             // Menos botones a la vista (2026-10-22): "Cargar selección" aparece al elegir pedidos/remitos y el resto va al menú "…".
-            ? [.. (_seleccionados.Count > 0
+            ? [.. (EsFacturacionAutomatica && _seleccionFa.Count > 0
+                    ? new PageHeaderAction[]
+                    {
+                        new() { Key = "fa-emitir", Label = $"Emitir ({_seleccionFa.Count})", Icon = "bi-send-check", Style = PageHeaderActionStyle.Primary,
+                            Disabled = _busy || !PuedeEmitirFa, OnClick = () => { _confirmarEmisionFa = true; return InvokeAsync(StateHasChanged); } },
+                        new() { Key = "fa-previa", Label = $"Vista previa ({_seleccionFa.Count})", Icon = "bi-eye", Style = PageHeaderActionStyle.Secondary,
+                            Disabled = _busy, OnClick = PrevisualizarFacturacionAutomaticaAsync }
+                    }
+                    : []),
+                .. (_seleccionados.Count > 0
                     ? new PageHeaderAction[] { new() { Key = "cargar-seleccion", Label = $"Cargar selección ({_seleccionados.Count})", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = CargarSeleccionAsync } }
                     : []),
                 new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = _seleccionados.Count > 0 ? PageHeaderActionStyle.Secondary : PageHeaderActionStyle.Primary,

@@ -13,10 +13,18 @@ public sealed class CargaComprobantesDirectaPreparador
         if (draft.Tc is not ("FC" or "NC" or "ND" or "FP")) throw new CargaComprobantesReglaException("Tipo de comprobante no admitido.");
         if (draft.Tc is "NC" or "ND" ? draft.FacturaAsociadaId is null or <= 0 : draft.FacturaAsociadaId is not null)
             throw new CargaComprobantesReglaException("Las notas requieren una factura asociada; las facturas nuevas y proformas no llevan asociado.");
+        // Renglones de otros conceptos (sin artículo, como la grilla "Otros" de V_mv_vta): texto + importe sin IVA.
+        var conceptos = draft.Lineas.Where(x => x.EsConcepto).ToList();
+        var articulos = draft.Lineas.Where(x => !x.EsConcepto).ToList();
         if (draft.Borrador == Guid.Empty || string.IsNullOrWhiteSpace(draft.Cliente) || draft.Lineas.Count is < 1 or > 200 ||
-            draft.Lineas.Any(x => string.IsNullOrWhiteSpace(x.Articulo) || x.Cantidad <= 0 || x.Cantidad > 9999999 || decimal.Round(x.Cantidad, 4) != x.Cantidad) ||
-            draft.Lineas.GroupBy(x => x.Articulo.Trim(), StringComparer.OrdinalIgnoreCase).Any(x => x.Count() > 1))
+            articulos.Any(x => string.IsNullOrWhiteSpace(x.Articulo) || x.Cantidad <= 0 || x.Cantidad > 9999999 || decimal.Round(x.Cantidad, 4) != x.Cantidad) ||
+            articulos.GroupBy(x => x.Articulo.Trim(), StringComparer.OrdinalIgnoreCase).Any(x => x.Count() > 1))
             throw new CargaComprobantesReglaException("Elegí un cliente y entre 1 y 200 artículos únicos, con cantidades positivas y hasta cuatro decimales.");
+        if (conceptos.Any(x => string.IsNullOrWhiteSpace(x.Concepto) || x.Concepto!.Trim().Length > 250 || x.Cantidad != 1 ||
+                x.PrecioUnitarioNeto is not { } importe || importe < 0 || importe > 999999999 || decimal.Round(importe, 4) != importe || x.Descuento.HasValue || x.Bultos.HasValue))
+            throw new CargaComprobantesReglaException("Cada otro concepto necesita un texto de hasta 250 caracteres y un importe sin IVA de cero o más (cantidad 1, sin descuento).");
+        if (conceptos.Count > 0 && draft.Tc is "NC" or "ND")
+            throw new CargaComprobantesReglaException("Las notas de crédito y débito con otros conceptos todavía no están incorporadas.");
         if (draft.Observaciones.Length > 1000 || (!ctx.AdminCentral && draft.UnidadNegocio.Trim() != ctx.UnidadNegocio.Trim()))
             throw new CargaComprobantesReglaException("Revisá la unidad de negocio y las observaciones (hasta 1000 caracteres).");
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
@@ -38,12 +46,13 @@ public sealed class CargaComprobantesDirectaPreparador
             ?? throw new CargaComprobantesReglaException("El cliente no está disponible, está bloqueado o fue dado de baja.");
         var seleccionPrecios = new CargaComprobantesSeleccionPrecios();
         var pricing = await seleccionPrecios.ResolverAsync(cn, ctx.Usuario, draft, ct, tx);
-        await seleccionPrecios.ValidarArticulosAsync(cn, ctx.Usuario, draft.Tc, pricing, draft.Lineas.Select(x => x.Articulo), ct, tx);
+        if (articulos.Count > 0)
+            await seleccionPrecios.ValidarArticulosAsync(cn, ctx.Usuario, draft.Tc, pricing, articulos.Select(x => x.Articulo), ct, tx);
         var edicion = new CargaComprobantesEdicionPrecios();
-        var politica = draft.Lineas.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue)
+        var politica = articulos.Any(x => x.PrecioUnitarioNeto.HasValue || x.Descuento.HasValue)
             ? await edicion.LeerAsync(cn, ctx.Usuario, draft.Cliente, draft.Tc, ct, tx) : null;
         var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
-        var rows = (await cn.QueryAsync<Articulo>(new CommandDefinition($"""
+        var rows = articulos.Count == 0 ? new List<Articulo>() : (await cn.QueryAsync<Articulo>(new CommandDefinition($"""
             SELECT LTRIM(RTRIM(a.IDARTICULO)) Codigo,a.DESCRIPCION Descripcion,LTRIM(RTRIM(a.IDUNIDAD)) Unidad,
                 ISNULL(a.TasaIVA,0) Iva,CONVERT(bit,ISNULL(a.EXENTO,0)) Exento,ISNULL(a.PRECIO{clase},0) PrecioMaestro,ISNULL(p.Precio{clase},0) PrecioLista,
                 CONVERT(bit,CASE WHEN ISNULL(a.Suspendido,0)<>0 OR ISNULL(a.SuspendidoV,0)<>0 OR ISNULL(a.USASERIE,0)<>0
@@ -62,17 +71,30 @@ public sealed class CargaComprobantesDirectaPreparador
             FROM dbo.V_MA_ARTICULOS a LEFT JOIN dbo.V_MA_PRECIOS p ON p.IdArticulo=a.IDARTICULO
                 AND LTRIM(RTRIM(p.IdLista))=@Lista AND p.TipoLista='V'
             WHERE LTRIM(RTRIM(a.IDARTICULO)) IN @Codigos;
-            """, new { Lista = pricing.UsaListas ? pricing.IdLista : "", Codigos = draft.Lineas.Select(x => x.Articulo.Trim()).ToArray() }, tx, cancellationToken: ct))).ToList();
-        if (rows.Count != draft.Lineas.Count || rows.Any(x => x.Especial || string.IsNullOrWhiteSpace(x.Unidad)))
+            """, new { Lista = pricing.UsaListas ? pricing.IdLista : "", Codigos = articulos.Select(x => x.Articulo.Trim()).ToArray() }, tx, cancellationToken: ct))).ToList();
+        if (rows.Count != articulos.Count || rows.Any(x => x.Especial || string.IsNullOrWhiteSpace(x.Unidad)))
             throw new CargaComprobantesReglaException("Un artículo no está disponible o requiere equivalencias, impuestos, ofertas, descuentos o un circuito especial pendiente de incorporar.");
         var lineas = new List<CargaComprobantesLineaOrigen>();
-        var unidades = await CargaComprobantesUnidades.LeerAsync(cn, rows.Select(x => x.Codigo), ct, tx);
+        var unidades = articulos.Count == 0 ? null : await CargaComprobantesUnidades.LeerAsync(cn, rows.Select(x => x.Codigo), ct, tx);
         foreach (var item in draft.Lineas)
         {
+            if (item.EsConcepto)
+            {
+                // Otros conceptos: importe sin IVA tal cual; IVA a la alícuota general salvo "no gravado"
+                // (clsTotales.AcumulaOtrosConceptos). En factura C el calculador no discrimina IVA.
+                var importe = item.PrecioUnitarioNeto!.Value;
+                var tasaConcepto = item.ConceptoNoGravado ? 0 : ctx.AlicuotaGeneral;
+                lineas.Add(new() { Id = lineas.Count + 1, Secuencia = lineas.Count + 1, EsConcepto = true,
+                    Descripcion = item.Concepto!.Trim(), Deposito = draft.Deposito.Trim(),
+                    CantidadOriginal = 1, Pendiente = 1, CoeficienteUnidad = 1, RenglonesArticulo = 1,
+                    PrecioSinIva = importe, Precio = decimal.Round(importe * (1 + tasaConcepto / 100), 4, MidpointRounding.ToEven),
+                    AlicuotaIva = tasaConcepto, Exento = item.ConceptoNoGravado });
+                continue;
+            }
             var a = rows.Single(x => string.Equals(x.Codigo, item.Articulo.Trim(), StringComparison.OrdinalIgnoreCase));
             if (draft.Tc == "NC" && item.Bultos.HasValue)
                 throw new CargaComprobantesReglaException("La nota de crédito conserva las unidades y cantidades de su factura; ingresá la cantidad a acreditar.");
-            var medidas = unidades.Resolver(a.Codigo,a.Unidad,item.Cantidad,item.Bultos);
+            var medidas = unidades!.Resolver(a.Codigo,a.Unidad,item.Cantidad,item.Bultos);
             var tasa = a.Exento ? 0 : a.Iva == 0 ? ctx.AlicuotaGeneral : a.Iva;
             var bruto = pricing.UsaListas && a.PrecioLista > 0 ? a.PrecioLista : a.PrecioMaestro;
             var (neto, final) = ArticuloPrecioResolverService.SplitPrice(bruto, tasa, pricing.PreciosConIva);

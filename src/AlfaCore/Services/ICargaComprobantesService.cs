@@ -33,6 +33,12 @@ public interface ICargaComprobantesService
     /// <summary>Clientes en condiciones de facturación automática a la fecha del filtro (solo consulta).</summary>
     Task<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>> BuscarFacturacionAutomaticaAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>>([]);
+    /// <summary>Arma y valida la factura automática de un cliente (ensayo revertido): no pide CAE ni graba.</summary>
+    Task<CargaComprobantesFacturacionAutomaticaResultado> PrevisualizarFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    /// <summary>Emite la factura automática de un cliente (homologación) y actualiza su última factura y cuotas.</summary>
+    Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => throw new NotSupportedException();
     Task<PagedResult<CargaComprobantesOrigen>> BuscarOrigenesAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default);
     Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default);
     Task<CargaComprobantesSimulacion> SimularAsync(int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct = default);

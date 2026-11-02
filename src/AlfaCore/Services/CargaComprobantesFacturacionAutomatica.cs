@@ -60,13 +60,14 @@ public static class CargaComprobantesFacturacionAutomatica
           AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
           AND (@Vendedor = '' OR LTRIM(RTRIM(ISNULL(cl.IdVendedor,''))) = @Vendedor)
           AND (@Zona = '' OR LTRIM(RTRIM(ISNULL(cl.ZONA,''))) = @Zona)
+          AND (@Cuenta = '' OR cl.CODIGO = @Cuenta)
           AND (@Texto = '' OR LTRIM(RTRIM(cl.CODIGO)) LIKE @Like ESCAPE '\' OR LTRIM(RTRIM(ISNULL(cl.CTACODIGO,''))) LIKE @Like ESCAPE '\'
                OR cl.RAZON_SOCIAL LIKE @Like ESCAPE '\')
         ORDER BY LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))), LTRIM(RTRIM(cl.CODIGO));
         """;
 
     public static async Task<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>> BuscarAsync(SqlConnection cn,
-        CargaComprobantesContexto contexto, CargaComprobantesFiltro filtro, CancellationToken ct)
+        CargaComprobantesContexto contexto, CargaComprobantesFiltro filtro, CancellationToken ct, string cuenta = "")
     {
         var fecha = (filtro.FechaFacturacion ?? DateTime.Today).Date;
         var texto = (filtro.Busqueda ?? string.Empty).Trim();
@@ -76,12 +77,85 @@ public static class CargaComprobantesFacturacionAutomatica
             Fecha = fecha, Maximo,
             contexto.AdminCentral, UnidadUsuario = contexto.UnidadNegocio.Trim(),
             Unidad = filtro.UnidadNegocio.Trim(), Vendedor = filtro.Vendedor.Trim(), Zona = filtro.Zona.Trim(),
-            Texto = texto, Like = "%" + Literal(texto) + "%"
+            Texto = texto, Like = "%" + Literal(texto) + "%", Cuenta = cuenta.Trim()
         }, commandTimeout: 60, cancellationToken: ct))).ToList();
         // Mismo reemplazo que FrmFCAutoCptes.GenerarCpte: <PERIODO> = mes/año de la fecha a facturar, sin ceros.
         var periodo = $"{fecha.Month}/{fecha.Year}";
         foreach (var fila in filas)
             fila.ConceptoFactura = fila.Concepto.Replace("<PERIODO>", periodo, StringComparison.OrdinalIgnoreCase);
         return filas;
+    }
+
+    /// <summary>
+    /// Arma la factura de un cliente igual que FrmMvVentas.VerificarAUTOCptes: concepto de cabecera con
+    /// &lt;PERIODO&gt;, una línea de "otros conceptos" por detalle (cuotas: "Cuota N de M"; ESTAMPCABA no gravado)
+    /// y el talonario de su unidad de negocio. El borrador es determinístico por cliente y fecha: un segundo
+    /// intento devuelve la misma operación en vez de emitir otra factura.
+    /// </summary>
+    public static async Task<(CargaComprobantesDirecta Borrador, int Talonario, CargaComprobantesFacturacionAutomaticaFila Fila)> PrepararAsync(
+        SqlConnection cn, CargaComprobantesContexto contexto, string cuenta, DateTime fechaFacturacion, CancellationToken ct)
+    {
+        var fila = (await BuscarAsync(cn, contexto, new CargaComprobantesFiltro { TipoOrigen = TipoOrigen, FechaFacturacion = fechaFacturacion }, ct, cuenta))
+            .SingleOrDefault() ?? throw new CargaComprobantesReglaException("El cliente ya no está en condiciones de facturar a esa fecha (ya se facturó, se desactivó o no tiene importe).");
+        if (fila.Tc is not ("FC" or "FP"))
+            throw new CargaComprobantesReglaException($"El tipo de comprobante {fila.Tc} de la facturación automática no está incorporado (solo FC y FP).");
+        var unidad = fila.UnidadNegocio.Length > 0 ? fila.UnidadNegocio : contexto.UnidadNegocio;
+        var detalle = (await cn.QueryAsync<DetalleFila>(new CommandDefinition("""
+            SELECT ID, ISNULL(CONVERT(nvarchar(500),Detalle),'') Detalle, ISNULL(Importe,0) Importe,
+                ISNULL(Cuotas,0) Cuotas, NroUltimaCuota
+            FROM dbo.MA_CUENTAS_AUTOCPTESDET
+            WHERE Cuenta=@Cuenta AND ISNULL(SucursalCuenta,0)=0 ORDER BY ID;
+            """, new { Cuenta = fila.Cuenta }, cancellationToken: ct))).ToList();
+        var periodo = $"{fechaFacturacion.Month}/{fechaFacturacion.Year}";
+        var lineas = new List<CargaComprobantesDirectaLinea>();
+        foreach (var d in detalle)
+        {
+            string texto;
+            if (d.Cuotas > 0)
+            {
+                if ((d.NroUltimaCuota ?? 0) > d.Cuotas) continue; // cuotas cumplidas: no se factura
+                texto = $"{d.Detalle.Trim()} Cuota {d.NroUltimaCuota ?? 1} de {d.Cuotas}";
+            }
+            else texto = d.Detalle.Trim().Replace("<PERIODO>", periodo, StringComparison.OrdinalIgnoreCase);
+            if (texto.Length == 0) { if (d.Importe == 0) continue; texto = "Concepto"; }
+            lineas.Add(new() { Concepto = texto.Length > 250 ? texto[..250] : texto, Cantidad = 1,
+                PrecioUnitarioNeto = decimal.Round(d.Importe, 4, MidpointRounding.ToEven),
+                ConceptoNoGravado = string.Equals(d.Detalle.Trim(), "ESTAMPCABA", StringComparison.OrdinalIgnoreCase) });
+        }
+        if (lineas.Count == 0) throw new CargaComprobantesReglaException("El cliente no tiene conceptos para facturar.");
+        var deposito = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+            SELECT TOP(1) LTRIM(RTRIM(IdDeposito)) FROM dbo.V_TA_Deposito
+            WHERE ISNULL(LTRIM(RTRIM(UnidadNegocio)),'') IN ('',@Unidad)
+            ORDER BY CASE WHEN ISNULL(LTRIM(RTRIM(UnidadNegocio)),'')=@Unidad THEN 0 ELSE 1 END, IdDeposito;
+            """, new { Unidad = unidad }, cancellationToken: ct))
+            ?? throw new CargaComprobantesReglaException($"La unidad de negocio {unidad} no tiene un depósito asociado.");
+        var talonario = await cn.QuerySingleOrDefaultAsync<int?>(new CommandDefinition("""
+            SELECT TOP(1) Talonario FROM dbo.V_TA_CPTE
+            WHERE LTRIM(RTRIM(CODIGO))=@Tc AND LTRIM(RTRIM(SISTEMA))='Ventas' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) IN ('',@Unidad)
+            ORDER BY CASE WHEN LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@Unidad THEN 0 ELSE 1 END, Talonario;
+            """, new { fila.Tc, Unidad = unidad }, cancellationToken: ct))
+            ?? throw new CargaComprobantesReglaException($"No hay un talonario {fila.Tc} de ventas para la unidad de negocio {unidad}.");
+        var cabecera = fila.ConceptoFactura.Replace("<NOMBRE>", fila.Cliente.Trim(), StringComparison.OrdinalIgnoreCase).Trim();
+        var borrador = new CargaComprobantesDirecta
+        {
+            Borrador = BorradorDeterministico(cn.Database, fila.Cuenta, fechaFacturacion),
+            Tc = fila.Tc, Cliente = fila.Cuenta, UnidadNegocio = unidad, Deposito = deposito,
+            Observaciones = cabecera.Length > 1000 ? cabecera[..1000] : cabecera, Lineas = lineas,
+            FacturacionAutomaticaCuenta = fila.Cuenta
+        };
+        return (borrador, talonario, fila);
+    }
+
+    private static Guid BorradorDeterministico(string baseDatos, string cuenta, DateTime fecha)
+        => new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(
+            $"FACTAUTO|{baseDatos.Trim().ToUpperInvariant()}|{cuenta.Trim()}|{fecha:yyyyMMdd}")));
+
+    private sealed class DetalleFila
+    {
+        public int Id { get; set; }
+        public string Detalle { get; set; } = "";
+        public decimal Importe { get; set; }
+        public int Cuotas { get; set; }
+        public int? NroUltimaCuota { get; set; }
     }
 }
