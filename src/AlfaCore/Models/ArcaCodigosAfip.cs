@@ -34,6 +34,10 @@ public static class ArcaCodigosAfip
             _ => numero.Length == 0 ? DocTipoConsumidorFinal : DocTipoDni
         };
 
+        // WSFE espera DocNro numérico: las bases suelen guardar el CUIT con guiones ("30-68877493-0")
+        // y ARCA rechaza el pedido entero ("Server was unable to read request"). El pasaporte se deja igual.
+        if (docTipo != DocTipoPasaporte)
+            numero = new string(numero.Where(char.IsDigit).ToArray());
         return docTipo == DocTipoConsumidorFinal ? (docTipo, "0") : (docTipo, numero);
     }
 

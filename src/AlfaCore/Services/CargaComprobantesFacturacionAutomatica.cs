@@ -138,7 +138,7 @@ public static class CargaComprobantesFacturacionAutomatica
         var cabecera = fila.ConceptoFactura.Replace("<NOMBRE>", fila.Cliente.Trim(), StringComparison.OrdinalIgnoreCase).Trim();
         var borrador = new CargaComprobantesDirecta
         {
-            Borrador = BorradorDeterministico(cn.Database, fila.Cuenta, fechaFacturacion),
+            Borrador = await BorradorVigenteAsync(cn, fila.Cuenta, fechaFacturacion, ct),
             Tc = fila.Tc, Cliente = fila.Cuenta, UnidadNegocio = unidad, Deposito = deposito,
             Observaciones = cabecera.Length > 1000 ? cabecera[..1000] : cabecera, Lineas = lineas,
             FacturacionAutomaticaCuenta = fila.Cuenta
@@ -146,9 +146,24 @@ public static class CargaComprobantesFacturacionAutomatica
         return (borrador, talonario, fila);
     }
 
-    private static Guid BorradorDeterministico(string baseDatos, string cuenta, DateTime fecha)
+    // El primer borrador del día que no terminó RECHAZADO: un reintento devuelve la operación ya creada
+    // (grabada o pendiente de recuperar), pero un rechazo de ARCA permite un intento nuevo.
+    private static async Task<Guid> BorradorVigenteAsync(SqlConnection cn, string cuenta, DateTime fecha, CancellationToken ct)
+    {
+        for (var intento = 0; intento < 50; intento++)
+        {
+            var borrador = BorradorDeterministico(cn.Database, cuenta, fecha, intento);
+            var estado = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT TOP(1) Estado FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION WHERE Borrador=@Borrador;",
+                new { Borrador = borrador }, cancellationToken: ct));
+            if (estado != "RECHAZADA") return borrador;
+        }
+        throw new CargaComprobantesReglaException("El cliente tiene demasiados intentos rechazados hoy. Revisá el motivo antes de volver a emitir.");
+    }
+
+    private static Guid BorradorDeterministico(string baseDatos, string cuenta, DateTime fecha, int intento)
         => new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(
-            $"FACTAUTO|{baseDatos.Trim().ToUpperInvariant()}|{cuenta.Trim()}|{fecha:yyyyMMdd}")));
+            $"FACTAUTO|{baseDatos.Trim().ToUpperInvariant()}|{cuenta.Trim()}|{fecha:yyyyMMdd}" + (intento == 0 ? "" : $"|{intento}"))));
 
     private sealed class DetalleFila
     {
