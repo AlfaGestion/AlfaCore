@@ -38,6 +38,10 @@ public static class ArcaCodigosAfip
         // y ARCA rechaza el pedido entero ("Server was unable to read request"). El pasaporte se deja igual.
         if (docTipo != DocTipoPasaporte)
             numero = new string(numero.Where(char.IsDigit).ToArray());
+        // Documento sin número (vacío o "0"): ARCA rechaza DocTipo distinto de 99 con DocNro 0
+        // ("si DocTipo es distinto a 99, DocNro debe ser mayor a 0"). Se informa como consumidor final.
+        if (docTipo != DocTipoPasaporte && numero.TrimStart('0').Length == 0)
+            docTipo = DocTipoConsumidorFinal;
         return docTipo == DocTipoConsumidorFinal ? (docTipo, "0") : (docTipo, numero);
     }
 
