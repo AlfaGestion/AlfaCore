@@ -67,7 +67,9 @@ public sealed partial class CargaComprobantesService
         var (validos, invalidos) = CorreoSalienteService.SepararMails(para ?? datos.Mail);
         if (validos.Count == 0)
             return new() { Enviado = false, Mensaje = invalidos.Count > 0
-                ? $"El mail del cliente no es válido ({string.Join(", ", invalidos)}). Corregilo en la ficha del cliente."
+                ? para is null
+                    ? $"El mail del cliente no es válido ({string.Join(", ", invalidos)}). Corregilo en la ficha del cliente."
+                    : $"El destinatario no es un mail válido ({string.Join(", ", invalidos)}). Revisá la dirección en «Para»."
                 : "El cliente no tiene mail cargado. Agregalo en la ficha del cliente (podés poner varios separados por «;»)." };
         var asuntoFinal = await ArmarTextoAsync(cn, asunto ?? config.Asunto, datos, ct);
         var mensajeFinal = await ArmarTextoAsync(cn, mensaje ?? config.Mensaje, datos, ct);
