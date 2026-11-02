@@ -346,6 +346,7 @@ public class Program
         builder.Services.AddScoped<INovedadesSistemaService, NovedadesSistemaService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
+        builder.Services.AddScoped<IConversacionesEtiquetasService, ConversacionesEtiquetasService>();
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
         builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();

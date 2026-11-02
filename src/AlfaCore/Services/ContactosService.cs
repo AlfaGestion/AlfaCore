@@ -90,6 +90,7 @@ public sealed class ContactosService(
                             OR ISNULL(c.Telefono, '') LIKE @TextoLike
                             OR ISNULL(c.Celular, '') LIKE @TextoLike
                             OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(CAST(c.Observaciones AS nvarchar(max)), '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                       {activoFilterSql}
                       {advancedFilterSql}
@@ -132,6 +133,7 @@ public sealed class ContactosService(
                         OR ISNULL(c.Telefono, '') LIKE @TextoLike
                         OR ISNULL(c.Celular, '') LIKE @TextoLike
                         OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(CAST(c.Observaciones AS nvarchar(max)), '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                   )
                   {advancedFilterSql}
                   {ruleFilterSql}
@@ -238,6 +240,7 @@ public sealed class ContactosService(
                             OR ISNULL(c.Telefono, '') LIKE @TextoLike
                             OR ISNULL(c.Celular, '') LIKE @TextoLike
                             OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(CAST(c.Observaciones AS nvarchar(max)), '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                       {activoFilterSql}
                       {advancedFilterSql}

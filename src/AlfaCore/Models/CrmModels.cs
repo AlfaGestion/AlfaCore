@@ -8,6 +8,8 @@ public sealed class CrmFilters
     public bool SoloSinAsignar { get; set; }
     public string? ClienteCodigo { get; set; }
     public int? IdEtiqueta { get; set; }
+    /// <summary>Código de <see cref="CrmCanalesOrigen"/>; <see cref="CrmCanalesOrigen.Manual"/> filtra las que no tienen canal.</summary>
+    public string? CanalOrigen { get; set; }
     public bool IncluirCerradas { get; set; }
     public string OrdenarPor { get; set; } = CrmViewColumnKeys.Fecha;
     public bool OrdenDescendente { get; set; } = true;
@@ -141,6 +143,38 @@ public sealed class CrmConversationPrefillDto
     public int? IdContacto { get; set; }
     public string ContactoNombre { get; set; } = string.Empty;
     public string CanalOrigen { get; set; } = string.Empty;
+}
+
+/// <summary>Canales de origen de una oportunidad (CRM_OPORTUNIDADES.CanalOrigen). Vacío = carga manual.</summary>
+public static class CrmCanalesOrigen
+{
+    /// <summary>Valor de filtro para "sin canal" (carga manual); no se graba nunca.</summary>
+    public const string Manual = "__MANUAL__";
+
+    public static readonly IReadOnlyList<(string Codigo, string Nombre)> Todos =
+    [
+        ("WHATSAPP", "WhatsApp"),
+        ("INSTAGRAM", "Instagram"),
+        ("FACEBOOK", "Facebook"),
+        ("MERCADOLIBRE", "Mercado Libre"),
+        ("WEB", "Sitio web"),
+        ("WEBCHAT", "Chat del sitio web"),
+        ("LLAMADA", "Llamada"),
+        ("EMAIL", "Email"),
+        ("MENSAJE", "Mensaje"),
+        ("LINKEDIN", "LinkedIn"),
+    ];
+
+    public static string Nombre(string? codigo)
+    {
+        var value = (codigo ?? string.Empty).Trim();
+        if (value.Length == 0)
+            return "Manual";
+        foreach (var canal in Todos)
+            if (string.Equals(canal.Codigo, value, StringComparison.OrdinalIgnoreCase))
+                return canal.Nombre;
+        return value;
+    }
 }
 
 public static class CrmTareaTipos

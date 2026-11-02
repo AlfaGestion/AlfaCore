@@ -30,6 +30,8 @@ public sealed class ConversacionesInboxFilters
     public DateTime? Hasta { get; set; }
     public string? Auditoria { get; set; }
     public string? TipoMensaje { get; set; }
+    /// <summary>Solo conversaciones con esta etiqueta (CONV_CONVERSACION_ETIQUETAS).</summary>
+    public int? IdEtiqueta { get; set; }
     public int Limit { get; set; } = 50;
     public int Offset { get; set; }
     /// <summary>"recientes" (default, actividad más reciente primero) o "cola_espera" (ver <see cref="ConversacionesInboxOrden"/>).</summary>
@@ -873,4 +875,11 @@ public static class ConversacionPlantillaEstadosLocales
     public const string Borrador = "BORRADOR";
     public const string Enviada = "ENVIADA";
     public const string Sincronizada = "SINCRONIZADA";
+}
+
+public sealed class ConversacionEtiquetaDto
+{
+    public int IdEtiqueta { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Color { get; set; } = string.Empty;
 }

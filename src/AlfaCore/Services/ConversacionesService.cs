@@ -1204,6 +1204,15 @@ public sealed partial class ConversacionesService(
                     )
                     AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                     AND (
+                        @IdEtiqueta IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_CONVERSACION_ETIQUETAS etqFiltro
+                            WHERE etqFiltro.IdConversacion = c.IdConversacion
+                              AND etqFiltro.IdEtiqueta = @IdEtiqueta
+                        )
+                    )
+                    AND (
                         @Modo = 'todas'
                         OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = '') AND {SinAsignarNotAttendedByHumanSql})
                         OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
@@ -1361,6 +1370,7 @@ public sealed partial class ConversacionesService(
                 command.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
                 command.Parameters.AddWithValue("@SistemaActual", sistemaActual);
                 command.Parameters.AddWithValue("@IdNumeroWhatsApp", filters.IdNumeroWhatsApp.HasValue ? filters.IdNumeroWhatsApp.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@IdEtiqueta", filters.IdEtiqueta is > 0 ? filters.IdEtiqueta.Value : DBNull.Value);
                 command.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
                 command.Parameters.AddWithValue("@Clasifica1", DbNullable(filters.Clasifica1));
                 command.Parameters.AddWithValue("@Clasifica2", DbNullable(filters.Clasifica2));

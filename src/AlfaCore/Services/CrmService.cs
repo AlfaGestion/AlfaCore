@@ -917,11 +917,19 @@ public sealed class CrmService(
                 WHERE oe.IdOportunidad = o.IdOportunidad AND oe.IdEtiqueta = @IdEtiqueta
           ))
           AND (
+                @CanalOrigen IS NULL
+                OR (@CanalOrigen = @CanalOrigenManual AND LTRIM(RTRIM(ISNULL(o.CanalOrigen, ''))) = '')
+                OR LTRIM(RTRIM(ISNULL(o.CanalOrigen, ''))) = @CanalOrigen
+          )
+          AND (
                 @Texto IS NULL
                 OR ISNULL(o.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                 OR ISNULL(CAST(o.Descripcion AS nvarchar(max)), '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                 OR ISNULL(cli.RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                 OR ISNULL(mc.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                OR ISNULL(mc.Celular, '') LIKE @TextoLike
+                OR ISNULL(mc.Telefono, '') LIKE @TextoLike
+                OR ISNULL(mc.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
           )
         """;
 
@@ -936,6 +944,8 @@ public sealed class CrmService(
         p.Add("SoloSinAsignar", filters.SoloSinAsignar);
         p.Add("ClienteCodigo", string.IsNullOrWhiteSpace(filters.ClienteCodigo) ? null : filters.ClienteCodigo.Trim());
         p.Add("IdEtiqueta", filters.IdEtiqueta);
+        p.Add("CanalOrigen", string.IsNullOrWhiteSpace(filters.CanalOrigen) ? null : filters.CanalOrigen.Trim());
+        p.Add("CanalOrigenManual", CrmCanalesOrigen.Manual);
         p.Add("IncluirCerradas", filters.IncluirCerradas);
         return p;
     }

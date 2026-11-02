@@ -16,6 +16,7 @@
 @inject AlfaCore.Services.IPortalClienteAutoLoginService PortalClienteAutoLoginSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IConversacionesEtiquetasService EtiquetasSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -895,6 +896,21 @@
                             </div>
                         }
                     </div>
+                    @if (_etiquetasConversacion.Count > 0)
+                    {
+                        <div class="conversations-tag-filter @(_filters.IdEtiqueta is > 0 ? "is-active" : string.Empty)">
+                            <i class="bi bi-tags"></i>
+                            <select aria-label="Filtrar por etiqueta"
+                                    value="@(_filters.IdEtiqueta?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)"
+                                    @onchange="HandleEtiquetaFilterChangedAsync">
+                                <option value="">Todas las etiquetas</option>
+                                @foreach (var etiqueta in _etiquetasConversacion)
+                                {
+                                    <option value="@etiqueta.IdEtiqueta">@etiqueta.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                    }
                 </div>
 
                 @if (_loadingInbox && _inbox.Count == 0)
@@ -999,6 +1015,12 @@
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
+                                    }
+                                    @foreach (var etiqueta in GetEtiquetasConversacion(item.IdConversacion))
+                                    {
+                                        <span class="conversation-badge conversation-badge--etiqueta" style="--etiqueta-color:@GetEtiquetaColor(etiqueta);" title="Etiqueta: @etiqueta.Nombre">
+                                            <i class="bi bi-tag-fill"></i> @etiqueta.Nombre
+                                        </span>
                                     }
                                     @if (item.Canal == "MERCADOLIBRE")
                                     {
@@ -1508,6 +1530,62 @@
                             }
                         </div>
                     </header>
+
+                    @if (_selectedConversation is not null && _selectedConversation.Canal != "INTERNO")
+                    {
+                        var etiquetasSeleccionada = GetEtiquetasConversacion(_selectedConversation.IdConversacion);
+                        <div class="conversation-etiquetas" @onclick:stopPropagation="true">
+                            @foreach (var etiqueta in etiquetasSeleccionada)
+                            {
+                                <span class="conversation-etiquetas__chip" style="--etiqueta-color:@GetEtiquetaColor(etiqueta);">
+                                    <i class="bi bi-tag-fill"></i> @etiqueta.Nombre
+                                    <button type="button" title="Quitar etiqueta" aria-label="Quitar etiqueta @etiqueta.Nombre"
+                                            disabled="@_guardandoEtiquetas"
+                                            @onclick="() => QuitarEtiquetaSeleccionadaAsync(etiqueta.IdEtiqueta)">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </span>
+                            }
+                            <button type="button" class="conversation-etiquetas__agregar" @onclick="ToggleEtiquetasPicker"
+                                    aria-haspopup="dialog" aria-expanded="@_showEtiquetasPicker" disabled="@_guardandoEtiquetas">
+                                <i class="bi bi-tags"></i> @(etiquetasSeleccionada.Count == 0 ? "Etiquetar" : string.Empty)
+                            </button>
+                            @if (_showEtiquetasPicker)
+                            {
+                                <button type="button" class="conversation-etiquetas__fondo" aria-label="Cerrar etiquetas" @onclick="() => _showEtiquetasPicker = false"></button>
+                                <div class="conversation-etiquetas__popover" role="dialog" aria-label="Etiquetas de la conversación">
+                                    @foreach (var etiqueta in _etiquetasConversacion)
+                                    {
+                                        var marcada = etiquetasSeleccionada.Any(x => x.IdEtiqueta == etiqueta.IdEtiqueta);
+                                        <label class="conversation-etiquetas__opcion">
+                                            <input type="checkbox" checked="@marcada" disabled="@_guardandoEtiquetas"
+                                                   @onchange="args => ToggleEtiquetaSeleccionadaAsync(etiqueta.IdEtiqueta, args)" />
+                                            <span class="conversation-etiquetas__punto" style="--etiqueta-color:@GetEtiquetaColor(etiqueta);"></span>
+                                            <span>@etiqueta.Nombre</span>
+                                        </label>
+                                    }
+                                    @if (_etiquetasConversacion.Count == 0)
+                                    {
+                                        <span class="conversation-etiquetas__vacio">Todavía no hay etiquetas. Creá la primera:</span>
+                                    }
+                                    <div class="conversation-etiquetas__nueva">
+                                        <input type="text" maxlength="60" placeholder="Nueva etiqueta"
+                                               value="@_nuevaEtiquetaNombre"
+                                               @oninput="args => _nuevaEtiquetaNombre = args.Value?.ToString() ?? string.Empty"
+                                               @onkeydown="HandleNuevaEtiquetaKeyDownAsync" />
+                                        <button type="button" class="btn btn--primary btn--sm" @onclick="CrearYAplicarEtiquetaAsync"
+                                                disabled="@(_guardandoEtiquetas || string.IsNullOrWhiteSpace(_nuevaEtiquetaNombre))">
+                                            <i class="bi bi-plus-lg"></i> Crear
+                                        </button>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(_etiquetasError))
+                                    {
+                                        <span class="conversation-etiquetas__error">@_etiquetasError</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
 
                     @if (_showMessageSearch)
                     {
@@ -3934,6 +4012,12 @@
     private List<ConversacionTecnicoOptionDto> _technicians = [];
     private List<ConversacionEstadoOptionDto> _states = [];
     private List<ConversacionInboxItemDto> _inbox = [];
+    private List<ConversacionEtiquetaDto> _etiquetasConversacion = [];
+    private Dictionary<long, IReadOnlyList<ConversacionEtiquetaDto>> _etiquetasPorConversacion = [];
+    private bool _showEtiquetasPicker;
+    private bool _guardandoEtiquetas;
+    private string _nuevaEtiquetaNombre = string.Empty;
+    private string? _etiquetasError;
     /// <summary>Total de conversaciones que matchean los filtros actuales en el servidor (paginación server-side del inbox).</summary>
     private int _inboxTotal;
     private List<ConversacionMensajeDto> _messages = [];
@@ -4342,6 +4426,7 @@
             await AlfaKnowledgeSvc.EnsureConfiguredAsync();
 
         await LoadWhatsAppNumerosAndAdminStatusAsync();
+        await CargarEtiquetasConversacionAsync();
         await LoadInboxPreferenceAsync();
 
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
@@ -5544,6 +5629,7 @@
         _filters.CodigoEstado = string.Empty;
         _filters.IdTecnicoActual = string.Empty;
         _filters.ClienteCodigo = string.Empty;
+        _filters.IdEtiqueta = null;
         _actionError = null;
         _showContactSuggestions = false;
         _showMobileAdvancedFilters = false;
@@ -5624,6 +5710,139 @@
         _filters.IdTecnicoActual = string.Empty;
         _filters.CodigoEstado = string.Empty;
         ResetInboxPaging();
+    }
+
+    // ---------- Etiquetas de conversaciones ----------
+    private async Task CargarEtiquetasConversacionAsync()
+    {
+        try
+        {
+            _etiquetasConversacion = (await EtiquetasSvc.GetEtiquetasAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            // Las etiquetas son un complemento: si fallan, la bandeja sigue funcionando sin ellas.
+            Logger.LogWarning(ex, "No se pudieron cargar las etiquetas de conversaciones.");
+            _etiquetasConversacion = [];
+        }
+    }
+
+    private async Task CargarEtiquetasDeInboxAsync(CancellationToken token)
+    {
+        if (_etiquetasConversacion.Count == 0)
+        {
+            _etiquetasPorConversacion = [];
+            return;
+        }
+
+        try
+        {
+            var ids = _inbox.Select(x => x.IdConversacion).ToList();
+            if (_selectedConversationId is long seleccionada && !ids.Contains(seleccionada))
+                ids.Add(seleccionada);
+            _etiquetasPorConversacion = (await EtiquetasSvc.GetEtiquetasPorConversacionAsync(ids, token)).ToDictionary(x => x.Key, x => x.Value);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "No se pudieron cargar las etiquetas de la bandeja.");
+        }
+    }
+
+    private IReadOnlyList<ConversacionEtiquetaDto> GetEtiquetasConversacion(long idConversacion)
+        => _etiquetasPorConversacion.TryGetValue(idConversacion, out var etiquetas) ? etiquetas : [];
+
+    private static string GetEtiquetaColor(ConversacionEtiquetaDto etiqueta)
+        => string.IsNullOrWhiteSpace(etiqueta.Color) ? "#64748B" : etiqueta.Color;
+
+    private async Task HandleEtiquetaFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.IdEtiqueta = int.TryParse(Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture), out var id) && id > 0 ? id : null;
+        // Lo etiquetado suele incluir conversaciones cerradas (por ejemplo el historial importado): al filtrar se muestran todas.
+        if (_filters.IdEtiqueta is not null)
+        {
+            _filters.Modo = "todas";
+            _filters.CodigoEstado = string.Empty;
+        }
+        ResetInboxPaging();
+        await LoadInboxAsync();
+    }
+
+    private void ToggleEtiquetasPicker()
+    {
+        _showEtiquetasPicker = !_showEtiquetasPicker;
+        _etiquetasError = null;
+    }
+
+    private Task ToggleEtiquetaSeleccionadaAsync(int idEtiqueta, ChangeEventArgs args)
+    {
+        var ids = GetEtiquetasConversacion(_selectedConversation?.IdConversacion ?? 0).Select(x => x.IdEtiqueta).ToList();
+        if (args.Value is true)
+        {
+            if (!ids.Contains(idEtiqueta))
+                ids.Add(idEtiqueta);
+        }
+        else
+        {
+            ids.Remove(idEtiqueta);
+        }
+        return GuardarEtiquetasSeleccionadaAsync(ids);
+    }
+
+    private Task QuitarEtiquetaSeleccionadaAsync(int idEtiqueta)
+        => GuardarEtiquetasSeleccionadaAsync(GetEtiquetasConversacion(_selectedConversation?.IdConversacion ?? 0)
+            .Select(x => x.IdEtiqueta)
+            .Where(x => x != idEtiqueta)
+            .ToList());
+
+    private async Task HandleNuevaEtiquetaKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await CrearYAplicarEtiquetaAsync();
+    }
+
+    private async Task CrearYAplicarEtiquetaAsync()
+    {
+        if (_selectedConversation is null || string.IsNullOrWhiteSpace(_nuevaEtiquetaNombre) || _guardandoEtiquetas)
+            return;
+
+        _etiquetasError = null;
+        try
+        {
+            var nueva = await EtiquetasSvc.CrearEtiquetaAsync(_nuevaEtiquetaNombre, null, CurrentUserNameForAudit);
+            _nuevaEtiquetaNombre = string.Empty;
+            await CargarEtiquetasConversacionAsync();
+            var ids = GetEtiquetasConversacion(_selectedConversation.IdConversacion).Select(x => x.IdEtiqueta).ToList();
+            if (!ids.Contains(nueva.IdEtiqueta))
+                ids.Add(nueva.IdEtiqueta);
+            await GuardarEtiquetasSeleccionadaAsync(ids);
+        }
+        catch (Exception ex)
+        {
+            _etiquetasError = ex.Message;
+        }
+    }
+
+    private async Task GuardarEtiquetasSeleccionadaAsync(List<int> idsEtiqueta)
+    {
+        if (_selectedConversation is null || _guardandoEtiquetas)
+            return;
+
+        var idConversacion = _selectedConversation.IdConversacion;
+        _guardandoEtiquetas = true;
+        _etiquetasError = null;
+        try
+        {
+            await EtiquetasSvc.SetEtiquetasConversacionAsync(idConversacion, idsEtiqueta, CurrentUserNameForAudit);
+            _etiquetasPorConversacion[idConversacion] = _etiquetasConversacion.Where(x => idsEtiqueta.Contains(x.IdEtiqueta)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _etiquetasError = ex.Message;
+        }
+        finally
+        {
+            _guardandoEtiquetas = false;
+        }
     }
 
     private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
@@ -5788,6 +6007,7 @@
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
             _inboxTotal = pagedInbox.Total;
+            await CargarEtiquetasDeInboxAsync(token);
             StoreChannelCache(_canalActivo);
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
@@ -7749,6 +7969,7 @@
             Hasta = filters.Hasta,
             Auditoria = filters.Auditoria,
             TipoMensaje = filters.TipoMensaje,
+            IdEtiqueta = filters.IdEtiqueta,
             UsuarioActual = filters.UsuarioActual,
             SistemaActual = filters.SistemaActual,
             Limit = filters.Limit,

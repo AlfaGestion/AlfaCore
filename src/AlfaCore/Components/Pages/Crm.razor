@@ -920,6 +920,17 @@
                     </select>
                     </div>
                     <div class="smart-search__inline">
+                    <label>Origen</label>
+                    <select value="@(_filters.CanalOrigen ?? string.Empty)" @onchange="OnOriginFilterChangedAsync">
+                        <option value="">Todos</option>
+                        <option value="@CrmCanalesOrigen.Manual">Manual</option>
+                        @foreach (var canal in CrmCanalesOrigen.Todos)
+                        {
+                            <option value="@canal.Codigo">@canal.Nombre</option>
+                        }
+                    </select>
+                    </div>
+                    <div class="smart-search__inline">
                     <label>Asignado</label>
                     <select value="@(_filters.IdTecnico ?? string.Empty)" @onchange="OnTechFilterChangedAsync">
                         <option value="">Todos</option>
@@ -1060,10 +1071,15 @@
                 <label>Canal de origen</label>
                 <select @bind="_form.CanalOrigen" disabled="@_saving">
                     <option value="">Manual</option>
-                    <option value="WHATSAPP">WhatsApp</option>
-                    <option value="INSTAGRAM">Instagram</option>
-                    <option value="FACEBOOK">Facebook</option>
-                    <option value="MERCADOLIBRE">Mercado Libre</option>
+                    @foreach (var canal in CrmCanalesOrigen.Todos)
+                    {
+                        <option value="@canal.Codigo">@canal.Nombre</option>
+                    }
+                    @* Un código que no está en la lista (por ejemplo, importado) se conserva al guardar. *@
+                    @if (!string.IsNullOrWhiteSpace(_form.CanalOrigen) && !CrmCanalesOrigen.Todos.Any(c => string.Equals(c.Codigo, _form.CanalOrigen, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <option value="@_form.CanalOrigen">@_form.CanalOrigen</option>
+                    }
                 </select>
             </div>
             <div class="crm-prop crm-prop--etiquetas">
@@ -1365,6 +1381,7 @@
             && _filters.IdEtapa is null
             && string.IsNullOrWhiteSpace(_filters.IdTecnico)
             && _filters.IdEtiqueta is null
+            && string.IsNullOrWhiteSpace(_filters.CanalOrigen)
             && !string.IsNullOrWhiteSpace(CurrentUserTechId))
         {
             _filters.IdTecnico = CurrentUserTechId;
@@ -1567,6 +1584,8 @@
             chips.Add(new("asignado", IsMyFlowActive ? "Mi flujo" : $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
         if (_filters.IdEtiqueta is int idEtiqueta)
             chips.Add(new("etiqueta", $"Etiqueta: {_lookups.Etiquetas.FirstOrDefault(x => x.IdEtiqueta == idEtiqueta)?.Nombre ?? idEtiqueta.ToString()}"));
+        if (!string.IsNullOrWhiteSpace(_filters.CanalOrigen))
+            chips.Add(new("origen", $"Origen: {(_filters.CanalOrigen == CrmCanalesOrigen.Manual ? "Manual" : CrmCanalesOrigen.Nombre(_filters.CanalOrigen))}"));
         if (_filters.IncluirCerradas)
             chips.Add(new("cerradas", "Incluye ganadas/perdidas"));
         return chips;
@@ -1590,6 +1609,9 @@
                 break;
             case "etiqueta":
                 _filters.IdEtiqueta = null;
+                break;
+            case "origen":
+                _filters.CanalOrigen = null;
                 break;
             case "cerradas":
                 _filters.IncluirCerradas = false;
@@ -1623,6 +1645,12 @@
     private async Task OnTagFilterChangedAsync(ChangeEventArgs args)
     {
         _filters.IdEtiqueta = int.TryParse(args.Value?.ToString(), out var value) ? value : null;
+        await SearchAsync();
+    }
+
+    private async Task OnOriginFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.CanalOrigen = string.IsNullOrWhiteSpace(args.Value?.ToString()) ? null : args.Value.ToString();
         await SearchAsync();
     }
 
