@@ -488,6 +488,26 @@ public sealed class FacturaDocumentService(
                 FROM dbo.V_TA_UnidadNegocio
                 WHERE LTRIM(RTRIM(Codigo)) = @UNegocio;
                 """, new { UNegocio = uNegocio.Trim() }, transaction: tx, cancellationToken: ct));
+        // Datos fiscales por unidad (como DatosUnegocio del VB6): solo si la unidad tiene CUIT;
+        // cada dato vacío de la unidad cae al general.
+        var fiscalUnidad = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(unidad?.Cuit))
+        {
+            var sufijo = "_UN_" + uNegocio!.Trim();
+            foreach (var row in await cn.QueryAsync<ConfiguracionRow>(new CommandDefinition("""
+                SELECT UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,
+                       CASE WHEN ISNULL(LTRIM(RTRIM(VALOR)), '') <> '' THEN LTRIM(RTRIM(VALOR))
+                            ELSE ISNULL(CAST(ValorAux AS nvarchar(max)), '') END AS Valor
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@Iva, @Domicilio, @Iibb, @Inicio);
+                """, new { Iva = "CONDICIONIVA" + sufijo, Domicilio = "DOMICILIO" + sufijo, Iibb = "INGRESOS_BRUTOS" + sufijo, Inicio = "INICIO_ACTIVIDADES" + sufijo },
+                transaction: tx, cancellationToken: ct)))
+            {
+                if (!string.IsNullOrWhiteSpace(row.Valor)) fiscalUnidad[row.Clave[..row.Clave.LastIndexOf(sufijo, StringComparison.OrdinalIgnoreCase)]] = row.Valor.Trim();
+            }
+        }
+        string Fiscal(string claveUnidad, string claveGeneral) => fiscalUnidad.TryGetValue(claveUnidad, out var v) ? v : Value(config, claveGeneral);
+
         var nombreGeneral = First(config, "NOMBRE", "RAZONSOCIAL", "RAZON_SOCIAL", "NOMBREEMPRESA");
         var cuitGeneral = First(config, "CUIT", "WSFE_CUIT");
         var emisor = ResolveEmisor(unidad?.UsaEfc == true, unidad?.RazonSocial, unidad?.Cuit,
@@ -497,18 +517,19 @@ public sealed class FacturaDocumentService(
         if (await ExistsAsync(cn, tx, "dbo.TA_LOGOS", ct))
             logo = await cn.QueryFirstOrDefaultAsync<byte[]>(new CommandDefinition("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", transaction: tx, cancellationToken: ct));
 
-        var condivaCodigo = Value(config, "CONDIVAEMPRESA");
+        var condivaCodigo = Fiscal("CONDICIONIVA", "CONDIVAEMPRESA");
         var condicionIva = string.Empty;
         if (condivaCodigo.Length > 0 && await ExistsAsync(cn, tx, "dbo.TA_CONDIVA", ct))
             condicionIva = await cn.QueryFirstOrDefaultAsync<string>(new CommandDefinition(
                 "SELECT TOP (1) ISNULL(DESCRIPCION, '') FROM dbo.TA_CONDIVA WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
                 new { Codigo = condivaCodigo }, transaction: tx, cancellationToken: ct)) ?? string.Empty;
 
-        var inicioActividadesTexto = Value(config, "INICIOACTIVIDADES");
-        DateTime? inicioActividades = DateTime.TryParseExact(inicioActividadesTexto, "dd/MM/yyyy",
+        var inicioActividadesTexto = Fiscal("INICIO_ACTIVIDADES", "INICIOACTIVIDADES");
+        // En la base se cargó con "/" y con "-" (01-04-2008).
+        DateTime? inicioActividades = DateTime.TryParseExact(inicioActividadesTexto, ["dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy"],
             System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : null;
 
-        var domicilio = First(config, "DOMICILIO", "DIRECCION");
+        var domicilio = fiscalUnidad.TryGetValue("DOMICILIO", out var domicilioUnidad) ? domicilioUnidad : First(config, "DOMICILIO", "DIRECCION");
         if (string.IsNullOrWhiteSpace(domicilio))
         {
             var calle = string.Join(" ", new[]
@@ -528,7 +549,7 @@ public sealed class FacturaDocumentService(
             Domicilio = domicilio, Telefono = First(config, "TELEFONO", "TEL"),
             Email = First(config, "EMAIL", "MAIL"), Logo = logo
         };
-        return (empresa, condicionIva, Value(config, "NROINGRESOSBRUTOS"), inicioActividades, emisor.CuitQr);
+        return (empresa, condicionIva, Fiscal("INGRESOS_BRUTOS", "NROINGRESOSBRUTOS"), inicioActividades, emisor.CuitQr);
     }
 
     // Una sola decisión para encabezado/pie y QR; la unidad proviene de V_MV_Cpte.

@@ -63,6 +63,10 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
         Assert.DoesNotContain("<PERIODO>", borrador.Asunto + borrador.Mensaje, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("<DETALLEFACTURA>", borrador.Asunto + borrador.Mensaje, StringComparison.OrdinalIgnoreCase);
 
+        // PDF opcional para revisar el encabezado (datos fiscales de la unidad): ALFACORE_MAIL_PDF=ruta.pdf
+        if (Environment.GetEnvironmentVariable("ALFACORE_MAIL_PDF") is { Length: > 0 } rutaPdf)
+            await File.WriteAllBytesAsync(rutaPdf, await service.GetPdfComprobanteAsync(factura.Tc, factura.Id));
+
         // Sin destinatario válido no intenta enviar: avisa qué corregir.
         var sinPara = await service.EnviarMailComprobanteAsync(factura.Tc, factura.Id, "no-es-un-mail", borrador.Asunto, borrador.Mensaje);
         output.WriteLine($"Sin destinatario: {sinPara.Enviado} · {sinPara.Mensaje}");
