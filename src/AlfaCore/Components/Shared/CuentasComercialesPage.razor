@@ -2571,8 +2571,9 @@ else
                     }
                 }
 
-                await BuscarAsync();
-                await SeleccionarAsync(savedCode);
+                // Guardado OK: vuelve al listado (como Odoo) y el aviso "guardado" queda visible ahí,
+                // así no hace falta Cancelar después de Guardar. Con errores se queda en la ficha.
+                await VolverAlListadoAsync();
             }
             catch (AppValidationException validationEx)
             {
