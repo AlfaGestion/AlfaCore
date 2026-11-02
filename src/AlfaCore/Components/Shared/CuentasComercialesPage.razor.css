@@ -1420,3 +1420,50 @@
     border-color: var(--alfa-accent);
     outline: 0;
 }
+
+/* Facturación automática (solo clientes): reutiliza la tabla de descuentos. */
+.proveedores-descuentos td.facturacion-detalle {
+    min-width: 280px;
+}
+
+.proveedores-descuentos td.facturacion-detalle input {
+    text-align: left;
+}
+
+.proveedores-descuentos td.is-number {
+    text-align: right;
+}
+
+.proveedores-descuentos tfoot td {
+    padding: 8px 10px;
+    border-top: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-surface-raised);
+}
+
+.clientes-edit-hint {
+    margin: 0 0 10px;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+}
+
+.clientes-edit-date {
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--alfa-text-secondary);
+}
+
+.clientes-edit-date input {
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm, 6px);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: 13px;
+}
+
+.clientes-edit-date small {
+    font-size: 11px;
+}

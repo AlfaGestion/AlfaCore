@@ -23,4 +23,7 @@ public interface ICuentasComercialesService
     Task UpdateContactoQuickAsync(CuentaComercialTipo tipo, CuentaComercialContactoQuickUpdateRequest request, CancellationToken ct = default);
     Task<CuentaComercialViewSettingsDto> GetViewSettingsAsync(CuentaComercialTipo tipo, string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(CuentaComercialTipo tipo, string userName, CuentaComercialViewSettingsDto settings, CancellationToken ct = default);
+
+    // Vistas fijas de facturación automática (solo clientes), ver CuentaComercialVistaFijaKeys.
+    Task<IReadOnlyList<FacturacionAutomaticaVistaFilaDto>> GetFacturacionAutomaticaVistaAsync(string vista, string texto, CancellationToken ct = default);
 }

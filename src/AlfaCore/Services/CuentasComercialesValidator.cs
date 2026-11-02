@@ -181,6 +181,8 @@ public sealed class CuentasComercialesValidator(
 
         if (tipo == CuentaComercialTipo.Proveedor)
             ValidateDescuentosProveedor(request.DescuentosCondicion ?? [], result);
+        else if (request.FacturacionAutomatica is not null)
+            ValidateFacturacionAutomatica(request.FacturacionAutomatica, result);
 
         if (!result.IsValid)
             return result;
@@ -244,6 +246,41 @@ public sealed class CuentasComercialesValidator(
             await ValidateCondicionesProveedorAsync(cn, request.DescuentosCondicion ?? [], result, ct);
 
         return result;
+    }
+
+    private const string FacturacionAutomaticaKey = "facturacion-automatica";
+
+    private static void ValidateFacturacionAutomatica(CuentaComercialFacturacionAutomaticaDto config, ValidationResult result)
+    {
+        if (!config.Configurada && !config.TieneDatos)
+            return;
+
+        if (!CuentasComercialesService.TiposComprobanteAutomatico.Contains((config.TipoComprobante ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase))
+            result.Add(FacturacionAutomaticaKey, "Elegí el tipo de comprobante de la facturación automática.");
+
+        if (!CuentaComercialFacturacionAutomaticaDto.Periodicidades.Contains((config.Periodicidad ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase))
+            result.Add(FacturacionAutomaticaKey, "Elegí la periodicidad de la facturación automática.");
+
+        if ((config.Concepto ?? string.Empty).Trim().Length > 500)
+            result.Add(FacturacionAutomaticaKey, "El concepto de la facturación automática no puede superar los 500 caracteres.");
+
+        if ((config.UnidadNegocio ?? string.Empty).Trim().Length > 4)
+            result.Add(FacturacionAutomaticaKey, "La unidad de negocio no puede superar los 4 caracteres.");
+
+        var conceptos = (config.Conceptos ?? []).Where(c => c is not null && !string.IsNullOrWhiteSpace(c.Detalle)).ToList();
+        if (config.Activo && conceptos.Count == 0)
+            result.Add(FacturacionAutomaticaKey, "Para activar la facturación automática cargá al menos un concepto.");
+
+        foreach (var concepto in conceptos)
+        {
+            var detalle = concepto.Detalle.Trim();
+            if (detalle.Length > 500)
+                result.Add(FacturacionAutomaticaKey, "El detalle de un concepto no puede superar los 500 caracteres.");
+            if (Math.Abs(concepto.Importe) > 900_000_000_000m)
+                result.Add(FacturacionAutomaticaKey, $"El importe de \"{detalle}\" no es válido.");
+            if (concepto.Cuota < 0 || concepto.Cuotas < 0)
+                result.Add(FacturacionAutomaticaKey, $"Las cuotas de \"{detalle}\" no pueden ser negativas.");
+        }
     }
 
     private static void ValidateDescuentosProveedor(IEnumerable<CuentaComercialCondicionDescuentoDto> descuentos, ValidationResult result)

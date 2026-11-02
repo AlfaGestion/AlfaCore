@@ -13,6 +13,8 @@ public sealed class CuentaComercialFilters
     public bool? Bloqueado { get; set; }
     public string ProvinciaCodigo { get; set; } = string.Empty;
     public string PaisCodigo { get; set; } = string.Empty;
+    /// <summary>Solo clientes: true = con facturación automática activa; false = sin; null = todos.</summary>
+    public bool? FacturacionAutomatica { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
@@ -93,6 +95,94 @@ public class CuentaComercialSaveRequest
     public bool ProveedorLocal { get; set; }
     public bool ProveedorCompartido { get; set; }
     public List<CuentaComercialCondicionDescuentoDto> DescuentosCondicion { get; set; } = [];
+    /// <summary>Solo clientes. Null = no se toca la facturación automática al guardar.</summary>
+    public CuentaComercialFacturacionAutomaticaDto? FacturacionAutomatica { get; set; }
+}
+
+/// <summary>
+/// Facturación automática de servicios del cliente (solapa Cptes-Automáticos de Alfa Gestión).
+/// Cabecera en MA_CUENTAS_AUTOCPTES y conceptos en MA_CUENTAS_AUTOCPTESDET, siempre con
+/// SucursalCuenta = 0 (AlfaCore no maneja sucursales de cuenta).
+/// </summary>
+public sealed class CuentaComercialFacturacionAutomaticaDto
+{
+    /// <summary>Hay cabecera grabada en la base para esta cuenta.</summary>
+    public bool Configurada { get; set; }
+    public bool Activo { get; set; }
+    public string TipoComprobante { get; set; } = "FC";
+    public string Concepto { get; set; } = string.Empty;
+    public string Periodicidad { get; set; } = "Mensual";
+    public DateTime? FechaUltimoMovimiento { get; set; }
+    public string UnidadNegocio { get; set; } = string.Empty;
+    public List<CuentaComercialFacturacionConceptoDto> Conceptos { get; set; } = [];
+
+    /// <summary>Lo mismo que lista el combo de Alfa Gestión, en el mismo orden.</summary>
+    public static readonly IReadOnlyList<string> Periodicidades =
+        ["Anual", "Semestral", "Trimestral", "Bimestral", "Mensual", "Quincenal", "Semanal", "Diaria"];
+
+    public const string MarcaPeriodo = "<PERIODO>";
+
+    /// <summary>Tiene algo cargado que justifique grabar la cabecera.</summary>
+    public bool TieneDatos => Activo || !string.IsNullOrWhiteSpace(Concepto)
+        || Conceptos.Any(c => !string.IsNullOrWhiteSpace(c.Detalle));
+
+    /// <summary>Lo que se factura: conceptos sin cuotas o con cuota pendiente (criterio de Alfa Gestión).</summary>
+    public decimal TotalAFacturar => Conceptos.Where(c => !string.IsNullOrWhiteSpace(c.Detalle) && c.SeFactura).Sum(c => c.Importe);
+}
+
+public sealed class CuentaComercialFacturacionConceptoDto
+{
+    /// <summary>ID de MA_CUENTAS_AUTOCPTESDET; null = renglón nuevo.</summary>
+    public int? Id { get; set; }
+    public string Detalle { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    /// <summary>NroUltimaCuota: última cuota facturada.</summary>
+    public int Cuota { get; set; }
+    /// <summary>Cantidad de cuotas; 0 = se factura siempre.</summary>
+    public int Cuotas { get; set; }
+
+    public bool SeFactura => Cuotas <= 0 || Cuota <= Cuotas;
+}
+
+/// <summary>Vistas fijas de la lista (iguales para todos los usuarios). Las de facturación
+/// automática son solo de clientes, como en Alfa Gestión.</summary>
+public static class CuentaComercialVistaFijaKeys
+{
+    public const string General = "general";
+    public const string FacturacionPorCliente = "facturacion-por-cliente";
+    public const string FacturacionPorConcepto = "facturacion-por-concepto";
+}
+
+/// <summary>Fila de las vistas de facturación automática (por cliente o por concepto).</summary>
+public sealed class FacturacionAutomaticaVistaFilaDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string CtaCodigo { get; set; } = string.Empty;
+    public int Sucursal { get; set; }
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Contacto { get; set; } = string.Empty;
+    public string Mail { get; set; } = string.Empty;
+    public DateTime? FechaUltMov { get; set; }
+    public string Periodicidad { get; set; } = string.Empty;
+    public string TC { get; set; } = string.Empty;
+    public string UnidadNegocio { get; set; } = string.Empty;
+    public string VendedorCodigo { get; set; } = string.Empty;
+    public string VendedorNombre { get; set; } = string.Empty;
+    public string Concepto { get; set; } = string.Empty;
+    // Por cliente
+    public decimal Abono { get; set; }
+    public decimal Otros { get; set; }
+    public decimal Total { get; set; }
+    public int Conceptos { get; set; }
+    // Por concepto
+    public string Detalle { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public decimal ImporteAnterior { get; set; }
+    public DateTime? FechaCambio { get; set; }
+    public int Cuota { get; set; }
+    public int Cuotas { get; set; }
+
+    public bool SeFactura => Cuotas <= 0 || Cuota <= Cuotas;
 }
 
 public sealed class CuentaComercialDetailDto : CuentaComercialSaveRequest
@@ -128,6 +218,10 @@ public sealed class CuentaComercialLookupDataDto
     public List<CuentaComercialLookupOptionDto> ListasPrecio { get; set; } = [];
     public List<CuentaComercialLookupOptionDto> Monedas { get; set; } = [];
     public List<CuentaComercialLookupOptionDto> Clasificaciones { get; set; } = [];
+    /// <summary>Solo clientes: comprobantes admitidos por la facturación automática (FC, FP, RM, NP).</summary>
+    public List<CuentaComercialLookupOptionDto> TiposComprobanteAutomatico { get; set; } = [];
+    /// <summary>Solo clientes: unidades de negocio para la facturación automática.</summary>
+    public List<CuentaComercialLookupOptionDto> UnidadesNegocio { get; set; } = [];
 }
 
 public sealed class CuentaComercialCondicionDescuentoDto

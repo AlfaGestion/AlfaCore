@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace AlfaCore.Services;
 
-public sealed class CuentasComercialesService(
+public sealed partial class CuentasComercialesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -38,6 +38,7 @@ public sealed class CuentasComercialesService(
             await cn.OpenAsync(token);
 
             // SQL Server 2008 no admite OFFSET/FETCH; conservar la paginación en el servidor.
+            var filtroFacturacion = BuildFiltroFacturacionAutomatica(tipo, filters);
             var paginacion = Version.Parse(cn.ServerVersion).Major < 11
                 ? "WHERE Fila > @Skip AND Fila <= CONVERT(bigint,@Skip) + @PageSize ORDER BY Fila;"
                 : "ORDER BY Fila OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;";
@@ -94,6 +95,7 @@ public sealed class CuentasComercialesService(
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
                   AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, '')))) = @ProvinciaCodigo)
                   AND (@PaisCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PAIS, '')))) = @PaisCodigo)
+                  {filtroFacturacion}
                 )
                 SELECT Codigo,RazonSocial,Contacto,Localidad,ProvinciaCodigo,ProvinciaDescripcion,
                     PaisCodigo,PaisDescripcion,Telefono,Mail,NumeroDocumento,IvaCodigo,IvaDescripcion,
@@ -115,7 +117,8 @@ public sealed class CuentasComercialesService(
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
                   AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, '')))) = @ProvinciaCodigo)
-                  AND (@PaisCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PAIS, '')))) = @PaisCodigo);
+                  AND (@PaisCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(base.PAIS, '')))) = @PaisCodigo)
+                  {filtroFacturacion};
                 """;
 
             var rows = new List<CuentaComercialGridItemDto>();
@@ -304,6 +307,8 @@ public sealed class CuentasComercialesService(
             await LoadCuentaObservacionesAsync(cn, detail, token);
             if (tipo == CuentaComercialTipo.Proveedor)
                 detail.DescuentosCondicion = (await LoadDescuentosProveedorAsync(cn, detail.Codigo, token)).ToList();
+            else
+                detail.FacturacionAutomatica = await LoadFacturacionAutomaticaAsync(cn, detail.Codigo, token);
 
             return detail;
         }, $"No se pudo cargar el {GetSingularLabel(tipo).ToLowerInvariant()} seleccionado.", ct);
@@ -379,6 +384,10 @@ public sealed class CuentasComercialesService(
             data.Monedas = (await ReadLookupListAsync(rd, token)).ToList();
             await rd.NextResultAsync(token);
             data.Clasificaciones = (await ReadLookupListAsync(rd, token)).ToList();
+            await rd.CloseAsync();
+
+            if (tipo == CuentaComercialTipo.Cliente)
+                await LoadFacturacionAutomaticaLookupsAsync(cn, data, token);
 
             return data;
         }, $"No se pudieron cargar las referencias de {GetPluralLabel(tipo).ToLowerInvariant()}.", ct);
@@ -689,6 +698,8 @@ public sealed class CuentasComercialesService(
             await UpsertCuentaObsAsync(cn, (SqlTransaction)tx, normalized, token);
             if (tipo == CuentaComercialTipo.Proveedor)
                 await ReplaceDescuentosProveedorAsync(cn, (SqlTransaction)tx, normalized, token);
+            else if (normalized.FacturacionAutomatica is not null)
+                await SaveFacturacionAutomaticaAsync(cn, (SqlTransaction)tx, normalized.Codigo, normalized.FacturacionAutomatica, token);
 
             await tx.CommitAsync(token);
 
@@ -1434,7 +1445,8 @@ public sealed class CuentasComercialesService(
                     Descuento5 = item.Descuento5
                 })
                 .Where(item => !string.IsNullOrWhiteSpace(item.CondicionCodigo))
-                .ToList()
+                .ToList(),
+            FacturacionAutomatica = NormalizeFacturacionAutomatica(request.FacturacionAutomatica)
         };
 
     internal const string ClasificacionDetalleSql = "LTRIM(RTRIM(ISNULL(adic.Clasificacion, '')))";

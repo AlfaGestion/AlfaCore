@@ -1,0 +1,17 @@
+.fa-vista {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.fa-vista ::deep .fa-vista__fila {
+    cursor: pointer;
+}
+
+.fa-vista ::deep .fa-vista__fila:hover td {
+    background: var(--alfa-bg-row-hover);
+}
+
+.fa-vista ::deep .fa-vista__fila.is-cumplido td {
+    color: var(--alfa-text-secondary);
+    opacity: 0.7;
+}

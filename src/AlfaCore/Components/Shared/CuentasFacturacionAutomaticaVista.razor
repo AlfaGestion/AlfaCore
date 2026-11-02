@@ -1,0 +1,130 @@
+@using AlfaCore.Models
+@* Vistas fijas de facturación automática de la lista de clientes (iguales a las del VB6).
+   Doble clic o el botón de la fila abren la ficha en la solapa Facturación automática. *@
+
+<div class="gd fa-vista">
+    @if (PorConcepto)
+    {
+        <DataTable Titulo="Datos de facturación automática"
+                   Subtitulo="@($"{Filas.Count} concepto(s) de {Filas.Select(f => f.Codigo).Distinct().Count()} cliente(s) con facturación activa · el importe anterior es el previo al último cambio")">
+            <Header>
+                <tr>
+                    <th>Código</th>
+                    <th>Cliente</th>
+                    <th>Detalle</th>
+                    <th style="text-align:right;">Importe</th>
+                    <th style="text-align:right;">Importe anterior</th>
+                    <th>Cambio</th>
+                    <th style="text-align:right;">Cuota</th>
+                    <th>Periodicidad</th>
+                    <th>TC</th>
+                    <th>U. negocio</th>
+                    <th>Últ. mov.</th>
+                    <th></th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (Filas.Count == 0)
+                {
+                    <tr><td colspan="12"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin conceptos" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
+                }
+                else
+                {
+                    @foreach (var fila in Filas)
+                    {
+                        <tr class="fa-vista__fila @(fila.SeFactura ? string.Empty : "is-cumplido")" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="@(fila.SeFactura ? "Doble clic para abrir la ficha" : "Cuotas cumplidas: ya no se factura")">
+                            <td>@fila.CtaCodigo</td>
+                            <td><strong>@fila.RazonSocial</strong></td>
+                            <td>@fila.Detalle</td>
+                            <td style="text-align:right;">@Moneda(fila.Importe)</td>
+                            <td style="text-align:right;">@Moneda(fila.ImporteAnterior)</td>
+                            <td>@Fecha(fila.FechaCambio)</td>
+                            <td style="text-align:right;">@(fila.Cuotas > 0 ? $"{fila.Cuota}/{fila.Cuotas}" : "")</td>
+                            <td>@fila.Periodicidad</td>
+                            <td>@fila.TC</td>
+                            <td>@fila.UnidadNegocio</td>
+                            <td>@Fecha(fila.FechaUltMov)</td>
+                            <td>@RenderAbrir(fila.Codigo)</td>
+                        </tr>
+                    }
+                    <tr class="data-table__totals">
+                        <td colspan="3" class="gd-totals-label">Total (@Filas.Count conceptos)</td>
+                        <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Importe))</td>
+                        <td style="text-align:right;">@Moneda(Filas.Sum(f => f.ImporteAnterior))</td>
+                        <td colspan="7"></td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+    else
+    {
+        <DataTable Titulo="Facturación automática por cliente"
+                   Subtitulo="@($"{Filas.Count} cliente(s) con facturación activa · Abono = líneas con <PERIODO> · Total = lo que se factura por período (sin cuotas cumplidas)")">
+            <Header>
+                <tr>
+                    <th>Código</th>
+                    <th>Cliente</th>
+                    <th>Contacto</th>
+                    <th>Últ. mov.</th>
+                    <th>Periodicidad</th>
+                    <th>TC</th>
+                    <th>U. negocio</th>
+                    <th>Vendedor</th>
+                    <th style="text-align:right;">Abono</th>
+                    <th style="text-align:right;">Otros</th>
+                    <th style="text-align:right;">Total</th>
+                    <th style="text-align:right;">Conceptos</th>
+                    <th></th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (Filas.Count == 0)
+                {
+                    <tr><td colspan="13"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin clientes" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
+                }
+                else
+                {
+                    @foreach (var fila in Filas)
+                    {
+                        <tr class="fa-vista__fila" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="Doble clic para abrir la ficha">
+                            <td>@fila.CtaCodigo</td>
+                            <td><strong>@fila.RazonSocial</strong></td>
+                            <td>@fila.Contacto</td>
+                            <td>@Fecha(fila.FechaUltMov)</td>
+                            <td>@fila.Periodicidad</td>
+                            <td>@fila.TC</td>
+                            <td>@fila.UnidadNegocio</td>
+                            <td>@(string.IsNullOrWhiteSpace(fila.VendedorNombre) ? fila.VendedorCodigo : $"{fila.VendedorCodigo} · {fila.VendedorNombre}")</td>
+                            <td style="text-align:right;">@Moneda(fila.Abono)</td>
+                            <td style="text-align:right;">@Moneda(fila.Otros)</td>
+                            <td style="text-align:right;"><strong>@Moneda(fila.Total)</strong></td>
+                            <td style="text-align:right;">@fila.Conceptos</td>
+                            <td>@RenderAbrir(fila.Codigo)</td>
+                        </tr>
+                    }
+                    <tr class="data-table__totals">
+                        <td colspan="8" class="gd-totals-label">Total (@Filas.Count clientes)</td>
+                        <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Abono))</td>
+                        <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Otros))</td>
+                        <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Total))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<FacturacionAutomaticaVistaFilaDto> Filas { get; set; } = [];
+    [Parameter] public bool PorConcepto { get; set; }
+    [Parameter] public EventCallback<string> OnAbrir { get; set; }
+
+    private RenderFragment RenderAbrir(string codigo) => @<AlfaIconButton Icon="bi bi-pencil-square" Label="Abrir ficha" Size="AlfaSize.Sm" OnClick="_ => OnAbrir.InvokeAsync(codigo)" />;
+
+    private static string Moneda(decimal v) => v.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    // Alfa Gestión deja 01/01/1900 cuando nunca facturó.
+    private static string Fecha(DateTime? v) => v is { Year: > 1900 } f ? f.ToString("dd/MM/yyyy") : "";
+}

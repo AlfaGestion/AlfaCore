@@ -107,6 +107,12 @@
                                     OnAction="_ => BuscarAsync()" />
                 </div>
             }
+            else if (EsVistaFacturacion)
+            {
+                <CuentasFacturacionAutomaticaVista Filas="@_filasVistaFija"
+                                                   PorConcepto="@(_vistaFija == CuentaComercialVistaFijaKeys.FacturacionPorConcepto)"
+                                                   OnAbrir="AbrirEnFacturacionAsync" />
+            }
             else if (_items.Count == 0)
             {
                 <div class="cuentas-list-shell__state">
@@ -827,6 +833,98 @@ else
                                     }
                                 </div>
                             }
+                        </div>
+                    }
+                    else if (_activeTab == CuentaComercialTab.FacturacionAutomatica && Tipo == CuentaComercialTipo.Cliente)
+                    {
+                        @* Misma configuración que la solapa Cptes-Automáticos de Alfa Gestión
+                           (MA_CUENTAS_AUTOCPTES / MA_CUENTAS_AUTOCPTESDET). El comprobante lo genera Alfa Gestión. *@
+                        var fa = FacturacionAuto;
+                        <div class="clientes-edit-content">
+                            @if (HasFieldError("facturacion-automatica"))
+                            {
+                                <small class="clientes-edit-error">@GetFieldError("facturacion-automatica")</small>
+                            }
+                            <section class="clientes-edit-section">
+                                <h3>Generación automática de comprobantes</h3>
+                                <p class="clientes-edit-hint">Alfa Gestión genera estos comprobantes según la periodicidad. En el concepto y en los detalles podés usar <code>@CuentaComercialFacturacionAutomaticaDto.MarcaPeriodo</code>, que se reemplaza por el período facturado.</p>
+                                <div class="clientes-edit-flags">
+                                    <AlfaCheckbox Value="@fa.Activo" ValueChanged="@(v => fa.Activo = v == true)" Disabled="@_saving">Activo</AlfaCheckbox>
+                                </div>
+                                <div class="clientes-edit-grid">
+                                    <AlfaSelect Label="Tipo de comprobante" Options="@ToClienteOptions(_lookups.TiposComprobanteAutomatico)" Value="@fa.TipoComprobante" ValueChanged="@(v => fa.TipoComprobante = v ?? string.Empty)" Disabled="@_saving" />
+                                    <AlfaSelect Label="Periodicidad" Options="@PeriodicidadOptions" Value="@fa.Periodicidad" ValueChanged="@(v => fa.Periodicidad = v ?? string.Empty)" Disabled="@_saving" />
+                                    <AlfaSelect Label="Unidad de negocio" Placeholder="Sin unidad" Options="@ToClienteOptions(_lookups.UnidadesNegocio, withCode: true)" Value="@fa.UnidadNegocio" ValueChanged="@(v => fa.UnidadNegocio = v ?? string.Empty)" Disabled="@_saving" />
+                                    <label class="clientes-edit-date">
+                                        <span>Último movimiento</span>
+                                        <input type="date" value="@(fa.FechaUltimoMovimiento?.ToString("yyyy-MM-dd"))" @onchange="SetFechaUltimoMovimiento" disabled="@_saving" />
+                                        <small>Última vez que se facturó. Si lo dejás vacío se conserva el grabado.</small>
+                                    </label>
+                                </div>
+                                <div class="clientes-edit-grid clientes-edit-grid--wide">
+                                    <AlfaInput Label="Concepto" MaxLength="500" Placeholder="SERVICIO DE MANTENIMIENTO MENSUAL PERIODO: <PERIODO>" Value="@fa.Concepto" ValueChanged="@(v => fa.Concepto = v ?? string.Empty)" Disabled="@_saving" />
+                                </div>
+                            </section>
+
+                            <section class="clientes-edit-section">
+                                <div class="clientes-edit-contacts-head">
+                                    <div>
+                                        <h3>Detalle del concepto</h3>
+                                        <p>Cuotas en 0 = se factura siempre. Con cuotas, se factura mientras la cuota no supere la cantidad de cuotas.</p>
+                                    </div>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle" Disabled="@_saving" OnClick="_ => AgregarConceptoFacturacion()">Agregar concepto</AlfaButton>
+                                </div>
+                                @if (fa.Conceptos.Count == 0)
+                                {
+                                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Sin conceptos" Message="Agregá los conceptos e importes que se facturan automáticamente." />
+                                }
+                                else
+                                {
+                                    <div class="proveedores-descuentos">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Detalle</th>
+                                                    <th class="is-number">Importe</th>
+                                                    <th class="is-number">Cuota</th>
+                                                    <th class="is-number">Cuotas</th>
+                                                    <th>Estado</th>
+                                                    <th><span class="visually-hidden">Acciones</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var concepto in fa.Conceptos)
+                                                {
+                                                    <tr>
+                                                        <td class="facturacion-detalle"><input type="text" maxlength="500" @bind="concepto.Detalle" disabled="@_saving" aria-label="Detalle" /></td>
+                                                        <td><input type="number" step="0.01" class="is-number" @bind="concepto.Importe" disabled="@_saving" aria-label="Importe" /></td>
+                                                        <td><input type="number" step="1" min="0" class="is-number" @bind="concepto.Cuota" disabled="@_saving" aria-label="Cuota" /></td>
+                                                        <td><input type="number" step="1" min="0" class="is-number" @bind="concepto.Cuotas" disabled="@_saving" aria-label="Cuotas" /></td>
+                                                        <td>
+                                                            @if (concepto.SeFactura)
+                                                            {
+                                                                <AlfaTag Tone="AlfaTagTone.Success">Se factura</AlfaTag>
+                                                            }
+                                                            else
+                                                            {
+                                                                <AlfaTag Tone="AlfaTagTone.Neutral">Cuotas cumplidas</AlfaTag>
+                                                            }
+                                                        </td>
+                                                        <td><AlfaIconButton Icon="bi bi-trash3" Label="Quitar concepto" Size="AlfaSize.Sm" Disabled="@_saving" OnClick="_ => QuitarConceptoFacturacion(concepto)" /></td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                            <tfoot>
+                                                <tr>
+                                                    <td><strong>Total a facturar por período</strong></td>
+                                                    <td class="is-number"><strong>@FormatMoneda(fa.TotalAFacturar)</strong></td>
+                                                    <td colspan="4"></td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                }
+                            </section>
                         </div>
                     }
                     else if (_activeTab == CuentaComercialTab.Notas)
@@ -1676,6 +1774,17 @@ else
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
             <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation @onkeydown="OnSearchKeyDownAsync">
+                @if (Tipo == CuentaComercialTipo.Cliente)
+                {
+                    @* Vistas fijas, iguales para todos (las mismas del VB6). Por ahora solo clientes tiene vistas extra. *@
+                    <div class="smart-search__column smart-search__section smart-search__section--status">
+                        <h4><i class="bi bi-layout-text-window"></i> Vista</h4>
+                        @foreach (var vista in VistasFijas)
+                        {
+                            <button type="button" class="@GetSmartOptionClass(_vistaFija == vista.Key)" @onclick="() => SetVistaFijaAsync(vista.Key)">@vista.Label</button>
+                        }
+                    </div>
+                }
                 <div class="smart-search__column smart-search__section smart-search__section--status">
                     <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
                     <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
@@ -1688,6 +1797,15 @@ else
                     <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "1")" @onclick='() => SetBlockFilterAsync("1")'>Bloqueados</button>
                     <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "0")" @onclick='() => SetBlockFilterAsync("0")'>Sin bloquear</button>
                 </div>
+                @if (Tipo == CuentaComercialTipo.Cliente)
+                {
+                    <div class="smart-search__column smart-search__section smart-search__section--block">
+                        <h4><i class="bi bi-arrow-repeat"></i> Facturación automática</h4>
+                        <button type="button" class="@GetSmartOptionClass(_filters.FacturacionAutomatica is null)" @onclick="() => SetFacturacionFilterAsync(null)">Todos</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.FacturacionAutomatica == true)" @onclick="() => SetFacturacionFilterAsync(true)">Con facturación automática</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.FacturacionAutomatica == false)" @onclick="() => SetFacturacionFilterAsync(false)">Sin facturación automática</button>
+                    </div>
+                }
                 <div class="smart-search__column smart-search__section smart-search__section--group">
                     <h4><i class="bi bi-stack"></i> Agrupar por</h4>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.None)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.None)'>Sin agrupar</button>
@@ -1820,8 +1938,8 @@ else
             TopNavigationItems = [new() { Key = ModuleKeyForTipo, Label = PluralLabel, Url = RouteContext.BuildRoute(RouteForTipo), Active = true }],
             Search = new PageHeaderSearchConfig(),
             SearchContent = RenderClientesSmartSearch(),
-            Pagination = BuildHeaderPagination(),
-            ViewButtons = BuildHeaderViewButtons(),
+            Pagination = EsVistaFacturacion ? null : BuildHeaderPagination(),
+            ViewButtons = EsVistaFacturacion ? [] : BuildHeaderViewButtons(),
             Actions = actions
         });
         _ = InvokeAsync(StateHasChanged);
@@ -1984,6 +2102,62 @@ else
         await AplicarFiltrosAsync();
     }
 
+    private async Task SetFacturacionFilterAsync(bool? value)
+    {
+        _filters.FacturacionAutomatica = _filters.FacturacionAutomatica == value ? null : value;
+        await AplicarFiltrosAsync();
+    }
+
+    // ── Vistas fijas (solo clientes) ─────────────────────────────────────────────
+    private static readonly IReadOnlyList<(string Key, string Label)> VistasFijas =
+    [
+        (CuentaComercialVistaFijaKeys.General, "General"),
+        (CuentaComercialVistaFijaKeys.FacturacionPorCliente, "Facturación automática por cliente"),
+        (CuentaComercialVistaFijaKeys.FacturacionPorConcepto, "Datos de facturación automática")
+    ];
+
+    private string _vistaFija = CuentaComercialVistaFijaKeys.General;
+    private IReadOnlyList<FacturacionAutomaticaVistaFilaDto> _filasVistaFija = [];
+
+    private bool EsVistaFacturacion => Tipo == CuentaComercialTipo.Cliente && _vistaFija != CuentaComercialVistaFijaKeys.General;
+
+    private async Task SetVistaFijaAsync(string vista)
+    {
+        if (_vistaFija == vista)
+            return;
+        _vistaFija = vista;
+        _filasVistaFija = [];
+        _selectedCodes.Clear();
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task CargarVistaFijaAsync()
+    {
+        var result = await UiOps.RunAsync(() => CuentasSvc.GetFacturacionAutomaticaVistaAsync(_vistaFija, _filters.Texto), "No se pudo cargar la vista de facturación automática.");
+        if (!result.Success || result.Value is null)
+        {
+            _listLoadFailed = true;
+            _filasVistaFija = [];
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        _filasVistaFija = result.Value;
+        _pagedTotal = _filasVistaFija.Count;
+        _pageNumber = 1;
+        _totalPages = 1;
+        _hasPrev = false;
+        _hasNext = false;
+    }
+
+    private async Task AbrirEnFacturacionAsync(string codigo)
+    {
+        await AbrirEditorAsync(codigo);
+        if (_showEditor && !_isNewMode)
+            await SetActiveTabAsync(CuentaComercialTab.FacturacionAutomatica);
+        UpdatePageHeader();
+    }
+
     private async Task SetGroupAsync(string group)
     {
         _viewSettings.AgruparPor = group;
@@ -2025,6 +2199,12 @@ else
 
         try
         {
+            if (EsVistaFacturacion)
+            {
+                await CargarVistaFijaAsync();
+                return;
+            }
+
             var result = await UiOps.RunAsync(() => CuentasSvc.SearchAsync(Tipo, _filters), $"No se pudieron cargar los {PluralLabelLower}.");
             if (!result.Success || result.Value is null)
             {
@@ -2113,7 +2293,8 @@ else
             IvaCodigo = "1",
             CondicionComercialCodigo = "1",
             Clase = Tipo == CuentaComercialTipo.Cliente ? (short)1 : (short)0,
-            DescuentosCondicion = []
+            DescuentosCondicion = [],
+            FacturacionAutomatica = Tipo == CuentaComercialTipo.Cliente ? new CuentaComercialFacturacionAutomaticaDto() : null
         };
 
         var result = await UiOps.RunAsync(() => CuentasSvc.GetSuggestedCodigoAsync(Tipo), $"No se pudo preparar el código del {SingularLabelLower}.");
@@ -3023,6 +3204,7 @@ else
         _filters.Texto = string.Empty;
         _filters.ProvinciaCodigo = string.Empty;
         _filters.PaisCodigo = string.Empty;
+        _filters.FacturacionAutomatica = null;
         _activoFiltro = "1";
         _bloqueoFiltro = string.Empty;
     }
@@ -3118,9 +3300,31 @@ else
                     Descuento4 = item.Descuento4,
                     Descuento5 = item.Descuento5
                 })
-                .ToList()
+                .ToList(),
+            FacturacionAutomatica = Tipo == CuentaComercialTipo.Cliente
+                ? detail.FacturacionAutomatica ?? new CuentaComercialFacturacionAutomaticaDto()
+                : null
         };
     }
+
+    // ── Facturación automática (solo clientes) ───────────────────────────────────
+    private CuentaComercialFacturacionAutomaticaDto FacturacionAuto
+        => _form.FacturacionAutomatica ??= new CuentaComercialFacturacionAutomaticaDto();
+
+    private void AgregarConceptoFacturacion()
+        => FacturacionAuto.Conceptos.Add(new CuentaComercialFacturacionConceptoDto());
+
+    private void QuitarConceptoFacturacion(CuentaComercialFacturacionConceptoDto concepto)
+        => FacturacionAuto.Conceptos.Remove(concepto);
+
+    private void SetFechaUltimoMovimiento(ChangeEventArgs e)
+        => FacturacionAuto.FechaUltimoMovimiento = DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fecha) ? fecha.Date : null;
+
+    private IReadOnlyList<AlfaSelectOption> PeriodicidadOptions
+        => CuentaComercialFacturacionAutomaticaDto.Periodicidades.Select(p => new AlfaSelectOption(p, p)).ToList();
+
+    private static string FormatMoneda(decimal value)
+        => value.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
 
     private void AgregarDescuento()
         => _form.DescuentosCondicion.Add(new CuentaComercialCondicionDescuentoDto());
@@ -3426,12 +3630,16 @@ else
     private IReadOnlyList<SmartFilterChip> BuildFilterChips()
     {
         var chips = new List<SmartFilterChip>();
+        if (EsVistaFacturacion)
+            chips.Add(new("vista", $"Vista: {VistasFijas.First(v => v.Key == _vistaFija).Label}"));
         if (!string.IsNullOrWhiteSpace(_filters.Texto))
             chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
         if (!string.IsNullOrWhiteSpace(_activoFiltro))
             chips.Add(new("activo", _activoFiltro == "1" ? "Activos" : "Inactivos"));
         if (!string.IsNullOrWhiteSpace(_bloqueoFiltro))
             chips.Add(new("bloqueo", _bloqueoFiltro == "1" ? "Bloqueados" : "Sin bloquear"));
+        if (Tipo == CuentaComercialTipo.Cliente && _filters.FacturacionAutomatica is bool conFacturacion)
+            chips.Add(new("facturacion", conFacturacion ? "Con facturación automática" : "Sin facturación automática"));
         if (!string.IsNullOrWhiteSpace(_filters.ProvinciaCodigo))
         {
             var label = _lookups.Provincias.FirstOrDefault(p => string.Equals(p.Codigo, _filters.ProvinciaCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion ?? _filters.ProvinciaCodigo;
@@ -3458,6 +3666,13 @@ else
                 break;
             case "bloqueo":
                 _bloqueoFiltro = string.Empty;
+                break;
+            case "facturacion":
+                _filters.FacturacionAutomatica = null;
+                break;
+            case "vista":
+                _vistaFija = CuentaComercialVistaFijaKeys.General;
+                _filasVistaFija = [];
                 break;
             case "provincia":
                 _filters.ProvinciaCodigo = string.Empty;
@@ -3918,6 +4133,9 @@ else
     private static CuentaComercialTab GetValidationTab(string fieldKey)
     {
         var key = fieldKey.Trim();
+        if (string.Equals(key, "facturacion-automatica", StringComparison.OrdinalIgnoreCase))
+            return CuentaComercialTab.FacturacionAutomatica;
+
         if (ValidationNoteFields.Contains(key))
             return CuentaComercialTab.Notas;
 
@@ -4007,7 +4225,8 @@ else
         Datos = 0,
         Condiciones = 1,
         Contactos = 2,
-        Notas = 3
+        Notas = 3,
+        FacturacionAutomatica = 4
     }
 }
 
@@ -4019,11 +4238,13 @@ else
         new(nameof(CuentaComercialTab.Datos), "Carga de datos"),
         new(nameof(CuentaComercialTab.Condiciones), "Condiciones"),
         new(nameof(CuentaComercialTab.Contactos), "Contactos"),
-        new(nameof(CuentaComercialTab.Notas), "Notas")
+        new(nameof(CuentaComercialTab.Notas), "Notas"),
+        new(nameof(CuentaComercialTab.FacturacionAutomatica), "Facturación automática")
     ];
 
     private IReadOnlyList<AlfaTabItem> ClienteEditorTabs
         => ClienteEditorTabsBase
+            .Where(tab => tab.Key != nameof(CuentaComercialTab.FacturacionAutomatica) || Tipo == CuentaComercialTipo.Cliente)
             .Select(tab => tab.Key == nameof(CuentaComercialTab.Contactos) && !_isNewMode
                 ? tab with { Badge = _contactosCuenta.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) }
                 : tab)
