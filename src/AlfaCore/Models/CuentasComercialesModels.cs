@@ -15,6 +15,9 @@ public sealed class CuentaComercialFilters
     public string PaisCodigo { get; set; } = string.Empty;
     /// <summary>Solo clientes: true = con facturación automática activa; false = sin; null = todos.</summary>
     public bool? FacturacionAutomatica { get; set; }
+    /// <summary>Clave de columna (CuentaComercialViewColumnKeys); vacío = orden por defecto.</summary>
+    public string OrdenarPor { get; set; } = string.Empty;
+    public bool OrdenDescendente { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }

@@ -168,7 +168,17 @@
                                         data-alfa-column-min="@sizing.MinWidth"
                                         data-alfa-column-default="@sizing.DefaultWidth"
                                         data-alfa-column-max="@sizing.MaxWidth">
-                                        <span class="cuentas-list-table__header-label">@column.Label</span>
+                                        <button type="button"
+                                                class="cuentas-list-table__header-label cuentas-list-table__sort @(_filters.OrdenarPor == column.Key ? "is-sorted" : string.Empty)"
+                                                title="@($"Ordenar por {column.Label}")"
+                                                aria-sort="@(_filters.OrdenarPor == column.Key ? (_filters.OrdenDescendente ? "descending" : "ascending") : "none")"
+                                                @onclick="() => OrdenarPorColumnaAsync(column.Key)">
+                                            @column.Label
+                                            @if (_filters.OrdenarPor == column.Key)
+                                            {
+                                                <i class="bi @(_filters.OrdenDescendente ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
+                                            }
+                                        </button>
                                         @if (sizing.Resizable)
                                         {
                                             <span class="alfa-data-view-column-resizer"
@@ -1369,6 +1379,7 @@ else
     private bool _savingColumnWidths;
     private bool _isNewMode = true;
     private bool _puedeVerCuentaCorriente;
+    private bool _scrollListaArriba;
     private bool _selectedActivo = true;
     private bool _loadingLinkCandidates;
     private bool _linkingContacto;
@@ -1560,6 +1571,13 @@ else
             await InitializeNotesEditorsAsync();
 
         await SyncDataViewColumnResizeAsync();
+
+        if (_scrollListaArriba && !_showEditor)
+        {
+            _scrollListaArriba = false;
+            // Sube el scroll de la lista y de todos sus contenedores (shell__main, etc.).
+            await Js.InvokeVoidAsync("eval", "window.scrollTo(0,0);for(var e=document.querySelector('.cuentas-list-shell__table-scroll')||document.querySelector('.cuentas-page');e;e=e.parentElement){e.scrollTop=0;}");
+        }
 
         if (_scrollFeedbackAfterRender && _feedback is not null)
         {
@@ -1883,7 +1901,7 @@ else
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Essential,
                     Disabled = _saving,
-                    OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+                    OnClick = () => InvokeAsync(VolverAlListadoAsync)
                 }
             };
             if (!_isNewMode && _selectedActivo)
@@ -2105,6 +2123,25 @@ else
     private async Task SetFacturacionFilterAsync(bool? value)
     {
         _filters.FacturacionAutomatica = _filters.FacturacionAutomatica == value ? null : value;
+        await AplicarFiltrosAsync();
+    }
+
+    // Clic en el encabezado: ascendente → descendente → orden por defecto. Se ordena en el
+    // servidor porque la lista está paginada.
+    private async Task OrdenarPorColumnaAsync(string columna)
+    {
+        if (_filters.OrdenarPor != columna)
+        {
+            _filters.OrdenarPor = columna;
+            _filters.OrdenDescendente = false;
+        }
+        else if (!_filters.OrdenDescendente)
+            _filters.OrdenDescendente = true;
+        else
+        {
+            _filters.OrdenarPor = string.Empty;
+            _filters.OrdenDescendente = false;
+        }
         await AplicarFiltrosAsync();
     }
 
@@ -2474,7 +2511,24 @@ else
         _showEditor = false;
         _notesEditorsReady = false;
         ResetContactosState();
+        _scrollListaArriba = true;
         UpdatePageHeader();
+    }
+
+    // Cancelar de la ficha: vuelve al listado con la URL limpia (sin ?editar), lo recarga y lo
+    // muestra desde arriba (si no, quedaba el scroll de la ficha y la lista no se veía).
+    private async Task VolverAlListadoAsync()
+    {
+        CerrarEditor();
+        var actual = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = QueryHelpers.ParseQuery(actual.Query);
+        if (query.ContainsKey("editar") || query.ContainsKey("codigo"))
+        {
+            var resto = query.Where(q => q.Key is not ("editar" or "codigo"))
+                .ToDictionary(q => q.Key, q => (string?)q.Value.ToString());
+            Nav.NavigateTo(QueryHelpers.AddQueryString(actual.AbsolutePath, resto));
+        }
+        await BuscarAsync();
     }
 
     private void ResetForm()

@@ -1,6 +1,5 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
-using System.Net.Mail;
 using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
@@ -109,8 +108,8 @@ public sealed class CuentasComercialesValidator(
 
         if (mail.Length > 250)
             result.Add("mail", "El email no puede superar los 250 caracteres.");
-        else if (!string.IsNullOrWhiteSpace(mail) && !IsValidEmail(mail))
-            result.Add("mail", "El email no tiene un formato válido.");
+        // El formato del email no bloquea el grabado: en Alfa Gestión el campo admite varias
+        // direcciones separadas por ";" o "," y datos históricos que no siguen un formato estricto.
 
         if (web.Length > 250)
             result.Add("web", "La web no puede superar los 250 caracteres.");
@@ -431,19 +430,6 @@ public sealed class CuentasComercialesValidator(
         cmd.Parameters.AddWithValue("@Codigo", codigoActual.Trim().ToUpperInvariant());
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt32(result) > 0;
-    }
-
-    private static bool IsValidEmail(string email)
-    {
-        try
-        {
-            _ = new MailAddress(email);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static bool ShouldValidateCuit(string documentoTipo)

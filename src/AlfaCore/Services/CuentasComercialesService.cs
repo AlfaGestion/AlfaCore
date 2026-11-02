@@ -39,6 +39,7 @@ public sealed partial class CuentasComercialesService(
 
             // SQL Server 2008 no admite OFFSET/FETCH; conservar la paginación en el servidor.
             var filtroFacturacion = BuildFiltroFacturacionAutomatica(tipo, filters);
+            var ordenColumna = BuildOrdenColumna(filters);
             var paginacion = Version.Parse(cn.ServerVersion).Major < 11
                 ? "WHERE Fila > @Skip AND Fila <= CONVERT(bigint,@Skip) + @PageSize ORDER BY Fila;"
                 : "ORDER BY Fila OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;";
@@ -69,7 +70,7 @@ public sealed partial class CuentasComercialesService(
                     ISNULL(base.NUMERO, ''),
                     ISNULL(base.PISO, ''),
                     ISNULL(base.DEPARTAMENTO, ''),
-                    ROW_NUMBER() OVER (ORDER BY
+                    ROW_NUMBER() OVER (ORDER BY {ordenColumna}
                         CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN 0 ELSE 1 END,
                         ISNULL(base.RAZON_SOCIAL, ''),ISNULL(base.CODIGO, ''))
                 FROM dbo.{descriptor.ViewName} base
@@ -1384,6 +1385,29 @@ public sealed partial class CuentasComercialesService(
             Telefono = request.Telefono?.Trim() ?? string.Empty,
             Celular = request.Celular?.Trim() ?? string.Empty
         };
+
+    /// <summary>Orden elegido en el encabezado de la lista. Solo columnas conocidas (nunca texto libre
+    /// en el SQL); se antepone al orden por defecto, que queda como desempate.</summary>
+    private static string BuildOrdenColumna(CuentaComercialFilters filters)
+    {
+        var expresion = (filters.OrdenarPor ?? string.Empty).Trim() switch
+        {
+            CuentaComercialViewColumnKeys.Codigo => "ISNULL(base.CODIGO, '')",
+            CuentaComercialViewColumnKeys.RazonSocial => "ISNULL(base.RAZON_SOCIAL, '')",
+            CuentaComercialViewColumnKeys.Contacto => "ISNULL(base.CONTACTO, '')",
+            CuentaComercialViewColumnKeys.Localidad => "ISNULL(base.LOCALIDAD, '')",
+            CuentaComercialViewColumnKeys.Provincia => "ISNULL(prov.DESCRIPCION, '')",
+            CuentaComercialViewColumnKeys.Telefono => "ISNULL(base.TELEFONO, '')",
+            CuentaComercialViewColumnKeys.Mail => "ISNULL(base.MAIL, '')",
+            CuentaComercialViewColumnKeys.Documento => "ISNULL(base.NUMERO_DOCUMENTO, '')",
+            CuentaComercialViewColumnKeys.Iva => "ISNULL(iva.DESCRIPCION, '')",
+            CuentaComercialViewColumnKeys.Vendedor => "ISNULL(vd.Nombre, '')",
+            CuentaComercialViewColumnKeys.Lista => "ISNULL(base.IdLista, '')",
+            CuentaComercialViewColumnKeys.Bloqueado => "ISNULL(base.BLOQUEO, 0)",
+            _ => null
+        };
+        return expresion is null ? string.Empty : $"{expresion} {(filters.OrdenDescendente ? "DESC" : "ASC")},";
+    }
 
     private static CuentaComercialSaveRequest NormalizeRequest(CuentaComercialSaveRequest request)
         => new()

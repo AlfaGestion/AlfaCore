@@ -9,17 +9,17 @@
                    Subtitulo="@($"{Filas.Count} concepto(s) de {Filas.Select(f => f.Codigo).Distinct().Count()} cliente(s) con facturación activa · el importe anterior es el previo al último cambio")">
             <Header>
                 <tr>
-                    <th>Código</th>
-                    <th>Cliente</th>
-                    <th>Detalle</th>
-                    <th style="text-align:right;">Importe</th>
-                    <th style="text-align:right;">Importe anterior</th>
-                    <th>Cambio</th>
-                    <th style="text-align:right;">Cuota</th>
-                    <th>Periodicidad</th>
-                    <th>TC</th>
-                    <th>U. negocio</th>
-                    <th>Últ. mov.</th>
+                    @Th("codigo", "Código")
+                    @Th("cliente", "Cliente")
+                    @Th("detalle", "Detalle")
+                    @Th("importe", "Importe", true)
+                    @Th("anterior", "Importe anterior", true)
+                    @Th("cambio", "Cambio")
+                    @Th("cuota", "Cuota", true)
+                    @Th("periodicidad", "Periodicidad")
+                    @Th("tc", "TC")
+                    @Th("unegocio", "U. negocio")
+                    @Th("ultmov", "Últ. mov.")
                     <th></th>
                 </tr>
             </Header>
@@ -30,7 +30,7 @@
                 }
                 else
                 {
-                    @foreach (var fila in Filas)
+                    @foreach (var fila in Ordenadas)
                     {
                         <tr class="fa-vista__fila @(fila.SeFactura ? string.Empty : "is-cumplido")" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="@(fila.SeFactura ? "Doble clic para abrir la ficha" : "Cuotas cumplidas: ya no se factura")">
                             <td>@fila.CtaCodigo</td>
@@ -63,18 +63,18 @@
                    Subtitulo="@($"{Filas.Count} cliente(s) con facturación activa · Abono = líneas con <PERIODO> · Total = lo que se factura por período (sin cuotas cumplidas)")">
             <Header>
                 <tr>
-                    <th>Código</th>
-                    <th>Cliente</th>
-                    <th>Contacto</th>
-                    <th>Últ. mov.</th>
-                    <th>Periodicidad</th>
-                    <th>TC</th>
-                    <th>U. negocio</th>
-                    <th>Vendedor</th>
-                    <th style="text-align:right;">Abono</th>
-                    <th style="text-align:right;">Otros</th>
-                    <th style="text-align:right;">Total</th>
-                    <th style="text-align:right;">Conceptos</th>
+                    @Th("codigo", "Código")
+                    @Th("cliente", "Cliente")
+                    @Th("contacto", "Contacto")
+                    @Th("ultmov", "Últ. mov.")
+                    @Th("periodicidad", "Periodicidad")
+                    @Th("tc", "TC")
+                    @Th("unegocio", "U. negocio")
+                    @Th("vendedor", "Vendedor")
+                    @Th("abono", "Abono", true)
+                    @Th("otros", "Otros", true)
+                    @Th("total", "Total", true)
+                    @Th("conceptos", "Conceptos", true)
                     <th></th>
                 </tr>
             </Header>
@@ -85,7 +85,7 @@
                 }
                 else
                 {
-                    @foreach (var fila in Filas)
+                    @foreach (var fila in Ordenadas)
                     {
                         <tr class="fa-vista__fila" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="Doble clic para abrir la ficha">
                             <td>@fila.CtaCodigo</td>
@@ -120,6 +120,59 @@
     [Parameter] public IReadOnlyList<FacturacionAutomaticaVistaFilaDto> Filas { get; set; } = [];
     [Parameter] public bool PorConcepto { get; set; }
     [Parameter] public EventCallback<string> OnAbrir { get; set; }
+
+    // ── Orden por columna (en pantalla: la vista trae todas las filas) ───────────
+    // Clic: ascendente → descendente → orden original de la consulta.
+    private string _ordenColumna = string.Empty;
+    private bool _ordenDesc;
+
+    private void Ordenar(string columna)
+    {
+        if (_ordenColumna != columna) { _ordenColumna = columna; _ordenDesc = false; }
+        else if (!_ordenDesc) _ordenDesc = true;
+        else { _ordenColumna = string.Empty; _ordenDesc = false; }
+    }
+
+    private IEnumerable<FacturacionAutomaticaVistaFilaDto> Ordenadas
+    {
+        get
+        {
+            Func<FacturacionAutomaticaVistaFilaDto, object>? clave = _ordenColumna switch
+            {
+                "codigo" => f => f.CtaCodigo,
+                "cliente" => f => f.RazonSocial,
+                "contacto" => f => f.Contacto,
+                "detalle" => f => f.Detalle,
+                "importe" => f => f.Importe,
+                "anterior" => f => f.ImporteAnterior,
+                "cambio" => f => f.FechaCambio ?? DateTime.MinValue,
+                "cuota" => f => f.Cuota,
+                "periodicidad" => f => f.Periodicidad,
+                "tc" => f => f.TC,
+                "unegocio" => f => f.UnidadNegocio,
+                "ultmov" => f => f.FechaUltMov ?? DateTime.MinValue,
+                "vendedor" => f => f.VendedorNombre,
+                "abono" => f => f.Abono,
+                "otros" => f => f.Otros,
+                "total" => f => f.Total,
+                "conceptos" => f => f.Conceptos,
+                _ => null
+            };
+            if (clave is null)
+                return Filas;
+            return _ordenDesc ? Filas.OrderByDescending(clave) : Filas.OrderBy(clave);
+        }
+    }
+
+    private RenderFragment Th(string columna, string titulo, bool derecha = false) => @<th style="@(derecha ? "text-align:right;" : null)" aria-sort="@(_ordenColumna == columna ? (_ordenDesc ? "descending" : "ascending") : "none")">
+        <button type="button" class="fa-vista__sort @(_ordenColumna == columna ? "is-sorted" : null)" title="@($"Ordenar por {titulo}")" @onclick="() => Ordenar(columna)">
+            @titulo
+            @if (_ordenColumna == columna)
+            {
+                <i class="bi @(_ordenDesc ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
+            }
+        </button>
+    </th>;
 
     private RenderFragment RenderAbrir(string codigo) => @<AlfaIconButton Icon="bi bi-pencil-square" Label="Abrir ficha" Size="AlfaSize.Sm" OnClick="_ => OnAbrir.InvokeAsync(codigo)" />;
 
