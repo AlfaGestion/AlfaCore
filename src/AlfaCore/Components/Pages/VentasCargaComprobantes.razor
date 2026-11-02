@@ -23,7 +23,9 @@
         <AlfaNotification Message="@(grabacion.Estado == "GRABADA"
             ? AppUiMessage.Success("Comprobante de prueba grabado", $"{grabacion.Tc} {grabacion.Comprobante} · Asiento {grabacion.NumeroAsiento}" +
                 (grabacion.Cae is null ? "." : $" · CAE {grabacion.Cae} · Vencimiento {grabacion.Vencimiento:dd/MM/yyyy}.") + " Se registraron los efectos comerciales en esta base de homologación.")
-            : AppUiMessage.Warning("Operación pendiente", $"{grabacion.Estado}. {grabacion.Mensaje} Usá Recuperar operación antes de emitir otra factura."))" />
+            : grabacion.Estado == "RECHAZADA"
+                ? AppUiMessage.Error("ARCA rechazó el comprobante", grabacion.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó la factura. {CargaComprobantesRechazos.NadaGrabado}")
+                : AppUiMessage.Warning("Emisión sin confirmar", grabacion.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta))" />
     }
     @if (_mostrarHistorial)
     {
@@ -336,14 +338,15 @@
                     : await Service.PrevisualizarFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token);
             }
             var resultados = cuentas.Where(_resultadosFa.ContainsKey).Select(c => _resultadosFa[c]).ToList();
-            var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE");
+            var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE" or "RECHAZADA");
             var ok = resultados.Count - errores;
             _feedback = errores == 0
                 ? AppUiMessage.Success(emitir ? "Facturas emitidas" : "Vista previa lista",
                     emitir ? $"{ok} factura(s) grabadas en homologación por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
                            : $"{ok} factura(s) validadas por {Moneda(resultados.Sum(r => r.Total))}. No se grabó nada.")
                 : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
-                    $"{ok} correcta(s) y {errores} con error. Revisá la columna Resultado de cada cliente.");
+                    $"{ok} correcta(s) y {errores} con problemas. En la columna Resultado de cada cliente figura el motivo y qué hacer; " +
+                    "las rechazadas no grabaron nada y se pueden volver a emitir después de corregir.");
             if (emitir) _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -379,7 +382,7 @@
                 {
                     var emitidas = resultados.Where(r => r.Estado == "GRABADA").ToList();
                     var validadas = resultados.Count(r => r.Estado == "VALIDADA");
-                    var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE");
+                    var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE" or "RECHAZADA");
                     <KpiCard Titulo="Resultado" Valor="@(emitidas.Count > 0 ? $"{emitidas.Count} emitida(s)" : $"{validadas} validada(s)")" Icono="@Icono(errores > 0 ? "bi-exclamation-triangle" : "bi-patch-check")"
                              Descripcion="@($"{(emitidas.Count > 0 ? $"Total {Moneda(emitidas.Sum(r => r.Total))} · " : "")}{errores} con error")" />
                 }
@@ -410,7 +413,7 @@
     {
         if (!_resultadosFa.TryGetValue(cuenta, out var r)) return;
         var clase = r.Estado switch { "GRABADA" => "is-ok", "VALIDADA" => "is-info", _ => "is-error" };
-        <span class="cc-fa-estado @clase">@(r.Estado switch { "GRABADA" => "Emitida", "VALIDADA" => "Validada", "PENDIENTE" => "Pendiente", _ => "Error" })</span>
+        <span class="cc-fa-estado @clase">@(r.Estado switch { "GRABADA" => "Emitida", "VALIDADA" => "Validada", "PENDIENTE" => "Sin confirmar", "RECHAZADA" => "Rechazada por ARCA", _ => "Error" })</span>
         @if (r.Estado is "GRABADA" or "VALIDADA")
         {
             <small>

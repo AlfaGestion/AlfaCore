@@ -203,9 +203,14 @@ public sealed class CargaComprobantesService(
             var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
             var resultado = await emision.EmitirAsync(cn, ctx, 0, talonario, [], Guid.NewGuid(), plan.Huella,
                 () => EnsureContext(ctx.SesionId, ctx.Usuario, ctx.Sistema), token, borrador);
-            var resumen = Resumen(plan, fila, talonario, resultado.Estado == "GRABADA" ? "GRABADA" : "PENDIENTE",
-                resultado.Estado == "GRABADA" ? "Factura grabada en homologación; se actualizó la última factura y las cuotas."
-                    : $"{resultado.Estado}. {resultado.Mensaje} Recuperala desde Comprobantes de prueba antes de reintentar.");
+            // Rechazada: nada grabado, se corrige y se vuelve a emitir. Pendiente: hay que recuperarla antes.
+            var resumen = Resumen(plan, fila, talonario, resultado.Estado switch { "GRABADA" => "GRABADA", "RECHAZADA" => "RECHAZADA", _ => "PENDIENTE" },
+                resultado.Estado switch
+                {
+                    "GRABADA" => "Factura grabada en homologación; se actualizó la última factura y las cuotas.",
+                    "RECHAZADA" => resultado.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó el comprobante. {CargaComprobantesRechazos.NadaGrabado}",
+                    _ => resultado.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta
+                });
             resumen.Comprobante = resultado.Comprobante; resumen.Cae = resultado.Cae; resumen.Operacion = resultado.Operacion;
             return resumen;
         }, ct);

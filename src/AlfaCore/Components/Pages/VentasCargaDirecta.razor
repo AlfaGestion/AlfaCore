@@ -18,7 +18,9 @@
     @if (_busy) { <AlfaNotification Message="@AppUiMessage.Info("Operación en curso", "Esperá a que aparezca el resultado.")" /> }
     @if (_resultado is { } r)
     {
-        <AlfaNotification Message="@(r.Estado == "GRABADA" ? AppUiMessage.Success("Comprobante grabado", $"{r.Tc} {r.Comprobante} · Asiento {r.NumeroAsiento}" + (r.Cae is null ? "." : $" · CAE {r.Cae}.")) : AppUiMessage.Warning("Operación pendiente", $"{r.Estado}. {r.Mensaje}"))" />
+        <AlfaNotification Message="@(r.Estado == "GRABADA" ? AppUiMessage.Success("Comprobante grabado", $"{r.Tc} {r.Comprobante} · Asiento {r.NumeroAsiento}" + (r.Cae is null ? "." : $" · CAE {r.Cae}.")) : r.Estado == "RECHAZADA"
+                ? AppUiMessage.Error("ARCA rechazó el comprobante", r.Mensaje is { Length: > 0 } m ? $"{m} Usá «Corregir comprobante» para modificar la carga." : "No se grabó nada. Usá «Corregir comprobante», revisá los datos y volvé a emitir.")
+                : AppUiMessage.Warning("Emisión sin confirmar", r.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta))" />
     }
     @if (_contexto is not null)
     {

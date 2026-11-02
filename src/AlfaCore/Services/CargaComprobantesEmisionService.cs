@@ -211,7 +211,15 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             UPDATE dbo.ALFACORE_VENTAS_CARGA_OPERACION SET Estado=@Estado,Cae=@Cae,Vencimiento=@Vencimiento,
                 FechaActualizacion=SYSUTCDATETIME() WHERE Operacion=@Operacion;
             """, new { Estado = estado, cae.Cae, cae.Vencimiento, cae.Operacion }, cancellationToken: CancellationToken.None));
-        if (cae.Estado != "APROBADA") return (await GetAsync(cn, ctx, cae.Operacion, ct))!;
+        if (cae.Estado != "APROBADA")
+        {
+            // Qué tiene que hacer el usuario: corregir y reemitir (rechazada) o recuperar (sin confirmar).
+            var mensaje = cae.Estado == "RECHAZADA" ? await ExplicarRechazoAsync(cn, cae.Operacion) : CargaComprobantesRechazos.Incierta;
+            await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.ALFACORE_VENTAS_CARGA_OPERACION SET Mensaje=@Mensaje WHERE Operacion=@Operacion;",
+                new { Mensaje = mensaje.Length > 1000 ? mensaje[..1000] : mensaje, cae.Operacion }, cancellationToken: CancellationToken.None));
+            return (await GetAsync(cn, ctx, cae.Operacion, ct))!;
+        }
         if (cae.PuntoVenta != plan.PuntoVenta || cae.TipoComprobante != plan.TipoArca ||
             cae.Importe != decimal.Round(plan.Liquidacion.Total, 2) || string.IsNullOrWhiteSpace(cae.Cae) || cae.Vencimiento is null)
             throw new CargaComprobantesReglaException("La autorización fiscal no coincide con el plan; quedó pendiente de conciliación.");
@@ -267,6 +275,17 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             new { Operacion = operacion }, cancellationToken: ct)) != 0)
             throw new CargaComprobantesReglaException("Existe una operación fiscal sin plan comercial; requiere revisión antes de emitir otra vez.");
         return null;
+    }
+
+    private static async Task<string> ExplicarRechazoAsync(SqlConnection cn, Guid operacion)
+    {
+        var fila = await cn.QuerySingleOrDefaultAsync<(string? Respuesta, string? Solicitud)>(new CommandDefinition(
+            "SELECT CONVERT(nvarchar(max),Respuesta) Respuesta, CONVERT(nvarchar(max),Solicitud) Solicitud FROM dbo.ALFACORE_VENTAS_HOMO_PRUEBA WHERE Operacion=@Operacion;",
+            new { Operacion = operacion }, cancellationToken: CancellationToken.None));
+        ArcaCaeResultadoDto? respuesta = null; string? documento = null;
+        try { if (fila.Respuesta is { Length: > 0 } r) respuesta = JsonSerializer.Deserialize<ArcaCaeResultadoDto>(r); } catch (JsonException) { }
+        try { if (fila.Solicitud is { Length: > 0 } s) documento = JsonSerializer.Deserialize<ArcaCaeSolicitudDto>(s)?.DocNro; } catch (JsonException) { }
+        return CargaComprobantesRechazos.Explicar(respuesta, documento);
     }
 
     private async Task MarcarErrorAsync(SqlConnection cn, Guid operacion, Exception error, CancellationToken ct)
