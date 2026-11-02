@@ -1,0 +1,234 @@
+@* Unidades de negocio (Archivos → Tablas), mismos campos y lugares de guardado que Tablas.frm del VB6. *@
+@using AlfaCore.Models
+@inject AlfaCore.Services.IUnidadesNegocioService Svc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<AlfaNotification Message="@_aviso" OnDismiss="() => _aviso = null" />
+
+<section class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h3 class="panel-card__title">@(_form is null ? "Unidades de negocio" : _esNueva ? "Nueva unidad de negocio" : $"Unidad {_form.Codigo}")</h3>
+            <p class="panel-card__subtitle">Los datos fiscales (CUIT, razón social, condición de IVA, domicilio, IIBB e inicio de actividades) salen en las facturas de la unidad.</p>
+        </div>
+        @if (_form is null)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(_cargando || _catalogos is null)" OnClick="_ => Nueva()">Nueva unidad</AlfaButton>
+        }
+    </div>
+
+    @if (_form is not null && _catalogos is not null)
+    {
+        <div class="un-form">
+            <fieldset class="un-form__grupo">
+                <legend>General</legend>
+                <div class="un-form__fila un-form__fila--codigo">
+                    <AlfaInput Label="Código" MaxLength="8" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty" Disabled="@(!_esNueva || _guardando)" />
+                    <AlfaInput Label="Descripción" MaxLength="100" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <div class="un-form__fila">
+                    <AlfaSelect Label="Depósito" Options="@Opciones(_catalogos.Depositos, _form.Deposito)" Value="@_form.Deposito" ValueChanged="v => _form.Deposito = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaSelect Label="Depósito para diferencias" Options="@Opciones(_catalogos.Depositos, _form.DepositoDiferencias)" Value="@_form.DepositoDiferencias" ValueChanged="v => _form.DepositoDiferencias = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaSelect Label="Motivo para diferencias" Options="@Opciones(_catalogos.MotivosStock, _form.MotivoDiferencias)" Value="@_form.MotivoDiferencias" ValueChanged="v => _form.MotivoDiferencias = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <div class="un-form__fila">
+                    <AlfaInput Label="Cuenta asociada" Type="number" Value="@_form.CuentaAsociada" ValueChanged="v => _form.CuentaAsociada = v ?? string.Empty" Disabled="@_guardando" />
+                    <div class="field">
+                        <label for="un-grupo">Grupo</label>
+                        <input id="un-grupo" class="un-form__input" list="un-grupos" maxlength="100" disabled="@_guardando" @bind="_form.Grupo" />
+                        <datalist id="un-grupos">@foreach (var g in _catalogos.Grupos) { <option value="@g"></option> }</datalist>
+                    </div>
+                    <div class="un-form__check">
+                        <AlfaCheckbox Value="@_form.ModificaDiferencias" ValueChanged="v => _form.ModificaDiferencias = v == true" Disabled="@_guardando">Modifica parámetros de diferencias</AlfaCheckbox>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="un-form__grupo">
+                <legend>Datos fiscales y factura electrónica</legend>
+                <AlfaCheckbox Value="@_form.UsaFacturacionElectronica" ValueChanged="v => _form.UsaFacturacionElectronica = v == true" Disabled="@_guardando">
+                    Utilizada para facturación electrónica (factura con su propio CUIT y punto de venta)
+                </AlfaCheckbox>
+                <div class="un-form__fila">
+                    <AlfaInput Label="CUIT" MaxLength="13" Value="@_form.Cuit" ValueChanged="v => _form.Cuit = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Razón social" MaxLength="100" Value="@_form.RazonSocial" ValueChanged="v => _form.RazonSocial = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <div class="un-form__fila">
+                    <AlfaInput Label="Domicilio" MaxLength="250" Value="@_form.Domicilio" ValueChanged="v => _form.Domicilio = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaSelect Label="Condición de IVA" Options="@Opciones(_catalogos.CondicionesIva, _form.CondicionIva, conCodigo: true)" Value="@_form.CondicionIva" ValueChanged="v => _form.CondicionIva = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <div class="un-form__fila">
+                    <AlfaInput Label="Punto de venta" MaxLength="5" Value="@_form.PuntoVenta" ValueChanged="v => _form.PuntoVenta = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Inicio de actividades" Placeholder="dd/mm/aaaa" MaxLength="10" Value="@_form.InicioActividades" ValueChanged="v => _form.InicioActividades = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Nro. Ingresos Brutos" MaxLength="50" Value="@_form.IngresosBrutos" ValueChanged="v => _form.IngresosBrutos = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <div class="un-form__fila un-form__fila--checks">
+                    <AlfaCheckbox Value="@_form.AgenteRetencionPercepcionIibb" ValueChanged="v => _form.AgenteRetencionPercepcionIibb = v == true" Disabled="@_guardando">Agente de retención / percepción IIBB</AlfaCheckbox>
+                    <AlfaCheckbox Value="@_form.AgenteRetencionGanancias" ValueChanged="v => _form.AgenteRetencionGanancias = v == true" Disabled="@_guardando">Agente de retención de Ganancias</AlfaCheckbox>
+                </div>
+                <label class="un-form__label" for="un-formapago">Formas de pago <small>(se usa en el mail de facturación con la marca &lt;FORMADEPAGO&gt;)</small></label>
+                <textarea id="un-formapago" class="un-form__textarea" rows="6" disabled="@_guardando" @bind="_form.FormaDePago" @bind:event="oninput"></textarea>
+            </fieldset>
+
+            <fieldset class="un-form__grupo">
+                <legend>Alfa Gestión (escritorio)</legend>
+                <p class="un-form__nota">Rutas que usa el programa de escritorio. En AlfaCore los certificados se suben en
+                    <a href="@UrlFacturaElectronica">Configuración General → Ventas → Factura electrónica</a>.</p>
+                <div class="un-form__fila">
+                    <AlfaInput Label="Ruta .CRT" MaxLength="500" Value="@_form.RutaCrt" ValueChanged="v => _form.RutaCrt = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Ruta .KEY" MaxLength="500" Value="@_form.RutaKey" ValueChanged="v => _form.RutaKey = v ?? string.Empty" Disabled="@_guardando" />
+                </div>
+                <AlfaInput Label="Ruta de reportes" MaxLength="500" Value="@_form.RutaReportes" ValueChanged="v => _form.RutaReportes = v ?? string.Empty" Disabled="@_guardando" />
+            </fieldset>
+
+            <div class="actions un-form__acciones">
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_guardando" Disabled="@_guardando" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_guardando" OnClick="_ => Cancelar()">Cancelar</AlfaButton>
+                @if (!_esNueva)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="@_guardando" OnClick="_ => _confirmarBorrar = true">Borrar</AlfaButton>
+                }
+            </div>
+        </div>
+    }
+    else if (_cargando)
+    {
+        <p class="gd-hint" role="status">Cargando unidades de negocio...</p>
+    }
+    else if (_filas.Count == 0)
+    {
+        <AlfaEmptyState Title="Sin unidades de negocio" Message="Todavía no hay unidades de negocio cargadas." />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Código</th><th>Descripción</th><th>CUIT</th><th>Condición de IVA</th><th>Pto. venta</th><th>F. electrónica</th><th class="tablas-ref__col-acciones"><span class="visually-hidden">Acciones</span></th></tr></thead>
+                <tbody>
+                    @foreach (var f in _filas)
+                    {
+                        <tr @ondblclick="() => EditarAsync(f.Codigo)">
+                            <td>@f.Codigo</td>
+                            <td>@f.Descripcion</td>
+                            <td>@f.Cuit</td>
+                            <td>@f.CondicionIva</td>
+                            <td>@f.PuntoVenta</td>
+                            <td>@(f.UsaFacturacionElectronica ? "Sí" : "")</td>
+                            <td class="tablas-ref__col-acciones">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" Disabled="@(_editandoCodigo is not null)"
+                                            Loading="@(_editandoCodigo == f.Codigo)" OnClick="_ => EditarAsync(f.Codigo)">Editar</AlfaButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@if (_confirmarBorrar && _form is not null)
+{
+    <AlfaConfirmDialog Open="true" Title="Borrar unidad de negocio"
+        Message="@($"Se borrará la unidad {_form.Codigo} · {_form.Descripcion} y sus datos fiscales.")"
+        SecondaryMessage="Si tiene comprobantes no se puede borrar."
+        ConfirmLabel="Borrar" OnConfirm="BorrarAsync" OnCancel="() => _confirmarBorrar = false" />
+}
+
+@code {
+    private List<UnidadNegocioFila> _filas = [];
+    private UnidadNegocioCatalogos? _catalogos;
+    private UnidadNegocioEdicion? _form;
+    private bool _esNueva;
+    private bool _cargando = true;
+    private bool _guardando;
+    private bool _confirmarBorrar;
+    private string? _editandoCodigo;
+    private AppUiMessage? _aviso;
+
+    private string UrlFacturaElectronica
+    {
+        get
+        {
+            var path = new Uri(Nav.Uri).AbsolutePath;
+            var i = path.IndexOf("/archivos/tablas", StringComparison.OrdinalIgnoreCase);
+            return (i >= 0 ? path[..i] : string.Empty) + "/configuracion-general/ventas?tab=factura";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _catalogos = await Svc.GetCatalogosAsync();
+            await CargarAsync();
+        }
+        catch (Exception ex) { _aviso = AppUiMessage.Error("Unidades de negocio", Mensaje(ex)); }
+        finally { _cargando = false; }
+    }
+
+    private async Task CargarAsync() => _filas = (await Svc.ListarAsync()).ToList();
+
+    private static IReadOnlyList<AlfaSelectOption> Opciones(IReadOnlyList<UnidadNegocioOpcion> items, string actual, bool conCodigo = false)
+    {
+        var lista = new List<AlfaSelectOption> { new(string.Empty, "(ninguno)") };
+        lista.AddRange(items.Select(x => new AlfaSelectOption(x.Codigo, conCodigo || x.Descripcion.Length == 0 ? $"{x.Codigo} - {x.Descripcion}".TrimEnd(' ', '-') : $"{x.Descripcion} ({x.Codigo})")));
+        // Un valor guardado que ya no está en la tabla se sigue mostrando, para no perderlo al grabar.
+        if (!string.IsNullOrWhiteSpace(actual) && items.All(x => !x.Codigo.Equals(actual, StringComparison.OrdinalIgnoreCase)))
+            lista.Add(new(actual, $"{actual} (no está en la tabla)"));
+        return lista;
+    }
+
+    private void Nueva()
+    {
+        var max = _filas.Select(f => int.TryParse(f.Codigo, out var n) ? n : 0).DefaultIfEmpty(0).Max();
+        _form = new UnidadNegocioEdicion { Codigo = (max + 1).ToString(), CondicionIva = "1" };
+        _esNueva = true; _aviso = null;
+    }
+
+    private async Task EditarAsync(string codigo)
+    {
+        if (_editandoCodigo is not null) return;
+        _editandoCodigo = codigo; _aviso = null;
+        try { _form = await Svc.GetAsync(codigo); _esNueva = false; }
+        catch (Exception ex) { _aviso = AppUiMessage.Error("Unidades de negocio", Mensaje(ex)); }
+        finally { _editandoCodigo = null; }
+    }
+
+    private void Cancelar() { _form = null; _esNueva = false; }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null || _guardando) return;
+        _guardando = true; _aviso = null;
+        try
+        {
+            await Svc.GuardarAsync(_form, _esNueva);
+            var codigo = _form.Codigo.Trim();
+            _aviso = AppUiMessage.Success("Unidad de negocio", _esNueva ? $"Se creó la unidad {codigo}." : $"Se grabó la unidad {codigo}.");
+            _form = null; _esNueva = false;
+            _catalogos = await Svc.GetCatalogosAsync();
+            await CargarAsync();
+        }
+        catch (Exception ex) { _aviso = AppUiMessage.Error("No se pudo grabar", Mensaje(ex)); }
+        finally { _guardando = false; }
+    }
+
+    private async Task BorrarAsync()
+    {
+        _confirmarBorrar = false;
+        if (_form is null) return;
+        _guardando = true; _aviso = null;
+        try
+        {
+            await Svc.EliminarAsync(_form.Codigo);
+            _aviso = AppUiMessage.Success("Unidad de negocio", $"Se borró la unidad {_form.Codigo}.");
+            _form = null;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _aviso = AppUiMessage.Error("No se pudo borrar", Mensaje(ex)); }
+        finally { _guardando = false; }
+    }
+
+    private static string Mensaje(Exception ex) => ex is AlfaCore.Services.AppUserFacingException u ? u.UserMessage : ex.Message;
+}

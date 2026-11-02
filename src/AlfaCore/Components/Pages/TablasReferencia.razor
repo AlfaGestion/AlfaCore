@@ -23,10 +23,6 @@
     {
         <p class="gd-hint" role="status">Cargando tablas...</p>
     }
-    else if (_tablas.Count == 0)
-    {
-        <AlfaEmptyState Title="Sin tablas de referencia" Message="No hay tablas de referencia registradas todavía." />
-    }
     else
     {
         <div class="tablas-ref__layout">
@@ -35,6 +31,12 @@
                     <h3 class="panel-card__title">Tablas</h3>
                 </div>
                 <div class="tablas-ref__items">
+                    <button type="button"
+                            class="tablas-ref__item @(_selectedClave == ClaveUnidades ? "is-active" : null)"
+                            aria-current="@(_selectedClave == ClaveUnidades ? "true" : null)"
+                            @onclick="SelectUnidades">
+                        Unidades de negocio
+                    </button>
                     @foreach (var tabla in _tablas)
                     {
                         <button type="button"
@@ -48,7 +50,11 @@
             </nav>
 
             <div class="tablas-ref__main">
-                @if (_selectedTabla is not null)
+                @if (_selectedClave == ClaveUnidades)
+                {
+                    <UnidadesNegocioEditor />
+                }
+                else if (_selectedTabla is not null)
                 {
                     <section class="panel-card">
                         <div class="panel-card__header">
@@ -185,7 +191,9 @@
         try
         {
             _tablas = (await TablasSvc.GetTablasAsync()).ToList();
-            if (_tablas.Count > 0)
+            if (string.Equals(TablaInicial, "unidades-negocio", StringComparison.OrdinalIgnoreCase) || _tablas.Count == 0)
+                SelectUnidades();
+            else
                 await SelectTablaAsync(_tablas[0].Clave);
         }
         catch (Exception ex)
@@ -196,6 +204,18 @@
         {
             _loadingTablas = false;
         }
+    }
+
+    // Unidades de negocio tiene su propio editor (no es una tabla Código/Descripción).
+    private const string ClaveUnidades = "__unidades_negocio";
+    [SupplyParameterFromQuery(Name = "tabla")] public string? TablaInicial { get; set; }
+
+    private void SelectUnidades()
+    {
+        _selectedClave = ClaveUnidades;
+        _selectedTabla = null;
+        _message = string.Empty;
+        _error = string.Empty;
     }
 
     private async Task SelectTablaAsync(string clave)

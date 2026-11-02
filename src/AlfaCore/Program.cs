@@ -337,6 +337,7 @@ public class Program
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupErrorLogger, WhatsAppEmbeddedSignupErrorLogger>();
         builder.Services.AddScoped<IConversacionesInformesService, ConversacionesInformesService>();
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
+        builder.Services.AddScoped<IUnidadesNegocioService, UnidadesNegocioService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<IAvisosPushNotifier, AvisosPushNotifier>();
