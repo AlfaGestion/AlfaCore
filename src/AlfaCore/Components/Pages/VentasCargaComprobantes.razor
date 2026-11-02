@@ -287,6 +287,28 @@
         UpdateHeader();
     }
 
+    // PDF de cómo saldría impresa la factura (ensayo revertido + marca de agua). Se abre en otra pestaña.
+    private string? _pdfPrevioCuenta;
+    private async Task VerPdfPrevioAsync(string cuenta)
+    {
+        if (_pdfPrevioCuenta is not null) return;
+        _pdfPrevioCuenta = cuenta; _feedback = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.PrevisualizarPdfFacturacionAutomaticaAsync(cuenta, FechaFaAplicada, _lifetime.Token), "Carga de Comprobantes");
+            if (result.Success && result.Value is { Length: > 0 } bytes)
+                await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(bytes), "application/pdf", $"vista-previa-{cuenta}.pdf");
+            else
+                _feedback = result.Feedback;
+        }
+        finally
+        {
+            _pdfPrevioCuenta = null;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private Task PrevisualizarFacturacionAutomaticaAsync() => ProcesarFaAsync(false);
     private Task EmitirFacturacionAutomaticaAsync() { _confirmarEmisionFa = false; return ProcesarFaAsync(true); }
 
@@ -502,7 +524,11 @@
                             <td class="cc-number">@fila.Conceptos</td>
                             <td class="cc-number"><strong>@Moneda(fila.Importe)</strong></td>
                             <td class="cc-fa-resultado">@RenderResultadoFa(fila.Cuenta)</td>
-                            <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => AbrirClienteAsync(fila.Cuenta)">Ver ficha</AlfaButton></td>
+                            <td class="cc-fa-acciones">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-pdf" Disabled="@(_busy || _pdfPrevioCuenta is not null)"
+                                            Loading="@(_pdfPrevioCuenta == fila.Cuenta)" OnClick="_ => VerPdfPrevioAsync(fila.Cuenta)">PDF previo</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => AbrirClienteAsync(fila.Cuenta)">Ver ficha</AlfaButton>
+                            </td>
                         </tr>
                     }
                     <tr class="cc-totals">
@@ -725,8 +751,16 @@
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas", Title = "Carga de Comprobantes",
         ShowHistoryNavigation = false,
         Breadcrumb = ["Ventas", "Carga de Comprobantes"],
-        // Una sola pestaña: conserva el aislamiento ?directo=1 sin accesos a otros módulos.
-        TopNavigationItems = [new() { Key = "carga", Label = "Carga de Comprobantes", Active = true }],
+        // Solo pestañas propias del módulo (conserva el aislamiento ?directo=1): carga y visor de comprobantes.
+        TopNavigationItems =
+        [
+            new() { Key = "carga", Label = "Carga de Comprobantes", Active = true },
+            new() { Key = "visor", Label = "Ver comprobantes", OnClick = () =>
+                {
+                    Navigation.NavigateTo(Navigation.Uri.Split('?')[0].TrimEnd('/') + "/visor" + new Uri(Navigation.Uri).Query);
+                    return Task.CompletedTask;
+                } }
+        ],
         State = _busy ? PageHeaderState.Loading : _origen is null ? PageHeaderState.List : PageHeaderState.Editing,
         Search = _origen is null && _contexto is not null ? new() : null,
         SearchContent = _origen is null && _contexto is not null ? RenderBusqueda() : null,

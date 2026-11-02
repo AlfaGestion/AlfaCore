@@ -36,6 +36,29 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         return plan;
     }
 
+    /// <summary>Número ficticio que lleva la vista previa (se reemplaza en el documento).</summary>
+    public const long NumeroVistaPrevia = 99999998;
+
+    /// <summary>
+    /// Vista previa impresa: valida, graba el comprobante en una transacción, lo arma con
+    /// <paramref name="armarDocumento"/> leyendo esa misma transacción y revierte todo. Sin CAE ni efectos.
+    /// </summary>
+    public async Task<(CargaComprobantesPlanGrabacion Plan, DocumentRenderResult Documento)> PrevisualizarAsync(SqlConnection cn,
+        CargaComprobantesContexto ctx, int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct,
+        CargaComprobantesDirecta? directa, Func<SqlConnection, SqlTransaction, string, string, string, Task<DocumentRenderResult>> armarDocumento)
+    {
+        var plan = await ValidarAsync(cn, ctx, origenId, talonario, cantidades, ct, directa);
+        using var tx = cn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        try
+        {
+            // CAE vacío: el documento no muestra CAE ni QR de un comprobante que todavía no existe.
+            var grabado = await writer.GrabarAsync(cn, tx, ctx, plan, Guid.NewGuid(), NumeroVistaPrevia, "", plan.Fecha, ct);
+            var documento = await armarDocumento(cn, tx, grabado.Tc, grabado.Comprobante!, plan.UnidadNegocio);
+            return (plan, documento);
+        }
+        finally { if (tx.Connection is not null) tx.Rollback(); }
+    }
+
     public async Task<CargaComprobantesGrabacionResultado> EmitirAsync(SqlConnection cn, CargaComprobantesContexto ctx,
         int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, Guid operacion,
         string huellaEsperada, Action validarSesion, CancellationToken ct, CargaComprobantesDirecta? directa = null)

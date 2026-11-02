@@ -2,6 +2,8 @@ using AlfaCore.Models;
 using AlfaCore.Services;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -100,6 +102,70 @@ public sealed class CargaComprobantesFacturacionAutomaticaEmisionPruebasTests(IT
             var fa = await cn.QuerySingleAsync("SELECT TOP 1 FechaUltMov FROM MA_CUENTAS_AUTOCPTES WHERE Cuenta=@cuenta ORDER BY SucursalCuenta", new { cuenta });
             output.WriteLine($"   facturación automática: última factura {fa.FechaUltMov:dd/MM/yyyy}");
         }
+    }
+}
+
+/// <summary>
+/// Vista previa impresa (PDF con marca) de la factura automática de ALFACORE_FA_PDF contra ALFANET2007_PRUEBAS.
+/// No graba nada: verifica que la facturación automática del cliente quede igual. El PDF va a ALFACORE_FA_PDF_DESTINO.
+/// </summary>
+[Collection("CargaComprobantes SQL")]
+public sealed class CargaComprobantesFacturacionAutomaticaPdfPruebasTests(ITestOutputHelper output)
+{
+    [FacturacionAutomaticaPdfFact]
+    public async Task GeneraLaVistaPreviaSinGrabar()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        await using var cn = new SqlConnection(Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")); await cn.OpenAsync();
+        Assert.Equal("ALFANET2007_PRUEBAS", await cn.ExecuteScalarAsync<string>("SELECT DB_NAME()"));
+        var repo = new CargaComprobantesRepository();
+        var ctx = await repo.GetContextoAsync(cn, "Administrador", default);
+        var planner = new CargaComprobantesPlanificador(repo);
+        var sender = new CargaComprobantesElectronicaEmisor(runtime.Config, runtime.Wsaa, runtime.Wsfe, runtime.Events);
+        var emision = new CargaComprobantesEmisionService(planner, new(planner, new()), sender, runtime.Config, runtime.Events);
+        var users = System.Reflection.DispatchProxy.Create<IAppUserSessionService, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler = (m, _) => m.Name switch
+        { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => "Administrador", _ => null };
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton(runtime.Events).AddSingleton<DocumentPdfService>().BuildServiceProvider();
+        var pdf = provider.GetRequiredService<DocumentPdfService>();
+        var logs = provider.GetRequiredService<ILoggerFactory>();
+        var docs = new FacturaDocumentService(runtime.Configuration,
+            new DocumentTemplateService(runtime.Configuration, runtime.Events, users, logs.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
+            new DocumentRenderer(), pdf, new ArcaQrService(), runtime.Events, logs.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
+        var hoy = await cn.ExecuteScalarAsync<DateTime>("SELECT CONVERT(date,GETDATE())");
+        var cuenta = Environment.GetEnvironmentVariable("ALFACORE_FA_PDF")!;
+        var antes = await cn.ExecuteScalarAsync<DateTime?>("SELECT TOP 1 FechaUltMov FROM MA_CUENTAS_AUTOCPTES WHERE Cuenta=@cuenta ORDER BY SucursalCuenta", new { cuenta });
+
+        var (borrador, talonario, _) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, hoy, default);
+        var (plan, documento) = await emision.PrevisualizarAsync(cn, ctx, 0, talonario, [], default, borrador,
+            (c, tx, tc, comprobante, unidad) => docs.RenderEnTransaccionAsync(c, tx, tc, comprobante, unidad));
+        var destino = Environment.GetEnvironmentVariable("ALFACORE_FA_PDF_DESTINO") ?? Path.GetTempPath();
+        var html = CargaComprobantesService.MarcarVistaPrevia(documento.Html);
+        await File.WriteAllTextAsync(Path.Combine(destino, $"vista-previa-{cuenta}.html"), html);
+        Assert.Contains("VISTA PREVIA", html);
+        Assert.DoesNotContain("99999998", html);
+        output.WriteLine($"{cuenta}: factura {plan.Letra} punto {plan.PuntoVenta} total {plan.Liquidacion.Total:N2} · HTML {html.Length} caracteres");
+        try
+        {
+            var bytes = await pdf.GenerateAsync(html, documento.Footer);
+            var archivo = Path.Combine(destino, $"vista-previa-{cuenta}.pdf");
+            await File.WriteAllBytesAsync(archivo, bytes);
+            output.WriteLine($"PDF {bytes.Length} bytes · {archivo}");
+        }
+        catch (AppUserFacingException ex) { output.WriteLine($"PDF no generado en este equipo: {ex.Message}"); }
+        Assert.Equal(antes, await cn.ExecuteScalarAsync<DateTime?>("SELECT TOP 1 FechaUltMov FROM MA_CUENTAS_AUTOCPTES WHERE Cuenta=@cuenta ORDER BY SucursalCuenta", new { cuenta }));
+        Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM V_MV_CPTE WHERE NUMERO='99999998'"));
+    }
+}
+
+public sealed class FacturacionAutomaticaPdfFactAttribute : FactAttribute
+{
+    public FacturacionAutomaticaPdfFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ALFACORE_FA_PDF")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")))
+            Skip = "Vista previa explícita: requiere ALFACORE_FA_PDF=cuenta y ALFACORE_TEST_SQL hacia ALFANET2007_PRUEBAS.";
     }
 }
 

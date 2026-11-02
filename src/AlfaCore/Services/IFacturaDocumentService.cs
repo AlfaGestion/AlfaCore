@@ -10,6 +10,10 @@ public interface IFacturaDocumentService
     Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
     Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
     Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
+    /// <summary>Arma el comprobante con una transacción abierta (vista previa de un ensayo que se revierte).</summary>
+    Task<DocumentRenderResult> RenderEnTransaccionAsync(Microsoft.Data.SqlClient.SqlConnection cn, Microsoft.Data.SqlClient.SqlTransaction tx,
+        string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
+        => throw new NotSupportedException("Este generador no admite vista previa en transacción.");
     Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
 
     /// <summary>Para Portal Cliente: resuelve el comprobante a partir del ID interno

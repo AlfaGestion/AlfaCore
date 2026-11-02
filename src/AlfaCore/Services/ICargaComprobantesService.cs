@@ -36,6 +36,15 @@ public interface ICargaComprobantesService
     /// <summary>Arma y valida la factura automática de un cliente (ensayo revertido): no pide CAE ni graba.</summary>
     Task<CargaComprobantesFacturacionAutomaticaResultado> PrevisualizarFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();
+    /// <summary>Visor de comprobantes de ventas: búsqueda paginada con filtros (respeta la unidad del usuario).</summary>
+    Task<ComprobantesVisorResultado> BuscarComprobantesAsync(ComprobantesVisorFiltro filtro, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    /// <summary>PDF para ver o reimprimir un comprobante ya grabado.</summary>
+    Task<byte[]> GetPdfComprobanteAsync(string tc, string idComprobante, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    /// <summary>PDF de cómo saldría impresa la factura automática de un cliente, con marca de vista previa. No graba nada.</summary>
+    Task<byte[]> PrevisualizarPdfFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => throw new NotSupportedException();
     /// <summary>Emite la factura automática de un cliente (homologación) y actualiza su última factura y cuotas.</summary>
     Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();

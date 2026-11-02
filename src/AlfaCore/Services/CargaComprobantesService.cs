@@ -210,6 +210,130 @@ public sealed class CargaComprobantesService(
             return resumen;
         }, ct);
 
+    public Task<ComprobantesVisorResultado> BuscarComprobantesAsync(ComprobantesVisorFiltro filtro, CancellationToken ct = default)
+        => ExecuteAsync("VisorComprobantes", async (cn, ctx, token) =>
+        {
+            var hasta = (filtro.FechaHasta ?? DateTime.Today).Date;
+            var desde = (filtro.FechaDesde ?? hasta.AddDays(-30)).Date;
+            if (desde > hasta) (desde, hasta) = (hasta, desde);
+            if ((hasta - desde).TotalDays > 3700) throw new CargaComprobantesReglaException("Elegí un período de hasta 10 años.");
+            var pageSize = Math.Clamp(filtro.PageSize, 10, 200);
+            var page = Math.Max(1, filtro.PageNumber);
+            var texto = (filtro.Busqueda ?? string.Empty).Trim();
+            static string Literal(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
+            // Números escritos como en pantalla (0010-00000519) se buscan sin guiones ni espacios.
+            var textoNumero = new string(texto.Where(char.IsLetterOrDigit).ToArray());
+            var p = new
+            {
+                Tc = (filtro.Tc ?? string.Empty).Trim(), Desde = desde, Hasta = hasta,
+                ctx.AdminCentral, UnidadUsuario = ctx.UnidadNegocio.Trim(), Unidad = (filtro.UnidadNegocio ?? string.Empty).Trim(),
+                filtro.IncluirAnulados, Texto = texto, Like = "%" + Literal(texto) + "%", LikeNumero = "%" + Literal(textoNumero) + "%",
+                Desde_ = (page - 1) * pageSize + 1, Hasta_ = page * pageSize
+            };
+            // SQL Server 2008: paginado con ROW_NUMBER y total con COUNT(*) OVER ().
+            var filas = (await cn.QueryAsync<ComprobantesVisorFilaTotal>(new CommandDefinition("""
+                WITH q AS (
+                    SELECT c.ID Id, LTRIM(RTRIM(c.TC)) Tc, LTRIM(RTRIM(c.IDCOMPROBANTE)) IdComprobante, ISNULL(c.IDCOMPLEMENTO,0) IdComplemento,
+                        c.FECHA Fecha, LTRIM(RTRIM(ISNULL(c.CUENTA,''))) Cuenta, ISNULL(c.NOMBRE,'') Cliente, ISNULL(c.IMPORTE,0) Importe,
+                        CONVERT(bit,ISNULL(c.ANULADA,0)) Anulada, LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) UnidadNegocio,
+                        LTRIM(RTRIM(ISNULL(c.Usuario,''))) Usuario,
+                        ROW_NUMBER() OVER (ORDER BY c.FECHA DESC, c.ID DESC) Fila,
+                        COUNT(*) OVER () Total, SUM(CASE WHEN ISNULL(c.ANULADA,0)=0 THEN ISNULL(c.IMPORTE,0) ELSE 0 END) OVER () ImporteTotal
+                    FROM dbo.V_MV_CPTE c
+                    WHERE c.FECHA >= @Desde AND c.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(c.IDCOMPLEMENTO,0) = 0
+                      AND (@Tc = '' OR LTRIM(RTRIM(c.TC)) = @Tc)
+                      AND (@IncluirAnulados = 1 OR ISNULL(c.ANULADA,0) = 0)
+                      AND (@AdminCentral = 1 OR LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) IN ('', @UnidadUsuario))
+                      AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) = @Unidad)
+                      AND (@Texto = '' OR c.NOMBRE LIKE @Like ESCAPE '\' OR LTRIM(RTRIM(c.CUENTA)) LIKE @Like ESCAPE '\'
+                           OR c.IDCOMPROBANTE LIKE @LikeNumero ESCAPE '\')
+                )
+                SELECT q.*, ISNULL(LTRIM(RTRIM(t.DESCRIPCION)),'') TcDescripcion, e.CAE Cae
+                FROM q
+                OUTER APPLY (SELECT TOP (1) DESCRIPCION FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) = q.Tc ORDER BY Talonario) t
+                OUTER APPLY (SELECT TOP (1) NULLIF(LTRIM(RTRIM(CAE)),'') CAE FROM dbo.V_MV_CPTE_ELECTRONICOS
+                             WHERE TC = q.Tc AND IdComprobante = q.IdComprobante AND ISNULL(Archivado,0) = 0) e
+                WHERE q.Fila BETWEEN @Desde_ AND @Hasta_
+                ORDER BY q.Fila;
+                """, p, commandTimeout: 60, cancellationToken: token))).ToList();
+            var tipos = (await cn.QueryAsync<CargaComprobantesOpcionFiltro>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(CODIGO)) Codigo, MIN(LTRIM(RTRIM(ISNULL(DESCRIPCION,'')))) Descripcion
+                FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(SISTEMA)) = 'Ventas' GROUP BY LTRIM(RTRIM(CODIGO)) ORDER BY 1;
+                """, cancellationToken: token))).ToList();
+            return new ComprobantesVisorResultado
+            {
+                Items = filas.Select(x => (ComprobantesVisorFila)x).ToList(), Total = filas.FirstOrDefault()?.Total ?? 0, ImporteTotal = filas.FirstOrDefault()?.ImporteTotal ?? 0,
+                PageNumber = page, PageSize = pageSize, Tipos = tipos
+            };
+        }, ct);
+
+    public Task<byte[]> GetPdfComprobanteAsync(string tc, string idComprobante, CancellationToken ct = default)
+        => ExecuteAsync("PdfComprobante", async (cn, ctx, token) =>
+        {
+            var unidad = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition("""
+                SELECT TOP (1) LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) FROM dbo.V_MV_CPTE WHERE LTRIM(RTRIM(TC))=@Tc AND IDCOMPROBANTE=@Id;
+                """, new { Tc = tc.Trim(), Id = idComprobante.Trim() }, cancellationToken: token))
+                ?? throw new CargaComprobantesReglaException("No se encontró el comprobante.");
+            if (!ctx.AdminCentral && unidad.Length > 0 && unidad != ctx.UnidadNegocio.Trim())
+                throw new CargaComprobantesReglaException("El comprobante pertenece a otra unidad de negocio.");
+            try { return await documents.GeneratePdfAsync(tc.Trim(), idComprobante.Trim(), unidad.Length == 0 ? null : unidad, token); }
+            catch (InvalidOperationException ex) when (ex.GetType().Name == "ComprobanteNoSoportadoException")
+            { throw new CargaComprobantesReglaException($"Todavía no hay un formato de impresión para comprobantes {tc.Trim()}."); }
+        }, ct);
+
+    private sealed class ComprobantesVisorFilaTotal
+    {
+        public int Id { get; set; }
+        public string Tc { get; set; } = string.Empty;
+        public string TcDescripcion { get; set; } = string.Empty;
+        public string IdComprobante { get; set; } = string.Empty;
+        public int IdComplemento { get; set; }
+        public DateTime? Fecha { get; set; }
+        public string Cuenta { get; set; } = string.Empty;
+        public string Cliente { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+        public bool Anulada { get; set; }
+        public string UnidadNegocio { get; set; } = string.Empty;
+        public string Usuario { get; set; } = string.Empty;
+        public string? Cae { get; set; }
+        public int Total { get; set; }
+        public decimal ImporteTotal { get; set; }
+        public static implicit operator ComprobantesVisorFila(ComprobantesVisorFilaTotal f) => new()
+        {
+            Id = f.Id, Tc = f.Tc, TcDescripcion = f.TcDescripcion, IdComprobante = f.IdComprobante, IdComplemento = f.IdComplemento,
+            Fecha = f.Fecha, Cuenta = f.Cuenta, Cliente = f.Cliente, Importe = f.Importe, Anulada = f.Anulada,
+            UnidadNegocio = f.UnidadNegocio, Usuario = f.Usuario, Cae = f.Cae
+        };
+    }
+
+    public Task<byte[]> PrevisualizarPdfFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+        => ExecuteAsync("PdfVistaPreviaFacturacionAutomatica", async (cn, ctx, token) =>
+        {
+            var (borrador, talonario, _) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, fechaFacturacion.Date, token);
+            var (_, documento) = await emision.PrevisualizarAsync(cn, ctx, 0, talonario, [], token, borrador,
+                (c, tx, tc, comprobante, unidad) => documents.RenderEnTransaccionAsync(c, tx, tc, comprobante, unidad, token));
+            return await pdf.GenerateAsync(MarcarVistaPrevia(documento.Html), documento.Footer, token);
+        }, ct);
+
+    /// <summary>Marca de agua en todas las páginas y número ficticio tapado: la vista previa no es un comprobante.</summary>
+    internal static string MarcarVistaPrevia(string html)
+    {
+        const string marca = """
+            <style>
+            .alfa-vista-previa{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:99999}
+            .alfa-vista-previa span{transform:rotate(-32deg);font:700 54px Arial,sans-serif;letter-spacing:4px;white-space:nowrap;
+              color:rgba(190,20,20,.20);border:6px solid rgba(190,20,20,.20);border-radius:12px;padding:10px 36px}
+            .alfa-vista-previa-banda{position:fixed;top:0;left:0;right:0;text-align:center;font:700 10px Arial,sans-serif;color:#b00;z-index:99999}
+            </style>
+            <div class="alfa-vista-previa"><span>VISTA PREVIA · SIN VALIDEZ</span></div>
+            <div class="alfa-vista-previa-banda">VISTA PREVIA · NO ES UN COMPROBANTE · NÚMERO Y CAE SE ASIGNAN AL EMITIR</div>
+            """;
+        var conNumero = html.Replace(CargaComprobantesEmisionService.NumeroVistaPrevia.ToString("00000000"), "XXXXXXXX", StringComparison.Ordinal);
+        return conNumero.Contains("</body>", StringComparison.OrdinalIgnoreCase)
+            ? conNumero.Replace("</body>", marca + "</body>", StringComparison.OrdinalIgnoreCase)
+            : conNumero + marca;
+    }
+
     private static CargaComprobantesFacturacionAutomaticaResultado Resumen(CargaComprobantesPlanGrabacion plan,
         CargaComprobantesFacturacionAutomaticaFila fila, int talonario, string estado, string mensaje)
     {

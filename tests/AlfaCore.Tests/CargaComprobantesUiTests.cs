@@ -227,7 +227,8 @@ public sealed class CargaComprobantesUiTests
             Assert.True(header.Current.Actions.Single(x => x.Key == "grabar").Disabled);
             Assert.False(header.Current.Actions.Single(x => x.Key == "pdf").Disabled);
             Assert.Equal("ventas", provider.GetRequiredService<IPageHeaderService>().Current.ModuleKey);
-            Assert.Single(provider.GetRequiredService<IPageHeaderService>().Current.TopNavigationItems);
+            // Solo pestañas del propio módulo (aislamiento ?directo=1): la carga y su visor de comprobantes.
+            Assert.Equal(["carga", "visor"], provider.GetRequiredService<IPageHeaderService>().Current.TopNavigationItems.Select(x => x.Key));
             await InvokeAsync(component,"VolverAsync");
             Invoke(component,"Seleccionar",1,true);Invoke(component,"Seleccionar",2,true);
             await header.Current.Actions.Single(x=>x.Key=="cargar-seleccion").OnClick!();

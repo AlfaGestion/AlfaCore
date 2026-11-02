@@ -1,0 +1,223 @@
+@page "/ventas/carga-comprobantes/visor"
+@page "/{idweb}/{idbase:int}/ventas/carga-comprobantes/visor"
+@using AlfaCore.Services
+@inject ICargaComprobantesService Service
+@inject ISessionService Sessions
+@inject IAppUserSessionService Users
+@inject IPageHeaderService PageHeader
+@inject IAppUiOperationService UiOps
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Ver comprobantes | Alfa Gestión</PageTitle>
+
+@* Visor de comprobantes de ventas: buscar, ver el detalle (aplicaciones, historial, asientos) y reimprimir. *@
+<div class="gd-page gd vc-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="vc-filtros" aria-label="Filtros de comprobantes" @onkeydown="TeclaAsync">
+        <AlfaSelect Label="Tipo" Value="@_filtro.Tc" ValueChanged="v => _filtro.Tc = v ?? string.Empty" Options="@TipoOptions" Disabled="@_busy" />
+        <AlfaInput Type="date" Label="Desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => _filtro.FechaDesde = LeerFecha(v)" Disabled="@_busy" />
+        <AlfaInput Type="date" Label="Hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => _filtro.FechaHasta = LeerFecha(v)" Disabled="@_busy" />
+        <div class="vc-filtros__texto">
+            <AlfaInput Label="Cliente, cuenta o número" Value="@_filtro.Busqueda" ValueChanged="v => _filtro.Busqueda = v ?? string.Empty"
+                       HelpText="Ej.: 0010-00000519 o parte del nombre" Disabled="@_busy" />
+        </div>
+        <AlfaCheckbox Value="@_filtro.IncluirAnulados" ValueChanged="v => _filtro.IncluirAnulados = v == true" Disabled="@_busy">Incluir anulados</AlfaCheckbox>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_busy" Disabled="@_busy" OnClick="_ => BuscarAsync(true)">Buscar</AlfaButton>
+    </section>
+
+    @if (_resultado is { } r)
+    {
+        <div class="kpi-grid vc-kpis">
+            <KpiCard Titulo="Comprobantes" Valor="@r.Total.ToString("N0")" Icono="@Icono("bi-files")"
+                     Descripcion="@($"{(_filtroAplicado.FechaDesde ?? DateTime.Today.AddDays(-30)):dd/MM/yyyy} al {(_filtroAplicado.FechaHasta ?? DateTime.Today):dd/MM/yyyy}")" />
+            <KpiCard Titulo="Importe (sin anulados)" Valor="@Moneda(r.ImporteTotal)" Icono="@Icono("bi-cash-stack")"
+                     Descripcion="@(string.IsNullOrEmpty(_filtroAplicado.Tc) ? "Todos los tipos: incluye pedidos y remitos" : $"Solo {_filtroAplicado.Tc}")" />
+            <KpiCard Titulo="En esta página" Valor="@r.Items.Count.ToString("N0")" Icono="@Icono("bi-list-ul")"
+                     Descripcion="@($"Página {r.PageNumber} de {r.TotalPages}")" />
+        </div>
+
+        @if (r.Items.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes" Message="No hay comprobantes para esos filtros. Probá con otro período o tipo." />
+        }
+        else
+        {
+            <section class="vc-tabla" aria-label="Comprobantes">
+                <div class="vc-tabla__scroll">
+                    <table class="vc-table">
+                        <thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Cliente</th><th class="vc-num">Importe</th><th>CAE</th><th>U. negocio</th><th>Usuario</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                        @foreach (var c in r.Items)
+                        {
+                            <tr @key="c.Id" class="@(c.Anulada ? "is-anulada" : null)" @ondblclick="() => Ver(c)">
+                                <td>@c.Fecha?.ToString("dd/MM/yyyy")</td>
+                                <td><strong>@c.Tc</strong><small>@c.TcDescripcion</small></td>
+                                <td>@c.Numero @if (c.Anulada) { <span class="vc-anulada">ANULADA</span> }</td>
+                                <td>@c.Cliente<small>@c.Cuenta</small></td>
+                                <td class="vc-num">@Moneda(c.Importe)</td>
+                                <td>@c.Cae</td>
+                                <td>@c.UnidadNegocio</td>
+                                <td>@c.Usuario</td>
+                                <td class="vc-acciones">
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" OnClick="_ => Ver(c)">Ver</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_pdfId is not null)"
+                                                Loading="@(_pdfId == c.Id)" OnClick="_ => ReimprimirAsync(c)">Reimprimir</AlfaButton>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <footer class="vc-tabla__pie">Doble clic o «Ver» abre el detalle: artículos, otros conceptos, comprobantes aplicados, asientos e historial.</footer>
+            </section>
+        }
+    }
+    else if (_busy)
+    {
+        <AlfaEmptyState Title="Buscando comprobantes" Message="Consultando la base activa." />
+    }
+</div>
+
+<ComprobanteViewerModal Visible="@(_viendo is not null)" Tc="@(_viendo?.Tc ?? string.Empty)" IdComprobante="@(_viendo?.IdComprobante ?? string.Empty)"
+                        IdComplemento="@(_viendo?.IdComplemento ?? 0)" Cliente="@_viendo?.Cliente" Cerrado="() => _viendo = null" />
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly ComprobantesVisorFiltro _filtro = new();
+    private ComprobantesVisorFiltro _filtroAplicado = new();
+    private ComprobantesVisorResultado? _resultado;
+    private ComprobantesVisorFila? _viendo;
+    private int? _pdfId;
+    private AppUiMessage? _feedback;
+    private PageHeaderConfig? _header;
+    private bool _busy;
+    private bool _disposed;
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    private IReadOnlyList<AlfaSelectOption> TipoOptions => [new("", "Todos"),
+        .. (_resultado?.Tipos ?? []).Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion.Length == 0 ? x.Codigo : $"{x.Codigo} · {x.Descripcion}"))];
+
+    protected override void OnInitialized()
+    {
+        // Por defecto los últimos 7 días: sirve para ver o reimprimir lo que se acaba de emitir.
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        _filtro.FechaHasta = DateTime.Today;
+        _filtro.FechaDesde = DateTime.Today.AddDays(-7);
+        if (query.TryGetValue("tc", out var tc)) _filtro.Tc = tc.ToString();
+        if (query.TryGetValue("buscar", out var buscar)) _filtro.Busqueda = buscar.ToString();
+        Sessions.SessionChanged += ContextChanged;
+        Users.StateChanged += ContextChanged;
+        UpdateHeader();
+    }
+
+    protected override Task OnInitializedAsync() => BuscarAsync(true);
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+
+    private async Task BuscarAsync(bool reset)
+    {
+        if (_busy || _disposed) return;
+        var consulta = reset ? new ComprobantesVisorFiltro
+        {
+            Tc = _filtro.Tc, Busqueda = _filtro.Busqueda, FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta,
+            UnidadNegocio = _filtro.UnidadNegocio, IncluirAnulados = _filtro.IncluirAnulados, PageSize = _filtro.PageSize, PageNumber = 1
+        } : _filtroAplicado;
+        _busy = true; _feedback = null; UpdateHeader();
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.BuscarComprobantesAsync(consulta, _lifetime.Token), "Ver comprobantes", _lifetime.Token);
+            if (_disposed) return;
+            if (result.Success) { _resultado = result.Value; _filtroAplicado = consulta; }
+            else _feedback = result.Feedback;
+        }
+        finally
+        {
+            _busy = false;
+            if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); }
+        }
+    }
+
+    private Task PaginarAsync(int delta)
+    {
+        _filtroAplicado.PageNumber = Math.Max(1, (_resultado?.PageNumber ?? 1) + delta);
+        return BuscarAsync(false);
+    }
+
+    private void Ver(ComprobantesVisorFila c) => _viendo = c;
+
+    private async Task ReimprimirAsync(ComprobantesVisorFila c)
+    {
+        if (_pdfId is not null) return;
+        _pdfId = c.Id; _feedback = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.GetPdfComprobanteAsync(c.Tc, c.IdComprobante, _lifetime.Token), "Reimprimir", _lifetime.Token);
+            if (result.Success && result.Value is { Length: > 0 } bytes)
+                await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(bytes), "application/pdf", $"{c.Tc}-{c.IdComprobante}.pdf");
+            else
+                _feedback = result.Feedback;
+        }
+        finally
+        {
+            _pdfId = null;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task TeclaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+        => args.Key == "Enter" ? BuscarAsync(true) : Task.CompletedTask;
+
+    private string RutaCarga() => Navigation.Uri.Split('?')[0].TrimEnd('/') is var actual && actual.EndsWith("/visor", StringComparison.OrdinalIgnoreCase)
+        ? actual[..^"/visor".Length] : actual;
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas", Title = "Ver comprobantes",
+        ShowHistoryNavigation = false,
+        Breadcrumb = ["Ventas", "Carga de Comprobantes", "Ver comprobantes"],
+        TopNavigationItems =
+        [
+            new() { Key = "carga", Label = "Carga de Comprobantes", OnClick = () => { Navigation.NavigateTo(RutaCarga() + new Uri(Navigation.Uri).Query); return Task.CompletedTask; } },
+            new() { Key = "visor", Label = "Ver comprobantes", Active = true }
+        ],
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = () => BuscarAsync(false) }
+        ],
+        Pagination = _resultado is { Total: > 0 } r ? new()
+        {
+            PageLabel = $"{r.PageNumber} / {r.TotalPages}", Label = $"{r.Total} comprobantes",
+            HasPrevious = r.PageNumber > 1, HasNext = r.PageNumber < r.TotalPages, Disabled = _busy,
+            OnPrevious = () => PaginarAsync(-1), OnNext = () => PaginarAsync(1)
+        } : null
+    });
+
+    private void ContextChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () =>
+        {
+            if (_disposed) return;
+            _resultado = null; _viendo = null;
+            await BuscarAsync(true);
+        });
+    }
+
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+    private static string Moneda(decimal value) => value.ToString("C2", Culture);
+    private static string? FechaHtml(DateTime? fecha) => fecha?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+    private static DateTime? LeerFecha(string? value) => DateTime.TryParseExact(value, "yyyy-MM-dd",
+        System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fecha) ? fecha : null;
+
+    public void Dispose()
+    {
+        _disposed = true; Sessions.SessionChanged -= ContextChanged; Users.StateChanged -= ContextChanged;
+        _lifetime.Cancel(); _lifetime.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

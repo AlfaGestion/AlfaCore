@@ -40,3 +40,4 @@
 .cc-table td small.cc-fa-lineas { white-space: normal; font-size: 11px; }
 /* Tarjetas de totales sobre la lista. */
 .cc-kpis { margin-bottom: 12px; }
+.cc-table td.cc-fa-acciones { white-space: nowrap; }

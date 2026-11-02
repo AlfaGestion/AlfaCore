@@ -16,6 +16,51 @@ public sealed class CargaComprobantesFiltro
     public int PageSize { get; set; } = 25;
 }
 
+/// <summary>Filtros del visor de comprobantes de ventas.</summary>
+public sealed class ComprobantesVisorFiltro
+{
+    public string Tc { get; set; } = string.Empty;
+    public string Busqueda { get; set; } = string.Empty;
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
+    public string UnidadNegocio { get; set; } = string.Empty;
+    public bool IncluirAnulados { get; set; } = true;
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 25;
+}
+
+/// <summary>Un comprobante de ventas en el visor (V_MV_CPTE).</summary>
+public sealed class ComprobantesVisorFila
+{
+    public int Id { get; set; }
+    public string Tc { get; set; } = string.Empty;
+    public string TcDescripcion { get; set; } = string.Empty;
+    public string IdComprobante { get; set; } = string.Empty;
+    public int IdComplemento { get; set; }
+    public DateTime? Fecha { get; set; }
+    public string Cuenta { get; set; } = string.Empty;
+    public string Cliente { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public bool Anulada { get; set; }
+    public string UnidadNegocio { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public string? Cae { get; set; }
+    /// <summary>Formato de pantalla: 0010-00000519 C.</summary>
+    public string Numero => IdComprobante.Length == 13 ? $"{IdComprobante[..4]}-{IdComprobante.Substring(4, 8)} {IdComprobante[12..]}" : IdComprobante;
+}
+
+public sealed class ComprobantesVisorResultado
+{
+    public IReadOnlyList<ComprobantesVisorFila> Items { get; set; } = [];
+    public int Total { get; set; }
+    public decimal ImporteTotal { get; set; }
+    public int PageNumber { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => PageSize <= 0 ? 1 : Math.Max(1, (int)Math.Ceiling(Total / (double)PageSize));
+    /// <summary>Tipos de comprobante de ventas (V_TA_CPTE) para el filtro.</summary>
+    public IReadOnlyList<CargaComprobantesOpcionFiltro> Tipos { get; set; } = [];
+}
+
 /// <summary>Resultado de validar o emitir la factura automática de un cliente.</summary>
 public sealed class CargaComprobantesFacturacionAutomaticaResultado
 {

@@ -32,11 +32,20 @@ public sealed class FacturaDocumentService(
     public Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
         => RenderCoreAsync(tc, idComprobante, uNegocio, tipoDocumento, ct, previewTemplate);
 
-    private async Task<DocumentRenderResult> RenderCoreAsync(string tc, string idComprobante, string? uNegocio, string? tipoSolicitado, CancellationToken ct, DocumentTemplateDto? previewTemplate)
+    /// <summary>
+    /// Arma el comprobante leyendo con la conexión/transacción indicadas: permite mostrar cómo quedaría
+    /// impreso un comprobante grabado en un ensayo que después se revierte (vista previa sin efectos).
+    /// </summary>
+    public Task<DocumentRenderResult> RenderEnTransaccionAsync(SqlConnection cn, SqlTransaction tx, string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
+        => RenderCoreAsync(tc, idComprobante, uNegocio, null, ct, null,
+            () => BuildDataAsync(cn, tx, (tc ?? string.Empty).Trim(), (idComprobante ?? string.Empty).Trim(), ct));
+
+    private async Task<DocumentRenderResult> RenderCoreAsync(string tc, string idComprobante, string? uNegocio, string? tipoSolicitado, CancellationToken ct, DocumentTemplateDto? previewTemplate,
+        Func<Task<FacturaDocumentData?>>? cargarDatos = null)
     {
         try
         {
-            var data = await BuildDataAsync(tc, idComprobante, ct)
+            var data = await (cargarDatos is null ? BuildDataAsync(tc, idComprobante, ct) : cargarDatos())
                 ?? throw new ComprobanteNoSoportadoException();
             var tipoDocumento = tipoSolicitado ?? data.Comprobante.TipoDocumento;
             if (!string.Equals(TiposDocumentoCore.NormalizarFiscal(tipoDocumento), TiposDocumentoCore.NormalizarFiscal(data.Comprobante.TipoDocumento), StringComparison.OrdinalIgnoreCase))
@@ -165,7 +174,7 @@ public sealed class FacturaDocumentService(
                 """, new { Top = Math.Clamp(top, 1, 200), Tc = tc, Letra = TiposDocumentoCore.LetraDe(tipoDocumento) }, cancellationToken: ct));
             return otros.AsList();
         }
-        if (!await ExistsAsync(cn, "dbo.V_MV_CPTE_ELECTRONICOS", ct))
+        if (!await ExistsAsync(cn, null, "dbo.V_MV_CPTE_ELECTRONICOS", ct))
             return [];
 
         var rows = await cn.QueryAsync<FacturaResumenDto>(new CommandDefinition("""
@@ -193,18 +202,24 @@ public sealed class FacturaDocumentService(
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        return await BuildDataAsync(cn, null, tcTrim, idTrim, ct);
+    }
 
-        var tieneCondIva = await ExistsAsync(cn, "dbo.TA_CONDIVA", ct);
+    // Con una transaccion abierta lee lo grabado y todavia no confirmado (vista previa de un ensayo revertido).
+    private async Task<FacturaDocumentData?> BuildDataAsync(SqlConnection cn, SqlTransaction? tx, string tcTrim, string idTrim, CancellationToken ct)
+    {
+
+        var tieneCondIva = await ExistsAsync(cn, tx, "dbo.TA_CONDIVA", ct);
         var condIvaJoin = tieneCondIva ? "LEFT JOIN dbo.TA_CONDIVA ci ON UPPER(LTRIM(RTRIM(ci.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.CONDICIONIVA, ''))))" : string.Empty;
         var condIvaSelect = tieneCondIva ? "ISNULL(ci.DESCRIPCION, '')" : "''";
 
-        var tieneElectronico = await ExistsAsync(cn, "dbo.V_MV_CPTE_ELECTRONICOS", ct);
+        var tieneElectronico = await ExistsAsync(cn, tx, "dbo.V_MV_CPTE_ELECTRONICOS", ct);
         var electronicoJoin = tieneElectronico ? "LEFT JOIN dbo.V_MV_CPTE_ELECTRONICOS e ON e.TC = v.TC AND e.IdComprobante = v.IDCOMPROBANTE AND ISNULL(e.Archivado, 0) = 0" : string.Empty;
         var electronicoSelect = tieneElectronico
             ? "e.Tipo_Cpte AS TipoCpte, e.CAE AS Cae, e.VtoCAE AS VtoCae, e.CodigoBarraCAE AS CodigoBarraCae, e.Resultado AS Resultado, ISNULL(CAST(e.Motivo AS nvarchar(500)), '') AS Motivo, e.Fecha_Cpte AS FechaElectronica, e.Punto_Vta AS PuntoVentaElectronico, e.Cpte_Desde AS NumeroElectronico, CAST(e.Imp_Total AS decimal(15,2)) AS TotalElectronico, e.Tipo_Doc AS TipoDocElectronico, e.Nro_Doc AS NumeroDocElectronico"
             : "CAST(NULL AS int) AS TipoCpte, CAST(NULL AS nvarchar(20)) AS Cae, CAST(NULL AS datetime) AS VtoCae, CAST(NULL AS nvarchar(60)) AS CodigoBarraCae, CAST(NULL AS nvarchar(4)) AS Resultado, '' AS Motivo";
 
-        var tienePercepcion = await ExistsAsync(cn, "dbo.V_TA_PERCEPCION", ct);
+        var tienePercepcion = await ExistsAsync(cn, tx, "dbo.V_TA_PERCEPCION", ct);
         var percepcionJoin = tienePercepcion
             ? """
               LEFT JOIN dbo.V_TA_PERCEPCION pIbr ON UPPER(LTRIM(RTRIM(pIbr.idPercepcion))) = UPPER(LTRIM(RTRIM(ISNULL(v.RETIBR_IdRetencion, ''))))
@@ -259,7 +274,7 @@ public sealed class FacturaDocumentService(
             WHERE v.TC = @Tc AND v.IDCOMPROBANTE = @IdComprobante;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
-            cancellationToken: ct));
+            transaction: tx, cancellationToken: ct));
 
         var pagos = await cn.QueryAsync<FacturaPagoRow>(new CommandDefinition(
             """
@@ -279,7 +294,7 @@ public sealed class FacturaDocumentService(
             ORDER BY ISNULL(b.[NUMERO ASIENTO], 0), ISNULL(b.SECUENCIA, 0), b.CUENTA;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
-            cancellationToken: ct));
+            transaction: tx, cancellationToken: ct));
 
         if (header is null)
             return null;
@@ -307,9 +322,9 @@ public sealed class FacturaDocumentService(
             ORDER BY SECUENCIA;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
-            cancellationToken: ct));
+            transaction: tx, cancellationToken: ct));
 
-        var empresa = await BuildEmpresaAsync(cn, header.UNegocio, ct);
+        var empresa = await BuildEmpresaAsync(cn, tx, header.UNegocio, ct);
 
         return new FacturaDocumentData
         {
@@ -354,11 +369,11 @@ public sealed class FacturaDocumentService(
                     Motivo = header.Motivo
                 }
                 : null,
-            QrBytes = await GenerateQrAsync(cn, header, empresa.CuitQr, ct)
+            QrBytes = await GenerateQrAsync(cn, tx, header, empresa.CuitQr, ct)
         };
     }
 
-    private async Task<byte[]?> GenerateQrAsync(SqlConnection cn, FacturaCabeceraRow header, string cuit, CancellationToken ct)
+    private async Task<byte[]?> GenerateQrAsync(SqlConnection cn, SqlTransaction? tx, FacturaCabeceraRow header, string cuit, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(header.Cae)) return null;
         if (!string.Equals(header.Resultado?.Trim(), "A", StringComparison.OrdinalIgnoreCase)) return null;
@@ -373,7 +388,7 @@ public sealed class FacturaDocumentService(
                 FROM dbo.TA_COTIZACION
                 WHERE FECHA_HORA >= @Fecha AND FECHA_HORA < DATEADD(day, 1, @Fecha)
                 ORDER BY ID DESC;
-                """, new { Moneda = moneda, Fecha = header.Fecha.Date }, cancellationToken: ct));
+                """, new { Moneda = moneda, Fecha = header.Fecha.Date }, transaction: tx, cancellationToken: ct));
             cotizacion = rate ?? throw new ArgumentException("No existe cotización histórica para generar el QR del comprobante.");
         }
         if (header.FechaElectronica is null || header.PuntoVentaElectronico is null || header.TipoCpte is null
@@ -456,7 +471,7 @@ public sealed class FacturaDocumentService(
         };
     }
 
-    private static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades, string CuitQr)> BuildEmpresaAsync(SqlConnection cn, string? uNegocio, CancellationToken ct)
+    private static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades, string CuitQr)> BuildEmpresaAsync(SqlConnection cn, SqlTransaction? tx, string? uNegocio, CancellationToken ct)
     {
         var config = (await cn.QueryAsync<ConfiguracionRow>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,
@@ -464,7 +479,7 @@ public sealed class FacturaDocumentService(
                         ELSE ISNULL(CAST(ValorAux AS nvarchar(max)), '') END AS Valor
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'RAZONSOCIAL', N'RAZON_SOCIAL', N'NOMBREEMPRESA', N'CUIT', N'WSFE_CUIT', N'DOMICILIO', N'DIRECCION', N'CALLE', N'NUMERO', N'PISO', N'DEPARTAMENTO', N'CPOSTAL', N'LOCALIDAD', N'PROVINCIA', N'TELEFONO', N'TEL', N'EMAIL', N'MAIL', N'CONDIVAEMPRESA', N'NROINGRESOSBRUTOS', N'INICIOACTIVIDADES');
-            """, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+            """, transaction: tx, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor ?? string.Empty, StringComparer.OrdinalIgnoreCase);
 
         var unidad = string.IsNullOrWhiteSpace(uNegocio) ? null
             : await cn.QuerySingleOrDefaultAsync<UnidadEmisorRow>(new CommandDefinition("""
@@ -472,22 +487,22 @@ public sealed class FacturaDocumentService(
                        LTRIM(RTRIM(CUIT)) AS Cuit
                 FROM dbo.V_TA_UnidadNegocio
                 WHERE LTRIM(RTRIM(Codigo)) = @UNegocio;
-                """, new { UNegocio = uNegocio.Trim() }, cancellationToken: ct));
+                """, new { UNegocio = uNegocio.Trim() }, transaction: tx, cancellationToken: ct));
         var nombreGeneral = First(config, "NOMBRE", "RAZONSOCIAL", "RAZON_SOCIAL", "NOMBREEMPRESA");
         var cuitGeneral = First(config, "CUIT", "WSFE_CUIT");
         var emisor = ResolveEmisor(unidad?.UsaEfc == true, unidad?.RazonSocial, unidad?.Cuit,
             nombreGeneral, cuitGeneral, Value(config, "WSFE_CUIT"));
 
         byte[]? logo = null;
-        if (await ExistsAsync(cn, "dbo.TA_LOGOS", ct))
-            logo = await cn.QueryFirstOrDefaultAsync<byte[]>(new CommandDefinition("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", cancellationToken: ct));
+        if (await ExistsAsync(cn, tx, "dbo.TA_LOGOS", ct))
+            logo = await cn.QueryFirstOrDefaultAsync<byte[]>(new CommandDefinition("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", transaction: tx, cancellationToken: ct));
 
         var condivaCodigo = Value(config, "CONDIVAEMPRESA");
         var condicionIva = string.Empty;
-        if (condivaCodigo.Length > 0 && await ExistsAsync(cn, "dbo.TA_CONDIVA", ct))
+        if (condivaCodigo.Length > 0 && await ExistsAsync(cn, tx, "dbo.TA_CONDIVA", ct))
             condicionIva = await cn.QueryFirstOrDefaultAsync<string>(new CommandDefinition(
                 "SELECT TOP (1) ISNULL(DESCRIPCION, '') FROM dbo.TA_CONDIVA WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
-                new { Codigo = condivaCodigo }, cancellationToken: ct)) ?? string.Empty;
+                new { Codigo = condivaCodigo }, transaction: tx, cancellationToken: ct)) ?? string.Empty;
 
         var inicioActividadesTexto = Value(config, "INICIOACTIVIDADES");
         DateTime? inicioActividades = DateTime.TryParseExact(inicioActividadesTexto, "dd/MM/yyyy",
@@ -558,7 +573,7 @@ public sealed class FacturaDocumentService(
 
     private static string Value(IReadOnlyDictionary<string, string> source, string key) => source.TryGetValue(key, out var value) ? value : string.Empty;
     private static string First(IReadOnlyDictionary<string, string> source, params string[] keys) => keys.Select(x => Value(source, x)).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty;
-    private static async Task<bool> ExistsAsync(SqlConnection cn, string name, CancellationToken ct) => await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(@Name) IS NULL THEN 0 ELSE 1 END;", new { Name = name }, cancellationToken: ct)) == 1;
+    private static async Task<bool> ExistsAsync(SqlConnection cn, SqlTransaction? tx, string name, CancellationToken ct) => await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(@Name) IS NULL THEN 0 ELSE 1 END;", new { Name = name }, tx, cancellationToken: ct)) == 1;
 
     private sealed class ConfiguracionRow { public string Clave { get; set; } = string.Empty; public string? Valor { get; set; } }
 
