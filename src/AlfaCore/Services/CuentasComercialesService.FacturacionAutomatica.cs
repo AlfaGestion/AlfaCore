@@ -212,6 +212,122 @@ public sealed partial class CuentasComercialesService
                 .ToList()
         };
 
+    // ── Acciones por lote (vista de facturación automática) ─────────────────────────────────────────
+    private const int MaximoLote = 1000;
+    // Abono = renglones con la marca <PERIODO> (igual que FrmPrincipalCliNew "Agregar concepto Facturacion Automatica").
+    private const string FiltroAbono = "UPPER(D.Detalle) LIKE '%<PERIODO>%'";
+    // Cuotas cumplidas: igual criterio que la facturación (se factura mientras NroUltimaCuota <= Cuotas).
+    private const string FiltroCumplido = "ISNULL(D.Cuotas,0) > 0 AND ISNULL(D.NroUltimaCuota,0) > D.Cuotas";
+
+    private static string[] NormalizarCodigos(IReadOnlyList<string> codigos)
+    {
+        var lista = (codigos ?? []).Select(c => (c ?? string.Empty).Trim()).Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (lista.Length == 0) throw new InvalidOperationException("Seleccioná al menos un cliente.");
+        if (lista.Length > MaximoLote) throw new InvalidOperationException($"Seleccioná hasta {MaximoLote} clientes por vez.");
+        return lista;
+    }
+
+    public Task<IReadOnlyList<FacturacionAutomaticaConceptoUsoDto>> GetConceptosFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<FacturacionAutomaticaConceptoUsoDto>>("Clientes", "FacturacionAutomaticaConceptos", async token =>
+        {
+            var lista = NormalizarCodigos(codigos);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return (IReadOnlyList<FacturacionAutomaticaConceptoUsoDto>)(await cn.QueryAsync<FacturacionAutomaticaConceptoUsoDto>(new CommandDefinition($"""
+                SELECT LTRIM(RTRIM(D.Detalle)) AS Detalle, COUNT(DISTINCT D.Cuenta) AS Clientes, COUNT(*) AS Renglones,
+                       SUM(CASE WHEN {FiltroCumplido} THEN 1 ELSE 0 END) AS Cumplidos
+                FROM dbo.MA_CUENTAS_AUTOCPTESDET D
+                WHERE D.Cuenta IN @Codigos AND LTRIM(RTRIM(D.Detalle)) <> ''
+                GROUP BY LTRIM(RTRIM(D.Detalle))
+                ORDER BY COUNT(DISTINCT D.Cuenta) DESC, LTRIM(RTRIM(D.Detalle));
+                """, new { Codigos = lista }, commandTimeout: 60, cancellationToken: token))).ToList();
+        }, "No se pudieron leer los conceptos de facturación automática.", ct);
+
+    public Task<FacturacionAutomaticaLoteResultadoDto> AgregarConceptoFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, string detalle,
+        decimal importe, bool esPorcentaje, int cuota, int cuotas, CancellationToken ct = default)
+        => ExecuteLoggedAsync<FacturacionAutomaticaLoteResultadoDto>("Clientes", "FacturacionAutomaticaAgregarConcepto", async token =>
+        {
+            var lista = NormalizarCodigos(codigos);
+            detalle = (detalle ?? string.Empty).Trim();
+            if (detalle.Length is 0 or > 1000) throw new InvalidOperationException("Ingresá el detalle del concepto (hasta 1000 caracteres).");
+            if (importe < 0 || (esPorcentaje && importe > 1000)) throw new InvalidOperationException("Revisá el importe o el porcentaje.");
+            if (cuotas < 0 || cuotas > 999 || (cuotas > 0 && (cuota < 1 || cuota > cuotas)))
+                throw new InvalidOperationException("Revisá las cuotas: la cuota inicial tiene que estar entre 1 y la cantidad de cuotas.");
+            if (cuotas == 0) cuota = 0;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+            // Igual que el VB6: una línea por cada cabecera (sucursal) de la cuenta, sin repetir un detalle
+            // que ya tenga. Con porcentaje, sobre la suma de las líneas de abono (<PERIODO>) de esa sucursal.
+            var importeSql = esPorcentaje ? "ROUND(A.Abono * @Importe / 100, 2)" : "@Importe";
+            var joinAbono = esPorcentaje ? $"""
+                INNER JOIN (SELECT D.Cuenta, ISNULL(D.SucursalCuenta,0) AS SucursalCuenta, SUM(ISNULL(D.Importe,0)) AS Abono
+                            FROM dbo.MA_CUENTAS_AUTOCPTESDET D WHERE {FiltroAbono}
+                            GROUP BY D.Cuenta, ISNULL(D.SucursalCuenta,0)) A
+                    ON A.Cuenta = C.Cuenta AND A.SucursalCuenta = ISNULL(C.SucursalCuenta,0) AND A.Abono <> 0
+                """ : string.Empty;
+            var insertados = await cn.ExecuteAsync(new CommandDefinition($"""
+                INSERT INTO dbo.MA_CUENTAS_AUTOCPTESDET (Cuenta, Detalle, Importe, NroUltimaCuota, Cuotas, SucursalCuenta)
+                SELECT C.Cuenta, @Detalle, {importeSql}, @Cuota, @Cuotas, ISNULL(C.SucursalCuenta,0)
+                FROM dbo.MA_CUENTAS_AUTOCPTES C
+                {joinAbono}
+                WHERE C.Cuenta IN @Codigos
+                  AND NOT EXISTS (SELECT 1 FROM dbo.MA_CUENTAS_AUTOCPTESDET D WHERE D.Cuenta = C.Cuenta
+                                  AND ISNULL(D.SucursalCuenta,0) = ISNULL(C.SucursalCuenta,0) AND LTRIM(RTRIM(D.Detalle)) = @Detalle);
+                """, new { Codigos = lista, Detalle = detalle, Importe = importe, Cuota = cuota, Cuotas = cuotas }, sqlTx, 120, cancellationToken: token));
+            var conConcepto = (await cn.QueryAsync<string>(new CommandDefinition("""
+                SELECT DISTINCT LTRIM(RTRIM(Cuenta)) FROM dbo.MA_CUENTAS_AUTOCPTESDET WHERE Cuenta IN @Codigos AND LTRIM(RTRIM(Detalle)) = @Detalle;
+                """, new { Codigos = lista, Detalle = detalle }, sqlTx, cancellationToken: token))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            await sqlTx.CommitAsync(token);
+
+            var resultado = new FacturacionAutomaticaLoteResultadoDto
+            {
+                Renglones = insertados,
+                Clientes = conConcepto.Count,
+                NoModificados = lista.Where(c => !conConcepto.Contains(c)).ToList()
+            };
+            await appEvents.LogAuditAsync("Clientes", "FacturacionAutomaticaAgregarConcepto", "MA_CUENTAS_AUTOCPTESDET", string.Join(",", lista.Take(50)),
+                $"Agregó «{detalle}» a {insertados} renglón(es) de facturación automática.",
+                new { Detalle = detalle, Importe = importe, EsPorcentaje = esPorcentaje, Cuota = cuota, Cuotas = cuotas, Seleccionados = lista.Length, Renglones = insertados },
+                CancellationToken.None);
+            return resultado;
+        }, "No se pudo agregar el concepto de facturación automática.", ct);
+
+    public Task<FacturacionAutomaticaLoteResultadoDto> QuitarConceptoFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, string detalle,
+        bool soloCumplidos, CancellationToken ct = default)
+        => ExecuteLoggedAsync<FacturacionAutomaticaLoteResultadoDto>("Clientes", "FacturacionAutomaticaQuitarConcepto", async token =>
+        {
+            var lista = NormalizarCodigos(codigos);
+            detalle = (detalle ?? string.Empty).Trim();
+            if (detalle.Length == 0) throw new InvalidOperationException("Elegí el concepto a quitar.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+            var filtro = $"D.Cuenta IN @Codigos AND LTRIM(RTRIM(D.Detalle)) = @Detalle{(soloCumplidos ? $" AND {FiltroCumplido}" : string.Empty)}";
+            var afectadas = (await cn.QueryAsync<string>(new CommandDefinition(
+                $"SELECT DISTINCT LTRIM(RTRIM(D.Cuenta)) FROM dbo.MA_CUENTAS_AUTOCPTESDET D WHERE {filtro};",
+                new { Codigos = lista, Detalle = detalle }, sqlTx, cancellationToken: token))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var borrados = await cn.ExecuteAsync(new CommandDefinition(
+                $"DELETE D FROM dbo.MA_CUENTAS_AUTOCPTESDET D WHERE {filtro};",
+                new { Codigos = lista, Detalle = detalle }, sqlTx, 120, cancellationToken: token));
+            await sqlTx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync("Clientes", "FacturacionAutomaticaQuitarConcepto", "MA_CUENTAS_AUTOCPTESDET", string.Join(",", lista.Take(50)),
+                $"Quitó «{detalle}» de {borrados} renglón(es) de facturación automática{(soloCumplidos ? " (solo cuotas cumplidas)" : "")}.",
+                new { Detalle = detalle, SoloCumplidos = soloCumplidos, Seleccionados = lista.Length, Renglones = borrados },
+                CancellationToken.None);
+            return new FacturacionAutomaticaLoteResultadoDto
+            {
+                Renglones = borrados, Clientes = afectadas.Count,
+                NoModificados = lista.Where(c => !afectadas.Contains(c)).ToList()
+            };
+        }, "No se pudo quitar el concepto de facturación automática.", ct);
+
     /// <summary>
     /// Vistas fijas de la lista de clientes, iguales a las del VB6 (NwDbGrid, proceso V_MA_Clientes_C):
     /// "Facturación Automática por Cliente" (VT_PL_Clientes_FacturacionAutCli) y "Datos de Facturación

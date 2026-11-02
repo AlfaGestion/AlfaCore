@@ -26,4 +26,18 @@ public interface ICuentasComercialesService
 
     // Vistas fijas de facturación automática (solo clientes), ver CuentaComercialVistaFijaKeys.
     Task<IReadOnlyList<FacturacionAutomaticaVistaFilaDto>> GetFacturacionAutomaticaVistaAsync(string vista, string texto, CancellationToken ct = default);
+
+    /// <summary>Detalles de facturación automática que tienen los clientes indicados.</summary>
+    Task<IReadOnlyList<FacturacionAutomaticaConceptoUsoDto>> GetConceptosFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    /// <summary>Agrega un concepto a la facturación automática de los clientes indicados (como el lote del VB6).</summary>
+    Task<FacturacionAutomaticaLoteResultadoDto> AgregarConceptoFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, string detalle,
+        decimal importe, bool esPorcentaje, int cuota, int cuotas, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    /// <summary>Quita de los clientes indicados los renglones con ese detalle (opcionalmente solo los de cuotas cumplidas).</summary>
+    Task<FacturacionAutomaticaLoteResultadoDto> QuitarConceptoFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, string detalle,
+        bool soloCumplidos, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }

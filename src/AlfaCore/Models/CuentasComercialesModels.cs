@@ -149,6 +149,25 @@ public sealed class CuentaComercialFacturacionConceptoDto
 
 /// <summary>Vistas fijas de la lista (iguales para todos los usuarios). Las de facturación
 /// automática son solo de clientes, como en Alfa Gestión.</summary>
+/// <summary>Un detalle de facturación automática presente en los clientes seleccionados (para quitarlo por lote).</summary>
+public sealed class FacturacionAutomaticaConceptoUsoDto
+{
+    public string Detalle { get; set; } = string.Empty;
+    public int Clientes { get; set; }
+    public int Renglones { get; set; }
+    /// <summary>Renglones con cuotas y todas ya facturadas.</summary>
+    public int Cumplidos { get; set; }
+}
+
+/// <summary>Resultado de una acción por lote sobre la facturación automática.</summary>
+public sealed class FacturacionAutomaticaLoteResultadoDto
+{
+    public int Renglones { get; set; }
+    public int Clientes { get; set; }
+    /// <summary>Códigos seleccionados que no se modificaron (sin facturación automática, sin abono, etc.).</summary>
+    public IReadOnlyList<string> NoModificados { get; set; } = [];
+}
+
 public static class CuentaComercialVistaFijaKeys
 {
     public const string General = "general";

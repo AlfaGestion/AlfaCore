@@ -113,6 +113,8 @@
                 <div class="cuentas-list-shell__table-scroll">
                     <CuentasFacturacionAutomaticaVista Filas="@_filasVistaFija"
                                                        PorConcepto="@(_vistaFija == CuentaComercialVistaFijaKeys.FacturacionPorConcepto)"
+                                                       Seleccion="@_selectedCodes"
+                                                       OnSeleccionCambiada="UpdatePageHeader"
                                                        OnAbrir="AbrirEnFacturacionAsync" />
                 </div>
             }
@@ -263,6 +265,83 @@
                            Loading="@_saving"
                            OnConfirm="ConfirmBulkDeactivateAsync"
                            OnCancel="CloseBulkDeactivateConfirm" />
+
+        @* Facturación automática por lote (como "Agregar concepto Facturacion Automatica" del VB6). *@
+        <AlfaDialog Open="@_faAgregarAbierto"
+                    Title="Agregar concepto"
+                    Eyebrow="@($"Facturación automática · {_selectedCodes.Count} cliente(s) seleccionado(s)")"
+                    Description="Se agrega una línea en cada sucursal con facturación automática de los clientes seleccionados. No se repite si ya tienen ese mismo detalle."
+                    Size="AlfaDialogSize.Md"
+                    Loading="@_faProcesando"
+                    ErrorMessage="@_faError"
+                    OnClose="() => _faAgregarAbierto = false">
+            <ChildContent>
+                <div class="cuentas-fa-lote">
+                    <AlfaInput Label="Detalle" MaxLength="1000" Value="@_faDetalle" ValueChanged="v => _faDetalle = v ?? string.Empty"
+                               HelpText="Podés usar <PERIODO> para que se reemplace por el mes/año al facturar." Disabled="@_faProcesando" />
+                    <div class="cuentas-fa-lote__fila">
+                        <AlfaSelect Label="Importe" Value="@(_faPorcentaje ? "porc" : "fijo")" ValueChanged='v => _faPorcentaje = v == "porc"'
+                                    Options="@FaTipoImporteOptions" Disabled="@_faProcesando" />
+                        <AlfaInput Label="@(_faPorcentaje ? "Porcentaje del abono" : "Importe sin IVA")" Type="number" Step="0.01"
+                                   Value="@_faImporte" ValueChanged="v => _faImporte = v" Disabled="@_faProcesando" />
+                    </div>
+                    <div class="cuentas-fa-lote__fila">
+                        <AlfaInput Label="Cantidad de cuotas" Type="number" Step="1" Value="@_faCuotas" ValueChanged="v => _faCuotas = v"
+                                   HelpText="0 = se factura siempre." Disabled="@_faProcesando" />
+                        <AlfaInput Label="Cuota inicial" Type="number" Step="1" Value="@_faCuota" ValueChanged="v => _faCuota = v"
+                                   HelpText="Por ejemplo 1 para empezar en la cuota 1." Disabled="@(_faProcesando || !(int.TryParse(_faCuotas, out var c) && c > 0))" />
+                    </div>
+                    @if (_faPorcentaje)
+                    {
+                        <p class="cuentas-fa-lote__nota">El importe de cada cliente es ese porcentaje de la suma de sus líneas de abono (las que tienen &lt;PERIODO&gt;). Los clientes sin abono no se modifican.</p>
+                    }
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_faProcesando" OnClick="_ => _faAgregarAbierto = false">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-plus-circle" Loading="@_faProcesando" Disabled="@_faProcesando" OnClick="_ => AgregarConceptoLoteAsync()">Agregar a @_selectedCodes.Count cliente(s)</AlfaButton>
+            </Footer>
+        </AlfaDialog>
+
+        <AlfaDialog Open="@_faQuitarAbierto"
+                    Title="Quitar concepto"
+                    Eyebrow="@($"Facturación automática · {_selectedCodes.Count} cliente(s) seleccionado(s)")"
+                    Description="Elegí el concepto a quitar de los clientes seleccionados. Se borran solo los renglones con ese mismo detalle."
+                    Size="AlfaDialogSize.Md"
+                    Loading="@_faProcesando"
+                    ErrorMessage="@_faError"
+                    OnClose="() => _faQuitarAbierto = false">
+            <ChildContent>
+                <div class="cuentas-fa-lote">
+                    @if (_faConceptos.Count == 0)
+                    {
+                        <p class="cuentas-fa-lote__nota">@(_faProcesando ? "Buscando los conceptos de los clientes seleccionados..." : "Los clientes seleccionados no tienen conceptos de facturación automática.")</p>
+                    }
+                    else
+                    {
+                        <div class="cuentas-fa-lote__lista" role="radiogroup" aria-label="Conceptos de los clientes seleccionados">
+                            @foreach (var concepto in _faConceptos)
+                            {
+                                <label class="cuentas-fa-lote__opcion @(concepto.Detalle == _faDetalleQuitar ? "is-selected" : null)">
+                                    <input type="radio" name="fa-quitar" checked="@(concepto.Detalle == _faDetalleQuitar)" disabled="@_faProcesando"
+                                           @onchange="() => _faDetalleQuitar = concepto.Detalle" />
+                                    <span class="cuentas-fa-lote__detalle">@concepto.Detalle</span>
+                                    <small>@concepto.Clientes cliente(s) · @concepto.Renglones renglón(es)@(concepto.Cumplidos > 0 ? $" · {concepto.Cumplidos} con cuotas cumplidas" : "")</small>
+                                </label>
+                            }
+                        </div>
+                        <AlfaCheckbox Value="@_faSoloCumplidos" ValueChanged="v => _faSoloCumplidos = v == true" Disabled="@_faProcesando">
+                            Quitar solo los renglones con las cuotas cumplidas
+                        </AlfaCheckbox>
+                    }
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_faProcesando" OnClick="_ => _faQuitarAbierto = false">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Loading="@_faProcesando"
+                            Disabled="@(_faProcesando || string.IsNullOrEmpty(_faDetalleQuitar))" OnClick="_ => QuitarConceptoLoteAsync()">Quitar</AlfaButton>
+            </Footer>
+        </AlfaDialog>
     </div>
 }
 else
@@ -1946,7 +2025,14 @@ else
         }
 
         var actions = new List<PageHeaderAction>();
-        if (_selectedCodes.Count > 0)
+        if (_selectedCodes.Count > 0 && EsVistaFacturacion)
+        {
+            actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "fa-agregar", Label = "Agregar concepto", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _faProcesando, OnClick = AbrirAgregarConceptoAsync });
+            actions.Add(new PageHeaderAction { Key = "fa-quitar", Label = "Quitar concepto", Icon = "bi-dash-circle", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _faProcesando, OnClick = AbrirQuitarConceptoAsync });
+            actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
+        }
+        else if (_selectedCodes.Count > 0)
         {
             actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
             actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = OpenBulkDeactivateFromHeaderAsync });
@@ -2198,6 +2284,99 @@ else
         _totalPages = 1;
         _hasPrev = false;
         _hasNext = false;
+    }
+
+    // ── Facturación automática por lote ──────────────────────────────────────────────────────────
+    private bool _faAgregarAbierto;
+    private bool _faQuitarAbierto;
+    private bool _faProcesando;
+    private string? _faError;
+    private string _faDetalle = string.Empty;
+    private bool _faPorcentaje;
+    private string? _faImporte;
+    private string? _faCuotas = "0";
+    private string? _faCuota = "1";
+    private IReadOnlyList<FacturacionAutomaticaConceptoUsoDto> _faConceptos = [];
+    private string? _faDetalleQuitar;
+    private bool _faSoloCumplidos;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> FaTipoImporteOptions =
+        [new("fijo", "Importe fijo"), new("porc", "Porcentaje del abono")];
+
+    private Task AbrirAgregarConceptoAsync()
+    {
+        _faError = null; _faDetalle = string.Empty; _faPorcentaje = false; _faImporte = null; _faCuotas = "0"; _faCuota = "1";
+        _faAgregarAbierto = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AbrirQuitarConceptoAsync()
+    {
+        _faError = null; _faConceptos = []; _faDetalleQuitar = null; _faSoloCumplidos = false;
+        _faQuitarAbierto = true; _faProcesando = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            _faConceptos = await CuentasSvc.GetConceptosFacturacionAutomaticaAsync(_selectedCodes.ToList());
+            // Si un solo concepto tiene cuotas cumplidas, se propone ese (caso típico: el adicional ya cobrado).
+            var cumplidos = _faConceptos.Where(c => c.Cumplidos > 0).ToList();
+            if (cumplidos.Count == 1) { _faDetalleQuitar = cumplidos[0].Detalle; _faSoloCumplidos = true; }
+        }
+        catch (Exception ex) { _faError = ex.Message; }
+        finally { _faProcesando = false; }
+        // Se abrió desde el encabezado (otro componente): hay que pedir el redibujo.
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static decimal? LeerDecimal(string? valor)
+        => decimal.TryParse((valor ?? string.Empty).Replace(',', '.'), System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out var numero) ? numero : null;
+
+    private async Task AgregarConceptoLoteAsync()
+    {
+        _faError = null;
+        var importe = LeerDecimal(_faImporte);
+        if (string.IsNullOrWhiteSpace(_faDetalle)) { _faError = "Ingresá el detalle del concepto."; return; }
+        if (importe is null) { _faError = _faPorcentaje ? "Ingresá el porcentaje." : "Ingresá el importe sin IVA."; return; }
+        if (!int.TryParse(_faCuotas, out var cuotas)) cuotas = 0;
+        if (!int.TryParse(_faCuota, out var cuota)) cuota = 1;
+        _faProcesando = true;
+        try
+        {
+            var r = await CuentasSvc.AgregarConceptoFacturacionAutomaticaAsync(_selectedCodes.ToList(), _faDetalle, importe.Value, _faPorcentaje, cuota, cuotas);
+            _faAgregarAbierto = false;
+            await TerminarLoteAsync($"Se agregó «{_faDetalle.Trim()}» en {r.Renglones} renglón(es) de {r.Clientes} cliente(s).", r,
+                _faPorcentaje ? "sin facturación automática o sin líneas de abono <PERIODO>" : "sin facturación automática");
+        }
+        catch (Exception ex) { _faError = ex.Message; }
+        finally { _faProcesando = false; }
+    }
+
+    private async Task QuitarConceptoLoteAsync()
+    {
+        if (string.IsNullOrEmpty(_faDetalleQuitar)) return;
+        _faError = null; _faProcesando = true;
+        try
+        {
+            var r = await CuentasSvc.QuitarConceptoFacturacionAutomaticaAsync(_selectedCodes.ToList(), _faDetalleQuitar, _faSoloCumplidos);
+            _faQuitarAbierto = false;
+            await TerminarLoteAsync($"Se quitó «{_faDetalleQuitar}» de {r.Renglones} renglón(es) de {r.Clientes} cliente(s).", r,
+                _faSoloCumplidos ? "sin ese concepto con cuotas cumplidas" : "sin ese concepto");
+        }
+        catch (Exception ex) { _faError = ex.Message; }
+        finally { _faProcesando = false; }
+    }
+
+    private async Task TerminarLoteAsync(string mensaje, FacturacionAutomaticaLoteResultadoDto r, string motivoNoModificados)
+    {
+        var nombres = r.NoModificados.Select(c => _filasVistaFija.FirstOrDefault(f => string.Equals(f.Codigo, c, StringComparison.OrdinalIgnoreCase))?.RazonSocial ?? c)
+            .Distinct().Take(8).ToList();
+        SetFeedback(r.NoModificados.Count == 0
+            ? AppUiMessage.Success("Facturación automática", mensaje)
+            : AppUiMessage.Warning("Facturación automática",
+                $"{mensaje} No se modificaron {r.NoModificados.Count} ({motivoNoModificados}): {string.Join(", ", nombres)}{(r.NoModificados.Count > nombres.Count ? "…" : "")}."));
+        await CargarVistaFijaAsync();
+        UpdatePageHeader();
     }
 
     private async Task AbrirEnFacturacionAsync(string codigo)

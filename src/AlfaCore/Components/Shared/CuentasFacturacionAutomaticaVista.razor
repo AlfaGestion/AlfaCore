@@ -9,6 +9,7 @@
                    Subtitulo="@($"{Filas.Count} concepto(s) de {Filas.Select(f => f.Codigo).Distinct().Count()} cliente(s) con facturación activa · el importe anterior es el previo al último cambio")">
             <Header>
                 <tr>
+                    <th>@RenderTodos()</th>
                     @Th("codigo", "Código")
                     @Th("cliente", "Cliente")
                     @Th("detalle", "Detalle")
@@ -26,13 +27,14 @@
             <Rows>
                 @if (Filas.Count == 0)
                 {
-                    <tr><td colspan="12"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin conceptos" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
+                    <tr><td colspan="13"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin conceptos" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
                 }
                 else
                 {
                     @foreach (var fila in Ordenadas)
                     {
                         <tr class="fa-vista__fila @(fila.SeFactura ? string.Empty : "is-cumplido")" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="@(fila.SeFactura ? "Doble clic para abrir la ficha" : "Cuotas cumplidas: ya no se factura")">
+                            <td>@RenderMarca(fila.Codigo)</td>
                             <td>@fila.CtaCodigo</td>
                             <td><strong>@fila.RazonSocial</strong></td>
                             <td>@fila.Detalle</td>
@@ -48,7 +50,7 @@
                         </tr>
                     }
                     <tr class="data-table__totals">
-                        <td colspan="3" class="gd-totals-label">Total (@Filas.Count conceptos)</td>
+                        <td colspan="4" class="gd-totals-label">Total (@Filas.Count conceptos)</td>
                         <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Importe))</td>
                         <td style="text-align:right;">@Moneda(Filas.Sum(f => f.ImporteAnterior))</td>
                         <td colspan="7"></td>
@@ -63,6 +65,7 @@
                    Subtitulo="@($"{Filas.Count} cliente(s) con facturación activa · Abono = líneas con <PERIODO> · Total = lo que se factura por período (sin cuotas cumplidas)")">
             <Header>
                 <tr>
+                    <th>@RenderTodos()</th>
                     @Th("codigo", "Código")
                     @Th("cliente", "Cliente")
                     @Th("contacto", "Contacto")
@@ -81,13 +84,14 @@
             <Rows>
                 @if (Filas.Count == 0)
                 {
-                    <tr><td colspan="13"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin clientes" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
+                    <tr><td colspan="14"><AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin clientes" Message="No hay clientes con facturación automática activa para esta búsqueda." /></td></tr>
                 }
                 else
                 {
                     @foreach (var fila in Ordenadas)
                     {
                         <tr class="fa-vista__fila" @ondblclick="() => OnAbrir.InvokeAsync(fila.Codigo)" title="Doble clic para abrir la ficha">
+                            <td>@RenderMarca(fila.Codigo)</td>
                             <td>@fila.CtaCodigo</td>
                             <td><strong>@fila.RazonSocial</strong></td>
                             <td>@fila.Contacto</td>
@@ -104,7 +108,7 @@
                         </tr>
                     }
                     <tr class="data-table__totals">
-                        <td colspan="8" class="gd-totals-label">Total (@Filas.Count clientes)</td>
+                        <td colspan="9" class="gd-totals-label">Total (@Filas.Count clientes)</td>
                         <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Abono))</td>
                         <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Otros))</td>
                         <td style="text-align:right;">@Moneda(Filas.Sum(f => f.Total))</td>
@@ -120,6 +124,32 @@
     [Parameter] public IReadOnlyList<FacturacionAutomaticaVistaFilaDto> Filas { get; set; } = [];
     [Parameter] public bool PorConcepto { get; set; }
     [Parameter] public EventCallback<string> OnAbrir { get; set; }
+    /// <summary>Códigos seleccionados (compartido con la página, para las acciones por lote).</summary>
+    [Parameter] public HashSet<string>? Seleccion { get; set; }
+    [Parameter] public EventCallback OnSeleccionCambiada { get; set; }
+
+    // Se selecciona el cliente: en la vista por concepto marcar una línea marca todas las de ese cliente.
+    private bool Marcado(string codigo) => Seleccion?.Contains(codigo) == true;
+    private bool TodosMarcados => Seleccion is not null && Filas.Count > 0 && Filas.All(f => Seleccion.Contains(f.Codigo));
+
+    private Task Marcar(string codigo, bool valor)
+    {
+        if (Seleccion is null) return Task.CompletedTask;
+        if (valor) Seleccion.Add(codigo); else Seleccion.Remove(codigo);
+        return OnSeleccionCambiada.InvokeAsync();
+    }
+
+    private Task MarcarTodos(bool valor)
+    {
+        if (Seleccion is null) return Task.CompletedTask;
+        foreach (var codigo in Filas.Select(f => f.Codigo).Distinct())
+            if (valor) Seleccion.Add(codigo); else Seleccion.Remove(codigo);
+        return OnSeleccionCambiada.InvokeAsync();
+    }
+
+    private RenderFragment RenderTodos() => @<AlfaCheckbox Value="@TodosMarcados" ValueChanged="v => MarcarTodos(v == true)">Todos</AlfaCheckbox>;
+
+    private RenderFragment RenderMarca(string codigo) => @<span @ondblclick:stopPropagation="true"><AlfaCheckbox Value="@Marcado(codigo)" AriaLabel="@($"Seleccionar cliente {codigo}")" ValueChanged="v => Marcar(codigo, v == true)" /></span>;
 
     // ── Orden por columna (en pantalla: la vista trae todas las filas) ───────────
     // Clic: ascendente → descendente → orden original de la consulta.
