@@ -1,28 +1,6 @@
+/* El scroll (vertical y horizontal) lo da el panel de la lista que la contiene. */
 .fa-vista {
     min-width: 0;
-    overflow-x: auto;
-}
-
-.fa-vista ::deep .fa-vista__sort {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-}
-
-.fa-vista ::deep .fa-vista__sort:hover,
-.fa-vista ::deep .fa-vista__sort.is-sorted {
-    color: var(--alfa-text-primary);
-}
-
-.fa-vista ::deep .fa-vista__sort i {
-    font-size: 10px;
-    color: var(--alfa-accent);
 }
 
 .fa-vista ::deep .fa-vista__fila {

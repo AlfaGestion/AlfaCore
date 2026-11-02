@@ -109,9 +109,12 @@
             }
             else if (EsVistaFacturacion)
             {
-                <CuentasFacturacionAutomaticaVista Filas="@_filasVistaFija"
-                                                   PorConcepto="@(_vistaFija == CuentaComercialVistaFijaKeys.FacturacionPorConcepto)"
-                                                   OnAbrir="AbrirEnFacturacionAsync" />
+                @* Dentro del panel con scroll: el contenedor de la lista tiene overflow hidden. *@
+                <div class="cuentas-list-shell__table-scroll">
+                    <CuentasFacturacionAutomaticaVista Filas="@_filasVistaFija"
+                                                       PorConcepto="@(_vistaFija == CuentaComercialVistaFijaKeys.FacturacionPorConcepto)"
+                                                       OnAbrir="AbrirEnFacturacionAsync" />
+                </div>
             }
             else if (_items.Count == 0)
             {

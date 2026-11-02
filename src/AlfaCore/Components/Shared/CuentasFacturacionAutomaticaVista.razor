@@ -165,12 +165,11 @@
     }
 
     private RenderFragment Th(string columna, string titulo, bool derecha = false) => @<th style="@(derecha ? "text-align:right;" : null)" aria-sort="@(_ordenColumna == columna ? (_ordenDesc ? "descending" : "ascending") : "none")">
-        <button type="button" class="fa-vista__sort @(_ordenColumna == columna ? "is-sorted" : null)" title="@($"Ordenar por {titulo}")" @onclick="() => Ordenar(columna)">
-            @titulo
-            @if (_ordenColumna == columna)
-            {
-                <i class="bi @(_ordenDesc ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
-            }
+        @* Clase global table-sort: sticky-list-headers.js copia el encabezado fuera de este componente y
+           los estilos aislados no llegan a esa copia (los botones se veían como botones comunes). *@
+        <button type="button" class="table-sort @(_ordenColumna == columna ? "is-active" : null)" title="@($"Ordenar por {titulo}")" @onclick="() => Ordenar(columna)">
+            <span class="table-sort__label">@titulo</span>
+            <i class="table-sort__icon bi @(_ordenColumna != columna ? "bi-arrow-down-up" : _ordenDesc ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i>
         </button>
     </th>;
 
