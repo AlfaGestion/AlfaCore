@@ -60,3 +60,5 @@
 
 .tarjetas-confirmacion-footer{width:100%;min-width:0;display:flex;flex-direction:column;gap:8px}
 .tarjetas-confirmacion-footer .tarjetas-herramientas{justify-content:flex-end}
+.tarjetas-lt-cuentas{margin:12px 0;padding:12px;border:1px solid var(--alfa-border-default);border-radius:var(--alfa-radius-sm)}
+.tarjetas-lt-cuentas summary{cursor:pointer;font-weight:600}

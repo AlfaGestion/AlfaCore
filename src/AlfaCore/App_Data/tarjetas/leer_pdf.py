@@ -13,6 +13,56 @@ def amount(text):
 def date(text, year=None):
     if len(text)==5: text += "/" + str(year)
     return datetime.strptime(text, "%d/%m/%Y" if len(text.split("/")[-1])==4 else "%d/%m/%y").strftime("%Y-%m-%d")
+
+def conceptos_lt(text):
+    """Desglose explícito Nación, sin recalcular impuestos ni completar diferencias."""
+    rows=[]
+    for line in text.splitlines():
+        m=re.match(r"\s*([+-])\s+(.+?)\s+\$\s*("+MONEY+r")\s*$",line)
+        if not m: continue
+        label=" ".join(m.group(2).split());upper=label.upper()
+        role=("Tarjeta" if upper.startswith("VENTAS") else
+              "IvaCredito" if upper.startswith(("IVA CRED","IVA RI SERV.OPER.")) else
+              "Iibb" if "ING.BRUTOS" in upper or "SIRTAC" in upper or upper.startswith("QR RETENCION IIBB") else
+              "Ganancias" if "GANANCIA" in upper else
+              "PercepcionIva" if "PERCEPCION IVA" in upper or "RETENCION IVA" in upper else
+              "Gastos" if upper.startswith(("ARANCEL","SERVICIO OPER.","DTO. FINANC","DESCUENTO FINANC")) else "SinClasificar")
+        value=amount(m.group(3))
+        if m.group(1)=="-": value=-value
+        # Signo económico: ingreso positivo, descuento negativo.
+        rows.append({"Concepto":label,"Rol":role,"Importe":str(value)})
+    return rows
+
+def liquidaciones_lt(text, banco):
+    if banco!="Nación" or "BCO DE LA NACION" not in text: return []
+    result=[];start=0
+    for close in re.finditer(r"F.de Pago:[^\n]*el d.a\s+(\d{2}/\d{2}/\d{4})[^\n]*Nro. Liq:\s*(\d+)",text):
+        block=text[start:close.start()];start=close.end()
+        rows=conceptos_lt(block)
+        net=re.findall(r"IMPORTE NETO DE PAGOS\s*\$\s*("+MONEY+r")",block)
+        if not rows or len(net)!=1: continue
+        result.append({"Numero":close.group(2),"Fecha":date(close.group(1)),
+                       "Neto":str(amount(net[0])),"Conceptos":rows})
+    return result
+
+def resumen_lt(text, result):
+    """Resumen fiscal mensual: nunca reparte impuestos entre liquidaciones diarias."""
+    compact="\n".join(" ".join(line.split()) for line in text.splitlines())
+    summary=re.search(r"Base Imponible IVA Monto Gravado\s*\n([\s\S]*?)Fin de la informaci.n",compact,re.I)
+    reference=re.search(r"N. DE RESUMEN:\s*(\d+)",compact)
+    emission=re.search(r"FECHA DE EMISION:\s*(\d{2}/\d{2}/\d{4})",compact)
+    if not summary or not reference or not emission: return []
+    s=summary.group(1)
+    rows=[{"Concepto":"TOTAL PRESENTADO","Rol":"Tarjeta","Importe":result["Bruto"]}]
+    patterns=[("Gastos","Base imponible IVA / gastos",r"^Tasa [\d,]+ % \$ ("+MONEY+r")$"),
+              ("IvaCredito","IVA crédito fiscal",r"^IVA [\d,]+ % \$ ("+MONEY+r")$"),
+              ("Iibb","Retención IB",r"^Ret\.IB[^\n]*\n[\d,]+ % \$ ("+MONEY+r")$"),
+              ("PercepcionIva","Percepción/retención AFIP-DGI",r"^Percep\./Retenc\.AFIP - DGI \$ ("+MONEY+r")$")]
+    for role,label,pattern in patterns:
+        values=re.findall(pattern,s,re.M|re.I)
+        if values: rows.append({"Concepto":label,"Rol":role,"Importe":str(-sum((amount(v) for v in values),Decimal(0)))})
+    return [{"Numero":reference.group(1),"Fecha":date(emission.group(1)),"Neto":result["Neto"],
+             "EsResumenMensual":True,"Conceptos":rows}]
 def read_pdf(data, name):
     reader=PdfReader(io.BytesIO(data))
     if len(reader.pages)>150: raise ValueError("El documento supera las 150 páginas.")
@@ -83,6 +133,9 @@ def read_pdf(data, name):
     result["TotalDetalle"]=str(total)
     result["DetalleCompleto"]=(total==Decimal(result["Bruto"]))
     if not result["DetalleCompleto"]: result["Avisos"].append("El detalle extraído no coincide con el bruto del resumen. Revisar antes de conciliar.")
+    result["LiquidacionesLt"]=liquidaciones_lt(text,result["Banco"])
+    if not result["LiquidacionesLt"] and monthly_bank:
+        result["LiquidacionesLt"]=resumen_lt(text,result)
     return result
 if __name__=="__main__":
     try:

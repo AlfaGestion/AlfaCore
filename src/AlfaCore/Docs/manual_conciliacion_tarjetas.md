@@ -243,3 +243,16 @@ Los avisos **Ambiguo** y **YaConciliado** aparecen directamente en la revisión.
 El caso de Patagonia analizado se puede resolver con cinco grupos candidatos para ocho filas PDF y 119 movimientos de Alfa, incluyendo el fin de semana y un centavo de diferencia. Los otros tres registros quedan señalados para revisar la identidad y el vínculo anterior. Es un resultado del caso probado, no una garantía de resolver cualquier liquidación.
 
 Para volver al comportamiento anterior desactivá **Búsqueda automática**. En ese modo vuelve a usarse el máximo de intentos de agrupación anterior. La actualización `2026-10-31-004` registra los predeterminados por base; los ajustes de esta ventana siguen siendo temporales para el análisis. La misma estrategia se usa al procesar desde Recepción documental.
+
+
+## Preparar LT: primera etapa de vista previa
+
+Dentro de una importación, en **Conciliar tarjetas → Preparar LT**, se vuelve a leer el PDF original guardado. No hace falta reimportar archivos anteriores. Se utiliza todo el documento, independientemente de los filtros y las casillas de conciliación.
+
+En los resúmenes Nación con desglose individual se elige cada liquidación para revisar ventas, descuentos, impuestos y neto. **Cuentas para LT → configurar conceptos** permite elegir cuentas del plan activo y guardar esa relación para próximas vistas del mismo banco, comercio, tarjeta y cuenta. La cuenta de tarjeta es la asignada a la importación; la cuenta del neto se elige entre bancos activos en pesos. Las sugerencias iniciales por nombre solo se completan cuando hay una cuenta inequívoca y deben revisarse.
+
+La tabla muestra Debe, Haber y diferencia, conservando los importes leídos. Si hay descuentos desconocidos, cuentas faltantes o una diferencia, se informa: nunca se inventa un ajuste para balancear. Los importes todavía no se pueden editar; ante una lectura incompleta corresponde revisar el PDF.
+
+Los formatos mensuales con resumen fiscal compartido (Patagonia y otros formatos compatibles) se presentan como **Resumen mensual**, no como LT individual. El cuadro usa la base imponible como gasto, sin sumar nuevamente los aranceles que la componen. No reparte impuestos ni descuentos diarios entre liquidaciones y no duplica las constancias de retención. Si falta un concepto, la diferencia queda visible. El criterio para registrar estos resúmenes y evitar duplicar el crédito fiscal diario debe definirse antes de habilitar la grabación.
+
+Esta etapa guarda únicamente las cuentas al pulsar **Guardar cuentas para próximas LT**. No reserva números, no controla duplicidad de LT manuales, no genera comprobantes, no modifica asientos, no cambia conciliaciones y no registra el libro de IVA. Esos controles y la registración corresponden a la siguiente etapa.

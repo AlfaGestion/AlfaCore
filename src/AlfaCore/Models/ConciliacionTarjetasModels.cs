@@ -11,6 +11,7 @@ public sealed class TarjetasLectura
     public bool DetalleCompleto {get;set;}
     public List<TarjetasDetalle> Detalles {get;set;}=[];
     public List<string> Avisos {get;set;}=[];
+    public List<TarjetasLtLiquidacion> LiquidacionesLt {get;set;}=[];
     public string CuentaSugerida {get;set;}="";
     public string SucursalSugerida {get;set;}="";
     public TarjetasDeteccionCuenta? Deteccion {get;set;}

@@ -231,3 +231,14 @@ La IA de movimientos conserva sus 20 índices por grupo. Se valida cantidad para
 Pruebas: TarjetasAutomaticasTests cubre complementos, fines de semana, agrupación de conceptos, repetidos, presupuestos/cancelación y planes de índices falsos. TarjetasAutomaticasSqlTests es optativo, de lectura, sobre el caso Patagonia en PRUEBAS02122025: cinco grupos, ocho filas PDF, 119 movimientos, diagnóstico de ambigüedad y vínculo #13; no llama al proveedor ni guarda análisis/vínculos. El plan de IA se prueba con respuestas simuladas; no se publicaron cambios ni se configuraron credenciales en las pruebas.
 
 El fallback de cupones en modo automático también rechaza una elección del modelo si quedan movimientos alternativos compatibles y no hay un cupón identificable que justifique la selección. El texto del modelo no reemplaza esa validación.
+
+
+## Vista previa LT (02/11/2026)
+
+`PrepararLtAsync` relee el original validando SHA-256, con la sesión y permiso de tarjetas vigentes. No utiliza movimientos seleccionados ni altera la conciliación. El lector agrega `LiquidacionesLt` sin cambiar el contrato del detalle conciliable. Nación se segmenta por cierre de pago/número de liquidación; los formatos mensuales compatibles exponen el resumen fiscal como `EsResumenMensual`, sin distribuirlo entre liquidaciones. La constancia AFIP no se suma nuevamente al resumen. Los conceptos desconocidos se conservan con `SinClasificar`; faltantes y diferencias son diagnósticos, nunca ajustes.
+
+`TarjetasLtPreparacion` construye un borrador sin persistencia contable: banco neto y descuentos al Debe, bruto de tarjeta al Haber, invirtiendo el sentido en devoluciones. No recalcula IVA. Se muestran advertencias por resúmenes compartidos, conceptos desconocidos, cuentas faltantes y desbalance. No se afirma aptitud para registrar: faltan control de duplicidad legacy, unidad, numeración, datos fiscales y transacción LT/libro IVA.
+
+`GuardarLtCuentasAsync` es la única escritura de esta etapa, sobre `TA_CONFIGURACION`, clave `TARJETAS-LT-CUENTAS`, grupo CAJA, JSON en ValorAux. Se identifica banco/comercio/tarjeta/cuenta TJ. Se valida contra MA_CUENTAS activo, imputable y pesos, excluyendo clientes y proveedores oficiales. Banco usa DB; otros conceptos medios vacíos o RI/RB/RG/RO. Las sugerencias por nombre solo se asignan si son únicas. No se escriben MV_ASIENTOS, libros, numeradores ni tablas de conciliación. No requiere migración de esquema; la clave se crea al guardar la configuración.
+
+Validación: pruebas del armado/signos/cuentas, separación de liquidaciones Nación, no duplicidad arancel/base/constancia y lectura local de los PDF de muestra. Los PDF privados permanecen fuera del repositorio.

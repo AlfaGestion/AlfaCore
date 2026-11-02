@@ -160,6 +160,35 @@
     }
     else{<AlfaEmptyState Title="Elegí una liquidación" Message="Abrí una importación para comparar sus operaciones con las tarjetas presentadas en Alfa." />}
 </div>
+<AlfaDialog Open="@_mostrarLt" Title="Preparar LT · vista previa" CloseOnBackdrop="false" Size="AlfaDialogSize.Lg" OnClose="CerrarLt" Loading="_busy">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@(_progreso??_feedback)" />
+        @if(_lt is {} lt)
+        {
+            <p>@lt.Banco · Comercio @lt.Comercio · @lt.Tarjeta · Cuenta tarjeta @lt.CuentaTarjeta</p>
+            @foreach(var aviso in lt.Avisos){<p role="status">@aviso</p>}
+            @if(lt.Liquidaciones.Count>0)
+            {
+                <AlfaSelect Label="Bloque económico del documento" Value="@_ltIndice" ValueChanged="v=>_ltIndice=v" Options="LtOpciones" Disabled="_busy" />
+                <details class="tarjetas-lt-cuentas"><summary>Cuentas para LT · configurar conceptos</summary>
+                    <p>Se recuerdan para este banco, comercio, tarjeta y cuenta en la base activa. Las sugerencias iniciales requieren revisión.</p>
+                    <div class="tarjetas-campos">@foreach(var r in _ltCuentas){<AlfaSelect @key="r.Rol" Label="@LtNombreRol(r.Rol)" Value="@r.Cuenta" ValueChanged="v=>r.Cuenta=v" Options="LtOpcionesCuenta(r.Rol)" Disabled="_busy" />}</div>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="GuardarLtCuentas">Guardar cuentas para próximas LT</AlfaButton>
+                </details>
+                @if(LtElegida is {} elegida)
+                {
+                    var borrador=TarjetasLtPreparacion.Preparar(elegida,lt.CuentaTarjeta,_ltCuentas);
+                    <p><strong>@(elegida.EsResumenMensual?"Resumen mensual":"Liquidación") @elegida.Numero</strong> · Fecha de pago/emisión @elegida.Fecha.ToString("dd/MM/yyyy")</p>
+                    @foreach(var aviso in borrador.Avisos){<p role="status">@aviso</p>}
+                    <div class="tarjetas-scroll"><table class="tarjetas-tabla"><thead><tr><th>Concepto del documento</th><th>Cuenta</th><th>Debe</th><th>Haber</th></tr></thead><tbody>
+                    @foreach(var linea in borrador.Lineas){<tr><td>@linea.Concepto</td><td>@(linea.Cuenta.Length==0?"Sin asignar":linea.Cuenta)<br/><small>@lt.Cuentas.FirstOrDefault(c=>c.Codigo==linea.Cuenta)?.Descripcion</small></td><td class="numero">@Dinero(linea.Debe)</td><td class="numero">@Dinero(linea.Haber)</td></tr>}
+                    </tbody><tfoot><tr><th>Totales</th><th>Diferencia @Dinero(borrador.Diferencia)</th><th class="numero">@Dinero(borrador.Debe)</th><th class="numero">@Dinero(borrador.Haber)</th></tr></tfoot></table></div>
+                }
+            }
+        }
+    </ChildContent>
+    <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="CerrarLt">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
 <AlfaDialog Open="@_mostrarCriteriosIa" Title="Asistir con IA · criterios de búsqueda" CloseOnBackdrop="false" Size="AlfaDialogSize.Lg" OnClose="CerrarCriteriosIa" Loading="_busy">
     <ChildContent>
         <AlfaFeedbackPanel Message="@(_progreso??_feedback)" />
@@ -442,7 +471,7 @@
     private string _ultimoHeader="";
     private string EstadoHeader()=>$"{_tab}|{_busy}|{_prepararAlImportar}|{_cuenta}|{_lectura?.Detalles.Count}|{_comparacion?.Importacion.Id}|{_comparacion?.Importacion.DetalleCompleto}|{_detalles.Count}|{_movimientos.Count}|{_filtro.FechaDesde}|{_filtro.FechaHasta}|{_filtro.Sucursal}|{_filtro.Estado}|{_filtro.Buscar}|{_paginaImport}|{_importaciones.Count}";
     protected override void OnAfterRender(bool firstRender){if(firstRender||EstadoHeader()!=_ultimoHeader)Header();}
-    private void CambioSesion(){if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;_lifetime.Cancel();_mostrarCriteriosIa=false;_criteriosElegidos=null;_mostrarExportar=false;_mostrarDeshacerVarias=false;_vistaDeshacer=null;_deshacerElegidos.Clear();_progreso=null;_accionEnCurso="";_corregirCuenta=null;_eliminarImportacion=null;_motivoEliminar="";_archivo=null;_lectura=null;_comparacion=null;_ia=null;_analisisGuardado=null;_mostrarIa=false;LimpiarIa();_cuentas=[];_importaciones=[];LimpiarSeleccion();_confirmar=false;_feedback=AppUiMessage.Info("La sesión cambió","Volvé a abrir el módulo en la base activa.");_ = InvokeAsync(StateHasChanged);}
+    private void CambioSesion(){if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;_lifetime.Cancel();_mostrarLt=false;_lt=null;_ltCuentas=[];_mostrarCriteriosIa=false;_criteriosElegidos=null;_mostrarExportar=false;_mostrarDeshacerVarias=false;_vistaDeshacer=null;_deshacerElegidos.Clear();_progreso=null;_accionEnCurso="";_corregirCuenta=null;_eliminarImportacion=null;_motivoEliminar="";_archivo=null;_lectura=null;_comparacion=null;_ia=null;_analisisGuardado=null;_mostrarIa=false;LimpiarIa();_cuentas=[];_importaciones=[];LimpiarSeleccion();_confirmar=false;_feedback=AppUiMessage.Info("La sesión cambió","Volvé a abrir el módulo en la base activa.");_ = InvokeAsync(StateHasChanged);}
     private async Task Operar(Func<CancellationToken,Task> work,AppUiMessage? progreso=null,string accion="")
     {
         if(_busy||_disposed||_lifetime.IsCancellationRequested)return;_busy=true;_accionEnCurso=accion;
@@ -567,7 +596,7 @@
         PageHeader.Set(_header=new PageHeaderConfig{ModuleKey="caja-bancos",ShellMode=PageHeaderShellMode.AlfaDesignPilot,Title="Conciliación de tarjetas asistida con IA",ResponsiveToolbar=true,
             TopNavigationItems=[new(){Key="tarjetas",Label="Conciliación de tarjetas asistida con IA",Active=true}],SearchContent=_tab=="conciliar"?Busqueda():null,
             Actions=_tab=="importar" ? [new(){Key="importar",Label=_prepararAlImportar?"Importar y preparar":"Importar liquidación",Icon="bi-upload",Disabled=_busy||_lectura is null||_cuenta.Length==0,OnClick=Importar},new(){Key="actualizar",Label="Actualizar",Icon="bi-arrow-clockwise",Disabled=_busy,OnClick=()=>Operar(async ct=>_importaciones=await Servicio.ImportacionesAsync(_verAnuladas,ct))}]
-                :[new(){Key="conciliar",Label="Conciliar selección",Icon="bi-link",Disabled=_busy||!PuedeConciliar,OnClick=PedirConfirmar},new(){Key="proponer",Label="Proponer selección",Title="Marca pares únicos con la misma fecha e importe; no usa IA ni confirma vínculos.",Icon="bi-stars",Disabled=_busy||_comparacion is null,OnClick=Proponer},new(){Key="ia",Label=_busy&&_accionEnCurso=="ia"?"Analizando con IA…":"Asistir con IA",Title="Analiza pendientes y propone coincidencias o agrupaciones para revisar antes de confirmar.",Busy=_busy&&_accionEnCurso=="ia",Icon="bi-stars",Disabled=_busy||_comparacion?.Importacion.DetalleCompleto!=true,OnClick=AsistirIa},new(){Key="comparar",Label="Comparar",Title="Actualiza las listas con los filtros elegidos; no propone ni confirma conciliaciones.",Busy=_busy&&_accionEnCurso=="comparar",Icon="bi-arrow-repeat",Disabled=_busy||_comparacion is null,OnClick=Comparar},new(){Key="exportar",Label=_busy&&_accionEnCurso=="exportar"?"Preparando Excel…":"Exportar Excel",Icon="bi-file-earmark-excel",Busy=_busy&&_accionEnCurso=="exportar",Disabled=_busy||_aplicado is null||_comparacion is null,OnClick=PedirExportar}],
+                :[new(){Key="conciliar",Label="Conciliar selección",Icon="bi-link",Disabled=_busy||!PuedeConciliar,OnClick=PedirConfirmar},new(){Key="proponer",Label="Proponer selección",Title="Marca pares únicos con la misma fecha e importe; no usa IA ni confirma vínculos.",Icon="bi-stars",Disabled=_busy||_comparacion is null,OnClick=Proponer},new(){Key="ia",Label=_busy&&_accionEnCurso=="ia"?"Analizando con IA…":"Asistir con IA",Title="Analiza pendientes y propone coincidencias o agrupaciones para revisar antes de confirmar.",Busy=_busy&&_accionEnCurso=="ia",Icon="bi-stars",Disabled=_busy||_comparacion?.Importacion.DetalleCompleto!=true,OnClick=AsistirIa},new(){Key="comparar",Label="Comparar",Title="Actualiza las listas con los filtros elegidos; no propone ni confirma conciliaciones.",Busy=_busy&&_accionEnCurso=="comparar",Icon="bi-arrow-repeat",Disabled=_busy||_comparacion is null,OnClick=Comparar},new(){Key="exportar",Label=_busy&&_accionEnCurso=="exportar"?"Preparando Excel…":"Exportar Excel",Icon="bi-file-earmark-excel",Busy=_busy&&_accionEnCurso=="exportar",Disabled=_busy||_aplicado is null||_comparacion is null,OnClick=PedirExportar},new(){Key="preparar-lt",Label=_busy&&_accionEnCurso=="PrepararLT"?"Preparando LT…":"Preparar LT",Icon="bi-journal-text",Busy=_busy&&_accionEnCurso=="PrepararLT",Disabled=_busy||_comparacion is null,OnClick=AbrirLt}],
             Pagination=_tab=="importar"?new(){Label=$"{_importaciones.Count} importaciones",PageLabel=$"{_paginaImport} / {Math.Max(1,(_importaciones.Count+49)/50)}",HasPrevious=_paginaImport>1,HasNext=_paginaImport*50<_importaciones.Count,Disabled=_busy,OnPrevious=()=>{_paginaImport--;Header();return Task.CompletedTask;},OnNext=()=>{_paginaImport++;Header();return Task.CompletedTask;}}:null});
     }
     public void Dispose(){_disposed=true;Sesiones.SessionChanged-=CambioSesion;Usuarios.StateChanged-=CambioSesion;_lifetime.Cancel();_lifetime.Dispose();if(ReferenceEquals(PageHeader.Current,_header))PageHeader.Clear();}

@@ -252,3 +252,8 @@ Integración con APIs externas
 ## 🔒 Regla final
 
 👉 Si algo puede configurarse, debe vivir en TA_CONFIGURACION
+
+
+### Cuentas para vista previa LT de tarjetas
+
+`TARJETAS-LT-CUENTAS` (CAJA): JSON en `ValorAux` con la relación de conceptos a cuentas por banco/comercio/tarjeta/cuenta TJ. Configuración por base; se crea al guardar desde Preparar LT. No contiene credenciales y no registra comprobantes.
