@@ -357,6 +357,7 @@ public class Program
         builder.Services.AddScoped<IArcaConfigService, ArcaConfigService>();
         builder.Services.AddScoped<IWsaaClient, WsaaClient>();
         builder.Services.AddScoped<IWsfev1Client, Wsfev1Client>();
+        builder.Services.AddScoped<ArcaPadronCentralService>();
         builder.Services.AddScoped<IArcaPadronService, ArcaPadronService>();
         builder.Services.AddScoped<IArcaFacturacionElectronicaService, ArcaFacturacionElectronicaService>();
 
@@ -2185,6 +2186,45 @@ public class Program
 
             var texto = string.Join("\r\n", datos.IdCliente, datos.FtpServer, datos.FtpUsuario, datos.FtpClave);
             return Results.Text(texto, "text/plain; charset=utf-8");
+        });
+
+        // Padrón ARCA central para el legacy (ModCuitAFIP.bas): ?cuit= o ?dni=, más licenciaPrincipal y base
+        // para identificar la instalación. Una línea por persona: CUIT|Denominación|Calle|Localidad|Provincia|CP|CondIVA.
+        // 404 "sin-resultados" si el DNI no tiene CUIT; 422 con el motivo si ARCA no pudo responder.
+        app.MapGet("/api/vb6/padron", async (
+            HttpRequest request,
+            ArcaPadronCentralService padron,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!string.Equals(request.Headers["X-Api-Key"].ToString(), apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var cuit = request.Query["cuit"].ToString();
+            var dni = request.Query["dni"].ToString();
+            if (string.IsNullOrWhiteSpace(cuit) == string.IsNullOrWhiteSpace(dni))
+                return Results.BadRequest("Informá cuit o dni.");
+            var origen = $"VB6:{request.Query["licenciaPrincipal"]}/{request.Query["base"]}";
+            var usuario = request.Query["usuario"].ToString();
+            static string Linea(AlfaCore.Models.ArcaPadronPersonaDto p) => string.Join("|",
+                new[] { p.Cuit, p.RazonSocial, p.Calle, p.Localidad, p.Provincia, p.CodigoPostal, p.CondicionIvaCodigo }
+                    .Select(x => (x ?? string.Empty).Replace("|", " ").Replace("\r", " ").Replace("\n", " ").Trim()));
+            try
+            {
+                var personas = string.IsNullOrWhiteSpace(dni)
+                    ? [await padron.ConsultarCuitAsync(cuit, origen, usuario, ct)]
+                    : await padron.ConsultarDniAsync(dni, origen, usuario, ct);
+                if (personas.Count == 0)
+                    return Results.Text("sin-resultados", "text/plain; charset=utf-8", statusCode: StatusCodes.Status404NotFound);
+                return Results.Text(string.Join("\r\n", personas.Select(Linea)), "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Text(ex.Message, "text/plain; charset=utf-8", statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
         });
 
         // Antes sp_ActivaLicencia en ESTADISTICAS: graba la fecha de activación si todavía no la tiene.

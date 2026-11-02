@@ -573,10 +573,20 @@ else
                                                     Size="AlfaSize.Sm"
                                                     Icon="bi bi-cloud-search"
                                                     Loading="@_arcaBuscando"
-                                                    Disabled="@(_arcaBuscando || _saving || new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray()).Length != 11)"
-                                                    OnClick="_ => ConsultarArcaAsync()">@(_arcaBuscando ? "Consultando..." : "Consultar ARCA")</AlfaButton>
+                                                    Disabled="@(_arcaBuscando || _saving || new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray()).Length is not (11 or 7 or 8))"                                                    OnClick="_ => ConsultarArcaAsync()">@(_arcaBuscando ? "Consultando..." : "Consultar ARCA")</AlfaButton>
                                         }
                                     </div>
+                                    @if (_arcaOpciones.Count > 0)
+                                    {
+                                        <div class="clientes-arca-opciones" role="group" aria-label="CUIT encontrados para el DNI">
+                                            <span>El DNI tiene @_arcaOpciones.Count CUIT en ARCA. Elegí cuál usar:</span>
+                                            @foreach (var opcion in _arcaOpciones)
+                                            {
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_saving"
+                                                            OnClick="_ => ElegirOpcionArca(opcion)">@($"{opcion.Cuit} · {opcion.RazonSocial} · {opcion.CondicionIva}")</AlfaButton>
+                                            }
+                                        </div>
+                                    }
                                     <AlfaSelect Label="Condición IVA" Placeholder="Seleccionar..." Options="@ToClienteOptions(_lookups.CondicionesIva)" Value="@_form.IvaCodigo" ValueChanged="@(v => _form.IvaCodigo = v ?? string.Empty)" ErrorText="@ClienteFieldError("iva")" Disabled="@_saving" />
                                 </div>
                             </section>
@@ -2350,17 +2360,52 @@ else
         _arcaConsultaMensaje = string.Empty;
         ClearFieldErrors();
 
-        var cuit = new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (cuit.Length != 11)
+        _arcaOpciones = [];
+        var documento = new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (documento.Length is not (11 or 7 or 8))
         {
-            SetFeedback(AppUiMessage.Error("Consulta ARCA", "Ingresá un CUIT válido de 11 dígitos."));
+            SetFeedback(AppUiMessage.Error("Consulta ARCA", "Ingresá un CUIT de 11 dígitos o un DNI de 7 u 8 dígitos."));
             return;
         }
 
         try
         {
             _arcaBuscando = true;
-            var persona = await ArcaPadronSvc.ConsultarPersonaAsync(cuit);
+            if (documento.Length == 11)
+            {
+                AplicarPersonaArca(await ArcaPadronSvc.ConsultarPersonaAsync(documento));
+                return;
+            }
+            // DNI: ARCA devuelve los CUIT asociados (consulta central). Uno se aplica; varios se eligen.
+            var personas = await ArcaPadronSvc.ConsultarDniAsync(documento);
+            if (personas.Count == 0)
+                SetFeedback(AppUiMessage.Warning("Consulta ARCA", $"ARCA no tiene un CUIT asociado al DNI {documento}."));
+            else if (personas.Count == 1)
+                AplicarPersonaArca(personas[0]);
+            else
+                _arcaOpciones = personas;
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(AppUiMessage.Error("Consulta ARCA", ex.Message));
+        }
+        finally
+        {
+            _arcaBuscando = false;
+        }
+    }
+
+    private IReadOnlyList<ArcaPadronPersonaDto> _arcaOpciones = [];
+
+    private void ElegirOpcionArca(ArcaPadronPersonaDto persona)
+    {
+        _arcaOpciones = [];
+        AplicarPersonaArca(persona);
+    }
+
+    private void AplicarPersonaArca(ArcaPadronPersonaDto persona)
+    {
+        {
             _form.NumeroDocumento = persona.Cuit;
             _form.RazonSocial = persona.RazonSocial;
             _form.Calle = persona.Calle;
@@ -2384,14 +2429,6 @@ else
                 _form.DocumentoTipoCodigo = tipoCuit.Codigo;
 
             _arcaConsultaMensaje = "Datos completados desde ARCA.";
-        }
-        catch (Exception ex)
-        {
-            SetFeedback(AppUiMessage.Error("Consulta ARCA", ex.Message));
-        }
-        finally
-        {
-            _arcaBuscando = false;
         }
     }
 
