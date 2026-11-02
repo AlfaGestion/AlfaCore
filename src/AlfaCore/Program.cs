@@ -284,6 +284,7 @@ public class Program
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<ReporteComercialService>();
+        builder.Services.AddScoped<CuentaComercialBorradorService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<ICierreCajaService, CierreCajaService>();
         builder.Services.AddScoped<CierreCajaExportService>();

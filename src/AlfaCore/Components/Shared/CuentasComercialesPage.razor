@@ -14,6 +14,8 @@
 @inject IPortalClienteAutoLoginService PortalAutoLoginSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ReporteComercialService ReporteComercialSvc
+@inject CuentaComercialBorradorService Borradores
 @implements IDisposable
 @implements IAsyncDisposable
 
@@ -484,6 +486,20 @@ else
                         <strong>@(HasNotes() ? 1 : 0)</strong>
                         <span>Notas</span>
                     </button>
+                    @if (!_isNewMode)
+                    {
+                        @* Botón inteligente: abre la cuenta corriente filtrada por esta cuenta. Lo que se
+                           está cargando queda en un borrador y se recupera al volver a la ficha. *@
+                        <button type="button"
+                                class="clientes-edit-stat @(_puedeVerCuentaCorriente ? string.Empty : "is-locked")"
+                                disabled="@(!_puedeVerCuentaCorriente)"
+                                title="@(_puedeVerCuentaCorriente ? $"Ver la cuenta corriente del {SingularLabelLower}. Lo que estás cargando se conserva al volver." : "Tu usuario no tiene permiso para ver la cuenta corriente.")"
+                                @onclick="AbrirCuentaCorriente">
+                            <i class="bi @(_puedeVerCuentaCorriente ? "bi-cash-coin" : "bi-lock")" aria-hidden="true"></i>
+                            <strong>@(_puedeVerCuentaCorriente ? "Ver" : "Sin acceso")</strong>
+                            <span>Cuenta corriente</span>
+                        </button>
+                    }
                 </div>
             </header>
 
@@ -1254,6 +1270,7 @@ else
     private bool _dataViewColumnsInitialized;
     private bool _savingColumnWidths;
     private bool _isNewMode = true;
+    private bool _puedeVerCuentaCorriente;
     private bool _selectedActivo = true;
     private bool _loadingLinkCandidates;
     private bool _linkingContacto;
@@ -1366,9 +1383,66 @@ else
         UpdatePageHeader();
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
+        await CargarPermisoCuentaCorrienteAsync();
         await BuscarAsync();
         await ApplyStartupQueryAsync();
         UpdatePageHeader();
+    }
+
+    private async Task CargarPermisoCuentaCorrienteAsync()
+    {
+        try
+        {
+            _puedeVerCuentaCorriente = await ReporteComercialSvc.PuedeConsultarAsync(Tipo == CuentaComercialTipo.Cliente);
+        }
+        catch
+        {
+            _puedeVerCuentaCorriente = false;
+        }
+    }
+
+    private string BorradorClave(string codigo) => $"{RouteContext.BuildRoute(RouteForTipo)}|{codigo.Trim()}";
+
+    private void AbrirCuentaCorriente()
+    {
+        if (!_puedeVerCuentaCorriente || _isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        Borradores.Guardar(BorradorClave(_selectedCodigo), new CuentaComercialBorrador(
+            System.Text.Json.JsonSerializer.Serialize(_form), _clavePortalNueva, _activeTab.ToString(), DateTime.UtcNow));
+
+        var volver = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        var destino = RouteContext.BuildRoute(Tipo == CuentaComercialTipo.Cliente ? "/ventas/reportes" : "/compras/reportes");
+        Nav.NavigateTo(QueryHelpers.AddQueryString(destino, new Dictionary<string, string?>
+        {
+            ["tipo"] = "CuentaCorrienteResumida",
+            ["cuenta"] = _selectedCodigo.Trim(),
+            ["nombre"] = _form.RazonSocial,
+            ["volver"] = volver
+        }));
+    }
+
+    // Si al salir a la cuenta corriente quedó un borrador de esta ficha, se recupera la pestaña y,
+    // si había cambios sin guardar, también los datos cargados.
+    private void RestaurarBorrador(string codigo)
+    {
+        var borrador = Borradores.Tomar(BorradorClave(codigo));
+        if (borrador is null)
+            return;
+
+        if (Enum.TryParse<CuentaComercialTab>(borrador.Pestana, out var tab) && Enum.IsDefined(tab))
+            _activeTab = tab;
+
+        if (borrador.FormJson == System.Text.Json.JsonSerializer.Serialize(_form) && borrador.ClavePortal == _clavePortalNueva)
+            return;
+
+        var form = System.Text.Json.JsonSerializer.Deserialize<CuentaComercialSaveRequest>(borrador.FormJson);
+        if (form is null)
+            return;
+
+        _form = form;
+        _clavePortalNueva = borrador.ClavePortal;
+        SetFeedback(AppUiMessage.Info("Cambios recuperados", $"Se recuperó lo que estabas cargando en este {SingularLabelLower}. Todavía no está guardado."));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -2128,6 +2202,7 @@ else
         }
 
         MapDetailToForm(result.Value);
+        RestaurarBorrador(codigo);
         UpdatePageHeader();
         await LoadContactosCuentaAsync();
     }
@@ -3263,6 +3338,7 @@ else
         _ = InvokeAsync(async () =>
         {
             await EnsureViewSettingsLoadedAsync(force: true);
+            await CargarPermisoCuentaCorrienteAsync();
             UpdatePageHeader();
             StateHasChanged();
         });

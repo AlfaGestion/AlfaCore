@@ -10,6 +10,7 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
 {
     private sealed class ReglaReporteException(string message) : InvalidOperationException(message);
     public const string MenuVentas = "D60RPTWEB";
+    public const string MenuCompras = "D5005";
     private static string Fuente(bool ventas) => ventas ? "dbo.Libro_VentasConFP" : "dbo.Libro_ComprasConFP";
     private static string Terceros(bool ventas) => ventas ? "dbo.VT_CLIENTES" : "dbo.VT_PROVEEDORES";
     private const string Filtro = """
@@ -159,17 +160,8 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
         try
         {
             await using var cn=new SqlConnection(sessions.GetConnectionString());await cn.OpenAsync(ct);
-            var clave=ventas?MenuVentas:"D5005";
-            if(!await permissions.HasAccessAsync(clave,ct))
-            {
-                var restringido=await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-                    SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.TA_TAREAS WHERE UPPER(LTRIM(RTRIM(USUARIO)))=UPPER(@Usuario)
-                        AND UPPER(LTRIM(RTRIM(SISTEMA)))=UPPER(@Sistema) AND ISNULL(TAREA,'')<>'')
-                        OR EXISTS(SELECT 1 FROM dbo.ALFACORE_TAREAS_WEB WHERE UPPER(LTRIM(RTRIM(USUARIO)))=UPPER(@Usuario)
-                        AND UPPER(LTRIM(RTRIM(SISTEMA)))=UPPER(@Sistema) AND ISNULL(Clave,'')<>'') THEN 1 ELSE 0 END
-                    """,new { Usuario=usuario,Sistema=users.CurrentUser?.SystemCode??"" },cancellationToken:ct));
-                if(restringido!=0)throw new ReglaReporteException("Tu usuario no tiene permiso para consultar este reporte.");
-            }
+            if(!await TienePermisoAsync(cn,ventas,usuario,ct))
+                throw new ReglaReporteException("Tu usuario no tiene permiso para consultar este reporte.");
             if (ventas && filtros?.IncluirProforma == true && !await PuedeIncluirProformaAsync(cn,ct))
                 throw new ReglaReporteException("La configuración o tu usuario no permiten incluir proformas. Desmarcá la opción y volvé a generar el reporte.");
             var resultado=await consulta(cn);
@@ -184,5 +176,39 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
             var codigo=await events.LogErrorAsync(ventas?"ReporteVentas":"ReporteCompras",accion,ex,"No se pudo generar el reporte.",ct:ct);
             throw new AppUserFacingException("No se pudo generar el reporte.",codigo,ex);
         }
+    }
+
+    /// <summary>Si el usuario puede abrir el reporte (y su cuenta corriente). Lo usan los botones
+    /// inteligentes de las fichas para mostrarse bloqueados. Ante un error responde que no.</summary>
+    public async Task<bool> PuedeConsultarAsync(bool ventas,CancellationToken ct=default)
+    {
+        if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out _))
+            return false;
+        try
+        {
+            await using var cn=new SqlConnection(sessions.GetConnectionString());await cn.OpenAsync(ct);
+            return await TienePermisoAsync(cn,ventas,users.GetCurrentUserName(),ct);
+        }
+        catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
+        catch(Exception ex)
+        {
+            await events.LogErrorAsync(ventas?"ReporteVentas":"ReporteCompras","PermisoCuentaCorriente",ex,"No se pudo verificar el permiso del reporte.",ct:ct);
+            return false;
+        }
+    }
+
+    // Sin la clave del reporte solo se bloquea a usuarios con tareas asignadas: un usuario sin
+    // ninguna tarea cargada conserva el acceso libre histórico.
+    private async Task<bool> TienePermisoAsync(SqlConnection cn,bool ventas,string usuario,CancellationToken ct)
+    {
+        if(await permissions.HasAccessAsync(ventas?MenuVentas:MenuCompras,ct))
+            return true;
+        var restringido=await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.TA_TAREAS WHERE UPPER(LTRIM(RTRIM(USUARIO)))=UPPER(@Usuario)
+                AND UPPER(LTRIM(RTRIM(SISTEMA)))=UPPER(@Sistema) AND ISNULL(TAREA,'')<>'')
+                OR EXISTS(SELECT 1 FROM dbo.ALFACORE_TAREAS_WEB WHERE UPPER(LTRIM(RTRIM(USUARIO)))=UPPER(@Usuario)
+                AND UPPER(LTRIM(RTRIM(SISTEMA)))=UPPER(@Sistema) AND ISNULL(Clave,'')<>'') THEN 1 ELSE 0 END
+            """,new { Usuario=usuario,Sistema=users.CurrentUser?.SystemCode??"" },cancellationToken:ct));
+        return restringido==0;
     }
 }

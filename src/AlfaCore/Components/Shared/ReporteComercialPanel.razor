@@ -13,6 +13,20 @@
 <PageTitle>@Titulo | Alfa Gestión</PageTitle>
 
 <div class="gd-page gd">
+    @if (_volverUrl is not null)
+    {
+        @* Se llegó desde el botón "Cuenta corriente" de una ficha: migas de pan para volver a ella. *@
+        <nav class="reporte-volver" aria-label="Ruta de navegación">
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-arrow-left" OnClick="_ => VolverAFichaAsync()">Volver a la ficha</AlfaButton>
+            <span class="reporte-volver__ruta">
+                <a href="@_volverUrl">@(Ventas ? "Clientes" : "Proveedores")</a>
+                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                <a href="@_volverUrl">@_volverEtiqueta</a>
+                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                <strong>@TipoReporteLabel(_tipoReporte)</strong>
+            </span>
+        </nav>
+    }
     <header class="gd-header">
         <div>
             <h2>@Titulo</h2>
@@ -300,19 +314,64 @@
         _ => Ventas ? "Resumen de ventas" : "Resumen de compras"
     };
 
-    private void OnTipoReporteChanged(string? key)
+    private async Task OnTipoReporteChanged(string? key)
     {
         if (_isLoading) return;
         if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || !Enum.IsDefined(tipo) || (!Ventas && tipo==TipoReporteCompras.ControlCredito) || tipo == _tipoReporte)
             return;
 
         // Cada tipo tiene su propio resultado: al cambiar de pestaña se vuelve al estado inicial.
-        var veniaDeDocumentosCC=EsDocumentosCC;
-        _tipoReporte = tipo;
-        if (EsDocumentosCC && !veniaDeDocumentosCC) { _filtros.FechaDesde=null; _filtros.FechaHasta=DateTime.Today; }
+        CambiarTipo(tipo);
         _mostrarResultados = false;
         _error = null;
         UpdatePageHeader();
+        // Viniendo de una ficha se analiza una sola cuenta: cada pestaña se genera sola.
+        if (_volverUrl is not null && _filtros.CuentaExacta is not null)
+            await GenerarAsync();
+    }
+
+    private void CambiarTipo(TipoReporteCompras tipo)
+    {
+        var veniaDeDocumentosCC=EsDocumentosCC;
+        _tipoReporte = tipo;
+        if (EsDocumentosCC && !veniaDeDocumentosCC) { _filtros.FechaDesde=null; _filtros.FechaHasta=DateTime.Today; }
+    }
+
+    // ── Llegada desde una ficha (botón inteligente "Cuenta corriente") ───────────
+    // ?tipo=<TipoReporteCompras>&cuenta=<código>&nombre=<razón social>&volver=<url local de la ficha>
+    private string? _volverUrl;
+    private string _volverEtiqueta = string.Empty;
+    private bool _autoGenerar;
+
+    private void AplicarParametrosIniciales()
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (query.TryGetValue("tipo", out var tipoRaw) && Enum.TryParse<TipoReporteCompras>(tipoRaw.ToString(), out var tipo)
+            && Enum.IsDefined(tipo) && (Ventas || tipo != TipoReporteCompras.ControlCredito))
+            CambiarTipo(tipo);
+
+        var cuenta = query.TryGetValue("cuenta", out var cuentaRaw) ? cuentaRaw.ToString().Trim() : string.Empty;
+        var nombre = query.TryGetValue("nombre", out var nombreRaw) ? nombreRaw.ToString().Trim() : string.Empty;
+        if (cuenta.Length > 0)
+        {
+            SeleccionarCliente(new ReporteFiltroOpcion(cuenta, nombre.Length > 0 ? nombre : cuenta));
+            _autoGenerar = true;
+        }
+
+        // Solo rutas locales: evita que el enlace "volver" lleve a otro sitio.
+        var volver = query.TryGetValue("volver", out var volverRaw) ? volverRaw.ToString() : string.Empty;
+        if (volver.StartsWith('/') && !volver.StartsWith("//") && !volver.StartsWith("/\\"))
+        {
+            _volverUrl = volver;
+            _volverEtiqueta = nombre.Length > 0 ? nombre : cuenta.Length > 0 ? cuenta : "Ficha";
+        }
+    }
+
+    private Task VolverAFichaAsync()
+    {
+        if (_volverUrl is not null)
+            Nav.NavigateTo(_volverUrl);
+        return Task.CompletedTask;
     }
 
     private int TotalPaginasActual => _tipoReporte switch
@@ -339,6 +398,7 @@
         SearchContent = RenderSmartSearch(),
         Actions =
         [
+            ..(_volverUrl is null ? Array.Empty<PageHeaderAction>() : [new PageHeaderAction { Key = "volver", Label = "Volver a la ficha", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, OnClick = VolverAFichaAsync }]),
             new PageHeaderAction { Key = "generar", Label = _isLoading ? "Generando..." : "Generar reporte", Icon = "bi-play-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _isLoading, OnClick = () => InvokeAsync(async () => { await GenerarAsync(); StateHasChanged(); }) },
             new PageHeaderAction { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !PuedeExportarExcel, OnClick = () => InvokeAsync(ExportarAsync) },
             new PageHeaderAction { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = !_mostrarResultados, OnClick = () => InvokeAsync(ImprimirPdfAsync) }
@@ -601,7 +661,13 @@
         => string.Join(" ", new[] { error.HasSuggestion ? error.Suggestion : null, error.HasCode ? $"Código: {error.Code}." : null }
             .Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    protected override Task OnInitializedAsync() => CargarOpcionesAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        AplicarParametrosIniciales();
+        await CargarOpcionesAsync();
+        if (_autoGenerar && _error is null && !_disposed)
+            await GenerarAsync();
+    }
 
     private async Task CargarOpcionesAsync()
     {
@@ -740,9 +806,9 @@
             chips.Add(new("tc", $"TC: {_filtros.TipoComprobante}"));
         if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
             chips.Add(new("proveedor", $"{Tercero}: {_filtros.Proveedor}"));
+        if (_filtros.CuentaExacta is not null) chips.Add(new("cuenta", $"Código exacto: {_filtros.CuentaExacta}"));
         if (Ventas)
         {
-            if (_filtros.CuentaExacta is not null) chips.Add(new("cuenta", $"Código exacto: {_filtros.CuentaExacta}"));
             if (_filtros.Provincia is not null) chips.Add(new("provincia", $"Provincia: {_filtros.Provincia}"));
             if (_filtros.IncluirProforma) chips.Add(new("proforma", "Incluye proformas"));
             if (_filtros.Vendedor is not null) chips.Add(new("vendedor", $"Vendedor: {_filtros.Vendedor}"));
@@ -779,7 +845,17 @@
     }
 
     private string BuildViewerUrl(string tc, string idComprobante) =>
-        RouteContext.BuildRoute($"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?returnUrl={Uri.EscapeDataString(RouteContext.BuildRoute(Ventas ? "/ventas/reportes" : "/compras/reportes"))}" + (Nav.Uri.Contains("directo=1") ? "&directo=1" : ""));
+        RouteContext.BuildRoute($"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?returnUrl={Uri.EscapeDataString(_volverUrl is null ? RouteContext.BuildRoute(Ventas ? "/ventas/reportes" : "/compras/reportes") : UrlActualConTipo())}" + (Nav.Uri.Contains("directo=1") ? "&directo=1" : ""));
+
+    // Viniendo de una ficha, el visor vuelve al mismo reporte (pestaña, cuenta y enlace a la ficha).
+    private string UrlActualConTipo()
+    {
+        var uri = new Uri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query)
+            .ToDictionary(x => x.Key, x => (string?)x.Value.ToString());
+        query["tipo"] = _tipoReporte.ToString();
+        return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("/" + Nav.ToBaseRelativePath(uri.GetLeftPart(UriPartial.Path)), query);
+    }
 
     private async Task ExportarAsync()
     {

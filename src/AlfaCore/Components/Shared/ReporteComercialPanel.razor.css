@@ -1,0 +1,35 @@
+.reporte-volver {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin-bottom: 12px;
+}
+
+.reporte-volver__ruta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+}
+
+.reporte-volver__ruta a {
+    color: var(--alfa-accent);
+    text-decoration: none;
+}
+
+.reporte-volver__ruta a:hover {
+    text-decoration: underline;
+}
+
+.reporte-volver__ruta i {
+    font-size: 10px;
+}
+
+.reporte-volver__ruta strong {
+    color: var(--alfa-text-primary);
+    font-weight: 600;
+}
