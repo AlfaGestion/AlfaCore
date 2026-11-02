@@ -36,6 +36,16 @@
 
     <AlfaTabs Items="TiposReporte" ActiveKey="@_tipoReporte.ToString()" ActiveKeyChanged="OnTipoReporteChanged" AriaLabel="Tipo de reporte" />
 
+    @if (_tipoReporte == TipoReporteCompras.ClientesPorMes)
+    {
+        <p class="gd-hint">Total vendido (con IVA, neto de notas de crédito) de cada cliente por mes. En los clientes con facturación automática activa se marcan los meses que quedaron sin factura según su periodicidad. Usá los períodos de 3, 6 o 12 meses o elegí desde/hasta en el buscador.</p>
+        <div class="rcm-rangos">
+            @foreach (var n in new[] { 3, 6, 12, 24 })
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_isLoading" OnClick="_ => UltimosMesesAsync(n)">Últimos @n meses</AlfaButton>
+            }
+        </div>
+    }
     @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
     {
         <p class="gd-hint">Agrupado por código de cuenta, en orden cronológico. Incluye saldo inicial y acumulado por línea. Los importes son contables; el tipo de comprobante solo limita las líneas visibles y no recalcula el saldo.</p>
@@ -195,6 +205,11 @@
         </DataTable>
     }
 
+    @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.ClientesPorMes && _clientesMes is not null)
+    {
+        <ResumenClientesMesTabla Resultado="_clientesMes" />
+    }
+
     @* ── Resultados: Cuenta Corriente ──────────────────────────────── *@
     @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.CuentaCorriente && _cuentaCorriente is not null)
     {
@@ -214,8 +229,8 @@
     @if (_mostrarResultados)
     {
         <footer class="alfa-data-view-footer">
-            <span class="alfa-data-view-footer__summary">@(_tipoReporte == TipoReporteCompras.ResumenDeCompras ? $"{_resumen?.CantidadProveedores ?? 0} cuentas · {_resumen?.CantidadComprobantes ?? 0} registros" : _tipoReporte == TipoReporteCompras.DetalleDeCompras ? GetSubtituloDetalle() : EsSaldos ? GetSubtituloSaldos() : EsDocumentosCC ? GetSubtituloDocumentosCC() : GetSubtituloCC())</span>
-            @if (_tipoReporte != TipoReporteCompras.ResumenDeCompras)
+            <span class="alfa-data-view-footer__summary">@(_tipoReporte == TipoReporteCompras.ResumenDeCompras ? $"{_resumen?.CantidadProveedores ?? 0} cuentas · {_resumen?.CantidadComprobantes ?? 0} registros" : _tipoReporte == TipoReporteCompras.ClientesPorMes ? $"{_clientesMes?.Filas.Count ?? 0} clientes · {_clientesMes?.Meses.Count ?? 0} meses · {_clientesMes?.ClientesConFaltantes ?? 0} con meses sin facturar" : _tipoReporte == TipoReporteCompras.DetalleDeCompras ? GetSubtituloDetalle() : EsSaldos ? GetSubtituloSaldos() : EsDocumentosCC ? GetSubtituloDocumentosCC() : GetSubtituloCC())</span>
+            @if (_tipoReporte is not (TipoReporteCompras.ResumenDeCompras or TipoReporteCompras.ClientesPorMes))
             {
                 <div class="alfa-data-view-footer__controls">
                     <AlfaSelect Label="Registros por página" Value="@_aplicados.TamanioPagina.ToString()" ValueChanged="CambiarTamanioAsync" Disabled="@_isLoading" Options="@(new List<AlfaSelectOption> { new("25","25"),new("50","50"),new("100","100") })" />
@@ -251,6 +266,17 @@
     private CuentaCorrienteResultDto? _cuentaCorriente;
     private SaldosVentasResultDto? _saldos;
     private ComprobantesCuentaCorrienteResultDto? _documentosCC;
+    private ResumenClientesMesDto? _clientesMes;
+
+    // Últimos N meses: desde el 1° del mes N-1 atrás hasta hoy (incluye el mes en curso).
+    private async Task UltimosMesesAsync(int meses)
+    {
+        if (_isLoading) return;
+        var hoy = DateTime.Today;
+        _filtros.FechaDesde = new DateTime(hoy.Year, hoy.Month, 1).AddMonths(-(meses - 1));
+        _filtros.FechaHasta = hoy;
+        await GenerarAsync();
+    }
     private bool EsDocumentosCC => _tipoReporte is TipoReporteCompras.CuentaCorrienteResumida or TipoReporteCompras.CuentaCorrienteAnalitica;
     private bool EsSaldos => _tipoReporte == TipoReporteCompras.Saldos || (Ventas && _tipoReporte == TipoReporteCompras.ControlCredito);
 
@@ -275,7 +301,7 @@
     private void ContextoChanged()
     {
         _contextCts.Cancel(); _contextCts.Dispose(); _contextCts = new();
-        _ = InvokeAsync(async () => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _saldos=null; _documentosCC=null; _options=new(); LimpiarCliente(); _filtros.IncluirProforma=false; _mostrarResultados=false;
+        _ = InvokeAsync(async () => { if (_disposed) return; _resumen=null; _detalleCompras=null; _cuentaCorriente=null; _saldos=null; _documentosCC=null; _clientesMes=null; _options=new(); LimpiarCliente(); _filtros.IncluirProforma=false; _mostrarResultados=false;
             _error=AppUiMessage.Warning("Cambió la sesión", "Volvé a generar el reporte en la base activa."); UpdatePageHeader(); StateHasChanged(); await CargarOpcionesAsync(); StateHasChanged(); });
     }
 
@@ -299,6 +325,7 @@
         new(nameof(TipoReporteCompras.CuentaCorriente), "Cuenta corriente"),
         new(nameof(TipoReporteCompras.Saldos), "Saldos"),
         ..(Ventas ? new AlfaTabItem[] { new(nameof(TipoReporteCompras.ControlCredito), "Saldos Control de Crédito") } : []),
+        ..(Ventas ? new AlfaTabItem[] { new(nameof(TipoReporteCompras.ClientesPorMes), "Clientes por mes") } : []),
         new(nameof(TipoReporteCompras.CuentaCorrienteResumida), "Cuenta corriente resumida"),
         new(nameof(TipoReporteCompras.CuentaCorrienteAnalitica), "Cuenta corriente analítica")
     ];
@@ -311,13 +338,14 @@
         TipoReporteCompras.ControlCredito => "Saldos Control de Crédito",
         TipoReporteCompras.CuentaCorrienteResumida => "Cuenta corriente resumida",
         TipoReporteCompras.CuentaCorrienteAnalitica => "Cuenta corriente analítica",
+        TipoReporteCompras.ClientesPorMes => "Clientes por mes",
         _ => Ventas ? "Resumen de ventas" : "Resumen de compras"
     };
 
     private async Task OnTipoReporteChanged(string? key)
     {
         if (_isLoading) return;
-        if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || !Enum.IsDefined(tipo) || (!Ventas && tipo==TipoReporteCompras.ControlCredito) || tipo == _tipoReporte)
+        if (!Enum.TryParse<TipoReporteCompras>(key, out var tipo) || !Enum.IsDefined(tipo) || (!Ventas && tipo is TipoReporteCompras.ControlCredito or TipoReporteCompras.ClientesPorMes) || tipo == _tipoReporte)
             return;
 
         // Cada tipo tiene su propio resultado: al cambiar de pestaña se vuelve al estado inicial.
@@ -335,6 +363,8 @@
         var veniaDeDocumentosCC=EsDocumentosCC;
         _tipoReporte = tipo;
         if (EsDocumentosCC && !veniaDeDocumentosCC) { _filtros.FechaDesde=null; _filtros.FechaHasta=DateTime.Today; }
+        // Clientes por mes arranca con los últimos 12 meses (incluye el mes en curso).
+        if (tipo == TipoReporteCompras.ClientesPorMes) { var hoy=DateTime.Today; _filtros.FechaDesde=new DateTime(hoy.Year,hoy.Month,1).AddMonths(-11); _filtros.FechaHasta=hoy; }
     }
 
     // ── Llegada desde una ficha (botón inteligente "Cuenta corriente") ───────────
@@ -347,7 +377,7 @@
     {
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
         if (query.TryGetValue("tipo", out var tipoRaw) && Enum.TryParse<TipoReporteCompras>(tipoRaw.ToString(), out var tipo)
-            && Enum.IsDefined(tipo) && (Ventas || tipo != TipoReporteCompras.ControlCredito))
+            && Enum.IsDefined(tipo) && (Ventas || tipo is not (TipoReporteCompras.ControlCredito or TipoReporteCompras.ClientesPorMes)))
             CambiarTipo(tipo);
 
         var cuenta = query.TryGetValue("cuenta", out var cuentaRaw) ? cuentaRaw.ToString().Trim() : string.Empty;
@@ -731,6 +761,9 @@
                 case TipoReporteCompras.ControlCredito:
                     _saldos = Ventas ? await ReporteService.GetSaldosVentasAsync(_aplicados, _tipoReporte==TipoReporteCompras.ControlCredito, ct) : await ReporteService.GetSaldosComprasAsync(_aplicados, ct);
                     break;
+                case TipoReporteCompras.ClientesPorMes:
+                    _clientesMes = await ReporteService.GetClientesPorMesAsync(_aplicados, ct);
+                    break;
                 case TipoReporteCompras.CuentaCorriente:
                     _cuentaCorriente = await ReporteService.GetCuentaCorrienteAsync(Ventas, _aplicados, ct);
                     break;
@@ -783,7 +816,7 @@
         _filtros.Pagina          = 1;
         _resumen         = null;
         _detalleCompras  = null;
-        _cuentaCorriente = null; _saldos=null; _documentosCC=null;
+        _cuentaCorriente = null; _saldos=null; _documentosCC=null; _clientesMes=null;
         _mostrarResultados = false;
         _error = null;
         _panelAbierto = false;
@@ -882,6 +915,7 @@
                 bytes=Exporter.ExportarSaldosVentas(items,f,_tipoReporte==TipoReporteCompras.ControlCredito,Ventas);
             }
             else if (_tipoReporte == TipoReporteCompras.ResumenDeCompras) bytes=Exporter.ExportarResumen(_resumen!, f, Ventas);
+            else if (_tipoReporte == TipoReporteCompras.ClientesPorMes) bytes=Exporter.ExportarClientesPorMes(_clientesMes!, f);
             else if (_tipoReporte == TipoReporteCompras.DetalleDeCompras)
             {
                 var items=new List<DetalleComprasFilaDto>();

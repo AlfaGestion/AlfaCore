@@ -65,6 +65,62 @@ public sealed class ReporteComprasExcelExporter
         return ms.ToArray();
     }
 
+    // ── Clientes por mes (ventas) ─────────────────────────────────────────────
+
+    public byte[] ExportarClientesPorMes(ResumenClientesMesDto resumen, FiltrosReporteCompras filtros)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Clientes por mes");
+        var columnas = resumen.Meses.Count + 4;
+        SetTitulo(ws, "Ventas por cliente y mes", columnas);
+        SetSubtitulo(ws, DescribirFiltros(filtros, true), columnas);
+        ws.Cell(3, 1).Value = $"Total vendido: {resumen.Total.ToString("N2", Cultura)} · {resumen.Filas.Count} clientes · {resumen.ClientesConFaltantes} con meses sin facturar";
+        ws.Cell(3, 1).Style.Font.Bold = true;
+
+        var headers = new List<string> { "Cuenta", "Cliente", "Facturación automática" };
+        headers.AddRange(resumen.Meses.Select(m => m.ToString("MM/yyyy")));
+        headers.Add("Total");
+        SetHeaders(ws, 5, [.. headers]);
+
+        var row = 6;
+        foreach (var f in resumen.Filas)
+        {
+            ws.Cell(row, 1).Value = f.Cuenta;
+            ws.Cell(row, 2).Value = f.RazonSocial;
+            ws.Cell(row, 3).Value = f.Periodicidad;
+            for (var i = 0; i < resumen.Meses.Count; i++)
+            {
+                var cell = ws.Cell(row, i + 4);
+                if (f.Importes[i] != 0) SetDecimalCell(cell, f.Importes[i]);
+                switch (f.Estados[i])
+                {
+                    case EstadoMesCliente.SinFacturar:
+                        cell.Value = "sin facturar";
+                        cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#fdecea");
+                        cell.Style.Font.FontColor = XLColor.FromHtml("#b3261e");
+                        break;
+                    case EstadoMesCliente.Pendiente:
+                        cell.Value = "pendiente";
+                        cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#fff4e0");
+                        break;
+                }
+            }
+            SetDecimalCell(ws.Cell(row, columnas), f.Total);
+            row++;
+        }
+        ws.Cell(row, 2).Value = "Total";
+        ws.Cell(row, 2).Style.Font.Bold = true;
+        for (var i = 0; i < resumen.Meses.Count; i++) SetDecimalCell(ws.Cell(row, i + 4), resumen.TotalesPorMes[i]);
+        SetDecimalCell(ws.Cell(row, columnas), resumen.Total);
+        ws.Row(row).Style.Font.Bold = true;
+
+        ws.Columns().AdjustToContents(8, 60);
+        ws.SheetView.Freeze(5, 2);
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
+
     // ── Detalle ───────────────────────────────────────────────────────────────
 
     public byte[] ExportarDetalle(IReadOnlyList<DetalleComprasFilaDto> items, FiltrosReporteCompras filtros, int total, bool ventas = false)

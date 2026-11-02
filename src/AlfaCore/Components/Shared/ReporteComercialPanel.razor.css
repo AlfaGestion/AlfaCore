@@ -33,3 +33,6 @@
     color: var(--alfa-text-primary);
     font-weight: 600;
 }
+
+/* Clientes por mes: accesos rapidos de periodo. */
+.rcm-rangos { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }

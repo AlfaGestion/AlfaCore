@@ -1,0 +1,97 @@
+@* Ventas por cliente y mes, con los meses sin facturar de los clientes con abono marcados. *@
+@using AlfaCore.Models
+
+<div class="kpi-grid">
+    <KpiCard Titulo="Total vendido" Valor="@Moneda(Resultado.Total)" Icono="$" />
+    <KpiCard Titulo="Clientes" Valor="@Resultado.Filas.Count.ToString("N0")" Icono="C" Descripcion="@($"{Resultado.Filas.Count(f => f.FacturacionAutomatica)} con facturación automática")" />
+    <KpiCard Titulo="Con meses sin facturar" Valor="@Resultado.ClientesConFaltantes.ToString("N0")" Icono="!" Destacado="@(Resultado.ClientesConFaltantes > 0)"
+             Descripcion="@(Resultado.ClientesConFaltantes == 0 ? "Todos los abonos están facturados" : $"{Resultado.MesesSinFacturar} mes(es) en total")" />
+    <KpiCard Titulo="Promedio mensual" Valor="@Moneda(Resultado.Meses.Count == 0 ? 0 : Resultado.Total / Resultado.Meses.Count)" Icono="~" Descripcion="@($"{Resultado.Meses.Count} meses")" />
+</div>
+
+<div class="rcm-opciones">
+    <AlfaCheckbox Value="@_soloAbonos" ValueChanged="v => _soloAbonos = v == true">Solo clientes con facturación automática</AlfaCheckbox>
+    <AlfaCheckbox Value="@_soloFaltantes" ValueChanged="v => _soloFaltantes = v == true">Solo clientes con meses sin facturar</AlfaCheckbox>
+    <span class="rcm-leyenda">
+        <span class="rcm-chip rcm-chip--falta">Sin facturar</span> abono sin factura en el mes (según su periodicidad)
+        <span class="rcm-chip rcm-chip--pend">Pendiente</span> mes en curso todavía sin factura
+    </span>
+</div>
+
+<div class="rcm-scroll">
+    <table class="rcm-tabla">
+        <thead>
+            <tr>
+                <th class="rcm-col-cliente">Cliente</th>
+                <th>Abono</th>
+                @foreach (var m in Resultado.Meses)
+                {
+                    <th class="rcm-num">@Mes(m)</th>
+                }
+                <th class="rcm-num">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @{ var filas = FilasVisibles.ToList(); }
+            @if (filas.Count == 0)
+            {
+                <tr><td colspan="@(Resultado.Meses.Count + 3)" class="rcm-vacio">No hay clientes con esos criterios en el período.</td></tr>
+            }
+            @foreach (var f in filas)
+            {
+                <tr class="@(f.MesesSinFacturar > 0 ? "rcm-fila--falta" : null)">
+                    <td class="rcm-col-cliente"><strong>@f.RazonSocial</strong><small>@f.Cuenta</small></td>
+                    <td><small>@(f.FacturacionAutomatica ? Capitalizar(f.Periodicidad) : "")</small></td>
+                    @for (var i = 0; i < Resultado.Meses.Count; i++)
+                    {
+                        var estado = f.Estados[i];
+                        <td class="rcm-num @Clase(estado)" title="@Titulo(estado, Resultado.Meses[i])">
+                            @(f.Importes[i] != 0 ? Numero(f.Importes[i]) : estado == EstadoMesCliente.SinFacturar ? "sin facturar" : estado == EstadoMesCliente.Pendiente ? "pendiente" : "")
+                        </td>
+                    }
+                    <td class="rcm-num"><strong>@Numero(f.Total)</strong></td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td class="rcm-col-cliente"><strong>Total · @filas.Count cliente(s)</strong></td>
+                <td></td>
+                @for (var i = 0; i < Resultado.Meses.Count; i++)
+                {
+                    <td class="rcm-num"><strong>@Numero(filas.Sum(f => f.Importes[i]))</strong></td>
+                }
+                <td class="rcm-num"><strong>@Numero(filas.Sum(f => f.Total))</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ResumenClientesMesDto Resultado { get; set; } = new();
+    private bool _soloAbonos;
+    private bool _soloFaltantes;
+    private static readonly System.Globalization.CultureInfo Cultura = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    private IEnumerable<ResumenClienteMesFilaDto> FilasVisibles => Resultado.Filas
+        .Where(f => !_soloAbonos || f.FacturacionAutomatica)
+        .Where(f => !_soloFaltantes || f.MesesSinFacturar > 0);
+
+    private static string Mes(DateTime m) => Cultura.TextInfo.ToTitleCase(m.ToString("MMM yy", Cultura).Replace(".", ""));
+    private static string Numero(decimal v) => v.ToString("#,##0", Cultura);
+    private static string Moneda(decimal v) => v.ToString("$ #,##0.00", Cultura);
+    private static string Capitalizar(string s) => s.Length == 0 ? s : s[..1] + s[1..].ToLowerInvariant();
+    private static string? Clase(EstadoMesCliente e) => e switch
+    {
+        EstadoMesCliente.SinFacturar => "rcm-celda--falta",
+        EstadoMesCliente.Pendiente => "rcm-celda--pend",
+        EstadoMesCliente.Vacio => "rcm-celda--vacia",
+        _ => null
+    };
+    private static string? Titulo(EstadoMesCliente e, DateTime m) => e switch
+    {
+        EstadoMesCliente.SinFacturar => $"Sin factura en {m:MM/yyyy} y tiene facturación automática activa",
+        EstadoMesCliente.Pendiente => "Mes en curso: todavía no se facturó",
+        _ => null
+    };
+}

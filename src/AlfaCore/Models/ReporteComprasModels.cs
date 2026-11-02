@@ -8,7 +8,9 @@ public enum TipoReporteCompras
     Saldos,
     ControlCredito,
     CuentaCorrienteResumida,
-    CuentaCorrienteAnalitica
+    CuentaCorrienteAnalitica,
+    /// <summary>Ventas: total por cliente y mes, con los meses sin facturar marcados.</summary>
+    ClientesPorMes
 }
 
 public class FiltrosReporteCompras
