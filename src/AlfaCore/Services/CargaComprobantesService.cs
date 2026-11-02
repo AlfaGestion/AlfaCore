@@ -4,12 +4,12 @@ using Dapper;
 
 namespace AlfaCore.Services;
 
-public sealed class CargaComprobantesService(
+public sealed partial class CargaComprobantesService(
     ISessionService sessionService, IAppUserSessionService appUserSession,
     IPermissionService permissions, IAppEventService events,
     CargaComprobantesRepository repository, CargaComprobantesElectronicaVerificador electronica,
     CargaComprobantesElectronicaEmisor emisorPrueba, CargaComprobantesEmisionService emision,
-    IFacturaDocumentService documents, IDocumentPdfService pdf) : ICargaComprobantesService
+    IFacturaDocumentService documents, IDocumentPdfService pdf, CorreoSalienteService? correo = null) : ICargaComprobantesService
 {
     public const string MenuKey = "D60CCW";
 
@@ -191,7 +191,7 @@ public sealed class CargaComprobantesService(
                 "Validada: se ensayó la grabación completa y se revirtió. No se pidió CAE ni se modificó la facturación automática.");
         }, ct);
 
-    public Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+    public Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false)
         => ResultadoFacturacionAutomaticaAsync(cuenta, "EmitirFacturacionAutomatica", async (cn, ctx, token) =>
         {
             var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token));
@@ -211,7 +211,21 @@ public sealed class CargaComprobantesService(
                     "RECHAZADA" => resultado.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó el comprobante. {CargaComprobantesRechazos.NadaGrabado}",
                     _ => resultado.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta
                 });
-            resumen.Comprobante = resultado.Comprobante; resumen.Cae = resultado.Cae; resumen.Operacion = resultado.Operacion;
+            resumen.Tc = resultado.Tc; resumen.Comprobante = resultado.Comprobante; resumen.Cae = resultado.Cae; resumen.Operacion = resultado.Operacion;
+            // Mail de la factura (como el VB6 con «enviar mail automático»): un problema de envío no anula la emisión.
+            if (enviarMail && resultado.Estado == "GRABADA" && resultado.Comprobante is { Length: > 0 } comprobanteEmitido)
+            {
+                try
+                {
+                    var envio = await EnviarMailAsync(cn, ctx, resultado.Tc, comprobanteEmitido, null, null, null, token);
+                    resumen.MailEstado = envio.Enviado ? "ENVIADO" : "ERROR"; resumen.MailMensaje = envio.Mensaje;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    resumen.MailEstado = "ERROR";
+                    resumen.MailMensaje = ex is CargaComprobantesReglaException ? ex.Message : "No se pudo enviar el mail; la factura quedó emitida. Reenviala desde Ver comprobantes.";
+                }
+            }
             return resumen;
         }, ct);
 
@@ -273,7 +287,14 @@ public sealed class CargaComprobantesService(
                 Desde_ = (page - 1) * pageSize + 1, Hasta_ = page * pageSize
             };
             // SQL Server 2008: paginado con ROW_NUMBER y total con COUNT(*) OVER ().
-            var filas = (await cn.QueryAsync<ComprobantesVisorFilaTotal>(new CommandDefinition("""
+            // Último envío por mail (V_MA_EMAILMOV, lo comparte con el VB6) si la tabla existe en la base.
+            var hayMails = await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.V_MA_EMAILMOV',N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 1;
+            var mailSelect = hayMails ? ", m.UltimoMail" : ", CAST(NULL AS nvarchar(400)) UltimoMail";
+            var mailApply = hayMails ? """
+                OUTER APPLY (SELECT TOP (1) CONVERT(nvarchar(10), FechaHora, 103) + ' ' + CONVERT(nvarchar(5), FechaHora, 108) + ' · ' + ISNULL(Para,'') + ' · ' + ISNULL(Status,'') UltimoMail
+                             FROM dbo.V_MA_EMAILMOV WHERE TC = q.Tc AND IdComprobante = q.IdComprobante AND ISNULL(Tipo,'E') = 'E' ORDER BY FechaHora DESC) m
+                """ : string.Empty;
+            var filas = (await cn.QueryAsync<ComprobantesVisorFilaTotal>(new CommandDefinition($"""
                 WITH q AS (
                     SELECT c.ID Id, LTRIM(RTRIM(c.TC)) Tc, LTRIM(RTRIM(c.IDCOMPROBANTE)) IdComprobante, ISNULL(c.IDCOMPLEMENTO,0) IdComplemento,
                         c.FECHA Fecha, LTRIM(RTRIM(ISNULL(c.CUENTA,''))) Cuenta, ISNULL(c.NOMBRE,'') Cliente, ISNULL(c.IMPORTE,0) Importe,
@@ -290,11 +311,12 @@ public sealed class CargaComprobantesService(
                       AND (@Texto = '' OR c.NOMBRE LIKE @Like ESCAPE '\' OR LTRIM(RTRIM(c.CUENTA)) LIKE @Like ESCAPE '\'
                            OR c.IDCOMPROBANTE LIKE @LikeNumero ESCAPE '\')
                 )
-                SELECT q.*, ISNULL(LTRIM(RTRIM(t.DESCRIPCION)),'') TcDescripcion, e.CAE Cae
+                SELECT q.*, ISNULL(LTRIM(RTRIM(t.DESCRIPCION)),'') TcDescripcion, e.CAE Cae{mailSelect}
                 FROM q
                 OUTER APPLY (SELECT TOP (1) DESCRIPCION FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) = q.Tc ORDER BY Talonario) t
                 OUTER APPLY (SELECT TOP (1) NULLIF(LTRIM(RTRIM(CAE)),'') CAE FROM dbo.V_MV_CPTE_ELECTRONICOS
                              WHERE TC = q.Tc AND IdComprobante = q.IdComprobante AND ISNULL(Archivado,0) = 0) e
+                {mailApply}
                 WHERE q.Fila BETWEEN @Desde_ AND @Hasta_
                 ORDER BY q.Fila;
                 """, p, commandTimeout: 60, cancellationToken: token))).ToList();
@@ -338,13 +360,14 @@ public sealed class CargaComprobantesService(
         public string UnidadNegocio { get; set; } = string.Empty;
         public string Usuario { get; set; } = string.Empty;
         public string? Cae { get; set; }
+        public string? UltimoMail { get; set; }
         public int Total { get; set; }
         public decimal ImporteTotal { get; set; }
         public static implicit operator ComprobantesVisorFila(ComprobantesVisorFilaTotal f) => new()
         {
             Id = f.Id, Tc = f.Tc, TcDescripcion = f.TcDescripcion, IdComprobante = f.IdComprobante, IdComplemento = f.IdComplemento,
             Fecha = f.Fecha, Cuenta = f.Cuenta, Cliente = f.Cliente, Importe = f.Importe, Anulada = f.Anulada,
-            UnidadNegocio = f.UnidadNegocio, Usuario = f.Usuario, Cae = f.Cae
+            UnidadNegocio = f.UnidadNegocio, Usuario = f.Usuario, Cae = f.Cae, UltimoMail = f.UltimoMail
         };
     }
 

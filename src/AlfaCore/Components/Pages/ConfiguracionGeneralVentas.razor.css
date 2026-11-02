@@ -566,3 +566,12 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Mail de facturación. */
+.cfg-mail { display: grid; gap: 12px; max-width: 760px; }
+.cfg-mail__label { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
+.cfg-mail__mensaje { width: 100%; min-height: 180px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical;
+    border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 8px; background: var(--alfa-surface, #fff); color: inherit; }
+.cfg-mail__marcas { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--alfa-text-muted, #5f6b7a); }
+.cfg-mail__marcas strong { flex-basis: 100%; }
+.cfg-mail__aviso { margin: 0; color: var(--alfa-warning, #8a5a00); font-weight: 600; font-size: 13px; }

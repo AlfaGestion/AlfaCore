@@ -186,7 +186,8 @@
 {
     <AlfaConfirmDialog Open="true" Title="Emitir facturación automática"
         Message="@($"Se emitirán {_seleccionFa.Count} factura(s) por {Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
-        SecondaryMessage="Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
+        SecondaryMessage="@("Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
+            + (_enviarMailFa ? (_mailPruebaFa is null ? " Cada factura se envía por mail al cliente." : $" Mail en modo prueba: todas las facturas van a {_mailPruebaFa}, no a los clientes.") : " No se envían mails."))"
         ConfirmLabel="Emitir" OnConfirm="EmitirFacturacionAutomaticaAsync" OnCancel="() => _confirmarEmisionFa = false" />
 }
 @if (_confirmarPrueba)
@@ -317,6 +318,48 @@
         }
     }
 
+    // ── Mail de la factura (asunto y mensaje en Configuración General → Ventas → Mail de facturación) ──
+    private bool _enviarMailFa;
+    private string? _mailPruebaFa;
+    private bool _mailConfigFaCargada;
+    private string? _mailFaCuenta;
+    private async Task CargarMailConfigFaAsync()
+    {
+        if (_mailConfigFaCargada) return;
+        try
+        {
+            var cfg = await Service.GetMailConfigAsync(_lifetime.Token);
+            _enviarMailFa = cfg.EnviarAlEmitir;
+            _mailPruebaFa = string.IsNullOrWhiteSpace(cfg.MailPrueba) ? null : cfg.MailPrueba.Trim();
+            _mailConfigFaCargada = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { /* sin config: queda sin envío */ }
+    }
+
+    private async Task EnviarMailFaAsync(CargaComprobantesFacturacionAutomaticaResultado r)
+    {
+        if (_mailFaCuenta is not null || r.Comprobante is not { Length: > 0 } comprobante) return;
+        _mailFaCuenta = r.Cuenta;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.EnviarMailComprobanteAsync(r.Tc ?? "FC", comprobante, ct: _lifetime.Token), "Carga de Comprobantes");
+            if (result.Success && result.Value is { } envio)
+            {
+                r.MailEstado = envio.Enviado ? "ENVIADO" : "ERROR"; r.MailMensaje = envio.Mensaje;
+            }
+            else
+            {
+                r.MailEstado = "ERROR"; r.MailMensaje = result.Feedback?.Message ?? "No se pudo enviar el mail.";
+            }
+        }
+        finally
+        {
+            _mailFaCuenta = null;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private Task PrevisualizarFacturacionAutomaticaAsync() => ProcesarFaAsync(false);
     private Task EmitirFacturacionAutomaticaAsync() { _confirmarEmisionFa = false; return ProcesarFaAsync(true); }
 
@@ -334,7 +377,7 @@
                 _progresoFa = $"{(emitir ? "Emitiendo" : "Validando")} {i + 1} de {cuentas.Count}…";
                 await InvokeAsync(StateHasChanged);
                 _resultadosFa[cuentas[i]] = emitir
-                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token)
+                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token, _enviarMailFa)
                     : await Service.PrevisualizarFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token);
             }
             var resultados = cuentas.Where(_resultadosFa.ContainsKey).Select(c => _resultadosFa[c]).ToList();
@@ -347,6 +390,14 @@
                 : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
                     $"{ok} correcta(s) y {errores} con problemas. En la columna Resultado de cada cliente figura el motivo y qué hacer; " +
                     "las rechazadas no grabaron nada y se pueden volver a emitir después de corregir.");
+            if (emitir && _enviarMailFa)
+            {
+                var conMail = resultados.Where(r => r.MailEstado is not null).ToList();
+                var fallidos = conMail.Count(r => r.MailEstado != "ENVIADO");
+                if (fallidos > 0)
+                    _feedback = AppUiMessage.Warning("Mails con problemas",
+                        $"{conMail.Count - fallidos} mail(s) enviados y {fallidos} sin enviar. La factura quedó emitida igual; en Resultado figura el motivo y el botón para reenviar.");
+            }
             if (emitir) _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -422,6 +473,19 @@
                 @if (r.Cae is { } cae) { <span> · CAE @cae</span> }
             </small>
             <small class="cc-fa-lineas">@string.Join(" · ", r.Lineas.Select(l => $"{l.Texto}: {Moneda(l.Importe)}"))</small>
+            @if (r.Estado == "GRABADA" && r.Comprobante is { Length: > 0 })
+            {
+                @if (r.MailEstado is { } mailEstado)
+                {
+                    <small class="cc-fa-mail @(mailEstado == "ENVIADO" ? "is-ok" : "is-error")">
+                        <i class="bi @(mailEstado == "ENVIADO" ? "bi-envelope-check" : "bi-envelope-exclamation")" aria-hidden="true"></i> @r.MailMensaje
+                    </small>
+                }
+                <button type="button" class="cc-fa-mail__btn" disabled="@(_busy || _mailFaCuenta is not null)" @onclick="() => EnviarMailFaAsync(r)">
+                    <i class="bi bi-envelope" aria-hidden="true"></i>
+                    @(_mailFaCuenta == r.Cuenta ? "Enviando…" : r.MailEstado == "ENVIADO" ? "Reenviar mail" : "Enviar por mail")
+                </button>
+            }
         }
         else
         {
@@ -436,6 +500,7 @@
         if (EsFa(consulta))
         {
             _filasFa = await Service.BuscarFacturacionAutomaticaAsync(consulta, _lifetime.Token);
+            await CargarMailConfigFaAsync();
             _result = null;
             _seleccionados.Clear();
             // Al reconsultar se conserva la selección de los clientes que siguen en la lista; los resultados se limpian.
@@ -479,6 +544,16 @@
         }
     }
 
+    private string UrlConfigMail
+    {
+        get
+        {
+            var path = new Uri(Navigation.Uri).AbsolutePath;
+            var indice = path.IndexOf("/ventas/carga-comprobantes", StringComparison.OrdinalIgnoreCase);
+            return (indice >= 0 ? path[..indice] : string.Empty) + "/configuracion-general/ventas?tab=mail";
+        }
+    }
+
     private Task AbrirClienteAsync(string cuenta)
     {
         // Abre la ficha en otra pestaña para no perder la lista consultada.
@@ -508,6 +583,16 @@
             return;
         }
         <section class="cc-data-view" aria-label="Clientes en condiciones de facturar" aria-busy="@_busy">
+            <div class="cc-fa-mailbar">
+                <AlfaCheckbox Value="@_enviarMailFa" ValueChanged="v => _enviarMailFa = v == true" Disabled="@_busy">
+                    <i class="bi bi-envelope" aria-hidden="true"></i> Enviar la factura por mail al emitir
+                </AlfaCheckbox>
+                @if (_mailPruebaFa is not null)
+                {
+                    <span class="cc-fa-mailbar__prueba">Modo prueba: los mails van a @_mailPruebaFa, no a los clientes.</span>
+                }
+                <a class="cc-fa-mailbar__config" href="@UrlConfigMail" target="_blank">Asunto y mensaje del mail</a>
+            </div>
             <div class="cc-table-scroll">
                 <table class="cc-table">
                     <thead><tr>

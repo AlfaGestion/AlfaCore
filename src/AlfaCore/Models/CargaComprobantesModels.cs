@@ -16,6 +16,46 @@ public sealed class CargaComprobantesFiltro
     public int PageSize { get; set; } = 25;
 }
 
+/// <summary>
+/// Mail de comprobantes: mismas claves que v_FacturacionAutomatica.vbp (TP_V_factAutomatica_txtAsunto,
+/// TP_V_factAutomatica_txtmensaje, TP_V_factAutomatica_chkemailauto), así el texto se comparte con el VB6.
+/// </summary>
+public sealed class ComprobanteMailConfig
+{
+    public string Asunto { get; set; } = string.Empty;
+    public string Mensaje { get; set; } = string.Empty;
+    public bool EnviarAlEmitir { get; set; }
+    /// <summary>Si tiene un mail, todos los envíos van ahí (para probar sin escribirle a los clientes).</summary>
+    public string MailPrueba { get; set; } = string.Empty;
+    public static readonly IReadOnlyList<(string Marca, string Descripcion)> Marcas =
+    [
+        ("<PERIODO>", "Mes y año del comprobante (ej. 11-2026)"),
+        ("<NOMBRE>", "Razón social del cliente"),
+        ("<FORMADEPAGO>", "Forma de pago de la unidad de negocio (configuración FormaDePago_UN_x)"),
+        ("<DETALLEFACTURA>", "Fecha, número y total del comprobante")
+    ];
+}
+
+/// <summary>Mail listo para revisar antes de enviar (visor de comprobantes).</summary>
+public sealed class ComprobanteMailBorrador
+{
+    public string Tc { get; set; } = string.Empty;
+    public string IdComprobante { get; set; } = string.Empty;
+    public string Cliente { get; set; } = string.Empty;
+    public string Para { get; set; } = string.Empty;
+    public string Asunto { get; set; } = string.Empty;
+    public string Mensaje { get; set; } = string.Empty;
+    public string? MailPrueba { get; set; }
+    public string? UltimoEnvio { get; set; }
+}
+
+public sealed class ComprobanteMailResultado
+{
+    public bool Enviado { get; set; }
+    public string Para { get; set; } = string.Empty;
+    public string Mensaje { get; set; } = string.Empty;
+}
+
 /// <summary>Filtros del visor de comprobantes de ventas.</summary>
 public sealed class ComprobantesVisorFiltro
 {
@@ -45,6 +85,8 @@ public sealed class ComprobantesVisorFila
     public string UnidadNegocio { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public string? Cae { get; set; }
+    /// <summary>Último envío por mail (V_MA_EMAILMOV): "02/11/2026 18:30 · a@b.com · OK".</summary>
+    public string? UltimoMail { get; set; }
     /// <summary>Formato de pantalla: 0010-00000519 C.</summary>
     public string Numero => IdComprobante.Length == 13 ? $"{IdComprobante[..4]}-{IdComprobante.Substring(4, 8)} {IdComprobante[12..]}" : IdComprobante;
 }
@@ -70,6 +112,7 @@ public sealed class CargaComprobantesFacturacionAutomaticaResultado
     public string Letra { get; set; } = string.Empty;
     public int PuntoVenta { get; set; }
     public int Talonario { get; set; }
+    public string? Tc { get; set; }
     public string? Comprobante { get; set; }
     public string? Cae { get; set; }
     public decimal Total { get; set; }
@@ -78,6 +121,9 @@ public sealed class CargaComprobantesFacturacionAutomaticaResultado
     public string Mensaje { get; set; } = string.Empty;
     public Guid? Operacion { get; set; }
     public IReadOnlyList<CargaComprobantesFacturacionAutomaticaLinea> Lineas { get; set; } = [];
+    /// <summary>Envío por mail de la factura emitida: null (no se pidió), ENVIADO o ERROR.</summary>
+    public string? MailEstado { get; set; }
+    public string? MailMensaje { get; set; }
 }
 
 public sealed record CargaComprobantesFacturacionAutomaticaLinea(string Texto, decimal Importe);

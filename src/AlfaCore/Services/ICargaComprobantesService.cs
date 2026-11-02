@@ -36,6 +36,14 @@ public interface ICargaComprobantesService
     /// <summary>Arma y valida la factura automática de un cliente (ensayo revertido): no pide CAE ni graba.</summary>
     Task<CargaComprobantesFacturacionAutomaticaResultado> PrevisualizarFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();
+    /// <summary>Asunto, mensaje, envío al emitir y mail de prueba (claves compartidas con el VB6).</summary>
+    Task<ComprobanteMailConfig> GetMailConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    Task GuardarMailConfigAsync(ComprobanteMailConfig config, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Destinatarios, asunto y mensaje armados para un comprobante, listos para revisar.</summary>
+    Task<ComprobanteMailBorrador> PrepararMailComprobanteAsync(string tc, string idComprobante, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Envía el comprobante en PDF por mail; null en para/asunto/mensaje usa los del cliente y la configuración.</summary>
+    Task<ComprobanteMailResultado> EnviarMailComprobanteAsync(string tc, string idComprobante, string? para = null, string? asunto = null,
+        string? mensaje = null, CancellationToken ct = default) => throw new NotSupportedException();
     /// <summary>Datos del cliente para la carga directa: documento, IVA, domicilio, vendedor, condición, lista y clase.</summary>
     Task<CargaComprobantesClienteResumen?> GetClienteDirectaAsync(string cliente, CancellationToken ct = default)
         => Task.FromResult<CargaComprobantesClienteResumen?>(null);
@@ -49,7 +57,7 @@ public interface ICargaComprobantesService
     Task<byte[]> PrevisualizarPdfFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();
     /// <summary>Emite la factura automática de un cliente (homologación) y actualiza su última factura y cuotas.</summary>
-    Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
+    Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false)
         => throw new NotSupportedException();
     Task<PagedResult<CargaComprobantesOrigen>> BuscarOrigenesAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default);
     Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default);

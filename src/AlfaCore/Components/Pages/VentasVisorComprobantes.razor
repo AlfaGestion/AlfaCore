@@ -48,7 +48,7 @@
             <section class="vc-tabla" aria-label="Comprobantes">
                 <div class="vc-tabla__scroll">
                     <table class="vc-table">
-                        <thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Cliente</th><th class="vc-num">Importe</th><th>CAE</th><th>U. negocio</th><th>Usuario</th><th>Acciones</th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Cliente</th><th class="vc-num">Importe</th><th>CAE</th><th>U. negocio</th><th>Usuario</th><th>Mail</th><th>Acciones</th></tr></thead>
                         <tbody>
                         @foreach (var c in r.Items)
                         {
@@ -61,10 +61,13 @@
                                 <td>@c.Cae</td>
                                 <td>@c.UnidadNegocio</td>
                                 <td>@c.Usuario</td>
+                                <td class="vc-mail">@if (c.UltimoMail is { Length: > 0 } um) { <small title="Último envío">@um</small> }</td>
                                 <td class="vc-acciones">
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" OnClick="_ => Ver(c)">Ver</AlfaButton>
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_pdfId is not null)"
                                                 Loading="@(_pdfId == c.Id)" OnClick="_ => ReimprimirAsync(c)">Reimprimir</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(c.Anulada || _mailCargandoId is not null)"
+                                                Loading="@(_mailCargandoId == c.Id)" OnClick="_ => AbrirMailAsync(c)">Mail</AlfaButton>
                                 </td>
                             </tr>
                         }
@@ -80,6 +83,35 @@
         <AlfaEmptyState Title="Buscando comprobantes" Message="Consultando la base activa." />
     }
 </div>
+
+<AlfaDialog Open="@(_mail is not null)" Title="Enviar comprobante por mail" Size="AlfaDialogSize.Lg" Loading="@_enviandoMail"
+            Description="@(_mail is null ? null : $"{_mail.Tc} {_mail.IdComprobante} · {_mail.Cliente} · va adjunto en PDF")"
+            ErrorMessage="@_mailError" CloseOnBackdrop="false" OnClose="CerrarMail">
+    <ChildContent>
+    @if (_mail is not null)
+    {
+        <div class="vc-mail-form">
+            @if (!string.IsNullOrWhiteSpace(_mail.MailPrueba))
+            {
+                <p class="vc-mail-form__prueba">Modo prueba: el mail va a @_mail.MailPrueba, no al cliente (Configuración General → Ventas → Mail de facturación).</p>
+            }
+            <AlfaInput Label="Para" Value="@_mail.Para" ValueChanged="v => _mail.Para = v ?? string.Empty" Disabled="@_enviandoMail"
+                       HelpText="Separá varios mails con «;». Se completa con los mails del cliente." />
+            <AlfaInput Label="Asunto" MaxLength="250" Value="@_mail.Asunto" ValueChanged="v => _mail.Asunto = v ?? string.Empty" Disabled="@_enviandoMail" />
+            <label class="vc-mail-form__label" for="vc-mail-mensaje">Mensaje</label>
+            <textarea id="vc-mail-mensaje" class="vc-mail-form__mensaje" rows="9" disabled="@_enviandoMail" @bind="_mail.Mensaje" @bind:event="oninput"></textarea>
+            @if (_mail.UltimoEnvio is { Length: > 0 } ultimo)
+            {
+                <small class="vc-mail-form__ultimo">Último envío: @ultimo</small>
+            }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_enviandoMail" OnClick="_ => CerrarMail()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_enviandoMail" Disabled="@_enviandoMail" OnClick="_ => EnviarMailAsync()">Enviar</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 <ComprobanteViewerModal Visible="@(_viendo is not null)" Tc="@(_viendo?.Tc ?? string.Empty)" IdComprobante="@(_viendo?.IdComprobante ?? string.Empty)"
                         IdComplemento="@(_viendo?.IdComplemento ?? 0)" Cliente="@_viendo?.Cliente" Cerrado="() => _viendo = null" />
@@ -147,6 +179,53 @@
     }
 
     private void Ver(ComprobantesVisorFila c) => _viendo = c;
+
+    // ── Enviar por mail: asunto y mensaje de la configuración, editables antes de enviar ──
+    private ComprobanteMailBorrador? _mail;
+    private int? _mailCargandoId;
+    private bool _enviandoMail;
+    private string? _mailError;
+
+    private async Task AbrirMailAsync(ComprobantesVisorFila c)
+    {
+        if (_mailCargandoId is not null) return;
+        _mailCargandoId = c.Id; _feedback = null; _mailError = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.PrepararMailComprobanteAsync(c.Tc, c.IdComprobante, _lifetime.Token), "Enviar por mail", _lifetime.Token);
+            if (result.Success) _mail = result.Value; else _feedback = result.Feedback;
+        }
+        finally
+        {
+            _mailCargandoId = null;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CerrarMail() { if (!_enviandoMail) { _mail = null; _mailError = null; } }
+
+    private async Task EnviarMailAsync()
+    {
+        if (_mail is not { } mail || _enviandoMail) return;
+        _enviandoMail = true; _mailError = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.EnviarMailComprobanteAsync(mail.Tc, mail.IdComprobante, mail.Para, mail.Asunto, mail.Mensaje, _lifetime.Token),
+                "Enviar por mail", _lifetime.Token);
+            if (!result.Success) _mailError = result.Feedback?.Message ?? "No se pudo enviar el mail.";
+            else if (result.Value is { Enviado: false } fallo) _mailError = fallo.Mensaje;
+            else
+            {
+                _mail = null;
+                _feedback = AppUiMessage.Success("Mail enviado", result.Value?.Mensaje ?? $"Se envió {mail.Tc} {mail.IdComprobante}.");
+            }
+        }
+        finally { _enviandoMail = false; }
+        if (_disposed) return;
+        if (_mail is null) await BuscarAsync(false); else await InvokeAsync(StateHasChanged);
+    }
 
     private async Task ReimprimirAsync(ComprobantesVisorFila c)
     {

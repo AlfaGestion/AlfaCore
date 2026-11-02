@@ -5,6 +5,7 @@
 @using AlfaCore.Services.MercadoPagoPoint.Models
 @inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
 @inject AlfaCore.Services.IArcaConfigService ArcaSvc
+@inject AlfaCore.Services.ICargaComprobantesService CargaSvc
 @inject AlfaCore.Services.IMercadoPagoPointConfigService MpConfigSvc
 @inject AlfaCore.Services.MercadoPagoPoint.ITerminalsService MpTerminalsSvc
 @inject AlfaCore.Services.MercadoPagoPoint.IPosService MpPosSvc
@@ -407,6 +408,47 @@
     </section>
     }
 
+    @if (_subtab == SubtabMail)
+    {
+    <section class="panel-card">
+        <h3 class="panel-card__title">Mail de facturación</h3>
+        <p class="panel-card__subtitle">
+            Asunto y mensaje con que se envían las facturas a los clientes (facturación automática y «Ver comprobantes»).
+            Es el mismo texto que usa Alfa Gestión: si lo cambiás acá, cambia también allá. La factura va adjunta en PDF.
+        </p>
+        @if (_mail is null)
+        {
+            <p class="panel-card__subtitle">Cargando...</p>
+        }
+        else
+        {
+            <div class="cfg-mail">
+                <AlfaInput Label="Asunto" MaxLength="250" Value="@_mail.Asunto" ValueChanged="v => _mail.Asunto = v ?? string.Empty" Disabled="@_saving" />
+                <label class="cfg-mail__label" for="cfg-mail-mensaje">Mensaje</label>
+                <textarea id="cfg-mail-mensaje" class="cfg-mail__mensaje" rows="10" disabled="@_saving"
+                          @bind="_mail.Mensaje" @bind:event="oninput"></textarea>
+                <div class="cfg-mail__marcas">
+                    <strong>Marcas que se reemplazan:</strong>
+                    @foreach (var (marca, descripcion) in AlfaCore.Models.ComprobanteMailConfig.Marcas)
+                    {
+                        <span><code>@marca</code> @descripcion</span>
+                    }
+                </div>
+                <AlfaCheckbox Value="@_mail.EnviarAlEmitir" ValueChanged="v => _mail.EnviarAlEmitir = v == true" Disabled="@_saving">
+                    Enviar la factura por mail al emitir la facturación automática (se puede cambiar en cada emisión)
+                </AlfaCheckbox>
+                <AlfaInput Label="Mail de prueba" Type="email" MaxLength="250" Value="@_mail.MailPrueba" ValueChanged="v => _mail.MailPrueba = v ?? string.Empty"
+                           HelpText="Si cargás un mail acá, TODOS los envíos van a esa dirección en lugar de a los clientes (para probar). Dejalo vacío para enviar de verdad."
+                           Disabled="@_saving" />
+                @if (!string.IsNullOrWhiteSpace(_mail.MailPrueba))
+                {
+                    <p class="cfg-mail__aviso">Modo prueba activo: los mails no les llegan a los clientes, van a @_mail.MailPrueba.</p>
+                }
+            </div>
+        }
+    </section>
+    }
+
     @if (_subtab == SubtabMercadoPago)
     {
     <section class="panel-card">
@@ -661,7 +703,11 @@
         if (Tab != _ultimoTab && !_saving)
         {
             _ultimoTab = Tab;
-            if (SubtabItems.Any(x => x.Key == Tab)) _subtab = Tab!;
+            if (SubtabItems.Any(x => x.Key == Tab))
+            {
+                _subtab = Tab!;
+                if (_subtab == SubtabMail && _mail is null) _ = CargarMailAsync();
+            }
         }
     }
 
@@ -715,7 +761,22 @@
     private readonly List<TerminalInfo> _mpTerminales = [];
     private readonly List<PosInfo> _mpPos = [];
 
-    private void SeleccionarSubtab(string subtab) { if (!_saving) { _subtab = subtab; UpdatePageHeader(); } }
+    private void SeleccionarSubtab(string subtab)
+    {
+        if (_saving) return;
+        _subtab = subtab; UpdatePageHeader();
+        if (subtab == SubtabMail && _mail is null) _ = CargarMailAsync();
+    }
+
+    // ── Mail de facturación (claves compartidas con v_FacturacionAutomatica.vbp) ──
+    private const string SubtabMail = "mail";
+    private AlfaCore.Models.ComprobanteMailConfig? _mail;
+    private async Task CargarMailAsync()
+    {
+        var result = await UiOps.RunAsync(() => CargaSvc.GetMailConfigAsync(), "No se pudo cargar el mail de facturación.");
+        if (result.Success) _mail = result.Value; else _feedback = result.Feedback;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private static readonly IReadOnlyList<AlfaTabItem> SubtabItems =
     [
@@ -724,6 +785,7 @@
         new(SubtabPuntoVenta, "Punto de Venta"),
         new(SubtabFactura, "Facturación electrónica"),
         new(SubtabPadron, "Padrón ARCA"),
+        new(SubtabMail, "Mail de facturación"),
         new(SubtabMercadoPago, "Mercado Pago Point"),
     ];
     private void SeleccionarMpPointTab(string tab)
@@ -969,6 +1031,18 @@
         {
             _saving = true; UpdatePageHeader();
             try { if (_cargaPanel is not null) await _cargaPanel.GuardarAsync(); }
+            finally { _saving = false; UpdatePageHeader(); }
+            return;
+        }
+        if (_subtab == SubtabMail)
+        {
+            if (_mail is null) return;
+            _saving = true; UpdatePageHeader();
+            try
+            {
+                var guardado = await UiOps.RunAsync(() => CargaSvc.GuardarMailConfigAsync(_mail), "No se pudo guardar el mail de facturación.");
+                _feedback = guardado.Success ? AppUiMessage.Success("Mail de facturación", "Se guardaron el asunto, el mensaje y las opciones de envío.") : guardado.Feedback;
+            }
             finally { _saving = false; UpdatePageHeader(); }
             return;
         }

@@ -42,3 +42,16 @@
 .cc-kpis { margin-bottom: 12px; }
 .cc-table td.cc-fa-acciones { white-space: nowrap; }
 .cc-table td small.cc-fa-pdf-error { display: block; max-width: 260px; white-space: normal; color: var(--alfa-danger, #e5484d); }
+
+/* Mail de la factura en la lista de facturación automática. */
+.cc-fa-mailbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; margin-bottom: 8px;
+    border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 8px; background: var(--alfa-surface-subtle, #f7f8fa); font-size: 13px; }
+.cc-fa-mailbar__prueba { color: var(--alfa-warning, #8a5a00); font-weight: 600; }
+.cc-fa-mailbar__config { margin-left: auto; font-size: 12px; }
+.cc-table td small.cc-fa-mail { display: block; white-space: normal; font-size: 11px; margin-top: 4px; }
+.cc-fa-mail.is-ok { color: var(--alfa-success, #1e7e34); }
+.cc-fa-mail.is-error { color: var(--alfa-danger, #b3261e); }
+.cc-fa-mail__btn { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 8px; font-size: 11px;
+    border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.cc-fa-mail__btn:hover:not(:disabled) { background: var(--alfa-surface-subtle, #f0f2f5); }
+.cc-fa-mail__btn:disabled { opacity: .6; cursor: default; }
