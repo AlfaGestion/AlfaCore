@@ -289,10 +289,13 @@
 
     // PDF de cómo saldría impresa la factura (ensayo revertido + marca de agua). Se abre en otra pestaña.
     private string? _pdfPrevioCuenta;
+    // Error del PDF en la misma fila: el aviso general queda arriba de la página y, con la lista
+    // desplazada, parecía que el botón se había colgado.
+    private readonly Dictionary<string, string> _pdfErrores = new(StringComparer.OrdinalIgnoreCase);
     private async Task VerPdfPrevioAsync(string cuenta)
     {
         if (_pdfPrevioCuenta is not null) return;
-        _pdfPrevioCuenta = cuenta; _feedback = null;
+        _pdfPrevioCuenta = cuenta; _feedback = null; _pdfErrores.Remove(cuenta);
         await InvokeAsync(StateHasChanged);
         try
         {
@@ -300,7 +303,10 @@
             if (result.Success && result.Value is { Length: > 0 } bytes)
                 await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(bytes), "application/pdf", $"vista-previa-{cuenta}.pdf");
             else
+            {
                 _feedback = result.Feedback;
+                _pdfErrores[cuenta] = result.Feedback?.Message is { Length: > 0 } m ? m : "No se pudo generar el PDF.";
+            }
         }
         finally
         {
@@ -526,8 +532,12 @@
                             <td class="cc-fa-resultado">@RenderResultadoFa(fila.Cuenta)</td>
                             <td class="cc-fa-acciones">
                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-file-earmark-pdf" Disabled="@(_busy || _pdfPrevioCuenta is not null)"
-                                            Loading="@(_pdfPrevioCuenta == fila.Cuenta)" OnClick="_ => VerPdfPrevioAsync(fila.Cuenta)">PDF previo</AlfaButton>
+                                            Loading="@(_pdfPrevioCuenta == fila.Cuenta)" OnClick="_ => VerPdfPrevioAsync(fila.Cuenta)">@(_pdfPrevioCuenta == fila.Cuenta ? "Generando…" : "PDF previo")</AlfaButton>
                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="_ => AbrirClienteAsync(fila.Cuenta)">Ver ficha</AlfaButton>
+                                @if (_pdfErrores.TryGetValue(fila.Cuenta, out var errorPdf))
+                                {
+                                    <small class="cc-fa-pdf-error">@errorPdf</small>
+                                }
                             </td>
                         </tr>
                     }
