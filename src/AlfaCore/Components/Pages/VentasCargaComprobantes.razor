@@ -62,6 +62,7 @@
         <section class="cc-intro cc-intro--compacto">
             <span class="cc-status">Facturación de prueba · Homologación</span>
         </section>
+        @RenderTarjetas()
         @if (EsFacturacionAutomatica)
         {
             @RenderFacturacionAutomatica()
@@ -324,6 +325,58 @@
             if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); }
         }
     }
+
+    // ── Tarjetas de totales sobre la lista (según el origen elegido) ─────────────────────────────
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+
+    private RenderFragment RenderTarjetas() => __builder =>
+    {
+        if (EsFacturacionAutomatica)
+        {
+            if (_filasFa.Count == 0) return;
+            var fecha = FechaFaAplicada;
+            var seleccion = _filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).ToList();
+            var nunca = _filasFa.Count(f => f.FechaUltimoMovimiento is null);
+            var porUnidad = string.Join(" · ", _filasFa.GroupBy(f => f.UnidadNegocio.Length == 0 ? "sin unidad" : $"U{f.UnidadNegocio}")
+                .OrderBy(g => g.Key).Select(g => $"{g.Key}: {g.Count()}"));
+            var resultados = _resultadosFa.Values.ToList();
+            <div class="kpi-grid cc-kpis">
+                <KpiCard Titulo="Clientes en condiciones" Valor="@_filasFa.Count.ToString("N0")" Icono="@Icono("bi-people")"
+                         Descripcion="@($"Al {fecha:dd/MM/yyyy} · {porUnidad}")" />
+                <KpiCard Titulo="A facturar (sin IVA)" Valor="@Moneda(_filasFa.Sum(f => f.Importe))" Icono="@Icono("bi-cash-stack")"
+                         Descripcion="@($"{_filasFa.Sum(f => f.Conceptos):N0} conceptos · promedio {Moneda(_filasFa.Average(f => f.Importe))}")" />
+                <KpiCard Titulo="Seleccionados" Valor="@seleccion.Count.ToString("N0")" Icono="@Icono("bi-check2-square")" Destacado="@(seleccion.Count > 0)"
+                         Descripcion="@(seleccion.Count == 0 ? "Marcá clientes para la vista previa o la emisión" : $"{Moneda(seleccion.Sum(f => f.Importe))} sin IVA")" />
+                @if (resultados.Count > 0)
+                {
+                    var emitidas = resultados.Where(r => r.Estado == "GRABADA").ToList();
+                    var validadas = resultados.Count(r => r.Estado == "VALIDADA");
+                    var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE");
+                    <KpiCard Titulo="Resultado" Valor="@(emitidas.Count > 0 ? $"{emitidas.Count} emitida(s)" : $"{validadas} validada(s)")" Icono="@Icono(errores > 0 ? "bi-exclamation-triangle" : "bi-patch-check")"
+                             Descripcion="@($"{(emitidas.Count > 0 ? $"Total {Moneda(emitidas.Sum(r => r.Total))} · " : "")}{errores} con error")" />
+                }
+                else
+                {
+                    <KpiCard Titulo="Nunca facturados" Valor="@nunca.ToString("N0")" Icono="@Icono("bi-hourglass-split")"
+                             Descripcion="Sin factura automática previa: se factura el período actual" />
+                }
+            </div>
+            return;
+        }
+        if (_result is null || _result.Total == 0) return;
+        var documento = _filtroAplicado.TipoOrigen == "RM" ? "Remitos" : "Pedidos";
+        var elegidos = _result.Items.Where(x => _seleccionados.Contains(x.Id)).ToList();
+        <div class="kpi-grid cc-kpis">
+            <KpiCard Titulo="@($"{documento} pendientes")" Valor="@_result.Total.ToString("N0")" Icono="@Icono("bi-file-earmark-text")"
+                     Descripcion="Con los filtros aplicados" />
+            <KpiCard Titulo="Importe en esta página" Valor="@Moneda(_result.Items.Sum(x => x.Importe))" Icono="@Icono("bi-cash-stack")"
+                     Descripcion="@($"Página {_result.PageNumber} de {Math.Max(_result.TotalPages, 1)} · {_result.Items.Count} documentos")" />
+            <KpiCard Titulo="Clientes en esta página" Valor="@_result.Items.Select(x => x.Cuenta).Distinct().Count().ToString("N0")" Icono="@Icono("bi-people")"
+                     Descripcion="Los de un mismo cliente se pueden facturar juntos" />
+            <KpiCard Titulo="Seleccionados" Valor="@_seleccionados.Count.ToString("N0")" Icono="@Icono("bi-check2-square")" Destacado="@(_seleccionados.Count > 0)"
+                     Descripcion="@(_seleccionados.Count == 0 ? "Marcá documentos para cargarlos en una factura" : $"{Moneda(elegidos.Sum(x => x.Importe))} en esta página")" />
+        </div>
+    };
 
     private RenderFragment RenderResultadoFa(string cuenta) => __builder =>
     {

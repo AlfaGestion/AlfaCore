@@ -38,3 +38,5 @@
 .cc-fa-estado.is-info { background: var(--alfa-info-subtle, #e7f1fb); color: var(--alfa-info, #1d5fa8); }
 .cc-fa-estado.is-error { background: var(--alfa-danger-subtle, #fdecea); color: var(--alfa-danger, #b3261e); }
 .cc-table td small.cc-fa-lineas { white-space: normal; font-size: 11px; }
+/* Tarjetas de totales sobre la lista. */
+.cc-kpis { margin-bottom: 12px; }
