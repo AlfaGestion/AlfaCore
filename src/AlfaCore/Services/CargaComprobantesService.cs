@@ -191,7 +191,7 @@ public sealed partial class CargaComprobantesService(
                 "Validada: se ensayó la grabación completa y se revirtió. No se pidió CAE ni se modificó la facturación automática.");
         }, ct);
 
-    public Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false)
+    public Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false, bool comoProforma = false)
         => ResultadoFacturacionAutomaticaAsync(cuenta, "EmitirFacturacionAutomatica", async (cn, ctx, token) =>
         {
             var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token));
@@ -199,7 +199,7 @@ public sealed partial class CargaComprobantesService(
             // así la fecha de última factura y el período del concepto quedan coherentes.
             if (fechaFacturacion.Date != hoy.Date)
                 throw new CargaComprobantesReglaException($"Para emitir, la fecha a facturar debe ser la de hoy ({hoy:dd/MM/yyyy}).");
-            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, hoy, token);
+            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, hoy, token, comoProforma ? "FP" : null);
             var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
             var resultado = await emision.EmitirAsync(cn, ctx, 0, talonario, [], Guid.NewGuid(), plan.Huella,
                 () => EnsureContext(ctx.SesionId, ctx.Usuario, ctx.Sistema), token, borrador);
@@ -207,9 +207,10 @@ public sealed partial class CargaComprobantesService(
             var resumen = Resumen(plan, fila, talonario, resultado.Estado switch { "GRABADA" => "GRABADA", "RECHAZADA" => "RECHAZADA", _ => "PENDIENTE" },
                 resultado.Estado switch
                 {
-                    "GRABADA" => "Factura grabada en homologación; se actualizó la última factura y las cuotas.",
+                    "GRABADA" when resultado.Tc == "FP" => "Proforma grabada (sin CAE, no va a ARCA); se actualizó la última factura y las cuotas. Más adelante se podrá convertir en factura electrónica.",
+                    "GRABADA" => comoProforma ? "El cliente ya tenía una factura emitida hoy: no se generó la proforma." : "Factura grabada en homologación; se actualizó la última factura y las cuotas.",
                     "RECHAZADA" => resultado.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó el comprobante. {CargaComprobantesRechazos.NadaGrabado}",
-                    _ => resultado.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta
+                    _ => comoProforma && resultado.Tc != "FP" ? "El cliente tiene una factura electrónica a medio emitir: recuperala antes de hacer una proforma (no se generó nada nuevo)." : resultado.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta
                 });
             resumen.Tc = resultado.Tc; resumen.Comprobante = resultado.Comprobante; resumen.Cae = resultado.Cae; resumen.Operacion = resultado.Operacion;
             // Mail de la factura (como el VB6 con «enviar mail automático»): un problema de envío no anula la emisión.
@@ -405,7 +406,7 @@ public sealed partial class CargaComprobantesService(
         var fiscal = CargaComprobantesDesgloseFiscal.Crear(plan.Liquidacion);
         return new()
         {
-            Cuenta = fila.Cuenta, Estado = estado, Letra = plan.Letra, PuntoVenta = plan.PuntoVenta, Talonario = talonario,
+            Cuenta = fila.Cuenta, Estado = estado, Tc = plan.Tc, Letra = plan.Letra, PuntoVenta = plan.PuntoVenta, Talonario = talonario,
             Total = fiscal.Total, Iva = fiscal.Iva, Concepto = plan.Origen.Observaciones, Mensaje = mensaje,
             Lineas = plan.Liquidacion.Lineas.Select(l => new CargaComprobantesFacturacionAutomaticaLinea(
                 plan.Origen.Lineas.Single(x => x.Id == l.LineaId).Descripcion, l.Total)).ToList()

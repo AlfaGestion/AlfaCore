@@ -93,10 +93,18 @@ public static class CargaComprobantesFacturacionAutomatica
     /// intento devuelve la misma operación en vez de emitir otra factura.
     /// </summary>
     public static async Task<(CargaComprobantesDirecta Borrador, int Talonario, CargaComprobantesFacturacionAutomaticaFila Fila)> PrepararAsync(
-        SqlConnection cn, CargaComprobantesContexto contexto, string cuenta, DateTime fechaFacturacion, CancellationToken ct)
+        SqlConnection cn, CargaComprobantesContexto contexto, string cuenta, DateTime fechaFacturacion, CancellationToken ct, string? tcForzado = null)
     {
         var fila = (await BuscarAsync(cn, contexto, new CargaComprobantesFiltro { TipoOrigen = TipoOrigen, FechaFacturacion = fechaFacturacion }, ct, cuenta))
             .SingleOrDefault() ?? throw new CargaComprobantesReglaException("El cliente ya no está en condiciones de facturar a esa fecha (ya se facturó, se desactivó o no tiene importe).");
+        // Proforma de contingencia (ARCA caída o rechazo): misma factura pero como FP, sin CAE.
+        if (tcForzado is { Length: > 0 })
+        {
+            if (tcForzado != "FP") throw new CargaComprobantesReglaException("Solo se puede forzar la emisión como proforma (FP).");
+            if (!contexto.UsaFacturaProforma)
+                throw new CargaComprobantesReglaException("La factura proforma no está habilitada en esta base (Configuración: UsaFacturaProforma).");
+            fila.Tc = "FP";
+        }
         if (fila.Tc is not ("FC" or "FP"))
             throw new CargaComprobantesReglaException($"El tipo de comprobante {fila.Tc} de la facturación automática no está incorporado (solo FC y FP).");
         var unidad = fila.UnidadNegocio.Length > 0 ? fila.UnidadNegocio : contexto.UnidadNegocio;

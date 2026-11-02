@@ -56,8 +56,9 @@ public interface ICargaComprobantesService
     /// <summary>PDF de cómo saldría impresa la factura automática de un cliente, con marca de vista previa. No graba nada.</summary>
     Task<byte[]> PrevisualizarPdfFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();
-    /// <summary>Emite la factura automática de un cliente (homologación) y actualiza su última factura y cuotas.</summary>
-    Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false)
+    /// <summary>Emite la factura automática de un cliente (homologación) y actualiza su última factura y cuotas.
+    /// comoProforma: la emite como FP (sin CAE, no va a ARCA) aunque el cliente esté configurado con FC.</summary>
+    Task<CargaComprobantesFacturacionAutomaticaResultado> EmitirFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default, bool enviarMail = false, bool comoProforma = false)
         => throw new NotSupportedException();
     Task<PagedResult<CargaComprobantesOrigen>> BuscarOrigenesAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default);
     Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default);

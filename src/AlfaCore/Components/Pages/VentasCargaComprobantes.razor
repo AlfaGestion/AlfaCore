@@ -190,6 +190,14 @@
             + (_enviarMailFa ? (_mailPruebaFa is null ? " Cada factura se envía por mail al cliente." : $" Mail en modo prueba: todas las facturas van a {_mailPruebaFa}, no a los clientes.") : " No se envían mails."))"
         ConfirmLabel="Emitir" OnConfirm="EmitirFacturacionAutomaticaAsync" OnCancel="() => _confirmarEmisionFa = false" />
 }
+@if (_confirmarProformaFa is { Count: > 0 } proformas)
+{
+    <AlfaConfirmDialog Open="true" Title="Emitir como proforma"
+        Message="@($"Se emitirán {proformas.Count} proforma(s) (FP) por {Moneda(_filasFa.Where(f => proformas.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
+        SecondaryMessage="@("Para cuando ARCA no responde o rechaza: la proforma no pide CAE ni va a ARCA. Se graba con cuenta corriente y asiento y se actualiza la última factura automática del cliente, así no se factura dos veces. Más adelante se podrá convertir en factura electrónica."
+            + (_enviarMailFa ? " También se envía por mail." : ""))"
+        ConfirmLabel="Emitir proforma" OnConfirm="EmitirProformaFaAsync" OnCancel="() => _confirmarProformaFa = null" />
+}
 @if (_confirmarPrueba)
 {
     <AlfaConfirmDialog Open="true" Title="Emitir prueba en homologación"
@@ -360,32 +368,44 @@
         }
     }
 
+    // Proforma de contingencia: los clientes elegidos (selección o uno rechazado) se emiten como FP.
+    private List<string>? _confirmarProformaFa;
+    private Task EmitirProformaFaAsync()
+    {
+        var cuentas = _confirmarProformaFa ?? [];
+        _confirmarProformaFa = null;
+        return ProcesarFaAsync(true, cuentas);
+    }
+
     private Task PrevisualizarFacturacionAutomaticaAsync() => ProcesarFaAsync(false);
     private Task EmitirFacturacionAutomaticaAsync() { _confirmarEmisionFa = false; return ProcesarFaAsync(true); }
 
     // Lote secuencial: cada cliente se valida/emite por separado y su resultado queda en la fila.
-    private async Task ProcesarFaAsync(bool emitir)
+    private async Task ProcesarFaAsync(bool emitir, IReadOnlyCollection<string>? proformas = null)
     {
-        if (_busy || _disposed || _seleccionFa.Count == 0) return;
+        var comoProforma = proformas is not null;
+        if (_busy || _disposed || (comoProforma ? proformas!.Count == 0 : _seleccionFa.Count == 0)) return;
         var fecha = FechaFaAplicada;
-        var cuentas = FilasFaOrdenadas.Select(f => f.Cuenta).Where(_seleccionFa.Contains).ToList();
+        var elegidas = comoProforma ? new HashSet<string>(proformas!, StringComparer.OrdinalIgnoreCase) : _seleccionFa;
+        var cuentas = FilasFaOrdenadas.Select(f => f.Cuenta).Where(elegidas.Contains).ToList();
         _busy = true; _feedback = null; UpdateHeader();
         try
         {
             for (var i = 0; i < cuentas.Count && !_disposed; i++)
             {
-                _progresoFa = $"{(emitir ? "Emitiendo" : "Validando")} {i + 1} de {cuentas.Count}…";
+                _progresoFa = $"{(comoProforma ? "Emitiendo proforma" : emitir ? "Emitiendo" : "Validando")} {i + 1} de {cuentas.Count}…";
                 await InvokeAsync(StateHasChanged);
                 _resultadosFa[cuentas[i]] = emitir
-                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token, _enviarMailFa)
+                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token, _enviarMailFa, comoProforma)
                     : await Service.PrevisualizarFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token);
             }
             var resultados = cuentas.Where(_resultadosFa.ContainsKey).Select(c => _resultadosFa[c]).ToList();
             var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE" or "RECHAZADA");
             var ok = resultados.Count - errores;
             _feedback = errores == 0
-                ? AppUiMessage.Success(emitir ? "Facturas emitidas" : "Vista previa lista",
-                    emitir ? $"{ok} factura(s) grabadas en homologación por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
+                ? AppUiMessage.Success(comoProforma ? "Proformas emitidas" : emitir ? "Facturas emitidas" : "Vista previa lista",
+                    comoProforma ? $"{ok} proforma(s) grabadas por {Moneda(resultados.Sum(r => r.Total))}, sin CAE. Usá Actualizar para ver los clientes que quedan."
+                    : emitir ? $"{ok} factura(s) grabadas en homologación por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
                            : $"{ok} factura(s) validadas por {Moneda(resultados.Sum(r => r.Total))}. No se grabó nada.")
                 : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
                     $"{ok} correcta(s) y {errores} con problemas. En la columna Resultado de cada cliente figura el motivo y qué hacer; " +
@@ -468,7 +488,7 @@
         @if (r.Estado is "GRABADA" or "VALIDADA")
         {
             <small>
-                @(r.Comprobante is { } cpte ? $"FC {cpte}" : $"Factura {r.Letra} · Punto {r.PuntoVenta:0000}")
+                @(r.Comprobante is { } cpte ? $"{r.Tc ?? "FC"} {cpte}" : $"{(r.Tc == "FP" ? "Proforma" : "Factura")} {r.Letra} · Punto {r.PuntoVenta:0000}")
                 · Total @Moneda(r.Total)@(r.Iva != 0 ? $" (IVA {Moneda(r.Iva)})" : "")
                 @if (r.Cae is { } cae) { <span> · CAE @cae</span> }
             </small>
@@ -490,6 +510,13 @@
         else
         {
             <small>@r.Mensaje</small>
+            @if (r.Estado is "RECHAZADA" or "ERROR" && FechaFaAplicada == DateTime.Today)
+            {
+                <button type="button" class="cc-fa-mail__btn" disabled="@_busy" title="Emitir esta factura como proforma (FP), sin CAE"
+                        @onclick="() => { _confirmarProformaFa = [r.Cuenta]; }">
+                    <i class="bi bi-file-earmark-text" aria-hidden="true"></i> Emitir proforma
+                </button>
+            }
         }
     };
     private bool EsFacturacionAutomatica => _filtroAplicado.TipoOrigen == CargaComprobantesFacturacionAutomatica.TipoOrigen;
@@ -870,7 +897,9 @@
                         new() { Key = "fa-emitir", Label = $"Emitir ({_seleccionFa.Count})", Icon = "bi-send-check", Style = PageHeaderActionStyle.Primary,
                             Disabled = _busy || !PuedeEmitirFa, OnClick = () => { _confirmarEmisionFa = true; return InvokeAsync(StateHasChanged); } },
                         new() { Key = "fa-previa", Label = $"Vista previa ({_seleccionFa.Count})", Icon = "bi-eye", Style = PageHeaderActionStyle.Secondary,
-                            Disabled = _busy, OnClick = PrevisualizarFacturacionAutomaticaAsync }
+                            Disabled = _busy, OnClick = PrevisualizarFacturacionAutomaticaAsync },
+                        new() { Key = "fa-proforma", Label = $"Emitir proforma ({_seleccionFa.Count})", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost,
+                            Disabled = _busy || !PuedeEmitirFa, OnClick = () => { _confirmarProformaFa = _seleccionFa.ToList(); return InvokeAsync(StateHasChanged); } }
                     }
                     : []),
                 .. (_seleccionados.Count > 0
