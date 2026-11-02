@@ -210,6 +210,43 @@ public sealed class CargaComprobantesService(
             return resumen;
         }, ct);
 
+    public Task<CargaComprobantesClienteResumen?> GetClienteDirectaAsync(string cliente, CancellationToken ct = default)
+        => ExecuteAsync("ClienteDirecta", async (cn, ctx, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(cliente)) return null;
+            var resumen = await cn.QuerySingleOrDefaultAsync<CargaComprobantesClienteResumen>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(cl.CODIGO)) Codigo, ISNULL(cl.RAZON_SOCIAL,'') RazonSocial,
+                    ISNULL(LTRIM(RTRIM(td.DESCRIPCION)),'') DocumentoTipo, LTRIM(RTRIM(ISNULL(cl.NUMERO_DOCUMENTO,''))) Documento,
+                    ISNULL(LTRIM(RTRIM(iva.DESCRIPCION)),'') CondicionIva,
+                    LTRIM(RTRIM(LTRIM(RTRIM(ISNULL(cl.CALLE,''))) + ' ' + LTRIM(RTRIM(ISNULL(cl.NUMERO,''))))) Domicilio,
+                    LTRIM(RTRIM(ISNULL(cl.LOCALIDAD,''))) Localidad, ISNULL(LTRIM(RTRIM(pr.DESCRIPCION)),'') Provincia,
+                    LTRIM(RTRIM(ISNULL(cl.TELEFONO,''))) Telefono, LTRIM(RTRIM(ISNULL(cl.MAIL,''))) Mail,
+                    LTRIM(RTRIM(ISNULL(cl.IdVendedor,''))) VendedorCodigo, ISNULL(LTRIM(RTRIM(vd.Nombre)),'') VendedorNombre,
+                    ISNULL(LTRIM(RTRIM(cv.Descripcion)),'') CondicionVenta, ISNULL(cv.CantidadDias,0) DiasVencimiento,
+                    ISNULL(cl.Limite_Credito,0) LimiteCredito, CONVERT(bit, ISNULL(cl.BLOQUEO,0) | ISNULL(cl.Dada_De_Baja,0)) Bloqueado
+                FROM dbo.VT_CLIENTES cl
+                LEFT JOIN dbo.TA_TIPODOCUMENTO td ON LTRIM(RTRIM(td.CODIGO)) = LTRIM(RTRIM(cl.DOCUMENTO_TIPO))
+                LEFT JOIN dbo.TA_CONDIVA iva ON LTRIM(RTRIM(iva.CODIGO)) = LTRIM(RTRIM(cl.IVA))
+                LEFT JOIN dbo.TA_ESTADOS pr ON LTRIM(RTRIM(pr.CODIGO)) = LTRIM(RTRIM(cl.PROVINCIA))
+                LEFT JOIN dbo.V_TA_VENDEDORES vd ON LTRIM(RTRIM(vd.IdVendedor)) = LTRIM(RTRIM(cl.IdVendedor))
+                LEFT JOIN dbo.V_TA_Cpra_Vta cv ON LTRIM(RTRIM(cv.IDCond_Cpra_Vta)) = LTRIM(RTRIM(cl.idCond_Cpra_Vta))
+                WHERE LTRIM(RTRIM(cl.CODIGO)) = @Cliente;
+                """, new { Cliente = cliente.Trim() }, cancellationToken: token));
+            if (resumen is null) return null;
+            // Lista y clase que le corresponden (las mismas que usa la carga cuando queda "Del cliente").
+            var pricing = await new ArticuloPrecioResolverService().ResolveContextAsync(cn, cliente.Trim(), token);
+            resumen.ListaCodigo = pricing.IdLista?.Trim() ?? "";
+            resumen.Clase = pricing.ClasePrecio;
+            resumen.ListaNombre = resumen.ListaCodigo.Length == 0 ? "" : await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT TOP (1) LTRIM(RTRIM(Nombre)) FROM dbo.V_MA_PRECIOSCAB WHERE LTRIM(RTRIM(IdLista))=@Lista AND LTRIM(RTRIM(TipoLista))='V';",
+                new { Lista = resumen.ListaCodigo }, cancellationToken: token)) ?? "";
+            resumen.ClaseNombre = await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+                SELECT TOP (1) COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''), CONVERT(nvarchar(200), VALORAUX), '')
+                FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """, new { Clave = $"NOM_PCLASE{resumen.Clase}" }, cancellationToken: token)) ?? "";
+            return resumen;
+        }, ct);
+
     public Task<ComprobantesVisorResultado> BuscarComprobantesAsync(ComprobantesVisorFiltro filtro, CancellationToken ct = default)
         => ExecuteAsync("VisorComprobantes", async (cn, ctx, token) =>
         {

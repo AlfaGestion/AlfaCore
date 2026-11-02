@@ -159,6 +159,51 @@ public sealed class CargaComprobantesFacturacionAutomaticaPdfPruebasTests(ITestO
     }
 }
 
+/// <summary>Carga directa con otros conceptos, fecha y vendedor elegidos: ensayo revertido contra ALFANET2007_PRUEBAS.</summary>
+[Collection("CargaComprobantes SQL")]
+public sealed class CargaDirectaConceptosPruebasTests(ITestOutputHelper output)
+{
+    [FacturacionAutomaticaPdfFact]
+    public async Task ValidaConceptosFechaYVendedor()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        await using var cn = new SqlConnection(Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")); await cn.OpenAsync();
+        Assert.Equal("ALFANET2007_PRUEBAS", await cn.ExecuteScalarAsync<string>("SELECT DB_NAME()"));
+        var repo = new CargaComprobantesRepository();
+        var ctx = await repo.GetContextoAsync(cn, "Administrador", default);
+        var planner = new CargaComprobantesPlanificador(repo);
+        var emision = new CargaComprobantesEmisionService(planner, new(planner, new()),
+            new CargaComprobantesElectronicaEmisor(runtime.Config, runtime.Wsaa, runtime.Wsfe, runtime.Events), runtime.Config, runtime.Events);
+        var hoy = await cn.ExecuteScalarAsync<DateTime>("SELECT CONVERT(date,GETDATE())");
+        var cliente = Environment.GetEnvironmentVariable("ALFACORE_FA_PDF")!;
+
+        // Unidad 2 (talonario 1, A/B): solo conceptos, uno gravado y uno no gravado, con fecha de ayer y vendedor 1.
+        var a = new CargaComprobantesDirecta { Tc = "FC", Cliente = cliente, UnidadNegocio = "2", Deposito = "2", Fecha = hoy.AddDays(-1), Vendedor = "1",
+            Observaciones = "Prueba carga directa con otros conceptos",
+            Lineas = [new() { Concepto = "Flete a destino", Cantidad = 1, PrecioUnitarioNeto = 1000m },
+                      new() { Concepto = "Sellado", Cantidad = 1, PrecioUnitarioNeto = 50m, ConceptoNoGravado = true }] };
+        var planA = await emision.ValidarAsync(cn, ctx, 0, 1, [], default, a);
+        output.WriteLine($"Unidad 2: {planA.Letra} punto {planA.PuntoVenta} fecha {planA.Fecha:dd/MM/yyyy} neto {planA.Liquidacion.NetoGravado:N2} exento {planA.Liquidacion.NetoNoGravado:N2} IVA {planA.Liquidacion.Iva:N2} total {planA.Liquidacion.Total:N2}");
+        Assert.Equal(hoy.AddDays(-1), planA.Fecha);
+        Assert.Equal(1000m, planA.Liquidacion.NetoGravado);
+        Assert.Equal(50m, planA.Liquidacion.NetoNoGravado);
+
+        // Unidad 1 (talonario 10, solo C): factura C sin IVA discriminado.
+        var c = new CargaComprobantesDirecta { Tc = "FC", Cliente = cliente, UnidadNegocio = "1", Deposito = "1",
+            Lineas = [new() { Concepto = "Servicio técnico", Cantidad = 1, PrecioUnitarioNeto = 2500m }] };
+        var planC = await emision.ValidarAsync(cn, ctx, 0, 10, [], default, c);
+        output.WriteLine($"Unidad 1: {planC.Letra} punto {planC.PuntoVenta} total {planC.Liquidacion.Total:N2} IVA {planC.Liquidacion.Iva:N2}");
+        Assert.Equal("C", planC.Letra);
+        Assert.Equal(2500m, planC.Liquidacion.Total);
+
+        // Fecha fuera del rango de ARCA.
+        var fuera = new CargaComprobantesDirecta { Tc = "FC", Cliente = cliente, UnidadNegocio = "2", Deposito = "2", Fecha = hoy.AddDays(-10),
+            Lineas = [new() { Concepto = "X", Cantidad = 1, PrecioUnitarioNeto = 10m }] };
+        var ex = await Assert.ThrowsAsync<CargaComprobantesReglaException>(() => emision.ValidarAsync(cn, ctx, 0, 1, [], default, fuera));
+        output.WriteLine($"Fecha -10 días: {ex.Message}");
+    }
+}
+
 public sealed class FacturacionAutomaticaPdfFactAttribute : FactAttribute
 {
     public FacturacionAutomaticaPdfFactAttribute()

@@ -15,6 +15,12 @@ public sealed class CargaComprobantesDirecta
     public string UnidadNegocio { get; set; } = "";
     public string Deposito { get; set; } = "";
     public string Observaciones { get; set; } = "";
+    /// <summary>Fecha del comprobante; null = hoy. Electrónicos: ARCA admite hasta 5 días antes o después.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? Fecha { get; set; }
+    /// <summary>Vendedor del comprobante; null = el del cliente.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Vendedor { get; set; }
     public List<CargaComprobantesDirectaLinea> Lineas { get; set; } = [];
     /// <summary>
     /// Factura generada por la facturación automática (MA_CUENTAS_AUTOCPTES): al grabar actualiza
@@ -42,6 +48,31 @@ public sealed class CargaComprobantesDirectaLinea
     public decimal? PrecioUnitarioNeto { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public decimal? Descuento { get; set; }
+}
+
+/// <summary>Datos del cliente elegido en la carga directa (tarjeta del encabezado).</summary>
+public sealed class CargaComprobantesClienteResumen
+{
+    public string Codigo { get; set; } = "";
+    public string RazonSocial { get; set; } = "";
+    public string DocumentoTipo { get; set; } = "";
+    public string Documento { get; set; } = "";
+    public string CondicionIva { get; set; } = "";
+    public string Domicilio { get; set; } = "";
+    public string Localidad { get; set; } = "";
+    public string Provincia { get; set; } = "";
+    public string Telefono { get; set; } = "";
+    public string Mail { get; set; } = "";
+    public string VendedorCodigo { get; set; } = "";
+    public string VendedorNombre { get; set; } = "";
+    public string CondicionVenta { get; set; } = "";
+    public int DiasVencimiento { get; set; }
+    public string ListaCodigo { get; set; } = "";
+    public string ListaNombre { get; set; } = "";
+    public int Clase { get; set; }
+    public string ClaseNombre { get; set; } = "";
+    public decimal LimiteCredito { get; set; }
+    public bool Bloqueado { get; set; }
 }
 
 public sealed record CargaComprobantesPoliticaPrecio(bool PuedeEditarPrecio, bool PuedeEditarDescuento,

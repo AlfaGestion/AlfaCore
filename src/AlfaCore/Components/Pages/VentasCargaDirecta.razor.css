@@ -48,3 +48,31 @@
 
 @media(max-width: 1200px) { .directa-fields { grid-template-columns: 1fr 1fr; } }
 @media(max-width: 650px) { .directa-fields { grid-template-columns: 1fr; } .directa-pie__total { margin-left: 0; } }
+
+/* Tarjeta del cliente elegido. */
+.directa-cliente-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 24px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md, 8px);
+    background: var(--alfa-bg-surface);
+    font-size: 13px;
+}
+.directa-cliente-card__datos, .directa-cliente-card__comercial { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+.directa-cliente-card__datos span, .directa-cliente-card__comercial span { color: var(--alfa-text-secondary, #a6abb5); }
+.directa-cliente-card__datos strong { font-size: 14px; }
+.directa-cliente-card__comercial strong { color: var(--alfa-text-primary); font-weight: 600; }
+.directa-cliente-card__alerta { color: var(--alfa-danger, #e5484d) !important; font-weight: 600; }
+.directa-cliente-card ::deep .alfa-button { margin-left: auto; }
+
+/* Otros conceptos: texto libre e importe sin IVA. */
+.directa-conceptos { margin-top: 12px; }
+.directa-conceptos__titulo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.directa-conceptos__titulo h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.directa-table--conceptos { min-width: 0; }
+.directa-cell--texto { width: 100%; text-align: left; }
+.directa-table .col-nograv { width: 90px; text-align: center; }

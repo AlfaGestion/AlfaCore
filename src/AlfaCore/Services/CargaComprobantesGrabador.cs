@@ -74,13 +74,15 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
         p.Add("NetoOtros", netoOtros);
         p.Add("ClaseDirecta", plan.ClasePrecio);
         p.Add("ObservacionesDirecta", plan.Origen.Observaciones);
+        p.Add("VendedorDirecta", string.IsNullOrWhiteSpace(plan.Directa?.Vendedor) ? null : plan.Directa.Vendedor.Trim());
         p.Add("DepositoDirecta", CodigoPk.Format(plan.Origen.Deposito, 4));
         p.Add("ListaDirecta", string.IsNullOrWhiteSpace(plan.Origen.Lista) ? null : CodigoPk.Format(plan.Origen.Lista, 4));
         var fuenteCabecera = plan.Directa is null
             ? "dbo.V_MV_CPTE c JOIN dbo.VT_CLIENTES cl ON LTRIM(RTRIM(cl.CODIGO))=LTRIM(RTRIM(c.CUENTA)) WHERE c.ID=@Id"
             : """
               dbo.VT_CLIENTES cl CROSS APPLY
-                (SELECT @ClaseDirecta CLASEPRECIO,@ObservacionesDirecta OBSERVACIONES,cl.IdVendedor,
+                (SELECT @ClaseDirecta CLASEPRECIO,@ObservacionesDirecta OBSERVACIONES,
+                  COALESCE((SELECT TOP (1) v.IdVendedor FROM dbo.V_TA_VENDEDORES v WHERE LTRIM(RTRIM(v.IdVendedor))=@VendedorDirecta),cl.IdVendedor) IdVendedor,
                   @DepositoDirecta IdDeposito,@ListaDirecta IdLista,0 SucursalCuenta) c
               WHERE LTRIM(RTRIM(cl.CODIGO))=LTRIM(RTRIM(@Cuenta))
               """;

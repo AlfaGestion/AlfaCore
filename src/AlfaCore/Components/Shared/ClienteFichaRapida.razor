@@ -1,0 +1,126 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICuentasComercialesService CuentasSvc
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+@* Ficha rápida del cliente (como la ventanita de Odoo): ver y editar los datos que usa el comprobante
+   sin salir de la carga. Guarda con el mismo armado que la ficha completa (CuentaComercialFormulario). *@
+<AlfaDialog Open="@Open" Title="@(_form?.RazonSocial is { Length: > 0 } nombre ? nombre : "Cliente")"
+            Eyebrow="@($"Ficha del cliente · {Codigo}")" Size="AlfaDialogSize.Lg"
+            Loading="@(_cargando || _guardando)" ErrorMessage="@_error" OnClose="CerrarAsync">
+    <ChildContent>
+        @if (_form is null || _lookups is null)
+        {
+            <p class="cfr-muted">@(_cargando ? "Cargando datos del cliente..." : "No se pudo cargar el cliente.")</p>
+        }
+        else
+        {
+            <div class="cfr">
+                <section class="cfr-seccion">
+                    <h4>Datos fiscales</h4>
+                    <div class="cfr-grid">
+                        <AlfaInput Label="Razón social" MaxLength="100" Value="@_form.RazonSocial" ValueChanged="v => _form.RazonSocial = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaSelect Label="Condición IVA" Value="@_form.IvaCodigo" ValueChanged="v => _form.IvaCodigo = v ?? string.Empty" Options="@Opciones(_lookups.CondicionesIva)" Disabled="@_guardando" />
+                        <AlfaSelect Label="Tipo de documento" Value="@_form.DocumentoTipoCodigo" ValueChanged="v => _form.DocumentoTipoCodigo = v ?? string.Empty" Options="@Opciones(_lookups.TiposDocumento)" Disabled="@_guardando" />
+                        <AlfaInput Label="CUIT / Nro. documento" MaxLength="13" Value="@_form.NumeroDocumento" ValueChanged="v => _form.NumeroDocumento = v ?? string.Empty" Disabled="@_guardando" />
+                    </div>
+                </section>
+                <section class="cfr-seccion">
+                    <h4>Domicilio y contacto</h4>
+                    <div class="cfr-grid">
+                        <AlfaInput Label="Calle" MaxLength="50" Value="@_form.Calle" ValueChanged="v => _form.Calle = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaInput Label="Número" MaxLength="10" Value="@_form.Numero" ValueChanged="v => _form.Numero = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaInput Label="Localidad" MaxLength="50" Value="@_form.Localidad" ValueChanged="v => _form.Localidad = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaInput Label="Código postal" MaxLength="10" Value="@_form.CodigoPostal" ValueChanged="v => _form.CodigoPostal = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaSelect Label="Provincia" Value="@_form.ProvinciaCodigo" ValueChanged="v => _form.ProvinciaCodigo = v ?? string.Empty" Options="@Opciones(_lookups.Provincias)" Disabled="@_guardando" />
+                        <AlfaInput Label="Contacto" MaxLength="50" Value="@_form.Contacto" ValueChanged="v => _form.Contacto = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaInput Label="Teléfono" MaxLength="50" Value="@_form.Telefono" ValueChanged="v => _form.Telefono = v ?? string.Empty" Disabled="@_guardando" />
+                        <AlfaInput Label="Email" MaxLength="250" Value="@_form.Mail" ValueChanged="v => _form.Mail = v ?? string.Empty" Disabled="@_guardando" />
+                    </div>
+                </section>
+                <section class="cfr-seccion">
+                    <h4>Datos comerciales</h4>
+                    <div class="cfr-grid">
+                        <AlfaSelect Label="Condición de venta" Value="@_form.CondicionComercialCodigo" ValueChanged="v => _form.CondicionComercialCodigo = v ?? string.Empty" Options="@Opciones(_lookups.CondicionesComerciales)" Disabled="@_guardando" />
+                        <AlfaSelect Label="Vendedor" Value="@_form.VendedorCodigo" ValueChanged="v => _form.VendedorCodigo = v ?? string.Empty" Options="@Opciones(_lookups.Vendedores)" Placeholder="Sin vendedor" Disabled="@_guardando" />
+                        @if (_lookups.UsaListasDePrecio)
+                        {
+                            <AlfaSelect Label="Lista de precios" Value="@_form.ListaPrecioCodigo" ValueChanged="v => _form.ListaPrecioCodigo = v ?? string.Empty" Options="@Opciones(_lookups.ListasPrecio)" Placeholder="Sin lista" Disabled="@_guardando" />
+                        }
+                        <AlfaSelect Label="Clase de precio" Value="@_form.Clase?.ToString()" ValueChanged='v => _form.Clase = short.TryParse(v, out var c) ? c : null'
+                                    Options="@Clases" Placeholder="Sin clase" Disabled="@_guardando" />
+                        <AlfaInput Label="Límite de crédito" Type="number" Step="0.01" Value="@_form.LimiteCredito?.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   ValueChanged="v => _form.LimiteCredito = decimal.TryParse(v, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var l) ? l : null" Disabled="@_guardando" />
+                    </div>
+                </section>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-box-arrow-up-right" Disabled="@(_form is null)" OnClick="_ => AbrirFichaCompletaAsync()">Ficha completa</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_guardando" OnClick="_ => CerrarAsync()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-save" Loading="@_guardando" Disabled="@(_form is null || _guardando)" OnClick="_ => GuardarAsync()">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Codigo { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnGuardado { get; set; }
+
+    private CuentaComercialSaveRequest? _form;
+    private CuentaComercialLookupDataDto? _lookups;
+    private string? _codigoCargado;
+    private bool _cargando, _guardando;
+    private string? _error;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> Clases =
+        Enumerable.Range(1, 8).Select(n => new AlfaSelectOption(n.ToString(), $"Clase {n}")).ToList();
+
+    private static IReadOnlyList<AlfaSelectOption> Opciones(IEnumerable<CuentaComercialLookupOptionDto> items)
+        => items.Select(x => new AlfaSelectOption(x.Codigo, x.Codigo == x.Descripcion ? x.Codigo : $"{x.Codigo} · {x.Descripcion}")).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Open) { _codigoCargado = null; return; }
+        if (_codigoCargado == Codigo || string.IsNullOrWhiteSpace(Codigo)) return;
+        _codigoCargado = Codigo; _cargando = true; _error = null; _form = null;
+        try
+        {
+            _lookups ??= await CuentasSvc.GetLookupDataAsync(CuentaComercialTipo.Cliente);
+            var detalle = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, Codigo);
+            if (detalle is null) _error = "El cliente ya no existe en la base activa.";
+            else _form = CuentaComercialFormulario.DesdeDetalle(detalle, CuentaComercialTipo.Cliente);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _cargando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null) return;
+        _guardando = true; _error = null;
+        try
+        {
+            await CuentasSvc.SaveAsync(CuentaComercialTipo.Cliente, _form);
+            _codigoCargado = null;
+            await OnGuardado.InvokeAsync();
+        }
+        catch (AppValidationException ex) { _error = string.Join(" ", ex.Validation.Issues.Select(e => e.Message).Distinct()); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _guardando = false; }
+    }
+
+    private async Task CerrarAsync() { _codigoCargado = null; await OnClose.InvokeAsync(); }
+
+    // La ficha completa (todas las solapas) en otra pestaña, para no perder la carga.
+    private async Task AbrirFichaCompletaAsync()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath;
+        var indice = path.IndexOf("/ventas/", StringComparison.OrdinalIgnoreCase);
+        var url = (indice >= 0 ? path[..indice] : string.Empty) + "/clientes?editar=" + Uri.EscapeDataString(Codigo);
+        await Js.InvokeVoidAsync("open", url, "_blank");
+    }
+}

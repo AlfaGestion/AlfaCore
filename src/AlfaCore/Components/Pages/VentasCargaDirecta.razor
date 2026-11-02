@@ -38,11 +38,36 @@
             <AlfaSelect Label="Talonario" Value="@_talonario" ValueChanged="v => Cambiar(() => _talonario = v)" Disabled="@Bloqueado"
                 Options="@Talonarios" Placeholder="Elegí un talonario" />
             <AlfaSelect Label="Lista de precios" Value="@ListaSeleccionada" ValueChanged="ListaChanged"
-                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarLista)" Options="@ListasPrecio" Placeholder="Del cliente" />
+                Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarLista)" Options="@ListasPrecio" Placeholder="@ListaDelCliente" />
             <AlfaSelect Label="Clase de precio" Value="@_draft.ClasePrecio?.ToString()" ValueChanged="ClaseChanged"
                 Disabled="@(Bloqueado || !Editable || !_contexto.PuedeCambiarClase)"
-                Options="@_contexto.ClasesPrecio.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Del cliente" />
+                Options="@_contexto.ClasesPrecio.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Descripcion}")).ToList()" Placeholder="@ClaseDelCliente" />
+            <AlfaInput Type="date" Label="Fecha" Value="@((_draft.Fecha ?? DateTime.Today).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))"
+                ValueChanged="FechaChanged" Disabled="@Bloqueado"
+                HelpText="@(_draft.Tc == "FP" ? null : "Electrónicos: hasta 5 días antes o después de hoy.")" />
+            <AlfaSelect Label="Vendedor" Value="@_draft.Vendedor" ValueChanged="v => Cambiar(() => _draft.Vendedor = string.IsNullOrEmpty(v) ? null : v)"
+                Disabled="@Bloqueado" Options="@Vendedores" Placeholder="@VendedorDelCliente" />
         </section>
+        @if (_clienteResumen is { } cr)
+        {
+            @* Tarjeta del cliente (como la ficha de Alfa): los datos que salen en el comprobante y acceso a editarlos. *@
+            <section class="directa-cliente-card" aria-label="Datos del cliente">
+                <div class="directa-cliente-card__datos">
+                    <strong>@cr.RazonSocial</strong>
+                    <span>@cr.DocumentoTipo @cr.Documento · @cr.CondicionIva</span>
+                    <span>@string.Join(" · ", new[] { cr.Domicilio, cr.Localidad, cr.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x)))</span>
+                    <span>@string.Join(" · ", new[] { cr.Telefono, cr.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)))</span>
+                </div>
+                <div class="directa-cliente-card__comercial">
+                    <span>Condición: <strong>@(cr.CondicionVenta.Length == 0 ? "—" : cr.CondicionVenta)</strong>@(cr.DiasVencimiento > 0 ? $" ({cr.DiasVencimiento} días)" : "")</span>
+                    <span>Vendedor: <strong>@(cr.VendedorNombre.Length == 0 ? (cr.VendedorCodigo.Length == 0 ? "—" : cr.VendedorCodigo) : cr.VendedorNombre)</strong></span>
+                    @if (cr.LimiteCredito > 0) { <span>Límite de crédito: <strong>@Dinero(cr.LimiteCredito)</strong></span> }
+                    @if (cr.Bloqueado) { <span class="directa-cliente-card__alerta">Cliente bloqueado o dado de baja</span> }
+                </div>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-person-lines-fill" Disabled="@Bloqueado"
+                            OnClick="_ => _fichaClienteAbierta = true">Ver / editar cliente</AlfaButton>
+            </section>
+        }
         @if (_draft.Tc is "NC" or "ND")
         {
             <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Factura asociada" Placeholder="Buscar factura de homologación del cliente"
@@ -65,9 +90,10 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @for (var i = 0; i < _draft.Lineas.Count; i++)
+                    @{ var lineasArticulo = _draft.Lineas.Where(x => !x.EsConcepto).ToList(); }
+                    @for (var i = 0; i < lineasArticulo.Count; i++)
                     {
-                        var item = _draft.Lineas[i];
+                        var item = lineasArticulo[i];
                         var art = _articulos.GetValueOrDefault(item.Articulo);
                         <tr @key="item.Articulo">
                             <td class="col-n">@(i + 1)</td>
@@ -94,7 +120,7 @@
                         </tr>
                     }
                     <tr class="directa-nueva">
-                        <td class="col-n">@(_draft.Lineas.Count + 1)</td>
+                        <td class="col-n">@(lineasArticulo.Count + 1)</td>
                         <td class="col-cod"><input id="cd-codigo" class="directa-cell" placeholder="Código" autocomplete="off" aria-label="Código del artículo"
                             value="@_nuevoCodigo" @oninput="e => { _nuevoCodigo = e.Value?.ToString() ?? string.Empty; _nuevoArticulo = null; }"
                             @onkeydown="CodigoKeyDown" disabled="@NuevaLineaBloqueada" /></td>
@@ -118,9 +144,50 @@
             </table>
         </div>
 
+        @* Otros conceptos (como la grilla "Otros" de Alfa): texto libre e importe sin IVA, sin artículo ni stock. *@
+        <section class="directa-conceptos" aria-label="Otros conceptos">
+            <header class="directa-conceptos__titulo">
+                <h3>Otros conceptos</h3>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle"
+                            Disabled="@(NuevaLineaBloqueada || !Editable)" OnClick="_ => AgregarConceptoAsync()">Agregar concepto</AlfaButton>
+            </header>
+            @{ var conceptos = _draft.Lineas.Where(x => x.EsConcepto).ToList(); }
+            @if (conceptos.Count == 0)
+            {
+                <p class="directa-muted">@(_cliente is null ? "Elegí el cliente para agregar conceptos." : !Editable ? "Las notas de crédito toman los conceptos de su factura." : "Servicios, abonos, fletes o cualquier importe sin artículo: tocá «Agregar concepto».")</p>
+            }
+            else
+            {
+                <table class="directa-table directa-table--conceptos">
+                    <thead><tr><th class="col-n">#</th><th>Detalle</th><th class="num col-precio">Importe sin IVA</th><th class="col-nograv">No gravado</th><th class="num col-iva">IVA %</th><th class="num col-total">Total</th><th class="col-acc"></th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < conceptos.Count; i++)
+                        {
+                            var concepto = conceptos[i]; var idx = i;
+                            <tr>
+                                <td class="col-n">@(idx + 1)</td>
+                                <td><input id="@($"cd-concepto-{idx}")" class="directa-cell directa-cell--texto" maxlength="250" aria-label="@($"Detalle del concepto {idx + 1}")"
+                                    placeholder="Ej.: Servicio de mantenimiento 11/2026" value="@concepto.Concepto"
+                                    @onchange="e => Cambiar(() => concepto.Concepto = e.Value?.ToString() ?? string.Empty)" disabled="@Bloqueado" /></td>
+                                <td class="num"><input id="@($"cd-concepto-importe-{idx}")" class="directa-cell" inputmode="decimal" aria-label="@($"Importe del concepto {idx + 1}")"
+                                    value="@Num(concepto.PrecioUnitarioNeto ?? 0)"
+                                    @onchange="e => Cambiar(() => concepto.PrecioUnitarioNeto = ParseNumero(e.Value?.ToString()) ?? 0)" disabled="@Bloqueado" /></td>
+                                <td class="col-nograv"><AlfaCheckbox Value="@concepto.ConceptoNoGravado" AriaLabel="No gravado"
+                                    ValueChanged="v => Cambiar(() => concepto.ConceptoNoGravado = v == true)" Disabled="@Bloqueado" /></td>
+                                <td class="num">@TasaConcepto(concepto).ToString("0.##", Ar)</td>
+                                <td class="num">@Dinero(TotalLinea(concepto))</td>
+                                <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar concepto" Disabled="@Bloqueado" OnClick="() => Cambiar(() => _draft.Lineas.Remove(concepto))" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
         <section class="directa-pie" aria-label="@(_plan is null ? "Totales" : "Liquidación validada")">
-            <span>Ítems: <strong>@_draft.Lineas.Count</strong></span>
-            <span>Cantidad: <strong>@Num(_draft.Lineas.Sum(x => x.Cantidad))</strong></span>
+            <span>Ítems: <strong>@_draft.Lineas.Count(x => !x.EsConcepto)</strong></span>
+            <span>Cantidad: <strong>@Num(_draft.Lineas.Where(x => !x.EsConcepto).Sum(x => x.Cantidad))</strong></span>
+            @if (_draft.Lineas.Any(x => x.EsConcepto)) { <span>Conceptos: <strong>@_draft.Lineas.Count(x => x.EsConcepto)</strong></span> }
             @if (_plan is { } pv)
             {
                 <span>Neto gravado @Dinero(pv.Liquidacion.NetoGravado)</span>
@@ -176,6 +243,10 @@
             </div>
         </div>
     </AlfaDialog>
+}
+@if (_fichaClienteAbierta && _cliente is not null)
+{
+    <ClienteFichaRapida Open="true" Codigo="@_cliente.Codigo" OnClose="() => _fichaClienteAbierta = false" OnGuardado="FichaClienteGuardadaAsync" />
 }
 @if (_mostrarClientes)
 {
@@ -243,8 +314,56 @@
     private IEnumerable<CargaComprobantesTalonario> TalonariosValidos => (_contexto?.TalonariosDirecta ?? [])
         .Where(x => x.Tc == _draft.Tc && (x.UnidadNegocio.Length == 0 || x.UnidadNegocio == _draft.UnidadNegocio))
         .OrderBy(x => x.UnidadNegocio == _draft.UnidadNegocio && _draft.UnidadNegocio.Length > 0 ? 0 : 1).ThenBy(x => x.Talonario);
+    // Talonario con su punto de venta por letra ("10 · FACTURA · C 1010"): el código solo no le dice nada al usuario.
     private IReadOnlyList<AlfaSelectOption> Talonarios => TalonariosValidos
-        .Select(x => new AlfaSelectOption(x.Talonario.ToString(CultureInfo.InvariantCulture), $"{x.Talonario} · {x.Descripcion}")).ToList();
+        .Select(x => new AlfaSelectOption(x.Talonario.ToString(CultureInfo.InvariantCulture),
+            string.Join(" · ", new[] { x.Talonario.ToString(CultureInfo.InvariantCulture), x.Descripcion, x.Puntos }.Where(s => !string.IsNullOrWhiteSpace(s))))).ToList();
+    private IReadOnlyList<AlfaSelectOption> Vendedores => (_contexto?.Vendedores ?? [])
+        .Select(x => new AlfaSelectOption(x.Codigo, x.Codigo == x.Descripcion ? x.Codigo : $"{x.Codigo} · {x.Descripcion}")).ToList();
+
+    // ---- Datos del cliente (lista, clase y vendedor que le corresponden) ----
+    private CargaComprobantesClienteResumen? _clienteResumen;
+    private bool _fichaClienteAbierta;
+    private string ListaDelCliente => _clienteResumen is not { } c ? "Del cliente"
+        : c.ListaCodigo.Length == 0 ? "Del cliente: maestro de artículos (sin lista)"
+        : $"Del cliente: {c.ListaCodigo}{(c.ListaNombre.Length == 0 ? "" : $" · {c.ListaNombre}")}";
+    private string ClaseDelCliente => _clienteResumen is not { } c ? "Del cliente"
+        : $"Del cliente: {c.Clase}{(c.ClaseNombre.Length == 0 ? "" : $" · {c.ClaseNombre}")}";
+    private string VendedorDelCliente => _clienteResumen is not { } c || c.VendedorCodigo.Length == 0 ? "Del cliente"
+        : $"Del cliente: {c.VendedorCodigo}{(c.VendedorNombre.Length == 0 ? "" : $" · {c.VendedorNombre}")}";
+
+    private async Task CargarClienteResumenAsync()
+    {
+        var codigo = _cliente?.Codigo;
+        if (string.IsNullOrEmpty(codigo)) { _clienteResumen = null; return; }
+        try
+        {
+            var resumen = await Service.GetClienteDirectaAsync(codigo, _lifetime.Token);
+            if (!_disposed && _cliente?.Codigo == codigo) { _clienteResumen = resumen; StateHasChanged(); }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _clienteResumen = null; }
+    }
+
+    private void FechaChanged(string? value)
+    {
+        var fecha = DateTime.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f.Date : (DateTime?)null;
+        Cambiar(() => _draft.Fecha = fecha is null || fecha == DateTime.Today ? null : fecha);
+    }
+
+    private async Task FichaClienteGuardadaAsync()
+    {
+        _fichaClienteAbierta = false;
+        // Cambió la ficha (IVA, lista, vendedor...): se revalida la carga y se recarga la tarjeta.
+        _plan = null; InvalidarPrecios();
+        if (_cliente is not null)
+        {
+            var nombre = (await Service.GetClienteDirectaAsync(_cliente.Codigo, _lifetime.Token))?.RazonSocial;
+            if (!string.IsNullOrEmpty(nombre)) { _cliente.Descripcion = nombre; _clienteTexto = $"{_cliente.Codigo} · {nombre}"; }
+        }
+        await CargarClienteResumenAsync();
+        _feedback = AppUiMessage.Success("Cliente actualizado", "Se guardaron los datos del cliente. Validá la carga otra vez.");
+        UpdateHeader();
+    }
     // Depósitos: primero los de la unidad de negocio elegida.
     private IReadOnlyList<AlfaSelectOption> Depositos => (_contexto?.Depositos ?? [])
         .OrderBy(x => x.Grupo == _draft.UnidadNegocio && _draft.UnidadNegocio.Length > 0 ? 0 : 1)
@@ -315,7 +434,9 @@
             _draft.ListaPrecio = null; _draft.ClasePrecio = null;
             foreach (var a in _articulos.Values) { a.PrecioUnitarioConIva = 0; a.PrecioUnitarioNeto = 0; }
             LimpiarEdiciones(); LimpiarNuevaLinea();
+            _draft.Vendedor = null; _clienteResumen = null;
         });
+        _ = CargarClienteResumenAsync();
         if (cliente is not null) _ = FocoAsync("cd-codigo");
     }
     private void LimpiarAsociado() { _asociado = null; _asociadoTexto = ""; _draft.FacturaAsociadaId = null; }
@@ -450,11 +571,20 @@
     { if (Editable && _contexto?.PuedeEditarDescuento == true) Cambiar(() => item.Descuento = string.IsNullOrWhiteSpace(value) ? null : ParseNumero(value) ?? -1); }
 
     private decimal PrecioNeto(CargaComprobantesDirectaLinea item)
-        => item.PrecioUnitarioNeto ?? _articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0;
+        => item.EsConcepto ? item.PrecioUnitarioNeto ?? 0 : item.PrecioUnitarioNeto ?? _articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0;
     private decimal NetoLinea(CargaComprobantesDirectaLinea item)
         => decimal.Round(item.Cantidad * PrecioNeto(item) * (1 - (item.Descuento ?? 0) / 100m), 2);
+    // Estimación: los conceptos gravan la alícuota general (la validación calcula la definitiva, ej. factura C sin IVA).
+    private decimal TasaConcepto(CargaComprobantesDirectaLinea item) => item.ConceptoNoGravado ? 0 : _contexto?.AlicuotaGeneral ?? 0;
     private decimal TotalLinea(CargaComprobantesDirectaLinea item)
-        => decimal.Round(NetoLinea(item) * (1 + (_articulos.GetValueOrDefault(item.Articulo)?.TasaIva ?? 0) / 100m), 2);
+        => decimal.Round(NetoLinea(item) * (1 + (item.EsConcepto ? TasaConcepto(item) : _articulos.GetValueOrDefault(item.Articulo)?.TasaIva ?? 0) / 100m), 2);
+
+    private async Task AgregarConceptoAsync()
+    {
+        if (NuevaLineaBloqueada || !Editable) return;
+        Cambiar(() => _draft.Lineas.Add(new() { Concepto = string.Empty, Cantidad = 1, PrecioUnitarioNeto = 0 }));
+        await FocoAsync($"cd-concepto-{_draft.Lineas.Count(x => x.EsConcepto) - 1}");
+    }
 
     // ---- Búsqueda F5 ----
     [JSInvokable]
@@ -547,7 +677,7 @@
         if (!int.TryParse(_talonario, out var tal)) throw new CargaComprobantesReglaException("Elegí el talonario.");
         var plan = await Service.ValidarDirectaAsync(_draft, tal, _lifetime.Token);
         if (_disposed || version != _contextVersion) return;
-        foreach (var linea in plan.Origen.Lineas)
+        foreach (var linea in plan.Origen.Lineas.Where(x => !x.EsConcepto))
             _articulos[linea.Articulo] = new() { IdArticulo = linea.Articulo, Descripcion = linea.Descripcion,
                 PrecioUnitarioConIva = linea.PrecioReferenciaNeto.HasValue ? decimal.Round(linea.PrecioReferenciaNeto.Value * (1 + linea.AlicuotaIva / 100), 4) : linea.Precio,
                 PrecioUnitarioNeto = linea.PrecioReferenciaNeto ?? linea.PrecioSinIva, TasaIva = linea.AlicuotaIva };
@@ -612,7 +742,7 @@
     }
     private void ReiniciarCarga()
     {
-        _draft = new(); _articulos.Clear(); _cliente = null; _clienteTexto = ""; LimpiarAsociado(); LimpiarNuevaLinea();
+        _draft = new(); _articulos.Clear(); _cliente = null; _clienteTexto = ""; _clienteResumen = null; LimpiarAsociado(); LimpiarNuevaLinea();
         _plan = null; _resultado = null; _feedback = null; _operacion = Guid.NewGuid(); _intento = false; _talonario = null;
     }
     private Task Volver()
@@ -694,6 +824,7 @@
             _clienteTexto = _cliente is null ? "" : $"{_cliente.Codigo} · {_cliente.Descripcion}";
             _talonario = b.Talonario; _operacion = b.Operacion == Guid.Empty ? Guid.NewGuid() : b.Operacion; _intento = b.Intento;
             AplicarDefaultsUnidad();
+            _ = CargarClienteResumenAsync();
             _feedback = _intento
                 ? AppUiMessage.Warning("Emisión sin confirmar", "Se recuperó una carga cuya emisión quedó en curso. Tocá \"Recuperar operación\" para ver si se grabó.")
                 : AppUiMessage.Info("Carga recuperada", "Recuperamos la carga que tenías sin terminar.");

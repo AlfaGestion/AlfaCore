@@ -36,6 +36,9 @@ public interface ICargaComprobantesService
     /// <summary>Arma y valida la factura automática de un cliente (ensayo revertido): no pide CAE ni graba.</summary>
     Task<CargaComprobantesFacturacionAutomaticaResultado> PrevisualizarFacturacionAutomaticaAsync(string cuenta, DateTime fechaFacturacion, CancellationToken ct = default)
         => throw new NotSupportedException();
+    /// <summary>Datos del cliente para la carga directa: documento, IVA, domicilio, vendedor, condición, lista y clase.</summary>
+    Task<CargaComprobantesClienteResumen?> GetClienteDirectaAsync(string cliente, CancellationToken ct = default)
+        => Task.FromResult<CargaComprobantesClienteResumen?>(null);
     /// <summary>Visor de comprobantes de ventas: búsqueda paginada con filtros (respeta la unidad del usuario).</summary>
     Task<ComprobantesVisorResultado> BuscarComprobantesAsync(ComprobantesVisorFiltro filtro, CancellationToken ct = default)
         => throw new NotSupportedException();

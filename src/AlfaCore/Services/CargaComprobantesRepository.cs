@@ -54,7 +54,8 @@ public sealed class CargaComprobantesRepository
         if (!incluirCatalogos) return contexto;
         contexto.TalonariosDirecta = (await cn.QueryAsync<CargaComprobantesTalonario>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(CODIGO)) Tc,Talonario,LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) UnidadNegocio,
-                ISNULL(LETRAS,'') Letras,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion
+                ISNULL(LETRAS,'') Letras,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion,
+                ISNULL(A_SUC_DEFAULT,0) PuntoA,ISNULL(B_SUC_DEFAULT,0) PuntoB,ISNULL(C_SUC_DEFAULT,0) PuntoC,ISNULL(X_SUC_DEFAULT,0) PuntoX
             FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) IN ('FC','NC','ND','FP') AND LTRIM(RTRIM(SISTEMA))='Ventas'
                 AND (@AdminCentral=1 OR LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) IN ('',@UnidadNegocio))
             ORDER BY CODIGO,Talonario;

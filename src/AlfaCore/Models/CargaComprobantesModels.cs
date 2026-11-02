@@ -176,6 +176,27 @@ public sealed class CargaComprobantesTalonario
     public string UnidadNegocio { get; set; } = string.Empty;
     public string Letras { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
+    // Punto de venta por letra (V_TA_CPTE.x_SUC_DEFAULT), para mostrar el talonario como en Alfa.
+    public int PuntoA { get; set; }
+    public int PuntoB { get; set; }
+    public int PuntoC { get; set; }
+    public int PuntoX { get; set; }
+
+    /// <summary>Puntos de venta del talonario por letra, agrupando las letras con el mismo punto: "A/B 0002 · C 0010".</summary>
+    public string Puntos
+    {
+        get
+        {
+            var porLetra = new List<(string Letra, int Punto)>();
+            foreach (var letra in (Letras ?? string.Empty).ToUpperInvariant().Distinct())
+            {
+                var punto = letra switch { 'A' => PuntoA, 'B' => PuntoB, 'C' => PuntoC, 'X' => PuntoX, _ => 0 };
+                if (punto > 0) porLetra.Add((letra.ToString(), punto));
+            }
+            return string.Join(" · ", porLetra.GroupBy(x => x.Punto)
+                .Select(g => $"{string.Join("/", g.Select(x => x.Letra))} {g.Key:0000}"));
+        }
+    }
 }
 
 public sealed class CargaComprobantesOrigen

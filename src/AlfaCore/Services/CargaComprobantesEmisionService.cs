@@ -14,7 +14,11 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct,
         CargaComprobantesDirecta? directa = null)
     {
-        var fecha = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: ct));
+        var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: ct));
+        var fecha = directa?.Fecha?.Date ?? hoy.Date;
+        // WSFE (concepto productos) acepta CbteFch entre N-5 y N+5 días; la proforma no va a ARCA.
+        if (directa?.Fecha is not null && directa.Tc != "FP" && Math.Abs((fecha - hoy.Date).TotalDays) > 5)
+            throw new CargaComprobantesReglaException($"La fecha de un comprobante electrónico puede ser hasta 5 días antes o después de hoy ({hoy:dd/MM/yyyy}).");
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
         var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico.");

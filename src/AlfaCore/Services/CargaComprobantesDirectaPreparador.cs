@@ -27,6 +27,10 @@ public sealed class CargaComprobantesDirectaPreparador
             throw new CargaComprobantesReglaException("Las notas de crédito y débito con otros conceptos todavía no están incorporadas.");
         if (draft.Observaciones.Length > 1000 || (!ctx.AdminCentral && draft.UnidadNegocio.Trim() != ctx.UnidadNegocio.Trim()))
             throw new CargaComprobantesReglaException("Revisá la unidad de negocio y las observaciones (hasta 1000 caracteres).");
+        if (!string.IsNullOrWhiteSpace(draft.Vendedor) && await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT COUNT(*) FROM dbo.V_TA_VENDEDORES WHERE LTRIM(RTRIM(IdVendedor))=@Vendedor;",
+                new { Vendedor = draft.Vendedor.Trim() }, tx, cancellationToken: ct)) == 0)
+            throw new CargaComprobantesReglaException("El vendedor elegido no existe.");
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
             SELECT COUNT(*) FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(CODIGO))=@Unidad;
             """, new { Unidad = draft.UnidadNegocio.Trim() }, tx, cancellationToken: ct)) != 1 ||
