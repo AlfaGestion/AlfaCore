@@ -10,8 +10,33 @@ public sealed class CargaComprobantesFiltro
     public string Zona { get; set; } = string.Empty;
     public string UnidadNegocio { get; set; } = string.Empty;
     public string Deposito { get; set; } = string.Empty;
+    /// <summary>Solo para el origen "FA" (facturación automática): fecha a facturar; vacía = hoy.</summary>
+    public DateTime? FechaFacturacion { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 25;
+}
+
+/// <summary>Cliente en condiciones de facturación automática a una fecha (consulta, como el VB6).</summary>
+public sealed class CargaComprobantesFacturacionAutomaticaFila
+{
+    /// <summary>Código interno (MA_CUENTAS.CODIGO): abre la ficha del cliente.</summary>
+    public string Cuenta { get; set; } = string.Empty;
+    /// <summary>Código visible del cliente.</summary>
+    public string CtaCodigo { get; set; } = string.Empty;
+    public string Cliente { get; set; } = string.Empty;
+    /// <summary>Concepto tal como está en la ficha (puede tener la marca &lt;PERIODO&gt;).</summary>
+    public string Concepto { get; set; } = string.Empty;
+    /// <summary>Concepto con &lt;PERIODO&gt; reemplazado por el mes/año a facturar.</summary>
+    public string ConceptoFactura { get; set; } = string.Empty;
+    public string Tc { get; set; } = string.Empty;
+    public string Periodicidad { get; set; } = string.Empty;
+    /// <summary>Última facturación automática; null = nunca facturó.</summary>
+    public DateTime? FechaUltimoMovimiento { get; set; }
+    public string UnidadNegocio { get; set; } = string.Empty;
+    public string Vendedor { get; set; } = string.Empty;
+    public string VendedorNombre { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public int Conceptos { get; set; }
 }
 
 public sealed class CargaComprobantesContexto

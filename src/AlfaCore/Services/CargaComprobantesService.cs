@@ -178,6 +178,10 @@ public sealed class CargaComprobantesService(
             return repository.BuscarAsync(cn, contexto, filtro, token);
         }, ct);
 
+    public Task<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>> BuscarFacturacionAutomaticaAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default)
+        => ExecuteAsync("BuscarFacturacionAutomatica", (cn, contexto, token) =>
+            CargaComprobantesFacturacionAutomatica.BuscarAsync(cn, contexto, filtro, token), ct);
+
     public Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default)
         => ExecuteAsync("CargarOrigen", (cn, contexto, token) => repository.GetOrigenAsync(cn, contexto, id, token), ct);
 

@@ -30,6 +30,9 @@ public interface ICargaComprobantesService
     Task<CargaComprobantesElectronicaPrueba?> GetUltimaPruebaElectronicaAsync(int origenId, CancellationToken ct = default);
     Task<CargaComprobantesElectronicaPrueba> EmitirPruebaElectronicaAsync(int origenId, int talonario,
         IReadOnlyList<CargaComprobantesCantidad> cantidades, Guid operacion, CancellationToken ct = default);
+    /// <summary>Clientes en condiciones de facturación automática a la fecha del filtro (solo consulta).</summary>
+    Task<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>> BuscarFacturacionAutomaticaAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<CargaComprobantesFacturacionAutomaticaFila>>([]);
     Task<PagedResult<CargaComprobantesOrigen>> BuscarOrigenesAsync(CargaComprobantesFiltro filtro, CancellationToken ct = default);
     Task<CargaComprobantesOrigen> GetOrigenAsync(int id, CancellationToken ct = default);
     Task<CargaComprobantesSimulacion> SimularAsync(int origenId, int talonario, IReadOnlyList<CargaComprobantesCantidad> cantidades, CancellationToken ct = default);
