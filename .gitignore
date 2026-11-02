@@ -117,3 +117,6 @@ src/AlfaCore/Node/WhatsAppWebWorker/node_modules/
 # Configuración de la instalación, administrada en el servidor
 src/AlfaCore/App_Data/servidor/
 App_Data/servidor/
+
+# Cachés de los lectores Python (sin datos funcionales)
+__pycache__/

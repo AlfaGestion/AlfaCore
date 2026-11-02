@@ -102,10 +102,15 @@ public sealed record TarjetasVistaDeshacer(long Importacion,string Cuenta,IReadO
 public sealed record TarjetasDeshacerVarias(long Importacion,string Cuenta,IReadOnlyList<long> Vinculos,string Motivo);
 public sealed record TarjetasIaPropuesta(string Confianza,string Motivo,IReadOnlyList<TarjetasDetalle> Detalles,IReadOnlyList<TarjetasMovimiento> Movimientos)
 {
+    public string Origen {get;init;}="IA";
     public decimal Diferencia=>Detalles.Sum(x=>x.Importe)-Movimientos.Sum(x=>x.Importe);
 }
+public sealed record TarjetasDiagnostico(string Tipo,string Titulo,IReadOnlyList<long> Detalles,string Mensaje,IReadOnlyList<long> Vinculos);
 public sealed record TarjetasIaResultado(string Modelo,int DetallesAnalizados,int MovimientosAnalizados,int Descartadas,int Dias,IReadOnlyList<TarjetasIaPropuesta> Propuestas)
 {
+    public IReadOnlyList<TarjetasDiagnostico> Diagnosticos {get;init;}=[];
+    public string ResumenBusqueda {get;init;}="";
+    public long? AnalisisId {get;init;}
     public int LotesAnalizados {get;init;}=1;
     public int DetallesSinCandidatosPorFecha {get;init;}
     public int MovimientosSinCandidatosPorFecha {get;init;}

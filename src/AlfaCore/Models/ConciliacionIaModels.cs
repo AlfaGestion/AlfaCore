@@ -18,6 +18,7 @@ public sealed record ConciliacionIaContexto(ConciliacionCompararFiltro Filtro,Co
     IReadOnlyList<ConciliacionFilaBanco> Banco,IReadOnlyList<ConciliacionFilaAlfa> Alfa,
     IReadOnlyList<ConciliacionAsientoCuenta> Cuentas)
 {
+    public bool EsPlanTarjetas { get; init; }
     public bool EsTarjetas { get; init; }
 }
 public sealed record ConciliacionIaRespuesta(string Modelo,string Json);

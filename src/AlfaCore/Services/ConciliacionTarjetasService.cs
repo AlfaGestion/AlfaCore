@@ -16,7 +16,8 @@ public sealed partial class ConciliacionTarjetasService(ISessionService sessions
     private async Task<T> Ejecutar<T>(string accion,Func<SqlConnection,CancellationToken,Task<T>> work,CancellationToken ct)
     {
         if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var session)) throw new InvalidOperationException("Iniciá sesión en la base donde querés conciliar.");
-        void Sesion(){if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var actual)||actual!=session) throw new OperationCanceledException("La base activa cambió.");}
+        var autor=users.GetCurrentUserName();var sistema=users.CurrentUser?.SystemCode;
+        void Sesion(){if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var actual)||actual!=session||users.GetCurrentUserName()!=autor||users.CurrentUser?.SystemCode!=sistema) throw new OperationCanceledException("La base activa cambió.");}
         try
         {
             if(!await permissions.HasAccessAsync(MenuKey,ct)) throw new InvalidOperationException("No tenés permiso para conciliar tarjetas.");

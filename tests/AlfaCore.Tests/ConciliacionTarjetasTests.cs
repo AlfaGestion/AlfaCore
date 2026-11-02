@@ -100,7 +100,7 @@ public sealed class ConciliacionTarjetasTests(ITestOutputHelper output)
                     Grupos=[new(){Banco=[0],Alfa=[indice],Confianza="Media",Motivo="Coincidencia de control; revisar"}]})));
             });
             var asistido=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,Lector(),modelo);
-            var analisis=await asistido.AnalizarIaAsync(filtro);
+            var analisis=await asistido.AnalizarIaAsync(filtro,guardar:false);
             Assert.Equal(movimiento.Clave,Assert.Single(Assert.Single(analisis.Propuestas).Movimientos).Clave);
             Assert.Null((await service.CompararAsync(filtro)).Detalles.Single().Vinculo);
             var solicitud=new TarjetasConfirmar(filtro,[detalle],[new(movimiento.Clave,movimiento.Huella)],"Prueba automática");

@@ -11,13 +11,14 @@ using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
-public sealed class InterfacesService(
+public sealed partial class InterfacesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
     IInterfacesConfigService interfacesConfigService,
     ISaaSTenantRouteGuard tenantRouteGuard,
-    InterfacesCompraIaWorkerState workerState) : IInterfacesService
+    InterfacesCompraIaWorkerState workerState,
+    TarjetasRecepcionService? tarjetasRecepcion = null) : IInterfacesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly InterfacesCompraIaWorkerState _workerState = workerState;
@@ -30,7 +31,7 @@ public sealed class InterfacesService(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     private string ResolveConnectionString(int? expectedBaseId, string operationName)
         => expectedBaseId is > 0
@@ -334,7 +335,7 @@ public sealed class InterfacesService(
 
             var parsed = JsonSerializer.Deserialize<InterfacesViewSettingsDto>(raw, JsonOptions);
             return NormalizeViewSettings(parsed);
-        }, "No se pudo cargar la configuraciÃ³n de vista.", ct);
+        }, "No se pudo cargar la configuración de vista.", ct);
 
     public Task SaveViewSettingsAsync(string userName, InterfacesViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveViewSettings", async token =>
@@ -395,10 +396,10 @@ public sealed class InterfacesService(
                 "SaveViewSettings",
                 "TA_CONFIGURACION",
                 configKey,
-                "ConfiguraciÃ³n de vista de interfaces actualizada.",
+                "Configuración de vista de interfaces actualizada.",
                 new { UserName = userName.Trim(), normalized.AgruparPor, Columnas = normalized.Columnas },
                 token);
-        }, "No se pudo guardar la configuraciÃ³n de vista.", ct);
+        }, "No se pudo guardar la configuración de vista.", ct);
 
     public Task<InterfacesDetalleDto?> GetByIdAsync(long idComprobanteRecibido, CancellationToken ct = default)
         => GetByIdAsync(idComprobanteRecibido, null, ct);
@@ -499,6 +500,7 @@ public sealed class InterfacesService(
         => ExecuteLoggedAsync("Interfaces", "Create", async token =>
         {
             var connectionString = ResolveConnectionString(expectedBaseId, "Interfaces.Create");
+            var sesionTarjetas = sessionService.GetActiveSession()?.Id;
             ValidateCreateRequest(request);
             var settings = await interfacesConfigService.GetUploadSettingsAsync(expectedBaseId, token);
             ValidateSettings(settings);
@@ -514,6 +516,7 @@ public sealed class InterfacesService(
             var state = await GetStateByCodeAsync(cn, initialStateCode, token)
                 ?? throw new InvalidOperationException($"No existe el estado inicial configurado para Interfaces: {initialStateCode}.");
             await EnsureDocumentTypeExistsAsync(cn, request.IdTipoDocumento, token);
+            await ValidarAltaTarjetas(cn, request, token);
 
             await using var tx = await cn.BeginTransactionAsync(token);
             var savedFiles = new List<string>();
@@ -676,6 +679,7 @@ public sealed class InterfacesService(
                     token);
 
                 await TryAutoQueueCompraDetectionAfterCreateAsync(idComprobante, user, pc, token);
+                await IntentarEncolarTarjetas(idComprobante, request.IdTipoDocumento, sesionTarjetas, token);
                 return idComprobante;
             }
             catch
@@ -702,10 +706,13 @@ public sealed class InterfacesService(
         {
             ArgumentNullException.ThrowIfNull(request);
             if (request.Archivos.Count == 0)
-                throw new InvalidOperationException("DebÃ©s adjuntar al menos un archivo para el alta por lote.");
+                throw new InvalidOperationException("Debés adjuntar al menos un archivo para el alta por lote.");
 
             var loteId = Guid.NewGuid();
-            var grupos = AgruparArchivosPorNombre(request.Archivos);
+            var tipoTarjetas = (await GetDocumentTypesAsync(expectedBaseId, token)).Any(t => t.IdTipoDocumento == request.IdTipoDocumento && t.Codigo == TarjetasRecepcionService.Tipo);
+            IReadOnlyList<IReadOnlyList<InterfacesCrearAdjuntoRequest>> grupos = tipoTarjetas
+                ? request.Archivos.Select(a => (IReadOnlyList<InterfacesCrearAdjuntoRequest>)new[] { a }).ToList()
+                : AgruparArchivosPorNombre(request.Archivos);
 
             var resultados = new List<InterfacesLoteGrupoResultadoDto>();
             foreach (var grupo in grupos)
@@ -739,11 +746,11 @@ public sealed class InterfacesService(
         }, "No se pudo procesar el alta por lote.", ct);
 
     /// <summary>
-    /// Agrupa archivos sueltos por patrÃ³n de nombre â€” puerto simplificado de la heurÃ­stica "sin IA" de
-    /// agente_staging_comprobantes.py (patrones "1de3"/"pag1"/"hoja1", e Ã­ndice final secuencial para
-    /// imÃ¡genes). No incluye agrupaciÃ³n por contenido ni el caso de PDFs con sufijo "(2)": los archivos
+    /// Agrupa archivos sueltos por patrón de nombre — puerto simplificado de la heurística "sin IA" de
+    /// agente_staging_comprobantes.py (patrones "1de3"/"pag1"/"hoja1", e índice final secuencial para
+    /// imágenes). No incluye agrupación por contenido ni el caso de PDFs con sufijo "(2)": los archivos
     /// que en verdad pertenecen al mismo comprobante pero no matchean por nombre quedan como comprobantes
-    /// separados y se fusionan mÃ¡s tarde si la cola de lectura IA les detecta la misma identidad
+    /// separados y se fusionan más tarde si la cola de lectura IA les detecta la misma identidad
     /// (ver TryMergeLoteSiblingsAsync).
     /// </summary>
     private static IReadOnlyList<IReadOnlyList<InterfacesCrearAdjuntoRequest>> AgruparArchivosPorNombre(
@@ -837,8 +844,8 @@ public sealed class InterfacesService(
 
     /// <summary>
     /// Si <paramref name="detail"/> viene de un alta por lote (<see cref="InterfacesDetalleDto.LoteId"/>),
-    /// busca otros comprobantes del mismo lote ya leÃ­dos con la misma identidad de negocio
-    /// (proveedor+tipo+letra+PV+nÃºmero) y los fusiona en uno solo â€” resuelve el caso de pÃ¡ginas sueltas
+    /// busca otros comprobantes del mismo lote ya leídos con la misma identidad de negocio
+    /// (proveedor+tipo+letra+PV+número) y los fusiona en uno solo — resuelve el caso de páginas sueltas
     /// que no se agruparon por nombre de archivo al momento de la carga (ver AgruparArchivosPorNombre).
     /// </summary>
     private async Task TryMergeLoteSiblingsAsync(
@@ -983,7 +990,7 @@ public sealed class InterfacesService(
                 delCmd.Parameters.AddWithValue("@Usuario", user);
                 delCmd.Parameters.AddWithValue("@Pc", pc);
                 delCmd.Parameters.AddWithValue("@Motivo", Truncate(
-                    $"Fusionado automÃ¡ticamente con el comprobante #{idGanador} (mismo lote, misma factura detectada por IA).", 500));
+                    $"Fusionado automáticamente con el comprobante #{idGanador} (mismo lote, misma factura detectada por IA).", 500));
                 delCmd.Parameters.AddWithValue("@Id", idPerdedor);
                 await delCmd.ExecuteNonQueryAsync(ct);
             }
@@ -1038,7 +1045,7 @@ public sealed class InterfacesService(
                 "CreateAutoQueueCompra",
                 "IA_Compras_CAB",
                 queued.Id.ToString(CultureInfo.InvariantCulture),
-                "Documento encolado automÃ¡ticamente para lectura de compras al registrarse.",
+                "Documento encolado automáticamente para lectura de compras al registrarse.",
                 new
                 {
                     detail.IdComprobanteRecibido,
@@ -1052,7 +1059,7 @@ public sealed class InterfacesService(
                 "Interfaces",
                 "CreateAutoQueueCompra",
                 ex,
-                "No se pudo encolar automÃ¡ticamente el comprobante de compras reciÃ©n registrado.",
+                "No se pudo encolar automáticamente el comprobante de compras recién registrado.",
                 new
                 {
                     IdComprobanteRecibido = idComprobanteRecibido,
@@ -1080,7 +1087,7 @@ public sealed class InterfacesService(
             var current = await GetByIdAsync(request.IdComprobanteRecibido, token)
                 ?? throw new InvalidOperationException("El comprobante indicado no existe.");
             if (current.Eliminado)
-                throw new InvalidOperationException("El comprobante seleccionado estÃ¡ anulado y no permite nuevas modificaciones.");
+                throw new InvalidOperationException("El comprobante seleccionado está anulado y no permite nuevas modificaciones.");
 
             var targetDocumentTypeId = current.PermiteEdicion
                 ? request.IdTipoDocumento
@@ -1145,7 +1152,7 @@ public sealed class InterfacesService(
             if (request.IdComprobanteRecibido <= 0)
                 throw new InvalidOperationException("El comprobante es obligatorio.");
             if (request.Adjuntos is null || request.Adjuntos.Count == 0)
-                throw new InvalidOperationException("DebÃ©s seleccionar al menos un archivo.");
+                throw new InvalidOperationException("Debés seleccionar al menos un archivo.");
 
             var settings = await interfacesConfigService.GetUploadSettingsAsync(token);
             ValidateSettings(settings);
@@ -1319,7 +1326,7 @@ public sealed class InterfacesService(
                 "RemoveAttachment",
                 "INT_COMPROBANTE_RECIBIDO",
                 attachment.IdComprobanteRecibido.ToString(CultureInfo.InvariantCulture),
-                "Adjunto dado de baja lÃ³gicamente.",
+                "Adjunto dado de baja lógicamente.",
                 new { request.IdAdjunto, attachment.NombreOriginal },
                 token);
         }, "No se pudo quitar el adjunto.", ct);
@@ -1422,7 +1429,7 @@ public sealed class InterfacesService(
             var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
             var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
             return await RunCompraDetectionAsync(request.IdComprobanteRecibido, user, pc, null, null, token);
-        }, "No se pudo detectar la informaciÃ³n del comprobante.", ct);
+        }, "No se pudo detectar la información del comprobante.", ct);
 
     public Task<InterfacesCompraIaResultadoDto> QueueCompraDetectionAsync(InterfacesDetectarCompraRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "QueueDetectCompra", async token =>
@@ -1439,7 +1446,7 @@ public sealed class InterfacesService(
                 ?? throw new InvalidOperationException("El comprobante indicado no existe.");
             var eligibleAttachments = GetEligibleCompraAttachments(detail);
             if (eligibleAttachments.Count == 0)
-                throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detecciÃ³n.");
+                throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detección.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1460,7 +1467,7 @@ public sealed class InterfacesService(
                 "QueueDetectCompra",
                 "IA_Compras_CAB",
                 queued.Id.ToString(CultureInfo.InvariantCulture),
-                "Documento encolado para detecciÃ³n automÃ¡tica de compra.",
+                "Documento encolado para detección automática de compra.",
                 new
                 {
                     detail.IdComprobanteRecibido,
@@ -1469,7 +1476,7 @@ public sealed class InterfacesService(
                 token);
 
             return queued;
-        }, "No se pudo encolar la detecciÃ³n del comprobante.", ct);
+        }, "No se pudo encolar la detección del comprobante.", ct);
 
     public Task<InterfacesCompraIaQueueSnapshotDto> GetCompraIaQueueSnapshotAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetCompraIaQueueSnapshot", async token =>
@@ -1624,7 +1631,7 @@ public sealed class InterfacesService(
             await cn.OpenAsync(token);
             var claimed = await TryClaimCompraDetectionByIdAsync(cn, request.Id, user, token);
             if (claimed is null || !claimed.IdComprobanteRecibido.HasValue)
-                throw new InvalidOperationException("El proceso seleccionado ya no estÃ¡ pendiente para ejecutarse ahora.");
+                throw new InvalidOperationException("El proceso seleccionado ya no está pendiente para ejecutarse ahora.");
 
             try
             {
@@ -1658,7 +1665,7 @@ public sealed class InterfacesService(
                 await MarkCompraDetectionFailedAsync(cn, claimed.Id, user, ex.Message, token);
                 throw;
             }
-        }, "No se pudo ejecutar ahora la lectura automÃ¡tica de compra.", ct);
+        }, "No se pudo ejecutar ahora la lectura automática de compra.", ct);
 
     public Task<int> ProcessCompraIaQueueAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "ProcessCompraIaQueue", async token =>
@@ -1687,7 +1694,7 @@ public sealed class InterfacesService(
                 .ToList();
 
             if (ids.Count == 0)
-                throw new InvalidOperationException("DebÃ©s seleccionar al menos un documento para eliminar.");
+                throw new InvalidOperationException("Debés seleccionar al menos un documento para eliminar.");
 
             var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
             var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
@@ -1734,7 +1741,7 @@ public sealed class InterfacesService(
                 "Delete",
                 "INT_COMPROBANTE_RECIBIDO",
                 string.Join(",", existingIds),
-                "Comprobantes eliminados fÃ­sicamente junto con sus registros dependientes.",
+                "Comprobantes eliminados físicamente junto con sus registros dependientes.",
                 new
                 {
                     Cantidad = existingIds.Count,
@@ -1887,7 +1894,7 @@ public sealed class InterfacesService(
         cmd.Parameters.AddWithValue("@IdTipoDocumento", idTipoDocumento);
         var exists = await cmd.ExecuteScalarAsync(ct);
         if (exists is null)
-            throw new InvalidOperationException("El tipo documental seleccionado no existe o estÃ¡ inactivo.");
+            throw new InvalidOperationException("El tipo documental seleccionado no existe o está inactivo.");
     }
 
     private static async Task<IReadOnlyList<InterfacesDeleteSnapshotItem>> GetDeleteSnapshotAsync(SqlConnection cn, IReadOnlyList<long> ids, CancellationToken ct)
@@ -2002,7 +2009,7 @@ public sealed class InterfacesService(
                     "Interfaces",
                     "DeleteCleanup",
                     ex,
-                    "No se pudo eliminar un archivo fÃ­sico asociado al comprobante borrado.",
+                    "No se pudo eliminar un archivo físico asociado al comprobante borrado.",
                     new { Ruta = fullPath },
                     AppEventSeverity.Warning,
                     ct);
@@ -2230,41 +2237,41 @@ public sealed class InterfacesService(
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.IdTipoDocumento <= 0)
-            throw BuildValidationException("RevisÃ¡ los datos del documento antes de guardarlo.", "tipo-documental", "El tipo documental es obligatorio.");
+            throw BuildValidationException("Revisá los datos del documento antes de guardarlo.", "tipo-documental", "El tipo documental es obligatorio.");
         if (request.Adjuntos is null || request.Adjuntos.Count == 0)
-            throw BuildValidationException("RevisÃ¡ los datos del documento antes de guardarlo.", "adjuntos", "DebÃ©s adjuntar al menos un archivo.");
+            throw BuildValidationException("Revisá los datos del documento antes de guardarlo.", "adjuntos", "Debés adjuntar al menos un archivo.");
     }
 
     private static void ValidateSettings(InterfacesUploadSettingsDto settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (string.IsNullOrWhiteSpace(settings.RutaBase))
-            throw BuildValidationException("La configuraciÃ³n de carga de Interfaces estÃ¡ incompleta.", "ruta-base", "La ruta base o carpeta remota para documentos no estÃ¡ configurada.");
+            throw BuildValidationException("La configuración de carga de Interfaces está incompleta.", "ruta-base", "La ruta base o carpeta remota para documentos no está configurada.");
         if (settings.UsaFtp)
         {
             if (string.IsNullOrWhiteSpace(settings.FtpHost))
-                throw BuildValidationException("La configuraciÃ³n FTP de Interfaces estÃ¡ incompleta.", "ftp-host", "El host FTP no estÃ¡ configurado.");
+                throw BuildValidationException("La configuración FTP de Interfaces está incompleta.", "ftp-host", "El host FTP no está configurado.");
             if (string.IsNullOrWhiteSpace(settings.FtpUsuario))
-                throw BuildValidationException("La configuraciÃ³n FTP de Interfaces estÃ¡ incompleta.", "ftp-usuario", "El usuario FTP no estÃ¡ configurado.");
+                throw BuildValidationException("La configuración FTP de Interfaces está incompleta.", "ftp-usuario", "El usuario FTP no está configurado.");
         }
     }
 
     private static void ValidateAttachment(InterfacesCrearAdjuntoRequest attachment, InterfacesUploadSettingsDto settings)
     {
         if (attachment is null)
-            throw BuildValidationException("RevisÃ¡ los adjuntos seleccionados antes de guardar.", "adjuntos", "Se recibiÃ³ un adjunto invÃ¡lido.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "Se recibió un adjunto inválido.");
         if (string.IsNullOrWhiteSpace(attachment.NombreArchivo))
-            throw BuildValidationException("RevisÃ¡ los adjuntos seleccionados antes de guardar.", "adjuntos", "El nombre del archivo es obligatorio.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "El nombre del archivo es obligatorio.");
         if (attachment.TamanoBytes <= 0)
-            throw BuildValidationException("RevisÃ¡ los adjuntos seleccionados antes de guardar.", "adjuntos", "Uno de los archivos estÃ¡ vacÃ­o.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "Uno de los archivos está vacío.");
         if (attachment.TamanoBytes > settings.TamanoMaximoBytes)
-            throw BuildValidationException("RevisÃ¡ los adjuntos seleccionados antes de guardar.", "adjuntos", $"Uno de los archivos supera el mÃ¡ximo permitido de {settings.TamanoMaximoMb} MB.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", $"Uno de los archivos supera el máximo permitido de {settings.TamanoMaximoMb} MB.");
 
         var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
         if (settings.ExtensionesPermitidas.Count > 0
             && !settings.ExtensionesPermitidas.Contains(extension, StringComparer.OrdinalIgnoreCase))
         {
-            throw BuildValidationException("RevisÃ¡ los adjuntos seleccionados antes de guardar.", "adjuntos", $"La extensiÃ³n {extension} no estÃ¡ permitida para Interfaces.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", $"La extensión {extension} no está permitida para Interfaces.");
         }
     }
 
@@ -2281,7 +2288,7 @@ public sealed class InterfacesService(
             ?? throw new InvalidOperationException("El comprobante indicado no existe.");
 
         if (!current.PermiteEdicion)
-            throw new InvalidOperationException("El comprobante seleccionado ya no permite ediciÃ³n por su estado actual.");
+            throw new InvalidOperationException("El comprobante seleccionado ya no permite edición por su estado actual.");
 
         return current;
     }
@@ -2292,20 +2299,20 @@ public sealed class InterfacesService(
             AgruparPor = InterfacesViewGroupKeys.None,
             Columnas =
             [
-                new() { Key = InterfacesViewColumnKeys.Numero, Label = "NÃºmero", Visible = true, Order = 0 },
+                new() { Key = InterfacesViewColumnKeys.Numero, Label = "Número", Visible = true, Order = 0 },
                 new() { Key = InterfacesViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 1 },
                 new() { Key = InterfacesViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
                 new() { Key = InterfacesViewColumnKeys.TipoComprobanteIa, Label = "Tipo cpte. (IA)", Visible = true, Order = 3 },
                 new() { Key = InterfacesViewColumnKeys.PuntoVentaIa, Label = "PV", Visible = true, Order = 4 },
-                new() { Key = InterfacesViewColumnKeys.NumeroIa, Label = "NÂ° cpte.", Visible = true, Order = 5 },
+                new() { Key = InterfacesViewColumnKeys.NumeroIa, Label = "N° cpte.", Visible = true, Order = 5 },
                 new() { Key = InterfacesViewColumnKeys.LetraIa, Label = "Letra", Visible = true, Order = 6 },
-                new() { Key = InterfacesViewColumnKeys.CuentaProveedorIa, Label = "CÃ³d. proveedor", Visible = true, Order = 7 },
+                new() { Key = InterfacesViewColumnKeys.CuentaProveedorIa, Label = "Cód. proveedor", Visible = true, Order = 7 },
                 new() { Key = InterfacesViewColumnKeys.Proveedor, Label = "Proveedor", Visible = true, Order = 8 },
                 new() { Key = InterfacesViewColumnKeys.Importe, Label = "Importe", Visible = true, Order = 9 },
                 new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 10 },
-                new() { Key = InterfacesViewColumnKeys.AprobacionCompras, Label = "AprobaciÃ³n compras", Visible = true, Order = 11 },
+                new() { Key = InterfacesViewColumnKeys.AprobacionCompras, Label = "Aprobación compras", Visible = true, Order = 11 },
                 new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 12 },
-                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "ObservaciÃ³n", Visible = true, Order = 13 },
+                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 13 },
                 new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 14 }
             ]
         };
@@ -2388,7 +2395,7 @@ public sealed class InterfacesService(
         catch (SqlException ex) when (ex.Number == 208)
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
-            throw new AppUserFacingException("El esquema del mÃ³dulo Interfaces no estÃ¡ disponible en la base activa.", incidentId, ex);
+            throw new AppUserFacingException("El esquema del módulo Interfaces no está disponible en la base activa.", incidentId, ex);
         }
         catch (InvalidOperationException)
         {
@@ -2419,7 +2426,7 @@ public sealed class InterfacesService(
         catch (SqlException ex) when (ex.Number == 208)
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
-            throw new AppUserFacingException("El esquema del mÃ³dulo Interfaces no estÃ¡ disponible en la base activa.", incidentId, ex);
+            throw new AppUserFacingException("El esquema del módulo Interfaces no está disponible en la base activa.", incidentId, ex);
         }
         catch (InvalidOperationException)
         {
@@ -2474,10 +2481,10 @@ public sealed class InterfacesService(
         CancellationToken ct)
     {
         var userMessage = settings.UsaFtp
-            ? "No se pudo preparar la carpeta destino en el FTP configurado para Interfaces. VerificÃ¡ los datos y permisos del FTP."
+            ? "No se pudo preparar la carpeta destino en el FTP configurado para Interfaces. Verificá los datos y permisos del FTP."
             : $"No se pudo crear la carpeta destino en el almacenamiento configurado ({settings.RutaBase}). " +
               "La cuenta de Windows con la que se ejecuta AlfaCore no tiene acceso al recurso compartido; " +
-              "verificÃ¡ permisos de red o corregÃ­ la ruta del mÃ³dulo.";
+              "verificá permisos de red o corregí la ruta del módulo.";
 
         var incidentId = await _appEvents.LogErrorAsync(
             "Interfaces",
@@ -2852,7 +2859,7 @@ public sealed class InterfacesService(
     private static List<InterfacesAdjuntoDto> GetEligibleCompraAttachments(InterfacesDetalleDto detail)
     {
         if (!string.Equals(detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("La detecciÃ³n automÃ¡tica solo estÃ¡ disponible para comprobantes de compras.");
+            throw new InvalidOperationException("La detección automática solo está disponible para comprobantes de compras.");
 
         return detail.Adjuntos
             .Where(static x => !x.Eliminado)
@@ -2875,7 +2882,7 @@ public sealed class InterfacesService(
             ?? throw new InvalidOperationException("El comprobante indicado no existe.");
         var eligibleAttachments = GetEligibleCompraAttachments(detail);
         if (eligibleAttachments.Count == 0)
-            throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detecciÃ³n.");
+            throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detección.");
 
         var uploadSettings = await interfacesConfigService.GetUploadSettingsAsync(ct);
 
@@ -2934,7 +2941,7 @@ public sealed class InterfacesService(
                 ? await GetCompraDetectionByQueueIdInternalAsync(cn, queueId.Value, ct)
                 : await GetCompraDetectionInternalAsync(cn, idComprobanteRecibido, ct);
 
-            return saved ?? throw new InvalidOperationException("No se pudo recuperar la detecciÃ³n guardada.");
+            return saved ?? throw new InvalidOperationException("No se pudo recuperar la detección guardada.");
         }
         catch (OperationCanceledException)
         {
@@ -2999,7 +3006,7 @@ public sealed class InterfacesService(
                 "ProcessCompraIaQueue",
                 "IA_Compras_CAB",
                 claimed.Id.ToString(CultureInfo.InvariantCulture),
-                "Procesamiento automÃ¡tico de factura finalizado desde la cola.",
+                "Procesamiento automático de factura finalizado desde la cola.",
                 new
                 {
                     claimed.IdComprobanteRecibido,
@@ -3218,7 +3225,7 @@ public sealed class InterfacesService(
                 existingId = Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
         }
 
-        const string pendingNote = "En cola para lectura automÃ¡tica.";
+        const string pendingNote = "En cola para lectura automática.";
         if (existingId.HasValue)
         {
             const string updateSql = """
@@ -3314,7 +3321,7 @@ public sealed class InterfacesService(
         }
 
         if (string.IsNullOrWhiteSpace(currentState))
-            throw new InvalidOperationException("No se encontrÃ³ el registro de procesamiento indicado.");
+            throw new InvalidOperationException("No se encontró el registro de procesamiento indicado.");
 
         if (string.Equals(currentState, "PENDIENTE_LECTURA", StringComparison.OrdinalIgnoreCase))
         {
@@ -3333,12 +3340,12 @@ public sealed class InterfacesService(
 
             await using var cmd = new SqlCommand(updateSql, cn);
             cmd.Parameters.AddWithValue("@ID", id);
-            cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("CancelaciÃ³n solicitada por usuario.", 500));
+            cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("Cancelación solicitada por usuario.", 500));
             await cmd.ExecuteNonQueryAsync(ct);
         }
         else
         {
-            throw new InvalidOperationException("Solo se pueden cancelar procesos pendientes o en ejecuciÃ³n.");
+            throw new InvalidOperationException("Solo se pueden cancelar procesos pendientes o en ejecución.");
         }
 
         await _appEvents.LogAuditAsync(
@@ -3346,7 +3353,7 @@ public sealed class InterfacesService(
             "CancelCompraDetection",
             "IA_Compras_CAB",
             id.ToString(CultureInfo.InvariantCulture),
-            "CancelaciÃ³n de lectura automÃ¡tica solicitada.",
+            "Cancelación de lectura automática solicitada.",
             new { Estado = currentState, Usuario = user, Pc = pc },
             ct);
     }
@@ -3368,7 +3375,7 @@ public sealed class InterfacesService(
             WHERE ID = @ID;
 
             IF @@ROWCOUNT = 0
-                THROW 50000, 'No se encontrÃ³ el registro de procesamiento indicado.', 1;
+                THROW 50000, 'No se encontró el registro de procesamiento indicado.', 1;
             """;
 
         await using var cmd = new SqlCommand(updateSql, cn);
@@ -3382,7 +3389,7 @@ public sealed class InterfacesService(
             "RetryCompraDetection",
             "IA_Compras_CAB",
             id.ToString(CultureInfo.InvariantCulture),
-            "Registro de lectura automÃ¡tica reencolado.",
+            "Registro de lectura automática reencolado.",
             new { Usuario = user, Pc = pc },
             ct);
     }
@@ -3512,7 +3519,7 @@ public sealed class InterfacesService(
             """;
 
         var message = string.IsNullOrWhiteSpace(error)
-            ? "El procesamiento finalizÃ³ con error sin detalle."
+            ? "El procesamiento finalizó con error sin detalle."
             : error.Trim();
 
         await using var cmd = new SqlCommand(sql, cn);
@@ -3528,18 +3535,18 @@ public sealed class InterfacesService(
         ArgumentNullException.ThrowIfNull(settings);
 
         if (!settings.Habilitado)
-            throw new InvalidOperationException("La detecciÃ³n automÃ¡tica de facturas de compras estÃ¡ deshabilitada en la base activa.");
+            throw new InvalidOperationException("La detección automática de facturas de compras está deshabilitada en la base activa.");
         if (string.IsNullOrWhiteSpace(settings.PythonExe) || !File.Exists(settings.PythonExe))
-            throw new InvalidOperationException("No se encontrÃ³ el ejecutable Python configurado para la detecciÃ³n automÃ¡tica.");
+            throw new InvalidOperationException("No se encontró el ejecutable Python configurado para la detección automática.");
         if (string.IsNullOrWhiteSpace(settings.ScriptPath) || !File.Exists(settings.ScriptPath))
-            throw new InvalidOperationException("No se encontrÃ³ el script configurado para la detecciÃ³n automÃ¡tica de facturas.");
+            throw new InvalidOperationException("No se encontró el script configurado para la detección automática de facturas.");
 
         var workDir = settings.WorkDir;
         if (string.IsNullOrWhiteSpace(workDir))
             workDir = Path.GetDirectoryName(settings.ScriptPath) ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))
-            throw new InvalidOperationException("No existe la carpeta de trabajo configurada para la detecciÃ³n automÃ¡tica de facturas.");
+            throw new InvalidOperationException("No existe la carpeta de trabajo configurada para la detección automática de facturas.");
 
         return new InterfacesCompraIaSettings
         {
@@ -3570,7 +3577,7 @@ public sealed class InterfacesService(
 
         var sourcePath = BuildStoredFileReference(ResolveStoredBase(settings), attachment.RutaRelativa);
         if (!File.Exists(sourcePath))
-            throw new InvalidOperationException($"El archivo adjunto no se encontrÃ³ en la ruta configurada: {sourcePath}. VerificÃ¡ que la carpeta de almacenamiento sea accesible desde este servidor.");
+            throw new InvalidOperationException($"El archivo adjunto no se encontró en la ruta configurada: {sourcePath}. Verificá que la carpeta de almacenamiento sea accesible desde este servidor.");
         await using var source = File.OpenRead(sourcePath);
         await using var target = File.Create(outputPath);
         await source.CopyToAsync(target, ct);
@@ -3625,13 +3632,13 @@ public sealed class InterfacesService(
 
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
-            throw new InvalidOperationException("No se pudo iniciar el lector automÃ¡tico de facturas.");
+            throw new InvalidOperationException("No se pudo iniciar el lector automático de facturas.");
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
         // Sin este limite, un proceso Python colgado (ej. esperando una respuesta de red que nunca
-        // llega) deja trabado para siempre este await â€” y como el worker automatico
+        // llega) deja trabado para siempre este await — y como el worker automatico
         // (InterfacesCompraIaWorkerHostedService) procesa TODAS las bases en un unico loop secuencial,
         // un solo documento colgado en cualquier base congela el procesamiento automatico de todas las
         // demas, sin loguear ningun error (no esta fallando, esta esperando indefinidamente).
@@ -3663,7 +3670,7 @@ public sealed class InterfacesService(
                 {
                 }
 
-                throw new TimeoutException($"El lector automÃ¡tico de facturas no respondiÃ³ en {ReaderProcessTimeout.TotalMinutes:0} minutos y se cancelÃ³.");
+                throw new TimeoutException($"El lector automático de facturas no respondió en {ReaderProcessTimeout.TotalMinutes:0} minutos y se canceló.");
             }
         }
 
@@ -3672,7 +3679,7 @@ public sealed class InterfacesService(
 
         if (process.ExitCode != 0)
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
-                ? "El lector automÃ¡tico finalizÃ³ con error."
+                ? "El lector automático finalizó con error."
                 : stderr);
 
         var jsonPath = stdout
@@ -3680,7 +3687,7 @@ public sealed class InterfacesService(
             .LastOrDefault();
 
         if (string.IsNullOrWhiteSpace(jsonPath) || !File.Exists(jsonPath))
-            throw new InvalidOperationException("El lector automÃ¡tico no devolviÃ³ un archivo JSON vÃ¡lido.");
+            throw new InvalidOperationException("El lector automático no devolvió un archivo JSON válido.");
 
         return jsonPath;
     }
@@ -3832,7 +3839,7 @@ public sealed class InterfacesService(
     private static InterfacesCompraIaPayload ParseCompraIaPayload(string jsonText)
     {
         var root = JsonNode.Parse(jsonText)?.AsObject()
-            ?? throw new InvalidOperationException("El lector devolviÃ³ un JSON invÃ¡lido.");
+            ?? throw new InvalidOperationException("El lector devolvió un JSON inválido.");
 
         var cab = root["CAB"]?.AsObject();
         var totales = root["TOTALES"]?.AsObject();
@@ -3997,7 +4004,7 @@ public sealed class InterfacesService(
             }
 
             // Formato real de C_MV_CPTE.IDCOMPROBANTE (13 caracteres, ancho fijo, confirmado
-            // contra V_mv_Cpra.frm): Sucursal a 4 dÃ­gitos + Numero a 8 dÃ­gitos + Letra, con ceros
+            // contra V_mv_Cpra.frm): Sucursal a 4 dígitos + Numero a 8 dígitos + Letra, con ceros
             // a la izquierda. Las variantes de arriba son best-effort para datos irregulares;
             // esta es la que realmente coincide con lo que graba el sistema.
             candidates.Add($"{ptoDigits.PadLeft(4, '0')}{numeroDigits.PadLeft(8, '0')}{letra}");
@@ -4012,10 +4019,10 @@ public sealed class InterfacesService(
             paramNames.Add($"@id{idx++}");
 
         // Se chequea contra C_MV_CPTE (no MV_ASIENTOS): un asiento puede existir solo por
-        // importaciÃ³n ARCA/AFIP para el libro de IVA, sin que la factura se haya procesado
-        // realmente (stock, etc.) â€” C_MV_CPTE es la cabecera real del comprobante de compras.
+        // importación ARCA/AFIP para el libro de IVA, sin que la factura se haya procesado
+        // realmente (stock, etc.) — C_MV_CPTE es la cabecera real del comprobante de compras.
         // Las filas cargadas por ese importador quedan con USUARIO = 'IMPORTACION' y no cuentan
-        // como "ya cargada": esa factura todavÃ­a tiene que procesarse por este circuito.
+        // como "ya cargada": esa factura todavía tiene que procesarse por este circuito.
         var sqlCompras = $"""
             SELECT TOP (1)
                 ISNULL(TC, ''),
@@ -4044,7 +4051,7 @@ public sealed class InterfacesService(
                 var tcDb = rd.IsDBNull(0) ? string.Empty : Convert.ToString(rd.GetValue(0), CultureInfo.InvariantCulture) ?? string.Empty;
                 var fechaDb = rd.IsDBNull(1) ? string.Empty : Convert.ToString(rd.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty;
                 var idDb = rd.IsDBNull(2) ? string.Empty : Convert.ToString(rd.GetValue(2), CultureInfo.InvariantCulture) ?? string.Empty;
-                return $"Aviso: el comprobante ya existe en compras (TC: {tcDb.Trim()}, ID: {idDb.Trim()}, Fecha: {fechaDb}). RevisÃ¡ antes de grabar.";
+                return $"Aviso: el comprobante ya existe en compras (TC: {tcDb.Trim()}, ID: {idDb.Trim()}, Fecha: {fechaDb}). Revisá antes de grabar.";
             }
         }
 
@@ -4506,8 +4513,8 @@ public sealed class InterfacesService(
         }
 
         var observacion = string.Equals(compraIaState, "SIN_PROVEEDOR", StringComparison.OrdinalIgnoreCase)
-            ? "Estado actualizado automÃ¡ticamente: la lectura por IA finalizÃ³, aunque quedÃ³ pendiente la identificaciÃ³n del proveedor."
-            : "Estado actualizado automÃ¡ticamente: el documento ya fue procesado por la lectura automÃ¡tica.";
+            ? "Estado actualizado automáticamente: la lectura por IA finalizó, aunque quedó pendiente la identificación del proveedor."
+            : "Estado actualizado automáticamente: el documento ya fue procesado por la lectura automática.";
 
         await InsertHistoryAsync(
             cn,
@@ -4587,7 +4594,7 @@ public sealed class InterfacesService(
             {
                 "PROCESADO" => "Procesamiento finalizado correctamente.",
                 "SIN_PROVEEDOR" => "Procesamiento finalizado sin match de proveedor.",
-                "ERROR_LECTURA" => "El lector automÃ¡tico devolviÃ³ un error.",
+                "ERROR_LECTURA" => "El lector automático devolvió un error.",
                 "CANCELADO" => "Procesamiento cancelado.",
                 _ => string.Empty
             };
@@ -4802,7 +4809,7 @@ public sealed class InterfacesService(
 
         using var response = (FtpWebResponse)await request.GetResponseAsync();
         await using var responseStream = response.GetResponseStream()
-            ?? throw new InvalidOperationException("No se pudo abrir el adjunto remoto para ejecutar la detecciÃ³n.");
+            ?? throw new InvalidOperationException("No se pudo abrir el adjunto remoto para ejecutar la detección.");
         await using var output = File.Create(outputPath);
         await responseStream.CopyToAsync(output, ct);
     }

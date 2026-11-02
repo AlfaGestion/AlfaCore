@@ -373,6 +373,7 @@ public class Program
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
+        builder.Services.AddScoped<TarjetasRecepcionService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
         builder.Services.AddScoped<IBaseMaestraImagenService, BaseMaestraImagenService>();
@@ -526,6 +527,7 @@ public class Program
         if (!builder.Configuration.GetValue("ProcesosSegundoPlano:Deshabilitados", false))
         {
             builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+            builder.Services.AddHostedService<TarjetasRecepcionWorkerHostedService>();
             builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
             builder.Services.AddHostedService<BillingHostedService>();
             builder.Services.AddHostedService<CalendarioRecordatoriosHostedService>();

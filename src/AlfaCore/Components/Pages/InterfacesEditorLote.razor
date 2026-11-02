@@ -69,6 +69,7 @@
                 <div class="contactos-form__grid">
                     <div class="field">
                         <label>Tipo documental</label>
+                        <small>Para tarjetas elegí Liquidación de tarjetas: cada PDF se procesa por separado.</small>
                         <select @bind="_idTipoDocumento" disabled="@_saving">
                             <option value="0">Seleccionar...</option>
                             @foreach (var item in _documentTypes)

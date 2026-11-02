@@ -27,6 +27,7 @@ internal static class TarjetasIaPropuestas
         {
             var ds=p.Banco.Select(b=>datos.Detalles.Single(d=>d.Id==b.Id)).ToList();
             var ms=p.Alfa.Select(a=>movimientos[a.Secuencia]).ToList();
+            if(ds.All(d=>d.Nivel=="Lote"&&d.Cantidad>0)&&ds.Sum(d=>(long)d.Cantidad)!=ms.Count){descartadas++;continue;}
             // Si ambos lados identifican un cupón, una suma correcta no permite ignorar que sean distintos.
             if(ds.Any(d=>d.Nivel=="Cupón"&&Identificable(d.Cupon)&&ms.All(m=>Identificable(m.Cupon))&&!ms.Any(m=>IgualCupon(d.Cupon,m.Cupon)))
                 ||(ds.All(d=>d.Nivel=="Cupón"&&Identificable(d.Cupon))&&ms.Any(m=>Identificable(m.Cupon)&&!ds.Any(d=>IgualCupon(d.Cupon,m.Cupon)))))

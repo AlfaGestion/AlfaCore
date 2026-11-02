@@ -1,5 +1,7 @@
 # Modulo Interfaces
 
+Desde 2026-10-31, el tipo **Liquidación de tarjetas** incorpora lectura, elección de cuenta y análisis persistente en segundo plano, con confirmación desde Conciliación. Ver [contrato técnico](conciliacion-tarjetas.md) y [guía operativa](../../src/AlfaCore/Docs/manual_conciliacion_tarjetas.md). La descripción inicial que sigue conserva el relevamiento original del módulo.
+
 ## Objetivo
 
 Este documento define el diseno funcional y tecnico inicial del modulo `Interfaces`, enfocado primero en una bandeja de **recepcion documental**.

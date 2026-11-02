@@ -60,7 +60,7 @@ Mientras se ejecuta la IA aparece **Analizando con IA…**, un indicador animado
 
 ## Asistir con IA
 
-En **Conciliar tarjetas**, elegí **Asistir con IA** en la barra superior. Se consultan nuevamente los pendientes con las fechas, sucursal y búsqueda actuales, incluyendo otras páginas. Se envía a la IA el detalle necesario de las operaciones; el PDF original no se envía.
+En **Conciliar tarjetas**, elegí **Asistir con IA** en la barra superior, revisá los criterios y pulsá **Aplicar y analizar**. Se consultan nuevamente los pendientes con las fechas, sucursal y búsqueda actuales, incluyendo otras páginas. Primero se buscan agrupaciones locales y solo se envían a la IA los casos restantes cuando está habilitada esa opción; el PDF original no se envía.
 
 La IA puede proponer pares individuales y grupos de ventas que suman un lote, comparando importes brutos, fechas y referencias de cupón/presentación. La fecha de pago es informativa. No se compara el neto con ventas brutas ni se descuentan comisiones para forzar una coincidencia. Los casos ambiguos pueden quedar pendientes.
 
@@ -138,3 +138,108 @@ El análisis exige ahora una respuesta estructurada con los campos y tipos esper
 4. Pulsá **Confirmar N propuestas**. La evidencia de IA y el motivo quedan guardados en cada conciliación. Si algún movimiento cambió, ya fue conciliado o no cumple los controles, no se guarda ninguna de las elegidas.
 
 **Volver a las propuestas** conserva las marcas para corregir la selección. La selección masiva solo confirma vínculos de conciliación: no genera LT, asientos ni IVA.
+
+
+## Exportar la conciliación a Excel
+
+En **Conciliar tarjetas**, pulsá **Exportar Excel**. Elegí **Comparación actual**, **Solo pendientes** o **Solo conciliados** y confirmá **Descargar Excel**. Las dos últimas opciones reemplazan solo el estado general. Se respetan el período de Alfa, la búsqueda, las sucursales, las fechas locales y **Solo seleccionados** si está activo. Se incluyen todas las páginas del alcance elegido; no hace falta seleccionar todo para exportar la consulta completa.
+
+El archivo tiene cuatro hojas:
+
+- **Resumen**: base, usuario, fecha UTC, documento, cuenta, filtros y totales. Distingue el bruto/neto del archivo de los importes exportados.
+- **Liquidacion**: operaciones del PDF con fechas, lotes, cupones, terminal, cantidades, bruto, estado y número de conciliación.
+- **Alfa**: movimientos contables autorizados, comprobantes, sucursal, presentación, cupón, importe y estado. Identifica liquidaciones del sistema anterior y movimientos modificados después de conciliar.
+- **Conciliaciones**: una fila por vínculo, cantidades y totales exportados de ambos lados. Para revisar sus movimientos, filtrá ese número en las hojas Liquidacion y Alfa. Los totales confirmados, usuario, fecha UTC y motivo se incluyen solo cuando el grupo completo de esta importación está disponible y no tiene movimientos modificados. Los vínculos parciales se indican expresamente.
+
+Las fechas e importes son valores de Excel; los códigos conservan sus ceros iniciales. Los encabezados quedan inmovilizados y los detalles tienen filtros. La exportación vuelve a consultar los datos con los permisos vigentes y no cambia asientos ni conciliaciones. Un alcance vacío produce un archivo con encabezados y totales en cero.
+
+**Este informe compara presentaciones con liquidaciones de tarjetas: no confirma por sí solo la acreditación bancaria.**
+
+
+## Cambiar límites y probar agrupaciones
+
+Al pulsar **Asistir con IA** se abre **Criterios de búsqueda**. Modificá los valores y pulsá **Aplicar y analizar**. Podés repetir el análisis cambiando los límites; no se confirma nada automáticamente. Los valores elegidos quedan para esa pantalla, sin modificar los de otros usuarios ni los predeterminados de la base. **Valores de la base** recupera los predeterminados.
+
+| Criterio | Inicial | Rango | Uso |
+|---|---:|---:|---|
+| Margen entre fechas | 3 días | 0–31 | Diferencia entre presentación del PDF y operación de Alfa. |
+| Máximo de movimientos por día/grupo | 200 | 1–500 | Limita tanto los días que se exploran como el tamaño de cada grupo propuesto. |
+| Conceptos PDF combinados | 4 | 1–6 | Combina filas del mismo lote, presentación y terminal, por ejemplo crédito y débito. |
+| Intentos de agrupación (modo anterior) | 100.000 | 100–1.000.000 | Acota la búsqueda; se informa si no pudo agotarse. |
+| Filas por petición a la IA | 2.000 | 50–2.000 | Cantidad por lado en cada lote enviado al modelo. |
+
+Para el caso de los siete conceptos de Nación, en modo anterior usá **3 días, 200 movimientos, 4 conceptos y 100.000 intentos**; en modo automático podés conservar los valores predeterminados. Se pueden proponer así grupos de 28, 30, 32 o 43 movimientos. Las agrupaciones grandes se calculan localmente; el modelo mantiene su máximo de 20 índices por propuesta y atiende los casos que quedan.
+
+La búsqueda prueba primero el total de un día y sucursal; después, si está activado **Probar subconjuntos**, explora combinaciones dentro de ese día con la misma cantidad y total. No mezcla sucursales ni usa cuotas para multiplicar importes. Descarta candidatos que compiten por los mismos registros. Una coincidencia de cantidad e importe es evidencia para revisar, no prueba la identidad individual del cupón.
+
+El margen no amplía automáticamente un período general que cambiaste manualmente. **Usar período del PDF con margen** carga ese período y actualiza la comparación. Al abrir una importación también se incluye el margen predeterminado.
+
+Podés desactivar **Consultar IA para los casos que queden** para ensayar únicamente agrupaciones locales, sin enviar información al modelo. Si todo queda propuesto por el motor local tampoco se hacen peticiones de IA. Las propuestas distinguen **Agrupación local** de **IA**.
+
+Si alcanza el máximo de intentos, avisa y conserva solo las coincidencias diarias cuya exploración terminó. No presenta una búsqueda interrumpida como exhaustiva. Si falla el modelo y ya había agrupaciones locales, las conserva y muestra un aviso con código; no muestra propuestas parciales del modelo como completas.
+
+La tolerancia de importes sigue siendo la configurada para la base; no se amplía al cambiar estos límites. Toda diferencia requiere aceptación y motivo al confirmar. Las propuestas grandes pueden confirmarse juntas, con un máximo de 500 registros por lado y grupo, respetando además los límites totales de la tanda. No se modifican los asientos existentes.
+
+
+## Avance del análisis
+
+Mientras se procesa, se muestra **Paso 1 de 4** (consultar movimientos), **2 de 4** (buscar agrupaciones), **3 de 4** (analizar los casos restantes con IA) y **4 de 4** (preparar resultados). La barra representa etapas completadas, no porcentaje de tiempo.
+
+Durante las consultas de IA se indica el lote actual, el total, cuántos terminaron y cuántos quedan por finalizar. Una consulta se cuenta como completada después de recibir y validar la respuesta. También se muestra el **tiempo transcurrido**. No se estima un tiempo restante: cada respuesta puede tardar distinto. Si todo se resuelve localmente, se informa que no hacen falta consultas al modelo.
+
+
+## Recuperar un análisis al volver a entrar
+
+Al terminar **Aplicar y analizar**, el resultado se guarda automáticamente en la base, asociado a esa liquidación y a tu usuario. Conserva las propuestas, evidencias, modelo, filtros y límites de búsqueda, incluso si no encontró coincidencias. No guarda casillas seleccionadas ni confirma conciliaciones.
+
+Al abrir nuevamente la liquidación aparece **Análisis guardado**, con fecha y hora, y **Ver análisis guardado**. Este botón recupera el último análisis de tu usuario, restaura su período y filtros y verifica los movimientos actuales, sin volver a consultar la IA. Se informa cuántas propuestas siguen disponibles y cuántas se omitieron. Los conteos y el resumen de búsqueda corresponden al análisis original.
+
+Si un movimiento cambió, ya fue conciliado o dejó de estar disponible con tus permisos, se omite toda la propuesta afectada. Si cambió la cuenta de la liquidación, hay que generar un análisis nuevo. Al confirmar se mantienen los controles transaccionales habituales. Podés confirmar las propuestas vigentes y volver a recuperar las restantes.
+
+Un nuevo análisis terminado pasa a ser el último disponible. Si falla un nuevo intento, se conserva el anterior. Para utilizar el guardado hay que ejecutar las actualizaciones de base que incluye esta versión antes de analizar.
+
+Esta etapa guarda resultados terminados. Cerrar la pantalla durante un análisis todavía puede interrumpirlo; continuar el trabajo sin la pantalla abierta corresponde a la futura integración con el worker de Recepción documental.
+
+
+## Recibir liquidaciones y analizarlas sin mantener la pantalla abierta
+
+En **Recepción documental → Nuevo** elegí **Liquidación de tarjetas** y adjuntá un PDF de hasta 20 MB. Para varios archivos usá **Alta por lote**: cada PDF de tarjetas genera una recepción independiente, aunque los nombres parezcan páginas de un mismo documento. En esta versión el tipo se elige explícitamente; no se clasifican automáticamente archivos de compras como liquidaciones.
+
+Al guardar se conserva el original y se encola su lectura. Si la conexión se interrumpió al encolar, abrí el documento y pulsá **Preparar análisis de tarjetas**. El alta documental ya guardada se conserva si falla el encolado.
+
+La ficha muestra **En cola → Leyendo PDF → Analizando → Listo para revisar**. Se actualiza cada cinco segundos durante el procesamiento y también tiene **Actualizar estado**. Podés cerrar el navegador: el worker del servidor continúa. La grilla y las tarjetas del listado muestran el estado del análisis de tus recepciones al actualizar la lista.
+
+Si no hay una cuenta identificable queda **Esperando cuenta**. Elegí una cuenta TJ activa, imputable y en pesos; podés indicar una sucursal de Alfa o dejarla vacía para incluir todas. Pulsá **Aplicar cuenta y continuar**. La ficha muestra las cuentas candidatas cuando la lectura las identificó.
+
+El worker usa los límites predeterminados de la base para buscar agrupaciones y consultar la IA para los casos restantes. Guarda las propuestas y su evidencia; no las confirma. Cuando termina, **Revisar en Conciliación de tarjetas** abre esa importación y ese análisis, restaurando su alcance y verificando los movimientos actuales. El análisis sigue asociado al usuario que encoló el documento; necesitás ingresar con ese usuario. En acceso restringido por `directo=1` se oculta el acceso al otro módulo.
+
+Si falla, reintenta hasta tres veces, con cinco minutos de espera. Después queda **Requiere revisión**, con código de incidente y **Reintentar**. El original y la importación ya creada se conservan. Un reinicio normal del servidor devuelve el trabajo a la cola; ante una interrupción brusca, otro ciclo lo recupera al vencer su reserva. El PDF idéntico de la misma cuenta se reutiliza si ya estaba importado: no se duplican sus movimientos.
+
+### Preparación del servidor
+
+- Publicar la aplicación y ejecutar las actualizaciones hasta **2026-10-31-003** (incluye los límites y el análisis persistente).
+- En **Administrar → Bases**, marcar **Incluir** en **Recepción documental · compras y tarjetas** para la base correspondiente. Se reutiliza la selección de bases del worker documental existente. El cliente debe tener **Comprobantes con IA** activo o en prueba vigente en la central.
+- Ejecutar los workers en la instancia asignada por Administrar; `ProcesosSegundoPlano:Deshabilitados=true` impide ejecutarlos en esa instalación.
+- Configurar Python con pypdf en **Administrar → Servidor** y la conexión de IA de esa instalación. Se reutiliza la configuración existente; no se cambia appsettings.json ni .env automáticamente.
+- El usuario que carga y prepara debe estar autorizado en esa base y tener permiso de Conciliación de tarjetas. El worker consulta movimientos con ese usuario y sus unidades; no utiliza un administrador genérico.
+
+`TARJETAS-DOCUMENTAL-HABILITADO` habilita este procesamiento en la base (inicial SI). `TARJETAS-DOCUMENTAL-MINUTOS` limita cada intento (inicial 20, de 1 a 120 minutos). Los límites de agrupación y de IA siguen siendo los de tarjetas. La confirmación final sigue siendo manual; no se generan LT, IVA ni asientos.
+
+Una recepción preparada conserva el PDF con el que se encoló. Para corregir el archivo creá otra recepción: el worker verifica que el adjunto siga siendo el original y no reemplaza silenciosamente un análisis por el de otro documento.
+
+
+## Búsqueda automática guiada por IA
+
+En **Asistir con IA → Aplicar y analizar**, **Búsqueda automática** queda activada inicialmente. El sistema elige fechas y sucursales dentro del filtro general: no hace falta ir probándolas manualmente para cada lote. Combina primero las filas pendientes del mismo lote, fecha y terminal; compara días completos y ventanas de días consecutivos, y busca selecciones o exclusiones dentro de un día. No mezcla sucursales.
+
+Ordena las búsquedas por costo para evitar que un lote difícil consuma todo el presupuesto antes de revisar los demás. En automático el presupuesto inicial es **1.000.000 de intentos por pasada**, y se permiten **hasta 3 días consecutivos por grupo**. Ambos se pueden ajustar en los criterios, con máximos de 1.000.000 y 7 respectivamente. El margen entre fecha PDF y Alfa, el máximo de movimientos y los demás límites siguen vigentes. La tolerancia de dinero no se aumenta.
+
+Si quedan lotes explorables y está habilitada la consulta al modelo, la IA recibe objetivos y resúmenes de fechas/sucursales y elige alcances para una segunda búsqueda. Ese plan no confirma importes: el motor vuelve a comprobar cantidades, sumas, fechas, sucursal y alternativas sobre los registros reales. Puede proponer así grupos de más de 20 movimientos, hasta el máximo autorizado, sin pedir al modelo que enumere todos los comprobantes. Después se utiliza la asistencia de movimientos existente para lo que siga pendiente. No hay un ciclo ilimitado de llamadas: hay como máximo un plan y una segunda pasada local, además de los lotes de IA del período.
+
+La búsqueda puede devolver una propuesta válida dentro de una fecha/sucursal sin haber agotado cualquier combinación del período. En ese caso lo dice expresamente en **Diagnóstico y alcances de la búsqueda**. Las propuestas conservan sus importes y requieren revisión y confirmación; una suma coincidente no prueba la identidad individual de los cupones.
+
+Los avisos **Ambiguo** y **YaConciliado** aparecen directamente en la revisión. Se muestran comprobantes alternativos cuando están disponibles y vínculos que podrían explicar un faltante. Los casos ambiguos no se mandan otra vez al modelo para que elija uno por importe. No se desconcilia ni se mueve un registro de otro vínculo automáticamente.
+
+El caso de Patagonia analizado se puede resolver con cinco grupos candidatos para ocho filas PDF y 119 movimientos de Alfa, incluyendo el fin de semana y un centavo de diferencia. Los otros tres registros quedan señalados para revisar la identidad y el vínculo anterior. Es un resultado del caso probado, no una garantía de resolver cualquier liquidación.
+
+Para volver al comportamiento anterior desactivá **Búsqueda automática**. En ese modo vuelve a usarse el máximo de intentos de agrupación anterior. La actualización `2026-10-31-004` registra los predeterminados por base; los ajustes de esta ventana siguen siendo temporales para el análisis. La misma estrategia se usa al procesar desde Recepción documental.

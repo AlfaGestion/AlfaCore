@@ -51,10 +51,10 @@ public sealed partial class ConciliacionTarjetasService
         var ds=new HashSet<long>();var ms=new HashSet<string>();var resultado=new List<(GrupoConfirmacion,string)>();
         foreach(var p in solicitud.Propuestas)
         {
-            if(p.Detalles.Count is 0 or >20||p.Movimientos.Count is 0 or >20||string.IsNullOrWhiteSpace(p.Evidencia)||p.Evidencia.Length>500
+            if(p.Detalles.Count is 0 or >500||p.Movimientos.Count is 0 or >500||string.IsNullOrWhiteSpace(p.Evidencia)||p.Evidencia.Length>500
                 ||p.Detalles.Any(d=>!ds.Add(d))||p.Movimientos.Any(m=>!ms.Add(m.Clave)))
-                throw new InvalidOperationException("Las propuestas tienen registros repetidos o exceden los 20 movimientos por lado de un grupo de IA. Volvé a analizar.");
-            var motivo=(solicitud.Motivo.Trim().Length>0?solicitud.Motivo.Trim()+" · ":"")+"IA · "+p.Evidencia;
+                throw new InvalidOperationException("Las propuestas tienen registros repetidos o exceden los 500 movimientos por lado de una propuesta. Volvé a analizar.");
+            var motivo=(solicitud.Motivo.Trim().Length>0?solicitud.Motivo.Trim()+" · ":"")+"Asistencia · "+p.Evidencia;
             if(motivo.Length>500)motivo=motivo[..500];
             var grupo=ResolverConfirmacion(actual,new(solicitud.Filtro,p.Detalles,p.Movimientos,motivo));
             if(grupo.Total!=grupo.Alfa&&(!solicitud.AceptarDiferencias||string.IsNullOrWhiteSpace(solicitud.Motivo)))

@@ -9,6 +9,8 @@
 @inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject IJSRuntime Js
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.TarjetasRecepcionService RecepcionTarjetas
+@inject AlfaCore.Services.IPermissionService PermisosTarjetas
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -150,6 +152,8 @@
                                     <span>@item.TipoDocumentoDescripcion</span>
                                 </div>
                                 <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
+                                @if(_tarjetasEstados.TryGetValue(item.IdComprobanteRecibido,out var trabajoTarjeta))
+                                {<small title="@trabajoTarjeta.Mensaje">Tarjetas: @AlfaCore.Components.Shared.RecepcionTarjetasPanel.Estado(trabajoTarjeta.Estado)</small>}
                             </div>
 
                             <p class="interfaces-mobile-card__summary">@GetSummary(item.Observacion)</p>
@@ -305,6 +309,8 @@
                                                     break;
                                                 case InterfacesViewColumnKeys.Estado:
                                                     <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
+                                @if(_tarjetasEstados.TryGetValue(item.IdComprobanteRecibido,out var trabajoTarjeta))
+                                {<small title="@trabajoTarjeta.Mensaje">Tarjetas: @AlfaCore.Components.Shared.RecepcionTarjetasPanel.Estado(trabajoTarjeta.Estado)</small>}
                                                     break;
                                                 case InterfacesViewColumnKeys.AprobacionCompras:
                                                     @if (item.FechaAprobacionCompras.HasValue)
@@ -800,6 +806,7 @@
 @code {
     private readonly InterfacesFilters _filters = new();
     private readonly List<InterfacesInboxItemDto> _items = [];
+    private readonly Dictionary<long,TarjetasRecepcionTrabajo> _tarjetasEstados = [];
     private readonly List<InterfacesEstadoOptionDto> _states = [];
     private readonly List<InterfacesTipoDocumentoOptionDto> _documentTypes = [];
     private readonly List<InterfacesViewColumnDto> _viewSettingsDraft = [];
@@ -1081,7 +1088,7 @@
 
     private void ClearTenantState()
     {
-        _items.Clear();
+        _tarjetasEstados.Clear();_items.Clear();
         _states.Clear();
         _documentTypes.Clear();
         _selectedIds.Clear();
@@ -1195,8 +1202,16 @@
                 return;
             }
 
-            _items.Clear();
+            _tarjetasEstados.Clear();_items.Clear();
             _items.AddRange(result.Value.Items);
+            var tarjetasIds=_items.Where(i=>i.TipoDocumentoCodigo==AlfaCore.Services.TarjetasRecepcionService.Tipo).Select(i=>i.IdComprobanteRecibido).ToArray();
+            if(tarjetasIds.Length>0&&await PermisosTarjetas.HasAccessAsync(AlfaCore.Services.ConciliacionTarjetasService.MenuKey))
+            {
+                var trabajos=await UiOps.RunAsync(()=>RecepcionTarjetas.ConsultarAsync(tarjetasIds),"No se pudieron consultar los análisis de tarjetas.");
+                if(!IsCurrentTenant(lease))return;
+                if(trabajos.Success&&trabajos.Value is not null)foreach(var trabajo in trabajos.Value)_tarjetasEstados[trabajo.DocumentoId]=trabajo;
+                else SetFeedback(trabajos.Feedback);
+            }
             if (_openRowActionsId.HasValue && !_items.Any(item => item.IdComprobanteRecibido == _openRowActionsId.Value))
                 _openRowActionsId = null;
             _selectedIds.IntersectWith(_items.Select(item => item.IdComprobanteRecibido));

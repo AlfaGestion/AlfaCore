@@ -4,6 +4,10 @@
 
 MV_ASIENTOS continúa como fuente contable oficial de tarjetas presentadas. Los nuevos auxiliares TJ_Importacion, TJ_Detalle, TJ_Vinculo, TJ_VinculoDetalle y TJ_VinculoAlfa conservan PDF, detalle y auditoría; no reemplazan ni escriben contabilidad o marcas legacy. Se crean mediante `2026-10-27-002`; contrato en [Conciliación de tarjetas](modulos/conciliacion-tarjetas.md). `BK_ImportacionExtracto.ArchivoOriginal` se incorpora por `2026-10-27-001` para testigos bancarios transaccionales; históricos NULL.
 
+`TJ_Analisis` (actualización `2026-10-31-002`) conserva snapshots versionados del análisis de tarjetas por importación y usuario. Solo propuestas y evidencia; recuperar revalida contra las fuentes oficiales y confirmar no cambia su contrato. Ver [conciliación de tarjetas](modulos/conciliacion-tarjetas.md).
+
+`TJ_Recepcion` (actualización `2026-10-31-003`) es la cola operativa de liquidaciones recibidas como `LIQUIDACION_TARJETAS`, vinculada a INT_COMPROBANTE_RECIBIDO, TJ_Importacion y TJ_Analisis. No registra asientos ni conciliaciones confirmadas. Usa los originales y catálogos documentales existentes; no usa IA_Compras_CAB para tarjetas.
+
 ## Objetivo
 
 Este archivo define objetos SQL importantes de Alfa Gestión y aclara su **tipo real o uso recomendado**.

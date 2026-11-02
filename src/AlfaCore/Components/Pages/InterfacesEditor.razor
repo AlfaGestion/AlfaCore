@@ -233,6 +233,10 @@
                         </div>
                     }
 
+                    @if (_detail.TipoDocumentoCodigo == "LIQUIDACION_TARJETAS")
+                    {
+                        <AlfaCore.Components.Shared.RecepcionTarjetasPanel @key="_detail.IdComprobanteRecibido" DocumentoId="_detail.IdComprobanteRecibido" />
+                    }
                     @if (CanDetectCompra)
                     {
                         <div class="interfaces-inline-note">

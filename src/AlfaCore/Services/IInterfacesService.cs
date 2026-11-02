@@ -4,6 +4,7 @@ namespace AlfaCore.Services;
 
 public interface IInterfacesService
 {
+    Task EncolarTarjetasAsync(long documento, CancellationToken ct = default, Guid? sesionEsperada = null);
     Task<IReadOnlyList<InterfacesEstadoOptionDto>> GetStatesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<InterfacesEstadoOptionDto>> GetStatesAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<IReadOnlyList<InterfacesTipoDocumentoOptionDto>> GetDocumentTypesAsync(CancellationToken ct = default);

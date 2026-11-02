@@ -23,17 +23,19 @@ public partial class ConciliacionTarjetas
         _feedback=null;_aceptarDiferenciasIa=false;_motivoIaVarias="";_mostrarIa=false;_confirmarIaVarias=true;
     }
     private void VolverAPropuestasIa(){if(_busy)return;_confirmarIaVarias=false;_mostrarIa=true;}
+    private AppUiMessage ProgresoConfirmarIa=>AppUiMessage.InProgress("Guardando conciliaciones…",
+        $"Se están verificando y guardando {PropuestasIaElegidas.Count} propuestas. Esperá la confirmación antes de cerrar esta pantalla.");
     private Task GuardarVariasIa()=>Operar(async ct=>
     {
         if(!PuedeConfirmarVariasIa||_aplicado is null)return;
         var seleccion=PropuestasIaElegidas.Select(p=>
         {
-            var evidencia=p.Confianza+": "+p.Motivo;if(evidencia.Length>500)evidencia=evidencia[..500];
+            var evidencia=p.Origen+" · "+p.Confianza+": "+p.Motivo;if(evidencia.Length>500)evidencia=evidencia[..500];
             return new TarjetasIaSeleccion(p.Detalles.Select(d=>d.Id).ToList(),p.Movimientos.Select(m=>new TarjetasSeleccion(m.Clave,m.Huella)).ToList(),evidencia);
         }).ToList();
         var ids=await Servicio.ConfirmarVariasAsync(new(_aplicado,seleccion,_aceptarDiferenciasIa,_motivoIaVarias),ct);
         _confirmarIaVarias=false;_mostrarIa=false;
         await CompararCore(ct);_importaciones=await Servicio.ImportacionesAsync(ct);
         _feedback=AppUiMessage.Success("Propuestas confirmadas",$"Se guardaron {ids.Count} conciliaciones independientes con su evidencia y motivo. Los importes originales se conservaron.");
-    },AppUiMessage.InProgress("Confirmando propuestas…","Verificando todas las propuestas seleccionadas antes de guardar sus conciliaciones. Esperá hasta que termine."));
+    },ProgresoConfirmarIa,"confirmar-ia");
 }

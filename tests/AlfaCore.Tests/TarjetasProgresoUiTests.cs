@@ -42,7 +42,17 @@ public sealed class TarjetasProgresoUiTests
         var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
         await renderer.Dispatcher.InvokeAsync(()=>
         {
-            Func<CancellationToken,Task> trabajo=_=>{inicio.SetResult();return completar.Task;};
+            typeof(ConciliacionTarjetas).GetField("_analisisGuardado",Flags)!.SetValue(capture.Page,new TarjetasAnalisisReferencia(24,new(2026,10,31,12,0,0,DateTimeKind.Utc)));
+            Func<CancellationToken,Task> trabajo=ct=>
+            {
+                Func<Task> analizar=async()=>
+                {
+                    await (Task)typeof(ConciliacionTarjetas).GetMethod("MostrarAvanceAnalisis",Flags)!.Invoke(capture.Page,
+                        [new TarjetasProgresoAnalisis(3,"Esperando respuesta de IA",LoteActual:2,TotalLotes:4,LotesCompletados:1)])!;
+                    inicio.SetResult();await completar.Task;
+                };
+                return (Task)typeof(ConciliacionTarjetas).GetMethod("ConRelojAnalisis",Flags)!.Invoke(capture.Page,[analizar,ct])!;
+            };
             operacion=(Task)typeof(ConciliacionTarjetas).GetMethod("Operar",Flags)!.Invoke(capture.Page,
                 [trabajo,AppUiMessage.InProgress("Analizando con IA…","Buscando coincidencias; esperá el resultado."),"ia"])!;
         });
@@ -50,20 +60,38 @@ public sealed class TarjetasProgresoUiTests
         await renderer.Dispatcher.InvokeAsync(()=>
         {
             var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
-            Assert.Contains("Analizando con IA…",html);Assert.Contains("Buscando coincidencias",html);
+            Assert.Contains("Paso 3 de 4",html);Assert.Contains("Esperando respuesta de IA",html);
+            Assert.Contains("Lote 2 de 4; 1 completados; quedan 3 por finalizar",html);
+            Assert.Contains("<progress",html);Assert.Contains("2 de 4 etapas completadas",html);
+            Assert.Contains("Tiempo transcurrido",html);Assert.Contains("Agrupaciones",html);Assert.Contains("Resultados",html);
+            Assert.Contains("Análisis guardado",html);Assert.Contains("Ver análisis guardado",html);
+            Assert.DoesNotContain("Tiempo restante",html);
             Assert.Contains("role=\"status\"",html);Assert.Contains("aria-live=\"polite\"",html);
             Assert.Contains("alfa-feedback-panel__icon--spin",html);
             var ia=header.Current.Actions.Single(x=>x.Key=="ia");
             Assert.True(ia.Busy);Assert.True(ia.Disabled);Assert.Equal("Analizando con IA…",ia.Label);
             Assert.All(header.Current.Actions,a=>Assert.True(a.Disabled));
         });
+        if(resultado=="exito")
+        {
+            await Task.Delay(1200);
+            await renderer.Dispatcher.InvokeAsync(()=>
+            {
+                var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+                Assert.DoesNotContain("<strong>00:00</strong>",html);
+                Assert.Contains("Tiempo transcurrido",html);
+            });
+        }
         if(resultado=="error")completar.SetException(new InvalidOperationException("Fallo de ensayo"));
         else if(resultado=="cancelacion")completar.SetCanceled();else completar.SetResult();
         await operacion!.WaitAsync(TimeSpan.FromSeconds(5));
         await renderer.Dispatcher.InvokeAsync(()=>
         {
             var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
-            Assert.DoesNotContain("Buscando coincidencias",html);Assert.DoesNotContain("tarjetas-progreso",html);
+            Assert.DoesNotContain("Esperando respuesta de IA",html);Assert.DoesNotContain("tarjetas-progreso",html);
+            Assert.Null(typeof(ConciliacionTarjetas).GetField("_avanceAnalisis",Flags)!.GetValue(capture.Page));
+            var reloj=(System.Diagnostics.Stopwatch)typeof(ConciliacionTarjetas).GetField("_relojAnalisis",Flags)!.GetValue(capture.Page)!;
+            Assert.False(reloj.IsRunning);
             var ia=header.Current.Actions.Single(x=>x.Key=="ia");Assert.False(ia.Busy);Assert.False(ia.Disabled);Assert.Equal("Asistir con IA",ia.Label);
             Assert.Contains("misma fecha e importe",header.Current.Actions.Single(x=>x.Key=="proponer").Title);
             if(resultado=="error")Assert.NotNull(typeof(ConciliacionTarjetas).GetField("_feedback",Flags)!.GetValue(capture.Page));
@@ -158,6 +186,86 @@ public sealed class TarjetasProgresoUiTests
             Assert.Equal("Me equivoqué de archivo",typeof(ConciliacionTarjetas).GetField("_motivoEliminar",Flags)!.GetValue(capture.Page));
             Assert.Equal("Me equivoqué de archivo",input.Value);
             Assert.DoesNotContain("value=\"_motivoEliminar\"",root.ToHtmlString());
+        });
+    }
+
+    [Fact]
+    public async Task CriteriosPermitenEscribirYConservanLosLimitesSinModificarLaBase()
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var sessions=Proxy<ISessionService>((_,_)=>null);var users=Proxy<IAppUserSessionService>((_,_)=>null);
+        var service=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,null!);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(service);services.AddSingleton(sessions);services.AddSingleton(users);
+        services.AddSingleton(runtime.Events);services.AddSingleton<IPageHeaderService,PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService,AppUiOperationService>();services.AddSingleton<NavigationManager,CargaComprobantesUiTests.TestNavigation>();
+        services.AddSingleton(Proxy<IRouteContextService>((_,_)=>null));services.AddSingleton(Proxy<IJSRuntime>((_,_)=>null));
+        var capture=new Captura();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            typeof(ConciliacionTarjetas).GetField("_mostrarCriteriosIa",Flags)!.SetValue(capture.Page,true);
+            typeof(ComponentBase).GetMethod("StateHasChanged",Flags)!.Invoke(capture.Page,null);
+            var dias=capture.Inputs.Single(i=>i.Label=="Margen entre fechas (días)");
+            var grupo=capture.Inputs.Single(i=>i.Label=="Máximo de movimientos por día/grupo");
+            Assert.Equal("3",dias.Value);Assert.Equal("200",grupo.Value);
+            await dias.ValueChanged.InvokeAsync("5");await grupo.ValueChanged.InvokeAsync("300");
+            var criterios=(TarjetasCriteriosAnalisis)typeof(ConciliacionTarjetas).GetMethod("LeerFormularioCriterios",Flags)!.Invoke(capture.Page,null)!;
+            Assert.Equal(5,criterios.Dias);Assert.Equal(300,criterios.MaxMovimientosGrupo);
+            Assert.Equal("5",dias.Value);Assert.Equal("300",grupo.Value);
+            Assert.Contains("Aplicar y analizar",System.Net.WebUtility.HtmlDecode(root.ToHtmlString()));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfirmacionMasivaMuestraGuardadoEnElPieDelModalMientrasEspera(bool falla)
+    {
+        using var runtime=new CargaComprobantesArcaRuntime();
+        var sessions=Proxy<ISessionService>((_,_)=>null);var users=Proxy<IAppUserSessionService>((_,_)=>null);
+        var service=new ConciliacionTarjetasService(sessions,users,Proxy<IPermissionService>((_,_)=>Task.FromResult(true)),runtime.Events,null!);
+        var services=new ServiceCollection();services.AddLogging();services.AddSingleton(service);services.AddSingleton(sessions);services.AddSingleton(users);
+        services.AddSingleton(runtime.Events);services.AddSingleton<IPageHeaderService,PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService,AppUiOperationService>();services.AddSingleton<NavigationManager,CargaComprobantesUiTests.TestNavigation>();
+        services.AddSingleton(Proxy<IRouteContextService>((_,_)=>null));services.AddSingleton(Proxy<IJSRuntime>((_,_)=>null));
+        var capture=new Captura();services.AddSingleton<IComponentActivator>(capture);
+        using var provider=services.BuildServiceProvider();await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
+        var inicio=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var terminar=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);Task? operacion=null;
+        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PaginaSinCarga>());
+        await renderer.Dispatcher.InvokeAsync(()=>
+        {
+            var propuestas=Enumerable.Range(1,60).Select(i=>new TarjetasIaPropuesta("Alta","Coincidencia revisada",[new(){Id=i,Importe=100}],[new(){Clave=i.ToString(),Importe=100}])).ToList();
+            typeof(ConciliacionTarjetas).GetField("_ia",Flags)!.SetValue(capture.Page,new TarjetasIaResultado("ensayo",60,60,0,3,propuestas));
+            typeof(ConciliacionTarjetas).GetMethod("SeleccionarIa",Flags)!.Invoke(capture.Page,[false]);
+            typeof(ConciliacionTarjetas).GetMethod("PedirConfirmarVariasIa",Flags)!.Invoke(capture.Page,null);
+            var progreso=(AppUiMessage)typeof(ConciliacionTarjetas).GetProperty("ProgresoConfirmarIa",Flags)!.GetValue(capture.Page)!;
+            Func<CancellationToken,Task> guardar=async _=>
+            {
+                inicio.SetResult();await terminar.Task;
+                typeof(ConciliacionTarjetas).GetField("_confirmarIaVarias",Flags)!.SetValue(capture.Page,false);
+            };
+            operacion=(Task)typeof(ConciliacionTarjetas).GetMethod("Operar",Flags)!.Invoke(capture.Page,[guardar,progreso,"confirmar-ia"])!;
+        });
+        await inicio.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await renderer.Dispatcher.InvokeAsync(()=>
+        {
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            var pie=html[html.IndexOf("tarjetas-confirmacion-footer",StringComparison.Ordinal)..];
+            Assert.Contains("Guardando conciliaciones…",pie);Assert.Contains("guardando 60 propuestas",pie);
+            Assert.Contains("Guardando propuestas…",pie);Assert.Contains("alfa-button__spinner",pie);
+            Assert.Contains("aria-busy=\"true\"",pie);Assert.Contains("role=\"status\"",pie);
+            Assert.DoesNotContain("Confirmar 60 propuestas",pie);
+        });
+        if(falla)terminar.SetException(new InvalidOperationException("No se pudo guardar el ensayo"));else terminar.SetResult();
+        await operacion!.WaitAsync(TimeSpan.FromSeconds(5));
+        await renderer.Dispatcher.InvokeAsync(()=>
+        {
+            var html=System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.DoesNotContain("Guardando propuestas…",html);Assert.DoesNotContain("Guardando conciliaciones…",html);
+            Assert.Equal(falla,(bool)typeof(ConciliacionTarjetas).GetField("_confirmarIaVarias",Flags)!.GetValue(capture.Page)!);
+            if(falla){Assert.Contains("Confirmar 60 propuestas",html);Assert.Contains("No se pudo guardar el ensayo",html);}
         });
     }
 

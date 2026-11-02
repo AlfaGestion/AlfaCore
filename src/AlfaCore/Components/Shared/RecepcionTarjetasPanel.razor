@@ -1,0 +1,107 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject TarjetasRecepcionService Recepcion
+@inject ConciliacionTarjetasService Tarjetas
+@inject IInterfacesService Interfaces
+@inject IAppUiOperationService UiOps
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuarios
+@inject IRouteContextService Rutas
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<section class="panel-card">
+    <strong>Liquidación de tarjetas · preparación en segundo plano</strong>
+    <AlfaFeedbackPanel Message="_feedback" />
+    @if(_trabajo is {} trabajo)
+    {
+        <p role="status"><strong>@Estado(trabajo.Estado)</strong> · @trabajo.Mensaje</p>
+        @if(trabajo.Cuenta.Length>0){<p>Cuenta @trabajo.Cuenta · Sucursal @(trabajo.Sucursal.Length==0?"Todas":trabajo.Sucursal)</p>}
+        @if(trabajo.Estado is "CUENTA" or "ERROR")
+        {
+            @if(!trabajo.ImportacionId.HasValue)
+            {
+                <AlfaSelect Label="Cuenta de tarjeta (TJ, pesos)" Value="@_cuenta" ValueChanged="v=>_cuenta=v??string.Empty" Options="Opciones" Placeholder="Detectar o elegir cuenta" Disabled="_busy" />
+                @if(_candidatas.Count>0){<p>Cuentas sugeridas: @string.Join(" · ",_candidatas.Select(c=>$"{c.Cuenta} {c.Descripcion}"))</p>}
+            }
+            <AlfaInput Label="Sucursal de Alfa (opcional; vacío incluye todas)" Value="@_sucursal" ValueChanged="v=>_sucursal=v??string.Empty" MaxLength="10" Disabled="_busy" />
+            <AlfaButton Disabled="_busy" OnClick="Continuar">@(trabajo.Estado=="ERROR"?"Reintentar":"Aplicar cuenta y continuar")</AlfaButton>
+        }
+        @if(trabajo.Estado=="LISTO"&&trabajo.ImportacionId.HasValue&&!Directo)
+        {
+            <AlfaButton Icon="bi-box-arrow-up-right" Disabled="_busy" OnClick="Abrir">Revisar en Conciliación de tarjetas</AlfaButton>
+        }
+    }
+    else
+    {
+        <p>Se conserva el original. Prepará la lectura y las propuestas para revisarlas después desde Conciliación.</p>
+        <AlfaButton Disabled="_busy" OnClick="Encolar">Preparar análisis de tarjetas</AlfaButton>
+    }
+    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="Actualizar">Actualizar estado</AlfaButton>
+    <small>Podés cerrar esta pantalla. El servidor continúa los trabajos encolados; las propuestas requieren revisión y confirmación.</small>
+</section>
+
+@code {
+    [Parameter] public long DocumentoId {get;set;}
+    private TarjetasRecepcionTrabajo? _trabajo;
+    private AppUiMessage? _feedback;
+    private bool _busy,_disposed,_fallo;
+    private long _cargado;
+    private Guid? _sesionDocumento;
+    private string _cuenta="",_sucursal="";
+    private IReadOnlyList<ConciliacionCuenta> _cuentas=[];
+    private IReadOnlyList<TarjetasCuentaCandidata> _candidatas=[];
+    private readonly CancellationTokenSource _lifetime=new();
+    private Task? _reloj;
+    private readonly CancellationToken _token;
+    public RecepcionTarjetasPanel(){_token=_lifetime.Token;}
+    private bool Directo=>Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo",out var d)&&d=="1";
+    private IReadOnlyList<AlfaSelectOption> Opciones=>_cuentas.Where(c=>c.Moneda=="1").Select(c=>new AlfaSelectOption(c.Codigo,c.Codigo+" · "+c.Descripcion)).ToList();
+    protected override async Task OnParametersSetAsync()
+    {
+        if(_cargado==DocumentoId)return;_cargado=DocumentoId;_sesionDocumento=Sesiones.GetActiveSession()?.Id;_trabajo=null;_cuenta="";_sucursal="";_fallo=false;
+        await Actualizar();_reloj??=Refrescar();
+    }
+    private async Task Operar(Func<Task> trabajo)
+    {
+        if(_busy||_disposed||!TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;
+        var sesion=Sesiones.GetActiveSession()!.Id;var documento=DocumentoId;_busy=true;
+        try
+        {
+            var resultado=await UiOps.RunAsync(trabajo,"No se pudo consultar la recepción de tarjetas.");
+            if(_disposed||Sesiones.GetActiveSession()?.Id!=sesion||DocumentoId!=documento||!TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios)){_trabajo=null;return;}
+            _fallo=!resultado.Success;_feedback=resultado.Feedback;
+        }
+        finally{_busy=false;}
+    }
+    private Task Actualizar()=>Operar(Cargar);
+    private async Task Cargar()
+    {
+        var id=DocumentoId;var sesion=Sesiones.GetActiveSession()?.Id;
+        var filas=await Recepcion.ConsultarAsync([id],_token);
+        var cuentas=await Tarjetas.CuentasAsync(_token);
+        if(_disposed||DocumentoId!=id||Sesiones.GetActiveSession()?.Id!=sesion)return;
+        _cuentas=cuentas;_trabajo=filas.SingleOrDefault();
+        if(_trabajo is {} t)
+        {
+            _cuenta=t.Cuenta;_sucursal=t.Sucursal;
+            _candidatas=string.IsNullOrWhiteSpace(t.Candidatas)?[]:System.Text.Json.JsonSerializer.Deserialize<List<TarjetasCuentaCandidata>>(t.Candidatas)??[];
+        }
+    }
+    private Task Encolar()=>Operar(async()=>{await Interfaces.EncolarTarjetasAsync(DocumentoId,_token,_sesionDocumento);await Cargar();});
+    private Task Continuar()=>Operar(async()=>{await Recepcion.ContinuarAsync(DocumentoId,_cuenta,_sucursal,_trabajo?.Estado=="ERROR",_token,_sesionDocumento);await Cargar();});
+    private void Abrir(){if(!Directo&&_trabajo?.ImportacionId is {} id)Nav.NavigateTo(Rutas.BuildRoute($"/caja-bancos/conciliacion-tarjetas?importacion={id}&analisis={_trabajo.AnalisisId}"));}
+    private async Task Refrescar()
+    {
+        using var timer=new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while(await timer.WaitForNextTickAsync(_token))
+                if(!_disposed&&!_fallo&&_trabajo?.Estado is "PENDIENTE" or "LEYENDO" or "ANALIZANDO")
+                    await InvokeAsync(async()=>{await Actualizar();if(!_disposed)StateHasChanged();});
+        }
+        catch(OperationCanceledException) when(_lifetime.IsCancellationRequested){}
+    }
+    internal static string Estado(string estado)=>estado switch{"PENDIENTE"=>"En cola","LEYENDO"=>"Leyendo PDF","CUENTA"=>"Esperando cuenta","ANALIZANDO"=>"Analizando","LISTO"=>"Listo para revisar","ERROR"=>"Requiere revisión",_=>estado};
+    public async ValueTask DisposeAsync(){_disposed=true;_lifetime.Cancel();if(_reloj is not null)await _reloj;_lifetime.Dispose();}
+}
