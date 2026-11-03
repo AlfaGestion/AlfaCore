@@ -1,0 +1,224 @@
+@page "/contabilidad/estudio-contable"
+@page "/{idweb}/{idbase:int}/contabilidad/estudio-contable"
+@using AlfaCore.Services
+@inject IEstudioAccesosService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Estudio contable | Alfa Gestión</PageTitle>
+
+@* El dueño da acceso a su estudio contable: se crea un usuario de la base con un perfil y el estudio entra con su propia cuenta. *@
+<div class="gd-page gd ec-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="ec-intro">
+        <i class="bi bi-briefcase" aria-hidden="true"></i>
+        <div>
+            <strong>Dale acceso a tu estudio contable</strong>
+            <p>Invitás al contador por email y le mandás el enlace. El estudio entra con su propia cuenta y ve todas las empresas que atiende;
+               en la tuya trabaja con un usuario propio, con los permisos que elijas. Podés quitarle el acceso cuando quieras.</p>
+            <small>Perfil <b>Consulta</b>: libros de IVA, diario, mayor, balances, retenciones y el paquete del mes.
+                   Perfil <b>Consulta y carga</b>: además control e importación de ARCA, fechas de cierre y recepción documental.
+                   Después podés ajustar sus permisos en Autorización de tareas, como con cualquier usuario.</small>
+        </div>
+    </section>
+
+    @if (_enlace is { } e)
+    {
+        <section class="ec-enlace">
+            <strong><i class="bi bi-link-45deg" aria-hidden="true"></i> Enlace de invitación para @e.Acceso.EmailInvitado</strong>
+            <div class="ec-enlace__fila">
+                <input class="ec-input" readonly value="@e.Enlace" />
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-clipboard" OnClick="_ => CopiarAsync(e.Enlace)">@(_copiado ? "Copiado" : "Copiar")</AlfaButton>
+                <a class="ec-mail" href="@MailTo(e)"><i class="bi bi-envelope" aria-hidden="true"></i> Enviar por email</a>
+            </div>
+            <small>Copialo ahora: por seguridad no se vuelve a mostrar. Vence el @e.Acceso.TokenVence?.ToString("dd/MM/yyyy"). Si se pierde, generá uno nuevo.</small>
+        </section>
+    }
+
+    @if (!_puede && _cargado)
+    {
+        <AlfaEmptyState Title="Sin permiso" Message="Solo quien administra los usuarios de la empresa puede dar acceso al estudio contable." />
+    }
+    else if (_accesos.Count == 0 && _cargado)
+    {
+        <AlfaEmptyState Title="Todavía no invitaste a ningún estudio" Message="Usá «Invitar estudio» para darle acceso a tu contador." />
+    }
+    else if (_accesos.Count > 0)
+    {
+        <section class="ec-tabla__marco">
+            <table class="ec-tabla">
+                <thead><tr><th>Estudio</th><th>Usuario en la empresa</th><th>Perfil</th><th>Estado</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var a in _accesos)
+                {
+                    <tr class="@(a.Estado == "REVOCADO" ? "is-revocado" : null)">
+                        <td>@(a.NombreEstudio.Length > 0 ? a.NombreEstudio : a.EmailInvitado)<small>@(a.LoginEstudio.Length > 0 ? a.LoginEstudio : a.EmailInvitado)</small></td>
+                        <td>@a.UsuarioBase</td>
+                        <td>@(a.Perfil == "CARGA" ? "Consulta y carga" : "Consulta")</td>
+                        <td>
+                            <span class="ec-estado ec-estado--@a.Estado.ToLowerInvariant()">@Estado(a)</span>
+                            <small>@Fecha(a)</small>
+                        </td>
+                        <td class="ec-acciones">
+                            @if (a.Estado == "PENDIENTE")
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-arrow-repeat" Disabled="_busy" OnClick="_ => RenovarAsync(a)">Nuevo enlace</AlfaButton>
+                            }
+                            @if (a.Estado != "REVOCADO")
+                            {
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-x-octagon" Disabled="_busy" OnClick="_ => _revocar = a">Quitar acceso</AlfaButton>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+<AlfaDialog Open="@(_nuevo is not null)" Title="Invitar estudio contable" Size="AlfaDialogSize.Md" Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _nuevo = null">
+    <ChildContent>
+    @if (_nuevo is { } n)
+    {
+        <div class="ec-form">
+            <AlfaInput Label="Email del contador" Type="email" Value="@n.Email" ValueChanged="v => n.Email = v ?? string.Empty" MaxLength="150"
+                       HelpText="Con este email crea su cuenta de estudio, o entra con la que ya tiene." />
+            <AlfaSelect Label="Perfil" Value="@n.Perfil" ValueChanged="CambiarPerfil"
+                        Options="@(new List<AlfaSelectOption> { new("CONSULTA", "Consulta"), new("CARGA", "Consulta y carga") })" />
+            <AlfaInput Label="Usuario en la empresa (opcional)" Value="@n.Usuario" ValueChanged="v => n.Usuario = v ?? string.Empty" MaxLength="30"
+                       Placeholder="@(n.Email.Contains('@') ? EstudioAccesosService.UsuarioDesdeEmail(n.Email) : "EST_contador")"
+                       HelpText="Es el usuario con el que el estudio trabaja en tu base: lo vas a ver en la auditoría." />
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _nuevo = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Disabled="_busy" OnClick="_ => InvitarAsync()">Crear invitación</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@(_revocar is not null)" Title="Quitar acceso al estudio" Size="AlfaDialogSize.Sm" Loading="@_busy" OnClose="() => _revocar = null">
+    <ChildContent>
+        @if (_revocar is { } r)
+        {
+            <p>El estudio <b>@(r.NombreEstudio.Length > 0 ? r.NombreEstudio : r.EmailInvitado)</b> deja de poder entrar a esta empresa
+               y se desactiva el usuario <b>@r.UsuarioBase</b>. Lo que haya cargado queda registrado.</p>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _revocar = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-x-octagon" Disabled="_busy" OnClick="_ => RevocarAsync()">Quitar acceso</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private IReadOnlyList<EstudioAcceso> _accesos = [];
+    private EstudioInvitarSolicitud? _nuevo;
+    private EstudioAcceso? _revocar;
+    private EstudioInvitacionCreada? _enlace;
+    private AppUiMessage? _feedback;
+    private string? _error;
+    private bool _busy, _puede, _cargado, _copiado;
+    private PageHeaderConfig? _header;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        _puede = await Service.PuedeAdministrarAsync();
+        if (_puede) await CargarAsync();
+        _cargado = true;
+        UpdateHeader();
+    }
+
+    private async Task CargarAsync()
+    {
+        var r = await UiOps.RunAsync(() => Service.ListarAsync(), "Estudio contable");
+        if (r.Success) _accesos = r.Value!; else _feedback = r.Feedback;
+    }
+
+    private string BaseUri => Nav.BaseUri;
+
+    private async Task InvitarAsync()
+    {
+        if (_nuevo is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            _enlace = await Service.InvitarAsync(_nuevo, BaseUri);
+            _copiado = false; _nuevo = null;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo crear la invitación."; }
+        finally { _busy = false; UpdateHeader(); }
+    }
+
+    private async Task RenovarAsync(EstudioAcceso a)
+    {
+        _busy = true;
+        var r = await UiOps.RunAsync(() => Service.RenovarEnlaceAsync(a.IdAcceso, BaseUri), "Estudio contable");
+        if (r.Success) { _enlace = r.Value; _copiado = false; await CargarAsync(); } else _feedback = r.Feedback;
+        _busy = false;
+    }
+
+    private async Task RevocarAsync()
+    {
+        if (_revocar is not { } a) return;
+        _busy = true;
+        var r = await UiOps.RunAsync(() => Service.RevocarAsync(a.IdAcceso), "Estudio contable");
+        _revocar = null;
+        if (r.Success) { _feedback = AppUiMessage.Success("Acceso quitado", $"El estudio ya no puede entrar a la empresa."); await CargarAsync(); }
+        else _feedback = r.Feedback;
+        _busy = false;
+    }
+
+    private async Task CopiarAsync(string texto)
+    {
+        try { await Js.InvokeVoidAsync("navigator.clipboard.writeText", texto); _copiado = true; }
+        catch (JSException) { _feedback = AppUiMessage.Info("Copiá el enlace", "Seleccioná el enlace y copialo a mano."); }
+    }
+
+    private static string MailTo(EstudioInvitacionCreada e)
+        => $"mailto:{Uri.EscapeDataString(e.Acceso.EmailInvitado)}?subject={Uri.EscapeDataString("Acceso a Alfa Gestión")}&body={Uri.EscapeDataString($"Hola, te doy acceso a nuestra empresa en Alfa Gestión. Entrá con este enlace (vence en 14 días):\n\n{e.Enlace}")}";
+
+    private static string Estado(EstudioAcceso a) => a.Estado switch
+    {
+        "ACTIVO" => "Con acceso", "PENDIENTE" => a.TokenVence < DateTime.Now ? "Invitación vencida" : "Invitación enviada", _ => "Sin acceso"
+    };
+
+    private static string Fecha(EstudioAcceso a) => a.Estado switch
+    {
+        "ACTIVO" => $"desde {a.FechaAceptacion:dd/MM/yyyy}", "REVOCADO" => $"quitado el {a.FechaRevocacion:dd/MM/yyyy}", _ => $"invitado el {a.FechaInvitacion:dd/MM/yyyy}"
+    };
+
+    private void CambiarPerfil(string? v) { if (_nuevo is not null) _nuevo.Perfil = string.IsNullOrEmpty(v) ? "CONSULTA" : v; }
+
+    private Task Nueva()
+    {
+        _error = null; _nuevo = new EstudioInvitarSolicitud();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Estudio contable",
+        Breadcrumb = ["Contabilidad", "Estudio contable"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "estudio-contable"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "invitar", Label = "Invitar estudio", Icon = "bi-person-plus", Style = PageHeaderActionStyle.Primary, Disabled = _busy || !_puede, OnClick = Nueva }
+        ]
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

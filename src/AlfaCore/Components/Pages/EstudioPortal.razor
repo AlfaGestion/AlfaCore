@@ -1,0 +1,160 @@
+@page "/estudio"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Services
+@inject IEstudioPortalService Portal
+@inject IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<EstudioPortal> Logger
+
+<PageTitle>Portal del estudio | Alfa Gestión</PageTitle>
+
+@* Portal del estudio contable: todas las empresas que le dieron acceso, con el estado del mes. *@
+<div class="ep-page">
+    <header class="ep-header">
+        <div>
+            <h1><i class="bi bi-briefcase" aria-hidden="true"></i> Portal del estudio</h1>
+            <span>@(AppUserSession.CurrentUser?.RazonSocial ?? "")</span>
+        </div>
+        <div class="ep-header__acciones">
+            <label>Mes
+                <input type="month" class="ep-input" value="@_mes.ToString("yyyy-MM")" @onchange="CambiarMes" disabled="@_cargando" />
+            </label>
+            <button type="button" class="ep-link" @onclick="SalirAsync"><i class="bi bi-box-arrow-right" aria-hidden="true"></i> Salir</button>
+        </div>
+    </header>
+
+    @if (_error is not null)
+    {
+        <div class="ep-aviso ep-aviso--error">@_error</div>
+    }
+
+    @if (_cargando)
+    {
+        <div class="ep-aviso"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Consultando las empresas…</div>
+    }
+    else if (_empresas.Count == 0 && _listo)
+    {
+        <div class="ep-vacio">
+            <i class="bi bi-buildings" aria-hidden="true"></i>
+            <strong>Todavía no tenés empresas</strong>
+            <p>Cuando una empresa te invite, abrí el enlace que te mandó y aceptá: aparece acá.</p>
+        </div>
+    }
+    else if (_empresas.Count > 0)
+    {
+        <section class="ep-kpis">
+            <div><b>@_empresas.Count</b><span>empresas</span></div>
+            <div><b>@_empresas.Count(e => e.Estado is { VentasCerradas: true, ComprasCerradas: true })</b><span>con el mes cerrado</span></div>
+            <div><b>@_empresas.Count(e => e.Estado?.UltimoPaquete is not null)</b><span>con paquete del mes</span></div>
+            <div><b>@_empresas.Count(e => e.Error is not null)</b><span>sin conexión</span></div>
+        </section>
+
+        <section class="ep-tabla__marco">
+            <table class="ep-tabla">
+                <thead>
+                    <tr><th>Empresa</th><th>Ventas</th><th>Compras</th><th>Control ARCA</th><th>Paquete del mes</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var e in _empresas)
+                {
+                    <tr>
+                        <td><b>@e.Empresa</b><small>@e.BaseNombre · @(e.Perfil == "CARGA" ? "consulta y carga" : "consulta")</small></td>
+                        @if (e.Estado is { } s)
+                        {
+                            <td>@Libro(s.Ventas, s.VentasCerradas, s.CierreVentas)</td>
+                            <td>@Libro(s.Compras, s.ComprasCerradas, s.CierreCompras)</td>
+                            <td class="ep-arca">
+                                @if (s.ControlArcaRecibidos.Length + s.ControlArcaEmitidos.Length == 0) { <span class="ep-muted">Sin control automático</span> }
+                                else
+                                {
+                                    @if (s.ControlArcaRecibidos.Length > 0) { <small title="@s.ControlArcaRecibidos">Recibidos: @Corto(s.ControlArcaRecibidos)</small> }
+                                    @if (s.ControlArcaEmitidos.Length > 0) { <small title="@s.ControlArcaEmitidos">Emitidos: @Corto(s.ControlArcaEmitidos)</small> }
+                                }
+                            </td>
+                            <td>@(s.UltimoPaquete is { } p ? $"Generado el {p:dd/MM HH:mm}" : "—")</td>
+                        }
+                        else
+                        {
+                            <td colspan="4" class="ep-muted">@(e.Error ?? "—")</td>
+                        }
+                        <td class="ep-acciones">
+                            <button type="button" class="ep-btn ep-btn--primario" @onclick='() => Entrar(e, "contabilidad")'>Entrar</button>
+                            <button type="button" class="ep-btn" @onclick='() => Entrar(e, "contabilidad/paquete-estudio")'>Paquete</button>
+                            <button type="button" class="ep-btn" @onclick='() => Entrar(e, "contabilidad/control-arca")'>ARCA</button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+        <small class="ep-nota">Ventas y compras: comprobantes del mes en el libro de IVA y si la empresa ya cerró el período (fechas de cierre).
+            Control ARCA: el último resultado de la descarga automática de Mis Comprobantes, si la empresa la activó.</small>
+    }
+</div>
+
+@code {
+    private DateTime _mes = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-1);
+    private IReadOnlyList<EstudioEmpresa> _empresas = [];
+    private bool _cargando, _listo;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (!AppUserSession.IsAuthenticated)
+        {
+            try
+            {
+                var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                if (!string.IsNullOrWhiteSpace(token)) AppUserSession.TryRestoreFromToken(token);
+            }
+            catch (JSException ex) { Logger.LogDebug(ex, "EstudioPortal: no se pudo leer el token."); }
+        }
+        if (!AppUserSession.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login?returnUrl=" + Uri.EscapeDataString("/estudio"), replace: true);
+            return;
+        }
+        await CargarAsync();
+    }
+
+    private async Task CambiarMes(ChangeEventArgs e)
+    {
+        if (DateTime.TryParseExact($"{e.Value}-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var m))
+        {
+            _mes = m;
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        _cargando = true; _error = null; StateHasChanged();
+        try { _empresas = await Portal.EmpresasAsync(_mes); }
+        catch (Exception ex) when (ex is InvalidOperationException or AppUserFacingException) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "EstudioPortal: no se pudieron cargar las empresas."); _error = "No se pudieron cargar las empresas."; }
+        finally { _cargando = false; _listo = true; StateHasChanged(); }
+    }
+
+    private void Entrar(EstudioEmpresa e, string ruta)
+        // Recarga completa: la base nueva se activa por la ruta y el ingreso a la base es automático (usuario del estudio).
+        => Nav.NavigateTo($"/{e.IdWebEmpresa}/{e.IdBase}/{ruta}", forceLoad: true);
+
+    private async Task SalirAsync()
+    {
+        AppUserSession.Logout();
+        try { await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token"); } catch (JSException) { }
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    private static RenderFragment Libro(int cantidad, bool cerrado, DateTime? cierre) => __builder =>
+    {
+        <span class="ep-libro @(cerrado ? "is-ok" : "is-abierto")">
+            <i class="bi @(cerrado ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></i> @cantidad.ToString("N0")
+            <small>@(cerrado ? "cerrado" : cierre is { } c ? $"cerrado al {c:dd/MM}" : "sin cerrar")</small>
+        </span>
+    };
+
+    private static string Corto(string s) => s.Length > 60 ? s[..60] + "…" : s;
+}

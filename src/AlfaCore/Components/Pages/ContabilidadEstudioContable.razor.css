@@ -1,0 +1,25 @@
+.ec-page { display: flex; flex-direction: column; gap: 12px; }
+.ec-intro { display: flex; gap: 14px; padding: 14px 16px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
+.ec-intro > i { font-size: 26px; color: var(--alfa-accent); }
+.ec-intro p { margin: 4px 0 6px; }
+.ec-intro small { color: var(--alfa-text-secondary); }
+.ec-enlace { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px dashed var(--alfa-accent); border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
+.ec-enlace small { color: var(--alfa-text-secondary); }
+.ec-enlace__fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ec-input { flex: 1 1 320px; height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.ec-mail { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--alfa-accent); text-decoration: none; }
+.ec-tabla__marco { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); overflow-x: auto; }
+.ec-tabla { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--alfa-text-primary); }
+.ec-tabla th { text-align: left; padding: 8px 10px; font-size: 12px; color: var(--alfa-text-secondary); border-bottom: 1px solid var(--alfa-border-default); }
+.ec-tabla td { padding: 8px 10px; border-bottom: 1px solid var(--alfa-border-default); vertical-align: top; }
+.ec-tabla td small { display: block; color: var(--alfa-text-secondary); font-size: 11px; }
+.ec-tabla tr.is-revocado td { opacity: .6; }
+.ec-acciones { white-space: nowrap; text-align: right; }
+.ec-estado { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; }
+.ec-estado--activo { color: var(--alfa-success, #16a34a); }
+.ec-estado--pendiente { color: var(--alfa-warning, #d97706); }
+.ec-estado--revocado { color: var(--alfa-text-secondary); }
+.ec-form { display: flex; flex-direction: column; gap: 10px; }

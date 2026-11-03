@@ -217,6 +217,11 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
                 throw;
             }
             var bytes = new FileInfo(ruta).Length;
+            // Para el estado del mes en el portal del estudio: "AAAAMM|dd/MM/yyyy HH:mm".
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.TA_CONFIGURACION SET VALOR = @Valor, FechaHora_Modificacion = GETDATE() WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'ALFACORE_PAQUETE_ESTUDIO_ULTIMO';
+                IF @@ROWCOUNT = 0 INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, FechaHora_Grabacion) VALUES (N'CONTABILIDAD', N'ALFACORE_PAQUETE_ESTUDIO_ULTIMO', @Valor, GETDATE());
+                """, new { Valor = FormattableString.Invariant($"{desde:yyyyMM}|{DateTime.Now:dd/MM/yyyy HH:mm}") }, cancellationToken: CancellationToken.None));
             await events.LogAuditAsync("EstudioPaquete", "Generar", "PAQUETE_ESTUDIO", $"{desde:yyyyMM}",
                 $"Generó el paquete para el estudio de {desde:MM/yyyy} ({archivos} archivos).", new { s.Anio, s.Mes, unidad, archivos, bytes, avisos }, CancellationToken.None);
             return new EstudioPaqueteResultado(token, nombre, bytes, archivos, avisos);

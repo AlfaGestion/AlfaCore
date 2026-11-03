@@ -487,6 +487,20 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         var bases = user.SuperAdmin
             ? await _basesService.GetAllAsync().ConfigureAwait(false)
             : await _basesService.GetByClienteAsync(user.IdCliente, false).ConfigureAwait(false);
+        // Estudio contable: también las bases que le habilitaron sus clientes (el ingreso sigue siendo por TA_USUARIOS).
+        if (!user.SuperAdmin)
+        {
+            try
+            {
+                var concedidas = await _basesService.GetConcedidasAsync(user.IdCliente).ConfigureAwait(false);
+                if (concedidas.Count > 0)
+                    bases = bases.Concat(concedidas.Where(c => bases.All(b => b.IdBase != c.IdBase))).ToArray();
+            }
+            catch (SqlException)
+            {
+                // Sin la central de estudios se sigue con las bases propias.
+            }
+        }
 
         return bases
             .Select(Map)

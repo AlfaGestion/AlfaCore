@@ -1,0 +1,146 @@
+@page "/estudio/invitacion/{token}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Services
+@inject IEstudioPortalService Portal
+@inject IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<EstudioInvitacion> Logger
+
+<PageTitle>Invitación del estudio | Alfa Gestión</PageTitle>
+
+@* Invitación de una empresa a su estudio contable: se acepta con la cuenta del estudio, o se crea la cuenta acá mismo. *@
+<div class="ei-page">
+    <div class="ei-card">
+        <h1><i class="bi bi-briefcase" aria-hidden="true"></i> Acceso para el estudio contable</h1>
+
+        @if (!_listo)
+        {
+            <p class="ei-muted">Cargando la invitación…</p>
+        }
+        else if (_info is null)
+        {
+            <p>La invitación no existe o ya se usó. Pedile a la empresa que genere un enlace nuevo.</p>
+        }
+        else
+        {
+            <p><b>@(_info.Empresa.Length > 0 ? _info.Empresa : _info.BaseNombre)</b> te da acceso a su información contable
+               (@(_info.Perfil == "CARGA" ? "consulta y carga" : "solo consulta")).</p>
+            <p class="ei-muted">Invitación para @_info.EmailInvitado</p>
+
+            @if (_info.Estado != "PENDIENTE")
+            {
+                <div class="ei-aviso">Esta invitación ya fue @(_info.Estado == "ACTIVO" ? "aceptada" : "anulada por la empresa").</div>
+                @if (_info.Estado == "ACTIVO") { <button type="button" class="ei-btn ei-btn--primario" @onclick='() => Nav.NavigateTo("/estudio")'>Ir al portal del estudio</button> }
+            }
+            else if (_info.Vencida)
+            {
+                <div class="ei-aviso">La invitación venció. Pedile a la empresa que genere un enlace nuevo.</div>
+            }
+            else if (_esEstudio)
+            {
+                <p>Vas a aceptar con la cuenta <b>@Login</b>.</p>
+                <button type="button" class="ei-btn ei-btn--primario" disabled="@_busy" @onclick="AceptarAsync">Aceptar y entrar al portal</button>
+            }
+            else
+            {
+                @if (AppUserSession.IsAuthenticated)
+                {
+                    <div class="ei-aviso">Ingresaste con <b>@Login</b>, que es la cuenta de una empresa. Para atender empresas como estudio, creá la cuenta del estudio.</div>
+                }
+                else
+                {
+                    <p>¿El estudio ya tiene cuenta en Alfa Gestión?</p>
+                    <button type="button" class="ei-btn" @onclick="IngresarParaAceptar">Ingresar con la cuenta del estudio</button>
+                    <hr />
+                    <p>Si es la primera vez, creá la cuenta del estudio:</p>
+                }
+                <div class="ei-form">
+                    <label>Nombre del estudio <input class="ei-input" @bind="_reg.NombreEstudio" maxlength="150" /></label>
+                    <label>CUIT del estudio (opcional) <input class="ei-input" @bind="_reg.Cuit" maxlength="13" /></label>
+                    <label>Tu nombre <input class="ei-input" @bind="_reg.Nombre" maxlength="50" /></label>
+                    <label>Email (es tu usuario) <input class="ei-input" type="email" @bind="_reg.Email" maxlength="150" /></label>
+                    <label>Contraseña <input class="ei-input" type="password" @bind="_reg.Password" maxlength="50" autocomplete="new-password" /></label>
+                    <label>Repetí la contraseña <input class="ei-input" type="password" @bind="_repetida" maxlength="50" autocomplete="new-password" /></label>
+                </div>
+                <button type="button" class="ei-btn ei-btn--primario" disabled="@_busy" @onclick="RegistrarAsync">Crear la cuenta y aceptar</button>
+            }
+        }
+
+        @if (_error is not null) { <div class="ei-aviso ei-aviso--error">@_error</div> }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+    private EstudioInvitacionInfo? _info;
+    private readonly EstudioRegistroSolicitud _reg = new();
+    private string _repetida = string.Empty;
+    private bool _listo, _busy, _esEstudio;
+    private string? _error;
+
+    private string Login => AppUserSession.CurrentUser?.CentralLogin ?? AppUserSession.CurrentUser?.Email ?? "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (!AppUserSession.IsAuthenticated)
+        {
+            try
+            {
+                var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                if (!string.IsNullOrWhiteSpace(token)) AppUserSession.TryRestoreFromToken(token);
+            }
+            catch (JSException ex) { Logger.LogDebug(ex, "EstudioInvitacion: no se pudo leer el token."); }
+        }
+        try
+        {
+            _info = await Portal.InvitacionAsync(Token);
+            if (_info is not null) _reg.Email = _info.EmailInvitado;
+            _esEstudio = AppUserSession.IsAuthenticated && await Portal.EsEstudioAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "EstudioInvitacion: no se pudo leer la invitación.");
+            _error = "No se pudo leer la invitación. Probá de nuevo en un rato.";
+        }
+        _listo = true;
+        StateHasChanged();
+    }
+
+    private void IngresarParaAceptar()
+        => Nav.NavigateTo("/login?returnUrl=" + Uri.EscapeDataString($"/estudio/invitacion/{Token}"));
+
+    private async Task AceptarAsync()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            await Portal.AceptarAsync(Token);
+            Nav.NavigateTo("/estudio");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or AppUserFacingException) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "EstudioInvitacion: error al aceptar."); _error = "No se pudo aceptar la invitación."; }
+        finally { _busy = false; }
+    }
+
+    private async Task RegistrarAsync()
+    {
+        _error = null;
+        if (_reg.Password != _repetida) { _error = "Las contraseñas no coinciden."; return; }
+        _busy = true;
+        try
+        {
+            var login = await Portal.RegistrarYAceptarAsync(Token, _reg);
+            // Queda ingresado con la cuenta nueva, igual que en la pantalla de ingreso.
+            AppUserSession.Logout();
+            await AppUserSession.LoginAsync(login, _reg.Password);
+            if (AppUserSession.CurrentToken is { Length: > 0 } t)
+                try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", t); } catch (JSException) { }
+            Nav.NavigateTo("/estudio");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or AppUserFacingException) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "EstudioInvitacion: error al crear la cuenta del estudio."); _error = "No se pudo crear la cuenta del estudio."; }
+        finally { _busy = false; }
+    }
+}

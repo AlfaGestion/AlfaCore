@@ -346,6 +346,8 @@ public class Program
         builder.Services.AddScoped<IRetencionesService, RetencionesService>();
         builder.Services.AddScoped<IEstudioPaqueteService, EstudioPaqueteService>();
         builder.Services.AddSingleton<EstudioPaqueteDescargas>();
+        builder.Services.AddScoped<IEstudioAccesosService, EstudioAccesosService>();
+        builder.Services.AddScoped<IEstudioPortalService, EstudioPortalService>();
         builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
         builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();

@@ -69,6 +69,24 @@ public sealed class CentralBasesService(IConfiguration configuration, IAppEventS
             ?? throw new InvalidOperationException($"No se pudo generar el WebhookToken de la base {idBase}.");
     }
 
+    public async Task<IReadOnlyList<BaseCentralDto>> GetConcedidasAsync(string idCliente, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(idCliente)) return [];
+        // Antes de que exista la tabla (portal del estudio sin usar) no hay accesos.
+        var sql = $"""
+            IF OBJECT_ID(N'dbo.ESTUDIO_ACCESOS', N'U') IS NULL
+                SELECT {SelectColumns} FROM dbo.bases WHERE 1 = 0;
+            ELSE
+                SELECT {SelectColumns} FROM dbo.bases
+                WHERE id IN (SELECT IdBase FROM dbo.ESTUDIO_ACCESOS WHERE IdClienteEstudio = @IdCliente AND Estado = 'ACTIVO')
+                  AND ISNULL(idcliente, '') <> @IdCliente
+                ORDER BY ISNULL(nombre, ''), id;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        return (await cn.QueryAsync<BaseCentralDto>(new CommandDefinition(sql, new { IdCliente = idCliente.Trim() }, cancellationToken: ct)).ConfigureAwait(false)).ToArray();
+    }
+
     public async Task<IReadOnlyList<BaseCentralDto>> GetByClienteAsync(string idCliente, bool includeAllForSuperAdmin = false, CancellationToken ct = default)
     {
         var sql = includeAllForSuperAdmin

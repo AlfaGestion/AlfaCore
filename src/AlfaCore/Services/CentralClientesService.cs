@@ -65,7 +65,8 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
                 idcliente AS IdCliente,
                 ISNULL(nombre, '') AS RazonSocial,
                 ISNULL(idweb, '') AS IdWeb,
-                ISNULL(superadmin, 0) AS SuperAdmin
+                ISNULL(superadmin, 0) AS SuperAdmin,
+                LTRIM(RTRIM(ISNULL(type, ''))) AS Tipo
             FROM dbo.Clientes
             ORDER BY ISNULL(nombre, ''), idcliente;
             """;
@@ -138,7 +139,8 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
                 idcliente AS IdCliente,
                 ISNULL(nombre, '') AS RazonSocial,
                 ISNULL(idweb, '') AS IdWeb,
-                ISNULL(superadmin, 0) AS SuperAdmin
+                ISNULL(superadmin, 0) AS SuperAdmin,
+                LTRIM(RTRIM(ISNULL(type, ''))) AS Tipo
             FROM dbo.Clientes
             {filterSql};
             """;
@@ -163,7 +165,8 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
             IdCliente = row.IdCliente,
             RazonSocial = row.RazonSocial ?? string.Empty,
             IdWeb = row.IdWeb ?? string.Empty,
-            SuperAdmin = row.SuperAdmin
+            SuperAdmin = row.SuperAdmin,
+            Tipo = row.Tipo ?? string.Empty
         };
 
     private sealed class ClienteCentralRow
@@ -172,5 +175,6 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
         public string? RazonSocial { get; set; }
         public string? IdWeb { get; set; }
         public bool SuperAdmin { get; set; }
+        public string? Tipo { get; set; }
     }
 }

@@ -28,6 +28,8 @@ public sealed class ClienteCentralDto
     public string RazonSocial { get; init; } = string.Empty;
     public string IdWeb { get; init; } = string.Empty;
     public bool SuperAdmin { get; init; }
+    /// <summary>clientes.type: "M" registro web, "E" estudio contable, vacío = cliente del legacy.</summary>
+    public string Tipo { get; init; } = string.Empty;
 }
 
 public sealed class BaseCentralDto

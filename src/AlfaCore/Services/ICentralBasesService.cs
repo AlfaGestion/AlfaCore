@@ -20,4 +20,11 @@ public interface ICentralBasesService
     /// la primera vez que se pide (las bases creadas antes de este mecanismo no tienen uno).
     /// </summary>
     Task<string> EnsureWebhookTokenAsync(int idBase, CancellationToken ct = default);
+
+    /// <summary>
+    /// Bases de otros clientes a las que un estudio contable tiene acceso ACTIVO (ESTUDIO_ACCESOS).
+    /// Se suman a sus bases propias para navegar; el ingreso a la base sigue siendo el del usuario de TA_USUARIOS.
+    /// </summary>
+    Task<IReadOnlyList<BaseCentralDto>> GetConcedidasAsync(string idCliente, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<BaseCentralDto>>([]);
 }

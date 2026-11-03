@@ -53,17 +53,32 @@ public sealed class CentralAuthService(
                     IdCliente = cliente.IdCliente,
                     RazonSocial = cliente.RazonSocial,
                     IdWeb = idWeb,
-                    SuperAdmin = cliente.SuperAdmin
+                    SuperAdmin = cliente.SuperAdmin,
+                    Tipo = cliente.Tipo
                 };
             }
 
             var bases = cliente.SuperAdmin
                 ? await basesService.GetAllAsync(ct).ConfigureAwait(false)
                 : await basesService.GetByClienteAsync(user.IdCliente, false, ct).ConfigureAwait(false);
+            var concedidas = cliente.SuperAdmin ? [] : await basesService.GetConcedidasAsync(user.IdCliente, ct).ConfigureAwait(false);
+            var esEstudio = !cliente.SuperAdmin && string.Equals(cliente.Tipo, "E", StringComparison.OrdinalIgnoreCase);
 
-            if (bases.Count == 0)
+            // Un estudio contable entra aunque todavía no tenga empresas: va a su portal.
+            if (bases.Count == 0 && concedidas.Count == 0 && !esEstudio)
             {
                 return Fail("Usuario o contraseña incorrectos.");
+            }
+
+            if (esEstudio || (bases.Count == 0 && concedidas.Count > 0))
+            {
+                return new LoginResult
+                {
+                    Success = true,
+                    Session = new SesionCentralDto { Usuario = user, Cliente = cliente, Bases = bases.Concat(concedidas).ToArray() },
+                    RequiresBaseSelection = false,
+                    RedirectUrl = "/estudio"
+                };
             }
 
             var session = new SesionCentralDto

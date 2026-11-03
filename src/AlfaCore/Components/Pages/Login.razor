@@ -1,5 +1,6 @@
 @page "/login"
 @layout AlfaCore.Components.Layout.PublicLayout
+@inject AlfaCore.Services.IEstudioPortalService EstudioPortal
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
@@ -782,6 +783,20 @@
             Logger.LogInformation("Login: navigating to returnUrl {ReturnUrl}", returnUrl);
             Nav.NavigateTo(returnUrl, replace: true);
             return;
+        }
+
+        // Cuenta de estudio contable: va a su portal, con todas las empresas que le dieron acceso.
+        try
+        {
+            if (await EstudioPortal.EsEstudioAsync())
+            {
+                Nav.NavigateTo("/estudio", replace: true);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Login: no se pudo verificar si la cuenta es de un estudio contable.");
         }
 
         var bases = SessionSvc.GetAllSessions();

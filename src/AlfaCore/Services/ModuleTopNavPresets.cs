@@ -62,6 +62,7 @@ public static class ModuleTopNavPresets
             ("plan", "Plan de cuentas", "/contabilidad/plan-de-cuentas"),
             ("retenciones", "Retenciones", "/contabilidad/retenciones"),
             ("paquete-estudio", "Paquete estudio", "/contabilidad/paquete-estudio"),
+            ("estudio-contable", "Estudio contable", "/contabilidad/estudio-contable"),
             ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre"),
             ("control-arca", "Control ARCA", "/contabilidad/control-arca")
         ]);
