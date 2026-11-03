@@ -7,6 +7,8 @@ public interface ICrmService
     Task<CrmLookupDto> GetLookupsAsync(CancellationToken ct = default);
     Task<PagedResult<CrmOpportunityDto>> SearchAsync(CrmFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<CrmOpportunityDto>> GetKanbanAsync(CrmFilters filters, CancellationToken ct = default);
+    /// <summary>Página siguiente ("Cargar más") de una columna del tablero, a partir de las <paramref name="skip"/> ya mostradas.</summary>
+    Task<IReadOnlyList<CrmOpportunityDto>> GetKanbanStageAsync(CrmFilters filters, int idEtapa, int skip, CancellationToken ct = default);
     Task<CrmOpportunityDetailDto?> GetByIdAsync(long idOportunidad, CancellationToken ct = default);
     Task<long> SaveOpportunityAsync(CrmOpportunitySaveRequest request, CancellationToken ct = default);
     Task QuickUpdateAsync(CrmQuickUpdateRequest request, CancellationToken ct = default);

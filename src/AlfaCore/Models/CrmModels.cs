@@ -51,6 +51,10 @@ public class CrmOpportunityDto
     public DateTime? FechaHoraCierre { get; set; }
     public List<CrmEtiquetaDto> Etiquetas { get; set; } = [];
 
+    // Solo en el tablero: total de oportunidades e importe de la etapa (se muestran de a CRM-TABLERO-POR-ETAPA).
+    public int TotalEtapa { get; set; }
+    public decimal ImporteEtapa { get; set; }
+
     // Próxima acción = tarea pendiente más próxima por vencimiento (null si no tiene ninguna).
     public long? ProximaAccionId { get; set; }
     public string ProximaAccionTipo { get; set; } = string.Empty;

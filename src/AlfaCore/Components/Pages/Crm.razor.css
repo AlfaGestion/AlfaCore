@@ -365,6 +365,27 @@
     text-align: center;
 }
 
+.crm-load-more {
+    width: 100%;
+    margin-top: .65rem;
+    padding: .55rem .75rem;
+    border: 1px solid var(--crm-border, rgba(148, 163, 184, .35));
+    border-radius: .5rem;
+    background: transparent;
+    color: var(--accent, #60a5fa);
+    font-size: .85rem;
+    cursor: pointer;
+}
+
+.crm-load-more:hover:not(:disabled) {
+    background: rgba(96, 165, 250, .1);
+}
+
+.crm-load-more:disabled {
+    cursor: progress;
+    opacity: .6;
+}
+
 .crm-card {
     text-align: left;
     border: 1px solid var(--border, #dbe3ef);

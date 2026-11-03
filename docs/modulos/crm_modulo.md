@@ -9,7 +9,7 @@ El módulo `CRM` centraliza leads y oportunidades comerciales en AlfaCore. Está
 Implementado:
 
 - pantalla `/crm`;
-- tablero Kanban por etapas;
+- tablero Kanban por etapas: cada columna muestra de a `CRM-TABLERO-POR-ETAPA` oportunidades (80 por defecto, grupo CRM), por prioridad y fecha de alta, con el total real de la etapa y el botón "Cargar más... (N restantes)" como en Odoo;
 - listado paginado server-side;
 - configuración de columnas del listado por usuario;
 - alta y edición de oportunidades;

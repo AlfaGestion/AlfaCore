@@ -121,30 +121,56 @@ public sealed class CrmService(
         }, "No se pudieron cargar las oportunidades de CRM.", ct);
 
     public Task<IReadOnlyList<CrmOpportunityDto>> GetKanbanAsync(CrmFilters filters, CancellationToken ct = default)
-        => ExecuteLoggedAsync("GetKanban", async token =>
-        {
-            filters ??= new CrmFilters();
-            var limit = Math.Clamp(filters.PageSize <= 0 ? 160 : filters.PageSize, 25, 240);
-            var sql = $"""
-                {OpportunitySelectSql()}
+        => ExecuteLoggedAsync("GetKanban", token => QueryKanbanAsync(filters, null, 0, token), "No se pudo cargar el tablero CRM.", ct);
+
+    public Task<IReadOnlyList<CrmOpportunityDto>> GetKanbanStageAsync(CrmFilters filters, int idEtapa, int skip, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetKanbanStage", token => QueryKanbanAsync(filters, idEtapa, Math.Max(0, skip), token), "No se pudieron cargar más oportunidades.", ct);
+
+    // El tablero trae de a CRM-TABLERO-POR-ETAPA oportunidades por columna (antes el límite era global y la
+    // primera columna se llevaba todas las filas). "Cargar más" pide la página siguiente de una sola etapa.
+    // TotalEtapa/ImporteEtapa traen el total real de cada columna aunque se muestre solo una parte.
+    private async Task<IReadOnlyList<CrmOpportunityDto>> QueryKanbanAsync(CrmFilters? filters, int? idEtapa, int skip, CancellationToken token)
+    {
+        filters ??= new CrmFilters();
+        var sql = $"""
+            WITH kanban AS (
+                {OpportunitySelectSql()},
+                    ROW_NUMBER() OVER (PARTITION BY o.IdEtapa ORDER BY ISNULL(o.Prioridad, 0) DESC, o.FechaHoraAlta DESC, o.IdOportunidad DESC) AS FilaEtapa,
+                    COUNT(*) OVER (PARTITION BY o.IdEtapa) AS TotalEtapa,
+                    SUM(ISNULL(o.ImporteEstimado, 0)) OVER (PARTITION BY o.IdEtapa) AS ImporteEtapa
                 {OpportunityFromSql()}
                 {OpportunityWhereSql()}
-                ORDER BY e.Orden, o.Prioridad DESC, o.FechaHoraAlta DESC, o.IdOportunidad DESC
-                OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY;
-                """;
+            )
+            SELECT * FROM kanban
+            WHERE FilaEtapa > @Skip AND FilaEtapa <= @Skip + @Limit
+            ORDER BY EtapaOrden, FilaEtapa;
+            """;
 
-            var args = BuildFilterParameters(filters);
-            args.Add("Limit", limit);
-            // En el tablero las ganadas y perdidas siempre quedan en su columna (antes desaparecían al
-            // moverlas a GANADA). El filtro "Oportunidades abiertas" sigue aplicando a la lista.
-            args.Add("IncluirCerradas", true);
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(token);
+        var args = BuildFilterParameters(filters);
+        if (idEtapa is int etapa)
+            args.Add("IdEtapa", etapa);
+        args.Add("Skip", skip);
+        args.Add("Limit", await GetKanbanPorEtapaAsync(cn, token));
+        // En el tablero las ganadas y perdidas siempre quedan en su columna (antes desaparecían al
+        // moverlas a GANADA). El filtro "Oportunidades abiertas" sigue aplicando a la lista.
+        args.Add("IncluirCerradas", true);
 
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            var rows = (await cn.QueryAsync<CrmOpportunityDto>(new CommandDefinition(sql, args, cancellationToken: token))).AsList();
-            await HydrateEtiquetasAsync(cn, rows, token);
-            return (IReadOnlyList<CrmOpportunityDto>)rows;
-        }, "No se pudo cargar el tablero CRM.", ct);
+        var rows = (await cn.QueryAsync<CrmOpportunityDto>(new CommandDefinition(sql, args, cancellationToken: token))).AsList();
+        await HydrateEtiquetasAsync(cn, rows, token);
+        return rows;
+    }
+
+    private static async Task<int> GetKanbanPorEtapaAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var raw = await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) LTRIM(RTRIM(CONVERT(nvarchar(50), VALOR)))
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CRM-TABLERO-POR-ETAPA';
+            """, cancellationToken: ct));
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0 ? Math.Clamp(n, 10, 500) : 80;
+    }
 
     public Task<CrmOpportunityDetailDto?> GetByIdAsync(long idOportunidad, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetById", async token =>

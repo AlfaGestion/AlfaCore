@@ -37,6 +37,8 @@
             @foreach (var stage in _lookups.Etapas)
             {
                 var items = _kanban.Where(x => x.IdEtapa == stage.IdEtapa).ToList();
+                var totalEtapa = items.Count == 0 ? 0 : Math.Max(items.Count, items[0].TotalEtapa);
+                var importeEtapa = items.Count == 0 ? 0m : items[0].TotalEtapa > 0 ? items[0].ImporteEtapa : items.Sum(x => x.ImporteEstimado);
                 var isCollapsed = _collapsedStageIds.Contains(stage.IdEtapa);
                 var stats = GetStageTimingStats(items);
                 <article class="@GetStageClass(stage.IdEtapa)"
@@ -59,7 +61,7 @@
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
                         <div class="crm-stage__title">
                             <h3>@stage.Nombre</h3>
-                            <small>@items.Count oportunidad(es) · @FormatMoney(items.Sum(x => x.ImporteEstimado))</small>
+                            <small>@totalEtapa oportunidad(es) · @FormatMoney(importeEtapa)</small>
                             <div class="crm-stage__health" title="Estado por cierre estimado">
                                 <span class="is-ok" style="width:@stats.Ok%"></span>
                                 <span class="is-warning" style="width:@stats.Warning%"></span>
@@ -157,6 +159,12 @@
                                         }
                                     </div>
                                 </article>
+                            }
+                            @if (totalEtapa > items.Count)
+                            {
+                                <button type="button" class="crm-load-more" disabled="@(_cargandoMasEtapaId == stage.IdEtapa)" @onclick="() => CargarMasEtapaAsync(stage.IdEtapa)">
+                                    @(_cargandoMasEtapaId == stage.IdEtapa ? "Cargando..." : $"Cargar más... ({totalEtapa - items.Count} restantes)")
+                                </button>
                             }
                         </div>
                     }
@@ -755,6 +763,7 @@
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
     private List<CrmOpportunityDto> _kanban = [];
+    private int? _cargandoMasEtapaId;
     private CrmDashboardDto? _dashboard;
     private CrmViewSettingsDto _viewSettings = new();
     private CrmViewSettingsDto _viewDraft = new();
@@ -2146,6 +2155,28 @@
             _kanban = (await CrmSvc.GetKanbanAsync(_filters)).ToList();
         else
             _page = await CrmSvc.SearchAsync(_filters);
+    }
+
+    // "Cargar más" de una columna del tablero: agrega la página siguiente de esa etapa a las ya mostradas.
+    private async Task CargarMasEtapaAsync(int idEtapa)
+    {
+        if (_cargandoMasEtapaId is not null)
+            return;
+        _cargandoMasEtapaId = idEtapa;
+        try
+        {
+            await RunAsync(async () =>
+            {
+                var mostradas = _kanban.Count(x => x.IdEtapa == idEtapa);
+                var ids = _kanban.Select(x => x.IdOportunidad).ToHashSet();
+                var mas = await CrmSvc.GetKanbanStageAsync(_filters, idEtapa, mostradas);
+                _kanban.AddRange(mas.Where(x => ids.Add(x.IdOportunidad)));
+            });
+        }
+        finally
+        {
+            _cargandoMasEtapaId = null;
+        }
     }
 
     private async Task SearchAsync()
