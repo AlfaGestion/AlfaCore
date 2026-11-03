@@ -52,3 +52,16 @@
 .as-icon:hover { color: var(--alfa-danger, #dc2626); background: rgba(220,38,38,.08); }
 .as-link { border: none; background: none; color: var(--alfa-accent); cursor: pointer; font-size: 13px; padding: 2px 8px 2px 0; }
 .as-dif td { color: var(--alfa-danger, #dc2626); font-weight: 600; }
+.as-col-cc { min-width: 140px; max-width: 280px; }
+.as-cc { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--alfa-border-default); background: transparent; color: var(--alfa-text-primary); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-cc:hover { border-color: var(--alfa-accent); color: var(--alfa-accent); }
+.as-cc.is-vacio { color: var(--alfa-text-secondary); border-style: dashed; }
+.as-cc.is-revisar { border-color: var(--alfa-warning, #d97706); }
+.as-cc.is-revisar .bi-exclamation-circle { color: var(--alfa-warning, #d97706); }
+.as-cc-txt { font-size: 12px; color: var(--alfa-text-secondary); }
+.as-cc-tabla td { padding: 4px 6px; }
+.as-input--pct { width: 90px; text-align: right; }
+.as-mal { color: var(--alfa-danger, #dc2626); }
+.as-dlg-sub { margin: 0 0 8px; font-size: 13px; color: var(--alfa-text-secondary); }
+.as-form { display: flex; flex-direction: column; gap: 10px; }

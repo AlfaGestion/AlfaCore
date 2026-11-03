@@ -53,6 +53,35 @@ public sealed class AsientoRenglon
     public string Detalle { get; set; } = string.Empty;
     public decimal Debe { get; set; }
     public decimal Haber { get; set; }
+    /// <summary>Distribución en centros de costo (MV_ASIENTOSCCOSTO); vacía = sin distribuir.</summary>
+    public List<AsientoCentro> Centros { get; set; } = [];
+    /// <summary>Vino de un modelo: si queda sin importe, se omite al grabar (como el legacy).</summary>
+    public bool DeModelo { get; set; }
+    /// <summary>El modelo no deja cambiar la cuenta de este renglón.</summary>
+    public bool CuentaFija { get; set; }
+    /// <summary>Modelos: lado de la cuenta cuando el renglón no tiene importe (MA_MODELOS.DEBE-HABER).</summary>
+    public bool AlHaber { get; set; }
+}
+
+public sealed class AsientoCentro
+{
+    public string CCosto { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal Porcentaje { get; set; }
+    public decimal Importe { get; set; }
+}
+
+/// <summary>Distribución sugerida de una cuenta (MA_CUENTASCCOSTO o la plantilla MA_CUENTAS_CCDIST).</summary>
+public sealed record AsientoCentroDefault(string Cuenta, string CCosto, decimal Porcentaje, bool PideConfirmacion);
+
+public sealed class AsientoModelo
+{
+    public string Nombre { get; set; } = string.Empty;
+    public string Tc { get; set; } = string.Empty;
+    public bool ModificaTc { get; set; } = true;
+    public bool ModificaCuentas { get; set; } = true;
+    public bool AgregaCuentas { get; set; } = true;
+    public List<AsientoRenglon> Renglones { get; set; } = [];
 }
 
 public sealed class AsientoDetalle
@@ -96,6 +125,10 @@ public sealed class AsientosCatalogo
     public IReadOnlyList<AsientoCuenta> Cuentas { get; set; } = [];
     public IReadOnlyList<AsientoTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CompraCargaOpcion> Unidades { get; set; } = [];
+    public IReadOnlyList<CompraCargaOpcion> Centros { get; set; } = [];
+    public IReadOnlyList<AsientoCentroDefault> CentrosPorCuenta { get; set; } = [];
+    public IReadOnlyList<string> Modelos { get; set; } = [];
+    public bool PuedeGuardarModelos { get; set; }
     public string UnidadUsuario { get; set; } = string.Empty;
     public bool PuedeCargar { get; set; }
     public bool PuedeModificar { get; set; }

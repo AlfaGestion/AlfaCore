@@ -91,8 +91,17 @@
                 <label>Fecha <input type="date" class="as-input" value="@a.Fecha.ToString("yyyy-MM-dd")" disabled="@(!Editable)" @onchange="CambiarFechaAsiento" /></label>
                 @if (a.Clave is null)
                 {
+                    @if (_cat is { Modelos.Count: > 0 })
+                    {
+                        <label>Modelo
+                            <select class="as-input" value="@(_modelo?.Nombre ?? "")" @onchange="UsarModeloAsync" disabled="@_busy">
+                                <option value="">Sin modelo</option>
+                                @foreach (var m in _cat.Modelos) { <option value="@m">@m</option> }
+                            </select>
+                        </label>
+                    }
                     <label>Comprobante
-                        <select class="as-input" value="@a.Tc" @onchange="e => a.Tc = e.Value?.ToString() ?? a.Tc">
+                        <select class="as-input" value="@a.Tc" disabled="@(_modelo is { ModificaTc: false })" @onchange="e => a.Tc = e.Value?.ToString() ?? a.Tc">
                             @foreach (var t in _cat?.Talonarios ?? []) { <option value="@t.Codigo">@t.Codigo · @t.Descripcion</option> }
                         </select>
                     </label>
@@ -139,7 +148,7 @@
 
         <section class="as-tabla__marco"><div class="as-tabla__scroll">
             <table class="as-tabla as-renglones">
-                <thead><tr><th class="as-col-n">#</th><th class="as-col-cuenta">Cuenta</th><th>Concepto del renglón</th><th class="n as-col-imp">Debe</th><th class="n as-col-imp">Haber</th><th></th></tr></thead>
+                <thead><tr><th class="as-col-n">#</th><th class="as-col-cuenta">Cuenta</th><th>Concepto del renglón</th><th class="n as-col-imp">Debe</th><th class="n as-col-imp">Haber</th><th>Centros de costo</th><th></th></tr></thead>
                 <tbody>
                 @for (var i = 0; i < a.Renglones.Count; i++)
                 {
@@ -148,11 +157,17 @@
                         <td class="as-col-n">@n</td>
                         @if (Editable && _cat is not null)
                         {
-                            <td class="as-col-cuenta"><AsientoCuentaLookup Cuenta="@r.Cuenta" CuentaChanged="v => CambiarCuenta(r, v)" Cuentas="_cat.Cuentas" /></td>
+                            <td class="as-col-cuenta">
+                                @if (r.CuentaFija) { <span class="mono">@r.Cuenta</span> @r.CuentaNombre }
+                                else { <AsientoCuentaLookup Cuenta="@r.Cuenta" CuentaChanged="v => CambiarCuenta(r, v)" Cuentas="_cat.Cuentas" /> }
+                            </td>
                             <td><input class="as-input as-input--fila" maxlength="199" value="@r.Detalle" placeholder="(el del asiento)" @onchange="e => r.Detalle = e.Value?.ToString() ?? string.Empty" /></td>
                             <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Debe)" @onchange="e => Importe(r, e, debe: true)" /></td>
                             <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Haber)" @onchange="e => Importe(r, e, debe: false)" /></td>
-                            <td class="as-col-acc"><button type="button" class="as-icon" title="Quitar renglón" @onclick="() => Quitar(r)"><i class="bi bi-x-lg" aria-hidden="true"></i></button></td>
+                            <td class="as-col-cc">@Centros(r, editable: true)</td>
+                            <td class="as-col-acc">
+                                @if (!r.CuentaFija) { <button type="button" class="as-icon" title="Quitar renglón" @onclick="() => Quitar(r)"><i class="bi bi-x-lg" aria-hidden="true"></i></button> }
+                            </td>
                         }
                         else
                         {
@@ -160,6 +175,7 @@
                             <td>@r.Detalle</td>
                             <td class="n">@(r.Debe != 0 ? r.Debe.ToString("N2", Culture) : "")</td>
                             <td class="n">@(r.Haber != 0 ? r.Haber.ToString("N2", Culture) : "")</td>
+                            <td class="as-col-cc">@Centros(r, editable: false)</td>
                             <td></td>
                         }
                     </tr>
@@ -169,7 +185,7 @@
                     <tr>
                         <td></td>
                         <td colspan="2">
-                            @if (Editable)
+                            @if (Editable && _modelo is not { AgregaCuentas: false })
                             {
                                 <button type="button" class="as-link" @onclick="Agregar"><i class="bi bi-plus-lg" aria-hidden="true"></i> Agregar renglón</button>
                                 @if (Diferencia != 0) { <button type="button" class="as-link" @onclick="Balancear"><i class="bi bi-distribute-vertical" aria-hidden="true"></i> Completar la diferencia en el último renglón</button> }
@@ -177,17 +193,82 @@
                         </td>
                         <td class="n"><b>@a.TotalDebe.ToString("N2", Culture)</b></td>
                         <td class="n"><b>@a.TotalHaber.ToString("N2", Culture)</b></td>
-                        <td></td>
+                        <td></td><td></td>
                     </tr>
                     @if (Diferencia != 0)
                     {
-                        <tr class="as-dif"><td></td><td colspan="2">No balancea: diferencia</td><td colspan="2" class="n">@Math.Abs(Diferencia).ToString("N2", Culture) @(Diferencia > 0 ? "de más en el debe" : "de más en el haber")</td><td></td></tr>
+                        <tr class="as-dif"><td></td><td colspan="2">No balancea: diferencia</td><td colspan="2" class="n">@Math.Abs(Diferencia).ToString("N2", Culture) @(Diferencia > 0 ? "de más en el debe" : "de más en el haber")</td><td></td><td></td></tr>
                     }
                 </tfoot>
             </table>
         </div></section>
     }
 </div>
+
+<AlfaDialog Open="@(_centrosDe is not null)" Title="Centros de costo" Size="AlfaDialogSize.Md" ErrorMessage="@_errorCentros" OnClose="() => _centrosDe = null">
+    <ChildContent>
+    @if (_centrosDe is { } rc)
+    {
+        <p class="as-dlg-sub"><span class="mono">@rc.Cuenta</span> @rc.CuentaNombre · importe @((rc.Debe + rc.Haber).ToString("N2", Culture))</p>
+        <table class="as-tabla as-cc-tabla">
+            <thead><tr><th>Centro</th><th class="n">%</th><th class="n">Importe</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var c in _centrosEdit)
+            {
+                <tr @key="c">
+                    <td>
+                        <select class="as-input" value="@c.CCosto" @onchange="e => CambiarCentro(c, e)">
+                            <option value="">Elegí…</option>
+                            @foreach (var x in _cat?.Centros ?? []) { <option value="@x.Codigo">@x.Codigo · @x.Descripcion</option> }
+                        </select>
+                    </td>
+                    <td class="n"><input class="as-input as-input--pct" type="number" step="0.01" min="0" max="100" value="@c.Porcentaje.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                                         @onchange="e => CambiarPorcentaje(c, e)" /></td>
+                    <td class="n">@c.Importe.ToString("N2", Culture)</td>
+                    <td><button type="button" class="as-icon" title="Quitar" @onclick="() => QuitarCentro(c)"><i class="bi bi-x-lg" aria-hidden="true"></i></button></td>
+                </tr>
+            }
+            </tbody>
+            <tfoot><tr><td><button type="button" class="as-link" @onclick="AgregarCentro"><i class="bi bi-plus-lg" aria-hidden="true"></i> Agregar centro</button></td>
+                <td class="n"><b class="@(_centrosEdit.Count > 0 && _centrosEdit.Sum(x => x.Porcentaje) != 100 ? "as-mal" : null)">@_centrosEdit.Sum(x => x.Porcentaje).ToString("0.##") %</b></td><td></td><td></td></tr></tfoot>
+        </table>
+        @if (Sugeridos(rc.Cuenta).Count > 0)
+        {
+            <button type="button" class="as-link" @onclick="() => DistribucionDeLaCuenta(rc)">
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Usar la distribución de la cuenta</button>
+        }
+        <small class="as-nota">Sin centros, el renglón queda sin distribuir (como en el Alfa Gestión).</small>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => _centrosDe = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" OnClick="_ => AceptarCentros()">Aceptar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="@(_guardarModelo is not null)" Title="Guardar como modelo" Size="AlfaDialogSize.Sm" Loading="@_busy" ErrorMessage="@_errorModelo" OnClose="() => _guardarModelo = null">
+    <ChildContent>
+    @if (_guardarModelo is { } gm)
+    {
+        <div class="as-form">
+            <AlfaInput Label="Nombre del modelo" Value="@gm.Nombre" ValueChanged="v => gm.Nombre = (v ?? string.Empty).ToUpperInvariant()" MaxLength="50"
+                       HelpText="@(_cat?.Modelos.Contains(gm.Nombre.Trim()) == true ? "Ya existe: se reemplaza." : "Aparece en «Modelo» al cargar un asiento nuevo.")" />
+            <AlfaCheckbox Value="@_modeloConImportes" ValueChanged="v => _modeloConImportes = v ?? true">Guardar también los importes</AlfaCheckbox>
+            <AlfaCheckbox Value="@gm.ModificaTc" ValueChanged="v => gm.ModificaTc = v ?? true">Se puede cambiar el comprobante</AlfaCheckbox>
+            <AlfaCheckbox Value="@gm.ModificaCuentas" ValueChanged="v => gm.ModificaCuentas = v ?? true">Se pueden cambiar las cuentas</AlfaCheckbox>
+            <AlfaCheckbox Value="@gm.AgregaCuentas" ValueChanged="v => gm.AgregaCuentas = v ?? true">Se pueden agregar renglones</AlfaCheckbox>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (_guardarModelo is { } gm2 && _cat?.Modelos.Contains(gm2.Nombre.Trim()) == true)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => EliminarModeloAsync()">Borrar modelo</AlfaButton>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _guardarModelo = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarModeloAsync()">Guardar modelo</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 <AlfaConfirmDialog Open="@_confirmarAnular" Title="Anular asiento" ConfirmLabel="Anular" Loading="_busy" OnConfirm="AnularAsync" OnCancel="() => _confirmarAnular = false"
                    Message="@($"Se borra el asiento {_edit?.Clave?.Texto} ({_edit?.Comprobante}). Queda registrado en la auditoría. ¿Seguro?")" />
@@ -203,6 +284,164 @@
     private bool _busy, _buscado, _filtros = true, _confirmarAnular, _sucio;
     private string _texto = string.Empty;
     private PageHeaderConfig? _header;
+    private AsientoModelo? _modelo, _guardarModelo;
+    private bool _modeloConImportes = true;
+    private string? _errorModelo, _errorCentros;
+    private AsientoRenglon? _centrosDe;
+    private List<AsientoCentro> _centrosEdit = [];
+
+    private IReadOnlyList<AsientoCentroDefault> Sugeridos(string cuenta)
+        => _cat?.CentrosPorCuenta.Where(d => d.Cuenta.Equals(cuenta, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+
+    private string NombreCentro(string codigo) => _cat?.Centros.FirstOrDefault(c => c.Codigo == codigo)?.Descripcion ?? "";
+
+    private RenderFragment Centros(AsientoRenglon r, bool editable) => __builder =>
+    {
+        var sugeridos = Sugeridos(r.Cuenta);
+        if (r.Centros.Count == 0 && (!editable || sugeridos.Count == 0 && (_cat?.Centros.Count ?? 0) == 0 || r.Cuenta.Length == 0)) return;
+        var revisar = editable && sugeridos.Any(x => x.PideConfirmacion);
+        if (editable)
+        {
+            <button type="button" class="as-cc @(r.Centros.Count == 0 ? "is-vacio" : null) @(revisar ? "is-revisar" : null)" title="Distribuir en centros de costo" @onclick="() => AbrirCentros(r)">
+                <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                @(r.Centros.Count == 0 ? (sugeridos.Count > 0 ? "Distribuir" : "—") : ResumenCentros(r))
+                @if (revisar) { <i class="bi bi-exclamation-circle" aria-hidden="true" title="La cuenta pide confirmar la distribución"></i> }
+            </button>
+        }
+        else
+        {
+            <span class="as-cc-txt">@ResumenCentros(r)</span>
+        }
+    };
+
+    private string ResumenCentros(AsientoRenglon r)
+        => string.Join(" · ", r.Centros.Select(c => $"{c.CCosto} {(c.Descripcion.Length > 0 ? c.Descripcion : NombreCentro(c.CCosto))} {c.Porcentaje:0.##}%"));
+
+    private void AbrirCentros(AsientoRenglon r)
+    {
+        _errorCentros = null;
+        _centrosEdit = r.Centros.Select(c => new AsientoCentro { CCosto = c.CCosto, Descripcion = c.Descripcion, Porcentaje = c.Porcentaje, Importe = c.Importe }).ToList();
+        if (_centrosEdit.Count == 0)
+            _centrosEdit = Sugeridos(r.Cuenta).Where(x => x.Porcentaje > 0).Select(x => new AsientoCentro { CCosto = x.CCosto, Porcentaje = x.Porcentaje }).ToList();
+        if (_centrosEdit.Count == 0) _centrosEdit.Add(new AsientoCentro { Porcentaje = 100 });
+        _centrosDe = r;
+        RecalcularCentros();
+    }
+
+    private void CambiarCentro(AsientoCentro c, ChangeEventArgs e) { c.CCosto = e.Value?.ToString() ?? string.Empty; RecalcularCentros(); }
+    private void CambiarPorcentaje(AsientoCentro c, ChangeEventArgs e)
+    {
+        var txt = (e.Value?.ToString() ?? string.Empty).Replace(',', '.');
+        c.Porcentaje = decimal.TryParse(txt, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) ? Math.Round(Math.Abs(v), 2) : 0;
+        RecalcularCentros();
+    }
+    private void QuitarCentro(AsientoCentro c) { _centrosEdit.Remove(c); RecalcularCentros(); }
+    private void AgregarCentro() { _centrosEdit.Add(new AsientoCentro { Porcentaje = Math.Max(0, 100 - _centrosEdit.Sum(x => x.Porcentaje)) }); RecalcularCentros(); }
+    private void DistribucionDeLaCuenta(AsientoRenglon r)
+    {
+        _centrosEdit = Sugeridos(r.Cuenta).Where(x => x.Porcentaje > 0).Select(x => new AsientoCentro { CCosto = x.CCosto, Porcentaje = x.Porcentaje }).ToList();
+        RecalcularCentros();
+    }
+
+    private void RecalcularCentros()
+    {
+        if (_centrosDe is null) return;
+        var tmp = new AsientoRenglon { Debe = _centrosDe.Debe, Haber = _centrosDe.Haber, Centros = _centrosEdit };
+        AlfaCore.Services.AsientosService.DistribuirImportes(tmp);
+    }
+
+    private void AceptarCentros()
+    {
+        if (_centrosDe is null) return;
+        var lista = _centrosEdit.Where(c => c.CCosto.Length > 0 || c.Porcentaje != 0).ToList();
+        if (lista.Count > 0)
+        {
+            if (lista.Any(c => c.CCosto.Length == 0)) { _errorCentros = "Elegí el centro de cada fila."; return; }
+            if (lista.GroupBy(c => c.CCosto).Any(g => g.Count() > 1)) { _errorCentros = "Hay un centro repetido."; return; }
+            if (lista.Sum(c => c.Porcentaje) != 100) { _errorCentros = $"Los porcentajes tienen que sumar 100 % (suman {lista.Sum(c => c.Porcentaje):0.##} %)."; return; }
+        }
+        foreach (var c in lista) c.Descripcion = NombreCentro(c.CCosto);
+        _centrosDe.Centros = lista;
+        AlfaCore.Services.AsientosService.DistribuirImportes(_centrosDe);
+        _centrosDe = null; _sucio = true;
+    }
+
+    /// <summary>Al elegir la cuenta: la distribución de la cuenta si suma 100 % (como el legacy, que la proponía).</summary>
+    private void SugerirCentros(AsientoRenglon r)
+    {
+        var sug = Sugeridos(r.Cuenta).Where(x => x.Porcentaje > 0).ToList();
+        r.Centros = sug.Sum(x => x.Porcentaje) == 100
+            ? sug.Select(x => new AsientoCentro { CCosto = x.CCosto, Porcentaje = x.Porcentaje, Descripcion = NombreCentro(x.CCosto) }).ToList() : [];
+        AlfaCore.Services.AsientosService.DistribuirImportes(r);
+    }
+
+    private async Task UsarModeloAsync(ChangeEventArgs e)
+    {
+        var nombre = e.Value?.ToString() ?? "";
+        if (_edit is null || _edit.Clave is not null) return;
+        if (nombre.Length == 0) { _modelo = null; _edit.Renglones = [new AsientoRenglon(), new AsientoRenglon()]; UpdateHeader(); return; }
+        var r = await UiOps.RunAsync(() => Service.ModeloAsync(nombre), "Modelo");
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _modelo = r.Value!;
+        if (_modelo.Tc.Length > 0 && _cat?.Talonarios.Any(t => t.Codigo == _modelo.Tc) == true) _edit.Tc = _modelo.Tc;
+        _edit.Renglones = _modelo.Renglones;
+        foreach (var x in _edit.Renglones) SugerirCentros(x);
+        if (_modelo.AgregaCuentas) _edit.Renglones.Add(new AsientoRenglon());
+        if (_edit.Detalle.Trim().Length == 0) _edit.Detalle = _modelo.Nombre;
+        _sucio = true;
+        UpdateHeader();
+    }
+
+    private Task AbrirGuardarModelo()
+    {
+        if (_edit is null) return Task.CompletedTask;
+        _errorModelo = null; _modeloConImportes = true;
+        _guardarModelo = new AsientoModelo
+        {
+            Nombre = _modelo?.Nombre ?? "", Tc = _edit.Tc, ModificaTc = _modelo?.ModificaTc ?? true, ModificaCuentas = _modelo?.ModificaCuentas ?? true,
+            AgregaCuentas = _modelo?.AgregaCuentas ?? true
+        };
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarModeloAsync()
+    {
+        if (_guardarModelo is null || _edit is null) return;
+        _busy = true; _errorModelo = null;
+        try
+        {
+            // Sin importes, cada cuenta conserva de qué lado va (AlHaber).
+            _guardarModelo.Renglones = _edit.Renglones.Where(x => x.Cuenta.Length > 0)
+                .Select(x => new AsientoRenglon { Cuenta = x.Cuenta, Detalle = x.Detalle, Debe = _modeloConImportes ? x.Debe : 0,
+                    Haber = _modeloConImportes ? x.Haber : 0, AlHaber = x.Haber > 0 || (x.Debe == 0 && x.AlHaber) })
+                .ToList();
+            await Service.GuardarModeloAsync(_guardarModelo);
+            var nombre = _guardarModelo.Nombre.Trim().ToUpperInvariant();
+            if (_cat is not null && !_cat.Modelos.Contains(nombre)) _cat.Modelos = _cat.Modelos.Append(nombre).OrderBy(x => x).ToList();
+            _feedback = AppUiMessage.Success("Modelo guardado", $"El modelo {nombre} quedó disponible al cargar un asiento nuevo.");
+            _guardarModelo = null;
+        }
+        catch (Exception ex) { _errorModelo = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo guardar el modelo."; }
+        finally { _busy = false; UpdateHeader(); }
+    }
+
+    private async Task EliminarModeloAsync()
+    {
+        if (_guardarModelo is null) return;
+        _busy = true; _errorModelo = null;
+        try
+        {
+            var nombre = _guardarModelo.Nombre.Trim();
+            await Service.EliminarModeloAsync(nombre);
+            if (_cat is not null) _cat.Modelos = _cat.Modelos.Where(x => x != nombre).ToList();
+            if (_modelo?.Nombre == nombre) _modelo = null;
+            _feedback = AppUiMessage.Success("Modelo borrado", $"Se borró el modelo {nombre}.");
+            _guardarModelo = null;
+        }
+        catch (Exception ex) { _errorModelo = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo borrar el modelo."; }
+        finally { _busy = false; UpdateHeader(); }
+    }
 
     private bool Editable => _edit is not null && _edit.Editable && _cat is not null && (_edit.Clave is null ? _cat.PuedeCargar : _cat.PuedeModificar);
     private decimal Diferencia => _edit is null ? 0 : _edit.TotalDebe - _edit.TotalHaber;
@@ -273,14 +512,14 @@
             Fecha = DateTime.Today, Tc = _cat.Talonarios.FirstOrDefault()?.Codigo ?? "CC", Unidad = _cat.UnidadUsuario,
             Renglones = [new AsientoRenglon(), new AsientoRenglon()]
         };
-        _arca = null; _sucio = false;
+        _arca = null; _sucio = false; _modelo = null;
         UpdateHeader(); StateHasChanged();
         return Task.CompletedTask;
     }
 
     private Task Volver()
     {
-        _edit = null; _arca = null; _sucio = false;
+        _edit = null; _arca = null; _sucio = false; _modelo = null;
         UpdateHeader(); StateHasChanged();
         return Task.CompletedTask;
     }
@@ -299,9 +538,11 @@
     {
         r.Cuenta = cuenta;
         r.CuentaNombre = _cat?.Cuentas.FirstOrDefault(c => c.Codigo == cuenta)?.Descripcion ?? "";
+        SugerirCentros(r);
         _sucio = true;
-        // Siempre queda un renglón vacío al final para seguir cargando.
-        if (_edit is not null && _edit.Renglones.Count > 0 && _edit.Renglones[^1] == r && cuenta.Length > 0) _edit.Renglones.Add(new AsientoRenglon());
+        // Siempre queda un renglón vacío al final para seguir cargando (salvo que el modelo no deje agregar).
+        if (_edit is not null && _modelo is not { AgregaCuentas: false } && _edit.Renglones.Count > 0 && _edit.Renglones[^1] == r && cuenta.Length > 0)
+            _edit.Renglones.Add(new AsientoRenglon());
     }
 
     private static string Monto(decimal v) => v == 0 ? "" : v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
@@ -311,6 +552,7 @@
         var txt = (e.Value?.ToString() ?? "").Trim().Replace(',', '.');
         var v = decimal.TryParse(txt, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var x) ? Math.Round(Math.Abs(x), 2) : 0;
         if (debe) { r.Debe = v; if (v != 0) r.Haber = 0; } else { r.Haber = v; if (v != 0) r.Debe = 0; }
+        AlfaCore.Services.AsientosService.DistribuirImportes(r);
         _sucio = true;
     }
 
@@ -395,6 +637,8 @@
                 acciones.Add(new() { Key = "grabar", Label = "Grabar", Icon = "bi-check2", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = GrabarAsync });
             if (_edit.Clave is not null && _edit.Editable && _cat?.PuedeAnular == true)
                 acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Disabled = _busy, OnClick = () => { _confirmarAnular = true; StateHasChanged(); return Task.CompletedTask; } });
+            if ((Editable || _edit.Editable) && _cat?.PuedeGuardarModelos == true && _edit.Renglones.Count(x => x.Cuenta.Length > 0) >= 2)
+                acciones.Add(new() { Key = "modelo", Label = "Guardar como modelo", Icon = "bi-bookmark-plus", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = AbrirGuardarModelo });
             if (_edit is { LivaTipo.Length: > 0, Clave: { } k })
                 acciones.Add(new() { Key = "arca", Label = "Controlar con ARCA", Icon = "bi-shield-check", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = () => ControlArcaAsync(k) });
             acciones.Add(new() { Key = "volver", Label = _sucio ? "Cancelar" : "Volver", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = Volver });

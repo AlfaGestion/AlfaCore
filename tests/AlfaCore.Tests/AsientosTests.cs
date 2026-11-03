@@ -89,6 +89,60 @@ public sealed class AsientosTests
         Assert.Contains("cheques", AsientosService.MotivoSoloLectura(R("CC", medio: "CH"), manuales));
     }
 
+    private static readonly IReadOnlyList<CompraCargaOpcion> CentrosCat = [new() { Codigo = "0000", Descripcion = "OTROS" }, new() { Codigo = "0217", Descripcion = "MOLINOS" }, new() { Codigo = "0665", Descripcion = "ENCOPRESS" }];
+
+    [Fact]
+    public void DistribucionRedondeaContraElRenglon()
+    {
+        var r = new AsientoRenglon { Debe = 100.01m, Centros = [new() { CCosto = "0000", Porcentaje = 33.33m }, new() { CCosto = "0217", Porcentaje = 33.33m }, new() { CCosto = "0665", Porcentaje = 33.34m }] };
+        AsientosService.DistribuirImportes(r);
+        Assert.Equal(100.01m, r.Centros.Sum(c => c.Importe));
+        Assert.Equal([33.33m, 33.33m, 33.35m], r.Centros.Select(c => c.Importe));
+    }
+
+    [Fact]
+    public void CentrosDeLaCuentaSeAplicanSolosSiNoPidenConfirmacion()
+    {
+        AsientoCentroDefault[] defaults = [new("42120", "0000", 100, false), new("42120", "0217", 0, false), new("42101", "0217", 0, true), new("42101", "0000", 100, true)];
+        var r = new AsientoRenglon { Cuenta = "42120", Debe = 500 };
+        AsientosService.ValidarCentros(r, 1, CentrosCat, defaults);
+        var c = Assert.Single(r.Centros);
+        Assert.Equal(("0000", 100m, 500m), (c.CCosto, c.Porcentaje, c.Importe));
+        var conConfirmacion = new AsientoRenglon { Cuenta = "42101", Debe = 500 };
+        AsientosService.ValidarCentros(conConfirmacion, 1, CentrosCat, defaults);
+        Assert.Empty(conConfirmacion.Centros); // como el legacy: si la ventana se cancela, queda sin distribuir
+        var manual = new AsientoRenglon { Cuenta = "42101", Haber = 1000, Centros = [new() { CCosto = "0217", Porcentaje = 60 }, new() { CCosto = "0665", Porcentaje = 40 }] };
+        AsientosService.ValidarCentros(manual, 1, CentrosCat, defaults);
+        Assert.Equal([600m, 400m], manual.Centros.Select(x => x.Importe));
+    }
+
+    [Theory]
+    [InlineData("0217:60,0665:30")]
+    [InlineData("0217:60,0217:40")]
+    [InlineData("9999:100")]
+    [InlineData("0217:0,0665:100")]
+    public void CentrosMalCargados(string centros)
+    {
+        var r = new AsientoRenglon
+        {
+            Cuenta = "511", Debe = 10,
+            Centros = centros.Split(',').Select(x => new AsientoCentro { CCosto = x.Split(':')[0], Porcentaje = decimal.Parse(x.Split(':')[1], System.Globalization.CultureInfo.InvariantCulture) }).ToList()
+        };
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarCentros(r, 1, CentrosCat, []));
+    }
+
+    [Fact]
+    public void RenglonesDeModeloSinImporteNoSeGraban()
+    {
+        var a = A(("511", 1000, 0), ("211", 0, 1000));
+        a.Renglones.Add(new AsientoRenglon { Cuenta = "214", DeModelo = true });
+        AsientosService.ValidarRenglones(a, Cuentas, Terceros);
+        Assert.Equal(2, a.Renglones.Count);
+        var b = A(("511", 1000, 0), ("211", 0, 1000));
+        b.Renglones.Add(new AsientoRenglon { Cuenta = "214" });
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarRenglones(b, Cuentas, Terceros));
+    }
+
     [Fact]
     public void ClaveDelAsiento()
     {
@@ -144,11 +198,20 @@ public sealed class AsientosPruebasTests(ITestOutputHelper output)
         var proximoAntes = await cn.ExecuteScalarAsync<int>("SELECT TOP 1 X_ULTIMO_NRO FROM V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@U", new { U = cc.Unidad });
         var fecha = new DateTime(2026, 10, 31);
 
-        // Alta.
+        // Alta: una cuenta con distribución automática (si existe en la base) y otra con centros cargados a mano.
+        var conDistribucion = cat.CentrosPorCuenta.GroupBy(d => d.Cuenta).FirstOrDefault(g => g.Sum(d => d.Porcentaje) == 100 && !g.Any(d => d.PideConfirmacion)
+            && cat.Cuentas.Any(c => c.Codigo == g.Key && c.MedioDePago.Length == 0 && !c.PideVencimiento) && !terceros.Contains(g.Key))?.Key;
+        output.WriteLine($"Centros: {cat.Centros.Count} · cuenta con distribución automática: {conDistribucion ?? "(ninguna)"} · modelos: {string.Join(", ", cat.Modelos)}");
         var nuevo = new AsientoDetalle
         {
             Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE asiento manual",
-            Renglones = [new() { Cuenta = libres[0].Codigo, Debe = 1234.56m }, new() { Cuenta = libres[1].Codigo, Haber = 1234.56m, Detalle = "renglón con concepto" }, new()]
+            Renglones =
+            [
+                new() { Cuenta = conDistribucion ?? libres[0].Codigo, Debe = 1234.56m },
+                new() { Cuenta = libres[1].Codigo, Haber = 1234.56m, Detalle = "renglón con concepto",
+                        Centros = cat.Centros.Count >= 2 ? [new() { CCosto = cat.Centros[0].Codigo, Porcentaje = 70 }, new() { CCosto = cat.Centros[1].Codigo, Porcentaje = 30 }] : [] },
+                new()
+            ]
         };
         var a = await svc.GuardarAsync(nuevo);
         AsientoClave k = a.Clave!;
@@ -159,6 +222,13 @@ public sealed class AsientosPruebasTests(ITestOutputHelper output)
             Assert.Equal(2, a.Renglones.Count);
             Assert.Equal("renglón con concepto", a.Renglones[1].Detalle);
             Assert.Equal("PRUEBA ALFACORE asiento manual", a.Detalle);
+            if (cat.Centros.Count >= 2)
+            {
+                Assert.Equal([864.19m, 370.37m], a.Renglones[1].Centros.Select(c => c.Importe));
+                if (conDistribucion is not null) Assert.Equal(1234.56m, Assert.Single(a.Renglones[0].Centros).Importe);
+                Assert.Equal(conDistribucion is null ? 2 : 3, await cn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N", new { P = k.Periodo, M = k.Mes, N = k.Numero }));
+            }
             Assert.Equal(proximoAntes + 1 > int.Parse(a.Numero) ? proximoAntes + 1 : int.Parse(a.Numero) + 1,
                 await cn.ExecuteScalarAsync<int>("SELECT TOP 1 X_ULTIMO_NRO FROM V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@U", new { U = cc.Unidad }));
             var lista = await svc.BuscarAsync(new AsientosFiltro { Desde = fecha, Hasta = fecha, Texto = k.Texto, Origen = "MANUALES" });
@@ -196,6 +266,16 @@ public sealed class AsientosPruebasTests(ITestOutputHelper output)
                 output.WriteLine($"  ARCA: {arca.Estado} · {arca.Mensaje}");
             }
 
+            // Modelo: guardar, leer y borrar.
+            await svc.GuardarModeloAsync(new AsientoModelo { Nombre = "PRUEBA ALFACORE", Tc = "CC", ModificaCuentas = false, AgregaCuentas = false,
+                Renglones = [new() { Cuenta = libres[0].Codigo, Debe = 10 }, new() { Cuenta = libres[1].Codigo, AlHaber = true }] });
+            var modelo = await svc.ModeloAsync("PRUEBA ALFACORE");
+            Assert.Equal(2, modelo.Renglones.Count);
+            Assert.True(modelo.Renglones[1].AlHaber && modelo.Renglones.All(x => x.DeModelo && x.CuentaFija));
+            Assert.False(modelo.AgregaCuentas);
+            await svc.EliminarModeloAsync("PRUEBA ALFACORE");
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MA_MODELOS WHERE NOMBRE='PRUEBA ALFACORE'"));
+
             // Anulación.
             await svc.EliminarAsync(k, m.Huella);
             k = null!;
@@ -203,12 +283,15 @@ public sealed class AsientosPruebasTests(ITestOutputHelper output)
                 new { P = m.Clave!.Periodo, M = m.Clave.Mes, N = m.Clave.Numero }));
             Assert.Equal(1, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM V_MV_CPTEACCIONES WHERE TC='CC' AND IDCOMPROBANTE=@Id AND TIPO_ACCION='B' AND Proceso=N'AlfaCore: asientos'",
                 new { Id = m.Sucursal + m.Numero + m.Letra }));
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N",
+                new { P = m.Clave.Periodo, M = m.Clave.Mes, N = m.Clave.Numero }));
             output.WriteLine("Anulado.");
         }
         finally
         {
+            await cn.ExecuteAsync("DELETE FROM MA_MODELOS WHERE NOMBRE='PRUEBA ALFACORE'");
             if (k is not null)
-                await cn.ExecuteAsync("DELETE FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND LTRIM(RTRIM(ISNULL(TIPO_REG,'')))=''",
+                await cn.ExecuteAsync("DELETE FROM MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N; DELETE FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND LTRIM(RTRIM(ISNULL(TIPO_REG,'')))=''",
                     new { P = k.Periodo, M = k.Mes, N = k.Numero });
         }
     }

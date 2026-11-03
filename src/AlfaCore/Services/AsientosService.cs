@@ -20,6 +20,10 @@ public interface IAsientosService
     Task EliminarAsync(AsientoClave clave, string huella, CancellationToken ct = default);
     /// <summary>Cruce del asiento de una factura con el último Mis Comprobantes del mes bajado de ARCA.</summary>
     Task<AsientoControlArca> ControlArcaAsync(AsientoClave clave, CancellationToken ct = default);
+    Task<AsientoModelo> ModeloAsync(string nombre, CancellationToken ct = default);
+    /// <summary>Crea o reemplaza un modelo (MA_MODELOS) con los renglones dados.</summary>
+    Task GuardarModeloAsync(AsientoModelo modelo, CancellationToken ct = default);
+    Task EliminarModeloAsync(string nombre, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -32,7 +36,7 @@ public interface IAsientosService
 public sealed class AsientosService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
     IAppEventService events) : IAsientosService
 {
-    internal const string MenuAsientos = "D9550";
+    internal const string MenuAsientos = "D9550", MenuModelos = "D9540";
     /// <summary>Para ver asientos alcanza con el diario; para cargar hace falta la opción del legacy.</summary>
     internal static readonly string[] MenusConsulta = [MenuAsientos, "D957002", "D957003"];
     /// <summary>Talonarios contables que no son asientos manuales (liquidación de tarjetas y asiento resumen).</summary>
@@ -96,8 +100,159 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         return new AsientosCatalogo
         {
             Cuentas = (await CuentasAsync(cn, null, ct)).ToList(), Talonarios = await TalonariosAsync(cn, null, u.Unidad, ct), Unidades = unidades,
+            Centros = await CentrosAsync(cn, null, ct), CentrosPorCuenta = await CentrosPorCuentaAsync(cn, null, u.Unidad, ct), Modelos = await ModelosAsync(cn, ct),
+            PuedeGuardarModelos = await permissions.HasAccessAsync(MenuModelos, ct) || (cargar && u.Modificar),
             UnidadUsuario = u.Unidad, PuedeCargar = cargar, PuedeModificar = cargar && u.Modificar, PuedeAnular = cargar && u.Anular
         };
+    }, ct);
+
+    private static async Task<IReadOnlyList<CompraCargaOpcion>> CentrosAsync(SqlConnection cn, SqlTransaction? tx, CancellationToken ct)
+        => (await cn.QueryAsync<CompraCargaOpcion>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.TA_CCOSTO', N'U') IS NULL SELECT TOP 0 N'' Codigo, N'' Descripcion
+            ELSE SELECT LTRIM(RTRIM(CODIGO)) Codigo, LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion FROM dbo.TA_CCOSTO WHERE ISNULL(TITULO,0) = 0 ORDER BY CODIGO;
+            """, transaction: tx, cancellationToken: ct))).ToList();
+
+    /// <summary>
+    /// Distribución sugerida por cuenta, como el legacy (ClsCCosto): MA_CUENTASCCOSTO (o MA_CUENTASCCOSTO_UNEG para la unidad del usuario
+    /// cuando la cuenta es variable por unidad) y, si no tiene, la plantilla MA_CUENTAS_CCDIST indicada en MA_CUENTAS.CC_DIST.
+    /// </summary>
+    private static async Task<IReadOnlyList<AsientoCentroDefault>> CentrosPorCuentaAsync(SqlConnection cn, SqlTransaction? tx, string unidad, CancellationToken ct)
+        => (await cn.QueryAsync<AsientoCentroDefault>(new CommandDefinition("""
+            DECLARE @r TABLE (Cuenta nvarchar(20), CCosto nvarchar(10), Porcentaje decimal(9,4), PideConfirmacion bit);
+            IF OBJECT_ID(N'dbo.MA_CUENTASCCOSTO', N'U') IS NOT NULL
+            BEGIN
+                INSERT INTO @r
+                SELECT LTRIM(RTRIM(c.CODIGO)), LTRIM(RTRIM(c.CCOSTO)), CONVERT(decimal(9,4), ISNULL(c.PORCENTAJE,0)), CONVERT(bit, ISNULL(c.PideConfirmacion,0))
+                FROM dbo.MA_CUENTASCCOSTO c
+                WHERE NOT (ISNULL(c.VariablePorUD,0) = 1 AND OBJECT_ID(N'dbo.MA_CUENTASCCOSTO_UNEG', N'U') IS NOT NULL);
+                IF OBJECT_ID(N'dbo.MA_CUENTASCCOSTO_UNEG', N'U') IS NOT NULL
+                    INSERT INTO @r
+                    SELECT LTRIM(RTRIM(u.CODIGO)), LTRIM(RTRIM(u.CCOSTO)), CONVERT(decimal(9,4), ISNULL(u.PORCENTAJE,0)), 0
+                    FROM dbo.MA_CUENTASCCOSTO_UNEG u
+                    WHERE LTRIM(RTRIM(u.UNEGOCIO)) = @Unidad
+                      AND EXISTS (SELECT 1 FROM dbo.MA_CUENTASCCOSTO c WHERE c.CODIGO = u.CODIGO AND ISNULL(c.VariablePorUD,0) = 1);
+            END
+            IF OBJECT_ID(N'dbo.MA_CUENTAS_CCDIST', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.MA_CUENTAS', N'CC_DIST') IS NOT NULL
+                INSERT INTO @r
+                SELECT LTRIM(RTRIM(m.CODIGO)), LTRIM(RTRIM(d.CCosto)), CONVERT(decimal(9,4), ISNULL(d.Porcentaje,0)), CONVERT(bit, ISNULL(d.PideConfirmacion,0))
+                FROM dbo.MA_CUENTAS m JOIN dbo.MA_CUENTAS_CCDIST d ON LTRIM(RTRIM(d.Codigo)) = LTRIM(RTRIM(m.CC_DIST))
+                WHERE ISNULL(LTRIM(RTRIM(m.CC_DIST)),'') <> '' AND NOT EXISTS (SELECT 1 FROM @r x WHERE x.Cuenta = LTRIM(RTRIM(m.CODIGO)));
+            SELECT Cuenta, CCosto, Porcentaje, PideConfirmacion FROM @r ORDER BY Cuenta, Porcentaje DESC, CCosto;
+            """, new { Unidad = unidad.Trim() }, tx, cancellationToken: ct))).ToList();
+
+    /// <summary>Importes de cada centro a partir del porcentaje; el redondeo va al centro de mayor porcentaje (cierra con el renglón).</summary>
+    internal static void DistribuirImportes(AsientoRenglon r)
+    {
+        var importe = r.Debe + r.Haber;
+        foreach (var c in r.Centros) c.Importe = Math.Round(importe * c.Porcentaje / 100m, 2, MidpointRounding.AwayFromZero);
+        if (r.Centros.Count > 0 && r.Centros.Sum(c => c.Porcentaje) == 100m)
+            r.Centros.OrderByDescending(c => c.Porcentaje).First().Importe += importe - r.Centros.Sum(c => c.Importe);
+    }
+
+    /// <summary>Sugerencia para un renglón: los centros con porcentaje de la cuenta (los de 0 % quedan como opción en la pantalla).</summary>
+    internal static List<AsientoCentro> CentrosSugeridos(string cuenta, IEnumerable<AsientoCentroDefault> defaults, IReadOnlyList<CompraCargaOpcion> centros)
+        => defaults.Where(d => d.Cuenta.Equals(cuenta.Trim(), StringComparison.OrdinalIgnoreCase) && d.Porcentaje > 0)
+            .Select(d => new AsientoCentro { CCosto = d.CCosto, Porcentaje = d.Porcentaje, Descripcion = centros.FirstOrDefault(c => c.Codigo == d.CCosto)?.Descripcion ?? "" })
+            .ToList();
+
+    // ── Modelos de asiento (MA_MODELOS, D9540) ───────────────────────────────────────────────────
+
+    /// <summary>Modelos de asientos directos (sin subdiario, ni libro de IVA, ni liquidación de tarjetas).</summary>
+    private static async Task<IReadOnlyList<string>> ModelosAsync(SqlConnection cn, CancellationToken ct)
+        => (await cn.QueryAsync<string>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.MA_MODELOS', N'U') IS NULL SELECT TOP 0 N''
+            ELSE SELECT LTRIM(RTRIM(NOMBRE)) FROM dbo.MA_MODELOS
+                 WHERE LTRIM(RTRIM(ISNULL(TIPO_REG,''))) = '' AND ISNULL(AlLibroDeIva,0) = 0 AND ISNULL(EsLiqTarjetas,0) = 0
+                 GROUP BY LTRIM(RTRIM(NOMBRE)) ORDER BY 1;
+            """, cancellationToken: ct))).ToList();
+
+    private sealed class ModeloSql
+    {
+        public string Cuenta { get; set; } = ""; public string Dh { get; set; } = ""; public decimal Importe { get; set; } public string Detalle { get; set; } = "";
+        public string Tc { get; set; } = ""; public bool ModificaTc { get; set; } public bool ModificaCuentas { get; set; } public bool AgregaCuentas { get; set; }
+        public bool Especial { get; set; }
+    }
+
+    private static async Task<List<ModeloSql>> ModeloFilasAsync(SqlConnection cn, SqlTransaction? tx, string nombre, CancellationToken ct)
+        => (await cn.QueryAsync<ModeloSql>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(CUENTA)) Cuenta, [DEBE-HABER] Dh, ISNULL(IMPORTE,0) Importe, LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(200), DETALLE),''))) Detalle,
+                   LTRIM(RTRIM(ISNULL(TCDefault,''))) Tc, CONVERT(bit, ISNULL(ModificaTC,1)) ModificaTc, CONVERT(bit, ISNULL(ModificaCtas,1)) ModificaCuentas,
+                   CONVERT(bit, ISNULL(AgregaCtas,1)) AgregaCuentas,
+                   CONVERT(bit, CASE WHEN ISNULL(AlLibroDeIva,0) <> 0 OR ISNULL(EsLiqTarjetas,0) <> 0 OR LTRIM(RTRIM(ISNULL(TIPO_REG,''))) <> '' THEN 1 ELSE 0 END) Especial
+            FROM dbo.MA_MODELOS WHERE LTRIM(RTRIM(NOMBRE)) = @Nombre ORDER BY SECUENCIA;
+            """, new { Nombre = nombre.Trim() }, tx, cancellationToken: ct))).ToList();
+
+    public Task<AsientoModelo> ModeloAsync(string nombre, CancellationToken ct = default) => EjecutarAsync("Modelo", [MenuAsientos], async cn =>
+    {
+        var filas = await ModeloFilasAsync(cn, null, nombre, ct);
+        if (filas.Count == 0) throw new ReglaException("El modelo no existe.");
+        if (filas.Any(f => f.Especial)) throw new ReglaException("Ese modelo es de libro de IVA o de liquidación de tarjetas: se usa en el Alfa Gestión.");
+        var cuentas = (await CuentasAsync(cn, null, ct)).ToDictionary(c => c.Codigo, StringComparer.OrdinalIgnoreCase);
+        var f0 = filas[0];
+        return new AsientoModelo
+        {
+            Nombre = nombre.Trim(), Tc = f0.Tc, ModificaTc = f0.ModificaTc, ModificaCuentas = f0.ModificaCuentas, AgregaCuentas = f0.AgregaCuentas,
+            Renglones = filas.Select(f => new AsientoRenglon
+            {
+                Cuenta = f.Cuenta, CuentaNombre = cuentas.TryGetValue(f.Cuenta, out var c) ? c.Descripcion : "(cuenta no disponible)",
+                Detalle = f.Detalle.TrimEnd('.'), Debe = f.Dh == "D" ? f.Importe : 0, Haber = f.Dh == "D" ? 0 : f.Importe,
+                DeModelo = true, CuentaFija = !f0.ModificaCuentas, AlHaber = f.Dh != "D"
+            }).ToList()
+        };
+    }, ct);
+
+    public Task GuardarModeloAsync(AsientoModelo m, CancellationToken ct = default) => EjecutarAsync("GuardarModelo", [MenuAsientos, MenuModelos], async cn =>
+    {
+        var nombre = (m.Nombre ?? "").Trim().ToUpperInvariant();
+        if (nombre.Length is < 3 or > 50) throw new ReglaException("Poné un nombre al modelo (entre 3 y 50 letras).");
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var u = await UsuarioAsync(cn, tx, ct);
+        if (!(await permissions.HasAccessAsync(MenuModelos, ct) || (await permissions.HasAccessAsync(MenuAsientos, ct) && u.Modificar)))
+            throw new ReglaException("Tu usuario no tiene permiso para guardar modelos de asientos.");
+        var cuentas = (await CuentasAsync(cn, tx, ct)).ToDictionary(c => c.Codigo, StringComparer.OrdinalIgnoreCase);
+        var renglones = m.Renglones.Where(r => r.Cuenta.Trim().Length > 0).ToList();
+        if (renglones.Count < 2) throw new ReglaException("El modelo necesita al menos dos cuentas.");
+        foreach (var r in renglones)
+        {
+            if (!cuentas.ContainsKey(r.Cuenta.Trim())) throw new ReglaException($"La cuenta {r.Cuenta.Trim()} no es imputable o no está activa.");
+            if (r.Debe < 0 || r.Haber < 0 || (r.Debe != 0 && r.Haber != 0)) throw new ReglaException($"La cuenta {r.Cuenta.Trim()}: el importe va en el debe o en el haber.");
+        }
+        var talonarios = await TalonariosAsync(cn, tx, u.Unidad, ct);
+        var tc = talonarios.FirstOrDefault(t => t.Codigo.Equals((m.Tc ?? "").Trim(), StringComparison.OrdinalIgnoreCase))?.Codigo ?? "CC";
+        var previo = await ModeloFilasAsync(cn, tx, nombre, ct);
+        if (previo.Any(f => f.Especial)) throw new ReglaException("Ya hay un modelo con ese nombre de libro de IVA o de liquidación de tarjetas: elegí otro nombre.");
+        // Como el legacy (Modelo.frm): se reemplaza entero por nombre.
+        await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.MA_MODELOS WHERE LTRIM(RTRIM(NOMBRE)) = @Nombre;", new { Nombre = nombre }, tx, cancellationToken: ct));
+        for (var i = 0; i < renglones.Count; i++)
+        {
+            var r = renglones[i];
+            await cn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO dbo.MA_MODELOS (TIPO_REG, NOMBRE, CUENTA, [DEBE-HABER], IMPORTE, DETALLE, SECUENCIA, FechaHora_Grabacion, TCDefault, ModificaTC, ModificaCtas,
+                    AgregaCtas, AnclarEnMenu, AlLibroDeIva, EsLiqTarjetas)
+                VALUES (N'    ', @Nombre, @Cuenta, @Dh, @Importe, @Detalle, @Secuencia, GETDATE(), @Tc, @ModificaTc, @ModificaCuentas, @AgregaCuentas, 0, 0, 0);
+                """, new
+            {
+                Nombre = nombre, Cuenta = r.Cuenta.Trim(), Dh = r.Haber > 0 || (r.Debe == 0 && r.AlHaber) ? "H" : "D", Importe = r.Debe + r.Haber, Detalle = (r.Detalle ?? "").Trim(), Secuencia = i + 1,
+                Tc = tc, m.ModificaTc, m.ModificaCuentas, m.AgregaCuentas
+            }, tx, cancellationToken: ct));
+        }
+        await tx.CommitAsync(ct);
+        await events.LogAuditAsync("Asientos", "GuardarModelo", "MA_MODELOS", nombre, $"Guardó el modelo de asiento {nombre} ({renglones.Count} cuentas).",
+            new { nombre, tc, renglones = renglones.Select(r => new { r.Cuenta, r.Debe, r.Haber }) }, CancellationToken.None);
+        return true;
+    }, ct);
+
+    public Task EliminarModeloAsync(string nombre, CancellationToken ct = default) => EjecutarAsync("EliminarModelo", [MenuAsientos, MenuModelos], async cn =>
+    {
+        var u = await UsuarioAsync(cn, null, ct);
+        if (!(await permissions.HasAccessAsync(MenuModelos, ct) || (await permissions.HasAccessAsync(MenuAsientos, ct) && u.Modificar)))
+            throw new ReglaException("Tu usuario no tiene permiso para borrar modelos de asientos.");
+        var filas = await ModeloFilasAsync(cn, null, nombre, ct);
+        if (filas.Count == 0) return true;
+        if (filas.Any(f => f.Especial)) throw new ReglaException("Ese modelo es de libro de IVA o de liquidación de tarjetas: se borra en el Alfa Gestión.");
+        await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.MA_MODELOS WHERE LTRIM(RTRIM(NOMBRE)) = @Nombre;", new { Nombre = nombre.Trim() }, cancellationToken: ct));
+        await events.LogAuditAsync("Asientos", "EliminarModelo", "MA_MODELOS", nombre.Trim(), $"Borró el modelo de asiento {nombre.Trim()}.", new { nombre }, CancellationToken.None);
+        return true;
     }, ct);
 
     // ── Búsqueda ────────────────────────────────────────────────────────────────────────────────
@@ -230,8 +385,31 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     {
         var u = await UsuarioAsync(cn, null, ct);
         var manuales = (await TalonariosAsync(cn, null, u.Unidad, ct)).Select(t => t.Codigo).ToList();
-        return Armar(clave, await RenglonesAsync(cn, null, clave, false, ct), manuales);
+        var d = Armar(clave, await RenglonesAsync(cn, null, clave, false, ct), manuales);
+        await CargarCentrosAsync(cn, d, ct);
+        return d;
     }, ct);
+
+    private static async Task CargarCentrosAsync(SqlConnection cn, AsientoDetalle d, CancellationToken ct)
+    {
+        if (d.Clave is not { } k) return;
+        var filas = await cn.QueryAsync<(int Secuencia, string Cuenta, string CCosto, string Descripcion, decimal Porcentaje, decimal Importe)>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NULL SELECT TOP 0 0, N'', N'', N'', CONVERT(decimal(9,4),0), CONVERT(decimal(18,2),0)
+            ELSE SELECT CONVERT(int, c.SECUENCIA), LTRIM(RTRIM(c.CUENTA)), LTRIM(RTRIM(c.CCOSTO)), LTRIM(RTRIM(ISNULL(t.DESCRIPCION,''))),
+                        CONVERT(decimal(9,4), ISNULL(c.PORCENTAJE,0)), CONVERT(decimal(18,2), ISNULL(c.Importe,0))
+                 FROM dbo.MV_ASIENTOSCCOSTO c LEFT JOIN dbo.TA_CCOSTO t ON t.CODIGO = c.CCOSTO
+                 WHERE LTRIM(RTRIM(c.PERIODO)) = @Periodo AND c.MES_OPERATIVO = @Mes AND c.[NUMERO ASIENTO] = @Numero
+                   AND ISNULL(LTRIM(RTRIM(c.Tipo_Reg)),'') = @TipoReg
+                 ORDER BY c.SECUENCIA, c.PORCENTAJE DESC;
+            """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, cancellationToken: ct));
+        // El renglón se reconoce por su orden (SECUENCIA) y cuenta; si se grabó con huecos, por la cuenta.
+        foreach (var g in filas.GroupBy(f => (f.Secuencia, f.Cuenta)))
+        {
+            var r = g.Key.Secuencia >= 1 && g.Key.Secuencia <= d.Renglones.Count && d.Renglones[g.Key.Secuencia - 1].Cuenta == g.Key.Cuenta
+                ? d.Renglones[g.Key.Secuencia - 1] : d.Renglones.FirstOrDefault(x => x.Cuenta == g.Key.Cuenta && x.Centros.Count == 0);
+            r?.Centros.AddRange(g.Select(f => new AsientoCentro { CCosto = f.CCosto, Descripcion = f.Descripcion, Porcentaje = f.Porcentaje, Importe = f.Importe }));
+        }
+    }
 
     private static AsientoDetalle Armar(AsientoClave clave, List<RenglonSql> r, IReadOnlyCollection<string> manuales)
     {
@@ -264,11 +442,13 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     // ── Validación ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Validaciones de renglones que no dependen de la base (las del legacy al grabar).</summary>
-    internal static void ValidarRenglones(AsientoDetalle a, IReadOnlyDictionary<string, AsientoCuenta> cuentas, ISet<string> cuentasTerceros)
+    internal static void ValidarRenglones(AsientoDetalle a, IReadOnlyDictionary<string, AsientoCuenta> cuentas, ISet<string> cuentasTerceros,
+        IReadOnlyList<CompraCargaOpcion>? centros = null, IReadOnlyList<AsientoCentroDefault>? centrosPorCuenta = null)
     {
         var detalle = (a.Detalle ?? "").Trim();
         if (detalle.Length is < 3 or > LargoDetalle - 1) throw new ReglaException("Escribí el detalle del asiento (concepto).");
-        var renglones = a.Renglones.Where(r => r.Cuenta.Trim().Length > 0 || r.Debe != 0 || r.Haber != 0).ToList();
+        // Los renglones de un modelo que quedan sin importe no se graban (como el legacy).
+        var renglones = a.Renglones.Where(r => (r.Cuenta.Trim().Length > 0 || r.Debe != 0 || r.Haber != 0) && !(r.DeModelo && r.Debe == 0 && r.Haber == 0)).ToList();
         if (renglones.Count < 2) throw new ReglaException("El asiento necesita al menos dos renglones.");
         if (renglones.Count > MaximoRenglones) throw new ReglaException($"El asiento puede tener hasta {MaximoRenglones} renglones.");
         for (var i = 0; i < renglones.Count; i++)
@@ -290,7 +470,36 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         if (repetidas is not null) throw new ReglaException($"La cuenta de cliente o proveedor {repetidas.Key} está repetida: va una sola vez por asiento.");
         var debe = renglones.Sum(r => r.Debe); var haber = renglones.Sum(r => r.Haber);
         if (debe <= 0 || debe != haber) throw new ReglaException($"El asiento no balancea: debe {debe:N2} y haber {haber:N2}.");
+        for (var i = 0; i < renglones.Count; i++) ValidarCentros(renglones[i], i + 1, centros ?? [], centrosPorCuenta ?? []);
         a.Renglones = renglones;
+    }
+
+    /// <summary>
+    /// Centros de costo de un renglón: optativos como en el legacy; si los hay, centros existentes, sin repetir, que sumen 100 %.
+    /// Si el renglón no trae y la cuenta tiene una distribución del 100 % que no pide confirmación, se aplica sola (el legacy no mostraba la ventana).
+    /// Los importes se recalculan siempre desde el porcentaje.
+    /// </summary>
+    internal static void ValidarCentros(AsientoRenglon r, int n, IReadOnlyList<CompraCargaOpcion> centros, IReadOnlyList<AsientoCentroDefault> centrosPorCuenta)
+    {
+        r.Centros = (r.Centros ?? []).Where(c => c.CCosto.Trim().Length > 0 || c.Porcentaje != 0).ToList();
+        if (r.Centros.Count == 0)
+        {
+            var sugeridos = centrosPorCuenta.Where(d => d.Cuenta.Equals(r.Cuenta.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+            if (sugeridos.Count > 0 && sugeridos.Sum(d => d.Porcentaje) == 100m && !sugeridos.Any(d => d.PideConfirmacion))
+                r.Centros = CentrosSugeridos(r.Cuenta, sugeridos, centros);
+        }
+        if (r.Centros.Count == 0) return;
+        foreach (var c in r.Centros)
+        {
+            c.CCosto = c.CCosto.Trim();
+            if (centros.Count > 0 && centros.All(x => x.Codigo != c.CCosto)) throw new ReglaException($"Renglón {n}: el centro de costo {c.CCosto} no existe.");
+            if (c.Porcentaje <= 0 || c.Porcentaje > 100 || decimal.Round(c.Porcentaje, 4) != c.Porcentaje) throw new ReglaException($"Renglón {n}: revisá los porcentajes de los centros de costo.");
+        }
+        if (r.Centros.GroupBy(c => c.CCosto).Any(g => g.Count() > 1)) throw new ReglaException($"Renglón {n}: un centro de costo está repetido.");
+        var suma = r.Centros.Sum(c => c.Porcentaje);
+        if (Math.Abs(suma - 100m) > 0.01m) throw new ReglaException($"Renglón {n}: los centros de costo tienen que sumar 100 % (suman {suma:0.##} %).");
+        if (suma != 100m) r.Centros.OrderByDescending(c => c.Porcentaje).First().Porcentaje += 100m - suma;
+        DistribuirImportes(r);
     }
 
     /// <summary>Fecha: ejercicio abierto, fecha operativa, libro diario rubricado y cierre de caja (como el trigger MV_Asientos_ValidaFechas).</summary>
@@ -327,7 +536,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         var terceros = (await cn.QueryAsync<string>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_CLIENTES UNION SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_PROVEEDORES;
             """, transaction: tx, commandTimeout: 60, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        ValidarRenglones(a, cuentas, terceros);
+        ValidarRenglones(a, cuentas, terceros, await CentrosAsync(cn, tx, ct), await CentrosPorCuentaAsync(cn, tx, u.Unidad, ct));
         var tocaCaja = a.Renglones.Any(r => cuentas[r.Cuenta.Trim()].MedioDePago.Length > 0);
         var periodo = await ValidarFechaAsync(cn, tx, a.Fecha, tocaCaja, ct);
         var detalle = a.Detalle.Trim();
@@ -353,6 +562,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             clave = k;
             await cn.ExecuteAsync(new CommandDefinition("""
                 DELETE FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
+                IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NOT NULL
+                    DELETE FROM dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
                 """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, tx, cancellationToken: ct));
         }
         else
@@ -405,6 +616,17 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                 Grabado = grabado, Modificado = accion == "M" ? DateTime.Now : (DateTime?)null, Usuario = usuarioGrabo,
                 Caja = CodigoPk.Format(caja, 4), Unidad = CodigoPk.Format(unidad, 4), Vencimiento = (a.Vencimiento ?? a.Fecha).Date, Apertura = apertura
             }, tx, cancellationToken: ct));
+            foreach (var c in r.Centros)
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO dbo.MV_ASIENTOSCCOSTO (PERIODO, MES_OPERATIVO, [NUMERO ASIENTO], CUENTA, SECUENCIA, [DEBE-HABER], MONEDA, CCOSTO, PORCENTAJE,
+                        FechaHora_Grabacion, Tipo_Reg, Importe, Fecha, UNEGOCIO)
+                    VALUES (@Periodo, @Mes, @Asiento, @Cuenta, @Secuencia, @Dh, @Moneda, @CCosto, @Porcentaje, GETDATE(), @TipoReg, @Importe, @Fecha, @Unidad);
+                    """, new
+                {
+                    Periodo = clave.Periodo, clave.Mes, Asiento = clave.Numero, Cuenta = r.Cuenta.Trim(), Secuencia = i + 1, Dh = r.Debe > 0 ? "D" : "H",
+                    Moneda = CodigoPk.Format("1", 4), CCosto = CodigoPk.Format(c.CCosto, 4), Porcentaje = (double)c.Porcentaje, TipoReg = CodigoPk.Format(clave.TipoReg, 4),
+                    c.Importe, Fecha = a.Fecha.Date, Unidad = CodigoPk.Format(unidad, 4)
+                }, tx, cancellationToken: ct));
         }
         var control = await cn.QuerySingleAsync<(int Renglones, decimal Saldo)>(new CommandDefinition("""
             SELECT COUNT(*), ISNULL(SUM(CASE WHEN [DEBE-HABER] = 'D' THEN IMPORTE ELSE -IMPORTE END),0) FROM dbo.MV_ASIENTOS
@@ -416,7 +638,9 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         await events.LogAuditAsync("Asientos", accion == "A" ? "Alta" : "Modificacion", "MV_ASIENTOS", clave.Texto,
             $"{(accion == "A" ? "Registró" : "Modificó")} el asiento {clave.Texto} ({tc} {suc}-{nro}) por {total:N2}: {detalle}.",
             new { clave.Periodo, clave.Mes, clave.Numero, tc, suc, nro, total, renglones = a.Renglones.Count }, CancellationToken.None);
-        return Armar(clave, await RenglonesAsync(cn, null, clave, false, ct), talonarios.Select(t => t.Codigo).ToList());
+        var resultado = Armar(clave, await RenglonesAsync(cn, null, clave, false, ct), talonarios.Select(t => t.Codigo).ToList());
+        await CargarCentrosAsync(cn, resultado, ct);
+        return resultado;
     }, ct);
 
     private static Task AccionAsync(SqlConnection cn, SqlTransaction tx, string accion, string tc, string idComprobante, AsientoClave k, DateTime fecha, string cuenta,
