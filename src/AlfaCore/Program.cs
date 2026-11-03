@@ -342,6 +342,9 @@ public class Program
         builder.Services.AddScoped<IContabilidadReportesService, ContabilidadReportesService>();
         builder.Services.AddScoped<IFechasCierreService, FechasCierreService>();
         builder.Services.AddScoped<IControlArcaService, ControlArcaService>();
+        builder.Services.AddScoped<IControlArcaImportacionService, ControlArcaImportacionService>();
+        builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
+        builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<IAvisosPushNotifier, AvisosPushNotifier>();
@@ -548,6 +551,7 @@ public class Program
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
             builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
+            builder.Services.AddHostedService<ArcaDescargaHostedService>();
         }
 
         var app = builder.Build();

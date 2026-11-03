@@ -3,6 +3,7 @@ using System.Text;
 using AlfaCore.Models;
 using ClosedXML.Excel;
 using Dapper;
+using ExcelDataReader;
 using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
@@ -33,7 +34,9 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
     internal static ArcaMisComprobantesArchivo Leer(byte[] archivo, string nombre)
     {
         var filas = nombre.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || nombre.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
-            ? LeerCsv(archivo) : LeerXlsx(archivo);
+            ? LeerCsv(archivo)
+            // El script de descarga del legacy deja .xls (Excel 97-2003); ClosedXML solo lee .xlsx.
+            : nombre.EndsWith(".xls", StringComparison.OrdinalIgnoreCase) ? LeerXls(archivo) : LeerXlsx(archivo);
         var titulo = filas.Take(3).SelectMany(f => f).FirstOrDefault(c => c.Contains("Mis Comprobantes", StringComparison.OrdinalIgnoreCase)) ?? "";
         var iHeader = filas.FindIndex(f => f.Any(c => Norm(c) == "fecha") && f.Any(c => Norm(c) == "tipo"));
         if (iHeader < 0) throw new ReglaException("El archivo no tiene el formato de «Mis Comprobantes» de ARCA (no se encontró la fila de títulos Fecha / Tipo).");
@@ -52,6 +55,12 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             cTc = Col("Tipo Cambio", "Tipo de Cambio"), cMon = Col("Moneda"),
             cNeto = Col("Neto Gravado Total", "Imp. Neto Gravado"), cNoGrav = Col("Neto No Gravado", "Imp. Neto No Gravado"),
             cExento = Col("Op. Exentas", "Imp. Op. Exentas"), cOtros = Col("Otros Tributos"), cIva = Col("Total IVA", "IVA"), cTotal = Col("Imp. Total", "Importe Total");
+        // Columnas por alícuota del formato actual («Neto Grav. IVA 21%» / «IVA 21%»).
+        var cAlicuotas = new[] { 0m, 2.5m, 5m, 10.5m, 21m, 27m }.Select(t =>
+        {
+            var txt = t.ToString("0.##", Ar);
+            return (Tasa: t, Neto: Col($"Neto Grav. IVA {txt}%"), Iva: t == 0 ? -1 : Col($"IVA {txt}%"));
+        }).Where(x => x.Neto >= 0 || x.Iva >= 0).ToList();
         if (cFecha < 0 || cTipo < 0 || cPv < 0 || cDesde < 0 || cTotal < 0)
             throw new ReglaException("Al archivo le faltan columnas de «Mis Comprobantes» (Fecha, Tipo, Punto de Venta, Número Desde, Imp. Total).");
         string V(List<string> f, int c) => c >= 0 && c < f.Count ? f[c].Trim() : "";
@@ -70,6 +79,11 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
                 NetoGravado = Num(V(f, cNeto)), NoGravado = Num(V(f, cNoGrav)), Exento = Num(V(f, cExento)), OtrosTributos = Num(V(f, cOtros)),
                 Iva = Num(V(f, cIva)), Total = Num(V(f, cTotal))
             };
+            foreach (var (tasa, cn, ci) in cAlicuotas)
+            {
+                var neto = Num(V(f, cn)); var iva = Num(V(f, ci));
+                if (neto != 0 || iva != 0) c.Alicuotas.Add(new ArcaAlicuota(tasa, neto, iva));
+            }
             if (c.NumeroHasta < c.NumeroDesde) c.NumeroHasta = c.NumeroDesde;
             if (resultado.Cuit.Length == 0 && cDocPropio >= 0) resultado.Cuit = new string(V(f, cDocPropio).Where(char.IsDigit).ToArray());
             resultado.Comprobantes.Add(c);
@@ -127,6 +141,35 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
         }
     }
 
+    private static List<List<string>> LeerXls(byte[] archivo)
+    {
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            using var ms = new MemoryStream(archivo, false);
+            using var reader = ExcelReaderFactory.CreateReader(ms, new ExcelReaderConfiguration { FallbackEncoding = Encoding.GetEncoding(1252) });
+            var lista = new List<List<string>>();
+            while (reader.Read())
+            {
+                var fila = new List<string>();
+                for (var c = 0; c < reader.FieldCount; c++)
+                    fila.Add(reader.GetValue(c) switch
+                    {
+                        null => "",
+                        DateTime d => d.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                        double n => n.ToString(CultureInfo.InvariantCulture),
+                        var o => Convert.ToString(o, CultureInfo.InvariantCulture) ?? ""
+                    });
+                if (fila.Any(x => x.Length > 0)) lista.Add(fila);
+            }
+            return lista;
+        }
+        catch (Exception ex) when (ex is not ReglaException)
+        {
+            throw new ReglaException("No se pudo leer el Excel (.xls). Bajalo de ARCA en formato Excel (.xlsx) o CSV.");
+        }
+    }
+
     private static List<List<string>> LeerCsv(byte[] archivo)
     {
         var texto = Encoding.UTF8.GetString(archivo);
@@ -168,6 +211,16 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
         => EjecutarAsync("Controlar", async cn =>
         {
             var arca = Leer(archivo, nombreArchivo);
+            var resultado = await ControlarEnConexionAsync(cn, arca, ct);
+            await events.LogAuditAsync("ControlArca", "Controlar", "MIS_COMPROBANTES", nombreArchivo,
+                $"Controló {resultado.ComprobantesArca} comprobantes {(arca.Recibidos ? "recibidos" : "emitidos")} de ARCA ({resultado.Desde:MM/yyyy}–{resultado.Hasta:MM/yyyy}).",
+                new { arca.Cuit, Coinciden = resultado.Cantidad(ControlArcaEstado.Coincide), Faltan = resultado.Cantidad(ControlArcaEstado.FaltaEnSistema) }, CancellationToken.None);
+            return resultado;
+        }, ct);
+
+    /// <summary>Compara un archivo ya leído contra la base abierta (sin controles de usuario: lo usa también la descarga automática).</summary>
+    internal static async Task<ControlArcaResultado> ControlarEnConexionAsync(SqlConnection cn, ArcaMisComprobantesArchivo arca, CancellationToken ct)
+        {
             var desde = arca.Comprobantes.Min(c => c.Fecha); desde = new DateTime(desde.Year, desde.Month, 1);
             var hasta = arca.Comprobantes.Max(c => c.Fecha); hasta = new DateTime(hasta.Year, hasta.Month, 1).AddMonths(1).AddDays(-1);
             var unidades = (await cn.QueryAsync<(string Codigo, string Cuit)>(new CommandDefinition(
@@ -203,11 +256,8 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             resultado.CuitArchivo = arca.Cuit; resultado.Unidades = propias; resultado.Aviso = aviso;
             resultado.Emisor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'NOMBRE';", cancellationToken: ct)) ?? "";
-            await events.LogAuditAsync("ControlArca", "Controlar", "MIS_COMPROBANTES", nombreArchivo,
-                $"Controló {resultado.ComprobantesArca} comprobantes {(arca.Recibidos ? "recibidos" : "emitidos")} de ARCA ({desde:MM/yyyy}–{hasta:MM/yyyy}).",
-                new { arca.Cuit, Coinciden = resultado.Cantidad(ControlArcaEstado.Coincide), Faltan = resultado.Cantidad(ControlArcaEstado.FaltaEnSistema) }, CancellationToken.None);
             return resultado;
-        }, ct);
+        }
 
     internal sealed record ComprobanteSistema(string Clase, string Letra, int PuntoVenta, long Numero, DateTime Fecha, decimal Total, string Doc, string Nombre, string Referencia);
 
@@ -233,7 +283,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             var fila = new ControlArcaFila
             {
                 Clase = a.Clase, Letra = a.Letra, PuntoVenta = a.PuntoVenta, Numero = a.NumeroDesde, NumeroHasta = a.NumeroHasta,
-                Cuit = a.DocContraparte, Nombre = a.NombreContraparte, FechaArca = a.Fecha, TotalArca = a.TotalPesos, Cae = a.Cae
+                Cuit = a.DocContraparte, Nombre = a.NombreContraparte, FechaArca = a.Fecha, TotalArca = a.TotalPesos, Cae = a.Cae, Arca = a
             };
             if (candidatos.Count == 0)
             {

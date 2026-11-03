@@ -3,6 +3,8 @@
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.Components.Forms
 @inject IControlArcaService Service
+@inject IControlArcaImportacionService Importacion
+@inject IArcaDescargaService Descarga
 @inject IAppUiOperationService UiOps
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
@@ -12,21 +14,64 @@
 
 <PageTitle>Control contra ARCA | Alfa Gestión</PageTitle>
 
-@* Control contra «Mis Comprobantes» de ARCA (emitidos contra ventas, recibidos contra el libro de compras). Solo lectura. *@
+@* Control contra «Mis Comprobantes» de ARCA (emitidos contra ventas, recibidos contra el libro de compras). El archivo se sube a mano o
+   se baja con el script de pre-proceso del legacy; los recibidos que faltan se pueden importar al libro de IVA compras. *@
 <div class="gd-page gd ca-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-    <section class="ca-subir">
-        <div class="ca-subir__texto">
-            <strong><i class="bi bi-cloud-arrow-up" aria-hidden="true"></i> Archivo de «Mis Comprobantes» de ARCA</strong>
-            <span>En ARCA → Mis Comprobantes, consultá <b>Emitidos</b> o <b>Recibidos</b> del período y descargalo en Excel (.xlsx) o CSV.
-                Se compara con las ventas o con el libro de IVA compras del sistema; no se modifica nada.</span>
-        </div>
-        <label class="ca-subir__boton @(_busy ? "is-disabled" : null)">
-            <InputFile OnChange="ArchivoElegidoAsync" accept=".xlsx,.csv,.txt" disabled="@_busy" />
-            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i> @(_busy ? "Controlando…" : _archivo is null ? "Elegir archivo" : "Elegir otro archivo")
-        </label>
-    </section>
+    <div class="ca-origen">
+        <section class="ca-subir">
+            <div class="ca-subir__texto">
+                <strong><i class="bi bi-cloud-arrow-up" aria-hidden="true"></i> A mano: archivo de «Mis Comprobantes»</strong>
+                <span>En ARCA → Mis Comprobantes, consultá <b>Emitidos</b> o <b>Recibidos</b> del período y descargalo en Excel o CSV.
+                    Se compara con las ventas o con el libro de IVA compras; no se graba nada hasta que importes.</span>
+            </div>
+            <label class="ca-subir__boton @(_busy ? "is-disabled" : null)">
+                <InputFile OnChange="ArchivoElegidoAsync" accept=".xlsx,.xls,.csv,.txt" disabled="@_busy" />
+                <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i> @(_busy ? "Controlando…" : _archivo is null ? "Elegir archivo" : "Elegir otro archivo")
+            </label>
+        </section>
+
+        <section class="ca-descarga">
+            <div class="ca-subir__texto">
+                <strong><i class="bi bi-robot" aria-hidden="true"></i> Automático: bajar de ARCA y comparar</strong>
+                @if (_cfg is null)
+                {
+                    <span>@(_cfgError ?? "Leyendo la configuración…")</span>
+                }
+                else if (!_cfg.Configurado(true) && !_cfg.Configurado(false))
+                {
+                    <span>Usa el script de pre-proceso del Alfa Gestión (Importar Comprobantes). Tocá «Configurar descarga» para cargar el acceso a ARCA y la ruta del script.</span>
+                }
+                else
+                {
+                    <div class="ca-descarga__fila">
+                        <input type="month" class="ca-input" value="@_periodo" @onchange="e => _periodo = e.Value?.ToString() ?? _periodo" disabled="@_busy" aria-label="Período" />
+                        <select class="ca-input" value="@(_descargaRecibidos ? "R" : "E")" @onchange='e => _descargaRecibidos = e.Value?.ToString() == "R"' disabled="@_busy" aria-label="Tipo">
+                            @if (_cfg.Configurado(true)) { <option value="R">Recibidos (compras)</option> }
+                            @if (_cfg.Configurado(false)) { <option value="E">Emitidos (ventas)</option> }
+                        </select>
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-cloud-download" Disabled="_busy" OnClick="_ => DescargarAsync()">
+                            @(_descargando ? "Descargando de ARCA…" : "Descargar y comparar")
+                        </AlfaButton>
+                    </div>
+                    <span>@AutoTexto(_cfg)</span>
+                }
+            </div>
+            @if (_archivos.Count > 0)
+            {
+                <div class="ca-archivos" aria-label="Archivos descargados">
+                    <small>Descargados:</small>
+                    @foreach (var a in _archivos.Take(8))
+                    {
+                        <button type="button" class="ca-archivo" disabled="@_busy" title="@($"{a.Nombre} · {a.Fecha:dd/MM/yyyy HH:mm}")" @onclick="() => CompararDescargadoAsync(a)">
+                            @(a.Recibidos ? "Recibidos" : "Emitidos") @a.Periodo[4..]/@a.Periodo[..4]
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+    </div>
 
     @if (_r is { } r)
     {
@@ -37,7 +82,7 @@
             <KpiCard Titulo="Coinciden" Valor="@r.Cantidad(ControlArcaEstado.Coincide).ToString("N0")" Icono="@Icono("bi-check2-circle")"
                      Descripcion="@($"ARCA {Moneda(r.TotalArca)} · sistema {Moneda(r.TotalSistema)}")" />
             <KpiCard Titulo="Faltan en el sistema" Valor="@r.Cantidad(ControlArcaEstado.FaltaEnSistema).ToString("N0")" Icono="@Icono("bi-exclamation-triangle")"
-                     Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar" : "Emitidos que no están en ventas")" />
+                     Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar: tildalas e importalas" : "Emitidos que no están en ventas")" />
             <KpiCard Titulo="Con diferencias" Valor="@((r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo) + r.Cantidad(ControlArcaEstado.DifiereFecha)).ToString("N0"))"
                      Icono="@Icono("bi-arrow-left-right")" Descripcion="@($"{r.Cantidad(ControlArcaEstado.DifiereImporte)} importe · {r.Cantidad(ControlArcaEstado.OtroPeriodo)} otro período · {r.Cantidad(ControlArcaEstado.FaltaEnArca)} no están en ARCA")" />
         </div>
@@ -53,6 +98,7 @@
         </div>
 
         var filas = r.Filas.Where(f => _estado is null ? f.Estado != ControlArcaEstado.Coincide : f.Estado == _estado).ToList();
+        var seleccionable = PuedeImportar(r);
         @if (filas.Count == 0)
         {
             <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin novedades" Message="Todos los comprobantes del archivo coinciden con el sistema." />
@@ -61,12 +107,27 @@
         {
             <section class="ca-tabla__marco"><div class="ca-tabla__scroll">
                 <table class="ca-tabla">
-                    <thead><tr><th>Estado</th><th>Tipo</th><th>Comprobante</th><th>@(r.Recibidos ? "Proveedor" : "Cliente")</th><th>Fecha ARCA</th><th>Fecha sistema</th>
+                    <thead><tr>
+                        @if (seleccionable)
+                        {
+                            <th class="ca-sel"><input type="checkbox" aria-label="Seleccionar los faltantes" checked="@(Importables(filas).Any() && Importables(filas).All(f => _sel.Contains(f)))"
+                                                      @onchange="e => SeleccionarTodos(filas, e.Value is true)" /></th>
+                        }
+                        <th>Estado</th><th>Tipo</th><th>Comprobante</th><th>@(r.Recibidos ? "Proveedor" : "Cliente")</th><th>Fecha ARCA</th><th>Fecha sistema</th>
                         <th class="n">Total ARCA</th><th class="n">Total sistema</th><th class="n">Diferencia</th><th>Observación</th></tr></thead>
                     <tbody>
                     @foreach (var f in filas)
                     {
-                        <tr>
+                        <tr class="@(_sel.Contains(f) ? "is-sel" : null)">
+                            @if (seleccionable)
+                            {
+                                <td class="ca-sel">
+                                    @if (f.Estado == ControlArcaEstado.FaltaEnSistema && f.Arca is not null)
+                                    {
+                                        <input type="checkbox" aria-label="Seleccionar" checked="@_sel.Contains(f)" @onchange="e => Seleccionar(f, e.Value is true)" />
+                                    }
+                                </td>
+                            }
                             <td><span class="ca-chip ca-estado--@(f.Estado.ToString().ToLowerInvariant())">@ControlArcaService.EstadoTexto(f.Estado)</span></td>
                             <td>@f.Clase @f.Letra</td>
                             <td>@f.Comprobante@if (f.ComprobanteSistema.Length > 0) { <small>@f.ComprobanteSistema</small> }</td>
@@ -88,37 +149,344 @@
     }
     else if (!_busy)
     {
-        <AlfaEmptyState Title="Subí el archivo de ARCA" Message="Elegí el Excel o CSV de Mis Comprobantes (emitidos o recibidos) para controlarlo contra el sistema." />
+        <AlfaEmptyState Title="Subí o descargá el archivo de ARCA" Message="Elegí el Excel o CSV de Mis Comprobantes (emitidos o recibidos), o bajalo de ARCA, para controlarlo contra el sistema." />
     }
 </div>
+
+@* ── Importar faltantes ── *@
+<AlfaDialog Open="@(_imp is not null)" Title="Importar comprobantes recibidos" Size="AlfaDialogSize.Xl" Loading="@_impBusy"
+            Description="Se dan de alta en el libro de IVA compras como en Importar Comprobantes del Alfa Gestión: asiento (proveedor al Haber; compras, IVA y otros tributos al Debe; las NC al revés) y comprobante, con usuario IMPORTACION."
+            ErrorMessage="@_impError" CloseOnBackdrop="false" OnClose="CerrarImportacionAsync">
+    <ChildContent>
+    @if (_imp is { } ctx)
+    {
+        <div class="ca-imp">
+            <div class="ca-imp__grid">
+                <AlfaSelect Label="Cuenta de compras" Value="@_solicitud.CuentaCompras" ValueChanged="v => _solicitud.CuentaCompras = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="IVA crédito fiscal" Value="@_solicitud.CuentaIva" ValueChanged="v => _solicitud.CuentaIva = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="Otros tributos (percepciones)" Value="@_solicitud.CuentaOtrosTributos" ValueChanged="v => _solicitud.CuentaOtrosTributos = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="Unidad de negocio" Value="@_solicitud.Unidad" ValueChanged="v => _solicitud.Unidad = v ?? string.Empty" Options="@_opcionesUnidades" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="Proveedores que no existen" Value="@_solicitud.ProveedoresNuevos.ToString()" ValueChanged="CambiarModoProveedor"
+                            Options="@OpcionesProveedor(ctx)" Disabled="@(_impHecho || _impBusy)" />
+                @if (_solicitud.ProveedoresNuevos == ControlArcaProveedorModo.Alta)
+                {
+                    <AlfaSelect Label="Condición de compra (proveedores nuevos)" Value="@_solicitud.CondicionCompra" ValueChanged="v => _solicitud.CondicionCompra = v ?? string.Empty"
+                                Options="@_opcionesCondiciones" Disabled="@(_impHecho || _impBusy)" />
+                }
+            </div>
+            <div class="ca-tabla__marco"><div class="ca-tabla__scroll ca-imp__scroll">
+                <table class="ca-tabla">
+                    <thead><tr><th>Comprobante</th><th>Fecha</th><th>Emisor</th><th>Proveedor</th><th class="n">Total</th><th>@(_impHecho ? "Resultado" : "Estado")</th></tr></thead>
+                    <tbody>
+                    @foreach (var f in ctx.Filas)
+                    {
+                        <tr>
+                            <td>@f.Comprobante</td>
+                            <td>@f.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td>@f.Nombre<small>@f.Cuit</small></td>
+                            <td>
+                                @if (f.Proveedor.Length > 0) { <span>@f.Proveedor · @f.ProveedorNombre</span> }
+                                else { <span class="ca-imp__nuevo">@ProveedorNuevoTexto()</span> }
+                            </td>
+                            <td class="n">@f.Total.ToString("N2", Culture)</td>
+                            <td class="ca-obs">
+                                @if (_impHecho) { <span class="@(f.Importado ? "ca-ok" : "ca-mal")">@f.Resultado</span> }
+                                else if (f.Bloqueo.Length > 0) { <span class="ca-mal">@f.Bloqueo</span> }
+                                else { <span class="ca-ok">Se importa</span> }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></div>
+            @if (ctx.CierreCompras is { } cierre)
+            {
+                <small class="ca-nota">Cierre de compras: @cierre.ToString("dd/MM/yyyy"). Lo anterior a esa fecha no se graba.</small>
+            }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (_impHecho)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="_ => CerrarImportacionAsync()">Cerrar y volver a comparar</AlfaButton>
+        }
+        else
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_impBusy" OnClick="_ => CerrarImportacionAsync()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-box-arrow-in-down" Disabled="@(_impBusy || CantidadImportable == 0)" OnClick="_ => ImportarAsync()">
+                @(_impBusy ? "Importando…" : $"Importar {CantidadImportable}")
+            </AlfaButton>
+        }
+    </Footer>
+</AlfaDialog>
+
+@* ── Configuración de la descarga ── *@
+<AlfaDialog Open="@(_cfgEdit is not null)" Title="Descarga de Mis Comprobantes" Size="AlfaDialogSize.Lg" Loading="@_cfgBusy"
+            Description="Mismos datos que Importar Comprobantes del Alfa Gestión: lo que se configura acá vale para los dos."
+            ErrorMessage="@_cfgEditError" CloseOnBackdrop="false" OnClose="() => _cfgEdit = null">
+    <ChildContent>
+    @if (_cfgEdit is { } c)
+    {
+        <div class="ca-cfg">
+            <div class="ca-imp__grid">
+                <AlfaInput Label="CUIT de ingreso a ARCA" Value="@c.CuitLogin" ValueChanged="v => c.CuitLogin = v ?? string.Empty" MaxLength="13" />
+                <AlfaInput Label="Clave fiscal" Type="password" Value="@c.ClaveNueva" ValueChanged="v => c.ClaveNueva = v" MaxLength="50"
+                           Placeholder="@(c.TieneClave ? "Guardada · escribí para cambiarla" : "")" HelpText="Se guarda ofuscada, como en el Alfa Gestión; nunca se muestra." />
+                <AlfaInput Label="CUIT representado (empresa)" Value="@c.CuitRepresentado" ValueChanged="v => c.CuitRepresentado = v ?? string.Empty" MaxLength="13" />
+            </div>
+            <AlfaInput Label="Script de recibidos" Value="@c.ScriptRecibidos" ValueChanged="v => c.ScriptRecibidos = v ?? string.Empty" MaxLength="150"
+                       HelpText="@Estado(c.ScriptRecibidos, c.ScriptRecibidosExiste, EjemploScript)" />
+            <AlfaInput Label="Script de emitidos" Value="@c.ScriptEmitidos" ValueChanged="v => c.ScriptEmitidos = v ?? string.Empty" MaxLength="150"
+                       HelpText="@Estado(c.ScriptEmitidos, c.ScriptEmitidosExiste, "Suele ser el mismo script.")" />
+            <AlfaInput Label="Carpeta de descargas" Value="@c.Carpeta" ValueChanged="v => c.Carpeta = v ?? string.Empty" MaxLength="150"
+                       HelpText="@(c.CarpetaExiste ? "La carpeta existe en el servidor de AlfaCore." : "Se crea al descargar. Por defecto, ARCA_Descargas al lado del sistema.")" />
+            <p class="ca-nota">@(c.PythonExiste ? $"Python: {c.Python}." : "No se encontró el python portable (carpeta python al lado de la carpeta del script): sin él solo se puede subir el archivo a mano.")
+                El script corre en el servidor de AlfaCore y usa Excel instalado, como en el Alfa Gestión.</p>
+            <div class="ca-cfg__auto">
+                <strong>Todos los días, bajar de ARCA y comparar</strong>
+                <AlfaCheckbox Value="@c.AutoRecibidos" ValueChanged="v => c.AutoRecibidos = v == true">Recibidos (contra el libro de IVA compras)</AlfaCheckbox>
+                <AlfaCheckbox Value="@c.AutoEmitidos" ValueChanged="v => c.AutoEmitidos = v == true">Emitidos (contra las ventas)</AlfaCheckbox>
+                <label class="ca-cfg__hora">A partir de las <input type="time" class="ca-input" value="@c.HoraAuto" @onchange="e => c.HoraAuto = e.Value?.ToString() ?? c.HoraAuto" /></label>
+                <small>Baja el mes actual (y el anterior hasta el día 10) y deja el resultado en esta pantalla. No graba comprobantes: los faltantes se importan desde acá.</small>
+            </div>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_cfgBusy" OnClick="_ => _cfgEdit = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_cfgBusy" OnClick="_ => GuardarConfigAsync()">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
 @code {
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private const long MaximoArchivo = 15 * 1024 * 1024;
+    private const string EjemploScript = @"Ej.: C:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT\scripts_preproceso\arca_comprobantes.py";
     private ControlArcaResultado? _r;
     private ControlArcaEstado? _estado;
     private string? _archivo;
+    private byte[]? _bytes;
     private AppUiMessage? _feedback;
-    private bool _busy, _disposed, _exportando;
+    private bool _busy, _disposed, _exportando, _descargando;
     private PageHeaderConfig? _header;
+    // Descarga
+    private ArcaDescargaConfig? _cfg, _cfgEdit;
+    private string? _cfgError, _cfgEditError;
+    private bool _cfgBusy, _descargaRecibidos = true;
+    private string _periodo = DateTime.Today.ToString("yyyy-MM");
+    private IReadOnlyList<ArcaArchivoDescargado> _archivos = [];
+    // Importación
+    private readonly HashSet<ControlArcaFila> _sel = [];
+    private ControlArcaImportacionContexto? _imp;
+    private ControlArcaImportacionSolicitud _solicitud = new();
+    private IReadOnlyList<AlfaSelectOption> _opcionesCuentas = [], _opcionesUnidades = [], _opcionesCondiciones = [];
+    private bool _impBusy, _impHecho;
+    private string? _impError;
 
-    protected override void OnInitialized() => UpdateHeader();
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        await CargarDescargaAsync();
+    }
 
     private async Task ArchivoElegidoAsync(InputFileChangeEventArgs e)
     {
         if (_busy) return;
         var f = e.File;
         if (f.Size > MaximoArchivo) { _feedback = AppUiMessage.Warning("Archivo muy grande", "El archivo supera los 15 MB: consultá un período más corto."); return; }
-        _busy = true; _feedback = null; _archivo = f.Name; UpdateHeader(); StateHasChanged();
+        _busy = true; _feedback = null; UpdateHeader(); StateHasChanged();
         try
         {
             await using var s = f.OpenReadStream(MaximoArchivo);
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms);
-            var r = await UiOps.RunAsync(() => Service.ControlarAsync(ms.ToArray(), f.Name), "Control contra ARCA");
-            if (r.Success) { _r = r.Value; _estado = null; } else _feedback = r.Feedback;
+            await ControlarAsync(ms.ToArray(), f.Name);
         }
         finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private async Task ControlarAsync(byte[] bytes, string nombre)
+    {
+        _archivo = nombre; _bytes = bytes;
+        var r = await UiOps.RunAsync(() => Service.ControlarAsync(bytes, nombre), "Control contra ARCA");
+        if (r.Success) { _r = r.Value; _estado = null; _sel.Clear(); } else _feedback = r.Feedback;
+    }
+
+    // ── Descarga ──
+
+    private async Task CargarDescargaAsync()
+    {
+        try
+        {
+            _cfg = await Descarga.GetConfigAsync();
+            _descargaRecibidos = _cfg.Configurado(true) || !_cfg.Configurado(false);
+            _archivos = await Descarga.ArchivosAsync();
+            _cfgError = null;
+        }
+        catch (Exception ex)
+        {
+            _cfg = null;
+            _cfgError = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo leer la configuración de la descarga.";
+        }
+        UpdateHeader();
+    }
+
+    private static string AutoTexto(ArcaDescargaConfig c)
+    {
+        var tipos = new[] { c.AutoRecibidos ? "recibidos" : null, c.AutoEmitidos ? "emitidos" : null }.OfType<string>().ToList();
+        if (tipos.Count == 0) return "La descarga automática diaria está apagada (Configurar descarga).";
+        var ultima = new[] { c.AutoRecibidos && c.UltimaAutoRecibidos.Length > 0 ? "Recibidos " + c.UltimaAutoRecibidos : null,
+                             c.AutoEmitidos && c.UltimaAutoEmitidos.Length > 0 ? "Emitidos " + c.UltimaAutoEmitidos : null }.OfType<string>().ToList();
+        return $"Todos los días desde las {c.HoraAuto}: {string.Join(" y ", tipos)}. " + (ultima.Count > 0 ? "Última: " + string.Join(" | ", ultima) : "Todavía no corrió.");
+    }
+
+    private static string Estado(string ruta, bool existe, string ayuda)
+        => ruta.Trim().Length == 0 ? ayuda : existe ? "Encontrado en el servidor de AlfaCore." : "No se encuentra en el servidor de AlfaCore.";
+
+    private Task AbrirConfig()
+    {
+        if (_cfg is null) return Task.CompletedTask;
+        _cfgEditError = null;
+        _cfgEdit = new ArcaDescargaConfig
+        {
+            CuitLogin = _cfg.CuitLogin, TieneClave = _cfg.TieneClave, CuitRepresentado = _cfg.CuitRepresentado, Carpeta = _cfg.Carpeta,
+            ScriptRecibidos = _cfg.ScriptRecibidos, ScriptEmitidos = _cfg.ScriptEmitidos, AutoRecibidos = _cfg.AutoRecibidos, AutoEmitidos = _cfg.AutoEmitidos,
+            HoraAuto = _cfg.HoraAuto, ScriptRecibidosExiste = _cfg.ScriptRecibidosExiste, ScriptEmitidosExiste = _cfg.ScriptEmitidosExiste,
+            Python = _cfg.Python, PythonExiste = _cfg.PythonExiste, CarpetaExiste = _cfg.CarpetaExiste
+        };
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarConfigAsync()
+    {
+        if (_cfgEdit is null || _cfgBusy) return;
+        _cfgBusy = true; _cfgEditError = null;
+        try
+        {
+            await Descarga.GuardarConfigAsync(_cfgEdit);
+            _cfgEdit = null;
+            await CargarDescargaAsync();
+            _feedback = AppUiMessage.Success("Descarga configurada", "Se guardó la configuración de la descarga de ARCA.");
+        }
+        catch (Exception ex) { _cfgEditError = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo guardar la configuración."; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task DescargarAsync()
+    {
+        if (_busy || _cfg is null) return;
+        if (!DateTime.TryParseExact(_periodo + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var p))
+        { _feedback = AppUiMessage.Warning("Período", "Elegí el mes a descargar."); return; }
+        _busy = true; _descargando = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Descarga.DescargarAsync(_descargaRecibidos, p.Year, p.Month), "Descarga de ARCA");
+            if (!r.Success) { _feedback = r.Feedback; return; }
+            _archivos = await Descarga.ArchivosAsync();
+            await ControlarAsync(await Descarga.LeerArchivoAsync(r.Value!.Nombre), r.Value.Nombre);
+        }
+        finally { _busy = false; _descargando = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private async Task CompararDescargadoAsync(ArcaArchivoDescargado a)
+    {
+        if (_busy) return;
+        _busy = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Descarga.LeerArchivoAsync(a.Nombre), "Archivo descargado");
+            if (r.Success) await ControlarAsync(r.Value!, a.Nombre); else _feedback = r.Feedback;
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    // ── Importación de faltantes ──
+
+    private static bool PuedeImportar(ControlArcaResultado r) => r.Recibidos && r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0;
+    private static IEnumerable<ControlArcaFila> Importables(IEnumerable<ControlArcaFila> filas) => filas.Where(f => f.Estado == ControlArcaEstado.FaltaEnSistema && f.Arca is not null);
+    private void Seleccionar(ControlArcaFila f, bool valor) { if (valor) _sel.Add(f); else _sel.Remove(f); UpdateHeader(); }
+    private void SeleccionarTodos(IEnumerable<ControlArcaFila> filas, bool valor)
+    {
+        foreach (var f in Importables(filas)) { if (valor) _sel.Add(f); else _sel.Remove(f); }
+        UpdateHeader();
+    }
+    private int CantidadImportable => _imp?.Filas.Count(f => f.Bloqueo.Length == 0) ?? 0;
+    private string ProveedorNuevoTexto() => _solicitud.ProveedoresNuevos switch
+    {
+        ControlArcaProveedorModo.Alta => "Nuevo: se da de alta con los datos de ARCA",
+        ControlArcaProveedorModo.Varios => "No existe: va a proveedores varios",
+        _ => "No existe: no se importa"
+    };
+    private static IReadOnlyList<AlfaSelectOption> OpcionesProveedor(ControlArcaImportacionContexto c) =>
+    [
+        new(nameof(ControlArcaProveedorModo.Alta), "Darlos de alta con los datos de ARCA", !c.PuedeCrearProveedores),
+        new(nameof(ControlArcaProveedorModo.Varios), "Imputarlos a proveedores varios", c.CuentaProveedoresVarios.Length == 0),
+        new(nameof(ControlArcaProveedorModo.Omitir), "No importarlos")
+    ];
+    private void CambiarModoProveedor(string? v)
+        => _solicitud.ProveedoresNuevos = Enum.TryParse<ControlArcaProveedorModo>(v, out var m) ? m : ControlArcaProveedorModo.Omitir;
+
+    private async Task AbrirImportacionAsync()
+    {
+        if (_r is null || _sel.Count == 0 || _busy) return;
+        _busy = true; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var comprobantes = _sel.Select(f => f.Arca!).ToList();
+            var cuit = _r.CuitArchivo;
+            var r = await UiOps.RunAsync(() => Importacion.ContextoAsync(comprobantes, cuit), "Importar faltantes");
+            if (!r.Success) { _feedback = r.Feedback; return; }
+            var ctx = r.Value!;
+            _opcionesCuentas = ctx.Cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} · {c.Descripcion}")).ToList();
+            _opcionesUnidades = ctx.Unidades.Select(u => new AlfaSelectOption(u.Codigo, $"{u.Codigo} · {u.Descripcion}")).ToList();
+            _opcionesCondiciones = ctx.CondicionesCompra.Select(c => new AlfaSelectOption(c.Codigo, c.Descripcion)).ToList();
+            _solicitud = new ControlArcaImportacionSolicitud
+            {
+                Comprobantes = comprobantes, CuentaCompras = ctx.CuentaCompras, CuentaIva = ctx.CuentaIva, CuentaOtrosTributos = ctx.CuentaOtrosTributos,
+                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra,
+                ProveedoresNuevos = ctx.PuedeCrearProveedores ? ControlArcaProveedorModo.Alta
+                    : ctx.CuentaProveedoresVarios.Length > 0 ? ControlArcaProveedorModo.Varios : ControlArcaProveedorModo.Omitir
+            };
+            _impHecho = false; _impError = null; _imp = ctx;
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (_imp is null || _impBusy) return;
+        _impBusy = true; _impError = null; StateHasChanged();
+        try
+        {
+            var bloqueadas = _imp.Filas.Where(f => f.Bloqueo.Length > 0).Select(f => f.Clave).ToHashSet();
+            _solicitud.Comprobantes = _solicitud.Comprobantes.Where(c => !bloqueadas.Contains(ControlArcaImportacionService.Clave(c))).ToList();
+            var resultado = await Importacion.ImportarAsync(_solicitud);
+            var porClave = resultado.GroupBy(x => x.Clave).ToDictionary(g => g.Key, g => g.First());
+            foreach (var f in _imp.Filas)
+            {
+                if (!porClave.TryGetValue(f.Clave, out var x)) { f.Resultado = f.Bloqueo; continue; }
+                f.Resultado = x.Resultado; f.Importado = x.Importado;
+                if (x.Proveedor.Length > 0) { f.Proveedor = x.Proveedor; f.ProveedorNombre = x.ProveedorNombre; }
+            }
+            _impHecho = true;
+        }
+        catch (Exception ex) { _impError = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo importar."; }
+        finally { _impBusy = false; if (!_disposed) StateHasChanged(); }
+    }
+
+    private async Task CerrarImportacionAsync()
+    {
+        if (_impBusy) return;
+        var recontrolar = _impHecho;
+        _imp = null; _impHecho = false;
+        if (recontrolar && _bytes is not null && _archivo is not null)
+        {
+            _busy = true; UpdateHeader(); StateHasChanged();
+            try { await ControlarAsync(_bytes, _archivo); }
+            finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+        }
     }
 
     private async Task ExportarAsync()
@@ -133,18 +501,25 @@
         finally { _exportando = false; if (!_disposed) UpdateHeader(); }
     }
 
-    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    private void UpdateHeader()
     {
-        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Control contra ARCA",
-        Breadcrumb = ["Contabilidad", "Control contra ARCA"],
-        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "control-arca"),
-        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
-        Actions =
-        [
-            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary,
-                Disabled = _busy || _r is null || _exportando, Busy = _exportando, OnClick = ExportarAsync }
-        ]
-    });
+        var acciones = new List<PageHeaderAction>();
+        if (_r is { } r && PuedeImportar(r))
+            acciones.Add(new() { Key = "importar", Label = _sel.Count > 0 ? $"Importar faltantes ({_sel.Count})" : "Importar faltantes", Icon = "bi-box-arrow-in-down",
+                Style = PageHeaderActionStyle.Primary, Disabled = _busy || _sel.Count == 0, OnClick = AbrirImportacionAsync });
+        acciones.Add(new() { Key = "config", Label = "Configurar descarga", Icon = "bi-gear", Style = PageHeaderActionStyle.Secondary,
+            Disabled = _busy || _cfg is null, OnClick = AbrirConfig });
+        acciones.Add(new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary,
+            Disabled = _busy || _r is null || _exportando, Busy = _exportando, OnClick = ExportarAsync });
+        PageHeader.Set(_header = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Control contra ARCA",
+            Breadcrumb = ["Contabilidad", "Control contra ARCA"],
+            TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "control-arca"),
+            State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+            Actions = acciones
+        });
+    }
 
     private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
     private static string Moneda(decimal v) => v.ToString("C2", Culture);

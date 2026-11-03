@@ -27,3 +27,26 @@
 .ca-estado--otroperiodo, .ca-estado--difierefecha { color: var(--alfa-warning, #d9a400); }
 .ca-estado--faltaenarca { color: var(--alfa-text-secondary); }
 .ca-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }
+.ca-origen { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+.ca-descarga { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
+.ca-descarga__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
+.ca-input { height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font-size: 13px; color-scheme: light dark; }
+.ca-archivos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ca-archivos small { color: var(--alfa-text-secondary); }
+.ca-archivo { padding: 3px 10px; font-size: 12px; border-radius: 999px; cursor: pointer; border: 1px solid var(--alfa-border-default);
+    background: transparent; color: var(--alfa-text-primary); }
+.ca-archivo:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
+.ca-tabla .ca-sel { width: 32px; text-align: center; }
+.ca-tabla tr.is-sel td { background: color-mix(in srgb, var(--alfa-accent) 8%, var(--alfa-bg-surface)); }
+.ca-imp, .ca-cfg { display: flex; flex-direction: column; gap: 12px; }
+.ca-imp__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; }
+.ca-imp__scroll { max-height: 42vh; }
+.ca-imp__nuevo { color: var(--alfa-warning, #d9a400); }
+.ca-ok { color: var(--alfa-success, #2e9e5b); }
+.ca-mal { color: var(--alfa-danger, #e5484d); }
+.ca-cfg__auto { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--alfa-radius-md);
+    border: 1px solid var(--alfa-border-default); color: var(--alfa-text-primary); }
+.ca-cfg__auto small { color: var(--alfa-text-secondary); }
+.ca-cfg__hora { display: flex; align-items: center; gap: 8px; font-size: 13px; }

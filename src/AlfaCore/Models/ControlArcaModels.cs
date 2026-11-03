@@ -23,9 +23,13 @@ public sealed class ArcaMisComprobante
     public decimal OtrosTributos { get; set; }
     public decimal Iva { get; set; }
     public decimal Total { get; set; }
+    /// <summary>Neto e IVA por alícuota (columnas «Neto Grav. IVA x%» / «IVA x%»); vacío en el formato anterior.</summary>
+    public List<ArcaAlicuota> Alicuotas { get; set; } = [];
     /// <summary>Total en pesos (por el tipo de cambio si es moneda extranjera).</summary>
     public decimal TotalPesos => Moneda is "$" or "PES" or "" ? Total : Math.Round(Total * TipoCambio, 2);
 }
+
+public sealed record ArcaAlicuota(decimal Tasa, decimal Neto, decimal Iva);
 
 public sealed class ArcaMisComprobantesArchivo
 {
@@ -56,6 +60,8 @@ public sealed class ControlArcaFila
     /// <summary>Comprobante en el sistema (TC + número) cuando existe.</summary>
     public string ComprobanteSistema { get; set; } = string.Empty;
     public string Observacion { get; set; } = string.Empty;
+    /// <summary>Datos completos de ARCA (para importar los que faltan).</summary>
+    public ArcaMisComprobante? Arca { get; set; }
     public string Comprobante => NumeroHasta > Numero ? $"{PuntoVenta:00000}-{Numero:00000000} a {NumeroHasta:00000000}" : $"{PuntoVenta:00000}-{Numero:00000000}";
 }
 
@@ -76,3 +82,84 @@ public sealed class ControlArcaResultado
     public decimal TotalSistema { get; set; }
     public int Cantidad(ControlArcaEstado e) => Filas.Count(f => f.Estado == e);
 }
+
+// ── Importación de faltantes (recibidos → compras) ─────────────────────────────────────────────
+
+public sealed class ControlArcaImportacionContexto
+{
+    public string CuentaCompras { get; set; } = string.Empty;
+    public string CuentaIva { get; set; } = string.Empty;
+    public string CuentaOtrosTributos { get; set; } = string.Empty;
+    public string CuentaProveedoresVarios { get; set; } = string.Empty;
+    public string Unidad { get; set; } = string.Empty;
+    public IReadOnlyList<CompraCargaOpcion> Cuentas { get; set; } = [];
+    public IReadOnlyList<CompraCargaOpcion> Unidades { get; set; } = [];
+    public IReadOnlyList<CompraCargaOpcion> CondicionesCompra { get; set; } = [];
+    public string CondicionCompra { get; set; } = string.Empty;
+    public bool PuedeCrearProveedores { get; set; }
+    public DateTime? CierreCompras { get; set; }
+    public IReadOnlyList<ControlArcaImportacionFila> Filas { get; set; } = [];
+}
+
+public enum ControlArcaProveedorModo { Alta, Varios, Omitir }
+
+public sealed class ControlArcaImportacionFila
+{
+    public string Clave { get; set; } = string.Empty;
+    public string Comprobante { get; set; } = string.Empty;
+    public string Cuit { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public DateTime Fecha { get; set; }
+    public decimal Total { get; set; }
+    /// <summary>Proveedor encontrado por CUIT (vacío = no existe).</summary>
+    public string Proveedor { get; set; } = string.Empty;
+    public string ProveedorNombre { get; set; } = string.Empty;
+    /// <summary>Motivo por el que no se puede importar (vacío = se puede).</summary>
+    public string Bloqueo { get; set; } = string.Empty;
+    /// <summary>Resultado después de importar.</summary>
+    public string Resultado { get; set; } = string.Empty;
+    public bool Importado { get; set; }
+}
+
+public sealed class ControlArcaImportacionSolicitud
+{
+    public List<ArcaMisComprobante> Comprobantes { get; set; } = [];
+    public string CuentaCompras { get; set; } = string.Empty;
+    public string CuentaIva { get; set; } = string.Empty;
+    public string CuentaOtrosTributos { get; set; } = string.Empty;
+    public string Unidad { get; set; } = string.Empty;
+    public ControlArcaProveedorModo ProveedoresNuevos { get; set; } = ControlArcaProveedorModo.Alta;
+    public string CondicionCompra { get; set; } = string.Empty;
+}
+
+public sealed record ControlArcaAsientoLinea(string Cuenta, string DebeHaber, decimal Importe);
+
+// ── Descarga desde ARCA (script de pre-proceso del legacy) ─────────────────────────────────────
+
+public sealed class ArcaDescargaConfig
+{
+    public string CuitLogin { get; set; } = string.Empty;
+    /// <summary>Solo para grabar: nunca se devuelve la clave guardada.</summary>
+    public string? ClaveNueva { get; set; }
+    public bool TieneClave { get; set; }
+    public string CuitRepresentado { get; set; } = string.Empty;
+    public string Carpeta { get; set; } = string.Empty;
+    public string ScriptRecibidos { get; set; } = string.Empty;
+    public string ScriptEmitidos { get; set; } = string.Empty;
+    /// <summary>Descarga y control automático diario (AlfaCore).</summary>
+    public bool AutoRecibidos { get; set; }
+    public bool AutoEmitidos { get; set; }
+    public string HoraAuto { get; set; } = "07:00";
+    // Estado en este servidor (solo lectura).
+    public bool ScriptRecibidosExiste { get; set; }
+    public bool ScriptEmitidosExiste { get; set; }
+    public string Python { get; set; } = string.Empty;
+    public bool PythonExiste { get; set; }
+    public bool CarpetaExiste { get; set; }
+    public string UltimaAutoRecibidos { get; set; } = string.Empty;
+    public string UltimaAutoEmitidos { get; set; } = string.Empty;
+    public bool Configurado(bool recibidos) => CuitLogin.Length > 0 && TieneClave && CuitRepresentado.Length > 0
+        && (recibidos ? ScriptRecibidosExiste : ScriptEmitidosExiste) && PythonExiste;
+}
+
+public sealed record ArcaArchivoDescargado(string Nombre, bool Recibidos, string Periodo, DateTime Fecha, long Bytes);
