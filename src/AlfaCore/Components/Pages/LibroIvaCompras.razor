@@ -1,0 +1,8 @@
+@page "/compras/libro-iva"
+@page "/{idweb}/{idbase:int}/compras/libro-iva"
+<LibroIvaPanel Compras="true" />
+
+@code {
+    [Parameter] public string? idweb { get; set; }
+    [Parameter] public int? idbase { get; set; }
+}

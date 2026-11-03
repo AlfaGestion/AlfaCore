@@ -15,6 +15,7 @@ public static class ModuleTopNavPresets
         [
             ("inicio", "Inicio", "/compras"),
             ("reportes", "Reportes", "/compras/reportes"),
+            ("libro-iva", "Libro de IVA", "/compras/libro-iva"),
             ("proveedores", "Proveedores", "/compras/proveedores"),
             ("comprobantes", "Comprobantes", "/compras/comprobantes"),
             ("carga-compras", "Preparar compra", "/compras/carga"),

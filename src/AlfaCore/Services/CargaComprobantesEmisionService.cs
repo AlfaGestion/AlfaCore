@@ -22,7 +22,7 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
         // Período de ventas cerrado (CIERREVENTAS, Libro de IVA): el trigger de MV_ASIENTOS rechazaría el asiento.
         // Las proformas no van al libro de IVA.
-        if (plan.Tc is not ("FP" or "NCFP" or "NDFP" or "CBFP") && await LibroIvaVentasService.LeerCierreAsync(cn, ct) is { } cierre && fecha.Date <= cierre)
+        if (plan.Tc is not ("FP" or "NCFP" or "NDFP" or "CBFP") && await LibroIvaService.LeerCierreAsync(cn, ct) is { } cierre && fecha.Date <= cierre)
             throw new CargaComprobantesReglaException($"Las ventas están cerradas hasta el {cierre:dd/MM/yyyy} (Libro de IVA presentado): usá una fecha posterior. No se pidió CAE.");
         // ARCA no autoriza un comprobante con fecha anterior al último del mismo tipo y punto de venta
         // (también los emitidos desde Alfa Gestión de escritorio): se avisa antes de pedir CAE.

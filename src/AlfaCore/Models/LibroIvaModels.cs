@@ -1,8 +1,9 @@
 namespace AlfaCore.Models;
 
-/// <summary>Libro de IVA Ventas: un período (normalmente un mes) de una unidad de negocio (un CUIT).</summary>
-public sealed class LibroIvaVentasFiltro
+/// <summary>Libro de IVA (ventas o compras): un período (normalmente un mes) de una unidad de negocio (un CUIT).</summary>
+public sealed class LibroIvaFiltro
 {
+    public bool Compras { get; set; }
     public DateTime Desde { get; set; }
     public DateTime Hasta { get; set; }
     /// <summary>Código de unidad de negocio; vacío = todas (solo para consulta: el TXT de ARCA es por CUIT).</summary>
@@ -11,7 +12,7 @@ public sealed class LibroIvaVentasFiltro
 
 public sealed record LibroIvaAlicuota(decimal Alicuota, decimal Neto, decimal Iva);
 
-public sealed class LibroIvaVentasFila
+public sealed class LibroIvaFila
 {
     public DateTime Fecha { get; set; }
     public string Tc { get; set; } = string.Empty;
@@ -39,15 +40,16 @@ public sealed class LibroIvaVentasFila
     public string Comprobante => $"{PuntoVenta:0000}-{Numero:00000000}";
 }
 
-public sealed class LibroIvaVentasResultado
+public sealed class LibroIvaResultado
 {
-    public LibroIvaVentasFiltro Filtro { get; set; } = new();
+    public LibroIvaFiltro Filtro { get; set; } = new();
     public string Emisor { get; set; } = string.Empty;
     public string CuitEmisor { get; set; } = string.Empty;
     public string CondicionIvaEmisor { get; set; } = string.Empty;
-    public IReadOnlyList<LibroIvaVentasFila> Filas { get; set; } = [];
+    public IReadOnlyList<LibroIvaFila> Filas { get; set; } = [];
     public IReadOnlyList<LibroIvaAlicuota> TotalesPorAlicuota { get; set; } = [];
-    public DateTime? CierreVentas { get; set; }
+    /// <summary>Fecha de cierre del libro (CIERREVENTAS o CIERRECOMPRAS).</summary>
+    public DateTime? Cierre { get; set; }
     public bool PuedeCerrar { get; set; }
     /// <summary>Comprobantes sin código ARCA (no van al TXT del Libro IVA Digital).</summary>
     public int SinCodigoArca { get; set; }
