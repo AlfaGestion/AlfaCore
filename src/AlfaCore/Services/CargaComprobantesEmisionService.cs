@@ -20,6 +20,17 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         if (directa?.Fecha is not null && directa.Tc != "FP" && Math.Abs((fecha - hoy.Date).TotalDays) > 5)
             throw new CargaComprobantesReglaException($"La fecha de un comprobante electrónico puede ser hasta 5 días antes o después de hoy ({hoy:dd/MM/yyyy}).");
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
+        // ARCA no autoriza un comprobante con fecha anterior al último del mismo tipo y punto de venta
+        // (también los emitidos desde Alfa Gestión de escritorio): se avisa antes de pedir CAE.
+        if (plan.EsElectronico && fecha.Date < hoy.Date)
+        {
+            var ultima = await cn.ExecuteScalarAsync<DateTime?>(new CommandDefinition("""
+                SELECT MAX(FECHA) FROM dbo.V_MV_CPTE
+                WHERE LTRIM(RTRIM(TC))=@Tc AND SUCURSAL=@Sucursal AND LETRA=@Letra AND ISNULL(ANULADA,0)=0;
+                """, new { plan.Tc, Sucursal = plan.PuntoVenta.ToString("0000"), plan.Letra }, cancellationToken: ct));
+            if (ultima?.Date > fecha.Date)
+                throw new CargaComprobantesReglaException($"La fecha {fecha:dd/MM/yyyy} es anterior al último {plan.Tc} {plan.Letra} del punto de venta {plan.PuntoVenta:0000} ({ultima:dd/MM/yyyy}); ARCA no la acepta. Usá una fecha igual o posterior.");
+        }
         var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico.");
         // Validar/vista previa: ensayo revertido, no exige la emisión real habilitada (sí al pedir CAE o grabar).

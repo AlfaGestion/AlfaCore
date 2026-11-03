@@ -198,7 +198,7 @@
 @if (_confirmarEmisionFa)
 {
     <AlfaConfirmDialog Open="true" Title="@(EmisionReal ? "Emitir facturas REALES" : "Emitir facturación automática")"
-        Message="@($"Se emitirán {_seleccionFa.Count} factura(s) por {Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
+        Message="@($"Se emitirán {_seleccionFa.Count} factura(s) por {Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha {FechaFaAplicada:dd/MM/yyyy}.")"
         SecondaryMessage="@((EmisionReal
                 ? "FACTURAS REALES con validez fiscal: por cada cliente se pide CAE en ARCA producción y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
                 : "Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás.")
@@ -208,7 +208,7 @@
 @if (_confirmarProformaFa is { Count: > 0 } proformas)
 {
     <AlfaConfirmDialog Open="true" Title="Emitir como proforma"
-        Message="@($"Se emitirán {proformas.Count} proforma(s) (FP) por {Moneda(_filasFa.Where(f => proformas.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
+        Message="@($"Se emitirán {proformas.Count} proforma(s) (FP) por {Moneda(_filasFa.Where(f => proformas.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha {FechaFaAplicada:dd/MM/yyyy}.")"
         SecondaryMessage="@("Para cuando ARCA no responde o rechaza: la proforma no pide CAE ni va a ARCA. Se graba con cuenta corriente y asiento y se actualiza la última factura automática del cliente, así no se factura dos veces. Más adelante se podrá convertir en factura electrónica."
             + (_enviarMailFa ? " También se envía por mail." : ""))"
         ConfirmLabel="Emitir proforma" OnConfirm="EmitirProformaFaAsync" OnCancel="() => _confirmarProformaFa = null" />
@@ -298,11 +298,12 @@
     private string _progresoFa = string.Empty;
     private DateTime FechaFaAplicada => (_filtroAplicado.FechaFacturacion ?? DateTime.Today).Date;
     // La factura sale con la fecha del día: solo se emite si la fecha a facturar es hoy.
-    private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaAplicada == DateTime.Today && _contexto?.PuedeEmitir == true;
+    private bool FechaFaEmitible => Math.Abs((FechaFaAplicada - DateTime.Today).TotalDays) <= CargaComprobantesFacturacionAutomatica.DiasFechaEmision;
+    private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaEmitible && _contexto?.PuedeEmitir == true;
     private bool EmisionReal => _contexto?.EmisionReal == true;
     // Por qué Emitir está apagado (se muestra sobre la lista y como ayuda del botón).
     private string? MotivoNoEmiteFa => _contexto?.PuedeEmitir != true ? _contexto?.ModoEmisionMotivo
-        : FechaFaAplicada != DateTime.Today ? $"La fecha a facturar es {FechaFaAplicada:dd/MM/yyyy}: las facturas salen con la fecha del día, así que solo se emite con la fecha de hoy ({DateTime.Today:dd/MM/yyyy}). Cambiala en el filtro «Fecha a facturar»; con otra fecha podés usar Vista previa."
+        : !FechaFaEmitible ? $"La fecha a facturar es {FechaFaAplicada:dd/MM/yyyy}: ARCA acepta hasta {CargaComprobantesFacturacionAutomatica.DiasFechaEmision} días antes o después de hoy ({DateTime.Today:dd/MM/yyyy}). Cambiala en el filtro «Fecha a facturar»; con otra fecha podés usar Vista previa."
         : null;
     private string TextoAmbiente => _contexto?.ModoEmision switch { "PRODUCCION" => "Producción", "DESHABILITADA" => "Emisión deshabilitada", _ => "Homologación" };
 
@@ -628,7 +629,7 @@
         else
         {
             <small>@r.Mensaje</small>
-            @if (r.Estado is "RECHAZADA" or "ERROR" && FechaFaAplicada == DateTime.Today && _contexto?.PuedeEmitir == true)
+            @if (r.Estado is "RECHAZADA" or "ERROR" && FechaFaEmitible && _contexto?.PuedeEmitir == true)
             {
                 <button type="button" class="cc-fa-mail__btn" disabled="@_busy" title="Emitir esta factura como proforma (FP), sin CAE"
                         @onclick="() => { _confirmarProformaFa = [r.Cuenta]; }">
@@ -816,7 +817,7 @@
                 </table>
             </div>
             <footer class="cc-data-footer">Clientes en condiciones de facturar al @fecha.ToString("dd/MM/yyyy") · mismas reglas que Facturación Automática de Alfa Gestión ·
-                Vista previa valida sin grabar · Emitir (@TextoAmbiente.ToLowerInvariant()) requiere que la fecha a facturar sea hoy.</footer>
+                Vista previa valida sin grabar · Emitir (@TextoAmbiente.ToLowerInvariant()) usa la fecha a facturar: hasta 5 días antes o después de hoy.</footer>
         </section>
     };
     private static IReadOnlyList<AlfaSelectOption> Opciones(IReadOnlyList<CargaComprobantesOpcionFiltro> items)

@@ -193,6 +193,10 @@ public sealed partial class CargaComprobantesService(
         => ResultadoFacturacionAutomaticaAsync(cuenta, "PrevisualizarFacturacionAutomatica", async (cn, ctx, token) =>
         {
             var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, fechaFacturacion.Date, token);
+            // Con una fecha emitible, la vista previa la valida igual que la emisión (incluido el último comprobante).
+            var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token));
+            if (Math.Abs((fechaFacturacion.Date - hoy.Date).TotalDays) <= CargaComprobantesFacturacionAutomatica.DiasFechaEmision)
+                borrador.Fecha = fechaFacturacion.Date;
             var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
             return Resumen(plan, fila, talonario, "VALIDADA",
                 "Validada: se ensayó la grabación completa y se revirtió. No se pidió CAE ni se modificó la facturación automática.");
@@ -202,11 +206,14 @@ public sealed partial class CargaComprobantesService(
         => ResultadoFacturacionAutomaticaAsync(cuenta, "EmitirFacturacionAutomatica", async (cn, ctx, token) =>
         {
             var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: token));
-            // La factura sale con la fecha del día (el motor no admite fechas anteriores o futuras):
-            // así la fecha de última factura y el período del concepto quedan coherentes.
-            if (fechaFacturacion.Date != hoy.Date)
-                throw new CargaComprobantesReglaException($"Para emitir, la fecha a facturar debe ser la de hoy ({hoy:dd/MM/yyyy}).");
-            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, hoy, token, comoProforma ? "FP" : null);
+            // La factura sale con la fecha a facturar (ARCA acepta hasta 5 días antes o después de hoy y no
+            // anterior al último comprobante del punto de venta): la fecha de última factura y el período
+            // del concepto quedan coherentes con esa fecha.
+            var fecha = fechaFacturacion.Date;
+            if (Math.Abs((fecha - hoy.Date).TotalDays) > CargaComprobantesFacturacionAutomatica.DiasFechaEmision)
+                throw new CargaComprobantesReglaException($"La fecha a facturar puede ser hasta {CargaComprobantesFacturacionAutomatica.DiasFechaEmision} días antes o después de hoy ({hoy:dd/MM/yyyy}).");
+            var (borrador, talonario, fila) = await CargaComprobantesFacturacionAutomatica.PrepararAsync(cn, ctx, cuenta, fecha, token, comoProforma ? "FP" : null);
+            borrador.Fecha = fecha;
             var plan = await emision.ValidarAsync(cn, ctx, 0, talonario, [], token, borrador);
             var resultado = await emision.EmitirAsync(cn, ctx, 0, talonario, [], Guid.NewGuid(), plan.Huella,
                 () => EnsureContext(ctx.SesionId, ctx.Usuario, ctx.Sistema), token, borrador);

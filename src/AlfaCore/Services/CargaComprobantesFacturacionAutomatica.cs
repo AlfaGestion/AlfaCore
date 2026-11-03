@@ -92,6 +92,9 @@ public static class CargaComprobantesFacturacionAutomatica
     /// y el talonario de su unidad de negocio. El borrador es determinístico por cliente y fecha: un segundo
     /// intento devuelve la misma operación en vez de emitir otra factura.
     /// </summary>
+    /// <summary>ARCA (concepto productos) acepta la fecha del comprobante hasta 5 días antes o después de hoy.</summary>
+    public const int DiasFechaEmision = 5;
+
     public static async Task<(CargaComprobantesDirecta Borrador, int Talonario, CargaComprobantesFacturacionAutomaticaFila Fila)> PrepararAsync(
         SqlConnection cn, CargaComprobantesContexto contexto, string cuenta, DateTime fechaFacturacion, CancellationToken ct, string? tcForzado = null)
     {
