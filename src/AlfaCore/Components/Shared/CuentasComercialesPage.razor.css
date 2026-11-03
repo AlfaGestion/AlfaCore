@@ -1557,3 +1557,26 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* Aumentar / redondear importes de facturación automática: resumen y muestra de cómo queda. */
+.cuentas-fa-aumento__resumen {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-left: 3px solid var(--alfa-accent);
+    border-radius: 8px;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+}
+.cuentas-fa-aumento__resumen strong { color: var(--alfa-text-primary); }
+.cuentas-fa-aumento__aviso { color: var(--alfa-warning, #d9a400); }
+.cuentas-fa-aumento__tabla { max-height: 280px; overflow: auto; border: 1px solid var(--alfa-border-default); border-radius: 8px; }
+.cuentas-fa-aumento__tabla table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cuentas-fa-aumento__tabla th { position: sticky; top: 0; background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface)); text-align: left;
+    font-weight: 600; color: var(--alfa-text-secondary); padding: 6px 8px; border-bottom: 1px solid var(--alfa-border-default); }
+.cuentas-fa-aumento__tabla td { padding: 6px 8px; border-bottom: 1px solid var(--alfa-border-subtle, var(--alfa-border-default)); color: var(--alfa-text-primary); vertical-align: top; }
+.cuentas-fa-aumento__tabla td small { display: block; color: var(--alfa-text-secondary); }
+.cuentas-fa-aumento__tabla .num { text-align: right; white-space: nowrap; }
+.cuentas-fa-aumento__tabla > small { display: block; padding: 6px 8px; color: var(--alfa-text-secondary); }

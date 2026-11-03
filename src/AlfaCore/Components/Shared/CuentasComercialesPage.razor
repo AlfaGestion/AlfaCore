@@ -342,6 +342,77 @@
                             Disabled="@(_faProcesando || string.IsNullOrEmpty(_faDetalleQuitar))" OnClick="_ => QuitarConceptoLoteAsync()">Quitar</AlfaButton>
             </Footer>
         </AlfaDialog>
+
+        <AlfaDialog Open="@_aumAbierto"
+                    Title="Aumentar o redondear importes"
+                    Eyebrow="Facturación automática"
+                    Description="Cambia el importe de cada renglón con importe de la facturación automática (no toca los renglones en cero ni las cuotas cumplidas). El importe anterior queda guardado, como en Alfa Gestión."
+                    Size="AlfaDialogSize.Lg"
+                    Loading="@_faProcesando"
+                    ErrorMessage="@_faError"
+                    OnClose="() => _aumAbierto = false">
+            <ChildContent>
+                <div class="cuentas-fa-lote">
+                    <AlfaSelect Label="Aplicar a" Value="@(_aumTodos ? "todos" : "sel")" ValueChanged='v => { _aumTodos = v == "todos"; _aumResultado = null; }'
+                                Options="@AumAlcanceOptions" Disabled="@_faProcesando" />
+                    <div class="cuentas-fa-lote__fila">
+                        <AlfaSelect Label="Cambio" Value="@(_aumPorcentaje ? "porc" : "fijo")" ValueChanged='v => { _aumPorcentaje = v != "fijo"; _aumResultado = null; }'
+                                    Options="@AumTipoOptions" Disabled="@_faProcesando" />
+                        <AlfaInput Label="@(_aumPorcentaje ? "Porcentaje" : "Importe sin IVA")" Type="number" Step="0.01"
+                                   Placeholder="@(_aumPorcentaje ? "Ej.: 10 para subir o -5 para bajar" : "Ej.: 150000")"
+                                   HelpText="@(_aumPorcentaje ? "Negativo para reducir. Con 0 solo redondea." : "Se asigna a todos los renglones con importe de los clientes elegidos.")"
+                                   Value="@_aumValor" ValueChanged="v => { _aumValor = v; _aumResultado = null; }" Disabled="@_faProcesando" />
+                    </div>
+                    <div class="cuentas-fa-lote__fila">
+                        <AlfaSelect Label="Redondear a" Value="@_aumRedondeo" ValueChanged='v => { _aumRedondeo = v ?? "0"; _aumResultado = null; }'
+                                    Options="@AumRedondeoOptions" Disabled="@_faProcesando" />
+                        <AlfaSelect Label="Redondear sobre" Value="@(_aumConIva ? "iva" : "neto")" ValueChanged='v => { _aumConIva = v != "neto"; _aumResultado = null; }'
+                                    Options="@AumBaseOptions" Disabled="@(_faProcesando || _aumRedondeo == "0")" />
+                    </div>
+                    @if (_aumResultado is { } sim)
+                    {
+                        <div class="cuentas-fa-aumento__resumen">
+                            @if (sim.Renglones == 0)
+                            {
+                                <strong>No hay importes para cambiar con estos datos.</strong>
+                            }
+                            else
+                            {
+                                <strong>@sim.Renglones renglón(es) de @sim.Clientes cliente(s)</strong>
+                                <span>Total sin IVA: @sim.TotalAntes.ToString("C2", Ar) → @sim.TotalDespues.ToString("C2", Ar)
+                                    (@((sim.TotalAntes == 0 ? 0 : (sim.TotalDespues / sim.TotalAntes - 1) * 100).ToString("+0.##;-0.##;0", Ar))%)</span>
+                            }
+                            @if (sim.Omitidos > 0) { <span class="cuentas-fa-aumento__aviso">@sim.Omitidos renglón(es) quedarían en cero o negativos: no se tocan.</span> }
+                        </div>
+                        @if (sim.Muestra.Count > 0)
+                        {
+                            <div class="cuentas-fa-aumento__tabla">
+                                <table>
+                                    <thead><tr><th>Cliente</th><th>Concepto</th><th class="num">Antes s/IVA</th><th class="num">Después s/IVA</th><th class="num">Total c/IVA</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var f in sim.Muestra)
+                                        {
+                                            <tr><td>@f.RazonSocial<small>@f.Cuenta</small></td><td>@f.Detalle</td>
+                                                <td class="num">@f.Antes.ToString("N2", Ar)</td><td class="num"><strong>@f.Despues.ToString("N2", Ar)</strong></td>
+                                                <td class="num">@f.TotalConIvaDespues.ToString("N2", Ar)@(f.Alicuota == 0 ? " (sin IVA)" : "")</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                @if (sim.Renglones > sim.Muestra.Count) { <small>Se muestran los primeros @sim.Muestra.Count de @sim.Renglones.</small> }
+                            </div>
+                        }
+                    }
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_faProcesando" OnClick="_ => _aumAbierto = false">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-eye" Loading="@(_faProcesando && _aumResultado is null)" Disabled="@_faProcesando" OnClick="_ => AumentarAsync(false)">Ver cómo queda</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2-circle" Loading="@(_faProcesando && _aumResultado is not null)"
+                            Disabled="@(_faProcesando || _aumResultado is not { Renglones: > 0 })" OnClick="_ => AumentarAsync(true)">
+                    @(_aumResultado is { Renglones: > 0 } r ? $"Aplicar a {r.Renglones} renglón(es)" : "Aplicar")
+                </AlfaButton>
+            </Footer>
+        </AlfaDialog>
     </div>
 }
 else
@@ -2030,6 +2101,7 @@ else
             actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
             actions.Add(new PageHeaderAction { Key = "fa-agregar", Label = "Agregar concepto", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _faProcesando, OnClick = AbrirAgregarConceptoAsync });
             actions.Add(new PageHeaderAction { Key = "fa-quitar", Label = "Quitar concepto", Icon = "bi-dash-circle", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _faProcesando, OnClick = AbrirQuitarConceptoAsync });
+            actions.Add(new PageHeaderAction { Key = "fa-aumento", Label = "Aumentar / redondear", Icon = "bi-percent", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _faProcesando, OnClick = AbrirAumentoAsync });
             actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
         }
         else if (_selectedCodes.Count > 0)
@@ -2039,6 +2111,13 @@ else
             actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
         }
 
+        if (_selectedCodes.Count == 0 && EsVistaFacturacion)
+        {
+            // Acciones por lote en el menú «…»: el aumento puede ir a todos; agregar/quitar piden marcar clientes.
+            actions.Add(new PageHeaderAction { Key = "fa-aumento", Label = "Aumentar o redondear importes", Icon = "bi-percent", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList || _faProcesando, OnClick = AbrirAumentoAsync });
+            actions.Add(new PageHeaderAction { Key = "fa-agregar", Label = "Agregar concepto (marcá clientes)", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "fa-quitar", Label = "Quitar concepto (marcá clientes)", Icon = "bi-dash-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = true });
+        }
         actions.Add(new PageHeaderAction { Key = "nuevo", Label = $"Nuevo {SingularLabelLower}", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = BeginNewAsync });
         actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
         actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
@@ -2365,6 +2444,60 @@ else
         }
         catch (Exception ex) { _faError = ex.Message; }
         finally { _faProcesando = false; }
+    }
+
+    // ── Aumentar / reducir / redondear importes (como «Aumentar Valores de Facturación automática» del VB6) ──
+    private bool _aumAbierto;
+    private bool _aumTodos;
+    private bool _aumPorcentaje = true;
+    private string? _aumValor;
+    private string _aumRedondeo = "0";
+    private bool _aumConIva = true;
+    private FacturacionAutomaticaAumentoResultadoDto? _aumResultado;
+    private static readonly System.Globalization.CultureInfo Ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private IReadOnlyList<AlfaSelectOption> AumAlcanceOptions => _selectedCodes.Count > 0
+        ? [new("sel", $"Clientes seleccionados ({_selectedCodes.Count})"), new("todos", "Todos los clientes con facturación automática activa")]
+        : [new("todos", "Todos los clientes con facturación automática activa")];
+    private static readonly IReadOnlyList<AlfaSelectOption> AumTipoOptions =
+        [new("porc", "Porcentaje (+ aumenta, - reduce)"), new("fijo", "Asignar importe fijo sin IVA")];
+    private static readonly IReadOnlyList<AlfaSelectOption> AumRedondeoOptions =
+        [new("0", "Sin redondeo"), new("0.25", "$ 0,25"), new("0.5", "$ 0,50"), new("1", "$ 1 (sin centavos)"),
+         new("10", "$ 10"), new("100", "$ 100"), new("1000", "$ 1.000")];
+    private static readonly IReadOnlyList<AlfaSelectOption> AumBaseOptions =
+        [new("iva", "Total con IVA (lo que paga el cliente)"), new("neto", "Importe sin IVA")];
+
+    private Task AbrirAumentoAsync()
+    {
+        _faError = null; _aumResultado = null; _aumTodos = _selectedCodes.Count == 0;
+        _aumAbierto = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AumentarAsync(bool aplicar)
+    {
+        _faError = null;
+        var valor = string.IsNullOrWhiteSpace(_aumValor) ? 0 : LeerDecimal(_aumValor);
+        if (valor is null) { _faError = _aumPorcentaje ? "Revisá el porcentaje." : "Revisá el importe."; return; }
+        var pedido = new FacturacionAutomaticaAumentoPedido
+        {
+            Codigos = _aumTodos ? null : _selectedCodes.ToList(),
+            Porcentaje = _aumPorcentaje, Valor = valor.Value,
+            Redondeo = decimal.Parse(_aumRedondeo, System.Globalization.CultureInfo.InvariantCulture), RedondearConIva = _aumConIva
+        };
+        _faProcesando = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var r = await CuentasSvc.AumentarFacturacionAutomaticaAsync(pedido, aplicar);
+            if (!aplicar) { _aumResultado = r; return; }
+            _aumAbierto = false; _aumResultado = null;
+            SetFeedback(AppUiMessage.Success("Facturación automática",
+                $"Se actualizaron {r.Renglones} renglón(es) de {r.Clientes} cliente(s): total sin IVA {r.TotalAntes.ToString("C2", Ar)} → {r.TotalDespues.ToString("C2", Ar)}. El importe anterior quedó guardado."));
+            await CargarVistaFijaAsync();
+            UpdatePageHeader();
+        }
+        catch (Exception ex) { _faError = ex.Message; }
+        finally { _faProcesando = false; await InvokeAsync(StateHasChanged); }
     }
 
     private async Task TerminarLoteAsync(string mensaje, FacturacionAutomaticaLoteResultadoDto r, string motivoNoModificados)

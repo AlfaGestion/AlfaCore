@@ -40,4 +40,9 @@ public interface ICuentasComercialesService
     Task<FacturacionAutomaticaLoteResultadoDto> QuitarConceptoFacturacionAutomaticaAsync(IReadOnlyList<string> codigos, string detalle,
         bool soloCumplidos, CancellationToken ct = default)
         => throw new NotSupportedException();
+
+    /// <summary>Aumenta, reduce o redondea los importes de facturación automática. Con aplicar=false solo calcula cómo quedaría.</summary>
+    Task<FacturacionAutomaticaAumentoResultadoDto> AumentarFacturacionAutomaticaAsync(FacturacionAutomaticaAumentoPedido pedido, bool aplicar,
+        CancellationToken ct = default)
+        => throw new NotSupportedException();
 }

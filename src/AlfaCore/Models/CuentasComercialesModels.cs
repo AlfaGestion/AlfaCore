@@ -360,3 +360,42 @@ public static class CuentaComercialViewGroupKeys
     public const string Provincia = "provincia";
     public const string Bloqueado = "bloqueado";
 }
+
+/// <summary>Aumento, reducción o redondeo masivo de importes de facturación automática (como
+/// «Aumentar Valores de Facturación automática» del VB6, más redondeo a pasos).</summary>
+public sealed class FacturacionAutomaticaAumentoPedido
+{
+    /// <summary>Clientes elegidos; null o vacío = todos los clientes con facturación automática activa.</summary>
+    public IReadOnlyList<string>? Codigos { get; set; }
+    /// <summary>true: Valor es un porcentaje (negativo para bajar). false: Valor es el nuevo importe sin IVA.</summary>
+    public bool Porcentaje { get; set; } = true;
+    public decimal Valor { get; set; }
+    /// <summary>Paso de redondeo (0,25 · 0,50 · 1 · 10 · 100 · 1000); 0 = sin redondeo.</summary>
+    public decimal Redondeo { get; set; }
+    /// <summary>Redondear el total con IVA (como el VB6) y recalcular el neto; si no, el importe sin IVA.</summary>
+    public bool RedondearConIva { get; set; } = true;
+}
+
+public sealed class FacturacionAutomaticaAumentoFilaDto
+{
+    public string Cuenta { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public decimal Alicuota { get; set; }
+    public decimal Antes { get; set; }
+    public decimal Despues { get; set; }
+    public decimal TotalConIvaDespues => Math.Round(Despues * (1 + Alicuota / 100m), 2, MidpointRounding.AwayFromZero);
+}
+
+public sealed class FacturacionAutomaticaAumentoResultadoDto
+{
+    public bool Aplicado { get; set; }
+    public int Clientes { get; set; }
+    public int Renglones { get; set; }
+    /// <summary>Renglones que quedarían en cero o negativos: no se tocan.</summary>
+    public int Omitidos { get; set; }
+    public decimal TotalAntes { get; set; }
+    public decimal TotalDespues { get; set; }
+    /// <summary>Primeros renglones, para mostrar cómo queda.</summary>
+    public IReadOnlyList<FacturacionAutomaticaAumentoFilaDto> Muestra { get; set; } = [];
+}
