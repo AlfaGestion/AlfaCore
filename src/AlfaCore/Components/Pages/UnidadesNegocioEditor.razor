@@ -12,10 +12,6 @@
             <h3 class="panel-card__title">@(_form is null ? "Unidades de negocio" : _esNueva ? "Nueva unidad de negocio" : $"Unidad {_form.Codigo}")</h3>
             <p class="panel-card__subtitle">Los datos fiscales (CUIT, razón social, condición de IVA, domicilio, IIBB e inicio de actividades) salen en las facturas de la unidad.</p>
         </div>
-        @if (_form is null)
-        {
-            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(_cargando || _catalogos is null)" OnClick="_ => Nueva()">Nueva unidad</AlfaButton>
-        }
     </div>
 
     @if (_form is not null && _catalogos is not null)
@@ -82,14 +78,6 @@
                 <AlfaInput Label="Ruta de reportes" MaxLength="500" Value="@_form.RutaReportes" ValueChanged="v => _form.RutaReportes = v ?? string.Empty" Disabled="@_guardando" />
             </fieldset>
 
-            <div class="actions un-form__acciones">
-                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_guardando" Disabled="@_guardando" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
-                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_guardando" OnClick="_ => Cancelar()">Cancelar</AlfaButton>
-                @if (!_esNueva)
-                {
-                    <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="@_guardando" OnClick="_ => _confirmarBorrar = true">Borrar</AlfaButton>
-                }
-            </div>
         </div>
     }
     else if (_cargando)
@@ -136,6 +124,40 @@
 }
 
 @code {
+    // Los botones (Nueva, Grabar, Cancelar, Borrar) van en la barra de arriba, como en el resto del sistema:
+    // la página de Tablas los toma de Acciones y se entera de los cambios por OnAccionesCambiadas.
+    [Parameter] public EventCallback OnAccionesCambiadas { get; set; }
+    private string _estadoAcciones = string.Empty;
+
+    public IReadOnlyList<PageHeaderAction> Acciones => _form is null
+        ? [new() { Key = "un-nueva", Label = "Nueva unidad", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _cargando || _catalogos is null, OnClick = () => Refrescar(Nueva) }]
+        : [new() { Key = "un-grabar", Label = "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _guardando, Busy = _guardando, OnClick = GuardarDesdeBarraAsync },
+           new() { Key = "un-cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _guardando, OnClick = () => Refrescar(Cancelar) },
+           .. (_esNueva ? Array.Empty<PageHeaderAction>() :
+           [new() { Key = "un-borrar", Label = "Borrar", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger,
+                Disabled = _guardando, OnClick = () => Refrescar(() => _confirmarBorrar = true) }])];
+
+    private Task Refrescar(Action accion) { accion(); return InvokeAsync(StateHasChanged); }
+
+    private async Task GuardarDesdeBarraAsync()
+    {
+        var tarea = GuardarAsync();
+        await InvokeAsync(StateHasChanged);
+        await tarea;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var estado = $"{_form is null}|{_esNueva}|{_guardando}|{_cargando}|{_catalogos is null}";
+        if (estado == _estadoAcciones) return;
+        _estadoAcciones = estado;
+        await OnAccionesCambiadas.InvokeAsync();
+    }
+
     private List<UnidadNegocioFila> _filas = [];
     private UnidadNegocioCatalogos? _catalogos;
     private UnidadNegocioEdicion? _form;

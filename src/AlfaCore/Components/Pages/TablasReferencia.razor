@@ -52,7 +52,7 @@
             <div class="tablas-ref__main">
                 @if (_selectedClave == ClaveUnidades)
                 {
-                    <UnidadesNegocioEditor />
+                    <UnidadesNegocioEditor @ref="_editorUnidades" OnAccionesCambiadas="UpdatePageHeader" />
                 }
                 else if (_selectedTabla is not null)
                 {
@@ -158,7 +158,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => string.Empty;
+    private string HeaderSnapshot() => _selectedClave == ClaveUnidades ? ClaveUnidades : string.Empty;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -183,6 +183,7 @@
             ModuleKey = "archivos",
             Title = "Tablas de referencia",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "tablas"),
+            Actions = _selectedClave == ClaveUnidades && _editorUnidades is not null ? _editorUnidades.Acciones : [],
         });
     }
 
@@ -208,6 +209,7 @@
 
     // Unidades de negocio tiene su propio editor (no es una tabla Código/Descripción).
     private const string ClaveUnidades = "__unidades_negocio";
+    private UnidadesNegocioEditor? _editorUnidades;
     [SupplyParameterFromQuery(Name = "tabla")] public string? TablaInicial { get; set; }
 
     private void SelectUnidades()
