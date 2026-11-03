@@ -16,6 +16,12 @@ public interface IContabilidadReportesService
     Task<MayorResultado> GetMayorAsync(ContabilidadFiltro filtro, CancellationToken ct = default);
     Task<ContabilidadArchivo> ExportarSumasSaldosAsync(ContabilidadFiltro filtro, bool pdf, CancellationToken ct = default);
     Task<ContabilidadArchivo> ExportarMayorAsync(ContabilidadFiltro filtro, bool pdf, CancellationToken ct = default);
+    Task<DiarioResultado> GetDiarioAsync(ContabilidadFiltro filtro, bool subdiarios, CancellationToken ct = default);
+    Task<PlanCuentasResultado> GetPlanCuentasAsync(ContabilidadFiltro filtro, CancellationToken ct = default);
+    Task<BalanceGeneralResultado> GetBalanceGeneralAsync(ContabilidadFiltro filtro, CancellationToken ct = default);
+    Task<ContabilidadArchivo> ExportarDiarioAsync(ContabilidadFiltro filtro, bool subdiarios, bool pdf, CancellationToken ct = default);
+    Task<ContabilidadArchivo> ExportarPlanCuentasAsync(ContabilidadFiltro filtro, bool pdf, CancellationToken ct = default);
+    Task<ContabilidadArchivo> ExportarBalanceGeneralAsync(ContabilidadFiltro filtro, bool pdf, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -23,11 +29,21 @@ public interface IContabilidadReportesService
 /// (D957004) y Reporte de Cuentas / Mayor (D957005), desde MV_ASIENTOS del ejercicio elegido.
 /// Saldo anterior = movimientos del ejercicio con fecha anterior al «desde» (incluye la apertura).
 /// </summary>
-public sealed class ContabilidadReportesService(ISessionService sessions, IAppUserSessionService users,
+public sealed partial class ContabilidadReportesService(ISessionService sessions, IAppUserSessionService users,
     IPermissionService permissions, IAppEventService events, IDocumentPdfService pdf) : IContabilidadReportesService
 {
     public const string MenuSumasSaldos = "D957004";
     public const string MenuMayor = "D957005";
+    public const string MenuPlanCuentas = "D957001";
+    public const string MenuDiario = "D957002";
+    public const string MenuSubdiarios = "D957003";
+    public const string MenuBalanceGeneral = "D957006";
+    private async Task<bool> TieneAlgunReporteAsync(CancellationToken ct)
+    {
+        foreach (var m in new[] { MenuMayor, MenuSumasSaldos, MenuPlanCuentas, MenuDiario, MenuSubdiarios, MenuBalanceGeneral })
+            if (await permissions.HasAccessAsync(m, ct)) return true;
+        return false;
+    }
     private const int MaximoMovimientosMayor = 20000;
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     private static readonly string[] Proformas = ["FP", "NCFP", "NDFP", "CBFP", "FPC", "NCCP", "PGFP"];
@@ -47,7 +63,11 @@ public sealed class ContabilidadReportesService(ISessionService sessions, IAppUs
                 FROM dbo.V_TA_UnidadNegocio
                 ORDER BY CASE WHEN ISNUMERIC(Codigo) = 1 THEN 0 ELSE 1 END, RIGHT(REPLICATE(' ', 8) + LTRIM(RTRIM(Codigo)), 8);
                 """, cancellationToken: ct))).ToList(),
-            PuedeVerProformas = await PuedeVerProformasAsync(cn, ct)
+            PuedeVerProformas = await PuedeVerProformasAsync(cn, ct, users.GetCurrentUserName()),
+            Subdiarios = await SubdiariosAsync(cn, ct),
+            Niveles = (await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition(
+                "SELECT UPPER(LTRIM(RTRIM(CLAVE))), LTRIM(RTRIM(ISNULL(VALOR,''))) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) LIKE N'NIVEL[_][1-9]';",
+                cancellationToken: ct))).OrderBy(x => x.Clave).Select(x => x.Valor).ToList()
         }, ct);
 
     public Task<IReadOnlyList<ContabilidadOpcion>> BuscarCuentasAsync(string texto, CancellationToken ct = default)
@@ -396,7 +416,7 @@ public sealed class ContabilidadReportesService(ISessionService sessions, IAppUs
             await using var cn = new SqlConnection(sessions.GetConnectionString()); await cn.OpenAsync(ct);
             if (menu is not null && !await permissions.HasAccessAsync(menu, ct))
                 throw new ReglaContableException("Tu usuario no tiene permiso para este reporte contable.");
-            if (menu is null && !await permissions.HasAccessAsync(MenuMayor, ct) && !await permissions.HasAccessAsync(MenuSumasSaldos, ct))
+            if (menu is null && !await TieneAlgunReporteAsync(ct))
                 throw new ReglaContableException("Tu usuario no tiene permiso para los reportes contables.");
             var r = await operacion(cn);
             if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var actual) || actual != id)

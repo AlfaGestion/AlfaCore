@@ -102,4 +102,58 @@ public sealed class ContabilidadReportesPruebasTests(ITestOutputHelper output)
         Assert.True((await svc.ExportarSumasSaldosAsync(filtro, false)).Contenido.Length > 1000);
         Assert.True((await svc.ExportarMayorAsync(new ContabilidadFiltro { Periodo = ej.Periodo, Desde = filtro.Desde, Hasta = filtro.Hasta, CuentaDesde = cuenta.Codigo }, true)).Contenido.Length > 1000);
     }
+
+    [FacturacionAutomaticaPruebasFact]
+    public async Task DiarioSubdiarioPlanYBalanceGeneralCuadran()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        var cs = Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")!;
+        await using var cn = new SqlConnection(cs); await cn.OpenAsync();
+        Assert.Equal("ALFANET2007_PRUEBAS", cn.Database);
+        var sesion = new SessionDto();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)runtime.Sessions).Handler = (method, _) => method.Name switch
+        { "GetActiveSession" => sesion, "GetConnectionString" => cs, _ => null };
+        var user = await cn.QuerySingleAsync<AppUserSessionInfo>("SELECT LTRIM(RTRIM(NOMBRE)) UserName,LTRIM(RTRIM(SISTEMA)) SystemCode FROM TA_USUARIOS WHERE NOMBRE='Alberto'");
+        var users = DispatchProxy.Create<IAppUserSessionService, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler = (method, _) => method.Name switch
+        { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => user.UserName, "get_CurrentUser" => user, _ => null };
+        await using var provider = new ServiceCollection().AddLogging().AddSingleton(runtime.Events).AddSingleton<DocumentPdfService>().BuildServiceProvider();
+        var svc = new ContabilidadReportesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
+            runtime.Events, provider.GetRequiredService<DocumentPdfService>());
+        var cat = await svc.GetCatalogosAsync();
+        output.WriteLine($"Subdiarios: {string.Join(", ", cat.Subdiarios.Select(x => $"{x.Codigo}={x.Descripcion}"))} · niveles: {string.Join(", ", cat.Niveles)}");
+        var ej = cat.Ejercicios.First(e => DateTime.Today >= e.Desde && DateTime.Today <= e.Hasta);
+        var f = new ContabilidadFiltro { Periodo = ej.Periodo, Desde = new DateTime(ej.Desde.Year, 10, 1), Hasta = new DateTime(ej.Desde.Year, 10, 31) };
+
+        var diario = await svc.GetDiarioAsync(f, subdiarios: false);
+        var sumas = await svc.GetSumasSaldosAsync(new ContabilidadFiltro { Periodo = f.Periodo, Desde = f.Desde, Hasta = f.Hasta });
+        output.WriteLine($"Diario octubre: {diario.Asientos.Count} asientos · debe {diario.TotalDebe:N2} · haber {diario.TotalHaber:N2} (sumas y saldos {sumas.TotalDebe:N2}/{sumas.TotalHaber:N2})");
+        Assert.Equal(sumas.TotalDebe, diario.TotalDebe);
+        Assert.Equal(sumas.TotalHaber, diario.TotalHaber);
+
+        var cod = cat.Subdiarios.First(x => x.Codigo == "CB").Codigo;
+        var sub = await svc.GetDiarioAsync(new ContabilidadFiltro { Periodo = f.Periodo, Desde = f.Desde, Hasta = f.Hasta, Subdiario = cod, Resumido = true }, subdiarios: true);
+        var dg = await svc.GetDiarioAsync(new ContabilidadFiltro { Periodo = f.Periodo, Desde = f.Desde, Hasta = f.Hasta, Subdiario = "DG" }, subdiarios: false);
+        output.WriteLine($"Subdiario {sub.SubdiarioDescripcion}: {sub.Asientos.Count} asientos, {sub.PorCuenta.Count} cuentas · diario general {dg.Asientos.Count}");
+        Assert.All(sub.Asientos, a => Assert.Equal(cod, a.Subdiario));
+        Assert.True(sub.Asientos.Count + dg.Asientos.Count <= diario.Asientos.Count);
+
+        var plan = await svc.GetPlanCuentasAsync(new ContabilidadFiltro());
+        output.WriteLine($"Plan: {plan.Cuentas.Count} cuentas ({plan.Cuentas.Count(c => c.Titulo)} títulos) · ej. {string.Join(" | ", plan.Cuentas.Take(4).Select(c => $"{c.Codigo} {c.Descripcion} [{c.NivelNombre}]"))}");
+        Assert.DoesNotContain(plan.Cuentas, c => c.TipoVista is "CL" or "PR");
+
+        var bg = await svc.GetBalanceGeneralAsync(new ContabilidadFiltro { Periodo = f.Periodo, Hasta = f.Hasta, Comparativo = true, NivelMaximo = 3 });
+        var total = await svc.GetSumasSaldosAsync(new ContabilidadFiltro { Periodo = f.Periodo, Desde = ej.Desde, Hasta = f.Hasta });
+        output.WriteLine($"Balance general al {f.Hasta:dd/MM/yyyy} (comparativo {bg.EjercicioComparativo} al {bg.HastaComparativo:dd/MM/yyyy}): {bg.Filas.Count} filas · diferencia {bg.Diferencia:N2} (sumas {total.TotalSaldo:N2})");
+        foreach (var x in bg.Filas.Where(x => x.Nivel == 0)) output.WriteLine($"  {x.Codigo} {x.Descripcion} [{x.NivelNombre}] {x.Saldo:N2} / {x.SaldoComparativo:N2}");
+        Assert.Equal(total.TotalSaldo, bg.Diferencia);
+        Assert.All(bg.Filas, x => Assert.True(x.Nivel < 3));
+        Assert.NotNull(bg.EjercicioComparativo);
+        foreach (var capitulo in bg.Filas.Where(x => x.Nivel == 0))
+            Assert.Equal(total.Filas.Single(t => t.EsTitulo && t.Codigo == capitulo.Codigo).Saldo, capitulo.Saldo);
+
+        Assert.True((await svc.ExportarDiarioAsync(f, false, false)).Contenido.Length > 1000);
+        Assert.True((await svc.ExportarBalanceGeneralAsync(new ContabilidadFiltro { Periodo = f.Periodo, Hasta = f.Hasta, Comparativo = true }, true)).Contenido.Length > 1000);
+        Assert.True((await svc.ExportarPlanCuentasAsync(new ContabilidadFiltro(), false)).Contenido.Length > 1000);
+    }
 }

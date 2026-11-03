@@ -54,8 +54,12 @@ public static class ModuleTopNavPresets
         [
             ("resumen", "Resumen", "/contabilidad"),
             ("posicion-iva", "Posición de IVA", "/contabilidad/posicion-iva"),
-            ("mayor", "Mayor de cuentas", "/contabilidad/mayor"),
-            ("sumas-saldos", "Sumas y saldos", "/contabilidad/sumas-y-saldos")
+            ("diario", "Libro diario", "/contabilidad/diario"),
+            ("subdiarios", "Subdiarios", "/contabilidad/subdiarios"),
+            ("mayor", "Mayor", "/contabilidad/mayor"),
+            ("sumas-saldos", "Sumas y saldos", "/contabilidad/sumas-y-saldos"),
+            ("balance-general", "Balance general", "/contabilidad/balance-general"),
+            ("plan", "Plan de cuentas", "/contabilidad/plan-de-cuentas")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)

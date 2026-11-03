@@ -15,15 +15,33 @@
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <section class="ctr-filtros" aria-label="Filtros del reporte" @onkeydown="TeclaAsync">
-        <div class="ctr-filtros__ejercicio">
-            <AlfaSelect Label="Ejercicio" Value="@_filtro.Periodo.ToString()" ValueChanged="v => CambiarEjercicio(v)" Options="@EjercicioOptions" Disabled="@_busy" />
-        </div>
-        <AlfaInput Type="date" Label="Desde" Value="@Fecha(_filtro.Desde)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Desde = d; }" Disabled="@_busy" />
-        <AlfaInput Type="date" Label="Hasta" Value="@Fecha(_filtro.Hasta)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Hasta = d; }" Disabled="@_busy" />
-        <div class="ctr-filtros__unidad">
-            <AlfaSelect Label="Unidad de negocio" Value="@(_filtro.Unidades.FirstOrDefault() ?? "")" ValueChanged="v => _filtro.Unidades = string.IsNullOrEmpty(v) ? [] : [v]"
-                        Options="@UnidadOptions" Disabled="@_busy" />
-        </div>
+        @if (!EsPlan)
+        {
+            <div class="ctr-filtros__ejercicio">
+                <AlfaSelect Label="Ejercicio" Value="@_filtro.Periodo.ToString()" ValueChanged="v => CambiarEjercicio(v)" Options="@EjercicioOptions" Disabled="@_busy" />
+            </div>
+            @if (!EsBalanceGeneral)
+            {
+                <AlfaInput Type="date" Label="Desde" Value="@Fecha(_filtro.Desde)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Desde = d; }" Disabled="@_busy" />
+            }
+            <AlfaInput Type="date" Label="@(EsBalanceGeneral ? "Saldos al" : "Hasta")" Value="@Fecha(_filtro.Hasta)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Hasta = d; }" Disabled="@_busy" />
+            <div class="ctr-filtros__unidad">
+                <AlfaSelect Label="Unidad de negocio" Value="@(_filtro.Unidades.FirstOrDefault() ?? "")" ValueChanged="v => _filtro.Unidades = string.IsNullOrEmpty(v) ? [] : [v]"
+                            Options="@UnidadOptions" Disabled="@_busy" />
+            </div>
+        }
+        @if (EsDiario || EsSubdiarios)
+        {
+            <div class="ctr-filtros__unidad">
+                <AlfaSelect Label="Subdiario" Value="@_filtro.Subdiario" ValueChanged="v => _filtro.Subdiario = v ?? string.Empty" Options="@SubdiarioOptions" Disabled="@_busy" />
+            </div>
+        }
+        @if (EsBalanceGeneral)
+        {
+            <div class="ctr-filtros__unidad">
+                <AlfaSelect Label="Detalle hasta el nivel" Value="@_filtro.NivelMaximo.ToString()" ValueChanged="v => _filtro.NivelMaximo = int.TryParse(v, out var n) ? n : 0" Options="@NivelOptions" Disabled="@_busy" />
+            </div>
+        }
         @if (EsMayor)
         {
             <div class="ctr-filtros__cuenta">
@@ -42,13 +60,26 @@
             </div>
         }
         <div class="ctr-filtros__checks">
-            @if (!EsMayor)
+            @if (EsSubdiarios)
+            {
+                <AlfaCheckbox Value="@_filtro.Resumido" ValueChanged="v => _filtro.Resumido = v == true" Disabled="@_busy">Resumido: totales por cuenta</AlfaCheckbox>
+            }
+            @if (EsBalanceGeneral)
+            {
+                <AlfaCheckbox Value="@_filtro.Comparativo" ValueChanged="v => _filtro.Comparativo = v == true" Disabled="@_busy">Comparativo con el ejercicio anterior</AlfaCheckbox>
+            }
+            @if (EsPlan)
+            {
+                <AlfaCheckbox Value="@_filtro.PlanIncluirTerceros" ValueChanged="v => _filtro.PlanIncluirTerceros = v == true" Disabled="@_busy">Incluir cuentas de clientes y proveedores</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.PlanIncluirBaja" ValueChanged="v => _filtro.PlanIncluirBaja = v == true" Disabled="@_busy">Incluir dadas de baja</AlfaCheckbox>
+            }
+            @if (EsSumas)
             {
                 <AlfaCheckbox Value="@_filtro.AgruparTerceros" ValueChanged="v => _filtro.AgruparTerceros = v == true" Disabled="@_busy">Agrupar clientes y proveedores</AlfaCheckbox>
                 <AlfaCheckbox Value="@_filtro.MostrarTitulos" ValueChanged="v => _filtro.MostrarTitulos = v == true" Disabled="@_busy">Mostrar títulos</AlfaCheckbox>
                 <AlfaCheckbox Value="@_filtro.IncluirSinMovimientos" ValueChanged="v => _filtro.IncluirSinMovimientos = v == true" Disabled="@_busy">Cuentas sin movimientos</AlfaCheckbox>
             }
-            @if (_catalogos?.PuedeVerProformas == true)
+            @if (_catalogos?.PuedeVerProformas == true && !EsPlan)
             {
                 <AlfaCheckbox Value="@_filtro.IncluirProformas" ValueChanged="v => _filtro.IncluirProformas = v == true" Disabled="@_busy">Incluir proformas</AlfaCheckbox>
             }
@@ -141,7 +172,93 @@
             <p class="ctr-nota">@m.Cuentas.Count cuenta(s) · @m.Movimientos.ToString("N0") movimiento(s). Saldo positivo = deudor, negativo = acreedor.</p>
         }
     }
-    else if (_busy)
+    @if ((EsDiario || EsSubdiarios) && _diario is { } d)
+    {
+        <div class="kpi-grid ctr-kpis">
+            <KpiCard Titulo="Asientos" Valor="@d.Asientos.Count.ToString("N0")" Icono="@Icono("bi-journal-text")" Descripcion="@($"{d.SubdiarioDescripcion} · {d.Filtro.Desde:dd/MM/yyyy} al {d.Filtro.Hasta:dd/MM/yyyy}")" />
+            <KpiCard Titulo="Debe" Valor="@Moneda(d.TotalDebe)" Icono="@Icono("bi-plus-slash-minus")" Descripcion="@d.Ejercicio" />
+            <KpiCard Titulo="Haber" Valor="@Moneda(d.TotalHaber)" Icono="@Icono("bi-plus-slash-minus")" Descripcion="@(Math.Abs(d.TotalDebe - d.TotalHaber) < 0.005m ? "Balancea" : $"Diferencia {Moneda(d.TotalDebe - d.TotalHaber)}")" />
+        </div>
+        @if (d.Truncado) { <AlfaNotification Message="@AppUiMessage.Warning("Demasiados renglones", "Se muestran los primeros 30.000: acotá las fechas.")" /> }
+        @if (d.Asientos.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos" Message="No hay asientos para esos filtros." />
+        }
+        else if (EsSubdiarios && d.Filtro.Resumido)
+        {
+            <section class="ctr-tabla__marco"><div class="ctr-tabla__scroll">
+                <table class="ctr-tabla">
+                    <thead><tr><th>Cuenta</th><th>Descripción</th><th class="n">Debe</th><th class="n">Haber</th></tr></thead>
+                    <tbody>@foreach (var x in d.PorCuenta) { <tr><td>@x.Cuenta</td><td>@x.Descripcion</td><td class="n">@M(x.Debe)</td><td class="n">@M(x.Haber)</td></tr> }</tbody>
+                    <tfoot><tr><td></td><td>Totales</td><td class="n">@M(d.TotalDebe)</td><td class="n">@M(d.TotalHaber)</td></tr></tfoot>
+                </table>
+            </div></section>
+        }
+        else
+        {
+            <section class="ctr-tabla__marco"><div class="ctr-tabla__scroll">
+                <table class="ctr-tabla">
+                    <thead><tr><th>Cuenta</th><th>Descripción</th><th>Detalle</th><th class="n">Debe</th><th class="n">Haber</th></tr></thead>
+                    <tbody>
+                    @foreach (var a in d.Asientos)
+                    {
+                        <tr class="is-cuenta-cab"><td colspan="5">@a.Fecha.ToString("dd/MM/yyyy") · Asiento @a.MesOperativo-@a.Numero
+                            @if (a.Tc.Length > 0 || a.Comprobante.Length > 0) { <span> · @a.Tc @a.Comprobante</span> }
+                            @if (a.Subdiario.Length > 0) { <small>@a.Subdiario</small> }
+                            @if (Math.Abs(a.Debe - a.Haber) >= 0.005m) { <span class="is-acreedor"> · no balancea (@M(a.Debe - a.Haber))</span> }</td></tr>
+                        @foreach (var x in a.Renglones)
+                        {
+                            <tr><td>@x.Cuenta</td><td>@x.Descripcion</td><td class="ctr-detalle">@x.Detalle</td><td class="n">@M(x.Debe)</td><td class="n">@M(x.Haber)</td></tr>
+                        }
+                    }
+                    </tbody>
+                    <tfoot><tr><td colspan="3">Totales</td><td class="n">@M(d.TotalDebe)</td><td class="n">@M(d.TotalHaber)</td></tr></tfoot>
+                </table>
+            </div></section>
+        }
+    }
+
+    @if (EsPlan && _plan is { } pc)
+    {
+        <section class="ctr-tabla__marco"><div class="ctr-tabla__scroll">
+            <table class="ctr-tabla">
+                <thead><tr><th>Código</th><th>Descripción</th><th>Nivel</th><th>Tipo</th></tr></thead>
+                <tbody>
+                @foreach (var c in pc.Cuentas)
+                {
+                    <tr class="@(c.Titulo ? "is-titulo" : null)"><td>@c.Codigo</td><td style="padding-left:@(12 + c.Nivel * 14)px">@c.Descripcion@(c.Baja ? " (dada de baja)" : "")</td>
+                        <td>@c.NivelNombre</td><td>@(c.Titulo ? "Título" : c.TipoVista switch { "CL" => "Cliente", "PR" => "Proveedor", "BC" => "Caja/Banco", _ => "Imputable" })</td></tr>
+                }
+                </tbody>
+            </table>
+        </div></section>
+        <p class="ctr-nota">@pc.Cuentas.Count cuentas · @pc.Cuentas.Count(c => c.Titulo) títulos y @pc.Cuentas.Count(c => !c.Titulo) imputables.</p>
+    }
+
+    @if (EsBalanceGeneral && _balance is { } bg)
+    {
+        @if (Math.Abs(bg.Diferencia) >= 0.005m)
+        {
+            <AlfaNotification Message="@AppUiMessage.Warning("El balance no suma cero", $"Los saldos difieren en {Moneda(bg.Diferencia)} porque hay asientos desbalanceados. El detalle está en Balance de sumas y saldos.")" />
+        }
+        <section class="ctr-tabla__marco"><div class="ctr-tabla__scroll">
+            <table class="ctr-tabla">
+                <thead><tr><th>Cuenta</th><th>Descripción</th><th>Nivel</th><th class="n">Saldo al @bg.Filtro.Hasta.ToString("dd/MM/yyyy")</th>
+                    @if (bg.EjercicioComparativo is not null) { <th class="n">Saldo al @bg.HastaComparativo?.ToString("dd/MM/yyyy")</th> }</tr></thead>
+                <tbody>
+                @foreach (var x in bg.Filas)
+                {
+                    <tr class="@(x.EsTitulo ? "is-titulo" : null)"><td>@x.Codigo</td><td style="padding-left:@(12 + x.Nivel * 14)px">@x.Descripcion</td><td>@x.NivelNombre</td>
+                        <td class="n @(x.Saldo < 0 ? "is-acreedor" : null)">@M(x.Saldo)</td>
+                        @if (bg.EjercicioComparativo is not null) { <td class="n @(x.SaldoComparativo < 0 ? "is-acreedor" : null)">@M(x.SaldoComparativo ?? 0)</td> }</tr>
+                }
+                </tbody>
+            </table>
+        </div></section>
+        <p class="ctr-nota">Saldos acumulados del ejercicio (con la apertura) hasta la fecha. Positivo = deudor, negativo = acreedor.@(bg.EjercicioComparativo is { } ec ? $" Comparativo: {ec}." : "")</p>
+    }
+
+    @if (_busy && !HayDatos)
     {
         <AlfaEmptyState Title="Generando el reporte" Message="Leyendo los asientos del ejercicio." />
     }
@@ -151,7 +268,24 @@
     /// <summary>"mayor" o "sumas-saldos".</summary>
     [Parameter] public string Tipo { get; set; } = "sumas-saldos";
     private bool EsMayor => Tipo == "mayor";
-    private string Titulo => EsMayor ? "Mayor de cuentas" : "Balance de sumas y saldos";
+    private bool EsSumas => Tipo == "sumas-saldos";
+    private bool EsDiario => Tipo == "diario";
+    private bool EsSubdiarios => Tipo == "subdiarios";
+    private bool EsPlan => Tipo == "plan";
+    private bool EsBalanceGeneral => Tipo == "balance-general";
+    private string Titulo => Tipo switch
+    {
+        "mayor" => "Mayor de cuentas", "diario" => "Libro diario", "subdiarios" => "Subdiarios", "plan" => "Plan de cuentas",
+        "balance-general" => "Balance general de saldos", _ => "Balance de sumas y saldos"
+    };
+    private DiarioResultado? _diario;
+    private PlanCuentasResultado? _plan;
+    private BalanceGeneralResultado? _balance;
+    private IReadOnlyList<AlfaSelectOption> SubdiarioOptions =>
+        [.. (EsSubdiarios ? Array.Empty<AlfaSelectOption>() : [new("", "Todos los asientos")]), new("DG", "Diario general (sin subdiarios)"),
+         .. (_catalogos?.Subdiarios ?? []).Select(x => new AlfaSelectOption(x.Codigo, x.Codigo == x.Descripcion ? x.Codigo : $"{x.Codigo} · {x.Descripcion}"))];
+    private IReadOnlyList<AlfaSelectOption> NivelOptions =>
+        [new("0", "Todas las cuentas"), .. (_catalogos?.Niveles ?? []).Take(4).Select((n, i) => new AlfaSelectOption((i + 1).ToString(), $"{i + 1} · {n}"))];
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private ContabilidadCatalogos? _catalogos;
     private readonly ContabilidadFiltro _filtro = new();
@@ -192,6 +326,7 @@
             _cuenta = new ContabilidadOpcion(cu.ToString(), cu.ToString()); _cuentaTexto = cu.ToString(); _filtro.CuentaDesde = cu.ToString();
         }
         StateHasChanged();
+        if (EsSubdiarios && _filtro.Subdiario.Length == 0) _filtro.Subdiario = _catalogos.Subdiarios.FirstOrDefault()?.Codigo ?? "DG";
         if (!EsMayor || _filtro.CuentaDesde.Length > 0) await GenerarAsync();
     }
 
@@ -219,6 +354,21 @@
                 var r = await UiOps.RunAsync(() => Service.GetMayorAsync(Copia()), Titulo);
                 if (r.Success) _mayor = r.Value; else _feedback = r.Feedback;
             }
+            else if (EsDiario || EsSubdiarios)
+            {
+                var r = await UiOps.RunAsync(() => Service.GetDiarioAsync(Copia(), EsSubdiarios), Titulo);
+                if (r.Success) _diario = r.Value; else _feedback = r.Feedback;
+            }
+            else if (EsPlan)
+            {
+                var r = await UiOps.RunAsync(() => Service.GetPlanCuentasAsync(Copia()), Titulo);
+                if (r.Success) _plan = r.Value; else _feedback = r.Feedback;
+            }
+            else if (EsBalanceGeneral)
+            {
+                var r = await UiOps.RunAsync(() => Service.GetBalanceGeneralAsync(Copia()), Titulo);
+                if (r.Success) _balance = r.Value; else _feedback = r.Feedback;
+            }
             else
             {
                 var r = await UiOps.RunAsync(() => Service.GetSumasSaldosAsync(Copia()), Titulo);
@@ -232,7 +382,10 @@
     {
         Periodo = _filtro.Periodo, Desde = _filtro.Desde, Hasta = _filtro.Hasta, Unidades = [.. _filtro.Unidades], IncluirProformas = _filtro.IncluirProformas,
         CuentaDesde = _filtro.CuentaDesde, CuentaHasta = _filtro.CuentaHasta, AgruparTerceros = _filtro.AgruparTerceros,
-        MostrarTitulos = _filtro.MostrarTitulos, IncluirSinMovimientos = _filtro.IncluirSinMovimientos
+        MostrarTitulos = _filtro.MostrarTitulos, IncluirSinMovimientos = _filtro.IncluirSinMovimientos,
+        Subdiario = _filtro.Subdiario, ExcluirSubdiarios = _filtro.ExcluirSubdiarios, Resumido = _filtro.Resumido,
+        PlanIncluirTerceros = _filtro.PlanIncluirTerceros, PlanIncluirBaja = _filtro.PlanIncluirBaja,
+        NivelMaximo = _filtro.NivelMaximo, Comparativo = _filtro.Comparativo
     };
 
     private void AbrirMayor(SumasSaldosFila f)
@@ -249,7 +402,15 @@
         _exportando = pdf ? "pdf" : "excel"; UpdateHeader();
         try
         {
-            var r = await UiOps.RunAsync(() => EsMayor ? Service.ExportarMayorAsync(Copia(), pdf) : Service.ExportarSumasSaldosAsync(Copia(), pdf), Titulo);
+            var r = await UiOps.RunAsync(() => Tipo switch
+            {
+                "mayor" => Service.ExportarMayorAsync(Copia(), pdf),
+                "diario" => Service.ExportarDiarioAsync(Copia(), false, pdf),
+                "subdiarios" => Service.ExportarDiarioAsync(Copia(), true, pdf),
+                "plan" => Service.ExportarPlanCuentasAsync(Copia(), pdf),
+                "balance-general" => Service.ExportarBalanceGeneralAsync(Copia(), pdf),
+                _ => Service.ExportarSumasSaldosAsync(Copia(), pdf)
+            }, Titulo);
             if (r.Success && r.Value is { } a)
                 await Js.InvokeVoidAsync(pdf ? "alfaCoreInterfacesUpload.openBlob" : "alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
             else _feedback = r.Feedback;
@@ -257,13 +418,20 @@
         finally { _exportando = null; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
     }
 
-    private bool HayDatos => EsMayor ? _mayor is { Cuentas.Count: > 0 } : _sumas is { Filas.Count: > 0 };
+    private bool HayDatos => Tipo switch
+    {
+        "mayor" => _mayor is { Cuentas.Count: > 0 },
+        "diario" or "subdiarios" => _diario is { Asientos.Count: > 0 },
+        "plan" => _plan is { Cuentas.Count: > 0 },
+        "balance-general" => _balance is { Filas.Count: > 0 },
+        _ => _sumas is { Filas.Count: > 0 }
+    };
 
     private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = Titulo,
         Breadcrumb = ["Contabilidad", "Reportes", Titulo],
-        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, EsMayor ? "mayor" : "sumas-saldos"),
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, Tipo),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
         Actions =
         [
