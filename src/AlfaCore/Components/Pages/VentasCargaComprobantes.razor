@@ -13,7 +13,7 @@
 <PageTitle>Carga de Comprobantes | Alfa Gestión</PageTitle>
 
 <div class="gd-page gd cc-page">
-    @if (_busy)
+    @if (_busy && _procesoFa is null)
     {
         <AlfaNotification Message="@AppUiMessage.Info("Operación en curso", "Procesando la consulta. Esperá a que aparezca el resultado.")" />
     }
@@ -377,6 +377,67 @@
         return ProcesarFaAsync(true, cuentas);
     }
 
+    // ── Progreso del lote (panel sobre la lista, con Cancelar) ──
+    private sealed class ProcesoFa
+    {
+        public string Accion { get; init; } = string.Empty;
+        public int Total { get; init; }
+        public bool ConMail { get; init; }
+        public int Actual { get; set; }
+        public string Cliente { get; set; } = string.Empty;
+        public int Ok { get; set; }
+        public int Errores { get; set; }
+        public int Cancelados { get; set; }
+        public int MailsPendientes { get; set; }
+        public int MailsEnviados { get; set; }
+        public int MailsConError { get; set; }
+        public System.Diagnostics.Stopwatch Reloj { get; } = System.Diagnostics.Stopwatch.StartNew();
+        public int Hechos => Ok + Errores;
+        public int Porcentaje => Total == 0 ? 0 : (int)Math.Round(100.0 * Hechos / Total);
+    }
+    private ProcesoFa? _procesoFa;
+    private CancellationTokenSource? _cancelarFa;
+    private string? _cuentaEnCursoFa;
+    private bool CancelandoFa => _cancelarFa?.IsCancellationRequested == true;
+
+    private void CancelarFa()
+    {
+        try { _cancelarFa?.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    private async Task EnviarMailEnColaAsync(Task anterior, CargaComprobantesFacturacionAutomaticaResultado r, ProcesoFa p)
+    {
+        await anterior;
+        r.MailMensaje = "Enviando mail…";
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+        try
+        {
+            var envio = await Service.EnviarMailComprobanteAsync(r.Tc ?? "FC", r.Comprobante!, ct: _lifetime.Token);
+            r.MailEstado = envio.Enviado ? "ENVIADO" : "ERROR"; r.MailMensaje = envio.Mensaje;
+        }
+        catch (Exception ex)
+        {
+            r.MailEstado = "ERROR";
+            r.MailMensaje = ex is CargaComprobantesReglaException or AppUserFacingException ? ex.Message
+                : "No se pudo enviar el mail; la factura quedó emitida. Reenviala con el botón.";
+        }
+        finally
+        {
+            p.MailsPendientes--;
+            if (r.MailEstado == "ENVIADO") p.MailsEnviados++; else p.MailsConError++;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string TiempoFa(ProcesoFa p)
+    {
+        var t = p.Reloj.Elapsed;
+        var texto = t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes} min {t.Seconds:00} s" : $"{t.Seconds} s";
+        if (p.Hechos == 0 || p.Hechos >= p.Total) return texto;
+        var resta = TimeSpan.FromTicks(t.Ticks / p.Hechos * (p.Total - p.Hechos));
+        return texto + $" · faltan ~{(resta.TotalMinutes >= 1 ? $"{(int)Math.Ceiling(resta.TotalMinutes)} min" : $"{Math.Max(1, (int)resta.TotalSeconds)} s")}";
+    }
+
     private Task PrevisualizarFacturacionAutomaticaAsync() => ProcesarFaAsync(false);
     private Task EmitirFacturacionAutomaticaAsync() { _confirmarEmisionFa = false; return ProcesarFaAsync(true); }
 
@@ -388,16 +449,40 @@
         var fecha = FechaFaAplicada;
         var elegidas = comoProforma ? new HashSet<string>(proformas!, StringComparer.OrdinalIgnoreCase) : _seleccionFa;
         var cuentas = FilasFaOrdenadas.Select(f => f.Cuenta).Where(elegidas.Contains).ToList();
+        var clientes = _filasFa.ToDictionary(f => f.Cuenta, f => f.Cliente, StringComparer.OrdinalIgnoreCase);
+        var mailAlEmitir = emitir && _enviarMailFa;
+        var p = new ProcesoFa { Accion = comoProforma ? "Emitiendo proformas" : emitir ? "Emitiendo facturas" : "Validando facturas", Total = cuentas.Count, ConMail = mailAlEmitir };
+        _procesoFa = p; _cancelarFa = new CancellationTokenSource();
+        // El mail de cada factura sale en paralelo con la emisión de la siguiente (antes se esperaba
+        // PDF + SMTP por cliente). Los mails van de a uno, en orden.
+        var colaMail = Task.CompletedTask;
         _busy = true; _feedback = null; UpdateHeader();
         try
         {
             for (var i = 0; i < cuentas.Count && !_disposed; i++)
             {
-                _progresoFa = $"{(comoProforma ? "Emitiendo proforma" : emitir ? "Emitiendo" : "Validando")} {i + 1} de {cuentas.Count}…";
+                // Cancelar no corta un cliente a medio emitir (dejaría el CAE sin confirmar): frena antes del siguiente.
+                if (_cancelarFa.IsCancellationRequested) { p.Cancelados = cuentas.Count - i; break; }
+                p.Actual = i + 1; p.Cliente = clientes.GetValueOrDefault(cuentas[i], cuentas[i]); _cuentaEnCursoFa = cuentas[i];
+                _progresoFa = $"{p.Accion} {i + 1} de {cuentas.Count}…";
                 await InvokeAsync(StateHasChanged);
-                _resultadosFa[cuentas[i]] = emitir
-                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token, _enviarMailFa, comoProforma)
+                var r = emitir
+                    ? await Service.EmitirFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token, enviarMail: false, comoProforma)
                     : await Service.PrevisualizarFacturacionAutomaticaAsync(cuentas[i], fecha, _lifetime.Token);
+                _resultadosFa[cuentas[i]] = r;
+                if (r.Estado is "GRABADA" or "VALIDADA") p.Ok++; else p.Errores++;
+                if (mailAlEmitir && r.Estado == "GRABADA" && r.Comprobante is { Length: > 0 })
+                {
+                    p.MailsPendientes++; r.MailEstado = "PENDIENTE"; r.MailMensaje = "Mail en cola…";
+                    colaMail = EnviarMailEnColaAsync(colaMail, r, p);
+                }
+            }
+            _cuentaEnCursoFa = null;
+            if (!colaMail.IsCompleted)
+            {
+                p.Cliente = string.Empty;
+                await InvokeAsync(StateHasChanged);
+                await colaMail;
             }
             var resultados = cuentas.Where(_resultadosFa.ContainsKey).Select(c => _resultadosFa[c]).ToList();
             var errores = resultados.Count(r => r.Estado is "ERROR" or "PENDIENTE" or "RECHAZADA");
@@ -410,7 +495,7 @@
                 : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
                     $"{ok} correcta(s) y {errores} con problemas. En la columna Resultado de cada cliente figura el motivo y qué hacer; " +
                     "las rechazadas no grabaron nada y se pueden volver a emitir después de corregir.");
-            if (emitir && _enviarMailFa)
+            if (mailAlEmitir)
             {
                 var conMail = resultados.Where(r => r.MailEstado is not null).ToList();
                 var fallidos = conMail.Count(r => r.MailEstado != "ENVIADO");
@@ -418,12 +503,19 @@
                     _feedback = AppUiMessage.Warning("Mails con problemas",
                         $"{conMail.Count - fallidos} mail(s) enviados y {fallidos} sin enviar. La factura quedó emitida igual; en Resultado figura el motivo y el botón para reenviar.");
             }
+            // Las ya emitidas salen de la selección: lo que queda marcado es lo que falta o falló.
+            if (emitir) foreach (var r in resultados.Where(r => r.Estado == "GRABADA")) _seleccionFa.Remove(r.Cuenta);
+            if (p.Cancelados > 0)
+                _feedback = AppUiMessage.Warning("Proceso cancelado",
+                    $"Se procesaron {resultados.Count} de {p.Total} cliente(s) ({p.Ok} correctas, {p.Errores} con problemas). " +
+                    $"Los {p.Cancelados} restantes no se tocaron: siguen seleccionados para volver a emitir.");
             if (emitir) _recientes = await Service.GetGrabacionesRecientesAsync(_lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         finally
         {
-            _busy = false; _progresoFa = string.Empty;
+            _busy = false; _progresoFa = string.Empty; _procesoFa = null; _cuentaEnCursoFa = null;
+            _cancelarFa?.Dispose(); _cancelarFa = null;
             if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); }
         }
     }
@@ -482,6 +574,11 @@
 
     private RenderFragment RenderResultadoFa(string cuenta) => __builder =>
     {
+        if (_cuentaEnCursoFa == cuenta)
+        {
+            <span class="cc-fa-estado is-info"><span class="cc-fa-proceso__spinner cc-fa-proceso__spinner--sm" aria-hidden="true"></span> @(_procesoFa?.Accion.StartsWith("Validando") == true ? "Validando…" : "Emitiendo…")</span>
+            return;
+        }
         if (!_resultadosFa.TryGetValue(cuenta, out var r)) return;
         var clase = r.Estado switch { "GRABADA" => "is-ok", "VALIDADA" => "is-info", _ => "is-error" };
         <span class="cc-fa-estado @clase">@(r.Estado switch { "GRABADA" => "Emitida", "VALIDADA" => "Validada", "PENDIENTE" => "Sin confirmar", "RECHAZADA" => "Rechazada por ARCA", _ => "Error" })</span>
@@ -497,11 +594,11 @@
             {
                 @if (r.MailEstado is { } mailEstado)
                 {
-                    <small class="cc-fa-mail @(mailEstado == "ENVIADO" ? "is-ok" : "is-error")">
-                        <i class="bi @(mailEstado == "ENVIADO" ? "bi-envelope-check" : "bi-envelope-exclamation")" aria-hidden="true"></i> @r.MailMensaje
+                    <small class="cc-fa-mail @(mailEstado switch { "ENVIADO" => "is-ok", "PENDIENTE" => "is-pendiente", _ => "is-error" })">
+                        <i class="bi @(mailEstado switch { "ENVIADO" => "bi-envelope-check", "PENDIENTE" => "bi-hourglass-split", _ => "bi-envelope-exclamation" })" aria-hidden="true"></i> @r.MailMensaje
                     </small>
                 }
-                <button type="button" class="cc-fa-mail__btn" disabled="@(_busy || _mailFaCuenta is not null)" @onclick="() => EnviarMailFaAsync(r)">
+                <button type="button" class="cc-fa-mail__btn" disabled="@(_busy || _mailFaCuenta is not null || r.MailEstado == "PENDIENTE")" @onclick="() => EnviarMailFaAsync(r)">
                     <i class="bi bi-envelope" aria-hidden="true"></i>
                     @(_mailFaCuenta == r.Cuenta ? "Enviando…" : r.MailEstado == "ENVIADO" ? "Reenviar mail" : "Enviar por mail")
                 </button>
@@ -610,16 +707,44 @@
             return;
         }
         <section class="cc-data-view" aria-label="Clientes en condiciones de facturar" aria-busy="@_busy">
-            <div class="cc-fa-mailbar">
-                <AlfaCheckbox Value="@_enviarMailFa" ValueChanged="v => _enviarMailFa = v == true" Disabled="@_busy">
-                    <i class="bi bi-envelope" aria-hidden="true"></i> Enviar la factura por mail al emitir
-                </AlfaCheckbox>
-                @if (_mailPruebaFa is not null)
-                {
-                    <span class="cc-fa-mailbar__prueba">Modo prueba: los mails van a @_mailPruebaFa, no a los clientes.</span>
-                }
-                <a class="cc-fa-mailbar__config" href="@UrlConfigMail" target="_blank">Asunto y mensaje del mail</a>
-            </div>
+            @if (_procesoFa is { } proceso)
+            {
+                <div class="cc-fa-proceso" role="status" aria-live="polite">
+                    <div class="cc-fa-proceso__fila">
+                        <span class="cc-fa-proceso__spinner" aria-hidden="true"></span>
+                        <div class="cc-fa-proceso__texto">
+                            <strong>@(CancelandoFa ? "Cancelando: termina el cliente en curso y se detiene…"
+                                : proceso.Cliente.Length > 0 ? $"{proceso.Accion}: {proceso.Actual} de {proceso.Total}"
+                                : proceso.MailsPendientes > 0 ? $"Terminando de enviar {proceso.MailsPendientes} mail(s)…" : "Finalizando…")</strong>
+                            @if (proceso.Cliente.Length > 0)
+                            {
+                                <span>@proceso.Cliente · pidiendo CAE y grabando</span>
+                            }
+                        </div>
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-x-circle"
+                                    Disabled="@(CancelandoFa || proceso.Cliente.Length == 0)" OnClick="_ => CancelarFa()">@(CancelandoFa ? "Cancelando…" : "Cancelar")</AlfaButton>
+                    </div>
+                    <div class="cc-fa-proceso__barra" aria-hidden="true"><span style="width:@(proceso.Porcentaje)%"></span></div>
+                    <small class="cc-fa-proceso__detalle">
+                        @proceso.Hechos de @proceso.Total listos · @proceso.Ok correctas@(proceso.Errores > 0 ? $" · {proceso.Errores} con problemas" : "")
+                        @if (proceso.ConMail) { <span> · Mails: @proceso.MailsEnviados enviados@(proceso.MailsConError > 0 ? $", {proceso.MailsConError} con error" : "")@(proceso.MailsPendientes > 0 ? $", {proceso.MailsPendientes} en cola" : "")</span> }
+                        · @TiempoFa(proceso)
+                    </small>
+                </div>
+            }
+            else
+            {
+                <div class="cc-fa-mailbar">
+                    <AlfaCheckbox Value="@_enviarMailFa" ValueChanged="v => _enviarMailFa = v == true" Disabled="@_busy">
+                        <i class="bi bi-envelope" aria-hidden="true"></i> Enviar la factura por mail al emitir
+                    </AlfaCheckbox>
+                    @if (_mailPruebaFa is not null)
+                    {
+                        <span class="cc-fa-mailbar__prueba">Modo prueba: los mails van a @_mailPruebaFa, no a los clientes.</span>
+                    }
+                    <a class="cc-fa-mailbar__config" href="@UrlConfigMail" target="_blank"><i class="bi bi-pencil-square" aria-hidden="true"></i> Asunto y mensaje del mail</a>
+                </div>
+            }
             <div class="cc-table-scroll">
                 <table class="cc-table">
                     <thead><tr>
@@ -632,7 +757,7 @@
                     <tbody>
                     @foreach (var fila in FilasFaOrdenadas)
                     {
-                        <tr @key="fila.Cuenta">
+                        <tr @key="fila.Cuenta" class="@(_cuentaEnCursoFa == fila.Cuenta ? "cc-fa-en-curso" : null)">
                             <td><AlfaCheckbox Value="@_seleccionFa.Contains(fila.Cuenta)" ValueChanged="v => SeleccionarFa(fila.Cuenta, v == true)" Disabled="@_busy">@fila.CtaCodigo</AlfaCheckbox></td>
                             <td>@fila.CtaCodigo</td>
                             <td><strong>@fila.Cliente</strong></td>

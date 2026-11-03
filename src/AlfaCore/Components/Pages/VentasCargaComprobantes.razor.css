@@ -5,7 +5,7 @@
 .cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--alfa-text-secondary); }
 .cc-status { padding: 8px 12px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); white-space: nowrap; font-size: 12px; }
 .cc-page .cc-filter-note { margin: 0; font-size: 12px; }
-.cc-data-view { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); min-width: 0; overflow: hidden; }
+.cc-data-view { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); min-width: 0; overflow: hidden; overflow: clip; }
 .cc-table-scroll { overflow: auto; max-height: 65vh; }
 .cc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cc-table th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-surface); color: var(--alfa-text-secondary); font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
@@ -44,10 +44,29 @@
 .cc-table td small.cc-fa-pdf-error { display: block; max-width: 260px; white-space: normal; color: var(--alfa-danger, #e5484d); }
 
 /* Mail de la factura en la lista de facturación automática. */
-.cc-fa-mailbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; margin-bottom: 8px;
-    border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 8px; background: var(--alfa-surface-subtle, #f7f8fa); font-size: 13px; }
-.cc-fa-mailbar__prueba { color: var(--alfa-warning, #8a5a00); font-weight: 600; }
-.cc-fa-mailbar__config { margin-left: auto; font-size: 12px; }
+/* Barra de opciones de mail: integrada a la tarjeta de la lista, sin fondo propio. */
+.cc-fa-mailbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px;
+    border-bottom: 1px solid var(--alfa-border-default); color: var(--alfa-text-secondary); font-size: 13px; }
+.cc-fa-mailbar__prueba { color: var(--alfa-warning, #d9a400); font-weight: 600; }
+.cc-fa-mailbar__config { margin-left: auto; font-size: 12px; color: var(--alfa-accent); text-decoration: none; display: inline-flex; gap: 4px; align-items: center; }
+.cc-fa-mailbar__config:hover { text-decoration: underline; }
+/* Progreso del lote: queda fijo arriba al desplazar la lista. */
+.cc-fa-proceso { position: sticky; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
+    background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface)); border-bottom: 1px solid var(--alfa-border-default);
+    border-left: 3px solid var(--alfa-accent); }
+.cc-fa-proceso__fila { display: flex; align-items: center; gap: 12px; }
+.cc-fa-proceso__texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; color: var(--alfa-text-primary); }
+.cc-fa-proceso__texto span { color: var(--alfa-text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-fa-proceso__barra { height: 6px; border-radius: 999px; background: var(--alfa-border-default); overflow: hidden; }
+.cc-fa-proceso__barra span { display: block; height: 100%; background: var(--alfa-accent); border-radius: inherit; transition: width .3s ease; }
+.cc-fa-proceso__detalle { color: var(--alfa-text-secondary); font-size: 12px; }
+.cc-fa-proceso__spinner { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 2px solid var(--alfa-border-default);
+    border-top-color: var(--alfa-accent); animation: cc-fa-giro .8s linear infinite; display: inline-block; vertical-align: -3px; }
+.cc-fa-proceso__spinner--sm { width: 10px; height: 10px; border-width: 2px; vertical-align: -1px; }
+@keyframes cc-fa-giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cc-fa-proceso__spinner { animation-duration: 2.4s; } }
+.cc-table tr.cc-fa-en-curso td { background: color-mix(in srgb, var(--alfa-accent) 10%, transparent); }
+.cc-fa-mail.is-pendiente { color: var(--alfa-text-secondary); }
 .cc-table td small.cc-fa-mail { display: block; white-space: normal; font-size: 11px; margin-top: 4px; }
 .cc-fa-mail.is-ok { color: var(--alfa-success, #1e7e34); }
 .cc-fa-mail.is-error { color: var(--alfa-danger, #b3261e); }
