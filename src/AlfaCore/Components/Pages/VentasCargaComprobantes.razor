@@ -61,7 +61,25 @@
     else if (_origen is null)
     {
         @* Menos texto (2026-10-22): el título ya está en la barra y la nota de fechas en el panel de filtros. *@
-        <section class="cc-intro cc-intro--compacto">
+        <section class="cc-intro cc-intro--compacto @(EsFacturacionAutomatica ? "cc-intro--fa" : null)">
+            @if (EsFacturacionAutomatica)
+            {
+                var fechaFa = FechaFaAplicada; var hoyFa = DateTime.Today;
+                <div class="cc-fecha-fa">
+                    <label for="cc-fecha-fa"><i class="bi bi-calendar-event" aria-hidden="true"></i> Fecha a facturar</label>
+                    <input id="cc-fecha-fa" type="date" value="@FechaHtml(fechaFa)" disabled="@_busy"
+                           min="@FechaHtml(hoyFa.AddDays(-CargaComprobantesFacturacionAutomatica.DiasFechaEmision))"
+                           max="@FechaHtml(hoyFa.AddDays(CargaComprobantesFacturacionAutomatica.DiasFechaEmision))"
+                           @onchange="e => CambiarFechaFaAsync(LeerFecha(e.Value?.ToString()))" />
+                    <button type="button" class="@(fechaFa == hoyFa ? "is-active" : null)" disabled="@_busy" @onclick="() => CambiarFechaFaAsync(hoyFa)">Hoy</button>
+                    @if (hoyFa.Day <= CargaComprobantesFacturacionAutomatica.DiasFechaEmision + 1 && hoyFa.Day > 1)
+                    {
+                        var primero = new DateTime(hoyFa.Year, hoyFa.Month, 1);
+                        <button type="button" class="@(fechaFa == primero ? "is-active" : null)" disabled="@_busy" @onclick="() => CambiarFechaFaAsync(primero)">1° del mes</button>
+                    }
+                    <small>@(fechaFa == hoyFa ? "Hoy" : fechaFa.ToString("dddd d 'de' MMMM", Culture)) · ARCA acepta hasta @CargaComprobantesFacturacionAutomatica.DiasFechaEmision días antes o después</small>
+                </div>
+            }
             <span class="cc-status cc-status--@(_contexto.ModoEmision.ToLowerInvariant())" title="@_contexto.ModoEmisionMotivo">
                 @(_contexto.ModoEmision switch
                 {
@@ -836,8 +854,53 @@
         Users.StateChanged += ContextChanged;
         UpdateHeader();
     }
-    protected override Task OnInitializedAsync() => InicializarAsync();
-    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+    private Task? _inicio;
+    protected override Task OnInitializedAsync() => _inicio = InicializarAsync();
+
+    // Los últimos filtros se leen del navegador después del primer render (sin JS en el prerender);
+    // si cambian la consulta inicial, se vuelve a consultar con ellos.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        var g = await FiltrosRecordados.LeerAsync<FiltrosGuardados>(Js, Sessions, Pantalla);
+        if (_inicio is not null) await _inicio;
+        if (g is not null && !_disposed)
+        {
+            _filtro.TipoOrigen = g.TipoOrigen is "NP" or "RM" or CargaComprobantesFacturacionAutomatica.TipoOrigen ? g.TipoOrigen : "NP";
+            _filtro.Vendedor = g.Vendedor ?? ""; _filtro.Zona = g.Zona ?? ""; _filtro.UnidadNegocio = g.UnidadNegocio ?? ""; _filtro.Deposito = g.Deposito ?? "";
+            if (g.Guardado.Date == DateTime.Today)
+            {
+                // Mismo día: fechas y búsqueda como quedaron. Otro día: la fecha a facturar vuelve a hoy.
+                _filtro.FechaDesde = g.FechaDesde; _filtro.FechaHasta = g.FechaHasta; _filtro.FechaFacturacion = g.FechaFacturacion; _filtro.Busqueda = g.Busqueda ?? "";
+            }
+            var f = _filtroAplicado;
+            if (_contexto is not null && (f.TipoOrigen != _filtro.TipoOrigen || f.Busqueda != _filtro.Busqueda || f.FechaDesde != _filtro.FechaDesde ||
+                f.FechaHasta != _filtro.FechaHasta || f.FechaFacturacion != _filtro.FechaFacturacion || f.Vendedor != _filtro.Vendedor ||
+                f.Zona != _filtro.Zona || f.UnidadNegocio != _filtro.UnidadNegocio || f.Deposito != _filtro.Deposito))
+                await BuscarAsync(true);
+        }
+    }
+    private const string Pantalla = "ventas-carga-comprobantes";
+    private sealed class FiltrosGuardados
+    {
+        public string? TipoOrigen { get; set; }
+        public string? Busqueda { get; set; }
+        public DateTime? FechaDesde { get; set; }
+        public DateTime? FechaHasta { get; set; }
+        public DateTime? FechaFacturacion { get; set; }
+        public string? Vendedor { get; set; }
+        public string? Zona { get; set; }
+        public string? UnidadNegocio { get; set; }
+        public string? Deposito { get; set; }
+        public DateTime Guardado { get; set; }
+    }
+    private static CargaComprobantesFiltro CopiarFiltro(CargaComprobantesFiltro f) => new()
+    {
+        TipoOrigen = f.TipoOrigen, Busqueda = f.Busqueda, FechaDesde = f.FechaDesde, FechaHasta = f.FechaHasta,
+        Vendedor = f.Vendedor, Zona = f.Zona, UnidadNegocio = f.UnidadNegocio, Deposito = f.Deposito,
+        FechaFacturacion = f.FechaFacturacion, PageSize = f.PageSize, PageNumber = 1
+    };
 
     private async Task InicializarAsync()
     {
@@ -854,17 +917,16 @@
     private void CambiarCantidad(int id, string? value) { _cantidades[id] = value; _simulacion = null; _planGrabacion = null; UpdateHeader(); }
     private Task BuscarAsync(bool reset) => RunAsync(async () =>
     {
-        var consulta = reset ? new CargaComprobantesFiltro
-        {
-            TipoOrigen = _filtro.TipoOrigen, Busqueda = _filtro.Busqueda,
-            FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta,
-            Vendedor = _filtro.Vendedor, Zona = _filtro.Zona, UnidadNegocio = _filtro.UnidadNegocio,
-            Deposito = _filtro.Deposito, FechaFacturacion = _filtro.FechaFacturacion,
-            PageSize = _filtro.PageSize, PageNumber = 1
-        } : _filtroAplicado;
+        var consulta = reset ? CopiarFiltro(_filtro) : _filtroAplicado;
         await ConsultarAsync(consulta);
         _filtroAplicado = consulta;
         _filtrosAbiertos = false;
+        if (reset) await FiltrosRecordados.GuardarAsync(Js, Sessions, Pantalla, new FiltrosGuardados
+        {
+            TipoOrigen = consulta.TipoOrigen, Busqueda = consulta.Busqueda, FechaDesde = consulta.FechaDesde, FechaHasta = consulta.FechaHasta,
+            FechaFacturacion = consulta.FechaFacturacion, Vendedor = consulta.Vendedor, Zona = consulta.Zona,
+            UnidadNegocio = consulta.UnidadNegocio, Deposito = consulta.Deposito, Guardado = DateTime.Now
+        });
     });
     private Task PaginarAsync(int delta) { _filtroAplicado.PageNumber = Math.Max(1, (_result?.PageNumber ?? 1) + delta); return BuscarAsync(false); }
     private Task LimpiarFiltrosAsync()
@@ -1112,7 +1174,7 @@
                     @if (EsFa(_filtro))
                     {
                         <h4><i class="bi bi-calendar-event"></i> Facturación</h4>
-                        <AlfaInput Type="date" Label="Fecha a facturar" Value="@FechaHtml(_filtro.FechaFacturacion ?? DateTime.Today)" ValueChanged="v => _filtro.FechaFacturacion = LeerFecha(v)" Disabled="@_busy" />
+                        <AlfaInput Type="date" Label="Fecha a facturar" Value="@FechaHtml(_filtro.FechaFacturacion ?? DateTime.Today)" ValueChanged="v => CambiarFiltro(() => _filtro.FechaFacturacion = LeerFecha(v))" Disabled="@_busy" />
                         <span class="smart-search__hint">Muestra los clientes que corresponde facturar a esa fecha según su periodicidad y su última factura automática.</span>
                     }
                     else
@@ -1130,7 +1192,7 @@
                 </div>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-file-earmark-text"></i> Documentos</h4>
-                    <AlfaSelect Label="Origen" Value="@_filtro.TipoOrigen" ValueChanged='v => _filtro.TipoOrigen = v ?? "NP"' Options="@TipoOptions" Disabled="@_busy" />
+                    <AlfaSelect Label="Origen" Value="@_filtro.TipoOrigen" ValueChanged='v => CambiarFiltro(() => _filtro.TipoOrigen = v ?? "NP")' Options="@TipoOptions" Disabled="@_busy" />
                     <AlfaSelect Label="Unidad de negocio" Value="@_filtro.UnidadNegocio" ValueChanged="v => _filtro.UnidadNegocio = v ?? string.Empty" Options="@Opciones(_contexto.UnidadesNegocio)" Disabled="@_busy" />
                     @if (!EsFa(_filtro))
                     {
@@ -1145,6 +1207,14 @@
         }
     </div>;
     private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdateHeader(); }
+    private void CambiarFiltro(Action cambio) { cambio(); UpdateHeader(); }
+    private Task CambiarFechaFaAsync(DateTime? fecha)
+    {
+        if (fecha is null || _busy) return Task.CompletedTask;
+        _filtro.FechaFacturacion = fecha.Value.Date == DateTime.Today ? null : fecha.Value.Date;
+        _filtro.TipoOrigen = CargaComprobantesFacturacionAutomatica.TipoOrigen;
+        return BuscarAsync(true);
+    }
     private void CerrarFiltros() { _filtrosAbiertos = false; UpdateHeader(); }
     private Task TeclaBusquedaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
     {

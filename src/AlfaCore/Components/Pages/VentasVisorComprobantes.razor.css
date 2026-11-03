@@ -66,8 +66,21 @@
 .vc-mail small { font-size: 11px; color: var(--alfa-text-muted, #5f6b7a); white-space: normal; }
 .vc-mail-form { display: grid; gap: 12px; }
 .vc-mail-form__label { font-size: 13px; font-weight: 600; margin-bottom: -6px; }
-.vc-mail-form__mensaje { width: 100%; min-height: 170px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical;
-    border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 8px; background: var(--alfa-surface, #fff); color: inherit; }
+.vc-mail-form__mensaje { width: 100%; min-height: 170px; padding: 8px 12px; font: inherit; font-size: 14px; line-height: 1.45; resize: vertical;
+    border: 1px solid var(--alfa-border-default); border-radius: 6px;
+    background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); }
+.vc-mail-form__mensaje:focus { outline: none; border-color: var(--alfa-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent) 25%, transparent); }
 .vc-mail-form__prueba { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    background: var(--alfa-warning-subtle, #fff4e0); color: var(--alfa-warning, #8a5a00); }
-.vc-mail-form__ultimo { font-size: 12px; color: var(--alfa-text-muted, #5f6b7a); }
+    border: 1px solid var(--alfa-warning, #d9a400); color: var(--alfa-warning, #d9a400); }
+.vc-mail-form__ultimo { font-size: 12px; color: var(--alfa-text-secondary); }
+.vc-mail-form__nota { margin-right: auto; font-size: 12px; color: var(--alfa-text-secondary); }
+.vc-mail__enviando { display: inline-flex; align-items: center; gap: 6px; color: var(--alfa-accent) !important; }
+.vc-spinner { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--alfa-border-default); border-top-color: var(--alfa-accent);
+    animation: vc-giro .8s linear infinite; display: inline-block; }
+@keyframes vc-giro { to { transform: rotate(360deg); } }
+
+/* Atajos de período en el panel de filtros. */
+.vc-rangos { display: flex; flex-wrap: wrap; gap: 6px; }
+.vc-rangos button { padding: 4px 10px; font-size: 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--alfa-border-default); background: transparent; color: var(--alfa-text-primary); }
+.vc-rangos button:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }

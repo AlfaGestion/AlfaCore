@@ -82,6 +82,54 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>Tiempos de cada paso del mail (armar, PDF, envío). Con ALFACORE_MAIL_ENVIAR_A envía de verdad.</summary>
+    [FacturacionAutomaticaPruebasFact]
+    public async Task MideLosTiemposDelMail()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        await using var cn = new SqlConnection(Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")); await cn.OpenAsync();
+        var factura = await cn.QueryFirstAsync<(string Tc, string Id)>("""
+            SELECT TOP (1) LTRIM(RTRIM(TC)), LTRIM(RTRIM(IDCOMPROBANTE)) FROM V_MV_CPTE
+            WHERE TC IN ('FC') AND ISNULL(ANULADA,0) = 0 ORDER BY FECHAHORA_GRABACION DESC, IDCOMPROBANTE DESC;
+            """);
+        var repo = new CargaComprobantesRepository();
+        var planner = new CargaComprobantesPlanificador(repo);
+        var sender = new CargaComprobantesElectronicaEmisor(runtime.Config, runtime.Wsaa, runtime.Wsfe, runtime.Events);
+        var emision = new CargaComprobantesEmisionService(planner, new(planner, new()), sender, runtime.Config, runtime.Events);
+        var sesion = new SessionDto();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)runtime.Sessions).Handler = (method, _) => method.Name switch
+        { "GetActiveSession" => sesion, "GetConnectionString" => Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL"), _ => null };
+        var user = await cn.QuerySingleAsync<AppUserSessionInfo>("SELECT LTRIM(RTRIM(NOMBRE)) UserName,LTRIM(RTRIM(SISTEMA)) SystemCode FROM TA_USUARIOS WHERE NOMBRE='Administrador'");
+        var users = DispatchProxy.Create<IAppUserSessionService, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler = (method, _) => method.Name switch
+        { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => user.UserName, "get_CurrentUser" => user, _ => null };
+        await using var provider = new ServiceCollection().AddLogging().AddSingleton(runtime.Events).AddSingleton<DocumentPdfService>().BuildServiceProvider();
+        var pdfService = provider.GetRequiredService<DocumentPdfService>();
+        var loggers = provider.GetRequiredService<ILoggerFactory>();
+        var docs = new FacturaDocumentService(runtime.Configuration,
+            new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
+            new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
+        var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()));
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var borrador = await service.PrepararMailComprobanteAsync(factura.Tc, factura.Id);
+        output.WriteLine($"Preparar mail (abrir diálogo): {sw.ElapsedMilliseconds} ms");
+        sw.Restart(); await service.GetPdfComprobanteAsync(factura.Tc, factura.Id);
+        output.WriteLine($"PDF 1ra vez: {sw.ElapsedMilliseconds} ms");
+        sw.Restart(); await service.GetPdfComprobanteAsync(factura.Tc, factura.Id);
+        output.WriteLine($"PDF 2da vez: {sw.ElapsedMilliseconds} ms");
+        if (Environment.GetEnvironmentVariable("ALFACORE_MAIL_ENVIAR_A") is { Length: > 0 } destino)
+        {
+            for (var i = 1; i <= 2; i++)
+            {
+                sw.Restart();
+                var envio = await service.EnviarMailComprobanteAsync(factura.Tc, factura.Id, destino, "[Prueba tiempos AlfaCore] " + borrador.Asunto, borrador.Mensaje);
+                output.WriteLine($"Enviar mail {i} (PDF + SMTP + registro): {sw.ElapsedMilliseconds} ms · {envio.Enviado} · {envio.Mensaje}");
+            }
+        }
+    }
+
     // appsettings.json + appsettings.Development.json del proyecto (la clave de la cuenta no está en git).
     private static Microsoft.Extensions.Configuration.IConfiguration ConfiguracionReal()
     {

@@ -16,17 +16,6 @@
 <div class="gd-page gd vc-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-    <section class="vc-filtros" aria-label="Filtros de comprobantes" @onkeydown="TeclaAsync">
-        <AlfaSelect Label="Tipo" Value="@_filtro.Tc" ValueChanged="v => _filtro.Tc = v ?? string.Empty" Options="@TipoOptions" Disabled="@_busy" />
-        <AlfaInput Type="date" Label="Desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => _filtro.FechaDesde = LeerFecha(v)" Disabled="@_busy" />
-        <AlfaInput Type="date" Label="Hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => _filtro.FechaHasta = LeerFecha(v)" Disabled="@_busy" />
-        <div class="vc-filtros__texto">
-            <AlfaInput Label="Cliente, cuenta o número" Value="@_filtro.Busqueda" ValueChanged="v => _filtro.Busqueda = v ?? string.Empty"
-                       HelpText="Ej.: 0010-00000519 o parte del nombre" Disabled="@_busy" />
-        </div>
-        <AlfaCheckbox Value="@_filtro.IncluirAnulados" ValueChanged="v => _filtro.IncluirAnulados = v == true" Disabled="@_busy">Incluir anulados</AlfaCheckbox>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_busy" Disabled="@_busy" OnClick="_ => BuscarAsync(true)">Buscar</AlfaButton>
-    </section>
 
     @if (_resultado is { } r)
     {
@@ -61,12 +50,18 @@
                                 <td>@c.Cae</td>
                                 <td>@c.UnidadNegocio</td>
                                 <td>@c.Usuario</td>
-                                <td class="vc-mail">@if (c.UltimoMail is { Length: > 0 } um) { <small title="Último envío">@um</small> }</td>
+                                <td class="vc-mail">
+                                    @if (_mailsEnCurso.Contains(ClaveMail(c.Tc, c.IdComprobante)))
+                                    {
+                                        <small class="vc-mail__enviando"><span class="vc-spinner" aria-hidden="true"></span> Enviando…</small>
+                                    }
+                                    else if (c.UltimoMail is { Length: > 0 } um) { <small title="Último envío">@um</small> }
+                                </td>
                                 <td class="vc-acciones">
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" OnClick="_ => Ver(c)">Ver</AlfaButton>
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_pdfId is not null)"
                                                 Loading="@(_pdfId == c.Id)" OnClick="_ => ReimprimirAsync(c)">Reimprimir</AlfaButton>
-                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(c.Anulada || _mailCargandoId is not null)"
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(c.Anulada || _mailCargandoId is not null || _mailsEnCurso.Contains(ClaveMail(c.Tc, c.IdComprobante)))"
                                                 Loading="@(_mailCargandoId == c.Id)" OnClick="_ => AbrirMailAsync(c)">Mail</AlfaButton>
                                 </td>
                             </tr>
@@ -84,7 +79,7 @@
     }
 </div>
 
-<AlfaDialog Open="@(_mail is not null)" Title="Enviar comprobante por mail" Size="AlfaDialogSize.Lg" Loading="@_enviandoMail"
+<AlfaDialog Open="@(_mail is not null)" Title="Enviar comprobante por mail" Size="AlfaDialogSize.Lg"
             Description="@(_mail is null ? null : $"{_mail.Tc} {_mail.IdComprobante} · {_mail.Cliente} · va adjunto en PDF")"
             ErrorMessage="@_mailError" CloseOnBackdrop="false" OnClose="CerrarMail">
     <ChildContent>
@@ -95,11 +90,11 @@
             {
                 <p class="vc-mail-form__prueba">Modo prueba: el mail va a @_mail.MailPrueba, no al cliente (Configuración General → Ventas → Mail de facturación).</p>
             }
-            <AlfaInput Label="Para" Value="@_mail.Para" ValueChanged="v => _mail.Para = v ?? string.Empty" Disabled="@_enviandoMail"
+            <AlfaInput Label="Para" Value="@_mail.Para" ValueChanged="v => _mail.Para = v ?? string.Empty"
                        HelpText="Separá varios mails con «;». Se completa con los mails del cliente." />
-            <AlfaInput Label="Asunto" MaxLength="250" Value="@_mail.Asunto" ValueChanged="v => _mail.Asunto = v ?? string.Empty" Disabled="@_enviandoMail" />
+            <AlfaInput Label="Asunto" MaxLength="250" Value="@_mail.Asunto" ValueChanged="v => _mail.Asunto = v ?? string.Empty" />
             <label class="vc-mail-form__label" for="vc-mail-mensaje">Mensaje</label>
-            <textarea id="vc-mail-mensaje" class="vc-mail-form__mensaje" rows="9" disabled="@_enviandoMail" @bind="_mail.Mensaje" @bind:event="oninput"></textarea>
+            <textarea id="vc-mail-mensaje" class="vc-mail-form__mensaje" rows="9" @bind="_mail.Mensaje" @bind:event="oninput"></textarea>
             @if (_mail.UltimoEnvio is { Length: > 0 } ultimo)
             {
                 <small class="vc-mail-form__ultimo">Último envío: @ultimo</small>
@@ -108,8 +103,9 @@
     }
     </ChildContent>
     <Footer>
-        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_enviandoMail" OnClick="_ => CerrarMail()">Cancelar</AlfaButton>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_enviandoMail" Disabled="@_enviandoMail" OnClick="_ => EnviarMailAsync()">Enviar</AlfaButton>
+        <small class="vc-mail-form__nota">Se envía en segundo plano: podés seguir trabajando.</small>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => CerrarMail()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" OnClick="_ => EnviarMail()">Enviar</AlfaButton>
     </Footer>
 </AlfaDialog>
 
@@ -135,18 +131,48 @@
     protected override void OnInitialized()
     {
         // Por defecto los últimos 7 días: sirve para ver o reimprimir lo que se acaba de emitir.
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
         _filtro.FechaHasta = DateTime.Today;
         _filtro.FechaDesde = DateTime.Today.AddDays(-7);
-        if (query.TryGetValue("tc", out var tc)) _filtro.Tc = tc.ToString();
-        if (query.TryGetValue("buscar", out var buscar)) _filtro.Busqueda = buscar.ToString();
         Sessions.SessionChanged += ContextChanged;
         Users.StateChanged += ContextChanged;
         UpdateHeader();
     }
 
-    protected override Task OnInitializedAsync() => BuscarAsync(true);
-    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+    // Los últimos filtros se leen del navegador después del primer render (sin JS en el prerender).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        if (await FiltrosRecordados.LeerAsync<FiltrosGuardados>(Js, Sessions, Pantalla) is { } g)
+        {
+            _filtro.Tc = g.Tc ?? string.Empty; _filtro.IncluirAnulados = g.IncluirAnulados;
+            if (g.Guardado.Date == DateTime.Today)
+            {
+                // Mismo día: se retoma exactamente donde quedó.
+                _filtro.FechaDesde = g.Desde; _filtro.FechaHasta = g.Hasta; _filtro.Busqueda = g.Busqueda ?? string.Empty;
+            }
+            else if (g.Desde is { } d && g.Hasta is { } h && h >= d)
+            {
+                // Otro día: mismo largo de período, terminando hoy.
+                _filtro.FechaHasta = DateTime.Today; _filtro.FechaDesde = DateTime.Today.AddDays(-(h - d).Days);
+            }
+        }
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        if (query.TryGetValue("tc", out var tc)) _filtro.Tc = tc.ToString();
+        if (query.TryGetValue("buscar", out var buscar)) _filtro.Busqueda = buscar.ToString();
+        await BuscarAsync(true);
+    }
+
+    private const string Pantalla = "ventas-ver-comprobantes";
+    private sealed class FiltrosGuardados
+    {
+        public string? Tc { get; set; }
+        public string? Busqueda { get; set; }
+        public DateTime? Desde { get; set; }
+        public DateTime? Hasta { get; set; }
+        public bool IncluirAnulados { get; set; }
+        public DateTime Guardado { get; set; }
+    }
 
     private async Task BuscarAsync(bool reset)
     {
@@ -162,7 +188,15 @@
         {
             var result = await UiOps.RunAsync(() => Service.BuscarComprobantesAsync(consulta, _lifetime.Token), "Ver comprobantes", _lifetime.Token);
             if (_disposed) return;
-            if (result.Success) { _resultado = result.Value; _filtroAplicado = consulta; }
+            if (result.Success)
+            {
+                _resultado = result.Value; _filtroAplicado = consulta; _filtrosAbiertos = false;
+                if (reset) await FiltrosRecordados.GuardarAsync(Js, Sessions, Pantalla, new FiltrosGuardados
+                {
+                    Tc = consulta.Tc, Busqueda = consulta.Busqueda, Desde = consulta.FechaDesde, Hasta = consulta.FechaHasta,
+                    IncluirAnulados = consulta.IncluirAnulados, Guardado = DateTime.Now
+                });
+            }
             else _feedback = result.Feedback;
         }
         finally
@@ -183,7 +217,6 @@
     // ── Enviar por mail: asunto y mensaje de la configuración, editables antes de enviar ──
     private ComprobanteMailBorrador? _mail;
     private int? _mailCargandoId;
-    private bool _enviandoMail;
     private string? _mailError;
 
     private async Task AbrirMailAsync(ComprobantesVisorFila c)
@@ -203,28 +236,48 @@
         }
     }
 
-    private void CerrarMail() { if (!_enviandoMail) { _mail = null; _mailError = null; } }
+    private void CerrarMail() { _mail = null; _mailError = null; }
 
-    private async Task EnviarMailAsync()
+    // El servidor de correo tarda varios segundos (sobre todo en validar la cuenta): el diálogo se cierra
+    // enseguida y el mail sale en segundo plano; la fila muestra «Enviando…». Si falla, se reabre con el motivo.
+    private readonly HashSet<string> _mailsEnCurso = new(StringComparer.OrdinalIgnoreCase);
+    private static string ClaveMail(string tc, string id) => $"{tc.Trim()}|{id.Trim()}";
+
+    private void EnviarMail()
     {
-        if (_mail is not { } mail || _enviandoMail) return;
-        _enviandoMail = true; _mailError = null;
-        await InvokeAsync(StateHasChanged);
+        if (_mail is not { } mail) return;
+        _mail = null; _mailError = null;
+        _mailsEnCurso.Add(ClaveMail(mail.Tc, mail.IdComprobante));
+        _ = EnviarEnSegundoPlanoAsync(mail);
+    }
+
+    private async Task EnviarEnSegundoPlanoAsync(ComprobanteMailBorrador mail)
+    {
+        string? error = null; string? ok = null;
         try
         {
             var result = await UiOps.RunAsync(() => Service.EnviarMailComprobanteAsync(mail.Tc, mail.IdComprobante, mail.Para, mail.Asunto, mail.Mensaje, _lifetime.Token),
                 "Enviar por mail", _lifetime.Token);
-            if (!result.Success) _mailError = result.Feedback?.Message ?? "No se pudo enviar el mail.";
-            else if (result.Value is { Enviado: false } fallo) _mailError = fallo.Mensaje;
-            else
-            {
-                _mail = null;
-                _feedback = AppUiMessage.Success("Mail enviado", result.Value?.Mensaje ?? $"Se envió {mail.Tc} {mail.IdComprobante}.");
-            }
+            if (!result.Success) error = result.Feedback?.Message ?? "No se pudo enviar el mail.";
+            else if (result.Value is { Enviado: false } fallo) error = fallo.Mensaje;
+            else ok = result.Value?.Mensaje ?? $"Se envió {mail.Tc} {mail.IdComprobante}.";
         }
-        finally { _enviandoMail = false; }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex) { error = ex.Message; }
+        finally { _mailsEnCurso.Remove(ClaveMail(mail.Tc, mail.IdComprobante)); }
         if (_disposed) return;
-        if (_mail is null) await BuscarAsync(false); else await InvokeAsync(StateHasChanged);
+        await InvokeAsync(async () =>
+        {
+            if (error is not null)
+            {
+                _feedback = AppUiMessage.Error("No se envió el mail", $"{mail.Tc} {mail.IdComprobante}: {error}");
+                if (_mail is null) { _mail = mail; _mailError = error; }
+                StateHasChanged();
+                return;
+            }
+            _feedback = AppUiMessage.Success("Mail enviado", $"{mail.Tc} {mail.IdComprobante} · {ok}");
+            await BuscarAsync(false);
+        });
     }
 
     private async Task ReimprimirAsync(ComprobantesVisorFila c)
@@ -247,8 +300,93 @@
         }
     }
 
+    // ── Búsqueda en una línea con filtros desplegables (mismo estilo que Carga de comprobantes) ──
+    private bool _filtrosAbiertos;
+    private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdateHeader(); }
+    private void CerrarFiltros() { _filtrosAbiertos = false; UpdateHeader(); }
+    private void Cambiar(Action cambio) { cambio(); UpdateHeader(); }
     private Task TeclaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
-        => args.Key == "Enter" ? BuscarAsync(true) : Task.CompletedTask;
+    {
+        if (args.Key == "Enter") return BuscarAsync(true);
+        if (args.Key == "Escape") CerrarFiltros();
+        return Task.CompletedTask;
+    }
+    private Task RangoAsync(DateTime desde, DateTime hasta) { _filtro.FechaDesde = desde; _filtro.FechaHasta = hasta; return BuscarAsync(true); }
+
+    private List<(string Key, string Label)> FiltrosActivos()
+    {
+        var f = _filtroAplicado;
+        var chips = new List<(string, string)>
+        {
+            ("fechas", $"{f.FechaDesde?.ToString("dd/MM/yyyy") ?? "Inicio"} – {f.FechaHasta?.ToString("dd/MM/yyyy") ?? "Hoy"}")
+        };
+        if (f.Tc.Length > 0) chips.Insert(0, ("tipo", TipoOptions.FirstOrDefault(o => o.Value == f.Tc)?.Label ?? f.Tc));
+        if (f.IncluirAnulados) chips.Add(("anulados", "Con anulados"));
+        return chips;
+    }
+
+    private Task QuitarFiltroAsync(string key)
+    {
+        if (key == "fechas") { if (!_filtrosAbiertos) AlternarFiltros(); return Task.CompletedTask; }
+        _filtro.Tc = _filtroAplicado.Tc; _filtro.Busqueda = _filtroAplicado.Busqueda; _filtro.IncluirAnulados = _filtroAplicado.IncluirAnulados;
+        _filtro.FechaDesde = _filtroAplicado.FechaDesde; _filtro.FechaHasta = _filtroAplicado.FechaHasta;
+        if (key == "tipo") _filtro.Tc = string.Empty;
+        if (key == "anulados") _filtro.IncluirAnulados = false;
+        return BuscarAsync(true);
+    }
+
+    private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var chips = FiltrosActivos(); var hoy = DateTime.Today; var mes = new DateTime(hoy.Year, hoy.Month, 1); }
+        <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > 1 ? "is-active" : string.Empty)"
+                aria-label="Abrir filtros" title="Abrir filtros" aria-expanded="@_filtrosAbiertos" disabled="@_busy" @onclick="AlternarFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in chips.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" disabled="@_busy" title="@chip.Label"
+                        aria-label="@(chip.Key == "fechas" ? "Cambiar período" : $"Quitar filtro {chip.Label}")" @onclick="() => QuitarFiltroAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        @if (chip.Key != "fechas") { <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span> }
+                    </button>
+                }
+                @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
+            </div>
+            <input type="search" aria-label="Buscar cliente, cuenta o número" placeholder="Cliente, cuenta o número (ej. 0010-00000519)..."
+                maxlength="100" value="@_filtro.Busqueda" disabled="@_busy" @oninput="e => _filtro.Busqueda = e.Value?.ToString() ?? string.Empty"
+                @onkeydown="TeclaAsync" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
+                disabled="@_busy" @onclick="AlternarFiltros"><i class="bi @(_filtrosAbiertos ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+        </div>
+        @if (_filtrosAbiertos)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="TeclaAsync" @onkeydown:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <AlfaInput Type="date" Label="Desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => Cambiar(() => _filtro.FechaDesde = LeerFecha(v))" Disabled="@_busy" />
+                    <AlfaInput Type="date" Label="Hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => Cambiar(() => _filtro.FechaHasta = LeerFecha(v))" Disabled="@_busy" />
+                    <div class="vc-rangos">
+                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(hoy, hoy)">Hoy</button>
+                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(hoy.AddDays(-7), hoy)">7 días</button>
+                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(mes, hoy)">Este mes</button>
+                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(mes.AddMonths(-1), mes.AddDays(-1))">Mes anterior</button>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-file-earmark-text"></i> Comprobante</h4>
+                    <AlfaSelect Label="Tipo" Value="@_filtro.Tc" ValueChanged="v => Cambiar(() => _filtro.Tc = v ?? string.Empty)" Options="@TipoOptions" Disabled="@_busy" />
+                    <AlfaCheckbox Value="@_filtro.IncluirAnulados" ValueChanged="v => Cambiar(() => _filtro.IncluirAnulados = v == true)" Disabled="@_busy">Incluir anulados</AlfaCheckbox>
+                    <span class="smart-search__hint">En la barra buscás por cliente (nombre o cuenta) o por número de comprobante.</span>
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_busy" OnClick="_ => BuscarAsync(true)">Aplicar</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
 
     private string RutaCarga() => Navigation.Uri.Split('?')[0].TrimEnd('/') is var actual && actual.EndsWith("/visor", StringComparison.OrdinalIgnoreCase)
         ? actual[..^"/visor".Length] : actual;
@@ -264,6 +402,8 @@
             new() { Key = "visor", Label = "Ver comprobantes", Active = true }
         ],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new(),
+        SearchContent = RenderBusqueda(),
         Actions =
         [
             new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = () => BuscarAsync(false) }
