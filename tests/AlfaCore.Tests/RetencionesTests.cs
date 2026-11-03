@@ -80,6 +80,95 @@ public sealed class RetencionesTests
         Assert.Equal("767" + "30718008146" + "05/10/2026" + "00001" + "00000007548" + " 000000014168,04", lineas[0]);
         Assert.ThrowsAny<InvalidOperationException>(() => RetencionesService.IvaSufridas([], true, ""));
     }
+
+    private static RetencionPago Pago(string tc = "OPG", string id = "02", decimal retencion = 1234.56m) => new()
+    {
+        Tc = tc, Sucursal = "0001", Numero = "00000123", Letra = "X", Fecha = new(2026, 10, 7), Cuenta = "211010001", Nombre = "PROVEEDOR ÑANDÚ S.A.",
+        Domicilio = "Av. Siempre Viva 742", Localidad = "General Roca", Provincia = "RIO NEGRO", CodigoPostal = "8332", Cuit = "30-71800814-6",
+        CondicionIva = "1", Importe = 100000m, ImporteSinIva = 82644.63m, IdRetencion = id, Base = 61722.31m, Retencion = retencion, AlicuotaIva = "21"
+    };
+
+    private static PercepcionVenta Venta(string tc = "FC", string letra = "A") => new()
+    {
+        Tc = tc, Sucursal = "0003", Numero = "00004567", Letra = letra, Fecha = new(2026, 10, 9), FechaContable = new(2026, 10, 9), Cuit = "20123456786",
+        Nombre = "Cliente Peña", CondicionIva = "1", DocumentoTipo = "1", SituacionIb = "00", NetoGravado = 1000m, AlicuotaIva = 21m, Iva = 210m,
+        PercepcionIibb = 30m, Total = 1240m, Provincia = "BUENOS AIRES"
+    };
+
+    [Fact]
+    public void SicoreGananciasCon145CaracteresYRegimenObligatorio()
+    {
+        var cfg = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["RETGANCR_02"] = "78" };
+        var linea = RetencionesService.SicoreGanancias([Pago()], cfg).TrimEnd('\r', '\n');
+        Assert.Equal(145, linea.Length);
+        Assert.Equal("06" + "07/10/2026" + "000100000123X   " + "0000000082644,63" + "0217" + "078" + "1" + "00000061722,31" + "07/10/2026" + "01" + "0"
+            + "00000001234,56" + "      " + "          " + "80" + "30718008146".PadRight(20) + new string(' ', 14), linea);
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => RetencionesService.SicoreGanancias([Pago(id: "05")], cfg));
+        Assert.Contains("05", ex.Message);
+    }
+
+    [Fact]
+    public void SicoreSujetosUnoPorCuitCon83Caracteres()
+    {
+        var lineas = RetencionesService.SicoreSujetos([Pago(), Pago(tc: "PG")]).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.Single(lineas);
+        Assert.Equal(83, lineas[0].Length);
+        Assert.Equal("30718008146" + "PROVEEDOR NANDU S.A." + "Av. Siempre Viva 742" + "General Roca".PadRight(20) + "22" + "8332    " + "80", lineas[0]);
+    }
+
+    [Fact]
+    public void SicorePercepcionIvaCon145Caracteres()
+    {
+        var linea = RetencionesService.SicorePercepcionIva([Pago(tc: "NC", retencion: 300m)]).TrimEnd('\r', '\n');
+        Assert.Equal(145, linea.Length);
+        Assert.StartsWith("03" + "07/10/2026" + "0000100000000123" + "0000000100000,00" + "0767" + "602" + "2" + "00000099700,00" + "07/10/2026" + "13" + "0" + "00000000300,00" + "  0,00", linea);
+    }
+
+    [Fact]
+    public void ArbaRetencionesYPercepciones()
+    {
+        var ret = RetencionesService.ArbaRetenciones([Pago()]).TrimEnd('\r', '\n');
+        Assert.Equal(47, ret.Length);
+        Assert.Equal("30-71800814-6" + "07/10/2026" + "0001" + "00000123" + "00001234,56" + "A", ret);
+
+        var perc = RetencionesService.ArbaPercepciones([Venta(), Venta("NC")]).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.All(perc, l => Assert.Equal(71, l.Length));
+        Assert.Equal("20-12345678-6" + "09/10/2026" + "F" + "A" + "00003" + "00004567" + "00000001000.00" + "21,00" + "0000000030.00" + "A", perc[0]);
+        Assert.Contains("-0000001000.00" + "21,00" + "-000000030.00", perc[1]);
+
+        Assert.Equal("AR-30718008146-2026100-6201-LOTEOCTUBRE1", RetencionesService.NombreArba("30-71800814-6", new(2026, 10, 1), "SI", "6201"));
+        Assert.Equal("AR-30718008146-2026102-6201-LOTEOCTUBRE2", RetencionesService.NombreArba("30718008146", new(2026, 10, 16), "NO", "6201"));
+        Assert.ThrowsAny<InvalidOperationException>(() => RetencionesService.NombreArba("30718008146", new(2026, 10, 1), "SI", ""));
+    }
+
+    [Fact]
+    public void ArcibaCon226CaracteresSinNotasDeCredito()
+    {
+        var lineas = RetencionesService.Arciba([Venta(), Venta("NC")]).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        var l = Assert.Single(lineas);
+        Assert.Equal(226, l.Length);
+        Assert.StartsWith("2" + "029" + "09/10/2026" + "01" + "A" + "0000000000004567" + "09/10/2026" + "0000000001210,00" + new string(' ', 16) + "3" + "20123456786"
+            + "1" + "20123456786" + "1" + "Cliente Pena".PadRight(30) + "0000000000000,00" + "0000000000210,00" + "0000000001000,00" + "03,00"
+            + "0000000000030,00" + "0000000000030,00", l);
+    }
+
+    [Fact]
+    public void SircarCsvPorJurisdiccion()
+    {
+        var cfg = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [RetencionesService.ClaveSircarRegimen] = "1" };
+        var ret = RetencionesService.SircarRetenciones([Pago(), Pago(tc: "PG")], cfg, "OCT2026");
+        var a = Assert.Single(ret);
+        Assert.Equal("RETENCION_OCT2026_JUR916.TXT", a.Nombre);
+        Assert.Equal("1,1,1,000100000123,30718008146,07/10/2026,61722.31,2.00,1234.56,001,916\r\n2,1,1,000100000123,30718008146,07/10/2026,61722.31,2.00,1234.56,001,916\r\n", a.Contenido);
+
+        cfg[RetencionesService.ClaveSircarJurisdiccion] = "904";
+        var perc = RetencionesService.SircarPercepciones([Venta(), Venta("NC")], cfg, "OCT2026");
+        var p = Assert.Single(perc);
+        Assert.Equal("PERCEPCION_OCT2026_JUR904.TXT", p.Nombre);
+        Assert.Equal("1,1,A,000300004567,20123456786,09/10/2026,1000.00,3.00,30.00,001,904\r\n2,102,A,000300004567,20123456786,09/10/2026,-1000.00,3.00,-30.00,001,904\r\n", p.Contenido);
+
+        Assert.ThrowsAny<InvalidOperationException>(() => RetencionesService.SircarRetenciones([Pago()], new Dictionary<string, string>(), "OCT2026"));
+    }
 }
 
 /// <summary>Contra ALFANET2007_PRUEBAS (solo lectura). Requiere ALFACORE_TEST_SQL y ALFACORE_FA_PRUEBAS=1.</summary>
@@ -119,5 +208,17 @@ public sealed class RetencionesPruebasTests(ITestOutputHelper output)
         Assert.All(r.Filas, x => Assert.True(x.Cuenta.StartsWith('1') == x.Sufrida));
         Assert.Contains(r.Filas, x => x.Origen == "Cobranza" && x.Impuesto == "IIBB");
         Assert.True((await svc.ExportarAsync(filtro, "EXCEL")).Contenido.Length > 3000);
+
+        var config = await svc.GetConfigAsync();
+        Assert.NotEmpty(config.Sicore);
+        Assert.All(config.Sicore, s => Assert.Equal(s.IdRetencion.Trim(), s.IdRetencion));
+
+        // Practicadas: las consultas corren; PRUEBAS no tiene retenciones de agente, así que se espera un archivo o un aviso, nunca un error de SQL.
+        foreach (var formato in RetencionesService.FormatosPracticadas)
+        {
+            try { output.WriteLine($"  {formato}: {(await svc.ExportarAsync(filtro, formato)).Nombre}"); }
+            catch (AppUserFacingException ex) { Assert.Fail($"{formato}: {ex.InnerException?.Message ?? ex.Message}"); }
+            catch (InvalidOperationException ex) { output.WriteLine($"  {formato}: {ex.Message}"); }
+        }
     }
 }

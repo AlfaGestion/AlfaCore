@@ -66,6 +66,21 @@
             <small>SIFERE WEB (Comisión Arbitral) va en un .zip con un archivo por jurisdicción. F.2002 es «Mis Aplicaciones Web» de ARCA (IVA por actividad). Mismos formatos que el Alfa Gestión.</small>
         </section>
 
+        <section class="rp-export">
+            <strong><i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i> Archivos de agente (practicadas del período)</strong>
+            <div class="rp-export__botones">
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SICORE_GAN")'>SICORE · retenciones Ganancias</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SICORE_SUJ")'>SICORE · sujetos retenidos</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SICORE_PERC_IVA")'>SICORE · percepción IVA</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("ARBA_RET")'>ARBA · retenciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("ARBA_PERC")'>ARBA · percepciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("ARCIBA")'>ARCIBA · percepciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SIRCAR_RET")'>SIRCAR · retenciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SIRCAR_PERC")'>SIRCAR · percepciones IIBB</AlfaButton>
+            </div>
+            <small>Salen de las retenciones grabadas en órdenes de pago y pagos, y de las percepciones del libro de IVA ventas. ARBA va en .zip con el nombre de lote; SIRCAR, un archivo por jurisdicción.</small>
+        </section>
+
         @if (r.Filas.Count == 0)
         {
             <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos" Message="No hay retenciones ni percepciones en ese período." />
@@ -102,18 +117,62 @@
     }
 </div>
 
-<AlfaDialog Open="@(_cfgEdit is not null)" Title="Configurar exportaciones" Size="AlfaDialogSize.Md" Loading="@_cfgBusy"
+<AlfaDialog Open="@(_cfgEdit is not null)" Title="Configurar exportaciones" Size="AlfaDialogSize.Lg" Loading="@_cfgBusy"
             ErrorMessage="@_cfgError" CloseOnBackdrop="false" OnClose="() => _cfgEdit = null">
     <ChildContent>
     @if (_cfgEdit is { } c)
     {
         <div class="rp-cfg">
+            <h4>Sufridas</h4>
             <AlfaSelect Label="Jurisdicción por defecto (SIFERE)" Value="@c.JurisdiccionDefecto" ValueChanged="v => c.JurisdiccionDefecto = v ?? string.Empty"
-                        Options="@(new[] { new AlfaSelectOption("", "Sin jurisdicción por defecto") }.Concat(c.Jurisdicciones.Select(j => new AlfaSelectOption(j.Codigo, $"{j.Codigo} · {j.Nombre}"))).ToList())" />
+                        Options="@JurisdiccionOpciones("Sin jurisdicción por defecto")" />
             <small>Se usa cuando la cuenta de la retención o percepción de IIBB no tiene provincia cargada.</small>
-            <AlfaInput Label="Régimen F.2002 · retenciones de IVA" Value="@c.RegimenRetencionIva" ValueChanged="v => c.RegimenRetencionIva = v ?? string.Empty" MaxLength="3" />
-            <AlfaInput Label="Régimen F.2002 · percepciones de IVA" Value="@c.RegimenPercepcionIva" ValueChanged="v => c.RegimenPercepcionIva = v ?? string.Empty" MaxLength="3"
-                       HelpText="Código de régimen de ARCA (tres dígitos). Son los mismos datos del Alfa Gestión." />
+            <div class="rp-cfg__par">
+                <AlfaInput Label="Régimen F.2002 · retenciones de IVA" Value="@c.RegimenRetencionIva" ValueChanged="v => c.RegimenRetencionIva = v ?? string.Empty" MaxLength="3" />
+                <AlfaInput Label="Régimen F.2002 · percepciones de IVA" Value="@c.RegimenPercepcionIva" ValueChanged="v => c.RegimenPercepcionIva = v ?? string.Empty" MaxLength="3" />
+            </div>
+            <small>Código de régimen de ARCA (tres dígitos). Son los mismos datos del Alfa Gestión.</small>
+
+            <h4>ARBA (agente de recaudación)</h4>
+            <div class="rp-cfg__par">
+                <AlfaInput Label="Código de actividad · retenciones" Value="@c.ArbaRetencionesActividad" ValueChanged="v => c.ArbaRetencionesActividad = v ?? string.Empty" MaxLength="20" />
+                <AlfaInput Label="Código de actividad · percepciones" Value="@c.ArbaPercepcionesActividad" ValueChanged="v => c.ArbaPercepcionesActividad = v ?? string.Empty" MaxLength="20" />
+            </div>
+            <div class="rp-cfg__par">
+                <AlfaCheckbox Value="@c.ArbaRetencionesMensual" ValueChanged="v => c.ArbaRetencionesMensual = v ?? true">Retenciones: presentación mensual</AlfaCheckbox>
+                <AlfaCheckbox Value="@c.ArbaPercepcionesMensual" ValueChanged="v => c.ArbaPercepcionesMensual = v ?? true">Percepciones: presentación mensual</AlfaCheckbox>
+            </div>
+            <small>Sin presentación mensual, el lote es por quincena: consultá del 1 al 15 o del 16 a fin de mes.</small>
+
+            <h4>SIRCAR</h4>
+            <div class="rp-cfg__par">
+                <AlfaInput Label="Tipo de régimen" Value="@c.SircarRegimen" ValueChanged="v => c.SircarRegimen = v ?? string.Empty" MaxLength="3" />
+                <AlfaSelect Label="Jurisdicción" Value="@c.SircarJurisdiccion" ValueChanged="v => c.SircarJurisdiccion = v ?? string.Empty"
+                            Options="@JurisdiccionOpciones("La provincia de cada comprobante")" />
+            </div>
+
+            <h4>SICORE · códigos por retención</h4>
+            @if (c.Sicore.Count == 0)
+            {
+                <small>No hay retenciones cargadas en la tabla de retenciones.</small>
+            }
+            else
+            {
+                <table class="rp-cfg__tabla">
+                    <thead><tr><th>Retención</th><th>Impuesto</th><th>Régimen</th></tr></thead>
+                    <tbody>
+                    @foreach (var s in c.Sicore)
+                    {
+                        <tr>
+                            <td>@s.IdRetencion · @s.Descripcion</td>
+                            <td><input class="rp-input" maxlength="4" placeholder="217" value="@s.Impuesto" @onchange="e => s.Impuesto = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td><input class="rp-input" maxlength="3" value="@s.Regimen" @onchange="e => s.Regimen = e.Value?.ToString() ?? string.Empty" /></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                <small>Impuesto vacío = 217 (Ganancias). Son las claves RETGANCI_ / RETGANCR_ de la tabla de retenciones del Alfa Gestión.</small>
+            }
         </div>
     }
     </ChildContent>
@@ -189,6 +248,10 @@
         _cfgEdit = new RetencionesConfig
         {
             JurisdiccionDefecto = _cfg.JurisdiccionDefecto, RegimenRetencionIva = _cfg.RegimenRetencionIva, RegimenPercepcionIva = _cfg.RegimenPercepcionIva,
+            ArbaRetencionesMensual = _cfg.ArbaRetencionesMensual, ArbaPercepcionesMensual = _cfg.ArbaPercepcionesMensual,
+            ArbaRetencionesActividad = _cfg.ArbaRetencionesActividad, ArbaPercepcionesActividad = _cfg.ArbaPercepcionesActividad,
+            SircarRegimen = _cfg.SircarRegimen, SircarJurisdiccion = _cfg.SircarJurisdiccion,
+            Sicore = _cfg.Sicore.Select(s => new RetencionSicoreCodigo { IdRetencion = s.IdRetencion, Descripcion = s.Descripcion, Impuesto = s.Impuesto, Regimen = s.Regimen }).ToList(),
             Jurisdicciones = _cfg.Jurisdicciones, Unidades = _cfg.Unidades
         };
         StateHasChanged();
@@ -203,7 +266,7 @@
         {
             await Service.GuardarConfigAsync(_cfgEdit);
             _cfg = _cfgEdit; _cfgEdit = null;
-            _feedback = AppUiMessage.Success("Configuración guardada", "Se guardaron la jurisdicción y los regímenes.");
+            _feedback = AppUiMessage.Success("Configuración guardada", "Se guardaron los datos de las exportaciones.");
         }
         catch (Exception ex) { _cfgError = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo guardar."; }
         finally { _cfgBusy = false; }
@@ -223,6 +286,9 @@
             new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _r is null, OnClick = ExcelAsync }
         ]
     });
+
+    private List<AlfaSelectOption> JurisdiccionOpciones(string vacia)
+        => new[] { new AlfaSelectOption("", vacia) }.Concat((_cfg?.Jurisdicciones ?? []).Select(j => new AlfaSelectOption(j.Codigo, $"{j.Codigo} · {j.Nombre}"))).ToList();
 
     private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
 

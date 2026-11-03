@@ -26,3 +26,9 @@
 .rp-chip.is-practicada { color: var(--alfa-warning, #d9a400); }
 .rp-cfg { display: flex; flex-direction: column; gap: 10px; }
 .rp-cfg small { color: var(--alfa-text-secondary); }
+.rp-cfg h4 { margin: 8px 0 0; font-size: 0.95rem; color: var(--alfa-text-primary); border-bottom: 1px solid var(--alfa-border, #e3e7ee); padding-bottom: 4px; }
+.rp-cfg__par { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+.rp-cfg__tabla { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.rp-cfg__tabla th { text-align: left; color: var(--alfa-text-secondary); font-weight: 600; padding: 4px 6px; }
+.rp-cfg__tabla td { padding: 3px 6px; border-top: 1px solid var(--alfa-border, #e3e7ee); }
+.rp-cfg__tabla input { width: 80px; }
