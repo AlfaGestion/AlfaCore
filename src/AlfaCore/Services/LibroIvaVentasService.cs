@@ -1,0 +1,424 @@
+using System.Globalization;
+using System.IO.Compression;
+using System.Net;
+using System.Text;
+using AlfaCore.Models;
+using ClosedXML.Excel;
+using Dapper;
+using Microsoft.Data.SqlClient;
+
+namespace AlfaCore.Services;
+
+public interface ILibroIvaVentasService
+{
+    Task<IReadOnlyList<LibroIvaUnidad>> GetUnidadesAsync(CancellationToken ct = default);
+    Task<LibroIvaVentasResultado> GetAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default);
+    /// <summary>Pasa la fecha de cierre de ventas (CIERREVENTAS, la del legacy) a <paramref name="hasta"/>.
+    /// El trigger de MV_ASIENTOS rechaza desde ahí asientos de ventas con fecha igual o anterior.</summary>
+    Task<DateTime> CerrarVentasAsync(DateTime hasta, CancellationToken ct = default);
+    Task<LibroIvaArchivo> ExportarTxtArcaAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default);
+    Task<LibroIvaArchivo> ExportarExcelAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default);
+    Task<LibroIvaArchivo> ExportarPdfAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Libro de IVA Ventas con las columnas que pide ARCA (Libro IVA Digital), desde los asientos de ventas
+/// (MV_ASIENTOS con LIVA_TIPO = VENTAS, como los libros del legacy). Un solo modelo en lugar de los tres
+/// de configuración del VB6 (LIVA_MOD_ALTER*). Permiso: el del menú legacy «Reporte Libro de IVA Ventas».
+/// </summary>
+public sealed class LibroIvaVentasService(ISessionService sessions, IAppUserSessionService users,
+    IPermissionService permissions, IAppEventService events, IDocumentPdfService pdf) : ILibroIvaVentasService
+{
+    public const string MenuLibro = "D6009";
+    public const string MenuFechasCierre = "D9882";
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private sealed class ReglaLibroException(string message) : InvalidOperationException(message);
+
+    public Task<IReadOnlyList<LibroIvaUnidad>> GetUnidadesAsync(CancellationToken ct = default)
+        => EjecutarAsync<IReadOnlyList<LibroIvaUnidad>>("Unidades", async cn => (await cn.QueryAsync<LibroIvaUnidad>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(Codigo)) Codigo,
+                   COALESCE(NULLIF(LTRIM(RTRIM(RAZON_SOCIAL)),''), NULLIF(LTRIM(RTRIM(Descripcion)),''), LTRIM(RTRIM(Codigo))) Descripcion,
+                   ISNULL(LTRIM(RTRIM(CUIT)),'') Cuit
+            FROM dbo.V_TA_UnidadNegocio
+            ORDER BY CASE WHEN ISNUMERIC(Codigo) = 1 THEN 0 ELSE 1 END, RIGHT(REPLICATE(' ', 8) + LTRIM(RTRIM(Codigo)), 8);
+            """, cancellationToken: ct))).ToList(), ct);
+
+    public Task<LibroIvaVentasResultado> GetAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default)
+        => EjecutarAsync("Consultar", cn => LeerAsync(cn, filtro, ct), ct);
+
+    public Task<DateTime> CerrarVentasAsync(DateTime hasta, CancellationToken ct = default)
+        => EjecutarAsync("CerrarVentas", async cn =>
+        {
+            if (!await permissions.HasAccessAsync(MenuFechasCierre, ct))
+                throw new ReglaLibroException("Tu usuario no tiene permiso para cambiar las fechas de cierre (menú «Fechas de Cierre»).");
+            hasta = hasta.Date;
+            var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: ct));
+            if (hasta >= hoy.Date) throw new ReglaLibroException("Solo se pueden cerrar días anteriores a hoy.");
+            var actual = await LeerCierreAsync(cn, ct);
+            if (actual is { } a && hasta <= a)
+                throw new ReglaLibroException($"Las ventas ya están cerradas hasta el {a:dd/MM/yyyy}. Para reabrir un período usá «Fechas de Cierre» de Alfa Gestión.");
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.TA_CONFIGURACION SET VALOR = @Valor, FechaHora_Modificacion = GETDATE() WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CIERREVENTAS';
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, FechaHora_Grabacion, FechaHora_Modificacion)
+                    VALUES (N'CONTABILIDAD', N'CIERREVENTAS', @Valor, GETDATE(), GETDATE());
+                """, new { Valor = hasta.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) }, cancellationToken: ct));
+            await events.LogAuditAsync("LibroIvaVentas", "CerrarVentas", "TA_CONFIGURACION", "CIERREVENTAS",
+                $"Cerró ventas hasta el {hasta:dd/MM/yyyy} (antes {(actual is { } x ? x.ToString("dd/MM/yyyy") : "sin cierre")}).",
+                new { Hasta = hasta, Anterior = actual }, CancellationToken.None);
+            return hasta;
+        }, ct);
+
+    // ── Lectura ─────────────────────────────────────────────────────────────────────────────────
+
+    internal static async Task<DateTime?> LeerCierreAsync(SqlConnection cn, CancellationToken ct, System.Data.IDbTransaction? tx = null)
+    {
+        var valor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CIERREVENTAS';",
+            transaction: tx, cancellationToken: ct));
+        return DateTime.TryParseExact(valor, ["dd/MM/yyyy", "d/M/yyyy"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) && f.Year > 2000 ? f.Date : null;
+    }
+
+    private async Task<LibroIvaVentasResultado> LeerAsync(SqlConnection cn, LibroIvaVentasFiltro filtro, CancellationToken ct)
+    {
+        var desde = filtro.Desde.Date; var hasta = filtro.Hasta.Date;
+        if (hasta < desde) (desde, hasta) = (hasta, desde);
+        if ((hasta - desde).TotalDays > 400) throw new ReglaLibroException("Elegí un período de hasta un año (normalmente, un mes).");
+        var unidad = (filtro.UnidadNegocio ?? string.Empty).Trim();
+        var filas = (await cn.QueryAsync<FilaSql>(new CommandDefinition("""
+            SELECT a.FECHA Fecha, LTRIM(RTRIM(a.TC)) Tc, LTRIM(RTRIM(ISNULL(a.LETRA,''))) Letra, LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) Sucursal,
+                   LTRIM(RTRIM(ISNULL(a.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(a.CUENTA,''))) Cuenta,
+                   COALESCE(NULLIF(LTRIM(RTRIM(a.CABNOMBRE)),''), NULLIF(LTRIM(RTRIM(cl.RAZON_SOCIAL)),''), LTRIM(RTRIM(a.CUENTA))) RazonSocial,
+                   LTRIM(RTRIM(ISNULL(a.CABCUIT,''))) Cuit, ISNULL(LTRIM(RTRIM(ci.DESCRIPCION)), LTRIM(RTRIM(ISNULL(a.CABCONDIVA,'')))) CondicionIva,
+                   LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) UnidadNegocio,
+                   ISNULL(a.LIVA_ImpNetoGrav,0) NetoGravado, ISNULL(a.LIVA_ImpNetoNGrav,0) NoGravado, ISNULL(a.LIVA_EXENTO,0) Exento,
+                   ISNULL(a.LIVA_AlicIVA,0) A1, ISNULL(a.LIVA_ImpIVA,0) + ISNULL(a.LIVA_ImpIVARec,0) I1,
+                   ISNULL(a.LIVA_AlicIva2,0) A2, ISNULL(a.LIVA_ImpIva2,0) I2, ISNULL(a.LIVA_AlicIVA3,0) A3, ISNULL(a.LIVA_ImpIVA3,0) I3,
+                   ISNULL(a.LIVA_AlicIVA4,0) A4, ISNULL(a.LIVA_ImpIVA4,0) I4,
+                   ISNULL(a.LIVA_Ret_Perc,0) PercepcionIva, ISNULL(a.LIVA_Ret_IBtos,0) PercepcionIibb, ISNULL(a.LIVA_Ret_Ganancias,0) OtrasPercepciones,
+                   ISNULL(c.ImporteImpuestosInternos,0) * CASE WHEN ISNULL(a.LIVA_TOTAL,0) < 0 THEN -1 ELSE 1 END ImpuestosInternos,
+                   ISNULL(a.LIVA_TOTAL,0) Total
+            FROM dbo.MV_ASIENTOS a
+            LEFT JOIN dbo.VT_CLIENTES cl ON cl.CODIGO = a.CUENTA
+            LEFT JOIN dbo.TA_CONDIVA ci ON LTRIM(RTRIM(CONVERT(nvarchar(20), ci.CODIGO))) = LTRIM(RTRIM(a.CABCONDIVA))
+            OUTER APPLY (SELECT TOP (1) ABS(ISNULL(x.ImporteImpuestosInternos,0)) ImporteImpuestosInternos FROM dbo.V_MV_CPTE x
+                         WHERE x.TC = a.TC AND x.SUCURSAL = a.SUCURSAL AND x.NUMERO = a.NUMERO AND x.LETRA = a.LETRA AND ISNULL(x.IDCOMPLEMENTO,0) = 0) c
+            WHERE a.LIVA_TIPO = N'VENTAS' AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta)
+              AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
+            ORDER BY a.FECHA, a.TC, a.LETRA, a.SUCURSAL, a.NUMERO;
+            """, new { Desde = desde, Hasta = hasta, Unidad = unidad }, commandTimeout: 120, cancellationToken: ct))).ToList();
+
+        var resultado = new LibroIvaVentasResultado
+        {
+            Filtro = new() { Desde = desde, Hasta = hasta, UnidadNegocio = unidad },
+            Filas = filas.Select(Convertir).ToList(),
+            CierreVentas = await LeerCierreAsync(cn, ct),
+            PuedeCerrar = await permissions.HasAccessAsync(MenuFechasCierre, ct)
+        };
+        resultado.TotalesPorAlicuota = resultado.Filas.SelectMany(f => f.Alicuotas).GroupBy(a => a.Alicuota).OrderByDescending(g => g.Key)
+            .Select(g => new LibroIvaAlicuota(g.Key, g.Sum(x => x.Neto), g.Sum(x => x.Iva))).ToList();
+        resultado.SinCodigoArca = resultado.Filas.Count(f => f.CodigoArca == 0);
+        (resultado.Emisor, resultado.CuitEmisor, resultado.CondicionIvaEmisor) = await EmisorAsync(cn, unidad, ct);
+        return resultado;
+    }
+
+    private static async Task<(string, string, string)> EmisorAsync(SqlConnection cn, string unidad, CancellationToken ct)
+    {
+        var cfg = (await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition("""
+            SELECT UPPER(LTRIM(RTRIM(CLAVE))), LTRIM(RTRIM(ISNULL(VALOR,''))) FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'CUIT', N'WSFE_CUIT', N'CONDIVA', N'CONDIVAEMPRESA', N'CONDICIONIVA_UN_' + @Unidad);
+            """, new { Unidad = unidad }, cancellationToken: ct))).GroupBy(x => x.Clave).ToDictionary(g => g.Key, g => g.First().Valor, StringComparer.OrdinalIgnoreCase);
+        string nombre = cfg.GetValueOrDefault("NOMBRE", ""), cuit = cfg.GetValueOrDefault("WSFE_CUIT") is { Length: > 0 } w ? w : cfg.GetValueOrDefault("CUIT", "");
+        var cond = cfg.GetValueOrDefault("CONDIVAEMPRESA") is { Length: > 0 } ce && ce != "0" ? ce : cfg.GetValueOrDefault("CONDIVA", "");
+        if (unidad.Length > 0)
+        {
+            var u = await cn.QuerySingleOrDefaultAsync<(string Nombre, string Cuit)>(new CommandDefinition("""
+                SELECT TOP (1) COALESCE(NULLIF(LTRIM(RTRIM(RAZON_SOCIAL)),''), LTRIM(RTRIM(ISNULL(Descripcion,'')))), LTRIM(RTRIM(ISNULL(CUIT,'')))
+                FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo)) = @Unidad;
+                """, new { Unidad = unidad }, cancellationToken: ct));
+            if (u.Nombre is { Length: > 0 }) nombre = u.Nombre;
+            if (u.Cuit is { Length: > 0 }) cuit = u.Cuit;
+            if (cfg.GetValueOrDefault("CONDICIONIVA_UN_" + unidad) is { Length: > 0 } cu) cond = cu;
+        }
+        var condTexto = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT TOP (1) LTRIM(RTRIM(DESCRIPCION)) FROM dbo.TA_CONDIVA WHERE LTRIM(RTRIM(CONVERT(nvarchar(20), CODIGO))) = @Cond;",
+            new { Cond = cond }, cancellationToken: ct)) ?? "";
+        return (nombre, cuit, condTexto);
+    }
+
+    private static LibroIvaVentasFila Convertir(FilaSql s)
+    {
+        var fila = new LibroIvaVentasFila
+        {
+            Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit,
+            CondicionIva = s.CondicionIva, UnidadNegocio = s.UnidadNegocio,
+            PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
+            NetoGravado = s.NetoGravado, NoGravado = s.NoGravado, Exento = s.Exento,
+            PercepcionIva = s.PercepcionIva, PercepcionIibb = s.PercepcionIibb, OtrasPercepciones = s.OtrasPercepciones,
+            ImpuestosInternos = s.ImpuestosInternos, Total = s.Total, CodigoArca = CodigoArca(s.Tc, s.Letra)
+        };
+        fila.Alicuotas = RepartirAlicuotas(s.NetoGravado, s.Letra, [(s.A1, s.I1), (s.A2, s.I2), (s.A3, s.I3), (s.A4, s.I4)]);
+        return fila;
+    }
+
+    /// <summary>El asiento guarda el neto gravado total y el IVA de hasta cuatro alícuotas: el neto de cada
+    /// alícuota sale de su IVA (IVA × 100 / alícuota) y la última absorbe el redondeo para que sumen el total.
+    /// Letra C (monotributo) no discrimina IVA: sin alícuotas.</summary>
+    internal static IReadOnlyList<LibroIvaAlicuota> RepartirAlicuotas(decimal netoGravado, string letra, IReadOnlyList<(decimal Alicuota, decimal Iva)> datos)
+    {
+        if (letra.Trim().Equals("C", StringComparison.OrdinalIgnoreCase)) return [];
+        var conIva = datos.Where(d => d.Iva != 0 && d.Alicuota > 0).GroupBy(d => d.Alicuota).Select(g => (Alicuota: g.Key, Iva: g.Sum(x => x.Iva))).ToList();
+        if (conIva.Count == 0) return netoGravado == 0 ? [] : [new LibroIvaAlicuota(0, netoGravado, 0)];
+        if (conIva.Count == 1) return [new LibroIvaAlicuota(conIva[0].Alicuota, netoGravado, conIva[0].Iva)];
+        var lista = new List<LibroIvaAlicuota>();
+        var acumulado = 0m;
+        for (var i = 0; i < conIva.Count; i++)
+        {
+            var neto = i == conIva.Count - 1 ? netoGravado - acumulado : Math.Round(conIva[i].Iva * 100 / conIva[i].Alicuota, 2, MidpointRounding.AwayFromZero);
+            acumulado += neto;
+            lista.Add(new LibroIvaAlicuota(conIva[i].Alicuota, neto, conIva[i].Iva));
+        }
+        return lista;
+    }
+
+    /// <summary>Tabla de comprobantes de ARCA para facturas, notas de débito y de crédito A, B y C.</summary>
+    internal static int CodigoArca(string tc, string letra) => (tc.Trim().ToUpperInvariant(), letra.Trim().ToUpperInvariant()) switch
+    {
+        ("FC", "A") => 1, ("ND", "A") => 2, ("NC", "A") => 3,
+        ("FC", "B") => 6, ("ND", "B") => 7, ("NC", "B") => 8,
+        ("FC", "C") => 11, ("ND", "C") => 12, ("NC", "C") => 13,
+        ("FC", "M") => 51, ("ND", "M") => 52, ("NC", "M") => 53,
+        _ => 0
+    };
+
+    internal static int CodigoAlicuota(decimal alicuota) => alicuota switch
+    {
+        0m => 3, 10.5m => 4, 21m => 5, 27m => 6, 5m => 8, 2.5m => 9, _ => 0
+    };
+
+    // ── Exportaciones ───────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Archivos del Libro IVA Digital de ARCA (importación de comprobantes de ventas):
+    /// LIBRO_IVA_DIGITAL_VENTAS_CBTE.txt y LIBRO_IVA_DIGITAL_VENTAS_ALICUOTAS.txt, en un zip.</summary>
+    public Task<LibroIvaArchivo> ExportarTxtArcaAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default)
+        => EjecutarAsync("ExportarTxt", async cn =>
+        {
+            if (string.IsNullOrWhiteSpace(filtro.UnidadNegocio) && await HayVariosCuitsAsync(cn, ct))
+                throw new ReglaLibroException("El Libro IVA Digital se presenta por CUIT: elegí una unidad de negocio.");
+            var r = await LeerAsync(cn, filtro, ct);
+            var (cbte, alic) = ArmarTxt(r.Filas);
+            using var ms = new MemoryStream();
+            using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+            {
+                foreach (var (nombre, texto) in new[] { ("LIBRO_IVA_DIGITAL_VENTAS_CBTE.txt", cbte), ("LIBRO_IVA_DIGITAL_VENTAS_ALICUOTAS.txt", alic) })
+                {
+                    await using var s = zip.CreateEntry(nombre).Open();
+                    var bytes = Encoding.Latin1.GetBytes(texto);
+                    await s.WriteAsync(bytes, ct);
+                }
+            }
+            return new LibroIvaArchivo($"LibroIvaDigital_Ventas_{r.CuitEmisor.Replace("-", "")}_{r.Filtro.Desde:yyyyMM}.zip", "application/zip", ms.ToArray());
+        }, ct);
+
+    internal static (string Comprobantes, string Alicuotas) ArmarTxt(IEnumerable<LibroIvaVentasFila> filas)
+    {
+        var cbte = new StringBuilder(); var alic = new StringBuilder();
+        foreach (var f in filas.Where(x => x.CodigoArca > 0))
+        {
+            var (codDoc, nroDoc) = Documento(f.Cuit);
+            var exento = Math.Abs(f.Exento); var noGravado = Math.Abs(f.NoGravado);
+            var alicuotas = f.Alicuotas.Where(a => CodigoAlicuota(a.Alicuota) > 0).ToList();
+            var codigoOperacion = alicuotas.Count > 0 || f.Letra == "C" ? (f.Letra == "C" ? "0" : " ") : exento != 0 ? "E" : noGravado != 0 ? "N" : " ";
+            cbte.Append(f.Fecha.ToString("yyyyMMdd", CultureInfo.InvariantCulture))
+                .Append(f.CodigoArca.ToString("000"))
+                .Append(f.PuntoVenta.ToString("00000"))
+                .Append(f.Numero.ToString(new string('0', 20)))
+                .Append(f.Numero.ToString(new string('0', 20)))
+                .Append(codDoc.ToString("00"))
+                .Append(nroDoc.PadLeft(20, '0'))
+                .Append(Texto(f.RazonSocial, 30))
+                .Append(Importe(f.Total))
+                .Append(Importe(noGravado))
+                .Append(Importe(0))                       // percepción a no categorizados
+                .Append(Importe(exento))
+                .Append(Importe(f.PercepcionIva + f.OtrasPercepciones))
+                .Append(Importe(f.PercepcionIibb))
+                .Append(Importe(0))                       // percepciones municipales
+                .Append(Importe(f.ImpuestosInternos))
+                .Append("PES")
+                .Append("0001000000")                     // tipo de cambio 1
+                .Append(f.Letra == "C" ? "0" : Math.Max(alicuotas.Count, 1).ToString(CultureInfo.InvariantCulture))
+                .Append(codigoOperacion)
+                .Append(Importe(0))                       // otros tributos
+                .Append("00000000")                       // vencimiento de pago
+                .Append("\r\n");
+            if (f.Letra == "C") continue;
+            if (alicuotas.Count == 0) alicuotas = [new LibroIvaAlicuota(0, 0, 0)];
+            foreach (var a in alicuotas)
+                alic.Append(f.CodigoArca.ToString("000"))
+                    .Append(f.PuntoVenta.ToString("00000"))
+                    .Append(f.Numero.ToString(new string('0', 20)))
+                    .Append(Importe(a.Neto))
+                    .Append(CodigoAlicuota(a.Alicuota).ToString("0000"))
+                    .Append(Importe(a.Iva))
+                    .Append("\r\n");
+        }
+        return (cbte.ToString(), alic.ToString());
+    }
+
+    private static (int Codigo, string Numero) Documento(string cuit)
+    {
+        var digitos = new string((cuit ?? string.Empty).Where(char.IsDigit).ToArray());
+        // Consumidor final genérico (99999999995) o sin documento: ARCA espera 99 / 0.
+        if (digitos.Length == 0 || digitos.All(c => c == '0') || digitos == "99999999995") return (99, "0");
+        return digitos.Length switch
+        {
+            11 => (80, digitos),
+            >= 7 and <= 8 => (96, digitos),
+            _ => (99, "0")
+        };
+    }
+
+    private static string Importe(decimal valor) => Math.Round(Math.Abs(valor) * 100, 0, MidpointRounding.AwayFromZero).ToString("000000000000000", CultureInfo.InvariantCulture);
+
+    private static string Texto(string valor, int largo)
+    {
+        var limpio = new string((valor ?? string.Empty).Normalize(NormalizationForm.FormD)
+            .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && c >= ' ' && c < 127).ToArray()).Trim().ToUpperInvariant();
+        return (limpio.Length > largo ? limpio[..largo] : limpio).PadRight(largo);
+    }
+
+    private static async Task<bool> HayVariosCuitsAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(DISTINCT LTRIM(RTRIM(CUIT))) FROM dbo.V_TA_UnidadNegocio WHERE ISNULL(LTRIM(RTRIM(CUIT)),'') <> '';", cancellationToken: ct)) > 1;
+
+    public Task<LibroIvaArchivo> ExportarExcelAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default)
+        => EjecutarAsync("ExportarExcel", async cn =>
+        {
+            var r = await LeerAsync(cn, filtro, ct);
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("Libro IVA Ventas");
+            ws.Cell(1, 1).Value = $"Libro de IVA Ventas · {r.Emisor} · CUIT {r.CuitEmisor}";
+            ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
+            ws.Cell(2, 1).Value = $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.CondicionIvaEmisor}";
+            string[] titulos = ["Fecha", "Comprobante", "Número", "Cliente", "CUIT", "Cond. IVA", "Neto gravado", "No gravado", "Exento",
+                "IVA 21%", "IVA 10,5%", "IVA 27%", "IVA otras", "Percepciones", "Imp. internos", "Total"];
+            for (var c = 0; c < titulos.Length; c++) ws.Cell(4, c + 1).Value = titulos[c];
+            ws.Range(4, 1, 4, titulos.Length).Style.Font.Bold = true;
+            ws.Range(4, 1, 4, titulos.Length).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8ECF2");
+            var fila = 5;
+            foreach (var f in r.Filas)
+            {
+                ws.Cell(fila, 1).Value = f.Fecha; ws.Cell(fila, 1).Style.DateFormat.Format = "dd/MM/yyyy";
+                ws.Cell(fila, 2).Value = $"{f.Tc} {f.Letra}"; ws.Cell(fila, 3).Value = f.Comprobante;
+                ws.Cell(fila, 4).Value = f.RazonSocial; ws.Cell(fila, 5).Value = f.Cuit; ws.Cell(fila, 6).Value = f.CondicionIva;
+                decimal[] valores = [f.NetoGravado, f.NoGravado, f.Exento, f.IvaDe(21), f.IvaDe(10.5m), f.IvaDe(27),
+                    f.Iva - f.IvaDe(21) - f.IvaDe(10.5m) - f.IvaDe(27), f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones, f.ImpuestosInternos, f.Total];
+                for (var c = 0; c < valores.Length; c++) ws.Cell(fila, 7 + c).Value = valores[c];
+                fila++;
+            }
+            ws.Cell(fila, 4).Value = "Totales"; ws.Row(fila).Style.Font.Bold = true;
+            for (var c = 7; c <= 16; c++) ws.Cell(fila, c).FormulaA1 = $"SUM({ws.Cell(5, c).Address}:{ws.Cell(fila - 1, c).Address})";
+            ws.Range(5, 7, fila, 16).Style.NumberFormat.Format = "#,##0.00";
+            fila += 2;
+            ws.Cell(fila++, 1).Value = "Totales por alícuota"; ws.Cell(fila - 1, 1).Style.Font.Bold = true;
+            foreach (var a in r.TotalesPorAlicuota)
+            {
+                ws.Cell(fila, 1).Value = a.Alicuota == 0 ? "0% / sin IVA" : $"{a.Alicuota.ToString("0.##", Ar)}%";
+                ws.Cell(fila, 2).Value = a.Neto; ws.Cell(fila, 3).Value = a.Iva;
+                ws.Range(fila, 2, fila, 3).Style.NumberFormat.Format = "#,##0.00"; fila++;
+            }
+            ws.Columns().AdjustToContents(); ws.Column(4).Width = Math.Min(ws.Column(4).Width, 45);
+            ws.SheetView.FreezeRows(4);
+            using var ms = new MemoryStream(); wb.SaveAs(ms);
+            return new LibroIvaArchivo($"LibroIvaVentas_{r.Filtro.Desde:yyyyMM}{(r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ms.ToArray());
+        }, ct);
+
+    public Task<LibroIvaArchivo> ExportarPdfAsync(LibroIvaVentasFiltro filtro, CancellationToken ct = default)
+        => EjecutarAsync("ExportarPdf", async cn =>
+        {
+            var r = await LeerAsync(cn, filtro, ct);
+            var bytes = await pdf.GenerateAsync(ArmarHtml(r), new DocumentPdfFooterOptions(true, true, r.Emisor), ct);
+            return new LibroIvaArchivo($"LibroIvaVentas_{r.Filtro.Desde:yyyyMM}{(r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.pdf", "application/pdf", bytes);
+        }, ct);
+
+    internal static string ArmarHtml(LibroIvaVentasResultado r)
+    {
+        static string M(decimal v) => v == 0 ? "" : v.ToString("N2", Ar);
+        static string E(string s) => WebUtility.HtmlEncode(s);
+        var sb = new StringBuilder();
+        sb.Append("""
+            <!doctype html><html><head><meta charset="utf-8"><style>
+            @page { size: A4 landscape; margin: 10mm 8mm 14mm 8mm; }
+            body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #111; margin: 0; }
+            h1 { font-size: 12pt; margin: 0 0 2px; } .sub { color: #444; margin-bottom: 6px; font-size: 8pt; }
+            table { width: 100%; border-collapse: collapse; } thead { display: table-header-group; }
+            th { background: #e8ecf2; text-align: left; padding: 3px 3px; border-bottom: 1px solid #999; font-size: 7pt; }
+            td { padding: 2px 3px; border-bottom: 1px solid #e3e3e3; } .n { text-align: right; white-space: nowrap; }
+            td:nth-child(-n+3), td:nth-child(5) { white-space: nowrap; } td:nth-child(6) { font-size: 6.5pt; }
+            tr { page-break-inside: avoid; } tfoot td { font-weight: bold; border-top: 1px solid #333; background: #f3f5f8; }
+            .alic { margin-top: 10px; width: auto; } .alic td, .alic th { padding: 3px 10px; }
+            </style></head><body>
+            """);
+        sb.Append($"<h1>Libro de IVA Ventas</h1><div class=\"sub\">{E(r.Emisor)} · CUIT {E(r.CuitEmisor)} · {E(r.CondicionIvaEmisor)} · Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.Filas.Count} comprobantes</div>");
+        sb.Append("<table><thead><tr><th>Fecha</th><th>Cpte.</th><th>Número</th><th>Cliente</th><th>CUIT</th><th>Cond. IVA</th><th class=\"n\">Neto grav.</th><th class=\"n\">No grav.</th><th class=\"n\">Exento</th><th class=\"n\">IVA 21%</th><th class=\"n\">IVA 10,5%</th><th class=\"n\">IVA otras</th><th class=\"n\">Percep.</th><th class=\"n\">Imp. int.</th><th class=\"n\">Total</th></tr></thead><tbody>");
+        foreach (var f in r.Filas)
+        {
+            var otras = f.Iva - f.IvaDe(21) - f.IvaDe(10.5m);
+            sb.Append($"<tr><td>{f.Fecha:dd/MM/yy}</td><td>{E(f.Tc)} {E(f.Letra)}</td><td>{f.Comprobante}</td><td>{E(f.RazonSocial)}</td><td>{E(f.Cuit)}</td><td>{E(f.CondicionIva)}</td>")
+              .Append($"<td class=\"n\">{M(f.NetoGravado)}</td><td class=\"n\">{M(f.NoGravado)}</td><td class=\"n\">{M(f.Exento)}</td><td class=\"n\">{M(f.IvaDe(21))}</td><td class=\"n\">{M(f.IvaDe(10.5m))}</td><td class=\"n\">{M(otras)}</td>")
+              .Append($"<td class=\"n\">{M(f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones)}</td><td class=\"n\">{M(f.ImpuestosInternos)}</td><td class=\"n\">{M(f.Total)}</td></tr>");
+        }
+        var o = r.Iva - r.Filas.Sum(f => f.IvaDe(21)) - r.Filas.Sum(f => f.IvaDe(10.5m));
+        sb.Append($"</tbody><tfoot><tr><td colspan=\"6\">Totales</td><td class=\"n\">{M(r.NetoGravado)}</td><td class=\"n\">{M(r.NoGravado)}</td><td class=\"n\">{M(r.Exento)}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(21)))}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(10.5m)))}</td><td class=\"n\">{M(o)}</td><td class=\"n\">{M(r.Percepciones)}</td><td class=\"n\">{M(r.ImpuestosInternos)}</td><td class=\"n\">{M(r.Total)}</td></tr></tfoot></table>");
+        if (r.TotalesPorAlicuota.Count > 0)
+        {
+            sb.Append("<table class=\"alic\"><thead><tr><th>Alícuota</th><th class=\"n\">Neto gravado</th><th class=\"n\">IVA</th></tr></thead><tbody>");
+            foreach (var a in r.TotalesPorAlicuota)
+                sb.Append($"<tr><td>{(a.Alicuota == 0 ? "0%" : a.Alicuota.ToString("0.##", Ar) + "%")}</td><td class=\"n\">{a.Neto.ToString("N2", Ar)}</td><td class=\"n\">{a.Iva.ToString("N2", Ar)}</td></tr>");
+            sb.Append("</tbody></table>");
+        }
+        sb.Append("</body></html>");
+        return sb.ToString();
+    }
+
+    // ── Ejecución con permiso ───────────────────────────────────────────────────────────────────
+
+    private async Task<T> EjecutarAsync<T>(string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
+    {
+        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var id))
+            throw new ReglaLibroException("Ingresá en la base activa para consultar el libro.");
+        try
+        {
+            await using var cn = new SqlConnection(sessions.GetConnectionString()); await cn.OpenAsync(ct);
+            if (!await permissions.HasAccessAsync(MenuLibro, ct))
+                throw new ReglaLibroException("Tu usuario no tiene permiso para el Libro de IVA Ventas.");
+            var r = await operacion(cn);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var actual) || actual != id)
+                throw new ReglaLibroException("Cambió la sesión. Volvé a generar el libro en la base activa.");
+            return r;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (ReglaLibroException) { throw; }
+        catch (AppUserFacingException) { throw; }
+        catch (Exception ex)
+        {
+            var codigo = await events.LogErrorAsync("LibroIvaVentas", accion, ex, "No se pudo generar el Libro de IVA Ventas.", ct: ct);
+            throw new AppUserFacingException("No se pudo generar el Libro de IVA Ventas.", codigo, ex);
+        }
+    }
+
+    private sealed class FilaSql
+    {
+        public DateTime Fecha { get; set; }
+        public string Tc { get; set; } = ""; public string Letra { get; set; } = ""; public string Sucursal { get; set; } = ""; public string Numero { get; set; } = "";
+        public string Cuenta { get; set; } = ""; public string RazonSocial { get; set; } = ""; public string Cuit { get; set; } = "";
+        public string CondicionIva { get; set; } = ""; public string UnidadNegocio { get; set; } = "";
+        public decimal NetoGravado { get; set; } public decimal NoGravado { get; set; } public decimal Exento { get; set; }
+        public decimal A1 { get; set; } public decimal I1 { get; set; } public decimal A2 { get; set; } public decimal I2 { get; set; }
+        public decimal A3 { get; set; } public decimal I3 { get; set; } public decimal A4 { get; set; } public decimal I4 { get; set; }
+        public decimal PercepcionIva { get; set; } public decimal PercepcionIibb { get; set; } public decimal OtrasPercepciones { get; set; }
+        public decimal ImpuestosInternos { get; set; } public decimal Total { get; set; }
+    }
+}

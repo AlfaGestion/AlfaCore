@@ -1,0 +1,275 @@
+@page "/ventas/libro-iva"
+@page "/{idweb}/{idbase:int}/ventas/libro-iva"
+@using AlfaCore.Services
+@inject ILibroIvaVentasService Service
+@inject ISessionService Sessions
+@inject IAppUserSessionService Users
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Libro de IVA Ventas | Alfa Gestión</PageTitle>
+
+@* Libro de IVA Ventas con las columnas de ARCA (Libro IVA Digital) y cierre de ventas (CIERREVENTAS del legacy). *@
+<div class="gd-page gd liva-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="liva-filtros" aria-label="Período y unidad de negocio">
+        <label class="liva-campo">
+            <span>Período</span>
+            <input type="month" value="@_mes.ToString("yyyy-MM")" disabled="@_busy" @onchange="e => CambiarMes(e.Value?.ToString())" />
+        </label>
+        <div class="liva-atajos">
+            <button type="button" disabled="@_busy" @onclick="() => IrAMesAsync(-1)" title="Mes anterior"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
+            <button type="button" disabled="@_busy" @onclick="() => IrAMesAsync(1)" title="Mes siguiente"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="liva-unidad">
+            <AlfaSelect Label="Unidad de negocio (CUIT)" Value="@_unidad" ValueChanged="v => CambiarUnidadAsync(v ?? string.Empty)" Options="@UnidadOptions" Disabled="@_busy" />
+        </div>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-journal-text" Loading="@_busy" Disabled="@_busy" OnClick="_ => GenerarAsync()">Generar</AlfaButton>
+    </section>
+
+    @if (_r is { } r)
+    {
+        <div class="kpi-grid liva-kpis">
+            <KpiCard Titulo="Comprobantes" Valor="@r.Filas.Count.ToString("N0")" Icono="@Icono("bi-files")"
+                     Descripcion="@($"{r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy}")" />
+            <KpiCard Titulo="Neto gravado" Valor="@Moneda(r.NetoGravado)" Icono="@Icono("bi-cash-stack")"
+                     Descripcion="@($"No gravado {Moneda(r.NoGravado)} · Exento {Moneda(r.Exento)}")" />
+            <KpiCard Titulo="IVA débito fiscal" Valor="@Moneda(r.Iva)" Icono="@Icono("bi-percent")"
+                     Descripcion="@($"Percepciones {Moneda(r.Percepciones)}")" />
+            <KpiCard Titulo="Total" Valor="@Moneda(r.Total)" Icono="@Icono("bi-receipt")" Destacado="true"
+                     Descripcion="@($"{r.Emisor} · CUIT {r.CuitEmisor}")" />
+        </div>
+
+        <div class="liva-cierre @(Cerrado(r) ? "is-cerrado" : null)">
+            <i class="bi @(Cerrado(r) ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></i>
+            <div>
+                <strong>@(r.CierreVentas is { } c ? $"Ventas cerradas hasta el {c:dd/MM/yyyy}" : "Ventas sin fecha de cierre")</strong>
+                <span>@(Cerrado(r)
+                    ? "Este período está cerrado: no se pueden cargar ni modificar comprobantes de ventas con esas fechas (ni desde Alfa Gestión ni desde AlfaCore)."
+                    : "Cuando el libro esté presentado, cerrá el período para que no se carguen más comprobantes con esas fechas.")</span>
+            </div>
+            @if (PuedeProponerCierre(r))
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-lock" Disabled="@_busy" OnClick="_ => _confirmarCierre = true">Cerrar ventas hasta el @r.Filtro.Hasta.ToString("dd/MM/yyyy")</AlfaButton>
+            }
+        </div>
+
+        @if (r.Filas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes" Message="No hay comprobantes de ventas en el libro para ese período y unidad." />
+        }
+        else
+        {
+            <section class="liva-tabla" aria-label="Libro de IVA Ventas">
+                <div class="liva-tabla__scroll">
+                    <table>
+                        <thead><tr>
+                            <th>Fecha</th><th>Cpte.</th><th>Número</th><th>Cliente</th><th>CUIT</th><th>Cond. IVA</th>
+                            <th class="n">Neto gravado</th><th class="n">No gravado</th><th class="n">Exento</th>
+                            <th class="n">IVA 21%</th><th class="n">IVA 10,5%</th><th class="n">IVA otras</th>
+                            <th class="n">Percep.</th><th class="n">Imp. int.</th><th class="n">Total</th>
+                        </tr></thead>
+                        <tbody>
+                        @foreach (var f in r.Filas)
+                        {
+                            <tr class="@(f.Total < 0 ? "is-nc" : null)">
+                                <td>@f.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td title="@(f.CodigoArca == 0 ? "Sin código ARCA: no va al TXT del Libro IVA Digital" : $"Código ARCA {f.CodigoArca}")">
+                                    @f.Tc @f.Letra @if (f.CodigoArca == 0) { <i class="bi bi-exclamation-triangle liva-aviso" aria-hidden="true"></i> }
+                                </td>
+                                <td>@f.Comprobante</td>
+                                <td>@f.RazonSocial<small>@f.Cuenta</small></td>
+                                <td>@f.Cuit</td>
+                                <td>@f.CondicionIva</td>
+                                <td class="n">@M(f.NetoGravado)</td><td class="n">@M(f.NoGravado)</td><td class="n">@M(f.Exento)</td>
+                                <td class="n">@M(f.IvaDe(21))</td><td class="n">@M(f.IvaDe(10.5m))</td><td class="n">@M(f.Iva - f.IvaDe(21) - f.IvaDe(10.5m))</td>
+                                <td class="n">@M(f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones)</td><td class="n">@M(f.ImpuestosInternos)</td>
+                                <td class="n"><strong>@M(f.Total)</strong></td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot><tr>
+                            <td colspan="6">Totales · @r.Filas.Count comprobantes</td>
+                            <td class="n">@M(r.NetoGravado)</td><td class="n">@M(r.NoGravado)</td><td class="n">@M(r.Exento)</td>
+                            <td class="n">@M(r.Filas.Sum(f => f.IvaDe(21)))</td><td class="n">@M(r.Filas.Sum(f => f.IvaDe(10.5m)))</td>
+                            <td class="n">@M(r.Iva - r.Filas.Sum(f => f.IvaDe(21)) - r.Filas.Sum(f => f.IvaDe(10.5m)))</td>
+                            <td class="n">@M(r.Percepciones)</td><td class="n">@M(r.ImpuestosInternos)</td><td class="n">@M(r.Total)</td>
+                        </tr></tfoot>
+                    </table>
+                </div>
+            </section>
+
+            <div class="liva-pie">
+                @if (r.TotalesPorAlicuota.Count > 0)
+                {
+                    <table class="liva-alicuotas">
+                        <thead><tr><th>Alícuota</th><th class="n">Neto gravado</th><th class="n">IVA</th></tr></thead>
+                        <tbody>
+                        @foreach (var a in r.TotalesPorAlicuota)
+                        {
+                            <tr><td>@(a.Alicuota == 0 ? "0%" : a.Alicuota.ToString("0.##", Culture) + "%")</td><td class="n">@a.Neto.ToString("N2", Culture)</td><td class="n">@a.Iva.ToString("N2", Culture)</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+                <p class="liva-nota">
+                    Datos de los asientos de ventas (como el libro de Alfa Gestión). Las notas de crédito restan.
+                    «TXT ARCA» genera los dos archivos para importar en el Libro IVA Digital (comprobantes y alícuotas) de la unidad elegida.
+                    @if (r.SinCodigoArca > 0) { <span class="liva-aviso">@r.SinCodigoArca comprobante(s) sin código ARCA no van al TXT.</span> }
+                </p>
+            </div>
+        }
+    }
+    else if (_busy)
+    {
+        <AlfaEmptyState Title="Generando el libro" Message="Leyendo los comprobantes de ventas del período." />
+    }
+</div>
+
+@if (_confirmarCierre && _r is { } rc)
+{
+    <AlfaConfirmDialog Open="true" Title="Cerrar ventas"
+        Message="@($"Se cierran las ventas hasta el {rc.Filtro.Hasta:dd/MM/yyyy}. Desde ahí no se pueden cargar ni modificar comprobantes de ventas con fecha igual o anterior, ni desde Alfa Gestión ni desde AlfaCore.")"
+        SecondaryMessage="@(AvisoCierre(rc))"
+        ConfirmLabel="Cerrar ventas" OnConfirm="CerrarAsync" OnCancel="() => _confirmarCierre = false" />
+}
+
+@code {
+    [Parameter] public string? idweb { get; set; }
+    [Parameter] public int? idbase { get; set; }
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private const string Pantalla = "ventas-libro-iva";
+    private DateTime _mes = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-1);
+    private string _unidad = string.Empty;
+    private IReadOnlyList<LibroIvaUnidad> _unidades = [];
+    private LibroIvaVentasResultado? _r;
+    private AppUiMessage? _feedback;
+    private bool _busy;
+    private bool _confirmarCierre;
+    private bool _disposed;
+    private string? _exportando;
+    private PageHeaderConfig? _header;
+
+    private IReadOnlyList<AlfaSelectOption> UnidadOptions => [new("", "Todas las unidades"),
+        .. _unidades.Select(u => new AlfaSelectOption(u.Codigo, u.Cuit.Length > 0 ? $"{u.Codigo} · {u.Descripcion} · {u.Cuit}" : $"{u.Codigo} · {u.Descripcion}"))];
+    private LibroIvaVentasFiltro Filtro => new() { Desde = _mes, Hasta = _mes.AddMonths(1).AddDays(-1), UnidadNegocio = _unidad };
+
+    protected override void OnInitialized() => UpdateHeader();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        if (await FiltrosRecordados.LeerAsync<Guardado>(Js, Sessions, Pantalla) is { } g) _unidad = g.Unidad ?? string.Empty;
+        var u = await UiOps.RunAsync(() => Service.GetUnidadesAsync(), "Libro de IVA Ventas");
+        if (u.Success && u.Value is { } lista) _unidades = lista;
+        // Por defecto la primera unidad con CUIT propio: el libro se presenta por CUIT.
+        if (_unidad.Length == 0 && _unidades.Count(x => x.Cuit.Length > 0) > 1) _unidad = _unidades.First(x => x.Cuit.Length > 0).Codigo;
+        await GenerarAsync();
+    }
+
+    private sealed class Guardado { public string? Unidad { get; set; } }
+
+    private void CambiarMes(string? valor)
+    {
+        if (DateTime.TryParseExact(valor, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var m))
+        { _mes = m; _ = GenerarAsync(); }
+    }
+    private Task IrAMesAsync(int delta) { _mes = _mes.AddMonths(delta); return GenerarAsync(); }
+    private Task CambiarUnidadAsync(string unidad) { _unidad = unidad; return GenerarAsync(); }
+
+    private async Task GenerarAsync()
+    {
+        if (_busy || _disposed) return;
+        _busy = true; _feedback = null; UpdateHeader();
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.GetAsync(Filtro), "Libro de IVA Ventas");
+            if (result.Success) { _r = result.Value; await FiltrosRecordados.GuardarAsync(Js, Sessions, Pantalla, new Guardado { Unidad = _unidad }); }
+            else { _r = null; _feedback = result.Feedback; }
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private static bool Cerrado(LibroIvaVentasResultado r) => r.CierreVentas is { } c && c >= r.Filtro.Hasta;
+    private static bool PuedeProponerCierre(LibroIvaVentasResultado r)
+        => r.PuedeCerrar && r.Filtro.Hasta < DateTime.Today && !(r.CierreVentas is { } c && c >= r.Filtro.Hasta);
+
+    private static string AvisoCierre(LibroIvaVentasResultado r)
+    {
+        var dias = (DateTime.Today - r.Filtro.Hasta).Days;
+        var texto = "Aplica a todas las unidades de negocio (la fecha de cierre es una sola para la base). Para reabrir hay que usar «Fechas de Cierre» de Alfa Gestión.";
+        if (dias <= 5)
+            texto = $"Atención: ARCA permite emitir facturas electrónicas con fecha hasta 5 días anterior; si cerrás ahora ya no vas a poder emitir con fecha del {r.Filtro.Hasta:dd/MM} o anterior. " + texto;
+        return texto;
+    }
+
+    private async Task CerrarAsync()
+    {
+        _confirmarCierre = false;
+        if (_r is not { } r) return;
+        var result = await UiOps.RunAsync(() => Service.CerrarVentasAsync(r.Filtro.Hasta), "Cerrar ventas");
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success("Ventas cerradas", $"Las ventas quedaron cerradas hasta el {result.Value:dd/MM/yyyy}.");
+            r.CierreVentas = result.Value;
+        }
+        else _feedback = result.Feedback;
+        UpdateHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ExportarAsync(string tipo)
+    {
+        if (_exportando is not null) return;
+        _exportando = tipo; UpdateHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => tipo switch
+            {
+                "pdf" => Service.ExportarPdfAsync(Filtro),
+                "excel" => Service.ExportarExcelAsync(Filtro),
+                _ => Service.ExportarTxtArcaAsync(Filtro)
+            }, "Libro de IVA Ventas");
+            if (result.Success && result.Value is { } a)
+            {
+                if (tipo == "pdf") await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
+                else await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
+            }
+            else _feedback = result.Feedback;
+        }
+        finally { _exportando = null; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "ventas", Title = "Libro de IVA Ventas",
+        Breadcrumb = ["Ventas", "Reportes", "Libro de IVA Ventas"],
+        TopNavigationItems = ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "libro-iva"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "generar", Label = "Generar", Icon = "bi-journal-text", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = GenerarAsync },
+            new() { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _r is not { Filas.Count: > 0 } || _exportando is not null, Busy = _exportando == "pdf", OnClick = () => ExportarAsync("pdf") },
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _r is not { Filas.Count: > 0 } || _exportando is not null, Busy = _exportando == "excel", OnClick = () => ExportarAsync("excel") },
+            new() { Key = "txt", Label = "TXT ARCA", Icon = "bi-filetype-txt", Style = PageHeaderActionStyle.Secondary, Title = "Libro IVA Digital: archivos de comprobantes y alícuotas",
+                Disabled = _busy || _r is not { Filas.Count: > 0 } || _exportando is not null, Busy = _exportando == "txt", OnClick = () => ExportarAsync("txt") }
+        ]
+    });
+
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+    private static string Moneda(decimal v) => v.ToString("C2", Culture);
+    private static string M(decimal v) => v == 0 ? "" : v.ToString("N2", Culture);
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

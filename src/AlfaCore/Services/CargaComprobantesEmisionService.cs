@@ -20,6 +20,10 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         if (directa?.Fecha is not null && directa.Tc != "FP" && Math.Abs((fecha - hoy.Date).TotalDays) > 5)
             throw new CargaComprobantesReglaException($"La fecha de un comprobante electrónico puede ser hasta 5 días antes o después de hoy ({hoy:dd/MM/yyyy}).");
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
+        // Período de ventas cerrado (CIERREVENTAS, Libro de IVA): el trigger de MV_ASIENTOS rechazaría el asiento.
+        // Las proformas no van al libro de IVA.
+        if (plan.Tc is not ("FP" or "NCFP" or "NDFP" or "CBFP") && await LibroIvaVentasService.LeerCierreAsync(cn, ct) is { } cierre && fecha.Date <= cierre)
+            throw new CargaComprobantesReglaException($"Las ventas están cerradas hasta el {cierre:dd/MM/yyyy} (Libro de IVA presentado): usá una fecha posterior. No se pidió CAE.");
         // ARCA no autoriza un comprobante con fecha anterior al último del mismo tipo y punto de venta
         // (también los emitidos desde Alfa Gestión de escritorio): se avisa antes de pedir CAE.
         if (plan.EsElectronico && fecha.Date < hoy.Date)
