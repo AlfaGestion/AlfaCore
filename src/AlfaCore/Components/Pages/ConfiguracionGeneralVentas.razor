@@ -348,7 +348,13 @@
                             {
                                 <tr>
                                     <td>@unidad.Codigo</td>
-                                    <td>@unidad.RazonSocialUnidad</td>
+                                    <td>
+                                        @(unidad.RazonSocialUnidad.Length > 0 ? unidad.RazonSocialUnidad : unidad.Descripcion)
+                                        @if (unidad.Descripcion.Length > 0 && !string.Equals(unidad.Descripcion, unidad.RazonSocialUnidad, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <small class="cfgarca-unidad-desc">@unidad.Descripcion</small>
+                                        }
+                                    </td>
                                     <td>
                                         <AlfaCheckbox Value="@unidad.UsaFacturacionElectronica" ValueChanged="v => unidad.UsaFacturacionElectronica = v == true" />
                                     </td>

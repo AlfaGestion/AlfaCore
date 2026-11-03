@@ -594,3 +594,6 @@
 .cfgarca-modo--prueba { border-left-color: var(--alfa-warning, #d9a400); }
 .cfgarca-modo--prueba > i { color: var(--alfa-warning, #d9a400); font-size: 18px; }
 .cfgarca-modo--real { border-left-color: var(--alfa-success, #2e9e5b); }
+
+/* Nombre interno de la unidad (Descripción) debajo de la razón social que va en la factura. */
+.cfgarca-unidad-desc { display: block; font-size: 11px; color: var(--alfa-text-secondary); }

@@ -21,7 +21,7 @@
                 <legend>General</legend>
                 <div class="un-form__fila un-form__fila--codigo">
                     <AlfaInput Label="Código" MaxLength="8" Value="@_form.Codigo" ValueChanged="v => _form.Codigo = v ?? string.Empty" Disabled="@(!_esNueva || _guardando)" />
-                    <AlfaInput Label="Descripción" MaxLength="100" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Descripción" MaxLength="100" Value="@_form.Descripcion" ValueChanged="v => _form.Descripcion = v ?? string.Empty" HelpText="Nombre interno: listas y filtros del sistema." Disabled="@_guardando" />
                 </div>
                 <div class="un-form__fila">
                     <AlfaSelect Label="Depósito" Options="@Opciones(_catalogos.Depositos, _form.Deposito)" Value="@_form.Deposito" ValueChanged="v => _form.Deposito = v ?? string.Empty" Disabled="@_guardando" />
@@ -48,7 +48,7 @@
                 </AlfaCheckbox>
                 <div class="un-form__fila">
                     <AlfaInput Label="CUIT" MaxLength="13" Value="@_form.Cuit" ValueChanged="v => _form.Cuit = v ?? string.Empty" Disabled="@_guardando" />
-                    <AlfaInput Label="Razón social" MaxLength="100" Value="@_form.RazonSocial" ValueChanged="v => _form.RazonSocial = v ?? string.Empty" Disabled="@_guardando" />
+                    <AlfaInput Label="Razón social" MaxLength="100" Value="@_form.RazonSocial" ValueChanged="v => _form.RazonSocial = v ?? string.Empty" HelpText="Es la que sale en las facturas y en Configuración → Facturación electrónica." Disabled="@_guardando" />
                 </div>
                 <div class="un-form__fila">
                     <AlfaInput Label="Domicilio" MaxLength="250" Value="@_form.Domicilio" ValueChanged="v => _form.Domicilio = v ?? string.Empty" Disabled="@_guardando" />

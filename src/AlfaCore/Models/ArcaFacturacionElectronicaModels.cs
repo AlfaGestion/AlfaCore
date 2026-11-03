@@ -59,6 +59,8 @@ public sealed class ArcaUnidadNegocioConfigDto
 {
     public string Codigo { get; set; } = string.Empty;
     public string RazonSocialUnidad { get; set; } = string.Empty;
+    /// <summary>Nombre interno de la unidad (Descripción en Tablas); la razón social es la que va en la factura.</summary>
+    public string Descripcion { get; set; } = string.Empty;
     public bool UsaFacturacionElectronica { get; set; }
     public string Cuit { get; set; } = string.Empty;
     public string PuntoVenta { get; set; } = string.Empty;

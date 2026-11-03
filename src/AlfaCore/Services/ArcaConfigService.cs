@@ -236,7 +236,7 @@ public sealed class ArcaConfigService(
 
             if (await ExistsAsync(cn, "dbo.V_TA_UnidadNegocio", token))
             {
-                var unidades = new List<(string Codigo, string RazonSocial, bool UsaEfc, string Cuit, string Pdv)>();
+                var unidades = new List<(string Codigo, string RazonSocial, bool UsaEfc, string Cuit, string Pdv, string Descripcion)>();
 
                 // El reader se cierra ANTES de seguir usando "cn" para leer el certificado de cada
                 // unidad más abajo -- de lo contrario ADO.NET tira "ya hay un DataReader abierto"
@@ -245,7 +245,7 @@ public sealed class ArcaConfigService(
                     """
                     SELECT LTRIM(RTRIM(Codigo)) AS Codigo, ISNULL(LTRIM(RTRIM(RAZON_SOCIAL)), '') AS RazonSocial,
                            ISNULL(USAEFC, 0) AS UsaEfc, ISNULL(LTRIM(RTRIM(CUIT)), '') AS Cuit,
-                           ISNULL(LTRIM(RTRIM(PDV)), '') AS Pdv
+                           ISNULL(LTRIM(RTRIM(PDV)), '') AS Pdv, ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
                     FROM dbo.V_TA_UnidadNegocio
                     WHERE ISNULL(USAEFC, 0) = 1 OR ISNULL(LTRIM(RTRIM(CUIT)), '') <> ''
                     ORDER BY Codigo;
@@ -253,7 +253,7 @@ public sealed class ArcaConfigService(
                 await using (var rd = await cmd.ExecuteReaderAsync(token))
                 {
                     while (await rd.ReadAsync(token))
-                        unidades.Add((GetString(rd, 0), GetString(rd, 1), Convert.ToBoolean(rd.GetValue(2)), GetString(rd, 3), GetString(rd, 4)));
+                        unidades.Add((GetString(rd, 0), GetString(rd, 1), Convert.ToBoolean(rd.GetValue(2)), GetString(rd, 3), GetString(rd, 4), GetString(rd, 5)));
                 }
 
                 foreach (var u in unidades)
@@ -263,6 +263,7 @@ public sealed class ArcaConfigService(
                     {
                         Codigo = u.Codigo,
                         RazonSocialUnidad = u.RazonSocial,
+                        Descripcion = u.Descripcion,
                         UsaFacturacionElectronica = u.UsaEfc,
                         Cuit = u.Cuit,
                         PuntoVenta = u.Pdv,
