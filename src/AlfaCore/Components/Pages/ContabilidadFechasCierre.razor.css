@@ -1,0 +1,16 @@
+.fc-page { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
+.fc-bloque { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
+.fc-bloque header h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.fc-bloque header p { margin: 0; font-size: 13px; color: var(--alfa-text-secondary); }
+.fc-grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 18px; }
+.fc-grilla--dos { grid-template-columns: repeat(auto-fit, minmax(200px, 260px)); }
+.fc-campo { display: flex; flex-direction: column; gap: 4px; }
+.fc-cambio { font-size: 12px; color: var(--alfa-accent); font-weight: 600; }
+.fc-cambio--reabre { color: var(--alfa-warning, #d9a400); }
+.fc-modos { display: flex; flex-wrap: wrap; gap: 8px; }
+.fc-modo { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--alfa-border-default);
+    border-radius: 999px; font-size: 13px; cursor: pointer; }
+.fc-modo.is-activo { border-color: var(--alfa-accent); color: var(--alfa-accent); font-weight: 600; }
+.fc-modo input { accent-color: var(--alfa-accent); }
+.fc-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }

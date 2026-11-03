@@ -1,0 +1,160 @@
+@page "/contabilidad/fechas-de-cierre"
+@page "/{idweb}/{idbase:int}/contabilidad/fechas-de-cierre"
+@using AlfaCore.Services
+@inject IFechasCierreService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Fechas de cierre | Alfa Gestión</PageTitle>
+
+@* Fechas de cierre y fecha operativa (FechasDeCierre del legacy). Las hace cumplir el trigger de MV_ASIENTOS. *@
+<div class="gd-page gd fc-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_dto is { } d)
+    {
+        <section class="fc-bloque" aria-label="Fechas de cierre">
+            <header>
+                <h3><i class="bi bi-lock" aria-hidden="true"></i> Fechas de cierre</h3>
+                <p>Impide cargar o modificar movimientos con fecha <strong>igual o anterior</strong> a la indicada en cada módulo, desde Alfa Gestión y desde AlfaCore.</p>
+            </header>
+            <div class="fc-grilla">
+                @Campo("Ventas / Deudores", "Facturas, notas y cobranzas. Se cierra al presentar el Libro de IVA Ventas.", d.CierreVentas, v => d.CierreVentas = v, _original?.CierreVentas)
+                @Campo("Compras / Proveedores", "Comprobantes de compra y pagos. Se cierra al presentar el Libro de IVA Compras.", d.CierreCompras, v => d.CierreCompras = v, _original?.CierreCompras)
+                @Campo("Caja y bancos / Movimientos", "Movimientos de cuentas de caja y bancos.", d.CierreCaja, v => d.CierreCaja = v, _original?.CierreCaja)
+                @Campo("Stock / Movimientos", "Movimientos de stock.", d.CierreStock, v => d.CierreStock = v, _original?.CierreStock)
+            </div>
+        </section>
+
+        <section class="fc-bloque" aria-label="Fecha operativa posible">
+            <header>
+                <h3><i class="bi bi-calendar-range" aria-hidden="true"></i> Fecha operativa posible</h3>
+                <p>Limita el rango de fechas en que puede trabajar el sistema. Afecta a <strong>todos</strong> los módulos que generan asientos contables y stock.</p>
+            </header>
+            <div class="fc-modos" role="radiogroup" aria-label="Cómo se calcula">
+                @foreach (var (valor, texto) in Modos)
+                {
+                    <label class="fc-modo @(d.ModoOperativa == valor ? "is-activo" : null)">
+                        <input type="radio" name="fc-modo" checked="@(d.ModoOperativa == valor)" disabled="@_busy" @onchange="() => CambiarModo(valor)" /> @texto
+                    </label>
+                }
+            </div>
+            <div class="fc-grilla fc-grilla--dos">
+                <AlfaInput Type="date" Label="Desde" Value="@Fecha(d.OperativaDesde)" ValueChanged="v => d.OperativaDesde = Leer(v)" Disabled="@(_busy || d.ModoOperativa is "MENOS30" or "MENOS60")" />
+                <AlfaInput Type="date" Label="Hasta" Value="@Fecha(d.OperativaHasta)" ValueChanged="v => d.OperativaHasta = Leer(v)" Disabled="@(_busy || d.ModoOperativa != "MANUAL")" />
+            </div>
+            @if (d.ModoOperativa != "MANUAL")
+            {
+                <p class="fc-nota">Al grabar se ajusta a hoy. La actualización diaria la hace Alfa Gestión (monitor del sistema), igual que hasta ahora.</p>
+            }
+        </section>
+    }
+    else if (_busy)
+    {
+        <AlfaEmptyState Title="Cargando" Message="Leyendo las fechas de cierre." />
+    }
+</div>
+
+@if (_reabiertos is { Count: > 0 } reab)
+{
+    <AlfaConfirmDialog Open="true" Title="Reabrir períodos cerrados"
+        Message="@($"Vas a reabrir: {string.Join(" · ", reab)}.")"
+        SecondaryMessage="Se van a poder cargar y modificar movimientos en esos períodos ya cerrados (por ejemplo, con el Libro de IVA presentado). Queda registrado en la auditoría."
+        ConfirmLabel="Reabrir y grabar" OnConfirm="() => GrabarAsync(true)" OnCancel="() => _reabiertos = null" />
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private static readonly (string, string)[] Modos =
+        [("MANUAL", "Fechas fijas"), ("DIA", "Hasta: la fecha del día"), ("MENOS30", "Últimos 30 días hasta hoy"), ("MENOS60", "Últimos 60 días hasta hoy")];
+    private FechasCierreDto? _dto, _original;
+    private IReadOnlyList<string>? _reabiertos;
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed;
+    private PageHeaderConfig? _header;
+
+    protected override void OnInitialized() => UpdateHeader();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _busy = true; UpdateHeader(); StateHasChanged();
+        var r = await UiOps.RunAsync(() => Service.GetAsync(), "Fechas de cierre");
+        if (r.Success && r.Value is { } v) { _dto = v; _original = Copiar(v); } else _feedback = r.Feedback;
+        _busy = false; UpdateHeader(); StateHasChanged();
+    }
+
+    private void CambiarModo(string modo)
+    {
+        if (_dto is null) return;
+        _dto.ModoOperativa = modo;
+        var hoy = DateTime.Today;
+        if (modo != "MANUAL") _dto.OperativaHasta = hoy;
+        if (modo == "MENOS30") _dto.OperativaDesde = hoy.AddDays(-30);
+        if (modo == "MENOS60") _dto.OperativaDesde = hoy.AddDays(-60);
+    }
+
+    private async Task GrabarAsync(bool confirmaReapertura)
+    {
+        if (_dto is null || _busy) return;
+        _reabiertos = null; _busy = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.GuardarAsync(_dto, confirmaReapertura), "Fechas de cierre");
+            if (!r.Success) { _feedback = r.Feedback; return; }
+            if (r.Value is { Count: > 0 } pendientes) { _reabiertos = pendientes; return; }
+            _feedback = AppUiMessage.Success("Fechas grabadas", "Las fechas de cierre y la fecha operativa quedaron grabadas.");
+            _original = Copiar(_dto);
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private RenderFragment Campo(string titulo, string ayuda, DateTime? valor, Action<DateTime?> cambiar, DateTime? original) => __builder =>
+    {
+        <div class="fc-campo">
+            <AlfaInput Type="date" Label="@titulo" Value="@Fecha(valor)" ValueChanged="v => cambiar(Leer(v))" Disabled="@_busy" HelpText="@ayuda" />
+            @if (valor is { } v && original is { } o && v != o)
+            {
+                <small class="@(v < o ? "fc-cambio fc-cambio--reabre" : "fc-cambio")">@(v < o ? $"Reabre desde el {v.AddDays(1):dd/MM/yyyy}" : $"Cierra hasta el {v:dd/MM/yyyy}") (antes {o:dd/MM/yyyy})</small>
+            }
+        </div>
+    };
+
+    private static FechasCierreDto Copiar(FechasCierreDto d) => new()
+    {
+        CierreVentas = d.CierreVentas, CierreCompras = d.CierreCompras, CierreCaja = d.CierreCaja, CierreStock = d.CierreStock,
+        OperativaDesde = d.OperativaDesde, OperativaHasta = d.OperativaHasta, ModoOperativa = d.ModoOperativa, PuedeEditar = d.PuedeEditar
+    };
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Fechas de cierre",
+        Breadcrumb = ["Contabilidad", "Fechas de cierre"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "fechas-cierre"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
+        Actions =
+        [
+            new() { Key = "grabar", Label = "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy || _dto is null, Busy = _busy, OnClick = () => GrabarAsync(false) },
+            new() { Key = "deshacer", Label = "Deshacer cambios", Icon = "bi-arrow-counterclockwise", Style = PageHeaderActionStyle.Ghost,
+                Disabled = _busy || _dto is null, OnClick = CargarAsync }
+        ]
+    });
+
+    private static string? Fecha(DateTime? d) => d?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+    private static DateTime? Leer(string? v) => DateTime.TryParseExact(v, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
