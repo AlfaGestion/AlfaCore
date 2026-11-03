@@ -60,13 +60,13 @@ public sealed class EstudioContableE2ETests(ITestOutputHelper output)
         {
             // 1. El dueño invita.
             Assert.True(await accesos.PuedeAdministrarAsync());
-            var inv = await accesos.InvitarAsync(new EstudioInvitarSolicitud { Email = Email, Perfil = "CONSULTA" }, "https://alfacentral.ddns.net/ALFANET/");
+            var inv = await accesos.InvitarAsync(new EstudioInvitarSolicitud { Email = Email }, "https://alfacentral.ddns.net/ALFANET/");
             var token = inv.Enlace.Split('/').Last();
             output.WriteLine($"Invitación {inv.Acceso.IdAcceso}: usuario {inv.Acceso.UsuarioBase}, enlace …/{token[..6]}…");
             Assert.Equal("PENDIENTE", inv.Acceso.Estado);
             var u0 = await cn.QuerySingleAsync<(string Email, bool Activo)>("SELECT ISNULL(email_de,''), CONVERT(bit,ISNULL(Activo,1)) FROM TA_USUARIOS WHERE NOMBRE=@U", new { U = inv.Acceso.UsuarioBase });
             Assert.Equal(("", false), u0); // nadie entra hasta aceptar
-            Assert.Equal(EstudioContableCentral.Perfiles["CONSULTA"].Length,
+            Assert.Equal(EstudioContableCentral.Perfiles["COMPLETO"].Length,
                 await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM ALFACORE_TAREAS_WEB WHERE Usuario=@U", new { U = inv.Acceso.UsuarioBase }));
             await Assert.ThrowsAnyAsync<InvalidOperationException>(() => accesos.InvitarAsync(new EstudioInvitarSolicitud { Email = Email, Perfil = "CONSULTA" }, "https://x/"));
 

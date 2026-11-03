@@ -20,15 +20,22 @@ internal static class EstudioContableCentral
     internal static readonly TimeSpan VigenciaInvitacion = TimeSpan.FromDays(14);
     private static volatile bool _esquemaListo;
 
-    /// <summary>Menús de cada perfil. Después el dueño los ajusta como a cualquier usuario (Autorización de tareas).</summary>
+    // Va antes de Perfiles: los inicializadores estáticos corren en orden.
+    private static readonly string[] Consulta =
+    [
+        "D95", "D9502", "D957001", "D957002", "D957003", "D957004", "D957005", "D957006", "D016021", "D9832",
+        "D60", "D6000", "D6009", "D60RPTWEB", "D50", "D5001", "D5004", "D5005", "D75", "D7510", "D8079", "DTABLEROS"
+    ];
+
+    /// <summary>Menús de cada perfil. Después el dueño los amplía o recorta como a cualquier usuario (Autorización de tareas).</summary>
     internal static readonly IReadOnlyDictionary<string, string[]> Perfiles = new Dictionary<string, string[]>
     {
-        // Consulta: tablero, libros de IVA, diario, subdiarios, mayor, sumas y saldos, balance, plan, retenciones, paquete.
-        ["CONSULTA"] = ["D9502", "D6009", "D5004", "D957001", "D957002", "D957003", "D957004", "D957005", "D957006", "D016021", "D9832"],
-        // Carga: además Control e importación ARCA, fechas de cierre y Recepción documental.
-        ["CARGA"] = ["D9502", "D6009", "D5004", "D957001", "D957002", "D957003", "D957004", "D957005", "D957006", "D016021", "D9832",
-            "D016023", "D9882", "D016004"]
+        // Consulta: contabilidad, libros de IVA, retenciones, paquete, reportes y tableros (ventas, compras, caja, stock).
+        ["CONSULTA"] = [.. Consulta],
+        // Completo (por defecto): además control e importación ARCA, fechas de cierre, recepción documental y conciliaciones.
+        ["COMPLETO"] = [.. Consulta, "D016023", "D9882", "D016004", "D75-CONCILIA-IA", "D75-TARJETAS-IA"]
     };
+
 
     internal static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
     internal static string NuevoToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
@@ -193,7 +200,7 @@ public sealed class EstudioAccesosService(ISessionService sessions, IAppUserSess
 
     /// <summary>Lista literal de menús (claves fijas del perfil, sin datos del usuario) para el INSERT … SELECT.</summary>
     internal static string ValoresMenus(IEnumerable<string> menus)
-        => "(VALUES " + string.Join(",", menus.Where(m => m.All(char.IsLetterOrDigit)).Select(m => $"(N'{m}')")) + ") m(Clave)";
+        => "(VALUES " + string.Join(",", menus.Where(m => m.Length > 0 && m.All(c => char.IsLetterOrDigit(c) || c == '-')).Select(m => $"(N'{m}')")) + ") m(Clave)";
 
     internal static string Enlace(string baseUri, string token) => $"{baseUri.TrimEnd('/')}/estudio/invitacion/{token}";
 
@@ -318,7 +325,7 @@ public sealed class EstudioPortalService(IConfiguration configuration, IAppUserS
         {
             await cn.OpenAsync(ct);
             var otro = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
-                "SELECT TOP (1) NOMBRE FROM dbo.TA_USUARIOS WHERE email_de = @Login AND NOMBRE <> @Usuario;", new { Login = login, a.UsuarioBase }, cancellationToken: ct));
+                "SELECT TOP (1) NOMBRE FROM dbo.TA_USUARIOS WHERE email_de = @Login AND NOMBRE <> @Usuario;", new { Login = login, Usuario = a.UsuarioBase }, cancellationToken: ct));
             if (otro is not null) throw new ReglaException($"En esa empresa ya hay otro usuario ({otro.Trim()}) con el email {login}. Pedile a la empresa que lo revise.");
             await EstudioContableCentral.SincronizarUsuarioBaseAsync(cn, a.UsuarioBase, login, activo: true, ct);
         }
@@ -413,8 +420,10 @@ public sealed class EstudioPortalService(IConfiguration configuration, IAppUserS
             """, cancellationToken: ct))).GroupBy(x => x.Clave).ToDictionary(g => g.Key, g => g.First().Valor);
         DateTime? F(string k) => DateTime.TryParseExact(cfg.GetValueOrDefault(k, ""), ["dd/MM/yyyy", "d/M/yyyy"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : null;
         var cantidades = await cn.QuerySingleAsync<(int Ventas, int Compras)>(new CommandDefinition("""
-            SELECT (SELECT COUNT(*) FROM dbo.MV_ASIENTOS WITH (NOLOCK) WHERE LIVA_TIPO = 'VENTAS' AND SECUENCIA = 1 AND FECHA >= @Desde AND FECHA < @Hasta),
-                   (SELECT COUNT(*) FROM dbo.MV_ASIENTOS WITH (NOLOCK) WHERE LIVA_TIPO = 'COMPRAS' AND SECUENCIA = 1 AND FECHA >= @Desde AND FECHA < @Hasta);
+            -- Comprobantes del libro de IVA (la línea marcada no siempre es la primera del asiento, por eso se cuenta por comprobante).
+            SELECT COUNT(DISTINCT CASE WHEN LIVA_TIPO = 'VENTAS' THEN TC + SUCURSAL + NUMERO + LETRA + ISNULL(CABCUENTA, CUENTA) END),
+                   COUNT(DISTINCT CASE WHEN LIVA_TIPO = 'COMPRAS' THEN TC + SUCURSAL + NUMERO + LETRA + ISNULL(CABCUENTA, CUENTA) END)
+            FROM dbo.MV_ASIENTOS WITH (NOLOCK) WHERE LIVA_TIPO IN ('VENTAS', 'COMPRAS') AND FECHA >= @Desde AND FECHA < @Hasta;
             """, new { Desde = mes, Hasta = mes.AddMonths(1) }, commandTimeout: 20, cancellationToken: ct));
         var paquete = cfg.GetValueOrDefault("ALFACORE_PAQUETE_ESTUDIO_ULTIMO", "");
         return new EstudioEstadoMes

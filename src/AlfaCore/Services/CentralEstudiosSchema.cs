@@ -19,7 +19,7 @@ public static class CentralEstudiosSchema
 --   Estado PENDIENTE (invitado, sin aceptar), ACTIVO o REVOCADO.
 --   TokenHash: SHA-256 del enlace de invitación (el enlace se muestra una sola vez al dueño).
 --   UsuarioBase: TA_USUARIOS.NOMBRE creado en la base para el estudio.
---   Perfil: CONSULTA o CARGA (los permisos se pueden ajustar después en Autorización de tareas).
+--   Perfil: COMPLETO (por defecto) o CONSULTA (los permisos se ajustan después en Autorización de tareas).
 SET NOCOUNT ON;
 IF OBJECT_ID(N'dbo.bases', N'U') IS NULL
     THROW 50000, N'La base destino no contiene el catálogo central de bases (dbo.bases).', 1;

@@ -21,9 +21,10 @@
             <strong>Dale acceso a tu estudio contable</strong>
             <p>Invitás al contador por email y le mandás el enlace. El estudio entra con su propia cuenta y ve todas las empresas que atiende;
                en la tuya trabaja con un usuario propio, con los permisos que elijas. Podés quitarle el acceso cuando quieras.</p>
-            <small>Perfil <b>Consulta</b>: libros de IVA, diario, mayor, balances, retenciones y el paquete del mes.
-                   Perfil <b>Consulta y carga</b>: además control e importación de ARCA, fechas de cierre y recepción documental.
-                   Después podés ajustar sus permisos en Autorización de tareas, como con cualquier usuario.</small>
+            <small>Perfil <b>Completo</b> (recomendado): toda la contabilidad, libros de IVA, Libro IVA Digital, retenciones y percepciones,
+                   paquete del mes, reportes de ventas y compras, caja y bancos, stock, control e importación ARCA, fechas de cierre,
+                   recepción documental y conciliaciones. Perfil <b>Consulta</b>: lo mismo pero sin importar, cerrar ni conciliar.
+                   El estudio es un usuario más de tu empresa: después le ampliás o quitás permisos en Autorización de tareas.</small>
         </div>
     </section>
 
@@ -59,7 +60,7 @@
                     <tr class="@(a.Estado == "REVOCADO" ? "is-revocado" : null)">
                         <td>@(a.NombreEstudio.Length > 0 ? a.NombreEstudio : a.EmailInvitado)<small>@(a.LoginEstudio.Length > 0 ? a.LoginEstudio : a.EmailInvitado)</small></td>
                         <td>@a.UsuarioBase</td>
-                        <td>@(a.Perfil == "CARGA" ? "Consulta y carga" : "Consulta")</td>
+                        <td>@(a.Perfil == "COMPLETO" ? "Completo" : "Consulta")</td>
                         <td>
                             <span class="ec-estado ec-estado--@a.Estado.ToLowerInvariant()">@Estado(a)</span>
                             <small>@Fecha(a)</small>
@@ -90,7 +91,7 @@
             <AlfaInput Label="Email del contador" Type="email" Value="@n.Email" ValueChanged="v => n.Email = v ?? string.Empty" MaxLength="150"
                        HelpText="Con este email crea su cuenta de estudio, o entra con la que ya tiene." />
             <AlfaSelect Label="Perfil" Value="@n.Perfil" ValueChanged="CambiarPerfil"
-                        Options="@(new List<AlfaSelectOption> { new("CONSULTA", "Consulta"), new("CARGA", "Consulta y carga") })" />
+                        Options="@(new List<AlfaSelectOption> { new("COMPLETO", "Completo (recomendado)"), new("CONSULTA", "Solo consulta") })" />
             <AlfaInput Label="Usuario en la empresa (opcional)" Value="@n.Usuario" ValueChanged="v => n.Usuario = v ?? string.Empty" MaxLength="30"
                        Placeholder="@(n.Email.Contains('@') ? EstudioAccesosService.UsuarioDesdeEmail(n.Email) : "EST_contador")"
                        HelpText="Es el usuario con el que el estudio trabaja en tu base: lo vas a ver en la auditoría." />
@@ -196,7 +197,7 @@
         "ACTIVO" => $"desde {a.FechaAceptacion:dd/MM/yyyy}", "REVOCADO" => $"quitado el {a.FechaRevocacion:dd/MM/yyyy}", _ => $"invitado el {a.FechaInvitacion:dd/MM/yyyy}"
     };
 
-    private void CambiarPerfil(string? v) { if (_nuevo is not null) _nuevo.Perfil = string.IsNullOrEmpty(v) ? "CONSULTA" : v; }
+    private void CambiarPerfil(string? v) { if (_nuevo is not null) _nuevo.Perfil = string.IsNullOrEmpty(v) ? "COMPLETO" : v; }
 
     private Task Nueva()
     {

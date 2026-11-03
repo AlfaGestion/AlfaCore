@@ -59,7 +59,7 @@
                 @foreach (var e in _empresas)
                 {
                     <tr>
-                        <td><b>@e.Empresa</b><small>@e.BaseNombre · @(e.Perfil == "CARGA" ? "consulta y carga" : "consulta")</small></td>
+                        <td><b>@e.Empresa</b><small>@e.BaseNombre · @(e.Perfil == "COMPLETO" ? "acceso completo" : "solo consulta")</small></td>
                         @if (e.Estado is { } s)
                         {
                             <td>@Libro(s.Ventas, s.VentasCerradas, s.CierreVentas)</td>

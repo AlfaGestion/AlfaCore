@@ -43,13 +43,16 @@ public sealed class EstudioContableTests
     [Fact]
     public void PerfilesSoloConClavesDeMenuYCargaIncluyeConsulta()
     {
-        Assert.Equal(["CARGA", "CONSULTA"], EstudioContableCentral.Perfiles.Keys.OrderBy(k => k));
-        Assert.All(EstudioContableCentral.Perfiles.Values.SelectMany(v => v), m => Assert.Matches("^D[0-9]+$", m));
-        Assert.Subset(EstudioContableCentral.Perfiles["CARGA"].ToHashSet(), EstudioContableCentral.Perfiles["CONSULTA"].ToHashSet());
+        Assert.Equal(["COMPLETO", "CONSULTA"], EstudioContableCentral.Perfiles.Keys.OrderBy(k => k));
+        Assert.All(EstudioContableCentral.Perfiles.Values.SelectMany(v => v), m => Assert.Matches("^D[A-Z0-9-]+$", m));
+        Assert.Subset(EstudioContableCentral.Perfiles["COMPLETO"].ToHashSet(), EstudioContableCentral.Perfiles["CONSULTA"].ToHashSet());
+        Assert.Equal("COMPLETO", new EstudioInvitarSolicitud().Perfil);
+        Assert.Contains("D6009", EstudioContableCentral.Perfiles["CONSULTA"]);
+        Assert.Contains("D75-CONCILIA-IA", EstudioContableCentral.Perfiles["COMPLETO"]);
         Assert.Contains("D9832", EstudioContableCentral.Perfiles["CONSULTA"]);
         Assert.DoesNotContain("D016023", EstudioContableCentral.Perfiles["CONSULTA"]);
         // La lista literal descarta cualquier cosa que no sea una clave (no hay inyección posible).
-        Assert.Equal("(VALUES (N'D6009'),(N'D5004')) m(Clave)", EstudioAccesosService.ValoresMenus(["D6009", "D5004", "x'); DROP TABLE y;--"]));
+        Assert.Equal("(VALUES (N'D6009'),(N'D75-CONCILIA-IA')) m(Clave)", EstudioAccesosService.ValoresMenus(["D6009", "D75-CONCILIA-IA", "x'); DROP TABLE y;--"]));
     }
 
     [Fact]

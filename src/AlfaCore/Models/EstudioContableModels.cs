@@ -7,7 +7,7 @@ public sealed class EstudioAcceso
     public int IdBase { get; set; }
     public string EmailInvitado { get; set; } = string.Empty;
     public string UsuarioBase { get; set; } = string.Empty;
-    /// <summary>CONSULTA o CARGA.</summary>
+    /// <summary>COMPLETO (por defecto) o CONSULTA.</summary>
     public string Perfil { get; set; } = "CONSULTA";
     /// <summary>PENDIENTE, ACTIVO o REVOCADO.</summary>
     public string Estado { get; set; } = "PENDIENTE";
@@ -26,7 +26,7 @@ public sealed class EstudioInvitarSolicitud
     public string Email { get; set; } = string.Empty;
     /// <summary>Nombre del usuario en la base (TA_USUARIOS); vacío = se arma con el email.</summary>
     public string Usuario { get; set; } = string.Empty;
-    public string Perfil { get; set; } = "CONSULTA";
+    public string Perfil { get; set; } = "COMPLETO";
 }
 
 /// <summary>El enlace se muestra una sola vez: en la base queda solo su hash.</summary>

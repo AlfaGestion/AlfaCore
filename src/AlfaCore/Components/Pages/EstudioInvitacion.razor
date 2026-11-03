@@ -25,7 +25,7 @@
         else
         {
             <p><b>@(_info.Empresa.Length > 0 ? _info.Empresa : _info.BaseNombre)</b> te da acceso a su información contable
-               (@(_info.Perfil == "CARGA" ? "consulta y carga" : "solo consulta")).</p>
+               (@(_info.Perfil == "COMPLETO" ? "acceso completo a la contabilidad e impuestos" : "solo consulta")).</p>
             <p class="ei-muted">Invitación para @_info.EmailInvitado</p>
 
             @if (_info.Estado != "PENDIENTE")
