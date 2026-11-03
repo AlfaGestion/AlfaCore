@@ -37,6 +37,8 @@ public static class CuentaComercialFormulario
         VendedorCodigo = detail.VendedorCodigo,
         CuentaPrincipal = detail.CuentaPrincipal,
         CodigoImputacion = detail.CodigoImputacion,
+        MotivoCompraCodigo = detail.MotivoCompraCodigo,
+        FacturaCompraSinOc = detail.FacturaCompraSinOc,
         CodigoOpcional = detail.CodigoOpcional,
         MonedaCodigo = detail.MonedaCodigo,
         ClasificacionCodigo = detail.ClasificacionCodigo,

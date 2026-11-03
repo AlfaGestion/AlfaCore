@@ -9,6 +9,8 @@ public interface ICuentasComercialesService
     Task<string> GetSuggestedCodigoAsync(CuentaComercialTipo tipo, CancellationToken ct = default);
     Task<CuentaComercialLookupDataDto> GetLookupDataAsync(CuentaComercialTipo tipo, CancellationToken ct = default);
     Task<string> SaveAsync(CuentaComercialTipo tipo, CuentaComercialSaveRequest request, CancellationToken ct = default);
+    Task<string> CrearProveedorEnSesionAsync(CuentaComercialSaveRequest request, Guid sesionEsperada, CancellationToken ct = default)
+        => throw new NotSupportedException("El alta rápida de proveedores no está disponible.");
     Task DeactivateAsync(CuentaComercialTipo tipo, string codigo, CancellationToken ct = default);
 
     // Clave del Portal Cliente (MA_CUENTASADIC.CLAVE) — acción específica y separada del guardado

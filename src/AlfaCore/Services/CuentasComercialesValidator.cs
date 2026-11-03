@@ -242,7 +242,12 @@ public sealed class CuentasComercialesValidator(
             await ValidateCuentaImputacionAsync(cn, codigoImputacion, result, ct);
 
         if (tipo == CuentaComercialTipo.Proveedor)
+        {
+            if(!string.IsNullOrWhiteSpace(request.MotivoCompraCodigo)&&
+                (request.MotivoCompraCodigo.Trim().Length>4||!await ExistsInTableAsync(cn,"V_TA_MOTIVOCPRA","IdMotivoCpra",request.MotivoCompraCodigo.Trim(),ct)))
+                result.Add("motivo-compra","El motivo de compra seleccionado no existe.");
             await ValidateCondicionesProveedorAsync(cn, request.DescuentosCondicion ?? [], result, ct);
+        }
 
         return result;
     }
@@ -438,7 +443,7 @@ public sealed class CuentasComercialesValidator(
     private static string NormalizeDigits(string? value)
         => Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty);
 
-    private static bool IsValidCuit(string cuit)
+    internal static bool IsValidCuit(string cuit)
     {
         var digits = NormalizeDigits(cuit);
         if (digits.Length != 11)

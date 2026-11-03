@@ -14,6 +14,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IPermissionService PermisosCompra
 @implements IDisposable
 
 <PageTitle>@(_isNewMode ? "Nuevo documento | Interfaces" : $"Documento #{IdComprobanteRecibido} | Interfaces")</PageTitle>
@@ -511,7 +512,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => string.Join('|', _isNewMode, IdComprobanteRecibido);
+    private string HeaderSnapshot() => string.Join('|', _isNewMode, IdComprobanteRecibido, _puedePrepararCompra, _detail?.LecturaCompra?.Id, _loading, EsDirectoCompra);
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -547,6 +548,14 @@
                     Disabled = false,
                     OnClick = () => InvokeAsync(() => { Navigation.NavigateTo(RouteContext.BuildRoute("/interfaces")); StateHasChanged(); })
                 },
+                .. (_puedePrepararCompra && !_isNewMode && _detail?.LecturaCompra is not null && !EsDirectoCompra ? new[] { new PageHeaderAction
+                {
+                    Key = "preparar-compra",
+                    Label = "Preparar compra",
+                    Icon = "bi-journal-plus",
+                    Disabled = _loading || _detail?.Eliminado == true,
+                    OnClick = () => { Navigation.NavigateTo(RouteContext.BuildRoute($"/compras/carga?documento={IdComprobanteRecibido}")); return Task.CompletedTask; }
+                } } : Array.Empty<PageHeaderAction>()),
             ],
         });
     }
@@ -560,6 +569,7 @@
                 return;
 
             await LoadCatalogsAsync();
+            _puedePrepararCompra = await PermisosCompra.HasAccessAsync(AlfaCore.Services.CompraCargaService.MenuKey);
             _settings = await InterfacesConfigSvc.GetUploadSettingsAsync(CurrentExpectedBaseId());
 
             if (_isNewMode)
@@ -585,6 +595,9 @@
 
     private int? CurrentExpectedBaseId()
         => idbase is > 0 ? idbase : Session.GetActiveSession()?.BaseId;
+
+    private bool _puedePrepararCompra;
+    private bool EsDirectoCompra => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query).TryGetValue("directo", out var v) && v == "1";
 
     private bool IsCurrentTenant(AlfaCore.Services.SaaSTenantRouteLease lease)
         => TenantRouteGuard.IsCurrent(lease, idbase is > 0 ? idbase : null, Session.GetActiveSession()?.BaseId);

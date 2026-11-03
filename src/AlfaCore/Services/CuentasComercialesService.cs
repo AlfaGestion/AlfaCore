@@ -12,7 +12,9 @@ public sealed partial class CuentasComercialesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    ICuentasComercialesValidator validator) : ICuentasComercialesService
+    ICuentasComercialesValidator validator,
+    IAppUserSessionService? auth = null,
+    IPermissionService? permissions = null) : ICuentasComercialesService
 {
     private const string ModuleName = "CuentasComerciales";
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -241,7 +243,9 @@ public sealed partial class CuentasComercialesService(
                     CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END,
                     base.FechaHora_Grabacion,
                     base.FechaHora_Modificacion,
-                    ISNULL(LTRIM(RTRIM(adic.CLAVE)), '')
+                    ISNULL(LTRIM(RTRIM(adic.CLAVE)), ''),
+                    {(tipo == CuentaComercialTipo.Proveedor ? "ISNULL(LTRIM(RTRIM(base.IdMotivoCpra)), '')" : "CAST('' AS nvarchar(4))")},
+                    {(tipo == CuentaComercialTipo.Proveedor ? "CONVERT(bit,ISNULL(base.FCC_Sin_OC,0))" : "CAST(NULL AS bit)")}
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.MA_CUENTAS acc
                     ON UPPER(LTRIM(RTRIM(acc.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
@@ -301,7 +305,9 @@ public sealed partial class CuentasComercialesService(
                 Activo = GetBool(rd, 39),
                 FechaHoraGrabacion = rd.IsDBNull(40) ? null : rd.GetDateTime(40),
                 FechaHoraModificacion = rd.IsDBNull(41) ? null : rd.GetDateTime(41),
-                ClavePortal = GetString(rd, 42)
+                ClavePortal = GetString(rd, 42),
+                MotivoCompraCodigo = GetString(rd, 43),
+                FacturaCompraSinOc = rd.IsDBNull(44) ? null : rd.GetBoolean(44)
             };
 
             await rd.CloseAsync();
@@ -394,14 +400,50 @@ public sealed partial class CuentasComercialesService(
         }, $"No se pudieron cargar las referencias de {GetPluralLabel(tipo).ToLowerInvariant()}.", ct);
 
     public Task<string> SaveAsync(CuentaComercialTipo tipo, CuentaComercialSaveRequest request, CancellationToken ct = default)
+        => SaveCoreAsync(tipo,request,null,ct);
+
+    public Task<string> CrearProveedorEnSesionAsync(CuentaComercialSaveRequest request,Guid sesionEsperada,CancellationToken ct=default)
+        => SaveCoreAsync(CuentaComercialTipo.Proveedor,request,sesionEsperada,ct);
+
+    private Task<string> SaveCoreAsync(CuentaComercialTipo tipo,CuentaComercialSaveRequest request,Guid? sesionEsperada,CancellationToken ct)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "Save", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
+            var autor=auth?.GetCurrentUserName();var sistema=auth?.CurrentUser?.SystemCode;
+            void Vigente()
+            {
+                if(sesionEsperada is null)return;
+                token.ThrowIfCancellationRequested();
+                if(auth is null||!TenantDataAccessGuard.TryGetAuthorizedSession(sessionService,auth,out var actual)||actual!=sesionEsperada||auth.GetCurrentUserName()!=autor||auth.CurrentUser?.SystemCode!=sistema)
+                    throw new OperationCanceledException("La sesión cambió. No se creó el proveedor.");
+            }
+            Vigente();
+            if(sesionEsperada is not null)
+            {
+                if(!string.IsNullOrWhiteSpace(request.CodigoOriginal)||!string.IsNullOrWhiteSpace(request.Codigo))
+                    throw new InvalidOperationException("El alta rápida crea un proveedor con código automático; no modifica cuentas existentes.");
+                if(permissions is null||!await permissions.HasAccessAsync("D010110",token))throw new InvalidOperationException("No tenés permiso para dar de alta proveedores.");
+            }
+            Vigente();
             var normalized = NormalizeRequest(request);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
+            if(sesionEsperada is not null)
+            {
+                await using var bloqueo=new SqlCommand("DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=N'ALFACORE-ALTA-PROVEEDOR',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=10000; SELECT @r;",cn,(SqlTransaction)tx);
+                if(Convert.ToInt32(await bloqueo.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)<0)throw new InvalidOperationException("Otro usuario está creando un proveedor. Reintentá en unos segundos.");
+                var documento=new string(normalized.NumeroDocumento.Where(char.IsAsciiDigit).ToArray());
+                if(!CuentasComercialesValidator.IsValidCuit(documento))throw new InvalidOperationException("Ingresá un CUIT válido para el alta rápida.");
+                await using var tipoDocumento=new SqlCommand("SELECT COUNT(*) FROM dbo.TA_TIPODOCUMENTO WHERE LTRIM(RTRIM(CODIGO))=@codigo AND UPPER(DESCRIPCION) LIKE '%CUIT%'",cn,(SqlTransaction)tx);
+                tipoDocumento.Parameters.AddWithValue("@codigo",normalized.DocumentoTipoCodigo.Trim());
+                if(Convert.ToInt32(await tipoDocumento.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)!=1)throw new InvalidOperationException("El alta rápida requiere el tipo de documento CUIT configurado en la base.");
+                await using var duplicado=new SqlCommand("SELECT COUNT(*) FROM dbo.VT_PROVEEDORES WHERE REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(NUMERO_DOCUMENTO,''))),'-',''),' ',''),'.','')=@doc",cn,(SqlTransaction)tx);
+                duplicado.Parameters.AddWithValue("@doc",documento);
+                if(Convert.ToInt32(await duplicado.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)>0)throw new InvalidOperationException("Ya existe un proveedor con ese CUIT. Seleccionalo en lugar de crear otro.");
+                normalized.NumeroDocumento=documento;
+            }
             var descriptor = ResolveDescriptor(tipo);
             var isNew = string.IsNullOrWhiteSpace(normalized.CodigoOriginal);
             var hasManualColumn = await ColumnExistsAsync(cn, (SqlTransaction)tx, "MA_CUENTAS", "MANUAL", token);
@@ -412,6 +454,7 @@ public sealed partial class CuentasComercialesService(
             var validation = await validator.ValidateForSaveAsync(tipo, normalized, token);
             if (!validation.IsValid)
                 throw new AppValidationException($"Revisá los datos del {GetSingularLabel(tipo).ToLowerInvariant()} antes de guardar.", validation);
+            Vigente();
 
             var tipoVista = await ResolveTipoVistaAsync(cn, (SqlTransaction)tx, normalized.Codigo, descriptor, token);
             var defaultDocumentoTipo = await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_TIPODOCUMENTO", "CODIGO", normalized.DocumentoTipoCodigo, "1", token);
@@ -422,9 +465,11 @@ public sealed partial class CuentasComercialesService(
             var defaultClasificacion = string.IsNullOrWhiteSpace(normalized.ClasificacionCodigo) ? string.Empty
                 : await ResolverCodigoTablaAsync(cn, (SqlTransaction)tx, "TA_CLASIFICACIONES", "Codigo", normalized.ClasificacionCodigo, string.Empty, token);
             var defaultClase = normalized.Clase ?? (tipo == CuentaComercialTipo.Cliente ? (short)1 : (short)0);
-            var defaultMotivo = "1";
+            var defaultMotivo = tipo==CuentaComercialTipo.Proveedor&&!string.IsNullOrWhiteSpace(normalized.MotivoCompraCodigo)
+                ? await ResolverCodigoTablaAsync(cn,(SqlTransaction)tx,"V_TA_MOTIVOCPRA","IdMotivoCpra",normalized.MotivoCompraCodigo,"",token) : "1";
 
             var accountExists = await ExistsAsync(cn, (SqlTransaction)tx, "MA_CUENTAS", "CODIGO", normalized.Codigo, token);
+            if(sesionEsperada is not null&&accountExists)throw new InvalidOperationException("El código de proveedor ya fue utilizado por otro proceso. Reintentá el alta.");
             if (!accountExists)
             {
                 var insertAccountSql = hasManualColumn
@@ -695,6 +740,8 @@ public sealed partial class CuentasComercialesService(
                     throw new InvalidOperationException("No se pudo actualizar MA_CUENTASADIC para la cuenta indicada.");
             }
 
+            if(tipo==CuentaComercialTipo.Proveedor&&normalized.FacturaCompraSinOc is {} sinOc)
+                await cn.ExecuteAsync(new CommandDefinition("UPDATE dbo.MA_CUENTASADIC SET FCC_Sin_OC=@sinOc WHERE LTRIM(RTRIM(CODIGO))=@codigo;",new{sinOc,codigo=normalized.Codigo.Trim()},(SqlTransaction)tx,cancellationToken:token));
             await EnsureCuentaAdicObservacionesSavedAsync(cn, (SqlTransaction)tx, normalized, token);
             await UpsertCuentaObsAsync(cn, (SqlTransaction)tx, normalized, token);
             if (tipo == CuentaComercialTipo.Proveedor)
@@ -702,6 +749,7 @@ public sealed partial class CuentasComercialesService(
             else if (normalized.FacturacionAutomatica is not null)
                 await SaveFacturacionAutomaticaAsync(cn, (SqlTransaction)tx, normalized.Codigo, normalized.FacturacionAutomatica, token);
 
+            Vigente();
             await tx.CommitAsync(token);
 
             await appEvents.LogAuditAsync(
@@ -1439,6 +1487,8 @@ public sealed partial class CuentasComercialesService(
             VendedorCodigo = request.VendedorCodigo?.Trim() ?? string.Empty,
             CuentaPrincipal = request.CuentaPrincipal?.Trim() ?? string.Empty,
             CodigoImputacion = request.CodigoImputacion?.Trim() ?? string.Empty,
+            MotivoCompraCodigo = request.MotivoCompraCodigo?.Trim() ?? string.Empty,
+            FacturaCompraSinOc = request.FacturaCompraSinOc,
             CodigoOpcional = request.CodigoOpcional?.Trim() ?? string.Empty,
             MonedaCodigo = request.MonedaCodigo?.Trim() ?? string.Empty,
             ClasificacionCodigo = request.ClasificacionCodigo?.Trim() ?? string.Empty,

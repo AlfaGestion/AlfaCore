@@ -80,6 +80,8 @@ public class CuentaComercialSaveRequest
     public string VendedorCodigo { get; set; } = string.Empty;
     public string CuentaPrincipal { get; set; } = string.Empty;
     public string CodigoImputacion { get; set; } = string.Empty;
+    public string MotivoCompraCodigo { get; set; } = string.Empty;
+    public bool? FacturaCompraSinOc { get; set; }
     public string CodigoOpcional { get; set; } = string.Empty;
     public string MonedaCodigo { get; set; } = string.Empty;
     public string ClasificacionCodigo { get; set; } = string.Empty;

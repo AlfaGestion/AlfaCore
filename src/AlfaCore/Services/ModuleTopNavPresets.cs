@@ -17,6 +17,7 @@ public static class ModuleTopNavPresets
             ("reportes", "Reportes", "/compras/reportes"),
             ("proveedores", "Proveedores", "/compras/proveedores"),
             ("comprobantes", "Comprobantes", "/compras/comprobantes"),
+            ("carga-compras", "Preparar compra", "/compras/carga"),
             ("rubros", "Rubros", "/compras/rubros"),
             ("familias", "Familias", "/compras/familias"),
             ("articulos", "Artículos", "/compras/articulos"),

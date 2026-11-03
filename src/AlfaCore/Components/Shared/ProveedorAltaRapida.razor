@@ -1,0 +1,107 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ProveedorAltaRapidaService Servicio
+@inject IAppUiOperationService UiOps
+@inject IAppEventService Eventos
+@implements IDisposable
+
+<AlfaDialog Open="Open" Title="Nuevo proveedor" Description="Alta rápida por CUIT, sin salir de la compra." CloseOnBackdrop="false" Loading="_busy" Size="AlfaDialogSize.Lg" OnClose="Cerrar">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@(_busy?AppUiMessage.InProgress("Procesando proveedor…","Esperá mientras se completa la consulta o el alta."):_feedback)" />
+        @if(_catalogo is {} catalogo)
+        {
+            <div class="proveedor-alta-cuit">
+                <AlfaInput Label="CUIT" Value="@_nuevo.NumeroDocumento" ValueChanged="v=>CambiarCuit(v)" MaxLength="13" Disabled="_busy" />
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" Icon="bi-search" OnClick="Consultar">Consultar ARCA / buscar existente</AlfaButton>
+            </div>
+            @foreach(var existente in _duplicados)
+            {
+                <div class="proveedor-alta-existente"><span>Ya existe: <strong>@existente.Codigo · @existente.RazonSocial</strong>@(!existente.Activo||existente.Bloqueado?" · Inactivo o bloqueado: revisar en el maestro":"")</span>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy||!existente.Activo||existente.Bloqueado)" OnClick="()=>ElegirExistente(existente.Codigo)">Usar proveedor existente</AlfaButton></div>
+            }
+            <div class="proveedor-alta-campos">
+                <AlfaInput Label="Razón social" Value="@_nuevo.RazonSocial" ValueChanged="v=>_nuevo.RazonSocial=v??string.Empty" MaxLength="50" Disabled="_busy" />
+                <AlfaSelect Label="Condición de IVA" Value="@_nuevo.IvaCodigo" ValueChanged="v=>_nuevo.IvaCodigo=v" Options="@Opciones(catalogo.CondicionesIva)" Disabled="_busy" />
+                <AlfaSelect Label="Condición de compra" Value="@_nuevo.CondicionComercialCodigo" ValueChanged="v=>_nuevo.CondicionComercialCodigo=v" Options="@Opciones(catalogo.CondicionesComerciales)" Disabled="_busy" />
+                <AlfaSelect Label="Motivo habitual de compra" Value="@_nuevo.MotivoCompraCodigo" ValueChanged="v=>_nuevo.MotivoCompraCodigo=v" Options="@OpcionesCompra(Motivos)" Disabled="_busy" />
+                <AlfaSelect Label="Imputación habitual (opcional)" Value="@_nuevo.CodigoImputacion" ValueChanged="v=>_nuevo.CodigoImputacion=v" Options="@OpcionesCompra(Cuentas)" Disabled="_busy" />
+                <AlfaInput Label="Calle" Value="@_nuevo.Calle" ValueChanged="v=>_nuevo.Calle=v??string.Empty" Disabled="_busy" />
+                <AlfaInput Label="Número" Value="@_nuevo.Numero" ValueChanged="v=>_nuevo.Numero=v??string.Empty" Disabled="_busy" />
+                <AlfaInput Label="Localidad" Value="@_nuevo.Localidad" ValueChanged="v=>_nuevo.Localidad=v??string.Empty" Disabled="_busy" />
+                <AlfaInput Label="Código postal" Value="@_nuevo.CodigoPostal" ValueChanged="v=>_nuevo.CodigoPostal=v??string.Empty" Disabled="_busy" />
+                <AlfaSelect Label="Provincia" Value="@_nuevo.ProvinciaCodigo" ValueChanged="v=>_nuevo.ProvinciaCodigo=v" Options="@Opciones(catalogo.Provincias)" Disabled="_busy" />
+                <AlfaSelect Label="País" Value="@_nuevo.PaisCodigo" ValueChanged="v=>_nuevo.PaisCodigo=v" Options="@Opciones(catalogo.Paises)" Disabled="_busy" />
+                <AlfaInput Label="Email" Type="email" Value="@_nuevo.Mail" ValueChanged="v=>_nuevo.Mail=v??string.Empty" Disabled="_busy" />
+                <AlfaInput Label="Teléfono" Value="@_nuevo.Telefono" ValueChanged="v=>_nuevo.Telefono=v??string.Empty" Disabled="_busy" />
+            </div>
+            <AlfaCheckbox Value="@_nuevo.FacturaCompraSinOc" ValueChanged="v=>_nuevo.FacturaCompraSinOc=v==true" Disabled="_busy">Permitir facturas de este proveedor sin orden de compra</AlfaCheckbox>
+            <p>El código se asigna al guardar. Se crea el proveedor en el maestro; la compra permanece sin registrar.</p>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="Cerrar">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi-check2" Loading="_busy" Disabled="@(_busy||_catalogo is null||_duplicados.Count>0)" OnClick="Guardar">Guardar y seleccionar proveedor</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public bool Open{get;set;}
+    [Parameter] public Guid Sesion{get;set;}
+    [Parameter] public int? BaseEsperada{get;set;}
+    [Parameter] public string MotivoInicial{get;set;}="";
+    [Parameter] public IReadOnlyList<CompraCargaOpcion> Motivos{get;set;}=[];
+    [Parameter] public IReadOnlyList<CompraCargaOpcion> Cuentas{get;set;}=[];
+    [Parameter] public EventCallback<string> OnSeleccionado{get;set;}
+    [Parameter] public EventCallback OnClose{get;set;}
+    private bool _abierto,_busy,_disposed;private Guid _sesion;
+    private CancellationTokenSource? _cts;private CuentaComercialSaveRequest _nuevo=new();
+    private CuentaComercialLookupDataDto? _catalogo;private AppUiMessage? _feedback;
+    private IReadOnlyList<CuentaComercialGridItemDto> _duplicados=[];
+    private static IReadOnlyList<AlfaSelectOption> Opciones(IEnumerable<CuentaComercialLookupOptionDto> lista)=>new[]{new AlfaSelectOption("","Seleccionar")}.Concat(lista.Select(x=>new AlfaSelectOption(x.Codigo,x.Descripcion))).ToList();
+    private static IReadOnlyList<AlfaSelectOption> OpcionesCompra(IEnumerable<CompraCargaOpcion> lista)=>new[]{new AlfaSelectOption("","Seleccionar")}.Concat(lista.Select(x=>new AlfaSelectOption(x.Codigo,$"{x.Codigo} · {x.Descripcion}"))).ToList();
+    protected override async Task OnParametersSetAsync()
+    {
+        if(!Open){_cts?.Cancel();_abierto=false;return;}
+        if(_abierto&&_sesion==Sesion)return;
+        _abierto=true;_sesion=Sesion;_cts?.Cancel();_cts?.Dispose();_cts=new();_feedback=null;_catalogo=null;_duplicados=[];
+        _nuevo=new(){MotivoCompraCodigo=MotivoInicial,FacturaCompraSinOc=true};
+        await Operar(async ct=>{
+            _catalogo=await Servicio.CatalogoAsync(_sesion,BaseEsperada,ct);
+            var cuit=_catalogo.TiposDocumento.Where(x=>x.Descripcion.Contains("CUIT",StringComparison.OrdinalIgnoreCase)).ToList();
+            if(cuit.Count!=1)throw new InvalidOperationException("Configurá un tipo de documento CUIT inequívoco en esta base.");
+            _nuevo.DocumentoTipoCodigo=cuit[0].Codigo;
+            _nuevo.PaisCodigo=_catalogo.Paises.FirstOrDefault(x=>x.Descripcion.Contains("ARGENTIN",StringComparison.OrdinalIgnoreCase))?.Codigo??"";
+            _nuevo.MonedaCodigo=_catalogo.Monedas.FirstOrDefault(x=>x.Codigo.Trim()=="1")?.Codigo??"";
+        });
+    }
+    private void CambiarCuit(string? valor){_nuevo.NumeroDocumento=valor??"";_duplicados=[];_feedback=null;}
+    private Task Consultar()=>Operar(async ct=>{
+        _duplicados=await Servicio.DuplicadosAsync(_sesion,BaseEsperada,_nuevo.NumeroDocumento,ct);if(_duplicados.Count>0)return;
+        var p=await Servicio.ConsultarArcaAsync(_sesion,BaseEsperada,_nuevo.NumeroDocumento,ct);
+        _nuevo.NumeroDocumento=p.Cuit;_nuevo.RazonSocial=p.RazonSocial;_nuevo.Calle=p.Calle;_nuevo.Localidad=p.Localidad;_nuevo.CodigoPostal=p.CodigoPostal;
+        _nuevo.IvaCodigo=_catalogo!.CondicionesIva.FirstOrDefault(x=>x.Codigo.Trim()==p.CondicionIvaCodigo.Trim())?.Codigo??"";
+        if(!string.IsNullOrWhiteSpace(p.Provincia))_nuevo.ProvinciaCodigo=_catalogo.Provincias.FirstOrDefault(x=>x.Descripcion.Equals(p.Provincia,StringComparison.OrdinalIgnoreCase))?.Codigo??"";
+        _feedback=AppUiMessage.Info("Datos consultados","Revisá los datos y completá la condición de compra antes de guardar.");
+    });
+    private Task Guardar()=>Operar(async ct=>{
+        _duplicados=await Servicio.DuplicadosAsync(_sesion,BaseEsperada,_nuevo.NumeroDocumento,ct);if(_duplicados.Count>0)return;
+        var codigo=await Servicio.CrearAsync(_sesion,BaseEsperada,_nuevo,ct);
+        await OnSeleccionado.InvokeAsync(codigo);await OnClose.InvokeAsync();
+    });
+    private Task ElegirExistente(string codigo)=>Operar(async ct=>{ct.ThrowIfCancellationRequested();await OnSeleccionado.InvokeAsync(codigo);await OnClose.InvokeAsync();});
+    private async Task Operar(Func<CancellationToken,Task> accion)
+    {
+        if(_busy||_disposed||_cts is null)return;_busy=true;_feedback=null;
+        try{await InvokeAsync(StateHasChanged);await accion(_cts.Token);}
+        catch(OperationCanceledException){}
+        catch(AppValidationException ex){_feedback=AppUiMessage.Warning("Revisá el proveedor",string.Join(" ",ex.Validation.Issues.Select(i=>i.Message)));}
+        catch(Exception ex)
+        {
+            if(ex is not AppUserFacingException){var mensaje=ex is InvalidOperationException?ex.Message:"No se pudo completar el alta de proveedor.";var codigo=await Eventos.LogErrorAsync("CargaCompras","AltaProveedorPantalla",ex,mensaje);ex=new AppUserFacingException(mensaje,codigo,ex);}
+            _feedback=UiOps.BuildMessage(ex,"Alta rápida de proveedor");
+        }
+        finally{_busy=false;if(!_disposed)await InvokeAsync(StateHasChanged);}
+    }
+    private async Task Cerrar(){if(!_busy)await OnClose.InvokeAsync();}
+    public void Dispose(){_disposed=true;_cts?.Cancel();_cts?.Dispose();}
+}

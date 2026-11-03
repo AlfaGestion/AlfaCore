@@ -290,3 +290,6 @@ Muestra:
 El script base propuesto para crear estas tablas y configuraciones iniciales queda en:
 
 - `docs/interfaces_modelo_inicial.sql`
+
+
+Desde 2026-11-03, la ficha con lectura de compra ofrece **Preparar compra** (si tiene permiso y no está en modo directo): abre la vista previa de servicios y gastos sin registrar ni aprobar el documento. Ver [preparación de compras](compras-carga.md).

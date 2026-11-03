@@ -432,6 +432,8 @@ public class Program
         builder.Services.AddScoped<LectoresServidorService>();
         builder.Services.AddScoped<TarjetasPdfLector>();
         builder.Services.AddScoped<ConciliacionTarjetasService>();
+        builder.Services.AddScoped<CompraCargaService>();
+        builder.Services.AddScoped<ProveedorAltaRapidaService>();
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();

@@ -1,0 +1,17 @@
+.compra-carga{display:flex;flex-direction:column;gap:12px;min-width:0}
+.compra-carga-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.compra-carga-layout:has(.compra-carga-original){grid-template-columns:minmax(0,3fr) minmax(280px,2fr)}
+.compra-carga-editor{display:flex;flex-direction:column;gap:16px;min-width:0}
+.compra-carga-campos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.compra-carga-scroll{overflow:auto;max-height:52vh;min-width:0}
+.compra-carga table{width:100%;border-collapse:collapse}
+.compra-carga th,.compra-carga td{padding:8px;border-bottom:1px solid var(--alfa-border-default);text-align:left;vertical-align:top}
+.compra-carga th{position:sticky;top:0;background:var(--alfa-bg-surface);z-index:1}
+.compra-carga td ::deep .alfa-field{min-width:120px}
+.compra-carga td:nth-child(1) ::deep .alfa-field,.compra-carga td:nth-child(2) ::deep .alfa-field{min-width:200px}
+.compra-carga .numero{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.compra-carga-original{position:sticky;top:0;align-self:start;min-width:0;overflow-wrap:anywhere}
+.compra-carga-original iframe{width:100%;height:65vh;border:1px solid var(--alfa-border-default)}
+.compra-carga-ayuda,.compra-carga-aviso{font-size:13px;color:var(--alfa-text-secondary);margin:8px 0}
+@media(max-width:1200px){.compra-carga-layout:has(.compra-carga-original){grid-template-columns:minmax(0,1fr)}.compra-carga-original{position:static}.compra-carga-campos{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.compra-carga-campos{grid-template-columns:minmax(0,1fr)}}

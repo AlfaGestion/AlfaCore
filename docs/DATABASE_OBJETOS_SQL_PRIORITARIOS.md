@@ -10,6 +10,8 @@ MV_ASIENTOS continúa como fuente contable oficial de tarjetas presentadas. Los 
 
 ## Objetivo
 
+Compras web: `ALFACORE_COMPRA_OPERACION` (actualización `2026-11-03-003`) conserva idempotencia, solicitud, resultado y origen documental de altas nuevas. Las fuentes comerciales/fiscales siguen siendo `C_MV_CPTE`, `C_MV_CPTE_OBSERV` y `MV_ASIENTOS`, insertadas en la misma transacción. No sustituye configuración, stock ni aplicaciones. Ver [carga de compras](modulos/compras-carga.md).
+
 Este archivo define objetos SQL importantes de Alfa Gestión y aclara su **tipo real o uso recomendado**.
 
 Regla crítica:
