@@ -15,7 +15,6 @@ public static class ModuleTopNavPresets
         [
             ("inicio", "Inicio", "/compras"),
             ("reportes", "Reportes", "/compras/reportes"),
-            ("libro-iva", "Libro de IVA", "/compras/libro-iva"),
             ("proveedores", "Proveedores", "/compras/proveedores"),
             ("comprobantes", "Comprobantes", "/compras/comprobantes"),
             ("carga-compras", "Preparar compra", "/compras/carga"),
@@ -32,7 +31,6 @@ public static class ModuleTopNavPresets
             // /ventas conserva el acceso histórico al POS; el inicio gerencial tiene ruta propia.
             ("inicio", "Inicio", "/ventas-dashboard"),
             ("reportes", "Reporte de Ventas", "/ventas/reportes"),
-            ("libro-iva", "Libro de IVA", "/ventas/libro-iva"),
             ("clientes", "Clientes", "/ventas/clientes"),
             ("comprobantes", "Comprobantes", "/ventas/comprobantes"),
             ("rubros", "Rubros", "/ventas/rubros"),

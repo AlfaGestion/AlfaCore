@@ -253,7 +253,8 @@
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = Compras ? "compras" : "ventas", Title = Titulo,
         Breadcrumb = [Libro, "Reportes", Titulo],
-        TopNavigationItems = Compras ? ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "libro-iva") : ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "libro-iva"),
+        // Opción propia del menú: no comparte la barra del dashboard ni del Reporte de Ventas/Compras.
+        TopNavigationItems = [new() { Key = "libro-iva", Label = Titulo, Active = true }],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
         Actions =
         [

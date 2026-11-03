@@ -4051,6 +4051,9 @@ else
         if (path.StartsWith("ventas/punto-venta", StringComparison.OrdinalIgnoreCase)
             || string.Equals(path, "ventas/delivery", StringComparison.OrdinalIgnoreCase))
             return "Punto de Venta";
+        // Libros de IVA: opción propia, no parte del dashboard ni del reporte.
+        if (path.EndsWith("ventas/libro-iva", StringComparison.OrdinalIgnoreCase)) return "Libro de IVA Ventas";
+        if (path.EndsWith("compras/libro-iva", StringComparison.OrdinalIgnoreCase)) return "Libro de IVA Compras";
 
         return GetModuleTitleForModule();
     }
