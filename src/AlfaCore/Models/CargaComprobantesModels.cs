@@ -67,6 +67,9 @@ public sealed class ComprobantesVisorFiltro
     public bool IncluirAnulados { get; set; } = true;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 25;
+    /// <summary>Columna de orden: fecha, tipo, numero, cliente, importe, unidad, usuario. Vacío = fecha.</summary>
+    public string Orden { get; set; } = string.Empty;
+    public bool Descendente { get; set; } = true;
 }
 
 /// <summary>Un comprobante de ventas en el visor (V_MV_CPTE).</summary>

@@ -303,6 +303,13 @@ public sealed partial class CargaComprobantesService(
                 filtro.IncluirAnulados, Texto = texto, Like = "%" + Literal(texto) + "%", LikeNumero = "%" + Literal(textoNumero) + "%",
                 Desde_ = (page - 1) * pageSize + 1, Hasta_ = page * pageSize
             };
+            // Orden por columna (lista cerrada: nunca se arma SQL con texto del usuario).
+            var columnaOrden = (filtro.Orden ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "tipo" => "LTRIM(RTRIM(c.TC))", "numero" => "c.IDCOMPROBANTE", "cliente" => "c.NOMBRE", "importe" => "c.IMPORTE",
+                "unidad" => "c.UNEGOCIO", "usuario" => "c.Usuario", _ => "c.FECHA"
+            };
+            var direccion = filtro.Descendente ? "DESC" : "ASC";
             // SQL Server 2008: paginado con ROW_NUMBER y total con COUNT(*) OVER ().
             // Último envío por mail (V_MA_EMAILMOV, lo comparte con el VB6) si la tabla existe en la base.
             var hayMails = await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.V_MA_EMAILMOV',N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 1;
@@ -317,7 +324,7 @@ public sealed partial class CargaComprobantesService(
                         c.FECHA Fecha, LTRIM(RTRIM(ISNULL(c.CUENTA,''))) Cuenta, ISNULL(c.NOMBRE,'') Cliente, ISNULL(c.IMPORTE,0) Importe,
                         CONVERT(bit,ISNULL(c.ANULADA,0)) Anulada, LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) UnidadNegocio,
                         LTRIM(RTRIM(ISNULL(c.Usuario,''))) Usuario,
-                        ROW_NUMBER() OVER (ORDER BY c.FECHA DESC, c.ID DESC) Fila,
+                        ROW_NUMBER() OVER (ORDER BY {columnaOrden} {direccion}{(columnaOrden == "c.FECHA" ? "" : $", c.FECHA {direccion}")}, c.ID {direccion}) Fila,
                         COUNT(*) OVER () Total, SUM(CASE WHEN ISNULL(c.ANULADA,0)=0 THEN ISNULL(c.IMPORTE,0) ELSE 0 END) OVER () ImporteTotal
                     FROM dbo.V_MV_CPTE c
                     WHERE c.FECHA >= @Desde AND c.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(c.IDCOMPLEMENTO,0) = 0

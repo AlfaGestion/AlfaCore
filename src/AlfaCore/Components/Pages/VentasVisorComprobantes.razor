@@ -37,11 +37,21 @@
             <section class="vc-tabla" aria-label="Comprobantes">
                 <div class="vc-tabla__scroll">
                     <table class="vc-table">
-                        <thead><tr><th>Fecha</th><th>Tipo</th><th>Número</th><th>Cliente</th><th class="vc-num">Importe</th><th>CAE</th><th>U. negocio</th><th>Usuario</th><th>Mail</th><th>Acciones</th></tr></thead>
+                        <thead><tr>
+                            <th class="vc-sel"><input type="checkbox" aria-label="Seleccionar los de esta página" title="Seleccionar los de esta página"
+                                checked="@(r.Items.Any(x => !x.Anulada) && r.Items.Where(x => !x.Anulada).All(x => _seleccion.ContainsKey(x.Id)))"
+                                @onchange="e => SeleccionarPagina(e.Value is true)" /></th>
+                            @Th("fecha", "Fecha") @Th("tipo", "Tipo") @Th("numero", "Número") @Th("cliente", "Cliente") @Th("importe", "Importe", true)
+                            <th>CAE</th> @Th("unidad", "U. negocio") @Th("usuario", "Usuario") <th>Mail</th><th>Acciones</th>
+                        </tr></thead>
                         <tbody>
                         @foreach (var c in r.Items)
                         {
-                            <tr @key="c.Id" class="@(c.Anulada ? "is-anulada" : null)" @ondblclick="() => Ver(c)">
+                            <tr @key="c.Id" class="@(c.Anulada ? "is-anulada" : _seleccion.ContainsKey(c.Id) ? "is-seleccionada" : null)" @ondblclick="() => Ver(c)">
+                                <td class="vc-sel" @ondblclick:stopPropagation>
+                                    <input type="checkbox" aria-label="@($"Seleccionar {c.Tc} {c.Numero}")" disabled="@c.Anulada"
+                                           checked="@_seleccion.ContainsKey(c.Id)" @onchange="e => Seleccionar(c, e.Value is true)" />
+                                </td>
                                 <td>@c.Fecha?.ToString("dd/MM/yyyy")</td>
                                 <td><strong>@c.Tc</strong><small>@c.TcDescripcion</small></td>
                                 <td>@c.Numero @if (c.Anulada) { <span class="vc-anulada">ANULADA</span> }</td>
@@ -55,13 +65,21 @@
                                     {
                                         <small class="vc-mail__enviando"><span class="vc-spinner" aria-hidden="true"></span> Enviando…</small>
                                     }
+                                    else if (_mailsEnCola.Contains(ClaveMail(c.Tc, c.IdComprobante)))
+                                    {
+                                        <small class="vc-mail__cola"><i class="bi bi-hourglass-split" aria-hidden="true"></i> En cola</small>
+                                    }
+                                    else if (_mailsError.TryGetValue(ClaveMail(c.Tc, c.IdComprobante), out var errMail))
+                                    {
+                                        <small class="vc-mail__error" title="@errMail"><i class="bi bi-envelope-exclamation" aria-hidden="true"></i> @errMail</small>
+                                    }
                                     else if (c.UltimoMail is { Length: > 0 } um) { <small title="Último envío">@um</small> }
                                 </td>
                                 <td class="vc-acciones">
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" OnClick="_ => Ver(c)">Ver</AlfaButton>
                                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_pdfId is not null)"
                                                 Loading="@(_pdfId == c.Id)" OnClick="_ => ReimprimirAsync(c)">Reimprimir</AlfaButton>
-                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(c.Anulada || _mailCargandoId is not null || _mailsEnCurso.Contains(ClaveMail(c.Tc, c.IdComprobante)))"
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(c.Anulada || _mailCargandoId is not null || _mailsEnCurso.Contains(ClaveMail(c.Tc, c.IdComprobante)) || _mailsEnCola.Contains(ClaveMail(c.Tc, c.IdComprobante)))"
                                                 Loading="@(_mailCargandoId == c.Id)" OnClick="_ => AbrirMailAsync(c)">Mail</AlfaButton>
                                 </td>
                             </tr>
@@ -109,6 +127,14 @@
     </Footer>
 </AlfaDialog>
 
+@if (_confirmarLote)
+{
+    <AlfaConfirmDialog Open="true" Title="Enviar por mail"
+        Message="@($"Se envían {_seleccion.Count} comprobante(s), cada uno a los mails de su cliente, con el asunto y el mensaje de Configuración General → Ventas → Mail de facturación.")"
+        SecondaryMessage="Salen de a uno en segundo plano: podés seguir trabajando. Los clientes sin mail válido quedan marcados en la columna Mail."
+        ConfirmLabel="Enviar" OnConfirm="EnviarLote" OnCancel="() => _confirmarLote = false" />
+}
+
 <ComprobanteViewerModal Visible="@(_viendo is not null)" Tc="@(_viendo?.Tc ?? string.Empty)" IdComprobante="@(_viendo?.IdComprobante ?? string.Empty)"
                         IdComplemento="@(_viendo?.IdComplemento ?? 0)" Cliente="@_viendo?.Cliente" Cerrado="() => _viendo = null" />
 
@@ -146,6 +172,7 @@
         if (await FiltrosRecordados.LeerAsync<FiltrosGuardados>(Js, Sessions, Pantalla) is { } g)
         {
             _filtro.Tc = g.Tc ?? string.Empty; _filtro.IncluirAnulados = g.IncluirAnulados;
+            _filtro.Orden = g.Orden ?? string.Empty; _filtro.Descendente = g.Descendente;
             if (g.Guardado.Date == DateTime.Today)
             {
                 // Mismo día: se retoma exactamente donde quedó.
@@ -171,6 +198,8 @@
         public DateTime? Desde { get; set; }
         public DateTime? Hasta { get; set; }
         public bool IncluirAnulados { get; set; }
+        public string? Orden { get; set; }
+        public bool Descendente { get; set; } = true;
         public DateTime Guardado { get; set; }
     }
 
@@ -180,7 +209,8 @@
         var consulta = reset ? new ComprobantesVisorFiltro
         {
             Tc = _filtro.Tc, Busqueda = _filtro.Busqueda, FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta,
-            UnidadNegocio = _filtro.UnidadNegocio, IncluirAnulados = _filtro.IncluirAnulados, PageSize = _filtro.PageSize, PageNumber = 1
+            UnidadNegocio = _filtro.UnidadNegocio, IncluirAnulados = _filtro.IncluirAnulados, PageSize = _filtro.PageSize, PageNumber = 1,
+            Orden = _filtro.Orden, Descendente = _filtro.Descendente
         } : _filtroAplicado;
         _busy = true; _feedback = null; UpdateHeader();
         await InvokeAsync(StateHasChanged);
@@ -191,10 +221,10 @@
             if (result.Success)
             {
                 _resultado = result.Value; _filtroAplicado = consulta; _filtrosAbiertos = false;
-                if (reset) await FiltrosRecordados.GuardarAsync(Js, Sessions, Pantalla, new FiltrosGuardados
+                await FiltrosRecordados.GuardarAsync(Js, Sessions, Pantalla, new FiltrosGuardados
                 {
                     Tc = consulta.Tc, Busqueda = consulta.Busqueda, Desde = consulta.FechaDesde, Hasta = consulta.FechaHasta,
-                    IncluirAnulados = consulta.IncluirAnulados, Guardado = DateTime.Now
+                    IncluirAnulados = consulta.IncluirAnulados, Orden = consulta.Orden, Descendente = consulta.Descendente, Guardado = DateTime.Now
                 });
             }
             else _feedback = result.Feedback;
@@ -335,6 +365,85 @@
         return BuscarAsync(true);
     }
 
+    // ── Orden por columna (en la base: ordena todos los resultados, no solo la página) ──
+    private RenderFragment Th(string columna, string titulo, bool derecha = false) => @<th class="@(derecha ? "vc-num" : null)"
+        aria-sort="@(OrdenActual == columna ? (_filtroAplicado.Descendente ? "descending" : "ascending") : "none")">
+        <button type="button" class="vc-sort @(OrdenActual == columna ? "is-sorted" : null)" title="@($"Ordenar por {titulo}")" disabled="@_busy" @onclick="() => OrdenarAsync(columna)">
+            @titulo
+            @if (OrdenActual == columna) { <i class="bi @(_filtroAplicado.Descendente ? "bi-caret-down-fill" : "bi-caret-up-fill")" aria-hidden="true"></i> }
+        </button>
+    </th>;
+    private string OrdenActual => _filtroAplicado.Orden.Length == 0 ? "fecha" : _filtroAplicado.Orden;
+    private Task OrdenarAsync(string columna)
+    {
+        // Mismo criterio que en otras listas: primer clic ascendente (fecha e importe arrancan de mayor a menor).
+        var desc = OrdenActual == columna ? !_filtroAplicado.Descendente : columna is "fecha" or "importe";
+        _filtro.Orden = _filtroAplicado.Orden = columna; _filtro.Descendente = _filtroAplicado.Descendente = desc;
+        _filtroAplicado.PageNumber = 1;
+        return BuscarAsync(false);
+    }
+
+    // ── Selección y envío por mail de varios comprobantes ──
+    private readonly Dictionary<int, ComprobantesVisorFila> _seleccion = [];
+    private bool _confirmarLote;
+    private readonly HashSet<string> _mailsEnCola = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _mailsError = new(StringComparer.OrdinalIgnoreCase);
+    private bool _loteEnCurso;
+
+    private void Seleccionar(ComprobantesVisorFila c, bool valor)
+    {
+        if (valor && !c.Anulada) _seleccion[c.Id] = c; else _seleccion.Remove(c.Id);
+        UpdateHeader();
+    }
+
+    private void SeleccionarPagina(bool valor)
+    {
+        foreach (var c in (_resultado?.Items ?? []).Where(x => !x.Anulada))
+            if (valor) _seleccion[c.Id] = c; else _seleccion.Remove(c.Id);
+        UpdateHeader();
+    }
+
+    private void EnviarLote()
+    {
+        _confirmarLote = false;
+        var lista = _seleccion.Values.OrderBy(x => x.Fecha).ThenBy(x => x.Id).ToList();
+        _seleccion.Clear();
+        foreach (var c in lista) { var k = ClaveMail(c.Tc, c.IdComprobante); _mailsEnCola.Add(k); _mailsError.Remove(k); }
+        UpdateHeader();
+        _ = EnviarLoteAsync(lista);
+    }
+
+    private async Task EnviarLoteAsync(IReadOnlyList<ComprobantesVisorFila> lista)
+    {
+        _loteEnCurso = true;
+        int ok = 0, fallidos = 0;
+        foreach (var c in lista)
+        {
+            if (_disposed) return;
+            var k = ClaveMail(c.Tc, c.IdComprobante);
+            _mailsEnCola.Remove(k); _mailsEnCurso.Add(k);
+            await InvokeAsync(StateHasChanged);
+            try
+            {
+                // Sin «Para»/asunto/mensaje: los mails del cliente y los textos de la configuración.
+                var r = await Service.EnviarMailComprobanteAsync(c.Tc, c.IdComprobante, ct: _lifetime.Token);
+                if (r.Enviado) ok++; else { fallidos++; _mailsError[k] = r.Mensaje; }
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { fallidos++; _mailsError[k] = ex is AppUserFacingException u ? u.UserMessage : ex.Message; }
+            finally { _mailsEnCurso.Remove(k); }
+        }
+        _loteEnCurso = false;
+        if (_disposed) return;
+        await InvokeAsync(async () =>
+        {
+            _feedback = fallidos == 0
+                ? AppUiMessage.Success("Mails enviados", $"Se enviaron {ok} comprobante(s) por mail.")
+                : AppUiMessage.Warning("Mails con problemas", $"{ok} enviado(s) y {fallidos} sin enviar: el motivo figura en la columna Mail. Podés corregir el mail del cliente y reenviar con el botón Mail.");
+            await BuscarAsync(false);
+        });
+    }
+
     private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
         @{ var chips = FiltrosActivos(); var hoy = DateTime.Today; var mes = new DateTime(hoy.Year, hoy.Month, 1); }
         <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
@@ -406,6 +515,16 @@
         SearchContent = RenderBusqueda(),
         Actions =
         [
+            .. (_seleccion.Count > 0
+                ? new PageHeaderAction[]
+                {
+                    new() { Key = "mail-lote", Label = $"Enviar por mail ({_seleccion.Count})", Icon = "bi-envelope", Style = PageHeaderActionStyle.Primary,
+                        Priority = PageHeaderActionPriority.Essential, Disabled = _loteEnCurso, Title = _loteEnCurso ? "Esperá a que termine el envío en curso" : string.Empty,
+                        OnClick = () => { _confirmarLote = true; return InvokeAsync(StateHasChanged); } },
+                    new() { Key = "limpiar-seleccion", Label = "Quitar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost,
+                        OnClick = () => { _seleccion.Clear(); UpdateHeader(); return InvokeAsync(StateHasChanged); } }
+                }
+                : []),
             new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = () => BuscarAsync(false) }
         ],
         Pagination = _resultado is { Total: > 0 } r ? new()

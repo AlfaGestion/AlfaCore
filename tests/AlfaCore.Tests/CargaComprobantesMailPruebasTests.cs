@@ -130,6 +130,47 @@ public sealed class CargaComprobantesMailPruebasTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>Ver comprobantes: cada orden por columna funciona en las dos direcciones (solo lectura).</summary>
+    [FacturacionAutomaticaPruebasFact]
+    public async Task VerComprobantesOrdenaPorCadaColumna()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        await using var cn = new SqlConnection(Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")); await cn.OpenAsync();
+        var repo = new CargaComprobantesRepository();
+        var planner = new CargaComprobantesPlanificador(repo);
+        var sender = new CargaComprobantesElectronicaEmisor(runtime.Config, runtime.Wsaa, runtime.Wsfe, runtime.Events);
+        var emision = new CargaComprobantesEmisionService(planner, new(planner, new()), sender, runtime.Config, runtime.Events);
+        var sesion = new SessionDto();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)runtime.Sessions).Handler = (method, _) => method.Name switch
+        { "GetActiveSession" => sesion, "GetConnectionString" => Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL"), _ => null };
+        var user = await cn.QuerySingleAsync<AppUserSessionInfo>("SELECT LTRIM(RTRIM(NOMBRE)) UserName,LTRIM(RTRIM(SISTEMA)) SystemCode FROM TA_USUARIOS WHERE NOMBRE='Administrador'");
+        var users = DispatchProxy.Create<IAppUserSessionService, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler = (method, _) => method.Name switch
+        { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => user.UserName, "get_CurrentUser" => user, _ => null };
+        await using var provider = new ServiceCollection().AddLogging().AddSingleton(runtime.Events).AddSingleton<DocumentPdfService>().BuildServiceProvider();
+        var pdfService = provider.GetRequiredService<DocumentPdfService>();
+        var loggers = provider.GetRequiredService<ILoggerFactory>();
+        var docs = new FacturaDocumentService(runtime.Configuration,
+            new DocumentTemplateService(runtime.Configuration, runtime.Events, users, loggers.CreateLogger<DocumentTemplateService>(), runtime.Sessions),
+            new DocumentRenderer(), pdfService, new ArcaQrService(), runtime.Events, loggers.CreateLogger<FacturaDocumentService>(), runtime.Sessions);
+        var service = new CargaComprobantesService(runtime.Sessions, users, new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events),
+            runtime.Events, repo, new(runtime.Config, runtime.Wsaa, runtime.Wsfe), sender, emision, docs, pdfService, new CorreoSalienteService(ConfiguracionReal()));
+
+        foreach (var orden in new[] { "", "fecha", "tipo", "numero", "cliente", "importe", "unidad", "usuario" })
+            foreach (var desc in new[] { true, false })
+            {
+                var r = await service.BuscarComprobantesAsync(new ComprobantesVisorFiltro
+                { FechaDesde = DateTime.Today.AddDays(-90), FechaHasta = DateTime.Today, Orden = orden, Descendente = desc, PageSize = 50 });
+                output.WriteLine($"{(orden.Length == 0 ? "(fecha)" : orden)} {(desc ? "desc" : "asc")}: {r.Total} · primeros {string.Join(" | ", r.Items.Take(3).Select(x => $"{x.Fecha:dd/MM} {x.Tc} {x.Numero} {x.Cliente} {x.Importe:N0}"))}");
+                Assert.True(r.Total > 0);
+                if (orden == "importe")
+                {
+                    var importes = r.Items.Select(x => x.Importe).ToList();
+                    Assert.Equal(desc ? importes.OrderByDescending(x => x) : importes.OrderBy(x => x), importes);
+                }
+            }
+    }
+
     // appsettings.json + appsettings.Development.json del proyecto (la clave de la cuenta no está en git).
     private static Microsoft.Extensions.Configuration.IConfiguration ConfiguracionReal()
     {

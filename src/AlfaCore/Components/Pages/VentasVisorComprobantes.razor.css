@@ -84,3 +84,14 @@
 .vc-rangos button { padding: 4px 10px; font-size: 12px; border-radius: 999px; cursor: pointer;
     border: 1px solid var(--alfa-border-default); background: transparent; color: var(--alfa-text-primary); }
 .vc-rangos button:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
+
+/* Orden por columna y selección para el envío por mail. */
+.vc-sort { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-transform: inherit; }
+.vc-sort:hover:not(:disabled), .vc-sort.is-sorted { color: var(--alfa-text-primary); }
+.vc-sort i { font-size: 10px; color: var(--alfa-accent); }
+.vc-table th.vc-num .vc-sort { justify-content: flex-end; width: 100%; }
+.vc-table .vc-sel { width: 36px; text-align: center; }
+.vc-table .vc-sel input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--alfa-accent); }
+.vc-table tr.is-seleccionada td { background: color-mix(in srgb, var(--alfa-accent) 8%, transparent); }
+.vc-mail__cola { color: var(--alfa-text-secondary) !important; }
+.vc-mail__error { color: var(--alfa-danger, #e5484d) !important; max-width: 240px; white-space: normal; }
