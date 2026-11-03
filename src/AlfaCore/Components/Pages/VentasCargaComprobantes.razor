@@ -300,6 +300,10 @@
     // La factura sale con la fecha del día: solo se emite si la fecha a facturar es hoy.
     private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaAplicada == DateTime.Today && _contexto?.PuedeEmitir == true;
     private bool EmisionReal => _contexto?.EmisionReal == true;
+    // Por qué Emitir está apagado (se muestra sobre la lista y como ayuda del botón).
+    private string? MotivoNoEmiteFa => _contexto?.PuedeEmitir != true ? _contexto?.ModoEmisionMotivo
+        : FechaFaAplicada != DateTime.Today ? $"La fecha a facturar es {FechaFaAplicada:dd/MM/yyyy}: las facturas salen con la fecha del día, así que solo se emite con la fecha de hoy ({DateTime.Today:dd/MM/yyyy}). Cambiala en el filtro «Fecha a facturar»; con otra fecha podés usar Vista previa."
+        : null;
     private string TextoAmbiente => _contexto?.ModoEmision switch { "PRODUCCION" => "Producción", "DESHABILITADA" => "Emisión deshabilitada", _ => "Homologación" };
 
     private void SeleccionarFa(string cuenta, bool valor)
@@ -723,6 +727,10 @@
             }
             return;
         }
+        @if (_contexto?.PuedeEmitir == true && MotivoNoEmiteFa is { } motivoFa)
+        {
+            <p class="cc-fa-motivo"><i class="bi bi-info-circle" aria-hidden="true"></i> @motivoFa</p>
+        }
         <section class="cc-data-view" aria-label="Clientes en condiciones de facturar" aria-busy="@_busy">
             @if (_procesoFa is { } proceso)
             {
@@ -1036,7 +1044,7 @@
             ? [.. (EsFacturacionAutomatica && _seleccionFa.Count > 0
                     ? new PageHeaderAction[]
                     {
-                        new() { Key = "fa-emitir", Label = $"Emitir ({_seleccionFa.Count})", Icon = "bi-send-check", Style = PageHeaderActionStyle.Primary,
+                        new() { Key = "fa-emitir", Label = $"Emitir ({_seleccionFa.Count})", Icon = "bi-send-check", Style = PageHeaderActionStyle.Primary, Title = MotivoNoEmiteFa ?? string.Empty,
                             Disabled = _busy || !PuedeEmitirFa, OnClick = () => { _confirmarEmisionFa = true; return InvokeAsync(StateHasChanged); } },
                         new() { Key = "fa-previa", Label = $"Vista previa ({_seleccionFa.Count})", Icon = "bi-eye", Style = PageHeaderActionStyle.Secondary,
                             Disabled = _busy, OnClick = PrevisualizarFacturacionAutomaticaAsync },
