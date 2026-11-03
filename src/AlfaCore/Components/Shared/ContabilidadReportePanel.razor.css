@@ -1,0 +1,33 @@
+.ctr-page { display: flex; flex-direction: column; gap: 12px; }
+.ctr-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 12px;
+    border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); }
+.ctr-filtros__ejercicio { flex: 1 1 280px; min-width: 240px; }
+.ctr-filtros__unidad { flex: 0 1 220px; min-width: 180px; }
+.ctr-filtros__cuenta { flex: 2 1 320px; min-width: 260px; }
+.ctr-filtros__cuenta--hasta { flex: 1 1 260px; }
+.ctr-filtros__checks { display: flex; flex-wrap: wrap; gap: 6px 18px; flex: 1 1 100%; }
+
+.ctr-desbalance { border: 1px solid var(--alfa-border-default); border-left: 3px solid var(--alfa-warning, #d9a400); border-radius: 8px;
+    background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
+.ctr-desbalance summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 8px; align-items: center; }
+.ctr-desbalance summary i { color: var(--alfa-warning, #d9a400); }
+
+.ctr-tabla__marco { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); overflow: hidden; background: var(--alfa-bg-surface); }
+.ctr-tabla__scroll { overflow: auto; max-height: 64vh; }
+.ctr-tabla__scroll--chica { max-height: 260px; border-top: 1px solid var(--alfa-border-default); }
+.ctr-tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; color: var(--alfa-text-primary); }
+.ctr-tabla th, .ctr-tabla td { padding: 6px 10px; border-bottom: 1px solid var(--alfa-border-default); white-space: nowrap; background: var(--alfa-bg-surface); }
+.ctr-tabla thead th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface)));
+    color: var(--alfa-text-secondary); font-size: 11px; font-weight: 600; text-align: left; }
+.ctr-tabla tfoot td { position: sticky; bottom: 0; background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface)));
+    font-weight: 700; border-top: 2px solid var(--alfa-border-default); }
+.ctr-tabla tr.is-titulo td { font-weight: 700; background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface)); }
+.ctr-tabla tr.is-cuenta { cursor: pointer; }
+.ctr-tabla tr.is-cuenta:hover td, .ctr-tabla tbody tr:hover td { background: var(--alfa-bg-row-hover, var(--alfa-bg-surface-raised, var(--alfa-bg-surface))); }
+.ctr-tabla tr.is-cuenta-cab td { font-weight: 700; background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface)); padding-top: 10px; }
+.ctr-tabla tr.is-cuenta-cab small { font-weight: 400; color: var(--alfa-text-secondary); margin-left: 6px; }
+.ctr-tabla tr.is-total td { font-weight: 600; border-bottom: 2px solid var(--alfa-border-default); }
+.ctr-tabla td.ctr-detalle { white-space: normal; min-width: 240px; max-width: 520px; }
+.ctr-tabla .is-acreedor { color: var(--alfa-danger, #e5484d); }
+.n { text-align: right !important; font-variant-numeric: tabular-nums; }
+.ctr-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }

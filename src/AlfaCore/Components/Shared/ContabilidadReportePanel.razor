@@ -1,0 +1,287 @@
+@using AlfaCore.Services
+@inject IContabilidadReportesService Service
+@inject ISessionService Sessions
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>@Titulo | Alfa Gestión</PageTitle>
+
+@* Reportes contables (Gestión Contable → Reportes del legacy): Mayor de cuentas y Balance de sumas y saldos. *@
+<div class="gd-page gd ctr-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="ctr-filtros" aria-label="Filtros del reporte" @onkeydown="TeclaAsync">
+        <div class="ctr-filtros__ejercicio">
+            <AlfaSelect Label="Ejercicio" Value="@_filtro.Periodo.ToString()" ValueChanged="v => CambiarEjercicio(v)" Options="@EjercicioOptions" Disabled="@_busy" />
+        </div>
+        <AlfaInput Type="date" Label="Desde" Value="@Fecha(_filtro.Desde)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Desde = d; }" Disabled="@_busy" />
+        <AlfaInput Type="date" Label="Hasta" Value="@Fecha(_filtro.Hasta)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Hasta = d; }" Disabled="@_busy" />
+        <div class="ctr-filtros__unidad">
+            <AlfaSelect Label="Unidad de negocio" Value="@(_filtro.Unidades.FirstOrDefault() ?? "")" ValueChanged="v => _filtro.Unidades = string.IsNullOrEmpty(v) ? [] : [v]"
+                        Options="@UnidadOptions" Disabled="@_busy" />
+        </div>
+        @if (EsMayor)
+        {
+            <div class="ctr-filtros__cuenta">
+                <AlfaLookup TItem="ContabilidadOpcion" Label="Cuenta (o título: todas sus cuentas)" Placeholder="Código o nombre de la cuenta"
+                            MinimumCharacters="1" @bind-SearchText="_cuentaTexto" SelectedItem="_cuenta" SelectedItemChanged="CuentaElegida"
+                            SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
+                    <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
+                </AlfaLookup>
+            </div>
+            <div class="ctr-filtros__cuenta ctr-filtros__cuenta--hasta">
+                <AlfaLookup TItem="ContabilidadOpcion" Label="Hasta la cuenta (opcional)" Placeholder="Rango de cuentas"
+                            MinimumCharacters="1" @bind-SearchText="_cuentaHastaTexto" SelectedItem="_cuentaHasta" SelectedItemChanged="CuentaHastaElegida"
+                            SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
+                    <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
+                </AlfaLookup>
+            </div>
+        }
+        <div class="ctr-filtros__checks">
+            @if (!EsMayor)
+            {
+                <AlfaCheckbox Value="@_filtro.AgruparTerceros" ValueChanged="v => _filtro.AgruparTerceros = v == true" Disabled="@_busy">Agrupar clientes y proveedores</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.MostrarTitulos" ValueChanged="v => _filtro.MostrarTitulos = v == true" Disabled="@_busy">Mostrar títulos</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.IncluirSinMovimientos" ValueChanged="v => _filtro.IncluirSinMovimientos = v == true" Disabled="@_busy">Cuentas sin movimientos</AlfaCheckbox>
+            }
+            @if (_catalogos?.PuedeVerProformas == true)
+            {
+                <AlfaCheckbox Value="@_filtro.IncluirProformas" ValueChanged="v => _filtro.IncluirProformas = v == true" Disabled="@_busy">Incluir proformas</AlfaCheckbox>
+            }
+        </div>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-play-fill" Loading="@_busy" Disabled="@_busy" OnClick="_ => GenerarAsync()">Generar</AlfaButton>
+    </section>
+
+    @if (!EsMayor && _sumas is { } s)
+    {
+        <div class="kpi-grid ctr-kpis">
+            <KpiCard Titulo="Debe del período" Valor="@Moneda(s.TotalDebe)" Icono="@Icono("bi-plus-slash-minus")" Descripcion="@($"{s.Filtro.Desde:dd/MM/yyyy} al {s.Filtro.Hasta:dd/MM/yyyy}")" />
+            <KpiCard Titulo="Haber del período" Valor="@Moneda(s.TotalHaber)" Icono="@Icono("bi-plus-slash-minus")" Descripcion="@s.Ejercicio" />
+            <KpiCard Titulo="Diferencia" Valor="@Moneda(s.TotalDebe - s.TotalHaber)" Icono="@Icono(s.Desbalanceados.Count == 0 ? "bi-check2-circle" : "bi-exclamation-triangle")"
+                     Destacado="@(s.Desbalanceados.Count > 0)" Descripcion="@(s.Desbalanceados.Count == 0 ? "Todos los asientos balancean" : $"{s.Desbalanceados.Count} asiento(s) no balancean")" />
+            <KpiCard Titulo="Cuentas" Valor="@s.Filas.Count(f => !f.EsTitulo).ToString("N0")" Icono="@Icono("bi-list-ol")" Descripcion="Con saldo o movimientos" />
+        </div>
+
+        @if (s.Desbalanceados.Count > 0)
+        {
+            <details class="ctr-desbalance">
+                <summary><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                    @s.Desbalanceados.Count asiento(s) del período no balancean: diferencia total @Moneda(s.Desbalanceados.Sum(a => a.Diferencia)). Tocá para ver cuáles.</summary>
+                <div class="ctr-tabla__scroll ctr-tabla__scroll--chica">
+                    <table class="ctr-tabla">
+                        <thead><tr><th>Fecha</th><th>Asiento</th><th>Comprobante</th><th>Detalle</th><th class="n">Renglones</th><th class="n">Diferencia</th></tr></thead>
+                        <tbody>
+                        @foreach (var a in s.Desbalanceados)
+                        {
+                            <tr><td>@a.Fecha.ToString("dd/MM/yyyy")</td><td>@a.MesOperativo-@a.Numero</td><td>@a.Tc @a.Comprobante</td><td>@a.Detalle</td>
+                                <td class="n">@a.Renglones</td><td class="n">@M(a.Diferencia)</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        }
+
+        <section class="ctr-tabla__marco" aria-label="Balance de sumas y saldos">
+            <div class="ctr-tabla__scroll">
+                <table class="ctr-tabla">
+                    <thead><tr><th>Cuenta</th><th>Descripción</th><th class="n">Saldo anterior</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th></tr></thead>
+                    <tbody>
+                    @foreach (var f in s.Filas)
+                    {
+                        <tr class="@(f.EsTitulo ? "is-titulo" : "is-cuenta")" title="@(f.EsTitulo || f.Agrupadas > 0 ? null : "Ver el mayor de la cuenta")"
+                            @onclick="() => AbrirMayor(f)">
+                            <td>@f.Codigo</td>
+                            <td style="padding-left:@(12 + f.Nivel * 14)px">@f.Descripcion@(f.Agrupadas > 0 ? $" ({f.Agrupadas})" : "")</td>
+                            <td class="n">@M(f.SaldoAnterior)</td><td class="n">@M(f.Debe)</td><td class="n">@M(f.Haber)</td>
+                            <td class="n @(f.Saldo < 0 ? "is-acreedor" : null)">@M(f.Saldo)</td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot><tr><td></td><td>Totales</td><td class="n">@M(s.TotalSaldoAnterior)</td><td class="n">@M(s.TotalDebe)</td><td class="n">@M(s.TotalHaber)</td><td class="n">@M(s.TotalSaldo)</td></tr></tfoot>
+                </table>
+            </div>
+        </section>
+        <p class="ctr-nota">Saldo anterior: movimientos del ejercicio antes de la fecha desde (incluye la apertura). Saldo positivo = deudor, negativo = acreedor. Tocá una cuenta para ver su mayor.</p>
+    }
+
+    @if (EsMayor && _mayor is { } m)
+    {
+        @if (m.Cuentas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos" Message="La cuenta no tiene saldo ni movimientos en ese período." />
+        }
+        else
+        {
+            @if (m.Truncado) { <AlfaNotification Message="@AppUiMessage.Warning("Demasiados movimientos", "Se muestran los primeros 20.000: acotá las cuentas o las fechas.")" /> }
+            <section class="ctr-tabla__marco" aria-label="Mayor de cuentas">
+                <div class="ctr-tabla__scroll">
+                    <table class="ctr-tabla">
+                        <thead><tr><th>Fecha</th><th>Asiento</th><th>Comprobante</th><th>Detalle</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th></tr></thead>
+                        <tbody>
+                        @foreach (var c in m.Cuentas)
+                        {
+                            <tr class="is-cuenta-cab"><td colspan="4">@c.Codigo · @c.Descripcion <small>saldo anterior</small></td><td></td><td></td><td class="n">@c.SaldoAnterior.ToString("N2", Culture)</td></tr>
+                            @foreach (var x in c.Movimientos)
+                            {
+                                <tr><td>@x.Fecha.ToString("dd/MM/yyyy")</td><td>@x.MesOperativo-@x.Asiento</td><td>@x.Tc @x.Comprobante</td><td class="ctr-detalle">@x.Detalle</td>
+                                    <td class="n">@M(x.Debe)</td><td class="n">@M(x.Haber)</td><td class="n @(x.Saldo < 0 ? "is-acreedor" : null)">@x.Saldo.ToString("N2", Culture)</td></tr>
+                            }
+                            <tr class="is-total"><td colspan="4">Total @c.Codigo · @c.Movimientos.Count movimiento(s)</td><td class="n">@M(c.Debe)</td><td class="n">@M(c.Haber)</td>
+                                <td class="n @(c.Saldo < 0 ? "is-acreedor" : null)">@c.Saldo.ToString("N2", Culture)</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <p class="ctr-nota">@m.Cuentas.Count cuenta(s) · @m.Movimientos.ToString("N0") movimiento(s). Saldo positivo = deudor, negativo = acreedor.</p>
+        }
+    }
+    else if (_busy)
+    {
+        <AlfaEmptyState Title="Generando el reporte" Message="Leyendo los asientos del ejercicio." />
+    }
+</div>
+
+@code {
+    /// <summary>"mayor" o "sumas-saldos".</summary>
+    [Parameter] public string Tipo { get; set; } = "sumas-saldos";
+    private bool EsMayor => Tipo == "mayor";
+    private string Titulo => EsMayor ? "Mayor de cuentas" : "Balance de sumas y saldos";
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private ContabilidadCatalogos? _catalogos;
+    private readonly ContabilidadFiltro _filtro = new();
+    private SumasSaldosResultado? _sumas;
+    private MayorResultado? _mayor;
+    private ContabilidadOpcion? _cuenta, _cuentaHasta;
+    private string _cuentaTexto = "", _cuentaHastaTexto = "";
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed;
+    private string? _exportando;
+    private PageHeaderConfig? _header;
+
+    private IReadOnlyList<AlfaSelectOption> EjercicioOptions => (_catalogos?.Ejercicios ?? [])
+        .Select(e => new AlfaSelectOption(e.Periodo.ToString(), $"{e.Descripcion} ({e.Desde:dd/MM/yyyy} – {e.Hasta:dd/MM/yyyy}){(e.Cerrado ? " · cerrado" : "")}")).ToList();
+    private IReadOnlyList<AlfaSelectOption> UnidadOptions => [new("", "Todas"), .. (_catalogos?.Unidades ?? []).Select(u => new AlfaSelectOption(u.Codigo, $"{u.Codigo} · {u.Descripcion}"))];
+
+    protected override void OnInitialized() => UpdateHeader();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        var cat = await UiOps.RunAsync(() => Service.GetCatalogosAsync(), Titulo);
+        if (!cat.Success) { _feedback = cat.Feedback; StateHasChanged(); return; }
+        _catalogos = cat.Value;
+        // Por defecto el ejercicio que contiene hoy (o el último) hasta hoy; la URL puede traer cuenta y fechas (desde el balance).
+        var hoy = DateTime.Today;
+        var ej = _catalogos!.Ejercicios.FirstOrDefault(e => hoy >= e.Desde && hoy <= e.Hasta) ?? _catalogos.Ejercicios.FirstOrDefault();
+        if (ej is not null) { _filtro.Periodo = ej.Periodo; _filtro.Desde = ej.Desde; _filtro.Hasta = hoy < ej.Hasta ? hoy : ej.Hasta; }
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (q.TryGetValue("periodo", out var per) && int.TryParse(per, out var pe)) _filtro.Periodo = pe;
+        if (q.TryGetValue("desde", out var de) && Leer(de) is { } fd) _filtro.Desde = fd;
+        if (q.TryGetValue("hasta", out var ha) && Leer(ha) is { } fh) _filtro.Hasta = fh;
+        if (q.TryGetValue("unidad", out var un) && un.ToString().Length > 0) _filtro.Unidades = [un.ToString()];
+        if (q.TryGetValue("proformas", out var pf)) _filtro.IncluirProformas = pf == "1";
+        if (q.TryGetValue("cuenta", out var cu) && cu.ToString().Length > 0)
+        {
+            _cuenta = new ContabilidadOpcion(cu.ToString(), cu.ToString()); _cuentaTexto = cu.ToString(); _filtro.CuentaDesde = cu.ToString();
+        }
+        StateHasChanged();
+        if (!EsMayor || _filtro.CuentaDesde.Length > 0) await GenerarAsync();
+    }
+
+    private void CambiarEjercicio(string? valor)
+    {
+        if (!int.TryParse(valor, out var p) || _catalogos?.Ejercicios.FirstOrDefault(e => e.Periodo == p) is not { } e) return;
+        _filtro.Periodo = p; _filtro.Desde = e.Desde; _filtro.Hasta = DateTime.Today < e.Hasta && DateTime.Today >= e.Desde ? DateTime.Today : e.Hasta;
+    }
+
+    private void CuentaElegida(ContabilidadOpcion? c) { _cuenta = c; _filtro.CuentaDesde = c?.Codigo ?? ""; if (c is not null) _cuentaTexto = c.Descripcion; }
+    private void CuentaHastaElegida(ContabilidadOpcion? c) { _cuentaHasta = c; _filtro.CuentaHasta = c?.Codigo ?? ""; if (c is not null) _cuentaHastaTexto = c.Descripcion; }
+
+    private Task TeclaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => e.Key == "Enter" ? GenerarAsync() : Task.CompletedTask;
+
+    private async Task GenerarAsync()
+    {
+        if (_busy || _disposed || _catalogos is null) return;
+        if (EsMayor && string.IsNullOrWhiteSpace(_filtro.CuentaDesde)) { _feedback = AppUiMessage.Info("Elegí la cuenta", "Buscá la cuenta por código o nombre. Si elegís un título, se muestran todas sus cuentas."); return; }
+        _busy = true; _feedback = null; UpdateHeader();
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            if (EsMayor)
+            {
+                var r = await UiOps.RunAsync(() => Service.GetMayorAsync(Copia()), Titulo);
+                if (r.Success) _mayor = r.Value; else _feedback = r.Feedback;
+            }
+            else
+            {
+                var r = await UiOps.RunAsync(() => Service.GetSumasSaldosAsync(Copia()), Titulo);
+                if (r.Success) _sumas = r.Value; else _feedback = r.Feedback;
+            }
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private ContabilidadFiltro Copia() => new()
+    {
+        Periodo = _filtro.Periodo, Desde = _filtro.Desde, Hasta = _filtro.Hasta, Unidades = [.. _filtro.Unidades], IncluirProformas = _filtro.IncluirProformas,
+        CuentaDesde = _filtro.CuentaDesde, CuentaHasta = _filtro.CuentaHasta, AgruparTerceros = _filtro.AgruparTerceros,
+        MostrarTitulos = _filtro.MostrarTitulos, IncluirSinMovimientos = _filtro.IncluirSinMovimientos
+    };
+
+    private void AbrirMayor(SumasSaldosFila f)
+    {
+        if (_sumas is not { } s) return;
+        var url = RouteContext.BuildRoute("/contabilidad/mayor") + $"?periodo={s.Filtro.Periodo}&desde={s.Filtro.Desde:yyyy-MM-dd}&hasta={s.Filtro.Hasta:yyyy-MM-dd}" +
+            $"&cuenta={Uri.EscapeDataString(f.Codigo)}{(s.Filtro.Unidades.Count > 0 ? "&unidad=" + Uri.EscapeDataString(s.Filtro.Unidades[0]) : "")}{(s.Filtro.IncluirProformas ? "&proformas=1" : "")}";
+        _ = Js.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private async Task ExportarAsync(bool pdf)
+    {
+        if (_exportando is not null) return;
+        _exportando = pdf ? "pdf" : "excel"; UpdateHeader();
+        try
+        {
+            var r = await UiOps.RunAsync(() => EsMayor ? Service.ExportarMayorAsync(Copia(), pdf) : Service.ExportarSumasSaldosAsync(Copia(), pdf), Titulo);
+            if (r.Success && r.Value is { } a)
+                await Js.InvokeVoidAsync(pdf ? "alfaCoreInterfacesUpload.openBlob" : "alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
+            else _feedback = r.Feedback;
+        }
+        finally { _exportando = null; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private bool HayDatos => EsMayor ? _mayor is { Cuentas.Count: > 0 } : _sumas is { Filas.Count: > 0 };
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = Titulo,
+        Breadcrumb = ["Contabilidad", "Reportes", Titulo],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, EsMayor ? "mayor" : "sumas-saldos"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "generar", Label = "Generar", Icon = "bi-play-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = GenerarAsync },
+            new() { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "pdf", OnClick = () => ExportarAsync(true) },
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "excel", OnClick = () => ExportarAsync(false) }
+        ]
+    });
+
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+    private static string Moneda(decimal v) => v.ToString("C2", Culture);
+    private static string M(decimal v) => v == 0 ? "" : v.ToString("N2", Culture);
+    private static string Fecha(DateTime d) => d == default ? "" : d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+    private static DateTime? Leer(string? v) => DateTime.TryParseExact(v, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

@@ -76,10 +76,12 @@ public sealed class ActualizacionesScriptsTests
             .GroupBy(m => m.Groups["version"].Value, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1 && !ChoquesHistoricos.Contains(g.Key)
                 // Un choque resuelto solo se admite si TODOS sus nombres viejos se retiraron
-                // y tienen reemplazos oficiales presentes. Reusar ese número con otro archivo sigue fallando.
-                && !g.All(m => !actuales.Contains(m.Value)
-                    && AlfaCore.Services.ActualizacionesService.ScriptsRenombrados.TryGetValue(m.Value, out var nuevo)
-                    && actuales.Contains(nuevo)))
+                // y tienen reemplazos oficiales presentes; a lo sumo uno de los nombres sigue vigente
+                // (el que conservó el número). Reusar ese número con otro archivo nuevo sigue fallando.
+                && !(g.Count(m => actuales.Contains(m.Value)) <= 1
+                    && g.Where(m => !actuales.Contains(m.Value)).All(m =>
+                        AlfaCore.Services.ActualizacionesService.ScriptsRenombrados.TryGetValue(m.Value, out var nuevo)
+                        && actuales.Contains(nuevo))))
             .Select(g => $"{g.Key}: {string.Join(", ", g.Select(m => m.Value))}")
             .ToList();
 

@@ -314,6 +314,9 @@ public sealed class ActualizacionesService(
         ["2026-10-15-004__ventas_carga_directa_operaciones.sql"] = "2026-10-15-007__ventas_carga_directa_operaciones.sql",
         ["2026-10-15-005__ventas_tipos_carga_directa.sql"] = "2026-10-15-008__ventas_tipos_carga_directa.sql",
         ["2026-10-15-006__ventas_reporte_ventas_menu_web.sql"] = "2026-10-15-009__ventas_reporte_ventas_menu_web.sql",
+        // 2026-11-03: dos sesiones usaron 002/003 el mismo día; los libros de IVA pasaron a 005/006.
+        ["2026-11-03-002__ventas_libro_iva_menu_web.sql"] = "2026-11-03-005__ventas_libro_iva_menu_web.sql",
+        ["2026-11-03-003__compras_libro_iva_menu_web.sql"] = "2026-11-03-006__compras_libro_iva_menu_web.sql",
     };
 
     /// <summary>

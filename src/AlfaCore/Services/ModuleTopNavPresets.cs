@@ -53,7 +53,9 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("resumen", "Resumen", "/contabilidad"),
-            ("posicion-iva", "Posición de IVA", "/contabilidad/posicion-iva")
+            ("posicion-iva", "Posición de IVA", "/contabilidad/posicion-iva"),
+            ("mayor", "Mayor de cuentas", "/contabilidad/mayor"),
+            ("sumas-saldos", "Sumas y saldos", "/contabilidad/sumas-y-saldos")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
