@@ -54,6 +54,7 @@ public static class ModuleTopNavPresets
         [
             ("resumen", "Resumen", "/contabilidad"),
             ("posicion-iva", "Posición de IVA", "/contabilidad/posicion-iva"),
+            ("asientos", "Asientos", "/contabilidad/asientos"),
             ("diario", "Libro diario", "/contabilidad/diario"),
             ("subdiarios", "Subdiarios", "/contabilidad/subdiarios"),
             ("mayor", "Mayor", "/contabilidad/mayor"),

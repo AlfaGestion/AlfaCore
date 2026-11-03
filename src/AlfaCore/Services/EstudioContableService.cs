@@ -32,8 +32,9 @@ internal static class EstudioContableCentral
     {
         // Consulta: contabilidad, libros de IVA, retenciones, paquete, reportes y tableros (ventas, compras, caja, stock).
         ["CONSULTA"] = [.. Consulta],
-        // Completo (por defecto): además control e importación ARCA, fechas de cierre, recepción documental y conciliaciones.
-        ["COMPLETO"] = [.. Consulta, "D016023", "D9882", "D016004", "D75-CONCILIA-IA", "D75-TARJETAS-IA"]
+        // Completo (por defecto): además carga de asientos (con modificar y anular), control e importación ARCA, fechas de cierre,
+        // recepción documental y conciliaciones.
+        ["COMPLETO"] = [.. Consulta, "D9550", "D016023", "D9882", "D016004", "D75-CONCILIA-IA", "D75-TARJETAS-IA"]
     };
 
 
@@ -172,9 +173,13 @@ public sealed class EstudioAccesosService(ISessionService sessions, IAppUserSess
                     UPDATE dbo.TA_USUARIOS SET email_de = N'', PASSWORD = @Password, FechaHora_Modificacion = GETDATE() WHERE NOMBRE = @Usuario;
                 """, new { Usuario = usuario, Sistema = SistemaFijo, Password = password }, tx, cancellationToken: ct));
             // Sin email hasta que el estudio acepta: nadie puede entrar todavía con ese usuario.
+            // Perfil completo: puede modificar y anular asientos manuales (AstModificar/AstAnular del legacy).
             await cn.ExecuteAsync(new CommandDefinition($"""
                 IF COL_LENGTH(N'dbo.TA_USUARIOS', N'Activo') IS NOT NULL
                     EXEC sys.sp_executesql N'UPDATE dbo.TA_USUARIOS SET Activo = 0 WHERE NOMBRE = @Usuario;', N'@Usuario nvarchar(50)', @Usuario = @Usuario;
+                IF COL_LENGTH(N'dbo.TA_USUARIOS', N'AstModificar') IS NOT NULL AND COL_LENGTH(N'dbo.TA_USUARIOS', N'AstAnular') IS NOT NULL
+                    EXEC sys.sp_executesql N'UPDATE dbo.TA_USUARIOS SET AstModificar = @Carga, AstAnular = @Carga WHERE NOMBRE = @Usuario;',
+                        N'@Carga bit, @Usuario nvarchar(50)', @Carga = {(perfil == "COMPLETO" ? 1 : 0)}, @Usuario = @Usuario;
                 IF OBJECT_ID(N'dbo.ALFACORE_TAREAS_WEB', N'U') IS NOT NULL
                 BEGIN
                     DELETE FROM dbo.ALFACORE_TAREAS_WEB WHERE Usuario = @Usuario AND Sistema = @Sistema;

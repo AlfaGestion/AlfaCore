@@ -1,0 +1,44 @@
+@* Buscador de cuentas imputables para los renglones del asiento (por código o nombre). *@
+<AlfaLookup TItem="AsientoCuenta" Label="@Label" Placeholder="Código o nombre de la cuenta"
+    SearchText="@_texto" SearchTextChanged="v => _texto = v" SelectedItem="@_seleccion" SelectedItemChanged="Elegir"
+    SearchFunc="Buscar" ItemKey="c => c.Codigo" Disabled="Disabled" MinimumCharacters="1" Class="@Class">
+    <ItemTemplate Context="c">@c.Codigo · @c.Descripcion</ItemTemplate>
+</AlfaLookup>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string Cuenta { get; set; } = "";
+    [Parameter] public EventCallback<string> CuentaChanged { get; set; }
+    [Parameter] public IReadOnlyList<AsientoCuenta> Cuentas { get; set; } = [];
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    private string _texto = "", _anterior = "\u0001";
+    private AsientoCuenta? _seleccion;
+
+    protected override void OnParametersSet()
+    {
+        if (Cuenta == _anterior) return;
+        _anterior = Cuenta;
+        _seleccion = Cuentas.FirstOrDefault(c => c.Codigo.Equals(Cuenta, StringComparison.OrdinalIgnoreCase));
+        _texto = _seleccion is null ? Cuenta : $"{_seleccion.Codigo} · {_seleccion.Descripcion}";
+    }
+
+    private Task<IReadOnlyList<AsientoCuenta>> Buscar(string texto, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var t = texto.Trim();
+        // Primero los códigos que empiezan con lo escrito, después los que lo contienen en el nombre.
+        var lista = Cuentas.Where(c => c.Codigo.StartsWith(t, StringComparison.OrdinalIgnoreCase))
+            .Concat(Cuentas.Where(c => !c.Codigo.StartsWith(t, StringComparison.OrdinalIgnoreCase)
+                && (c.Descripcion.Contains(t, StringComparison.OrdinalIgnoreCase) || c.Codigo.Contains(t, StringComparison.OrdinalIgnoreCase))))
+            .Take(40).ToList();
+        return Task.FromResult<IReadOnlyList<AsientoCuenta>>(lista);
+    }
+
+    private async Task Elegir(AsientoCuenta? c)
+    {
+        _seleccion = c;
+        _anterior = c?.Codigo ?? "";
+        await CuentaChanged.InvokeAsync(c?.Codigo ?? "");
+    }
+}

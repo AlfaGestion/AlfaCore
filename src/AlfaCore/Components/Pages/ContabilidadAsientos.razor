@@ -1,0 +1,421 @@
+@page "/contabilidad/asientos"
+@page "/{idweb}/{idbase:int}/contabilidad/asientos"
+@using AlfaCore.Services
+@inject IAsientosService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Asientos | Alfa Gestión</PageTitle>
+
+@* Registraciones directas al diario (D9550 del legacy, solo asientos). Los asientos de comprobantes se ven pero no se modifican acá. *@
+<div class="gd-page gd as-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_edit is null)
+    {
+        @if (_filtros)
+        {
+            <section class="as-filtros">
+                <label>Desde <input type="date" class="as-input" value="@_f.Desde.ToString("yyyy-MM-dd")" @onchange="e => Fecha(e, true)" /></label>
+                <label>Hasta <input type="date" class="as-input" value="@_f.Hasta.ToString("yyyy-MM-dd")" @onchange="e => Fecha(e, false)" /></label>
+                <label>Mostrar
+                    <select class="as-input" value="@_f.Origen" @onchange="CambiarOrigen">
+                        <option value="MANUALES">Asientos manuales</option>
+                        <option value="COMPROBANTES">De comprobantes (compras, ventas, cobranzas…)</option>
+                        <option value="TODOS">Todos</option>
+                    </select>
+                </label>
+                @if (_cat is { Unidades.Count: > 1 })
+                {
+                    <label>Unidad
+                        <select class="as-input" value="@_f.Unidad" @onchange="CambiarUnidad">
+                            <option value="">Todas</option>
+                            @foreach (var u in _cat.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                        </select>
+                    </label>
+                }
+                @if (_cat is not null)
+                {
+                    <div class="as-filtros__cuenta"><AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="CambiarCuenta" Cuentas="_cat.Cuentas" /></div>
+                }
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="_busy" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
+            </section>
+        }
+
+        @if (_lista.Count == 0 && _buscado)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos" Message="No hay asientos con esos filtros. Probá con otro período o con «Todos»." />
+        }
+        else if (_lista.Count > 0)
+        {
+            <section class="as-tabla__marco"><div class="as-tabla__scroll">
+                <table class="as-tabla">
+                    <thead><tr><th>Fecha</th><th>Asiento</th><th>Comprobante</th><th>Detalle</th><th class="n">Importe</th><th>Usuario</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var x in _lista)
+                    {
+                        <tr class="as-fila" @onclick="() => AbrirAsync(x.Clave)">
+                            <td>@x.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td class="mono">@x.Clave.Texto@(x.TipoReg.Trim().Length > 0 ? $" · {x.TipoReg.Trim()}" : "")</td>
+                            <td>@x.Tc @x.Comprobante</td>
+                            <td>@x.Detalle</td>
+                            <td class="n">@x.Total.ToString("N2", Culture)</td>
+                            <td>@x.Usuario</td>
+                            <td><span class="as-chip @(x.Manual ? "is-manual" : "is-cpte")">@Origen(x)</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></section>
+            @if (_lista.Count >= 500) { <small class="as-nota">Se muestran los 500 más recientes: acotá el período o buscá por número.</small> }
+        }
+    }
+    else
+    {
+        var a = _edit;
+        <section class="as-cab">
+            <div class="as-cab__titulo">
+                <strong>@(a.Clave is { } k ? $"Asiento {k.Texto}" : "Nuevo asiento")</strong>
+                @if (a.Clave is not null) { <span class="mono">@a.Comprobante</span> }
+                @if (a.Clave is not null && a.Usuario.Length > 0) { <small>Cargado por @a.Usuario@(a.Grabado is { } g ? $" el {g:dd/MM/yyyy HH:mm}" : "")@(a.Modificado is { } m ? $" · modificado el {m:dd/MM/yyyy HH:mm}" : "")</small> }
+            </div>
+            @if (!Editable)
+            {
+                <div class="as-solo-lectura"><i class="bi bi-lock" aria-hidden="true"></i>
+                    @(a.MotivoSoloLectura.Length > 0 ? a.MotivoSoloLectura : "Tu usuario no tiene permiso para modificar asientos.")</div>
+            }
+            <div class="as-cab__campos">
+                <label>Fecha <input type="date" class="as-input" value="@a.Fecha.ToString("yyyy-MM-dd")" disabled="@(!Editable)" @onchange="CambiarFechaAsiento" /></label>
+                @if (a.Clave is null)
+                {
+                    <label>Comprobante
+                        <select class="as-input" value="@a.Tc" @onchange="e => a.Tc = e.Value?.ToString() ?? a.Tc">
+                            @foreach (var t in _cat?.Talonarios ?? []) { <option value="@t.Codigo">@t.Codigo · @t.Descripcion</option> }
+                        </select>
+                    </label>
+                    @if (_cat is { Unidades.Count: > 1 })
+                    {
+                        <label>Unidad
+                            <select class="as-input" value="@a.Unidad" @onchange="e => a.Unidad = e.Value?.ToString() ?? a.Unidad">
+                                @foreach (var u in _cat.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                            </select>
+                        </label>
+                    }
+                }
+                @if (PideVencimiento || a.Vencimiento is not null)
+                {
+                    <label>Vencimiento <input type="date" class="as-input" value="@a.Vencimiento?.ToString("yyyy-MM-dd")" disabled="@(!Editable)" @onchange="CambiarVencimiento" /></label>
+                }
+                <label class="as-cab__detalle">Detalle
+                    <input class="as-input" maxlength="199" value="@a.Detalle" disabled="@(!Editable)" @onchange="e => a.Detalle = e.Value?.ToString() ?? string.Empty"
+                           placeholder="Concepto del asiento (ej. Amortizaciones octubre 2026)" />
+                </label>
+            </div>
+        </section>
+
+        @if (a.LivaTipo.Length > 0)
+        {
+            <section class="as-cpte">
+                <div>
+                    <strong>@(a.LivaTipo.Equals("COMPRAS", StringComparison.OrdinalIgnoreCase) ? "Comprobante de compra" : "Comprobante de venta")</strong>
+                    <span>@a.NombreComprobante · CUIT @a.CuitComprobante · total @a.TotalComprobante.ToString("N2", Culture)@(a.Cae.Length > 0 ? $" · CAE {a.Cae}" : "")</span>
+                </div>
+                @if (_arca is { } c)
+                {
+                    <div class="as-arca as-arca--@c.Estado.ToLowerInvariant()">
+                        <i class="bi @(c.Estado switch { "COINCIDE" => "bi-check-circle", "DIFIERE" => "bi-exclamation-triangle", "NO_INFORMADO" => "bi-x-circle", _ => "bi-info-circle" })" aria-hidden="true"></i>
+                        <div>
+                            <b>@c.Mensaje</b>
+                            @foreach (var o in c.Observaciones) { <small>@o</small> }
+                            @if (c.Archivo.Length > 0) { <small>Archivo: @c.Archivo@(c.TotalArca is { } t ? $" · total ARCA {t:N2}" : "")</small> }
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="as-tabla__marco"><div class="as-tabla__scroll">
+            <table class="as-tabla as-renglones">
+                <thead><tr><th class="as-col-n">#</th><th class="as-col-cuenta">Cuenta</th><th>Concepto del renglón</th><th class="n as-col-imp">Debe</th><th class="n as-col-imp">Haber</th><th></th></tr></thead>
+                <tbody>
+                @for (var i = 0; i < a.Renglones.Count; i++)
+                {
+                    var r = a.Renglones[i]; var n = i + 1;
+                    <tr @key="r">
+                        <td class="as-col-n">@n</td>
+                        @if (Editable && _cat is not null)
+                        {
+                            <td class="as-col-cuenta"><AsientoCuentaLookup Cuenta="@r.Cuenta" CuentaChanged="v => CambiarCuenta(r, v)" Cuentas="_cat.Cuentas" /></td>
+                            <td><input class="as-input as-input--fila" maxlength="199" value="@r.Detalle" placeholder="(el del asiento)" @onchange="e => r.Detalle = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Debe)" @onchange="e => Importe(r, e, debe: true)" /></td>
+                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Haber)" @onchange="e => Importe(r, e, debe: false)" /></td>
+                            <td class="as-col-acc"><button type="button" class="as-icon" title="Quitar renglón" @onclick="() => Quitar(r)"><i class="bi bi-x-lg" aria-hidden="true"></i></button></td>
+                        }
+                        else
+                        {
+                            <td class="as-col-cuenta"><span class="mono">@r.Cuenta</span> @r.CuentaNombre</td>
+                            <td>@r.Detalle</td>
+                            <td class="n">@(r.Debe != 0 ? r.Debe.ToString("N2", Culture) : "")</td>
+                            <td class="n">@(r.Haber != 0 ? r.Haber.ToString("N2", Culture) : "")</td>
+                            <td></td>
+                        }
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td></td>
+                        <td colspan="2">
+                            @if (Editable)
+                            {
+                                <button type="button" class="as-link" @onclick="Agregar"><i class="bi bi-plus-lg" aria-hidden="true"></i> Agregar renglón</button>
+                                @if (Diferencia != 0) { <button type="button" class="as-link" @onclick="Balancear"><i class="bi bi-distribute-vertical" aria-hidden="true"></i> Completar la diferencia en el último renglón</button> }
+                            }
+                        </td>
+                        <td class="n"><b>@a.TotalDebe.ToString("N2", Culture)</b></td>
+                        <td class="n"><b>@a.TotalHaber.ToString("N2", Culture)</b></td>
+                        <td></td>
+                    </tr>
+                    @if (Diferencia != 0)
+                    {
+                        <tr class="as-dif"><td></td><td colspan="2">No balancea: diferencia</td><td colspan="2" class="n">@Math.Abs(Diferencia).ToString("N2", Culture) @(Diferencia > 0 ? "de más en el debe" : "de más en el haber")</td><td></td></tr>
+                    }
+                </tfoot>
+            </table>
+        </div></section>
+    }
+</div>
+
+<AlfaConfirmDialog Open="@_confirmarAnular" Title="Anular asiento" ConfirmLabel="Anular" Loading="_busy" OnConfirm="AnularAsync" OnCancel="() => _confirmarAnular = false"
+                   Message="@($"Se borra el asiento {_edit?.Clave?.Texto} ({_edit?.Comprobante}). Queda registrado en la auditoría. ¿Seguro?")" />
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private readonly AsientosFiltro _f = new();
+    private AsientosCatalogo? _cat;
+    private IReadOnlyList<AsientoResumen> _lista = [];
+    private AsientoDetalle? _edit;
+    private AsientoControlArca? _arca;
+    private AppUiMessage? _feedback;
+    private bool _busy, _buscado, _filtros = true, _confirmarAnular, _sucio;
+    private string _texto = string.Empty;
+    private PageHeaderConfig? _header;
+
+    private bool Editable => _edit is not null && _edit.Editable && _cat is not null && (_edit.Clave is null ? _cat.PuedeCargar : _cat.PuedeModificar);
+    private decimal Diferencia => _edit is null ? 0 : _edit.TotalDebe - _edit.TotalHaber;
+    private bool PideVencimiento => _edit is not null && _cat is not null && _edit.Renglones.Any(r => _cat.Cuentas.FirstOrDefault(c => c.Codigo == r.Cuenta)?.PideVencimiento == true);
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        var c = await UiOps.RunAsync(() => Service.CatalogoAsync(), "Asientos");
+        if (c.Success) _cat = c.Value; else _feedback = c.Feedback;
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (_busy) return;
+        _busy = true; UpdateHeader();
+        try
+        {
+            var filtro = new AsientosFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad };
+            var r = await UiOps.RunAsync(() => Service.BuscarAsync(filtro), "Asientos");
+            if (r.Success) { _lista = r.Value!; _buscado = true; } else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private void Fecha(ChangeEventArgs e, bool desde)
+    {
+        if (!DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) return;
+        if (desde) _f.Desde = d; else _f.Hasta = d;
+    }
+    private Task CambiarOrigen(ChangeEventArgs e) { _f.Origen = e.Value?.ToString() ?? "MANUALES"; return BuscarAsync(); }
+    private Task CambiarUnidad(ChangeEventArgs e) { _f.Unidad = e.Value?.ToString() ?? ""; return BuscarAsync(); }
+    private Task CambiarCuenta(string v) { _f.Cuenta = v; return BuscarAsync(); }
+
+    private static string Origen(AsientoResumen x) => x.Manual ? "Manual" : x.LivaTipo.ToUpperInvariant() switch
+    {
+        "COMPRAS" => "Compra", "VENTAS" => "Venta",
+        _ => x.TipoReg.Trim() switch { "CB" => "Cobranza", "PG" => "Pago", "" => x.Tc, var t => t }
+    };
+
+    private async Task AbrirAsync(AsientoClave clave)
+    {
+        if (_busy) return;
+        _busy = true; _arca = null; UpdateHeader();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.GetAsync(clave), "Asiento");
+            if (r.Success) { _edit = r.Value; _sucio = false; } else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+        if (_edit is { LivaTipo.Length: > 0, Clave: { } k }) await ControlArcaAsync(k);
+    }
+
+    private async Task ControlArcaAsync(AsientoClave k)
+    {
+        var r = await UiOps.RunAsync(() => Service.ControlArcaAsync(k), "Control ARCA");
+        if (r.Success) _arca = r.Value;
+        else _arca = new AsientoControlArca { Estado = "SIN_ARCHIVO", Mensaje = r.Feedback?.Message ?? "No se pudo controlar con ARCA." };
+        StateHasChanged();
+    }
+
+    private Task Nuevo()
+    {
+        if (_cat is null) return Task.CompletedTask;
+        _edit = new AsientoDetalle
+        {
+            Fecha = DateTime.Today, Tc = _cat.Talonarios.FirstOrDefault()?.Codigo ?? "CC", Unidad = _cat.UnidadUsuario,
+            Renglones = [new AsientoRenglon(), new AsientoRenglon()]
+        };
+        _arca = null; _sucio = false;
+        UpdateHeader(); StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task Volver()
+    {
+        _edit = null; _arca = null; _sucio = false;
+        UpdateHeader(); StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void CambiarFechaAsiento(ChangeEventArgs e)
+    {
+        if (_edit is not null && DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) { _edit.Fecha = d; _sucio = true; }
+    }
+    private void CambiarVencimiento(ChangeEventArgs e)
+    {
+        if (_edit is null) return;
+        _edit.Vencimiento = DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+    }
+
+    private void CambiarCuenta(AsientoRenglon r, string cuenta)
+    {
+        r.Cuenta = cuenta;
+        r.CuentaNombre = _cat?.Cuentas.FirstOrDefault(c => c.Codigo == cuenta)?.Descripcion ?? "";
+        _sucio = true;
+        // Siempre queda un renglón vacío al final para seguir cargando.
+        if (_edit is not null && _edit.Renglones.Count > 0 && _edit.Renglones[^1] == r && cuenta.Length > 0) _edit.Renglones.Add(new AsientoRenglon());
+    }
+
+    private static string Monto(decimal v) => v == 0 ? "" : v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void Importe(AsientoRenglon r, ChangeEventArgs e, bool debe)
+    {
+        var txt = (e.Value?.ToString() ?? "").Trim().Replace(',', '.');
+        var v = decimal.TryParse(txt, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var x) ? Math.Round(Math.Abs(x), 2) : 0;
+        if (debe) { r.Debe = v; if (v != 0) r.Haber = 0; } else { r.Haber = v; if (v != 0) r.Debe = 0; }
+        _sucio = true;
+    }
+
+    private void Agregar() => _edit?.Renglones.Add(new AsientoRenglon());
+
+    private void Quitar(AsientoRenglon r)
+    {
+        if (_edit is null) return;
+        _edit.Renglones.Remove(r);
+        if (_edit.Renglones.Count == 0) _edit.Renglones.Add(new AsientoRenglon());
+        _sucio = true;
+    }
+
+    private void Balancear()
+    {
+        if (_edit is null) return;
+        var dif = Diferencia;
+        var r = _edit.Renglones.LastOrDefault(x => x.Cuenta.Length > 0 && x.Debe == 0 && x.Haber == 0)
+                ?? _edit.Renglones.LastOrDefault(x => x.Cuenta.Length == 0) ?? new AsientoRenglon();
+        if (!_edit.Renglones.Contains(r)) _edit.Renglones.Add(r);
+        if (dif > 0) { r.Haber = dif; r.Debe = 0; } else { r.Debe = -dif; r.Haber = 0; }
+        _sucio = true;
+    }
+
+    private async Task GrabarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _feedback = null; UpdateHeader();
+        try
+        {
+            var nuevo = _edit.Clave is null;
+            var r = await UiOps.RunAsync(() => Service.GuardarAsync(_edit), "Grabar asiento");
+            if (r.Success)
+            {
+                _edit = r.Value; _sucio = false;
+                _feedback = AppUiMessage.Success(nuevo ? "Asiento registrado" : "Asiento modificado", $"Asiento {_edit!.Clave?.Texto} ({_edit.Comprobante}).");
+                await BuscarSinRefrescarAsync();
+            }
+            else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private async Task BuscarSinRefrescarAsync()
+    {
+        var filtro = new AsientosFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad };
+        var r = await UiOps.RunAsync(() => Service.BuscarAsync(filtro), "Asientos");
+        if (r.Success) _lista = r.Value!;
+    }
+
+    private async Task AnularAsync()
+    {
+        _confirmarAnular = false;
+        if (_edit?.Clave is not { } k || _busy) return;
+        _busy = true; UpdateHeader();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.EliminarAsync(k, _edit.Huella), "Anular asiento");
+            if (r.Success)
+            {
+                _feedback = AppUiMessage.Success("Asiento anulado", $"Se anuló el asiento {k.Texto}.");
+                _edit = null; await BuscarSinRefrescarAsync();
+            }
+            else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private Task CambiarTexto(string t) { _texto = t; return Task.CompletedTask; }
+    private Task AlternarFiltros() { _filtros = !_filtros; UpdateHeader(); StateHasChanged(); return Task.CompletedTask; }
+
+    private void UpdateHeader()
+    {
+        var acciones = new List<PageHeaderAction>();
+        if (_edit is null)
+        {
+            acciones.Add(new() { Key = "nuevo", Label = "Nuevo asiento", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _cat?.PuedeCargar != true, OnClick = Nuevo });
+        }
+        else
+        {
+            if (Editable)
+                acciones.Add(new() { Key = "grabar", Label = "Grabar", Icon = "bi-check2", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = GrabarAsync });
+            if (_edit.Clave is not null && _edit.Editable && _cat?.PuedeAnular == true)
+                acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Disabled = _busy, OnClick = () => { _confirmarAnular = true; StateHasChanged(); return Task.CompletedTask; } });
+            if (_edit is { LivaTipo.Length: > 0, Clave: { } k })
+                acciones.Add(new() { Key = "arca", Label = "Controlar con ARCA", Icon = "bi-shield-check", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = () => ControlArcaAsync(k) });
+            acciones.Add(new() { Key = "volver", Label = _sucio ? "Cancelar" : "Volver", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = Volver });
+        }
+        PageHeader.Set(_header = new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Asientos",
+            Breadcrumb = _edit is null ? ["Contabilidad", "Asientos"] : ["Contabilidad", "Asientos", _edit.Clave?.Texto ?? "Nuevo"],
+            TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "asientos"),
+            State = _busy ? PageHeaderState.Loading : _edit is null ? PageHeaderState.List : PageHeaderState.Editing,
+            Search = _edit is null ? new PageHeaderSearchConfig
+            {
+                Text = _texto, Placeholder = "Buscar: número (10-25), comprobante, detalle, cuenta o usuario", ShowFiltersToggle = true, FiltersOpen = _filtros,
+                OnTextChanged = CambiarTexto, OnSearch = BuscarAsync, OnToggleFilters = AlternarFiltros, Disabled = _busy
+            } : null,
+            Actions = acciones
+        });
+    }
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
