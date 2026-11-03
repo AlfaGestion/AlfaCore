@@ -23,8 +23,6 @@ public sealed class CargaComprobantesDirectaPreparador
         if (conceptos.Any(x => string.IsNullOrWhiteSpace(x.Concepto) || x.Concepto!.Trim().Length > 250 || x.Cantidad != 1 ||
                 x.PrecioUnitarioNeto is not { } importe || importe < 0 || importe > 999999999 || decimal.Round(importe, 4) != importe || x.Descuento.HasValue || x.Bultos.HasValue))
             throw new CargaComprobantesReglaException("Cada otro concepto necesita un texto de hasta 250 caracteres y un importe sin IVA de cero o más (cantidad 1, sin descuento).");
-        if (conceptos.Count > 0 && draft.Tc is "NC" or "ND")
-            throw new CargaComprobantesReglaException("Las notas de crédito y débito con otros conceptos todavía no están incorporadas.");
         if (draft.Observaciones.Length > 1000 || (!ctx.AdminCentral && draft.UnidadNegocio.Trim() != ctx.UnidadNegocio.Trim()))
             throw new CargaComprobantesReglaException("Revisá la unidad de negocio y las observaciones (hasta 1000 caracteres).");
         if (!string.IsNullOrWhiteSpace(draft.Vendedor) && await cn.ExecuteScalarAsync<int>(new CommandDefinition(

@@ -131,14 +131,17 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
             """, new { Talonario = talonario, Unidad = origen.UnidadNegocio, TipoDestino = tcDestino }, tx, cancellationToken: ct));
         // Un talonario que solo admite la letra C es de un emisor monotributista (cada unidad de negocio
         // factura con su CUIT): factura C para cualquier receptor. Si no, A/B según la condición del cliente.
+        // Una nota sale con la letra de su factura (el talonario de notas suele admitir A/B/C/X).
+        var letraAsociado = asociado.Fiscal?.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => null };
         var letra = tcDestino == "FP" ? "X"
+            : letraAsociado is not null && tal?.Letras.Contains(letraAsociado, StringComparison.OrdinalIgnoreCase) == true ? letraAsociado
             : tal?.Letras.Equals("C", StringComparison.OrdinalIgnoreCase) == true ? "C"
             : ArcaCodigosAfip.RequiereFacturaA(condicionArca) ? "A" : "B";
         if (letra is "A" or "B" && !ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionArca, letra))
             throw new CargaComprobantesReglaException("La condición fiscal del cliente no admite una factura A/B en este circuito.");
-        if (letra == "C" && (asociado.Fiscal is not null || directa?.Lineas.Any(x => !x.EsConcepto) == true || directa is null))
-            throw new CargaComprobantesReglaException("La factura C se incorporó para otros conceptos (facturación automática); artículos y notas en C siguen pendientes.");
-        if (asociado.Fiscal is { } asociacion && (asociacion.Tipo == 1 ? "A" : "B") != letra)
+        if (letra == "C" && (directa is null || directa.Lineas.Any(x => !x.EsConcepto)))
+            throw new CargaComprobantesReglaException("Los comprobantes C se incorporaron para otros conceptos (abonos, servicios); los artículos en C siguen pendientes.");
+        if (asociado.Fiscal is { } asociacion && (asociacion.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => "" }) != letra)
             throw new CargaComprobantesReglaException("La letra de la nota no coincide con la factura asociada y la condición actual del cliente.");
         if (tal is null || tal.Letras.IndexOf(letra, StringComparison.OrdinalIgnoreCase) < 0)
             throw new CargaComprobantesReglaException($"El talonario elegido no admite la letra {letra} para este cliente y unidad de negocio.");
@@ -153,6 +156,9 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         if ((tcDestino != "FP" && punto != puntoElectronico) || punto is null or <= 0 or > 9999)
             throw new CargaComprobantesReglaException($"Elegí el talonario electrónico del punto {puntoElectronico} para la unidad del origen.");
         liquidacion = CargaComprobantesCalculador.Calcular(origen, contexto, cantidades, letra == "C");
+        // Una nota de crédito no puede acreditar más que el saldo de su factura (total menos notas anteriores).
+        if (tcDestino == "NC" && asociado.Fiscal is not null && liquidacion.Total > asociado.Saldo + 0.01m)
+            throw new CargaComprobantesReglaException($"La nota de crédito ({liquidacion.Total:N2}) supera el saldo acreditable de la factura ({asociado.Saldo:N2}).");
         _ = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
         var tc = cfg.GetValueOrDefault("EQU_" + tcDestino, "");
         if (string.IsNullOrWhiteSpace(tc)) throw new CargaComprobantesReglaException("Falta la equivalencia contable del comprobante.");

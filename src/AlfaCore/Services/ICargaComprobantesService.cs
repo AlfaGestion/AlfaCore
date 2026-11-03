@@ -48,6 +48,8 @@ public interface ICargaComprobantesService
     Task<CargaComprobantesClienteResumen?> GetClienteDirectaAsync(string cliente, CancellationToken ct = default)
         => Task.FromResult<CargaComprobantesClienteResumen?>(null);
     /// <summary>Visor de comprobantes de ventas: búsqueda paginada con filtros (respeta la unidad del usuario).</summary>
+    Task<IReadOnlyList<CargaComprobantesDirectaLinea>> GetConceptosFacturaAsync(int facturaId, CancellationToken ct = default)
+        => throw new NotSupportedException();
     Task<ComprobantesVisorResultado> BuscarComprobantesAsync(ComprobantesVisorFiltro filtro, CancellationToken ct = default)
         => throw new NotSupportedException();
     /// <summary>PDF para ver o reimprimir un comprobante ya grabado.</summary>

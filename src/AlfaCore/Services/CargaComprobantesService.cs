@@ -18,17 +18,32 @@ public sealed partial class CargaComprobantesService(
         {
             if (!ctx.AdminCentral && unidad.Trim() != ctx.UnidadNegocio)
                 throw new CargaComprobantesReglaException("La unidad de negocio no pertenece al usuario actual.");
-            return (await cn.QueryAsync<CargaComprobantesOpcionFiltro>(new CommandDefinition("""
-                SELECT TOP(30) CONVERT(nvarchar(15),c.ID) Codigo,
-                    LTRIM(RTRIM(c.IDCOMPROBANTE))+' · '+CONVERT(nvarchar(10),c.FECHA,103)+' · $ '+CONVERT(nvarchar(30),c.IMPORTE) Descripcion
-                FROM dbo.V_MV_CPTE c JOIN dbo.ALFACORE_VENTAS_CARGA_OPERACION o ON o.FacturaId=c.ID AND o.Estado='GRABADA'
-                JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=o.Operacion AND p.Estado='APROBADA' AND p.Ambiente=@Ambiente
-                WHERE LTRIM(RTRIM(c.TC))='FC' AND c.IDCOMPLEMENTO=0 AND c.ANULADA=0 AND LTRIM(RTRIM(c.CUENTA))=@Cliente
-                    AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad AND c.IDCOMPROBANTE LIKE @Texto
-                ORDER BY c.FECHA DESC,c.ID DESC;
-                """, new { Cliente = cliente.Trim(), Unidad = unidad.Trim(), Texto = "%" + texto.Trim() + "%",
-                    Ambiente = ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService)) ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, cancellationToken: token))).ToList();
+            var esPrueba = ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService));
+            // Las de AlfaCore y, en una base real, también las de Alfa Gestión con CAE (últimos 18 meses).
+            return (await cn.QueryAsync<CargaComprobantesOpcionFiltro>(new CommandDefinition($"""
+                SELECT TOP(30) CONVERT(nvarchar(15),f.Id) Codigo,
+                    LTRIM(RTRIM(f.Comprobante))+' · '+CONVERT(nvarchar(10),f.Fecha,103)+' · $ '+CONVERT(nvarchar(30),f.Total)
+                    + CASE WHEN f.Acreditado<>0 THEN ' · saldo $ '+CONVERT(nvarchar(30),f.Total-f.Acreditado) ELSE '' END Descripcion
+                FROM ({CargaComprobantesAsociadoPreparador.SqlFactura}
+                    AND LTRIM(RTRIM(c.CUENTA))=@Cliente AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad
+                    AND c.FECHA >= DATEADD(month,-18,GETDATE()) AND c.IDCOMPROBANTE LIKE @Texto) f
+                ORDER BY f.Fecha DESC, f.Id DESC;
+                """, new { Cliente = cliente.Trim(), Unidad = unidad.Trim(), Texto = "%" + texto.Trim() + "%", EsPrueba = esPrueba,
+                    Ambiente = esPrueba ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, cancellationToken: token))).ToList();
         }, ct);
+
+    /// <summary>Otros conceptos (grilla «Otros», TIPO_OBS 'OC') de una factura, para armar su nota de crédito.</summary>
+    public Task<IReadOnlyList<CargaComprobantesDirectaLinea>> GetConceptosFacturaAsync(int facturaId, CancellationToken ct = default)
+        => ExecuteAsync<IReadOnlyList<CargaComprobantesDirectaLinea>>("ConceptosFactura", async (cn, ctx, token) =>
+            (await cn.QueryAsync<(string Detalle, decimal Importe)>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(500),o.OBSERVACION),''))), ISNULL(o.IMPORTE_S_IVA, o.IMPORTE)
+                FROM dbo.V_MV_CPTE c JOIN dbo.V_MV_CPTE_OBSERV o ON o.TC=c.TC AND o.IDCOMPROBANTE=c.IDCOMPROBANTE AND o.IDCOMPLEMENTO=0
+                WHERE c.ID=@Id AND LTRIM(RTRIM(o.TIPO_OBS))='OC' AND (@AdminCentral=1 OR LTRIM(RTRIM(c.UNEGOCIO))=@Unidad)
+                ORDER BY o.SECUENCIA;
+                """, new { Id = facturaId, ctx.AdminCentral, Unidad = ctx.UnidadNegocio.Trim() }, cancellationToken: token)))
+            .Where(x => x.Detalle.Length > 0)
+            .Select(x => new CargaComprobantesDirectaLinea { Concepto = x.Detalle.Length > 250 ? x.Detalle[..250] : x.Detalle,
+                Cantidad = 1, PrecioUnitarioNeto = decimal.Round(x.Importe, 4) }).ToList(), ct);
 
     public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarClientesDirectaAsync(string texto, CancellationToken ct = default)
         => ExecuteAsync<IReadOnlyList<CargaComprobantesOpcionFiltro>>("ClientesDirecta", async (cn, ctx, token) =>

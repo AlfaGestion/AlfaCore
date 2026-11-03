@@ -9,19 +9,47 @@ namespace AlfaCore.Services;
 /// <summary>Valida la factura aplicada y conserva sus precios para devoluciones de artículos.</summary>
 public sealed class CargaComprobantesAsociadoPreparador
 {
-    public async Task<(ArcaComprobanteAsociadoDto Fiscal, string Comprobante, string Huella)> PrepararAsync(
+    /// <summary>
+    /// Facturas que se pueden asociar a una nota: las emitidas por AlfaCore (con su autorización registrada) y,
+    /// en una base real, también las de Alfa Gestión con CAE. En una base de prueba solo las de homologación de
+    /// AlfaCore (las de producción no existen en ARCA homologación). Letras A, B y C.
+    /// La factura se vuelve a confirmar contra ARCA al emitir la nota.
+    /// </summary>
+    internal const string SqlFactura = """
+        SELECT c.ID Id, c.IDCOMPROBANTE Comprobante, c.FECHA Fecha,
+            COALESCE(p.Cuit, NULLIF(LTRIM(RTRIM(u.CUIT)),''), cfg.Cuit, '') Cuit,
+            COALESCE(p.TipoComprobante, CASE LTRIM(RTRIM(c.LETRA)) WHEN 'A' THEN 1 WHEN 'B' THEN 6 WHEN 'C' THEN 11 ELSE 0 END) Tipo,
+            COALESCE(p.PuntoVenta, CASE WHEN c.SUCURSAL NOT LIKE '%[^0-9]%' AND c.SUCURSAL<>'' THEN CONVERT(int,c.SUCURSAL) ELSE 0 END) PuntoVenta,
+            COALESCE(p.Numero, CASE WHEN c.NUMERO NOT LIKE '%[^0-9]%' AND c.NUMERO<>'' THEN CONVERT(bigint,c.NUMERO) ELSE 0 END) Numero,
+            c.IMPORTE Total,
+            ISNULL((SELECT SUM(n.IMPORTE) FROM dbo.V_MV_CPTE n WHERE n.ID IN (
+                SELECT x.ID FROM dbo.MV_APLICACION a JOIN dbo.V_MV_CPTE x ON x.TC=a.TC AND x.IDCOMPROBANTE=a.IDCOMPROBANTE AND x.IDCOMPLEMENTO=0 AND ISNULL(x.ANULADA,0)=0
+                WHERE LTRIM(RTRIM(a.TC))='NC' AND LTRIM(RTRIM(a.TCO_ORIGEN))='FC' AND a.IDCOMPROBANTE_ORIGEN=c.IDCOMPROBANTE)),0) Acreditado
+        FROM dbo.V_MV_CPTE c
+        OUTER APPLY (SELECT TOP (1) h.Cuit, h.TipoComprobante, h.PuntoVenta, h.Numero
+                     FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION op
+                     JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA h ON h.Operacion=op.Operacion AND h.Estado='APROBADA' AND h.Ambiente=@Ambiente
+                     WHERE op.FacturaId=c.ID AND op.Estado='GRABADA') p
+        OUTER APPLY (SELECT TOP (1) NULLIF(LTRIM(RTRIM(e.CAE)),'') Cae FROM dbo.V_MV_CPTE_ELECTRONICOS e
+                     WHERE e.TC=c.TC AND e.IdComprobante=c.IDCOMPROBANTE AND ISNULL(e.Archivado,0)=0) e
+        LEFT JOIN dbo.V_TA_UnidadNegocio u ON LTRIM(RTRIM(u.Codigo))=LTRIM(RTRIM(c.UNEGOCIO)) AND ISNULL(u.USAEFC,0)<>0
+        OUTER APPLY (SELECT TOP (1) LTRIM(RTRIM(VALOR)) Cuit FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE)))='WSFE_CUIT') cfg
+        WHERE LTRIM(RTRIM(c.TC))='FC' AND c.IDCOMPLEMENTO=0 AND ISNULL(c.ANULADA,0)=0
+          AND (p.Cuit IS NOT NULL OR (@EsPrueba=0 AND e.Cae IS NOT NULL))
+          AND LTRIM(RTRIM(c.LETRA)) IN ('A','B','C')
+        """;
+
+    public async Task<(ArcaComprobanteAsociadoDto Fiscal, string Comprobante, string Huella, decimal Saldo)> PrepararAsync(
         SqlConnection cn, CargaComprobantesDirecta draft, CargaComprobantesOrigen origen, DateTime fecha, CancellationToken ct, SqlTransaction? tx)
     {
-        var factura = await cn.QuerySingleOrDefaultAsync<Factura>(new CommandDefinition("""
-            SELECT c.IDCOMPROBANTE Comprobante,c.FECHA Fecha,p.Cuit,p.TipoComprobante Tipo,p.PuntoVenta,p.Numero,c.IMPORTE Total
-            FROM dbo.V_MV_CPTE c JOIN dbo.ALFACORE_VENTAS_CARGA_OPERACION op ON op.FacturaId=c.ID AND op.Estado='GRABADA'
-            JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=op.Operacion AND p.Estado='APROBADA' AND p.Ambiente=@Ambiente
-            WHERE c.ID=@Id AND LTRIM(RTRIM(c.TC))='FC' AND c.IDCOMPLEMENTO=0 AND ISNULL(c.ANULADA,0)=0
-                AND LTRIM(RTRIM(c.CUENTA))=@Cliente AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad;
+        var esPrueba = ArcaModoEmision.EsBasePrueba(cn.Database);
+        var factura = await cn.QuerySingleOrDefaultAsync<Factura>(new CommandDefinition(SqlFactura + """
+              AND c.ID=@Id AND LTRIM(RTRIM(c.CUENTA))=@Cliente AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad;
             """, new { Id = draft.FacturaAsociadaId, Cliente = draft.Cliente.Trim(), Unidad = draft.UnidadNegocio.Trim(),
-                Ambiente = ArcaModoEmision.EsBasePrueba(cn.Database) ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, tx, cancellationToken: ct))
-            ?? throw new CargaComprobantesReglaException("Elegí una factura grabada y aprobada por ARCA, del mismo cliente y unidad de negocio.");
-        if (factura.Fecha.Date > fecha.Date || factura.Tipo is not (1 or 6) || factura.Numero <= 0)
+                EsPrueba = esPrueba, Ambiente = esPrueba ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, tx, cancellationToken: ct))
+            ?? throw new CargaComprobantesReglaException("Elegí una factura electrónica (con CAE) del mismo cliente y unidad de negocio.");
+        factura.Cuit = new string(factura.Cuit.Where(char.IsDigit).ToArray());
+        if (factura.Fecha.Date > fecha.Date || factura.Tipo is not (1 or 6 or 11) || factura.Numero <= 0 || factura.PuntoVenta <= 0)
             throw new CargaComprobantesReglaException("La fecha o el tipo de factura asociada no son compatibles con esta nota.");
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
             SELECT COUNT(*) FROM dbo.ALFACORE_VENTAS_CARGA_OPERACION
@@ -43,7 +71,7 @@ public sealed class CargaComprobantesAsociadoPreparador
                             AND a.IDCOMPROBANTE_ORIGEN=@Comprobante AND n.IDARTICULO=i.IDARTICULO),0) Acreditada
                 FROM dbo.V_MV_CPTEINSUMOS i WHERE LTRIM(RTRIM(i.TC))='FC' AND i.IDCOMPROBANTE=@Comprobante AND i.IDCOMPLEMENTO=0;
                 """, new { factura.Comprobante }, tx, cancellationToken: ct))).ToList();
-            foreach (var l in origen.Lineas)
+            foreach (var l in origen.Lineas.Where(x => !x.EsConcepto))
             {
                 var matching = lineas.Where(x => x.Articulo == l.Articulo).ToList();
                 if (matching.Count != 1) throw new CargaComprobantesReglaException($"El artículo {l.Articulo} no pertenece a la factura o aparece en varios renglones.");
@@ -66,10 +94,12 @@ public sealed class CargaComprobantesAsociadoPreparador
                 FROM dbo.V_MV_CPTE c WHERE c.ID=@Id FOR JSON PATH,INCLUDE_NULL_VALUES);
             """, new { Id = draft.FacturaAsociadaId }, tx, cancellationToken: ct));
         return (new(factura.Tipo, factura.PuntoVenta, factura.Numero, factura.Cuit, factura.Fecha.Date), factura.Comprobante.Trim(),
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))));
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))), Math.Max(0, factura.Total - factura.Acreditado));
     }
     private sealed class Factura
     {
+        public int Id { get; set; }
+        public decimal Acreditado { get; set; }
         public string Comprobante { get; set; } = "";
         public string Cuit { get; set; } = "";
         public DateTime Fecha { get; set; }

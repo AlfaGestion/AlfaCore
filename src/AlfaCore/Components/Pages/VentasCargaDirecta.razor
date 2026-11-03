@@ -150,13 +150,20 @@
         <section class="directa-conceptos" aria-label="Otros conceptos">
             <header class="directa-conceptos__titulo">
                 <h3>Otros conceptos</h3>
+                @if (_draft.Tc == "NC" && _draft.FacturaAsociadaId is not null)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-down-circle"
+                                Disabled="@NuevaLineaBloqueada" OnClick="_ => TraerConceptosFacturaAsync()">Traer conceptos de la factura</AlfaButton>
+                }
                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle"
-                            Disabled="@(NuevaLineaBloqueada || !Editable)" OnClick="_ => AgregarConceptoAsync()">Agregar concepto</AlfaButton>
+                            Disabled="@(NuevaLineaBloqueada || !PermiteConceptos)" OnClick="_ => AgregarConceptoAsync()">Agregar concepto</AlfaButton>
             </header>
             @{ var conceptos = _draft.Lineas.Where(x => x.EsConcepto).ToList(); }
             @if (conceptos.Count == 0)
             {
-                <p class="directa-muted">@(_cliente is null ? "Elegí el cliente para agregar conceptos." : !Editable ? "Las notas de crédito toman los conceptos de su factura." : "Servicios, abonos, fletes o cualquier importe sin artículo: tocá «Agregar concepto».")</p>
+                <p class="directa-muted">@(_cliente is null ? "Elegí el cliente para agregar conceptos."
+                    : _draft.Tc == "NC" ? (_draft.FacturaAsociadaId is null ? "Elegí la factura asociada: se traen sus conceptos y podés ajustar los importes a acreditar." : "Tocá «Traer conceptos de la factura» o «Agregar concepto» con el importe a acreditar.")
+                    : "Servicios, abonos, fletes o cualquier importe sin artículo: tocá «Agregar concepto».")</p>
             }
             else
             {
@@ -308,6 +315,8 @@
     private bool NuevaLineaBloqueada => Bloqueado || _cliente is null || _contexto is null;
     private bool Terminal => _resultado?.Estado is "GRABADA" or "RECHAZADA";
     private bool Editable => _draft.Tc is "FC" or "FP" or "ND";
+    // La NC acredita artículos a los precios de su factura, pero los otros conceptos se cargan con el importe a acreditar.
+    private bool PermiteConceptos => Editable || _draft.Tc == "NC";
     private bool PuedeEditarPrecio => Editable && _contexto?.PuedeEditarPrecio == true;
     private const string ListaMaestro = "__MAESTRO";
     private string? ListaSeleccionada => _draft.ListaPrecio is null ? null : _draft.ListaPrecio.Length == 0 ? ListaMaestro : _draft.ListaPrecio;
@@ -473,8 +482,26 @@
     });
     private Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarAsociados(string texto, CancellationToken ct)
         => Service.BuscarFacturasAsociadasAsync(_draft.Cliente, _draft.UnidadNegocio, texto, ct);
-    private void AsociadoChanged(CargaComprobantesOpcionFiltro? value) => Cambiar(() =>
-    { _asociado = value; if (value is not null) _asociadoTexto = value.Descripcion; _draft.FacturaAsociadaId = int.TryParse(value?.Codigo, out var id) ? id : null; });
+    private async Task AsociadoChanged(CargaComprobantesOpcionFiltro? value)
+    {
+        Cambiar(() => { _asociado = value; if (value is not null) _asociadoTexto = value.Descripcion; _draft.FacturaAsociadaId = int.TryParse(value?.Codigo, out var id) ? id : null; });
+        // NC sin renglones: se proponen los conceptos de la factura (después se ajustan o quitan).
+        if (_draft.Tc == "NC" && _draft.FacturaAsociadaId is not null && _draft.Lineas.Count == 0) await TraerConceptosFacturaAsync();
+    }
+
+    private async Task TraerConceptosFacturaAsync()
+    {
+        if (_draft.FacturaAsociadaId is not { } id || Bloqueado) return;
+        var result = await UiOps.RunAsync(() => Service.GetConceptosFacturaAsync(id, _lifetime.Token), "Nota de crédito");
+        if (!result.Success || result.Value is not { } conceptos) { _feedback = result.Feedback; return; }
+        if (conceptos.Count == 0) { _feedback = AppUiMessage.Info("Sin otros conceptos", "La factura no tiene otros conceptos: cargá los artículos a acreditar o agregá un concepto."); return; }
+        Cambiar(() =>
+        {
+            _draft.Lineas.RemoveAll(x => x.EsConcepto);
+            _draft.Lineas.AddRange(conceptos);
+        });
+        await InvokeAsync(StateHasChanged);
+    }
     private Task AbrirClientes(bool nuevo)
     {
         if (!Bloqueado) { _nuevoCliente = nuevo; _mostrarClientes = true; }
