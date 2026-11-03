@@ -22,7 +22,7 @@
     {
         <AlfaNotification Message="@(grabacion.Estado == "GRABADA"
             ? AppUiMessage.Success("Comprobante de prueba grabado", $"{grabacion.Tc} {grabacion.Comprobante} · Asiento {grabacion.NumeroAsiento}" +
-                (grabacion.Cae is null ? "." : $" · CAE {grabacion.Cae} · Vencimiento {grabacion.Vencimiento:dd/MM/yyyy}.") + " Se registraron los efectos comerciales en esta base de homologación.")
+                (grabacion.Cae is null ? "." : $" · CAE {grabacion.Cae} · Vencimiento {grabacion.Vencimiento:dd/MM/yyyy}.") + (EmisionReal ? " Se registraron los efectos comerciales." : " Se registraron los efectos comerciales en esta base de homologación."))
             : grabacion.Estado == "RECHAZADA"
                 ? AppUiMessage.Error("ARCA rechazó el comprobante", grabacion.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó la factura. {CargaComprobantesRechazos.NadaGrabado}")
                 : AppUiMessage.Warning("Emisión sin confirmar", grabacion.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta))" />
@@ -41,12 +41,12 @@
                         </td></tr>
                 }</tbody>
             </table></div>
-            <footer class="cc-data-footer">Últimas @_recientes.Count operaciones · Homologación · La recuperación conserva el número y la operación originales.</footer>
+            <footer class="cc-data-footer">Últimas @_recientes.Count operaciones · @TextoAmbiente · La recuperación conserva el número y la operación originales.</footer>
         </section>
     }
     @if (_electronica is { } electronica)
     {
-        <AlfaNotification Message="@AppUiMessage.Info("Electrónica verificada", $"Homologación · Punto de venta {electronica.PuntoVenta}. Últimas facturas autorizadas: A {electronica.UltimaFacturaA}, B {electronica.UltimaFacturaB}, C {electronica.UltimaFacturaC}. Esta consulta no emitió una factura ni reservó números.")" />
+        <AlfaNotification Message="@AppUiMessage.Info("Electrónica verificada", $"{(electronica.Ambiente == "PRODUCCION" ? "Producción" : "Homologación")} · Punto de venta {electronica.PuntoVenta}. Últimas facturas autorizadas: A {electronica.UltimaFacturaA}, B {electronica.UltimaFacturaB}, C {electronica.UltimaFacturaC}. Esta consulta no emitió una factura ni reservó números.")" />
     }
     @if (_pruebaElectronica is { } prueba)
     {
@@ -62,8 +62,19 @@
     {
         @* Menos texto (2026-10-22): el título ya está en la barra y la nota de fechas en el panel de filtros. *@
         <section class="cc-intro cc-intro--compacto">
-            <span class="cc-status">Facturación de prueba · Homologación</span>
+            <span class="cc-status cc-status--@(_contexto.ModoEmision.ToLowerInvariant())" title="@_contexto.ModoEmisionMotivo">
+                @(_contexto.ModoEmision switch
+                {
+                    "PRODUCCION" => "Emisión real · ARCA producción",
+                    "DESHABILITADA" => "Emisión deshabilitada en esta base",
+                    _ => "Facturación de prueba · Homologación"
+                })
+            </span>
         </section>
+        @if (!_contexto.PuedeEmitir)
+        {
+            <AlfaNotification Message="@AppUiMessage.Warning("Esta base no emite desde AlfaCore", _contexto.ModoEmisionMotivo + " Podés consultar y usar la vista previa.")" />
+        }
         @RenderTarjetas()
         @if (EsFacturacionAutomatica)
         {
@@ -169,7 +180,7 @@
                 else
                 {
                     <h3>Revisá tu selección</h3><p>Indicá las cantidades y elegí el talonario. Luego usá «Simular factura».</p>
-                    <p class="cc-note">Simulá, verificá electrónica y validá la grabación para emitir una factura comercial de prueba en homologación.</p>
+                    <p class="cc-note">Simulá, verificá electrónica y validá la grabación para emitir la factura@(EmisionReal ? " (real, con CAE de producción)" : " de prueba en homologación").</p>
                 }
             </aside>
         </section>
@@ -177,18 +188,22 @@
 </div>
 @if (_confirmarGrabacion && _planGrabacion is { } planConfirmacion)
 {
-    <AlfaConfirmDialog Open="true" Title="Grabar factura de prueba"
-        Message="@($"Factura {planConfirmacion.Letra} · Punto {planConfirmacion.PuntoVenta} · Total {Moneda(planConfirmacion.Liquidacion.Total)} · Homologación.")"
-        SecondaryMessage="Se solicitará CAE y se grabarán factura, artículos, cuenta corriente, asiento, aplicación al origen y stock cuando corresponda. Estos cambios quedan en la base de pruebas."
+    <AlfaConfirmDialog Open="true" Title="@(EmisionReal ? "Emitir factura real" : "Grabar factura de prueba")"
+        Message="@($"Factura {planConfirmacion.Letra} · Punto {planConfirmacion.PuntoVenta} · Total {Moneda(planConfirmacion.Liquidacion.Total)} · {TextoAmbiente}.")"
+        SecondaryMessage="@(EmisionReal
+            ? "FACTURA REAL: se pedirá CAE en ARCA producción y se grabarán factura, artículos, cuenta corriente, asiento, aplicación al origen y stock cuando corresponda. Tiene validez fiscal."
+            : "Se solicitará CAE y se grabarán factura, artículos, cuenta corriente, asiento, aplicación al origen y stock cuando corresponda. Estos cambios quedan en la base de pruebas.")"
         ConfirmLabel="Emitir y grabar" OnConfirm="GrabarFacturaAsync" OnCancel="() => _confirmarGrabacion = false" />
 }
 @if (_confirmarEmisionFa)
 {
-    <AlfaConfirmDialog Open="true" Title="Emitir facturación automática"
+    <AlfaConfirmDialog Open="true" Title="@(EmisionReal ? "Emitir facturas REALES" : "Emitir facturación automática")"
         Message="@($"Se emitirán {_seleccionFa.Count} factura(s) por {Moneda(_filasFa.Where(f => _seleccionFa.Contains(f.Cuenta)).Sum(f => f.Importe))} sin IVA, con fecha de hoy.")"
-        SecondaryMessage="@("Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
+        SecondaryMessage="@((EmisionReal
+                ? "FACTURAS REALES con validez fiscal: por cada cliente se pide CAE en ARCA producción y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás."
+                : "Homologación: por cada cliente se pide CAE de prueba y se graban factura, cuenta corriente y asiento; además se actualiza su última factura automática y las cuotas. Un error en un cliente no detiene a los demás.")
             + (_enviarMailFa ? (_mailPruebaFa is null ? " Cada factura se envía por mail al cliente." : $" Mail en modo prueba: todas las facturas van a {_mailPruebaFa}, no a los clientes.") : " No se envían mails."))"
-        ConfirmLabel="Emitir" OnConfirm="EmitirFacturacionAutomaticaAsync" OnCancel="() => _confirmarEmisionFa = false" />
+        ConfirmLabel="@(EmisionReal ? "Emitir facturas reales" : "Emitir")" OnConfirm="EmitirFacturacionAutomaticaAsync" OnCancel="() => _confirmarEmisionFa = false" />
 }
 @if (_confirmarProformaFa is { Count: > 0 } proformas)
 {
@@ -283,7 +298,9 @@
     private string _progresoFa = string.Empty;
     private DateTime FechaFaAplicada => (_filtroAplicado.FechaFacturacion ?? DateTime.Today).Date;
     // La factura sale con la fecha del día: solo se emite si la fecha a facturar es hoy.
-    private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaAplicada == DateTime.Today;
+    private bool PuedeEmitirFa => _seleccionFa.Count > 0 && FechaFaAplicada == DateTime.Today && _contexto?.PuedeEmitir == true;
+    private bool EmisionReal => _contexto?.EmisionReal == true;
+    private string TextoAmbiente => _contexto?.ModoEmision switch { "PRODUCCION" => "Producción", "DESHABILITADA" => "Emisión deshabilitada", _ => "Homologación" };
 
     private void SeleccionarFa(string cuenta, bool valor)
     {
@@ -490,7 +507,7 @@
             _feedback = errores == 0
                 ? AppUiMessage.Success(comoProforma ? "Proformas emitidas" : emitir ? "Facturas emitidas" : "Vista previa lista",
                     comoProforma ? $"{ok} proforma(s) grabadas por {Moneda(resultados.Sum(r => r.Total))}, sin CAE. Usá Actualizar para ver los clientes que quedan."
-                    : emitir ? $"{ok} factura(s) grabadas en homologación por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
+                    : emitir ? $"{ok} factura(s) {(EmisionReal ? "emitidas con CAE" : "grabadas en homologación")} por {Moneda(resultados.Sum(r => r.Total))}. Usá Actualizar para ver los clientes que quedan."
                            : $"{ok} factura(s) validadas por {Moneda(resultados.Sum(r => r.Total))}. No se grabó nada.")
                 : AppUiMessage.Warning(emitir ? "Emisión con observaciones" : "Vista previa con observaciones",
                     $"{ok} correcta(s) y {errores} con problemas. En la columna Resultado de cada cliente figura el motivo y qué hacer; " +
@@ -607,7 +624,7 @@
         else
         {
             <small>@r.Mensaje</small>
-            @if (r.Estado is "RECHAZADA" or "ERROR" && FechaFaAplicada == DateTime.Today)
+            @if (r.Estado is "RECHAZADA" or "ERROR" && FechaFaAplicada == DateTime.Today && _contexto?.PuedeEmitir == true)
             {
                 <button type="button" class="cc-fa-mail__btn" disabled="@_busy" title="Emitir esta factura como proforma (FP), sin CAE"
                         @onclick="() => { _confirmarProformaFa = [r.Cuenta]; }">
@@ -791,7 +808,7 @@
                 </table>
             </div>
             <footer class="cc-data-footer">Clientes en condiciones de facturar al @fecha.ToString("dd/MM/yyyy") · mismas reglas que Facturación Automática de Alfa Gestión ·
-                Vista previa valida sin grabar · Emitir (homologación) requiere que la fecha a facturar sea hoy.</footer>
+                Vista previa valida sin grabar · Emitir (@TextoAmbiente.ToLowerInvariant()) requiere que la fecha a facturar sea hoy.</footer>
         </section>
     };
     private static IReadOnlyList<AlfaSelectOption> Opciones(IReadOnlyList<CargaComprobantesOpcionFiltro> items)
@@ -1033,16 +1050,16 @@
                 new() { Key = "directa", Label = "Nuevo comprobante directo", Icon = "bi-plus-lg", Style = _seleccionados.Count > 0 ? PageHeaderActionStyle.Secondary : PageHeaderActionStyle.Primary,
                     Disabled = _busy || _contexto is null, OnClick = () => { Navigation.NavigateTo(Navigation.Uri.Split('?')[0].TrimEnd('/') + "/nuevo" + new Uri(Navigation.Uri).Query); return Task.CompletedTask; } },
                 new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = _contexto is null ? InicializarAsync : () => BuscarAsync(false) },
-                new() { Key = "historial", Label = "Comprobantes de prueba", Icon = "bi-clock-history", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
+                new() { Key = "historial", Label = EmisionReal ? "Últimas emisiones" : "Comprobantes de prueba", Icon = "bi-clock-history", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = MostrarHistorialAsync },
                 new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _contexto is null, OnClick = VerificarElectronicaAsync }]
             : [new() { Key = "volver", Label = "Cambiar origen", Disabled = _busy, OnClick = VolverAsync },
                 new() { Key = "electronica", Label = "Verificar electrónica", Icon = "bi-cloud-check", Disabled = _busy, OnClick = VerificarElectronicaAsync },
                 new() { Key = "validar-grabacion", Label = "Validar grabación", Icon = "bi-check2-square", Disabled = _busy || _simulacion?.Liquidacion is null || _grabacion is not null || _intentoComercial, OnClick = ValidarGrabacionAsync },
-                new() { Key = "grabar", Label = "Grabar factura de prueba", Icon = "bi-save", Disabled = _busy || _electronica is null || _planGrabacion is null || _grabacion is not null || _intentoComercial, Style = PageHeaderActionStyle.Primary, OnClick = AbrirGrabacionAsync },
+                new() { Key = "grabar", Label = EmisionReal ? "Emitir factura" : "Grabar factura de prueba", Icon = "bi-save", Disabled = _contexto?.PuedeEmitir != true || _busy || _electronica is null || _planGrabacion is null || _grabacion is not null || _intentoComercial, Style = PageHeaderActionStyle.Primary, OnClick = AbrirGrabacionAsync },
                 new() { Key = "recuperar", Label = "Recuperar operación", Icon = "bi-arrow-repeat", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || (!_intentoComercial && _grabacion is null) || _grabacion?.Estado is "GRABADA" or "RECHAZADA", OnClick = () => RecuperarOperacionAsync(_operacionComercial) },
                 new() { Key = "pdf", Label = "PDF factura", Icon = "bi-file-earmark-pdf", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado != "GRABADA", OnClick = () => DescargarFacturaAsync(_operacionComercial) },
                 new() { Key = "nueva-pendiente", Label = "Nueva factura sobre pendientes", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _grabacion?.Estado is not ("GRABADA" or "RECHAZADA"), OnClick = NuevaFacturaAsync },
-                new() { Key = "prueba-arca", Label = "Solo probar autorización ARCA", Icon = "bi-send", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _documentos.Count > 1 || _precios.Count > 0 || _descuentos.Count > 0 || _electronica is null || _simulacion?.Liquidacion is null || _pruebaElectronica is not null || _grabacion is not null || _intentoComercial, OnClick = AbrirPruebaAsync },
+                new() { Key = "prueba-arca", Label = "Solo probar autorización ARCA", Icon = "bi-send", Priority = PageHeaderActionPriority.Overflow, Disabled = _contexto?.ModoEmision != "HOMOLOGACION" || _busy || _documentos.Count > 1 || _precios.Count > 0 || _descuentos.Count > 0 || _electronica is null || _simulacion?.Liquidacion is null || _pruebaElectronica is not null || _grabacion is not null || _intentoComercial, OnClick = AbrirPruebaAsync },
                 new() { Key = "conciliar-prueba", Label = "Conciliar prueba ARCA", Priority = PageHeaderActionPriority.Overflow, Disabled = _busy || _pruebaElectronica is null, OnClick = RecuperarPruebaAsync },
                 new() { Key = "simular", Label = "Simular factura", Icon = "bi-calculator", Disabled = _busy || _grabacion is not null || _intentoComercial, OnClick = SimularAsync }],
         Pagination = _origen is null && _result is not null ? new()

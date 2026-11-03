@@ -22,11 +22,12 @@ public sealed partial class CargaComprobantesService(
                 SELECT TOP(30) CONVERT(nvarchar(15),c.ID) Codigo,
                     LTRIM(RTRIM(c.IDCOMPROBANTE))+' · '+CONVERT(nvarchar(10),c.FECHA,103)+' · $ '+CONVERT(nvarchar(30),c.IMPORTE) Descripcion
                 FROM dbo.V_MV_CPTE c JOIN dbo.ALFACORE_VENTAS_CARGA_OPERACION o ON o.FacturaId=c.ID AND o.Estado='GRABADA'
-                JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=o.Operacion AND p.Estado='APROBADA' AND p.Ambiente='HOMOLOGACION'
+                JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=o.Operacion AND p.Estado='APROBADA' AND p.Ambiente=@Ambiente
                 WHERE LTRIM(RTRIM(c.TC))='FC' AND c.IDCOMPLEMENTO=0 AND c.ANULADA=0 AND LTRIM(RTRIM(c.CUENTA))=@Cliente
                     AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad AND c.IDCOMPROBANTE LIKE @Texto
                 ORDER BY c.FECHA DESC,c.ID DESC;
-                """, new { Cliente = cliente.Trim(), Unidad = unidad.Trim(), Texto = "%" + texto.Trim() + "%" }, cancellationToken: token))).ToList();
+                """, new { Cliente = cliente.Trim(), Unidad = unidad.Trim(), Texto = "%" + texto.Trim() + "%",
+                    Ambiente = ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService)) ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, cancellationToken: token))).ToList();
         }, ct);
 
     public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarClientesDirectaAsync(string texto, CancellationToken ct = default)
@@ -96,6 +97,8 @@ public sealed partial class CargaComprobantesService(
             if (resultado?.Estado != "GRABADA" || string.IsNullOrWhiteSpace(resultado.Comprobante))
                 throw new CargaComprobantesReglaException("La factura todavía no tiene grabación comercial completa.");
             var documento = await documents.RenderAsync(resultado.Tc, resultado.Comprobante, resultado.UnidadNegocio, token);
+            if (!ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService)))
+                return await pdf.GenerateAsync(documento.Html, documento.Footer, token);
             var html = documento.Html.Replace("</head>", "<style>.ventas-homologacion{position:fixed;top:2px;left:0;right:0;text-align:center;font-size:10px;font-weight:bold;color:#a00;z-index:9999}</style></head>", StringComparison.OrdinalIgnoreCase)
                 .Replace("</body>", "<div class='ventas-homologacion'>HOMOLOGACIÓN · COMPROBANTE DE PRUEBA · SIN VALIDEZ FISCAL</div></body>", StringComparison.OrdinalIgnoreCase);
             return await pdf.GenerateAsync(html, documento.Footer, token);
@@ -136,7 +139,11 @@ public sealed partial class CargaComprobantesService(
                 """, new { ctx.AdminCentral, ctx.UnidadNegocio }, cancellationToken: token))).ToList(), ct);
 
     public Task<CargaComprobantesContexto> GetContextoAsync(CancellationToken ct = default)
-        => ExecuteAsync("Contexto", (cn, contexto, token) => Task.FromResult(contexto), ct);
+        => ExecuteAsync("Contexto", async (cn, contexto, token) =>
+        {
+            (contexto.ModoEmision, contexto.ModoEmisionMotivo) = await ArcaModoEmision.LeerAsync(cn, ArcaModoEmision.NombreSesion(sessionService), token);
+            return contexto;
+        }, ct);
 
     public Task<CargaComprobantesElectronicaPrueba?> GetUltimaPruebaElectronicaAsync(int origenId, CancellationToken ct = default)
         => ExecuteAsync("ConsultarPruebaHomologacion", async (cn, contexto, token) =>
@@ -208,7 +215,9 @@ public sealed partial class CargaComprobantesService(
                 resultado.Estado switch
                 {
                     "GRABADA" when resultado.Tc == "FP" => "Proforma grabada (sin CAE, no va a ARCA); se actualizó la última factura y las cuotas. Más adelante se podrá convertir en factura electrónica.",
-                    "GRABADA" => comoProforma ? "El cliente ya tenía una factura emitida hoy: no se generó la proforma." : "Factura grabada en homologación; se actualizó la última factura y las cuotas.",
+                    "GRABADA" => comoProforma ? "El cliente ya tenía una factura emitida hoy: no se generó la proforma." : (resultado.Cae is { Length: > 0 } && !ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService))
+                        ? "Factura emitida con CAE; se actualizó la última factura y las cuotas."
+                        : "Factura grabada en homologación; se actualizó la última factura y las cuotas."),
                     "RECHAZADA" => resultado.Mensaje is { Length: > 0 } m ? m : $"ARCA rechazó el comprobante. {CargaComprobantesRechazos.NadaGrabado}",
                     _ => comoProforma && resultado.Tc != "FP" ? "El cliente tiene una factura electrónica a medio emitir: recuperala antes de hacer una proforma (no se generó nada nuevo)." : resultado.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta
                 });

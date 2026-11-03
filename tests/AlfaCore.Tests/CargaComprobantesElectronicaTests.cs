@@ -23,10 +23,39 @@ public sealed class CargaComprobantesElectronicaTests
     public void HomologacionRechazaProduccionEndpointProductivoYPuntoDeOtraUnidad()
     {
         var e = Emisor();
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(e, 1007);
-        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarHomologacion(e with { Ambiente = ArcaAmbiente.Produccion }, 1007));
-        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarHomologacion(e with { WsfeUrl = "https://servicios1.afip.gov.ar/wsfev1/service.asmx" }, 1007));
-        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarHomologacion(e with { PuntoVentaElectronico = 1010 }, 1007));
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(e, 1007);
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(e with { Ambiente = ArcaAmbiente.Produccion }, 1007));
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(e with { WsfeUrl = "https://servicios1.afip.gov.ar/wsfev1/service.asmx" }, 1007));
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(e with { PuntoVentaElectronico = 1010 }, 1007));
+    }
+
+    private static ArcaEmisorConfig EmisorReal(bool habilitada) => new("20111111112", "", ArcaAmbiente.Produccion, 10, "", "", "1",
+        "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl", "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL")
+    { EsBasePrueba = false, EmisionRealAlfaCore = habilitada };
+
+    [Theory]
+    [InlineData("ALFANET2007_PRUEBAS", true)]
+    [InlineData("ClienteDemo", true)]
+    [InlineData("ALFA NET - PRUEBAS", true)]
+    [InlineData("ALFANET2007", false)]
+    public void BaseDePruebaSeReconocePorElNombre(string nombre, bool esPrueba)
+        => Assert.Equal(esPrueba, ArcaModoEmision.EsBasePrueba(nombre));
+
+    [Fact]
+    public void BaseRealEmiteSoloEnProduccionYConLaEmisionHabilitada()
+    {
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(EmisorReal(true), 10);
+        // Sin habilitar: no graba ni pide CAE, pero la vista previa (ensayo revertido) se puede hacer.
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(EmisorReal(false), 10));
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(EmisorReal(false), 10, exigirEmisionHabilitada: false);
+        // Una base real nunca graba comprobantes de homologación.
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(
+            Emisor() with { EsBasePrueba = false, EmisionRealAlfaCore = true }, 1007));
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarAmbiente(
+            EmisorReal(true) with { WsfeUrl = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx" }, 10));
+        // La prueba ARCA (CAE sin grabar) nunca va a producción.
+        Assert.Throws<CargaComprobantesReglaException>(() => CargaComprobantesElectronicaVerificador.ValidarSoloHomologacion(EmisorReal(true), 10));
+        CargaComprobantesElectronicaVerificador.ValidarSoloHomologacion(Emisor(), 1007);
     }
 
     [Fact]

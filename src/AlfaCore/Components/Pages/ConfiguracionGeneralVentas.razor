@@ -210,12 +210,36 @@
 
         @if (_arca.UsaFacturacionElectronica)
         {
+            @if (_arca.EsBasePrueba)
+            {
+                <div class="cfgarca-modo cfgarca-modo--prueba">
+                    <i class="bi bi-cone-striped" aria-hidden="true"></i>
+                    <div><strong>Base de prueba: siempre homologación</strong>
+                        <span>El nombre de la base contiene PRUEBA o DEMO, así que se factura en homologación (sin validez fiscal). Producción está bloqueada.</span></div>
+                </div>
+            }
+            else
+            {
+                <div class="cfgarca-modo @(_arca.EmisionRealAlfaCore ? "cfgarca-modo--real" : null)">
+                    <AlfaCheckbox Value="@_arca.EmisionRealAlfaCore" ValueChanged="CambiarEmisionReal">
+                        <strong>Emitir comprobantes reales desde AlfaCore</strong>
+                    </AlfaCheckbox>
+                    <span>
+                        @(_arca.EmisionRealAlfaCore
+                            ? "Activo: Carga de comprobantes y Facturación automática piden CAE en ARCA producción y graban en esta base. Requiere el ambiente en Producción."
+                            : "Apagado: en esta base AlfaCore permite consultar y ver la vista previa, pero no emite. Alfa Gestión de escritorio no se ve afectado.")
+                    </span>
+                </div>
+            }
             <div class="cfgarca-row cfgarca-row--general">
                 <label class="cfgarca-field">
                     Ambiente
-                    <select class="cfgarca-select" @bind="_arca.Ambiente" @bind:after="ActualizarUrlsArcaSegunAmbiente">
+                    <select class="cfgarca-select" @bind="_arca.Ambiente" @bind:after="ActualizarUrlsArcaSegunAmbiente" disabled="@_arca.EsBasePrueba">
                         <option value="HOMOLOGACION">Homologación (pruebas, sin validez fiscal)</option>
-                        <option value="PRODUCCION">Producción</option>
+                        @if (!_arca.EsBasePrueba)
+                        {
+                            <option value="PRODUCCION">Producción</option>
+                        }
                     </select>
                 </label>
                 <label class="cfgarca-field">
@@ -1107,6 +1131,17 @@
         _feedback = mpResult.Success
             ? AppUiMessage.Success("Guardado", "La configuración se guardó correctamente.")
             : mpResult.Feedback;
+    }
+
+    // Emitir en real exige producción: al activarla se pasa el ambiente a Producción.
+    private void CambiarEmisionReal(bool? valor)
+    {
+        _arca.EmisionRealAlfaCore = valor == true && !_arca.EsBasePrueba;
+        if (_arca.EmisionRealAlfaCore && !string.Equals(_arca.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase))
+        {
+            _arca.Ambiente = "PRODUCCION";
+            ActualizarUrlsArcaSegunAmbiente();
+        }
     }
 
     private void ActualizarUrlsArcaSegunAmbiente()

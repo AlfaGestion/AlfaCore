@@ -72,7 +72,7 @@
         }
         @if (_draft.Tc is "NC" or "ND")
         {
-            <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Factura asociada" Placeholder="Buscar factura de homologación del cliente"
+            <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Factura asociada" Placeholder="Buscar factura del cliente"
                 MinimumCharacters="0" @bind-SearchText="_asociadoTexto" SelectedItem="_asociado"
                 SelectedItemChanged="AsociadoChanged" SearchFunc="BuscarAsociados" ItemKey="x => x.Codigo"
                 Disabled="@(Bloqueado || _cliente is null || string.IsNullOrEmpty(_draft.UnidadNegocio))">
@@ -256,9 +256,11 @@
 }
 @if (_confirmar && _plan is { } confirmacion)
 {
-    <AlfaConfirmDialog Open="true" Title="Confirmar comprobante de prueba"
+    <AlfaConfirmDialog Open="true" Title="@(_contexto?.EmisionReal == true ? "Confirmar comprobante REAL" : "Confirmar comprobante de prueba")"
         Message="@($"{confirmacion.Tc} {confirmacion.Letra} · Punto {confirmacion.PuntoVenta} · Total {Dinero(confirmacion.Liquidacion.Total)}")"
-        SecondaryMessage="@(confirmacion.EsElectronico ? "Se solicitará CAE y se grabarán comprobante, artículos, stock y asiento en la base de homologación." : "Se grabarán proforma, artículos, stock y asiento. No se solicita CAE ni se afecta el libro de IVA.")"
+        SecondaryMessage="@(confirmacion.EsElectronico ? (_contexto?.EmisionReal == true
+            ? "COMPROBANTE REAL con validez fiscal: se pedirá CAE en ARCA producción y se grabarán comprobante, artículos, stock y asiento."
+            : "Se solicitará CAE y se grabarán comprobante, artículos, stock y asiento en la base de homologación.") : "Se grabarán proforma, artículos, stock y asiento. No se solicita CAE ni se afecta el libro de IVA.")"
         ConfirmLabel="Emitir y grabar" OnConfirm="GrabarAsync" OnCancel="() => _confirmar = false" />
 }
 @if (_confirmarSalida)
@@ -889,7 +891,7 @@
         acciones.Add(new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado, OnClick = () => AbrirClientes(true) });
         acciones.Add(new() { Key = "validar", Label = "Validar", Icon = "bi-check2-square", Disabled = Bloqueado, OnClick = ValidarAsync });
         acciones.Add(new() { Key = "grabar", Label = _draft.Tc == "FP" ? "Grabar proforma" : "Emitir", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
-            Disabled = Bloqueado || _plan is null, OnClick = AbrirConfirmacion });
+            Disabled = Bloqueado || _plan is null || _contexto?.PuedeEmitir != true, OnClick = AbrirConfirmacion });
         acciones.Add(new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Priority = PageHeaderActionPriority.Overflow, Disabled = Bloqueado, OnClick = () => AbrirClientes(false) });
         acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBusquedaAsync });
         return acciones;

@@ -20,7 +20,14 @@ public sealed record ArcaEmisorConfig(
     string ClavePrivadaPem,
     string CondicionIvaPropiaCodigo,
     string WsaaUrl,
-    string WsfeUrl);
+    string WsfeUrl)
+{
+    /// <summary>Base de prueba (nombre con PRUEBA o DEMO): solo homologación. Por omisión true:
+    /// un emisor armado sin pasar por ArcaConfigService nunca habilita producción.</summary>
+    public bool EsBasePrueba { get; init; } = true;
+    /// <summary>Base real habilitada para emitir desde AlfaCore (ALFACORE_EMISION_REAL=SI).</summary>
+    public bool EmisionRealAlfaCore { get; init; }
+}
 
 /// <summary>Configuración global de facturación electrónica para la pantalla de Configuración General
 /// (Ventas). No incluye el contenido del certificado -- solo si hay uno subido y su nombre.</summary>
@@ -28,6 +35,10 @@ public sealed class ArcaConfiguracionGeneralDto
 {
     public bool UsaFacturacionElectronica { get; set; }
     public string Ambiente { get; set; } = "HOMOLOGACION";
+    /// <summary>Base de prueba (nombre con PRUEBA o DEMO): siempre homologación, producción bloqueada.</summary>
+    public bool EsBasePrueba { get; set; }
+    /// <summary>AlfaCore emite comprobantes reales en esta base (Carga de comprobantes, facturación automática).</summary>
+    public bool EmisionRealAlfaCore { get; set; }
     public string ModoFalloCae { get; set; } = "ESTRICTO";
     public string Cuit { get; set; } = string.Empty;
     public string PuntoVenta { get; set; } = string.Empty;

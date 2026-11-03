@@ -17,7 +17,9 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
         if (operacion == Guid.Empty) throw new CargaComprobantesReglaException("Falta la identidad de la operación de prueba.");
         var emisor = await config.ResolveEmisorAsync(cn, origen.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor electrónico.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, plan?.PuntoVenta ?? contexto.PuntoVentaElectronico);
+        // Sin plan es la «prueba ARCA» (CAE sin grabar la factura): solo homologación.
+        if (plan is null) CargaComprobantesElectronicaVerificador.ValidarSoloHomologacion(emisor, contexto.PuntoVentaElectronico);
+        else CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, plan.PuntoVenta);
         if ((emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan?.Letra != "C") || (cuitEsperado is not null && emisor.Cuit != cuitEsperado))
             throw new CargaComprobantesReglaException("El emisor cambió o requiere un circuito fiscal distinto; no se envió la autorización.");
         var previo = await cn.QuerySingleOrDefaultAsync<CargaComprobantesElectronicaPrueba>(new CommandDefinition("""
@@ -79,9 +81,9 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
             await cn.ExecuteAsync(new CommandDefinition("""
                 INSERT INTO dbo.ALFACORE_VENTAS_HOMO_PRUEBA
                 (Operacion,OrigenId,Usuario,UnidadNegocio,Ambiente,Cuit,PuntoVenta,TipoComprobante,Numero,Estado,Importe,Solicitud)
-                VALUES(@Operacion,@OrigenId,@Usuario,@UnidadNegocio,'HOMOLOGACION',@Cuit,@PuntoVenta,@Tipo,@Numero,'ENVIANDO',@Importe,@Solicitud);
+                VALUES(@Operacion,@OrigenId,@Usuario,@UnidadNegocio,@Ambiente,@Cuit,@PuntoVenta,@Tipo,@Numero,'ENVIANDO',@Importe,@Solicitud);
                 """, new { Operacion = operacion, OrigenId = origen.Id, contexto.Usuario, UnidadNegocio = origen.UnidadNegocio,
-                    emisor.Cuit, PuntoVenta = emisor.PuntoVentaElectronico, Tipo = tipo, Numero = numero, Importe = solicitud.ImpTotal,
+                    Ambiente = emisor.Ambiente == ArcaAmbiente.Produccion ? ArcaModoEmision.Produccion : ArcaModoEmision.Homologacion, emisor.Cuit, PuntoVenta = emisor.PuntoVentaElectronico, Tipo = tipo, Numero = numero, Importe = solicitud.ImpTotal,
                     Solicitud = JsonSerializer.Serialize(solicitud) }, cancellationToken: ct));
             ArcaCaeResultadoDto resultado;
             var errorRegistrado = false;
@@ -135,7 +137,7 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
         var emisor = await config.ResolveEmisorAsync(cn, row.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor de la operación.");
         // El punto de la solicitud guardada (puede ser el de la unidad de negocio, no PV_EFACTURA).
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, row.PuntoVenta);
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, row.PuntoVenta);
         if (emisor.Cuit != row.Cuit || emisor.PuntoVentaElectronico != row.PuntoVenta)
             throw new CargaComprobantesReglaException("El emisor cambió respecto de la solicitud guardada.");
         var solicitud = JsonSerializer.Deserialize<ArcaCaeSolicitudDto>(row.Solicitud)

@@ -4,6 +4,8 @@
 .cc-page p { margin: 8px 0; color: var(--alfa-text-secondary); line-height: 1.5; }
 .cc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--alfa-text-secondary); }
 .cc-status { padding: 8px 12px; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); white-space: nowrap; font-size: 12px; }
+.cc-status--produccion { border-color: var(--alfa-success, #2e9e5b); color: var(--alfa-success, #2e9e5b); font-weight: 600; }
+.cc-status--deshabilitada { border-color: var(--alfa-warning, #d9a400); color: var(--alfa-warning, #d9a400); }
 .cc-page .cc-filter-note { margin: 0; font-size: 12px; }
 .cc-data-view { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); min-width: 0; overflow: hidden; overflow: clip; }
 .cc-table-scroll { overflow: auto; max-height: 65vh; }

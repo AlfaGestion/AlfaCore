@@ -153,6 +153,11 @@ public sealed class CargaComprobantesFacturacionAutomaticaFila
 
 public sealed class CargaComprobantesContexto
 {
+    /// <summary>HOMOLOGACION (base de prueba), PRODUCCION (emisión real) o DESHABILITADA (base real sin habilitar).</summary>
+    public string ModoEmision { get; set; } = "HOMOLOGACION";
+    public string ModoEmisionMotivo { get; set; } = string.Empty;
+    public bool EmisionReal => ModoEmision == "PRODUCCION";
+    public bool PuedeEmitir => ModoEmision != "DESHABILITADA";
     public Guid SesionId { get; set; }
     public string Sistema { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;

@@ -37,11 +37,15 @@ public sealed class ArcaConfigService(
             if (!string.Equals(ReadValue(global, "USAFCELECTRONICA", "NO"), "SI", StringComparison.OrdinalIgnoreCase))
                 return null;
 
-            var ambiente = string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase)
+            // Base de prueba o demo: siempre homologación, con los servicios oficiales de homologación,
+            // aunque la configuración guardada diga otra cosa.
+            var esBasePrueba = ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService));
+            var ambiente = !esBasePrueba && string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase)
                 ? ArcaAmbiente.Produccion
                 : ArcaAmbiente.Homologacion;
-            var wsaaUrl = ResolveConfiguredEndpoint(global, "WSAA_URL", ambiente, WsaaProduccionDefault, WsaaHomologacionDefault);
-            var wsfeUrl = ResolveConfiguredEndpoint(global, "WSFE_URL", ambiente, WsfeProduccionDefault, WsfeHomologacionDefault);
+            var wsaaUrl = esBasePrueba ? WsaaHomologacionDefault : ResolveConfiguredEndpoint(global, "WSAA_URL", ambiente, WsaaProduccionDefault, WsaaHomologacionDefault);
+            var wsfeUrl = esBasePrueba ? WsfeHomologacionDefault : ResolveConfiguredEndpoint(global, "WSFE_URL", ambiente, WsfeProduccionDefault, WsfeHomologacionDefault);
+            var emisionReal = !esBasePrueba && string.Equals(ReadValue(global, ArcaModoEmision.ClaveEmisionReal, "NO"), "SI", StringComparison.OrdinalIgnoreCase);
 
             var condicionIva = ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty));
 
@@ -89,7 +93,11 @@ public sealed class ArcaConfigService(
             var certificadoPem = Encoding.UTF8.GetString(certificado.Value.Crt);
             var clavePem = Encoding.UTF8.GetString(certificado.Value.Key);
 
-            return new ArcaEmisorConfig(cuitDigits, razonSocial, ambiente, puntoVenta, certificadoPem, clavePem, condicionIva, wsaaUrl, wsfeUrl);
+            return new ArcaEmisorConfig(cuitDigits, razonSocial, ambiente, puntoVenta, certificadoPem, clavePem, condicionIva, wsaaUrl, wsfeUrl)
+            {
+                EsBasePrueba = esBasePrueba,
+                EmisionRealAlfaCore = emisionReal
+            };
         }
         catch (InvalidOperationException)
         {
@@ -206,15 +214,18 @@ public sealed class ArcaConfigService(
             var certGlobal = await ReadCertificadoNombresAsync(cn, ClaveGlobal, token);
             var certPadron = await ReadCertificadoNombresAsync(cn, "PADRON", token);
 
+            var esBasePrueba = ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService));
             var dto = new ArcaConfiguracionGeneralDto
             {
                 UsaFacturacionElectronica = string.Equals(ReadValue(global, "USAFCELECTRONICA", "NO"), "SI", StringComparison.OrdinalIgnoreCase),
-                Ambiente = ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION").ToUpperInvariant(),
+                Ambiente = esBasePrueba ? "HOMOLOGACION" : ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION").ToUpperInvariant(),
+                EsBasePrueba = esBasePrueba,
+                EmisionRealAlfaCore = !esBasePrueba && string.Equals(ReadValue(global, ArcaModoEmision.ClaveEmisionReal, "NO"), "SI", StringComparison.OrdinalIgnoreCase),
                 ModoFalloCae = ReadValue(global, "ARCA_MODO_FALLO_CAE", "ESTRICTO").ToUpperInvariant(),
                 Cuit = ReadValue(global, "WSFE_CUIT", string.Empty),
                 PuntoVenta = ReadValue(global, "PV_EFACTURA", string.Empty),
-                WsaaUrl = ResolveConfiguredEndpoint(global, "WSAA_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsaaProduccionDefault, WsaaHomologacionDefault),
-                WsfeUrl = ResolveConfiguredEndpoint(global, "WSFE_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsfeProduccionDefault, WsfeHomologacionDefault),
+                WsaaUrl = esBasePrueba ? WsaaHomologacionDefault : ResolveConfiguredEndpoint(global, "WSAA_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsaaProduccionDefault, WsaaHomologacionDefault),
+                WsfeUrl = esBasePrueba ? WsfeHomologacionDefault : ResolveConfiguredEndpoint(global, "WSFE_URL", string.Equals(ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION"), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion, WsfeProduccionDefault, WsfeHomologacionDefault),
                 TieneCertificado = certGlobal.TieneCrt && certGlobal.TieneKey,
                 NombreArchivoCrt = certGlobal.NombreCrt,
                 NombreArchivoKey = certGlobal.NombreKey,
@@ -273,8 +284,17 @@ public sealed class ArcaConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            // Base de prueba o demo: el ambiente queda siempre en homologación y sin emisión real.
+            if (ArcaModoEmision.EsBasePrueba(cn.Database, ArcaModoEmision.NombreSesion(sessionService)))
+            {
+                dto.Ambiente = "HOMOLOGACION";
+                dto.EmisionRealAlfaCore = false;
+                dto.WsaaUrl = WsaaHomologacionDefault;
+                dto.WsfeUrl = WsfeHomologacionDefault;
+            }
 
             await SetConfigAsync(cn, detailColumn, "USAFCELECTRONICA", dto.UsaFacturacionElectronica ? "SI" : "NO", token);
+            await SetConfigAsync(cn, detailColumn, ArcaModoEmision.ClaveEmisionReal, dto.EmisionRealAlfaCore ? "SI" : "NO", token);
             await SetConfigAsync(cn, detailColumn, "ARCA_AMBIENTE",
                 string.Equals(dto.Ambiente, "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? "PRODUCCION" : "HOMOLOGACION", token);
             await SetConfigAsync(cn, detailColumn, "ARCA_MODO_FALLO_CAE",
@@ -293,7 +313,7 @@ public sealed class ArcaConfigService(
 
             await appEvents.LogAuditAsync(ModuleName, "GuardarConfiguracionGeneral", "TA_CONFIGURACION", "ARCA",
                 "Se actualizó la configuración general de facturación electrónica.",
-                new { dto.UsaFacturacionElectronica, dto.Ambiente, dto.ModoFalloCae, dto.Cuit, dto.PuntoVenta }, token);
+                new { dto.UsaFacturacionElectronica, dto.Ambiente, dto.EmisionRealAlfaCore, dto.ModoFalloCae, dto.Cuit, dto.PuntoVenta }, token);
         }, "No se pudo guardar la configuración de facturación electrónica.", ct);
 
     public Task GuardarUnidadAsync(ArcaUnidadNegocioConfigDto dto, CancellationToken ct = default)
@@ -492,7 +512,8 @@ public sealed class ArcaConfigService(
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (
                 N'USAFCELECTRONICA', N'ARCA_AMBIENTE', N'ARCA_MODO_FALLO_CAE',
-                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE', N'WSAA_URL', N'WSFE_URL'
+                N'WSFE_CUIT', N'PV_EFACTURA', N'CONDIVA', N'CONDIVAEMPRESA', N'NOMBRE', N'WSAA_URL', N'WSFE_URL',
+                N'ALFACORE_EMISION_REAL'
             )
             """;
 

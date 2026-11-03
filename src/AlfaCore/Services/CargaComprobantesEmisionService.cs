@@ -22,7 +22,9 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
         var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, plan.EsElectronico ? plan.PuntoVenta : emisor.PuntoVentaElectronico);
+        // Validar/vista previa: ensayo revertido, no exige la emisión real habilitada (sí al pedir CAE o grabar).
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, plan.EsElectronico ? plan.PuntoVenta : emisor.PuntoVentaElectronico, exigirEmisionHabilitada: false);
+        plan.AmbienteArca = emisor.Ambiente == ArcaAmbiente.Produccion ? ArcaModoEmision.Produccion : ArcaModoEmision.Homologacion;
         // La factura C la emite un monotributista (talonario solo C); la condición global CONDIVA no refleja cada unidad.
         if (emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan.Letra != "C")
             throw new CargaComprobantesReglaException("Este circuito inicial requiere un emisor responsable inscripto.");
@@ -111,8 +113,8 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         validarSesion();
         await cn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO dbo.ALFACORE_VENTAS_CARGA_OPERACION(Operacion,OrigenId,UnidadNegocio,Usuario,Ambiente,Estado,PlanJson,Borrador,Tc,FacturaAsociadaId)
-            VALUES(@Operacion,@OrigenId,@UnidadNegocio,@Usuario,'HOMOLOGACION','PREPARADA',@Plan,@Borrador,@Tc,@FacturaAsociadaId);
-            """, new { Operacion = operacion, OrigenId = origenId, plan.UnidadNegocio, plan.Usuario,
+            VALUES(@Operacion,@OrigenId,@UnidadNegocio,@Usuario,@Ambiente,'PREPARADA',@Plan,@Borrador,@Tc,@FacturaAsociadaId);
+            """, new { Operacion = operacion, OrigenId = origenId, plan.UnidadNegocio, plan.Usuario, Ambiente = plan.AmbienteArca,
                 Plan = JsonSerializer.Serialize(plan), Borrador = directa?.Borrador, plan.Tc, FacturaAsociadaId = directa?.FacturaAsociadaId }, cancellationToken: ct));
         try
         {
@@ -168,7 +170,7 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         validarSesion();
         var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor de la operación.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisor, emisor.PuntoVentaElectronico);
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, emisor.PuntoVentaElectronico);
         if (emisor.Cuit != plan.CuitEmisor) throw new CargaComprobantesReglaException("Cambió el emisor desde la validación.");
         CargaComprobantesGrabacionResultado resultado;
         using (var tx = cn.BeginTransaction(System.Data.IsolationLevel.Serializable))
@@ -225,7 +227,7 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             throw new CargaComprobantesReglaException("La autorización fiscal no coincide con el plan; quedó pendiente de conciliación.");
         var emisorActual = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
             ?? throw new CargaComprobantesReglaException("Falta el emisor de la operación aprobada.");
-        CargaComprobantesElectronicaVerificador.ValidarHomologacion(emisorActual, plan.PuntoVenta);
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisorActual, plan.PuntoVenta);
         if (emisorActual.Cuit != plan.CuitEmisor)
             throw new CargaComprobantesReglaException("Cambió el emisor después de autorizar; la factura quedó pendiente de conciliación.");
         validarSesion();
@@ -241,8 +243,9 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             }
             catch { if (tx.Connection is not null) tx.Rollback(); throw; }
         }
-        await events.LogAuditAsync("CargaComprobantes", "FacturaHomologacionGrabada", "V_MV_CPTE", resultado.FacturaId!.Value.ToString(),
-            "Factura de homologación grabada con efectos comerciales.", new { resultado.Operacion, resultado.Comprobante, resultado.NumeroAsiento }, CancellationToken.None);
+        await events.LogAuditAsync("CargaComprobantes", plan.AmbienteArca == ArcaModoEmision.Produccion ? "FacturaRealGrabada" : "FacturaHomologacionGrabada",
+            "V_MV_CPTE", resultado.FacturaId!.Value.ToString(),
+            plan.AmbienteArca == ArcaModoEmision.Produccion ? "Factura con CAE de producción grabada con efectos comerciales." : "Factura de homologación grabada con efectos comerciales.", new { resultado.Operacion, resultado.Comprobante, resultado.NumeroAsiento }, CancellationToken.None);
         return resultado;
     }
 

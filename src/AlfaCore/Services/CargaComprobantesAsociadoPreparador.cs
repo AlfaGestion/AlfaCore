@@ -15,11 +15,12 @@ public sealed class CargaComprobantesAsociadoPreparador
         var factura = await cn.QuerySingleOrDefaultAsync<Factura>(new CommandDefinition("""
             SELECT c.IDCOMPROBANTE Comprobante,c.FECHA Fecha,p.Cuit,p.TipoComprobante Tipo,p.PuntoVenta,p.Numero,c.IMPORTE Total
             FROM dbo.V_MV_CPTE c JOIN dbo.ALFACORE_VENTAS_CARGA_OPERACION op ON op.FacturaId=c.ID AND op.Estado='GRABADA'
-            JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=op.Operacion AND p.Estado='APROBADA' AND p.Ambiente='HOMOLOGACION'
+            JOIN dbo.ALFACORE_VENTAS_HOMO_PRUEBA p ON p.Operacion=op.Operacion AND p.Estado='APROBADA' AND p.Ambiente=@Ambiente
             WHERE c.ID=@Id AND LTRIM(RTRIM(c.TC))='FC' AND c.IDCOMPLEMENTO=0 AND ISNULL(c.ANULADA,0)=0
                 AND LTRIM(RTRIM(c.CUENTA))=@Cliente AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad;
-            """, new { Id = draft.FacturaAsociadaId, Cliente = draft.Cliente.Trim(), Unidad = draft.UnidadNegocio.Trim() }, tx, cancellationToken: ct))
-            ?? throw new CargaComprobantesReglaException("Elegí una factura grabada y aprobada en homologación, del mismo cliente y unidad de negocio.");
+            """, new { Id = draft.FacturaAsociadaId, Cliente = draft.Cliente.Trim(), Unidad = draft.UnidadNegocio.Trim(),
+                Ambiente = ArcaModoEmision.EsBasePrueba(cn.Database) ? ArcaModoEmision.Homologacion : ArcaModoEmision.Produccion }, tx, cancellationToken: ct))
+            ?? throw new CargaComprobantesReglaException("Elegí una factura grabada y aprobada por ARCA, del mismo cliente y unidad de negocio.");
         if (factura.Fecha.Date > fecha.Date || factura.Tipo is not (1 or 6) || factura.Numero <= 0)
             throw new CargaComprobantesReglaException("La fecha o el tipo de factura asociada no son compatibles con esta nota.");
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""

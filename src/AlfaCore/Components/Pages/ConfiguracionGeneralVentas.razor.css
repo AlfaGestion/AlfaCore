@@ -575,3 +575,22 @@
 .cfg-mail__marcas { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--alfa-text-muted, #5f6b7a); }
 .cfg-mail__marcas strong { flex-basis: 100%; }
 .cfg-mail__aviso { margin: 0; color: var(--alfa-warning, #8a5a00); font-weight: 600; font-size: 13px; }
+/* Modo de emisión de la base (prueba / real habilitada / real apagada). */
+.cfgarca-modo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin: 12px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--alfa-border-default);
+    border-left-width: 3px;
+    border-radius: 8px;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+}
+.cfgarca-modo > div { display: flex; flex-direction: column; gap: 2px; }
+.cfgarca-modo strong { color: var(--alfa-text-primary); }
+.cfgarca-modo--prueba { border-left-color: var(--alfa-warning, #d9a400); }
+.cfgarca-modo--prueba > i { color: var(--alfa-warning, #d9a400); font-size: 18px; }
+.cfgarca-modo--real { border-left-color: var(--alfa-success, #2e9e5b); }

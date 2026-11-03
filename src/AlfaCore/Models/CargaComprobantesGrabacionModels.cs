@@ -2,6 +2,8 @@ namespace AlfaCore.Models;
 
 public sealed class CargaComprobantesPlanGrabacion
 {
+    /// <summary>HOMOLOGACION o PRODUCCION, según el emisor validado (va al registro de la operación).</summary>
+    public string AmbienteArca { get; set; } = "HOMOLOGACION";
     // Solo los consolidados guardan partes. NULL mantiene el contrato JSON de operaciones anteriores.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<CargaComprobantesPlanGrabacion>? Origenes { get; set; }
