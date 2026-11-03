@@ -3756,3 +3756,47 @@
 .conversation-etiquetas__nueva { display: flex; gap: .35rem; margin-top: .3rem; padding-top: .45rem; border-top: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .2)); }
 .conversation-etiquetas__nueva input { flex: 1 1 auto; min-width: 0; padding: .25rem .5rem; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .3)); border-radius: 8px; background: transparent; color: var(--alfa-text-primary, #f5f5f7); font-size: var(--alfa-font-small, 13px); }
 .conversation-etiquetas__error { color: var(--alfa-danger, #f87171); font-size: var(--alfa-font-small, 12px); }
+
+/* Celular: la barra superior (canal, acciones y modo) usaba celdas de grilla de ancho fijo y los botones
+   (solo ícono) tomaban el ancho completo de su celda, así que se pisaban entre sí. En pantallas angostas
+   cada botón toma su ancho natural y la barra pasa a una segunda línea si no entra (sin scroll horizontal,
+   que recortaría los menús desplegables de canal y de modo). */
+@media (max-width: 768px) {
+    .conversations-page--odoo .conversations-core-workspace > .conversations-filters.desktop-only {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: .35rem !important;
+        padding: .35rem .5rem !important;
+    }
+
+    .conversations-page--odoo .conversations-core-workspace > .conversations-filters.desktop-only > * {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        grid-column: auto !important;
+        justify-self: auto !important;
+    }
+
+    /* Dos líneas: canal y modo (a la derecha) arriba; las acciones abajo. */
+    .conversations-page--odoo .conversations-core-workspace > .conversations-filters.desktop-only > .conversations-mode-select {
+        order: 1 !important;
+        margin-left: auto !important;
+    }
+
+    .conversations-page--odoo .conversations-core-workspace > .conversations-filters.desktop-only > .conversations-module-actions {
+        order: 2 !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only .conversations-canal > *,
+    .conversations-page--odoo .conversations-filters.desktop-only .conversations-module-actions > *,
+    .conversations-page--odoo .conversations-filters.desktop-only .conversations-filter-pill {
+        width: auto !important;
+        min-width: 34px !important;
+        flex: 0 0 auto !important;
+    }
+
+    .conversations-page--odoo .conversations-filters.desktop-only .conversations-module-actions {
+        flex-wrap: wrap !important;
+        gap: .3rem !important;
+    }
+}

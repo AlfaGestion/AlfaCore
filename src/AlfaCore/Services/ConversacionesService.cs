@@ -968,9 +968,14 @@ public sealed partial class ConversacionesService(
                 """;
 
             // Bloque FROM/WHERE compartido entre la consulta paginada y el COUNT de respaldo
-            // (ver más abajo) para no duplicar la lógica de filtros.
-            var fromWhereSql = $"""
-                FROM dbo.CONV_CONVERSACIONES c
+            // (ver más abajo) para no duplicar la lógica de filtros. Se arma en tres partes:
+            //  - FromBaseSql: conversación, estado, fijado, cliente y contacto (lo que usan los filtros).
+            //  - selectOnlyAppliesSql: cálculos que solo se muestran (último mensaje, no leídos, clasificación...).
+            //  - whereTailSql: MercadoLibre, ranking de búsqueda y el WHERE.
+            // "liviano" (paso 1 de la paginación en dos pasos) no resuelve la cuenta del contacto salvo que
+            // se filtre por cliente o se busque texto: es lo más caro por fila y solo lo usa el WHERE en esos casos.
+            string FromBaseSql(bool liviano, bool desdePagina) => $"""
+                {(desdePagina ? "FROM pagina pg INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = pg.IdConversacion" : "FROM dbo.CONV_CONVERSACIONES c")}
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
                 OUTER APPLY (
@@ -997,18 +1002,23 @@ public sealed partial class ConversacionesService(
                         FROM dbo.MA_CONTACTOS_CUENTAS rel
                         WHERE c.IdContacto IS NOT NULL
                           AND mc.id IS NOT NULL
+                          {(liviano ? "AND (@ClienteCodigo IS NOT NULL OR @Search IS NOT NULL)" : string.Empty)}
                           AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
                           AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
                         UNION ALL
                         SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
                         WHERE c.IdContacto IS NOT NULL
                           AND mc.id IS NOT NULL
+                          {(liviano ? "AND (@ClienteCodigo IS NOT NULL OR @Search IS NOT NULL)" : string.Empty)}
                           AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
                     ) cuenta
                     INNER JOIN dbo.VT_CLIENTES cliCuenta
                         ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
                     ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
                 ) contactoCuenta
+                """;
+
+            var selectOnlyAppliesSql = $"""
                 OUTER APPLY (
                     -- Codigo de clasificacion del cliente resuelto (directo o via contacto->cuenta),
                     -- solo para la cola de espera por prioridad (ver Orden = 'cola_espera').
@@ -1079,6 +1089,9 @@ public sealed partial class ConversacionesService(
                       )
                     ORDER BY {ConversationMessageVisibleDateSql("msg")} DESC, msg.IdMensaje DESC
                 ) ultMsg
+                """;
+
+            var whereTailSql = $"""
                 OUTER APPLY (
                     SELECT TOP (1)
                         CASE
@@ -1314,19 +1327,56 @@ public sealed partial class ConversacionesService(
                     )
                 """;
 
+            var fromWhereSql = $"{FromBaseSql(liviano: false, desdePagina: false)}\n{selectOnlyAppliesSql}\n{whereTailSql}";
+            var fromWhereLivianoSql = $"{FromBaseSql(liviano: true, desdePagina: false)}\n{whereTailSql}";
+
             var limit = Math.Clamp(filters.Limit, 1, 200);
             var offset = Math.Max(0, filters.Offset);
 
-            var sql = $"""
-                {ticketsPreambleSql}
+            // Orden normal: paginación en dos pasos. El paso 1 (pagina) filtra, cuenta y ordena todas las
+            // conversaciones solo con columnas baratas; el paso 2 calcula último mensaje, no leídos,
+            // clasificación, etc. únicamente para las filas de la página. Antes esos cálculos se hacían para
+            // todo el conjunto filtrado (con el historial de Odoo, 10.000+ conversaciones y ~15 s).
+            // Ninguna conversación queda sin FechaHoraUltimoMensaje (se mantiene al grabar cada mensaje), así
+            // que el paso 1 ordena por esa columna sin leer el último mensaje. La cola de espera ordena por
+            // dirección del último mensaje y sigue en un solo paso.
+            var esColaEspera = string.Equals(filters.Orden, ConversacionesInboxOrden.ColaEspera, StringComparison.OrdinalIgnoreCase);
+            var sql = esColaEspera
+                ? $"""
+                    {ticketsPreambleSql}
 
-                SELECT
-                {selectColumnsSql},
-                    COUNT(*) OVER() AS TotalCount
-                {fromWhereSql}
-                {BuildInboxOrderByClause(filters.Orden)}
-                OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
-                """;
+                    SELECT
+                    {selectColumnsSql},
+                        COUNT(*) OVER() AS TotalCount
+                    {fromWhereSql}
+                    {BuildInboxOrderByClause(filters.Orden)}
+                    OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+                    """
+                : $"""
+                    {ticketsPreambleSql}
+
+                    WITH pagina AS (
+                        SELECT
+                            c.IdConversacion,
+                            COUNT(*) OVER() AS TotalCount,
+                            ROW_NUMBER() OVER (ORDER BY
+                                CASE WHEN @Search IS NULL OR @ClienteCodigo IS NOT NULL THEN 0 ELSE searchRank.SearchRank END ASC,
+                                CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
+                                pin.FechaHora_Grabacion DESC,
+                                ISNULL(c.FechaHoraUltimoMensaje, c.FechaHora_Grabacion) DESC,
+                                c.IdConversacion DESC) AS Fila
+                        {fromWhereLivianoSql}
+                        ORDER BY Fila
+                        OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+                    )
+                    SELECT
+                    {selectColumnsSql},
+                        pg.TotalCount
+                    {FromBaseSql(liviano: false, desdePagina: true)}
+                    {selectOnlyAppliesSql}
+                    {whereTailSql}
+                    ORDER BY pg.Fila
+                    """;
 
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
@@ -1443,7 +1493,7 @@ public sealed partial class ConversacionesService(
                     {ticketsPreambleSql}
 
                     SELECT COUNT(1)
-                    {fromWhereSql}
+                    {fromWhereLivianoSql}
                     """;
                 await using var countCmd = new SqlCommand(countSql, cn);
                 AddInboxParameters(countCmd);

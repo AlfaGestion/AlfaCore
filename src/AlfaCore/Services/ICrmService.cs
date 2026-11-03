@@ -19,6 +19,8 @@ public interface ICrmService
     Task<int> GetAdjuntoMaxMbAsync(CancellationToken ct = default);
     Task<long> AddAdjuntoAsync(CrmAdjuntoSubirRequest request, CancellationToken ct = default);
     Task DeleteAdjuntoAsync(long idAdjunto, string? usuarioAccion = null, CancellationToken ct = default);
+    /// <summary>Archiva (baja lógica, deja de verse en el CRM) o desarchiva una oportunidad.</summary>
+    Task SetArchivadaAsync(long idOportunidad, bool archivada, string? usuarioAccion = null, CancellationToken ct = default);
     Task<CrmAdjuntoArchivoDto?> GetAdjuntoArchivoAsync(long idAdjunto, CancellationToken ct = default);
     Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default);
     Task<ConversacionExtraccionDto?> ExtractOportunidadDesdeConversacionAsync(long idConversacion, CancellationToken ct = default);

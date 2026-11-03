@@ -11,6 +11,8 @@ public sealed class CrmFilters
     /// <summary>Código de <see cref="CrmCanalesOrigen"/>; <see cref="CrmCanalesOrigen.Manual"/> filtra las que no tienen canal.</summary>
     public string? CanalOrigen { get; set; }
     public bool IncluirCerradas { get; set; }
+    /// <summary>true muestra solo las archivadas (Baja = 1) en lugar de las activas.</summary>
+    public bool Archivadas { get; set; }
     public string OrdenarPor { get; set; } = CrmViewColumnKeys.Fecha;
     public bool OrdenDescendente { get; set; } = true;
     public int PageNumber { get; set; } = 1;
@@ -33,6 +35,7 @@ public class CrmOpportunityDto
     public int Prioridad { get; set; }
     public int Probabilidad { get; set; }
     public decimal ImporteEstimado { get; set; }
+    public bool Archivada { get; set; }
     public DateTime? FechaCierreEstimada { get; set; }
     public string IdTecnico { get; set; } = string.Empty;
     public string TecnicoNombre { get; set; } = string.Empty;

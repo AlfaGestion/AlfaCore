@@ -178,8 +178,7 @@ public sealed class CrmService(
             var sql = $"""
                 {OpportunitySelectSql()}
                 {OpportunityFromSql()}
-                WHERE o.IdOportunidad = @IdOportunidad
-                  AND ISNULL(o.Baja, 0) = 0;
+                WHERE o.IdOportunidad = @IdOportunidad;
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -600,6 +599,27 @@ public sealed class CrmService(
             await tx.CommitAsync(token);
         }, "No se pudo quitar el adjunto.", ct);
 
+    // Archivar = baja lógica (Baja = 1): deja de verse en tablero, lista y resumen, como el "Archivar" de Odoo.
+    // Desarchivar la vuelve a mostrar; las dos quedan en la actividad de la oportunidad.
+    public Task SetArchivadaAsync(long idOportunidad, bool archivada, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SetArchivada", async token =>
+        {
+            if (idOportunidad <= 0)
+                throw new InvalidOperationException("Seleccioná una oportunidad válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            var cambiadas = await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.CRM_OPORTUNIDADES
+                SET Baja = @Baja, FechaHoraModificacion = GETDATE()
+                WHERE IdOportunidad = @IdOportunidad AND ISNULL(Baja, 0) <> @Baja;
+                """, new { IdOportunidad = idOportunidad, Baja = archivada }, tx, cancellationToken: token));
+            if (cambiadas > 0)
+                await AddActivityAsync(cn, tx, idOportunidad, "ESTADO", archivada ? "Archivó la oportunidad" : "Desarchivó la oportunidad", usuarioAccion, token);
+            await tx.CommitAsync(token);
+        }, archivada ? "No se pudo archivar la oportunidad." : "No se pudo desarchivar la oportunidad.", ct);
+
     public Task<CrmAdjuntoArchivoDto?> GetAdjuntoArchivoAsync(long idAdjunto, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAdjuntoArchivo", async token =>
         {
@@ -1019,6 +1039,7 @@ public sealed class CrmService(
             ISNULL(o.Prioridad, 0) AS Prioridad,
             ISNULL(o.Probabilidad, 0) AS Probabilidad,
             ISNULL(o.ImporteEstimado, 0) AS ImporteEstimado,
+            CAST(ISNULL(o.Baja, 0) AS bit) AS Archivada,
             o.FechaCierreEstimada,
             ISNULL(o.IdTecnico, '') AS IdTecnico,
             ISNULL(tec.Nombre, '') AS TecnicoNombre,
@@ -1065,7 +1086,7 @@ public sealed class CrmService(
         """;
 
     private static string OpportunityWhereSql() => """
-        WHERE ISNULL(o.Baja, 0) = 0
+        WHERE ISNULL(o.Baja, 0) = @Archivadas
           AND (@IncluirCerradas = 1 OR (ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0))
           AND (@IdEtapa IS NULL OR o.IdEtapa = @IdEtapa)
           AND (@SoloSinAsignar = 0 OR LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))) = '')
@@ -1106,6 +1127,7 @@ public sealed class CrmService(
         p.Add("CanalOrigen", string.IsNullOrWhiteSpace(filters.CanalOrigen) ? null : filters.CanalOrigen.Trim());
         p.Add("CanalOrigenManual", CrmCanalesOrigen.Manual);
         p.Add("IncluirCerradas", filters.IncluirCerradas);
+        p.Add("Archivadas", filters.Archivadas);
         return p;
     }
 

@@ -110,6 +110,12 @@ Cuando se conecte el botón desde `Conversaciones`, el flujo recomendado es:
 - `src/AlfaCore/App_Data/updates/2026-07-28-002__crm_oportunidades_menu_web.sql`
 - `src/AlfaCore/App_Data/updates/2026-11-03-004__crm_oportunidades_adjuntos.sql`
 
+## Archivar
+
+- En la ficha, **Archivar** (con confirmación) hace la baja lógica (`CRM_OPORTUNIDADES.Baja = 1`): deja de verse en tablero, lista y resumen, como el Archivar de Odoo. Queda en la actividad.
+- El filtro **Archivadas** del panel de búsqueda muestra solo las archivadas; desde la ficha, **Desarchivar** la vuelve a mostrar.
+- No hay borrado físico desde la pantalla.
+
 ## Adjuntos
 
 La ficha de la oportunidad tiene la solapa **Adjuntos**: subir varios archivos a la vez, abrirlos, descargarlos y quitarlos (baja lógica). Cada alta o baja deja una línea `ADJUNTO` en `CRM_ACTIVIDAD`.

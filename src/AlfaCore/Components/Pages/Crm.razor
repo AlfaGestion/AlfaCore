@@ -903,6 +903,7 @@
                     <h4><i class="bi bi-funnel"></i> Filtros</h4>
                     <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloSinAsignar)" @onclick="ApplyUnassignedAsync">Sin asignar</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.Archivadas)" @onclick="ToggleArchivadasAsync">Archivadas</button>
                     @* En el tablero las ganadas/perdidas siempre quedan en su columna: el filtro es de la lista. *@
                     @if (_viewMode != "kanban")
                     {
@@ -988,6 +989,14 @@
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowMeetingPlaceholder"><i class="bi bi-calendar2-event"></i> Sin reuniones</button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenConversationFromDetail"><i class="bi bi-chat-dots"></i> Ver chat</button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CreateSimilarLead"><i class="bi bi-star"></i> Lead similar</button>
+                @if (_detail is { Archivada: true })
+                {
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ArchivarOportunidadAsync(false)" disabled="@_saving" title="Vuelve a verse en el tablero y en la lista"><i class="bi bi-archive"></i> Desarchivar</button>
+                }
+                else if (_detail is not null)
+                {
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ArchivarOportunidadAsync(true)" disabled="@_saving" title="Deja de verse en el tablero y en la lista"><i class="bi bi-archive"></i> Archivar</button>
+                }
             </div>
         </header>
 
@@ -1637,6 +1646,8 @@
             chips.Add(new("origen", $"Origen: {(_filters.CanalOrigen == CrmCanalesOrigen.Manual ? "Manual" : CrmCanalesOrigen.Nombre(_filters.CanalOrigen))}"));
         if (_filters.IncluirCerradas)
             chips.Add(new("cerradas", "Incluye ganadas/perdidas"));
+        if (_filters.Archivadas)
+            chips.Add(new("archivadas", "Archivadas"));
         return chips;
     }
 
@@ -1664,6 +1675,9 @@
                 break;
             case "cerradas":
                 _filters.IncluirCerradas = false;
+                break;
+            case "archivadas":
+                _filters.Archivadas = false;
                 break;
         }
         UpdatePageHeader();
@@ -1723,6 +1737,12 @@
     {
         _filters.IdTecnico = null;
         _filters.SoloSinAsignar = true;
+        await SearchAsync();
+    }
+
+    private async Task ToggleArchivadasAsync()
+    {
+        _filters.Archivadas = !_filters.Archivadas;
         await SearchAsync();
     }
 
@@ -2406,6 +2426,32 @@
         {
             await CrmSvc.DeleteAdjuntoAsync(adjunto.IdAdjunto, CurrentUserName);
             _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    // Archivar pide confirmación y vuelve al tablero; desarchivar es directo y deja la ficha abierta.
+    private async Task ArchivarOportunidadAsync(bool archivar)
+    {
+        if (_detail is null)
+            return;
+        var codigo = _detail.CodigoVisible;
+        if (archivar && !await JS.InvokeAsync<bool>("confirm", $"¿Archivar la oportunidad #{codigo} {_detail.Titulo}? Deja de verse en el tablero y en la lista. Se puede recuperar con el filtro Archivadas."))
+            return;
+        var id = _detail.IdOportunidad;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.SetArchivadaAsync(id, archivar, CurrentUserName);
+            if (archivar)
+            {
+                CloseEditor();
+                await ReloadCurrentViewAsync(resetPage: false);
+                ShowOk("Oportunidad archivada", $"La #{codigo} quedó archivada. Para verla, usá el filtro Archivadas.");
+            }
+            else
+            {
+                _detail = await CrmSvc.GetByIdAsync(id);
+                ShowOk("Oportunidad desarchivada", $"La #{codigo} vuelve a verse en el tablero.");
+            }
         });
     }
 
