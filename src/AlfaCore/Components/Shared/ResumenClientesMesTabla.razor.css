@@ -1,20 +1,30 @@
-.rcm-opciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 12px 0 8px; font-size: 13px; }
-.rcm-leyenda { margin-left: auto; font-size: 12px; color: var(--alfa-text-muted, #5f6b7a); display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-.rcm-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-.rcm-chip--falta { background: var(--alfa-danger-subtle, #fdecea); color: var(--alfa-danger, #b3261e); }
-.rcm-chip--pend { background: var(--alfa-warning-subtle, #fff4e0); color: var(--alfa-warning, #8a5a00); margin-left: 10px; }
-.rcm-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--alfa-border, #dfe3e8); border-radius: 8px; }
-.rcm-tabla { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
-.rcm-tabla th, .rcm-tabla td { padding: 6px 10px; border-bottom: 1px solid var(--alfa-border, #eef0f3); white-space: nowrap; background: var(--alfa-surface, #fff); }
-.rcm-tabla thead th { position: sticky; top: 0; z-index: 2; background: var(--alfa-surface-subtle, #f5f7fa); font-weight: 600; text-align: left; }
-.rcm-tabla tfoot td { position: sticky; bottom: 0; z-index: 2; background: var(--alfa-surface-subtle, #f5f7fa); border-top: 1px solid var(--alfa-border, #dfe3e8); }
+/* Clientes por mes: colores del tema (claro y oscuro). Faltantes y pendientes con tinte suave del color de estado. */
+.rcm-opciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 12px 0 8px; font-size: 13px; color: var(--alfa-text-primary); }
+.rcm-leyenda { margin-left: auto; font-size: 12px; color: var(--alfa-text-secondary); display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.rcm-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; }
+.rcm-chip--falta { color: var(--alfa-danger, #e5484d); background: color-mix(in srgb, var(--alfa-danger, #e5484d) 14%, transparent); }
+.rcm-chip--pend { color: var(--alfa-warning, #d9a400); background: color-mix(in srgb, var(--alfa-warning, #d9a400) 14%, transparent); margin-left: 10px; }
+
+.rcm-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md, 8px); background: var(--alfa-bg-surface); }
+.rcm-tabla { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; color: var(--alfa-text-primary); }
+.rcm-tabla th, .rcm-tabla td { padding: 8px 12px; border-bottom: 1px solid var(--alfa-border-default); white-space: nowrap; background: var(--alfa-bg-surface); }
+.rcm-tabla thead th { position: sticky; top: 0; z-index: 2; background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface)));
+    color: var(--alfa-text-secondary); font-size: 11px; font-weight: 600; text-align: left; }
+.rcm-tabla tbody tr:hover td { background: var(--alfa-bg-row-hover, var(--alfa-bg-surface-raised, var(--alfa-bg-surface))); }
+.rcm-tabla tfoot td { position: sticky; bottom: 0; z-index: 2; background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface)));
+    border-top: 2px solid var(--alfa-border-default); font-weight: 600; }
+
 .rcm-col-cliente { position: sticky; left: 0; z-index: 1; min-width: 220px; max-width: 320px; white-space: normal !important; }
 .rcm-tabla thead .rcm-col-cliente, .rcm-tabla tfoot .rcm-col-cliente { z-index: 3; }
-.rcm-col-cliente small { display: block; color: var(--alfa-text-muted, #5f6b7a); }
-.rcm-num { text-align: right !important; font-variant-numeric: tabular-nums; }
-.rcm-celda--vacia { color: var(--alfa-text-muted, #9aa4b1); }
-.rcm-tabla td.rcm-celda--falta { background: var(--alfa-danger-subtle, #fdecea); color: var(--alfa-danger, #b3261e); font-weight: 600; font-size: 11px; }
-.rcm-tabla td.rcm-celda--pend { background: var(--alfa-warning-subtle, #fff4e0); color: var(--alfa-warning, #8a5a00); font-size: 11px; }
-.rcm-fila--falta .rcm-col-cliente strong { color: var(--alfa-danger, #b3261e); }
-.rcm-vacio { text-align: center; padding: 24px !important; color: var(--alfa-text-muted, #5f6b7a); }
+.rcm-col-cliente strong { color: var(--alfa-text-primary); font-weight: 600; }
+.rcm-col-cliente small { display: block; color: var(--alfa-text-secondary); }
 
+.rcm-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.rcm-tabla td.rcm-num:last-child, .rcm-tabla th.rcm-num:last-child { font-weight: 600; }
+.rcm-celda--vacia { color: var(--alfa-text-disabled, var(--alfa-text-secondary)); }
+.rcm-tabla td.rcm-celda--falta { background: color-mix(in srgb, var(--alfa-danger, #e5484d) 16%, var(--alfa-bg-surface));
+    color: var(--alfa-danger, #e5484d); font-weight: 600; font-size: 12px; }
+.rcm-tabla td.rcm-celda--pend { background: color-mix(in srgb, var(--alfa-warning, #d9a400) 14%, var(--alfa-bg-surface));
+    color: var(--alfa-warning, #d9a400); font-size: 12px; }
+.rcm-fila--falta .rcm-col-cliente strong { color: var(--alfa-danger, #e5484d); }
+.rcm-vacio { text-align: center; padding: 24px !important; color: var(--alfa-text-secondary); }

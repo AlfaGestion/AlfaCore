@@ -18,7 +18,7 @@ public sealed class ResumenClientesMesDto
 public sealed class ResumenClienteMesFilaDto
 {
     public string Cuenta { get; init; } = string.Empty;
-    public string RazonSocial { get; init; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
     /// <summary>Periodicidad de la facturación automática activa (MENSUAL, BIMESTRAL...), vacía si no tiene.</summary>
     public string Periodicidad { get; init; } = string.Empty;
     public bool FacturacionAutomatica => Periodicidad.Length > 0;

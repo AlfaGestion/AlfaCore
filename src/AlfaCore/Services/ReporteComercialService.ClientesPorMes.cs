@@ -70,7 +70,23 @@ public sealed partial class ReporteComercialService
                     primeraVenta[r.Cuenta] = r.Fecha;
             }
 
-            return Armar(meses, ventas, fa, primeraVenta, DateTime.Today);
+            var resultado = Armar(meses, ventas, fa, primeraVenta, DateTime.Today);
+            // Ventas sin razón social en el libro (y clientes sin abono): el nombre sale de la ficha del cliente.
+            var sinNombre = resultado.Filas.Where(x => string.IsNullOrWhiteSpace(x.RazonSocial) || x.RazonSocial == x.Cuenta).Select(x => x.Cuenta).Distinct().ToList();
+            if (sinNombre.Count > 0)
+            {
+                var nombres = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var lote in sinNombre.Chunk(500))
+                    foreach (var r in await cn.QueryAsync<(string Cuenta, string Nombre)>(new CommandDefinition("""
+                        SELECT LTRIM(RTRIM(CTACODIGO)), LTRIM(RTRIM(ISNULL(RAZON_SOCIAL,''))) FROM dbo.VT_CLIENTES
+                        WHERE LTRIM(RTRIM(CTACODIGO)) IN @Cuentas AND ISNULL(RAZON_SOCIAL,'') <> '';
+                        """, new { Cuentas = lote }, commandTimeout: 60, cancellationToken: ct)))
+                        nombres.TryAdd(r.Cuenta, r.Nombre);
+                foreach (var fila in resultado.Filas)
+                    if ((string.IsNullOrWhiteSpace(fila.RazonSocial) || fila.RazonSocial == fila.Cuenta) && nombres.TryGetValue(fila.Cuenta, out var n))
+                        fila.RazonSocial = n;
+            }
+            return resultado;
         }, ct, f);
 
     internal static List<DateTime> MesesDelPeriodo(DateTime desde, DateTime hasta)
