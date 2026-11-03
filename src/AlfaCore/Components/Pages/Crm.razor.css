@@ -1355,3 +1355,39 @@
 .crm-accion__body a:hover strong {
     text-decoration: underline;
 }
+
+/* Adjuntos en una sola línea: nombre (recortado si es largo) y a la derecha tamaño, fecha y autor. */
+.crm-adjunto {
+    padding: .3rem .5rem;
+}
+
+.crm-adjunto__body {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+.crm-adjunto__body a {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+.crm-adjunto__body a strong {
+    display: inline;
+}
+
+.crm-adjunto__body small {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .crm-adjunto__body {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .1rem;
+    }
+}

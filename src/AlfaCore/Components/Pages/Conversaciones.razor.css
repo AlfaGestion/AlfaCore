@@ -3729,10 +3729,18 @@
 .context-notes-dialog__text { color: var(--alfa-text-primary, #f5f5f7); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; user-select: text; }
 
 /* ---------- Etiquetas de conversaciones ---------- */
-.conversations-tag-filter { display: flex; align-items: center; gap: .45rem; margin-top: .45rem; padding: 0 .6rem; min-height: 32px; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .25)); border-radius: 10px; color: var(--alfa-text-secondary, #94a3b8); }
-.conversations-tag-filter.is-active { border-color: var(--alfa-accent, #38bdf8); color: var(--alfa-text-primary, #f5f5f7); }
-.conversations-tag-filter select { flex: 1 1 auto; min-width: 0; background: transparent; border: 0; color: inherit; font-size: var(--alfa-font-small, 13px); outline: none; }
+/* Filtro por etiqueta: botón compacto a la derecha del buscador (misma fila). Solo ícono hasta que se elige una etiqueta. */
+.conversations-page--odoo .conversations-inbox-tools.has-tag-filter,
+.conversations-inbox-tools.has-tag-filter { display: flex !important; align-items: center; gap: .4rem; }
+.conversations-inbox-tools.has-tag-filter > .conversations-inbox-search { flex: 1 1 auto; min-width: 0; }
+.conversations-tag-filter { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: .35rem; height: 38px; min-width: 38px; max-width: 45%; padding: 0 .55rem; border: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .25)); border-radius: 10px; color: var(--alfa-text-secondary, #94a3b8); cursor: pointer; }
+.conversations-tag-filter:hover { color: var(--alfa-text-primary, #f5f5f7); border-color: var(--alfa-accent, #38bdf8); }
+.conversations-tag-filter.is-active { border-color: var(--etiqueta-color, var(--alfa-accent, #38bdf8)); color: var(--etiqueta-color, var(--alfa-text-primary, #f5f5f7)); padding-right: .25rem; }
+.conversations-tag-filter__nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--alfa-font-small, 12px); font-weight: 600; }
+.conversations-tag-filter select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; }
 .conversations-tag-filter select option { background: var(--alfa-bg-surface-raised, #1e293b); color: var(--alfa-text-primary, #f5f5f7); }
+.conversations-tag-filter__quitar { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font-size: .7rem; cursor: pointer; }
+.conversations-tag-filter__quitar:hover { background: var(--alfa-state-hover, rgba(148, 163, 184, .16)); }
 .conversation-badge--etiqueta { color: var(--etiqueta-color) !important; border: 1px solid var(--etiqueta-color) !important; background: transparent !important; }
 .conversation-etiquetas { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .35rem .9rem; border-bottom: 1px solid var(--alfa-border-default, rgba(148, 163, 184, .18)); }
 .conversation-etiquetas__chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .2rem .1rem .55rem; border: 1px solid var(--etiqueta-color); border-radius: 999px; color: var(--etiqueta-color); font-size: var(--alfa-font-small, 12px); }

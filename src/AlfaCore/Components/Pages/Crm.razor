@@ -1296,11 +1296,11 @@
                         <div class="crm-accion-list">
                             @foreach (var adjunto in _detail.Adjuntos)
                             {
-                                <article class="crm-accion">
+                                <article class="crm-accion crm-adjunto">
                                     <i class="bi @GetAdjuntoIcon(adjunto) crm-adjunto__icono"></i>
-                                    <div class="crm-accion__body">
-                                        <a href="@GetAdjuntoUrl(adjunto, descargar: false)" target="_blank" rel="noopener"><strong>@adjunto.NombreArchivo</strong></a>
-                                        <small>@FormatTamano(adjunto.TamanoBytes) · @FormatDate(adjunto.FechaHoraAlta)@(string.IsNullOrWhiteSpace(adjunto.UsuarioAlta) ? string.Empty : $" · {adjunto.UsuarioAlta}")@(adjunto.Origen == "ODOO" ? " · Odoo" : string.Empty)</small>
+                                    <div class="crm-accion__body crm-adjunto__body">
+                                        <a href="@GetAdjuntoUrl(adjunto, descargar: false)" target="_blank" rel="noopener" title="@adjunto.NombreArchivo"><strong>@adjunto.NombreArchivo</strong></a>
+                                        <small>@FormatTamano(adjunto.TamanoBytes) · @FormatDate(adjunto.FechaHoraAlta) · @GetAdjuntoAutor(adjunto)</small>
                                     </div>
                                     <div>
                                         <a class="crm-accion__del" href="@GetAdjuntoUrl(adjunto, descargar: true)" title="Descargar"><i class="bi bi-download"></i></a>
@@ -2417,6 +2417,11 @@
             : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
         return $"/api/crm/adjuntos/{adjunto.IdAdjunto}?idBase={idBase}{(descargar ? "&download=1" : string.Empty)}{token}";
     }
+
+    // Quién lo subió; los traídos de Odoo tienen UsuarioAlta "Odoo", así que no se repite el origen.
+    private static string GetAdjuntoAutor(CrmAdjuntoDto adjunto)
+        => !string.IsNullOrWhiteSpace(adjunto.UsuarioAlta) ? adjunto.UsuarioAlta
+            : adjunto.Origen == "ODOO" ? "Odoo" : "-";
 
     private static string GetAdjuntoIcon(CrmAdjuntoDto adjunto)
     {

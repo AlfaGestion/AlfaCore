@@ -814,7 +814,7 @@
                     </div>
                 </div>
 
-                <div class="conversations-inbox-tools" @onclick:stopPropagation>
+                <div class="conversations-inbox-tools @(_etiquetasConversacion.Count > 0 ? "has-tag-filter" : string.Empty)" @onclick:stopPropagation>
                     <div class="conversations-inbox-search">
                         <div class="conversations-inbox-searchbox">
                             <i class="bi bi-search"></i>
@@ -898,8 +898,17 @@
                     </div>
                     @if (_etiquetasConversacion.Count > 0)
                     {
-                        <div class="conversations-tag-filter @(_filters.IdEtiqueta is > 0 ? "is-active" : string.Empty)">
+                        // Botón chico al lado del buscador: solo el ícono, o el nombre de la etiqueta elegida con una X para quitarla.
+                        // El select queda transparente encima, así se abre la lista nativa al tocarlo.
+                        var etiquetaFiltro = _etiquetasConversacion.FirstOrDefault(x => x.IdEtiqueta == _filters.IdEtiqueta);
+                        <div class="conversations-tag-filter @(etiquetaFiltro is not null ? "is-active" : string.Empty)"
+                             title="@(etiquetaFiltro is null ? "Filtrar por etiqueta" : $"Filtrando por {etiquetaFiltro.Nombre}")"
+                             style="@(etiquetaFiltro is null ? null : $"--etiqueta-color:{GetEtiquetaColor(etiquetaFiltro)}")">
                             <i class="bi bi-tags"></i>
+                            @if (etiquetaFiltro is not null)
+                            {
+                                <span class="conversations-tag-filter__nombre">@etiquetaFiltro.Nombre</span>
+                            }
                             <select aria-label="Filtrar por etiqueta"
                                     value="@(_filters.IdEtiqueta?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)"
                                     @onchange="HandleEtiquetaFilterChangedAsync">
@@ -909,6 +918,11 @@
                                     <option value="@etiqueta.IdEtiqueta">@etiqueta.Nombre</option>
                                 }
                             </select>
+                            @if (etiquetaFiltro is not null)
+                            {
+                                <button type="button" class="conversations-tag-filter__quitar" aria-label="Quitar filtro de etiqueta" title="Quitar filtro"
+                                        @onclick="ClearEtiquetaFilterAsync"><i class="bi bi-x-lg"></i></button>
+                            }
                         </div>
                     }
                 </div>
@@ -4015,6 +4029,7 @@
     private List<ConversacionEtiquetaDto> _etiquetasConversacion = [];
     private Dictionary<long, IReadOnlyList<ConversacionEtiquetaDto>> _etiquetasPorConversacion = [];
     private bool _showEtiquetasPicker;
+    private (string Modo, string? CodigoEstado)? _vistaAntesDeEtiqueta;
     private bool _guardandoEtiquetas;
     private string _nuevaEtiquetaNombre = string.Empty;
     private string? _etiquetasError;
@@ -5756,12 +5771,32 @@
 
     private async Task HandleEtiquetaFilterChangedAsync(ChangeEventArgs args)
     {
-        _filters.IdEtiqueta = int.TryParse(Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture), out var id) && id > 0 ? id : null;
-        // Lo etiquetado suele incluir conversaciones cerradas (por ejemplo el historial importado): al filtrar se muestran todas.
-        if (_filters.IdEtiqueta is not null)
+        var id = int.TryParse(Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture), out var parsed) && parsed > 0 ? parsed : (int?)null;
+        if (id is null)
         {
-            _filters.Modo = "todas";
-            _filters.CodigoEstado = string.Empty;
+            await ClearEtiquetaFilterAsync();
+            return;
+        }
+
+        // Lo etiquetado suele incluir conversaciones cerradas (por ejemplo el historial importado): al filtrar se muestran todas.
+        // Se recuerda la vista anterior para volver a ella al quitar el filtro.
+        if (_filters.IdEtiqueta is null)
+            _vistaAntesDeEtiqueta = (_filters.Modo, _filters.CodigoEstado);
+        _filters.IdEtiqueta = id;
+        _filters.Modo = "todas";
+        _filters.CodigoEstado = string.Empty;
+        ResetInboxPaging();
+        await LoadInboxAsync();
+    }
+
+    private async Task ClearEtiquetaFilterAsync()
+    {
+        _filters.IdEtiqueta = null;
+        if (_vistaAntesDeEtiqueta is { } vista)
+        {
+            _filters.Modo = vista.Modo;
+            _filters.CodigoEstado = vista.CodigoEstado;
+            _vistaAntesDeEtiqueta = null;
         }
         ResetInboxPaging();
         await LoadInboxAsync();
