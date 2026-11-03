@@ -60,7 +60,8 @@ public static class ModuleTopNavPresets
             ("sumas-saldos", "Sumas y saldos", "/contabilidad/sumas-y-saldos"),
             ("balance-general", "Balance general", "/contabilidad/balance-general"),
             ("plan", "Plan de cuentas", "/contabilidad/plan-de-cuentas"),
-            ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre")
+            ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre"),
+            ("control-arca", "Control ARCA", "/contabilidad/control-arca")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCajaBancos(IRouteContextService routeContext, NavigationManager nav, string activeKey)

@@ -1,0 +1,29 @@
+.ca-page { display: flex; flex-direction: column; gap: 12px; }
+.ca-subir { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 16px; border: 1px dashed var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
+.ca-subir__texto { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ca-subir__texto span { color: var(--alfa-text-secondary); }
+.ca-subir__boton { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    background: var(--alfa-accent); color: #fff; font-weight: 600; font-size: 14px; }
+.ca-subir__boton.is-disabled { opacity: .6; cursor: default; }
+.ca-subir__boton ::deep input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ca-filtros { display: flex; flex-wrap: wrap; gap: 6px; }
+.ca-filtros button { padding: 5px 12px; font-size: 12px; border-radius: 999px; cursor: pointer; border: 1px solid var(--alfa-border-default);
+    background: transparent; color: var(--alfa-text-primary); }
+.ca-filtros button.is-activo { border-color: var(--alfa-accent); color: var(--alfa-accent); font-weight: 600; }
+.ca-tabla__marco { border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); overflow: hidden; background: var(--alfa-bg-surface); }
+.ca-tabla__scroll { overflow: auto; max-height: 62vh; }
+.ca-tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; color: var(--alfa-text-primary); }
+.ca-tabla th, .ca-tabla td { padding: 7px 10px; border-bottom: 1px solid var(--alfa-border-default); white-space: nowrap; background: var(--alfa-bg-surface); vertical-align: top; }
+.ca-tabla thead th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface)));
+    color: var(--alfa-text-secondary); font-size: 11px; font-weight: 600; text-align: left; }
+.ca-tabla td small { display: block; color: var(--alfa-text-secondary); }
+.ca-tabla td.ca-obs { white-space: normal; min-width: 220px; max-width: 420px; color: var(--alfa-text-secondary); }
+.ca-tabla .is-dif { color: var(--alfa-danger, #e5484d); font-weight: 600; }
+.n { text-align: right !important; font-variant-numeric: tabular-nums; }
+.ca-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; }
+.ca-estado--coincide { color: var(--alfa-success, #2e9e5b); }
+.ca-estado--faltaensistema, .ca-estado--difiereimporte { color: var(--alfa-danger, #e5484d); }
+.ca-estado--otroperiodo, .ca-estado--difierefecha { color: var(--alfa-warning, #d9a400); }
+.ca-estado--faltaenarca { color: var(--alfa-text-secondary); }
+.ca-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }

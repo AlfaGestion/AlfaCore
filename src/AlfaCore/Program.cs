@@ -341,6 +341,7 @@ public class Program
         builder.Services.AddScoped<ILibroIvaService, LibroIvaService>();
         builder.Services.AddScoped<IContabilidadReportesService, ContabilidadReportesService>();
         builder.Services.AddScoped<IFechasCierreService, FechasCierreService>();
+        builder.Services.AddScoped<IControlArcaService, ControlArcaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<IAvisosPushNotifier, AvisosPushNotifier>();

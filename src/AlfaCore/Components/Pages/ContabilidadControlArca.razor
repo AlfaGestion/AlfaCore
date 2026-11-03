@@ -1,0 +1,157 @@
+@page "/contabilidad/control-arca"
+@page "/{idweb}/{idbase:int}/contabilidad/control-arca"
+@using AlfaCore.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject IControlArcaService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Control contra ARCA | Alfa Gestión</PageTitle>
+
+@* Control contra «Mis Comprobantes» de ARCA (emitidos contra ventas, recibidos contra el libro de compras). Solo lectura. *@
+<div class="gd-page gd ca-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="ca-subir">
+        <div class="ca-subir__texto">
+            <strong><i class="bi bi-cloud-arrow-up" aria-hidden="true"></i> Archivo de «Mis Comprobantes» de ARCA</strong>
+            <span>En ARCA → Mis Comprobantes, consultá <b>Emitidos</b> o <b>Recibidos</b> del período y descargalo en Excel (.xlsx) o CSV.
+                Se compara con las ventas o con el libro de IVA compras del sistema; no se modifica nada.</span>
+        </div>
+        <label class="ca-subir__boton @(_busy ? "is-disabled" : null)">
+            <InputFile OnChange="ArchivoElegidoAsync" accept=".xlsx,.csv,.txt" disabled="@_busy" />
+            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i> @(_busy ? "Controlando…" : _archivo is null ? "Elegir archivo" : "Elegir otro archivo")
+        </label>
+    </section>
+
+    @if (_r is { } r)
+    {
+        @if (r.Aviso is { } aviso) { <AlfaNotification Message="@AppUiMessage.Warning("CUIT del archivo", aviso)" /> }
+        <div class="kpi-grid ca-kpis">
+            <KpiCard Titulo="@(r.Recibidos ? "Recibidos (compras)" : "Emitidos (ventas)")" Valor="@($"{r.ComprobantesArca:N0} en ARCA")" Icono="@Icono("bi-cloud-check")"
+                     Descripcion="@($"CUIT {r.CuitArchivo} · {r.Desde:dd/MM/yyyy} al {r.Hasta:dd/MM/yyyy} · {r.ComprobantesSistema:N0} en el sistema")" />
+            <KpiCard Titulo="Coinciden" Valor="@r.Cantidad(ControlArcaEstado.Coincide).ToString("N0")" Icono="@Icono("bi-check2-circle")"
+                     Descripcion="@($"ARCA {Moneda(r.TotalArca)} · sistema {Moneda(r.TotalSistema)}")" />
+            <KpiCard Titulo="Faltan en el sistema" Valor="@r.Cantidad(ControlArcaEstado.FaltaEnSistema).ToString("N0")" Icono="@Icono("bi-exclamation-triangle")"
+                     Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar" : "Emitidos que no están en ventas")" />
+            <KpiCard Titulo="Con diferencias" Valor="@((r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo) + r.Cantidad(ControlArcaEstado.DifiereFecha)).ToString("N0"))"
+                     Icono="@Icono("bi-arrow-left-right")" Descripcion="@($"{r.Cantidad(ControlArcaEstado.DifiereImporte)} importe · {r.Cantidad(ControlArcaEstado.OtroPeriodo)} otro período · {r.Cantidad(ControlArcaEstado.FaltaEnArca)} no están en ARCA")" />
+        </div>
+
+        <div class="ca-filtros" role="group" aria-label="Filtrar por estado">
+            <button type="button" class="@(_estado is null ? "is-activo" : null)" @onclick="() => _estado = null">Con novedades (@r.Filas.Count(f => f.Estado != ControlArcaEstado.Coincide))</button>
+            @foreach (var e in Enum.GetValues<ControlArcaEstado>())
+            {
+                var n = r.Cantidad(e);
+                if (n == 0) continue;
+                <button type="button" class="ca-estado--@(e.ToString().ToLowerInvariant()) @(_estado == e ? "is-activo" : null)" @onclick="() => _estado = e">@ControlArcaService.EstadoTexto(e) (@n)</button>
+            }
+        </div>
+
+        var filas = r.Filas.Where(f => _estado is null ? f.Estado != ControlArcaEstado.Coincide : f.Estado == _estado).ToList();
+        @if (filas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin novedades" Message="Todos los comprobantes del archivo coinciden con el sistema." />
+        }
+        else
+        {
+            <section class="ca-tabla__marco"><div class="ca-tabla__scroll">
+                <table class="ca-tabla">
+                    <thead><tr><th>Estado</th><th>Tipo</th><th>Comprobante</th><th>@(r.Recibidos ? "Proveedor" : "Cliente")</th><th>Fecha ARCA</th><th>Fecha sistema</th>
+                        <th class="n">Total ARCA</th><th class="n">Total sistema</th><th class="n">Diferencia</th><th>Observación</th></tr></thead>
+                    <tbody>
+                    @foreach (var f in filas)
+                    {
+                        <tr>
+                            <td><span class="ca-chip ca-estado--@(f.Estado.ToString().ToLowerInvariant())">@ControlArcaService.EstadoTexto(f.Estado)</span></td>
+                            <td>@f.Clase @f.Letra</td>
+                            <td>@f.Comprobante@if (f.ComprobanteSistema.Length > 0) { <small>@f.ComprobanteSistema</small> }</td>
+                            <td>@f.Nombre<small>@f.Cuit</small></td>
+                            <td>@f.FechaArca?.ToString("dd/MM/yyyy")</td>
+                            <td>@f.FechaSistema?.ToString("dd/MM/yyyy")</td>
+                            <td class="n">@(f.TotalArca is { } ta ? ta.ToString("N2", Culture) : "")</td>
+                            <td class="n">@(f.TotalSistema is { } ts ? ts.ToString("N2", Culture) : "")</td>
+                            <td class="n @(Math.Abs(f.Diferencia) > 1 ? "is-dif" : null)">@(f.TotalArca is not null && f.TotalSistema is not null ? f.Diferencia.ToString("N2", Culture) : "")</td>
+                            <td class="ca-obs">@f.Observacion</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></section>
+        }
+        <p class="ca-nota">Se empareja por tipo, letra, punto de venta y número@(r.Recibidos ? " y CUIT del proveedor (libro de IVA compras)" : " (ventas no anuladas)").
+            Diferencias de hasta $ 1 se consideran redondeo. «Otro período»: el comprobante está cargado en un mes distinto al de ARCA (afecta el libro de IVA).</p>
+    }
+    else if (!_busy)
+    {
+        <AlfaEmptyState Title="Subí el archivo de ARCA" Message="Elegí el Excel o CSV de Mis Comprobantes (emitidos o recibidos) para controlarlo contra el sistema." />
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private const long MaximoArchivo = 15 * 1024 * 1024;
+    private ControlArcaResultado? _r;
+    private ControlArcaEstado? _estado;
+    private string? _archivo;
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed, _exportando;
+    private PageHeaderConfig? _header;
+
+    protected override void OnInitialized() => UpdateHeader();
+
+    private async Task ArchivoElegidoAsync(InputFileChangeEventArgs e)
+    {
+        if (_busy) return;
+        var f = e.File;
+        if (f.Size > MaximoArchivo) { _feedback = AppUiMessage.Warning("Archivo muy grande", "El archivo supera los 15 MB: consultá un período más corto."); return; }
+        _busy = true; _feedback = null; _archivo = f.Name; UpdateHeader(); StateHasChanged();
+        try
+        {
+            await using var s = f.OpenReadStream(MaximoArchivo);
+            using var ms = new MemoryStream();
+            await s.CopyToAsync(ms);
+            var r = await UiOps.RunAsync(() => Service.ControlarAsync(ms.ToArray(), f.Name), "Control contra ARCA");
+            if (r.Success) { _r = r.Value; _estado = null; } else _feedback = r.Feedback;
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private async Task ExportarAsync()
+    {
+        if (_r is null || _exportando) return;
+        _exportando = true; UpdateHeader();
+        try
+        {
+            var a = await Service.ExportarAsync(_r);
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
+        }
+        finally { _exportando = false; if (!_disposed) UpdateHeader(); }
+    }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Control contra ARCA",
+        Breadcrumb = ["Contabilidad", "Control contra ARCA"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "control-arca"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary,
+                Disabled = _busy || _r is null || _exportando, Busy = _exportando, OnClick = ExportarAsync }
+        ]
+    });
+
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+    private static string Moneda(decimal v) => v.ToString("C2", Culture);
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
