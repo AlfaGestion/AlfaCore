@@ -59,14 +59,20 @@
                             <i class="bi bi-grip-vertical"></i>
                         </span>
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
+                        @* Como Odoo: nombre y cantidad en una línea; barra de estado e importe en otra. Altura fija en todas las columnas. *@
                         <div class="crm-stage__title">
-                            <h3>@stage.Nombre</h3>
-                            <small>@totalEtapa oportunidad(es) · @FormatMoney(importeEtapa)</small>
-                            <div class="crm-stage__health" title="Estado por cierre estimado">
-                                <span class="is-ok" style="width:@stats.Ok%"></span>
-                                <span class="is-warning" style="width:@stats.Warning%"></span>
-                                <span class="is-late" style="width:@stats.Late%"></span>
-                                <span class="is-empty" style="width:@stats.Empty%"></span>
+                            <div class="crm-stage__title-row">
+                                <h3 title="@stage.Nombre">@stage.Nombre</h3>
+                                <span class="crm-stage__count" title="@totalEtapa oportunidad(es)">@totalEtapa.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</span>
+                            </div>
+                            <div class="crm-stage__meta-row">
+                                <div class="crm-stage__health" title="Estado por cierre estimado">
+                                    <span class="is-ok" style="width:@stats.Ok%"></span>
+                                    <span class="is-warning" style="width:@stats.Warning%"></span>
+                                    <span class="is-late" style="width:@stats.Late%"></span>
+                                    <span class="is-empty" style="width:@stats.Empty%"></span>
+                                </div>
+                                <small class="crm-stage__amount" title="Importe estimado de la etapa">@FormatMoney(importeEtapa)</small>
                             </div>
                         </div>
                         <div class="crm-stage__actions">
@@ -170,7 +176,7 @@
                     }
                 </article>
             }
-            <div class="crm-stage-add">
+            <div class="crm-stage-add @(_addingStageInline ? "is-open" : string.Empty)">
                 @if (_addingStageInline)
                 {
                     <div class="crm-stage-add__form">
@@ -178,15 +184,12 @@
                         <button type="button" class="is-ok" title="Guardar etapa" @onclick="SaveInlineStageAsync"><i class="bi bi-check-lg"></i></button>
                         <button type="button" class="is-cancel" title="Cancelar" @onclick="CancelInlineStage"><i class="bi bi-x-lg"></i></button>
                     </div>
-                    <div class="crm-stage-add__ghost"></div>
-                    <div class="crm-stage-add__ghost"></div>
-                    <div class="crm-stage-add__ghost"></div>
                 }
                 else
                 {
-                    <button type="button" @onclick="StartInlineStage">
+                    <button type="button" @onclick="StartInlineStage" title="Agregar etapa">
                         <i class="bi bi-plus-lg"></i>
-                        <span>Agregar etapa</span>
+                        <span>Etapa</span>
                     </button>
                 }
             </div>

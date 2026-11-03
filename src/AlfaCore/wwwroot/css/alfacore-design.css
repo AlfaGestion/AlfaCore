@@ -1265,3 +1265,44 @@
         display: none;
     }
 }
+
+/* Celular: la Context Toolbar estándar (acciones + búsqueda + paginación + vistas en una sola fila de 44px)
+   no entra en ~400px y los elementos se pisaban (ej. CRM: "Nueva oportunidad" tapada por el buscador).
+   En pantallas angostas pasa a dos filas: acciones, paginación y vistas arriba; búsqueda abajo a todo el ancho.
+   No toca las variantes que ya definen su propia grilla (sin búsqueda, registro, contexto compacto, responsive). */
+@media (max-width: 640px) {
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design:not(.main-page-header--no-search):not(.main-page-header--record):not(.main-page-header--compact-context):not(.main-page-header--responsive) {
+        height: auto;
+        flex-basis: auto;
+        min-height: calc(2 * var(--alfa-context-toolbar-height) - 8px);
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-areas: "actions pagination view" "search search search";
+        row-gap: var(--alfa-space-4);
+        padding-block: var(--alfa-space-4);
+        padding-inline: var(--alfa-space-8);
+    }
+
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design:not(.main-page-header--no-search):not(.main-page-header--record):not(.main-page-header--compact-context):not(.main-page-header--responsive) .main-page-header__actions {
+        min-width: 0;
+        justify-self: start;
+        justify-content: flex-start;
+    }
+
+    /* La acción principal conserva su texto (las secundarias quedan como íconos). */
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__action.main-page-header__action--primary {
+        width: auto;
+        min-width: max-content;
+        padding-inline: var(--alfa-space-8);
+    }
+
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design:not(.main-page-header--no-search):not(.main-page-header--record):not(.main-page-header--compact-context):not(.main-page-header--responsive) .main-page-header__search {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design:not(.main-page-header--no-search):not(.main-page-header--record):not(.main-page-header--compact-context):not(.main-page-header--responsive) .main-page-header__search .smart-search {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+}

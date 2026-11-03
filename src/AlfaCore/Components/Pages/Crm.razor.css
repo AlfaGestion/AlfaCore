@@ -67,13 +67,16 @@
 }
 
 .crm-kanban {
+    /* Como Odoo: el tablero ocupa el alto disponible y cada columna se desplaza sola; la barra de
+       búsqueda y filtros queda siempre a la vista (antes se desplazaba toda la página y la barra se perdía). */
     display: flex;
     gap: .85rem;
     align-items: stretch;
-    min-height: calc(100vh - 7.5rem);
+    height: calc(100dvh - 7.5rem);
+    min-height: 20rem;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: .15rem .25rem 1rem;
+    padding: .15rem .25rem .5rem;
     scroll-snap-type: x proximity;
 }
 
@@ -81,8 +84,10 @@
     background: transparent;
     border: 1px solid rgba(125, 156, 191, .28);
     border-radius: 6px;
+    display: flex;
     flex: 0 0 282px;
-    min-height: 18rem;
+    flex-direction: column;
+    min-height: 0;
     position: relative;
     scroll-snap-align: start;
     transition: border-color .15s ease, opacity .15s ease, transform .15s ease;
@@ -90,9 +95,11 @@
 
 .crm-stage__header {
     display: flex;
+    flex: 0 0 auto;
     gap: .55rem;
     align-items: center;
-    padding: .85rem;
+    height: 4rem;
+    padding: .55rem .75rem;
     border-bottom: 1px solid rgba(125, 156, 191, .24);
     cursor: grab;
     user-select: none;
@@ -288,20 +295,79 @@
 
 .crm-stage__body {
     display: grid;
+    flex: 1 1 auto;
     gap: .65rem;
     padding: .75rem;
     align-content: start;
-    min-height: 14rem;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
+/* Encabezado de columna: nombre + cantidad arriba, barra de estado + importe abajo (una línea cada uno). */
+.crm-stage__title {
+    display: grid;
+    flex: 1 1 auto;
+    gap: .35rem;
+    min-width: 0;
+}
+
+.crm-stage__title-row,
+.crm-stage__meta-row {
+    align-items: center;
+    display: flex;
+    gap: .5rem;
+    min-width: 0;
+}
+
+.crm-stage__title-row h3 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.crm-stage__count {
+    background: rgba(148, 163, 184, .16);
+    border-radius: 999px;
+    color: var(--muted, #94a3b8);
+    flex: 0 0 auto;
+    font-size: .72rem;
+    font-weight: 600;
+    padding: .05rem .45rem;
+}
+
+.crm-stage__meta-row .crm-stage__health {
+    flex: 1 1 auto;
+    margin-top: 0;
+    width: auto;
+}
+
+.crm-stage__amount {
+    flex: 0 0 auto;
+    font-size: .76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.crm-stage.is-collapsed .crm-stage__meta-row,
+.crm-stage.is-collapsed .crm-stage__count {
+    display: none;
+}
+
+/* "+ Etapa": botón chico arriba a la derecha de la última columna (como Odoo); al abrirlo toma el ancho de una columna. */
 .crm-stage-add {
-    align-self: stretch;
+    align-self: flex-start;
     border-color: rgba(125, 156, 191, .24);
     border-radius: 6px;
     color: var(--muted, #64748b);
-    flex: 0 0 282px;
-    min-height: 18rem;
-    padding: 1rem;
+    flex: 0 0 auto;
+    padding: 0;
+}
+
+.crm-stage-add.is-open {
+    flex-basis: 282px;
+    padding: .55rem;
 }
 
 .crm-stage-add > button {
@@ -311,11 +377,10 @@
     color: inherit;
     cursor: pointer;
     display: flex;
-    flex-direction: column;
-    gap: .5rem;
-    height: 100%;
-    justify-content: center;
-    width: 100%;
+    gap: .4rem;
+    height: 2.5rem;
+    padding: 0 .9rem;
+    white-space: nowrap;
 }
 
 .crm-stage-add:hover {
@@ -1389,5 +1454,11 @@
         flex-direction: column;
         align-items: flex-start;
         gap: .1rem;
+    }
+}
+@media (max-width: 640px) {
+    /* En celular la barra superior ocupa dos filas (acciones/vistas y búsqueda). */
+    .crm-kanban {
+        height: calc(100dvh - 10rem);
     }
 }
