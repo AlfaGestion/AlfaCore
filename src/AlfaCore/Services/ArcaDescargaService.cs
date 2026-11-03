@@ -103,9 +103,10 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         };
         c.ScriptRecibidosExiste = c.ScriptRecibidos.Length > 0 && File.Exists(c.ScriptRecibidos);
         c.ScriptEmitidosExiste = c.ScriptEmitidos.Length > 0 && File.Exists(c.ScriptEmitidos);
-        c.Python = Python(c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos) ?? "";
+        var listo = ScriptConPython(c, recibidos: true) ?? ScriptConPython(c, recibidos: false);
+        c.Python = listo is { } l ? Python(l)! : Python(c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos) ?? "";
         c.PythonExiste = c.Python.Length > 0 && File.Exists(c.Python);
-        var carpeta = CarpetaEfectiva(c.Carpeta, c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos);
+        var carpeta = CarpetaEfectiva(c.Carpeta, listo ?? (c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos));
         c.CarpetaExiste = carpeta.Length > 0 && Directory.Exists(carpeta);
         if (c.Carpeta.Length == 0) c.Carpeta = carpeta;
         return c;
@@ -115,10 +116,16 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     {
         if (anio is < 2000 or > 2100 || mes is < 1 or > 12) throw new ReglaException("Período inválido.");
         var c = await LeerConfigAsync(cn, ct);
-        var script = recibidos ? c.ScriptRecibidos : c.ScriptEmitidos;
-        if (!(recibidos ? c.ScriptRecibidosExiste : c.ScriptEmitidosExiste))
-            throw new ReglaException(script.Length == 0 ? "No hay un script de pre-proceso configurado para esta opción." : $"No se encuentra el script en este servidor: {script}");
-        if (!c.PythonExiste) throw new ReglaException("No se encuentra python.exe junto al script (carpeta python). Instalá el python portable del legacy.");
+        var configurado = recibidos ? c.ScriptRecibidos : c.ScriptEmitidos;
+        if (configurado.Length == 0 && (recibidos ? c.ScriptEmitidos : c.ScriptRecibidos).Length == 0)
+            throw new ReglaException("No hay un script de pre-proceso configurado para esta opción.");
+        // El mismo script baja recibidos y emitidos (el tipo va por parámetro): si el configurado no está en este servidor
+        // o no tiene el python portable al lado, se usa el del otro tipo.
+        var script = ScriptConPython(c, recibidos) ?? ScriptConPython(c, !recibidos)
+            ?? throw new ReglaException(File.Exists(configurado) || File.Exists(recibidos ? c.ScriptEmitidos : c.ScriptRecibidos)
+                ? "No se encuentra python.exe junto al script (carpeta python). Instalá el python portable del legacy."
+                : $"No se encuentra el script en este servidor: {(configurado.Length > 0 ? configurado : recibidos ? c.ScriptEmitidos : c.ScriptRecibidos)}");
+        var python = Python(script)!;
         var clave = Decodifica((await ValoresAsync(cn, ct)).GetValueOrDefault("ARCA_CLAVE", ""));
         if (c.CuitLogin.Length == 0 || clave.Length == 0 || c.CuitRepresentado.Length == 0)
             throw new ReglaException("Faltan datos de acceso a ARCA (CUIT de ingreso, clave fiscal o CUIT representado).");
@@ -131,7 +138,7 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         if (!await semaforo.WaitAsync(TimeSpan.Zero, ct)) throw new ReglaException("Ya hay una descarga de ARCA en curso. Esperá a que termine.");
         try
         {
-            var psi = new ProcessStartInfo(c.Python)
+            var psi = new ProcessStartInfo(python)
             {
                 WorkingDirectory = Path.GetDirectoryName(script)!, UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardOutput = true, RedirectStandardError = true
@@ -155,6 +162,13 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             return new ArcaArchivoDescargado(info.Name, recibidos, periodo, info.LastWriteTime, info.Length);
         }
         finally { semaforo.Release(); }
+    }
+
+    /// <summary>Script configurado para el tipo, si existe en este servidor y tiene python.exe al lado.</summary>
+    internal static string? ScriptConPython(ArcaDescargaConfig c, bool recibidos)
+    {
+        var s = recibidos ? c.ScriptRecibidos : c.ScriptEmitidos;
+        return s.Length > 0 && File.Exists(s) && Python(s) is { } py && File.Exists(py) ? s : null;
     }
 
     internal static string MensajeSalida(int codigo) => codigo switch

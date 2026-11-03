@@ -67,6 +67,23 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.DoesNotMatch(ArcaDescargaService.NombreArchivo, @"..\ARCA_RECIBIDOS_27228073259_202609.xls");
     }
 
+    /// <summary>Emitidos en el formato nuevo: títulos «Fecha de Emisión» / «Tipo de Comprobante», tipo por código, fecha serial de Excel.</summary>
+    [Fact]
+    public void LeeLosEmitidosDelFormatoNuevo()
+    {
+        var ruta = @"C:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT\ARCA_Descargas\ARCA_EMITIDOS_30707388850_202610.xls";
+        if (!File.Exists(ruta)) return;
+        var arca = ControlArcaService.Leer(File.ReadAllBytes(ruta), Path.GetFileName(ruta));
+        Assert.False(arca.Recibidos);
+        Assert.Equal("30707388850", arca.Cuit);
+        Assert.True(arca.Comprobantes.Count > 1000);
+        Assert.All(arca.Comprobantes, c => Assert.Equal(2026, c.Fecha.Year));
+        Assert.Contains(arca.Comprobantes, c => c.Clase == "FC" && c.Letra == "B");
+        var a = arca.Comprobantes.First(c => c.Letra == "A" && c.Alicuotas.Count > 0);
+        Assert.Equal(a.Iva, a.Alicuotas.Sum(x => x.Iva));
+        Assert.Equal(a.Total, a.NetoGravado + a.NoGravado + a.Exento + a.OtrosTributos + a.Iva);
+    }
+
     /// <summary>El .xls que deja el script del legacy (Excel 97-2003), con columnas por alícuota.</summary>
     [Fact]
     public void LeeElXlsQueDejaElScript()

@@ -19,6 +19,11 @@ public sealed class ControlArcaTests(ITestOutputHelper output)
     [InlineData("12 - Nota de Débito C", 12, "ND", "C")]
     [InlineData("201 - Factura de Crédito Electrónica MiPyMEs (FCE) A", 201, "FC", "A")]
     [InlineData("15 - Recibo C", 15, "RC", "C")]
+    [InlineData("1.0", 1, "FC", "A")]
+    [InlineData("6", 6, "FC", "B")]
+    [InlineData("8.0", 8, "NC", "B")]
+    [InlineData("203", 203, "NC", "A")]
+    [InlineData("82", 82, "FC", "B")]
     public void TipoDeComprobanteDeArca(string texto, int codigo, string clase, string letra)
     {
         var t = ControlArcaService.Tipo(texto);

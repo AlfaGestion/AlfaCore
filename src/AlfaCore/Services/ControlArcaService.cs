@@ -38,7 +38,8 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             // El script de descarga del legacy deja .xls (Excel 97-2003); ClosedXML solo lee .xlsx.
             : nombre.EndsWith(".xls", StringComparison.OrdinalIgnoreCase) ? LeerXls(archivo) : LeerXlsx(archivo);
         var titulo = filas.Take(3).SelectMany(f => f).FirstOrDefault(c => c.Contains("Mis Comprobantes", StringComparison.OrdinalIgnoreCase)) ?? "";
-        var iHeader = filas.FindIndex(f => f.Any(c => Norm(c) == "fecha") && f.Any(c => Norm(c) == "tipo"));
+        // Formato de recibidos («Fecha» / «Tipo») y el de emitidos más nuevo («Fecha de Emisión» / «Tipo de Comprobante», tipo por código).
+        var iHeader = filas.FindIndex(f => f.Any(c => Norm(c) is "fecha" or "fecha de emision") && f.Any(c => Norm(c) is "tipo" or "tipo de comprobante"));
         if (iHeader < 0) throw new ReglaException("El archivo no tiene el formato de «Mis Comprobantes» de ARCA (no se encontró la fila de títulos Fecha / Tipo).");
         var cols = filas[iHeader].Select(Norm).ToList();
         int Col(params string[] nombres) { foreach (var n in nombres) { var i = cols.IndexOf(Norm(n)); if (i >= 0) return i; } return -1; }
@@ -46,27 +47,34 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
         var resultado = new ArcaMisComprobantesArchivo { Recibidos = recibidos };
         var mCuit = System.Text.RegularExpressions.Regex.Match(titulo, @"CUIT\s*(\d{11})");
         if (mCuit.Success) resultado.Cuit = mCuit.Groups[1].Value;
+        // Sin título (emitidos): el CUIT sale del nombre que deja el script (ARCA_EMITIDOS_<CUIT>_<AAAAMM>.xls).
+        else if (ArcaDescargaService.NombreArchivo.Match(Path.GetFileName(nombre)) is { Success: true } mNombre) resultado.Cuit = mNombre.Groups[2].Value;
 
-        int cFecha = Col("Fecha"), cTipo = Col("Tipo"), cPv = Col("Punto de Venta"), cDesde = Col("Número Desde", "Numero Desde"), cHasta = Col("Número Hasta", "Numero Hasta"),
+        int cFecha = Col("Fecha", "Fecha de Emisión"), cTipo = Col("Tipo", "Tipo de Comprobante"),cPv = Col("Punto de Venta"), cDesde = Col("Número Desde", "Numero Desde"), cHasta = Col("Número Hasta", "Numero Hasta"),
             cCae = Col("Cód. Autorización", "Cod. Autorizacion", "Código de Autorización"),
             cDoc = recibidos ? Col("Nro. Doc. Emisor") : Col("Nro. Doc. Receptor"),
             cNom = recibidos ? Col("Denominación Emisor") : Col("Denominación Receptor"),
             cDocPropio = recibidos ? Col("Nro. Doc. Receptor") : -1,
             cTc = Col("Tipo Cambio", "Tipo de Cambio"), cMon = Col("Moneda"),
-            cNeto = Col("Neto Gravado Total", "Imp. Neto Gravado"), cNoGrav = Col("Neto No Gravado", "Imp. Neto No Gravado"),
+            cNeto = Col("Neto Gravado Total", "Imp. Neto Gravado Total", "Imp. Neto Gravado"),cNoGrav = Col("Neto No Gravado", "Imp. Neto No Gravado"),
             cExento = Col("Op. Exentas", "Imp. Op. Exentas"), cOtros = Col("Otros Tributos"), cIva = Col("Total IVA", "IVA"), cTotal = Col("Imp. Total", "Importe Total");
         // Columnas por alícuota del formato actual («Neto Grav. IVA 21%» / «IVA 21%»).
         var cAlicuotas = new[] { 0m, 2.5m, 5m, 10.5m, 21m, 27m }.Select(t =>
         {
             var txt = t.ToString("0.##", Ar);
-            return (Tasa: t, Neto: Col($"Neto Grav. IVA {txt}%"), Iva: t == 0 ? -1 : Col($"IVA {txt}%"));
+            return (Tasa: t, Neto: Col($"Neto Grav. IVA {txt}%", $"Imp. Neto Gravado IVA {txt}%"), Iva: t == 0 ? -1 : Col($"IVA {txt}%"));
         }).Where(x => x.Neto >= 0 || x.Iva >= 0).ToList();
         if (cFecha < 0 || cTipo < 0 || cPv < 0 || cDesde < 0 || cTotal < 0)
             throw new ReglaException("Al archivo le faltan columnas de «Mis Comprobantes» (Fecha, Tipo, Punto de Venta, Número Desde, Imp. Total).");
         string V(List<string> f, int c) => c >= 0 && c < f.Count ? f[c].Trim() : "";
         foreach (var f in filas.Skip(iHeader + 1))
         {
-            if (!DateTime.TryParseExact(V(f, cFecha), ["dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha)) continue;
+            if (!DateTime.TryParseExact(V(f, cFecha), ["dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha))
+            {
+                // Fecha como número de serie de Excel (formato de emitidos).
+                if (!double.TryParse(V(f, cFecha), NumberStyles.Float, CultureInfo.InvariantCulture, out var serie) || serie is < 30000 or > 80000) continue;
+                fecha = DateTime.FromOADate(serie).Date;
+            }
             var tipo = V(f, cTipo);
             var (codigo, clase, letra) = Tipo(tipo);
             if (clase.Length == 0) continue;
@@ -95,6 +103,25 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
     /// <summary>«1 - Factura A» → (1, FC, A). Por código ARCA y, si no, por el texto.</summary>
     internal static (int Codigo, string Clase, string Letra) Tipo(string texto)
     {
+        // Solo el código («1» o «1.0»): tabla de comprobantes de ARCA.
+        if (decimal.TryParse(texto.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var soloCodigo) && soloCodigo == Math.Floor(soloCodigo))
+        {
+            var n = (int)soloCodigo;
+            var cl = n switch
+            {
+                1 or 6 or 11 or 19 or 51 or 81 or 82 or 83 or 111 or 118 or 201 or 206 or 211 => "FC",
+                2 or 7 or 12 or 20 or 52 or 115 or 202 or 207 or 212 => "ND",
+                3 or 8 or 13 or 21 or 53 or 110 or 203 or 208 or 213 => "NC",
+                4 or 9 or 15 or 54 => "RC",
+                _ => ""
+            };
+            var le = n switch
+            {
+                >= 1 and <= 5 or >= 201 and <= 205 or 81 => "A", >= 6 and <= 10 or >= 206 and <= 210 or 82 or 83 => "B",
+                >= 11 and <= 15 or >= 211 and <= 215 or 110 or 111 or 115 => "C", >= 19 and <= 21 => "E", >= 51 and <= 54 or 118 => "M", _ => ""
+            };
+            return (n, cl, le);
+        }
         var partes = texto.Split(" - ", 2);
         _ = int.TryParse(partes[0].Trim(), out var codigo);
         var desc = Norm(partes.Length > 1 ? partes[1] : texto);
@@ -275,9 +302,19 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
         var usados = new HashSet<ComprobanteSistema>();
         var filas = new List<ControlArcaFila>();
         bool MismaContraparte(ComprobanteSistema s, ArcaMisComprobante a) => !arca.Recibidos || s.Doc.Length == 0 || a.DocContraparte.Length == 0 || s.Doc == a.DocContraparte;
+        // Agrupado por clase y punto de venta: con miles de emitidos, recorrer todo el sistema por cada comprobante es cuadrático.
+        var porPunto = sistema.ToLookup(s => (s.Clase, s.PuntoVenta));
+        var porNumero = sistema.ToLookup(s => (s.Clase, s.PuntoVenta, s.Numero));
+        IEnumerable<ComprobanteSistema> DelRango(ArcaMisComprobante a)
+        {
+            if (a.NumeroHasta - a.NumeroDesde > 2000) return porPunto[(a.Clase, a.PuntoVenta)];
+            var lista = new List<ComprobanteSistema>();
+            for (var n = a.NumeroDesde; n <= a.NumeroHasta; n++) lista.AddRange(porNumero[(a.Clase, a.PuntoVenta, n)]);
+            return lista;
+        }
         foreach (var a in arca.Comprobantes.OrderBy(x => x.Fecha).ThenBy(x => x.PuntoVenta).ThenBy(x => x.NumeroDesde))
         {
-            var candidatos = sistema.Where(s => !usados.Contains(s) && s.Clase == a.Clase && s.PuntoVenta == a.PuntoVenta
+            var candidatos = DelRango(a).Where(s => !usados.Contains(s)
                 && s.Numero >= a.NumeroDesde && s.Numero <= a.NumeroHasta && (s.Letra == a.Letra || a.Letra.Length == 0) && MismaContraparte(s, a)).ToList();
             // En recibidos puede haber dos proveedores con el mismo punto y número: si hay CUIT, ya filtró.
             var fila = new ControlArcaFila
@@ -289,6 +326,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             {
                 fila.Estado = ControlArcaEstado.FaltaEnSistema;
                 fila.Observacion = arca.Recibidos ? "No está cargado en compras (o se cargó con otro número o proveedor)." : "No está en las ventas del sistema.";
+                if (a.Total == 0) fila.Observacion = "ARCA lo informa con importe 0 (comprobante sin valor o anulado por el emisor).";
             }
             else
             {
@@ -300,6 +338,8 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
                 var notas = new List<string>();
                 if (!arca.Recibidos && candidatos[0].Doc.Length > 0 && a.DocContraparte.Length > 0 && candidatos[0].Doc != a.DocContraparte && a.DocContraparte.TrimStart('0').Length > 0)
                     notas.Add($"Documento distinto en el sistema ({candidatos[0].Doc})");
+                if (candidatos.Count > 1 && a.NumeroDesde == a.NumeroHasta)
+                    notas.Add($"Cargado {candidatos.Count} veces en el sistema ({string.Join(", ", candidatos.Select(s => s.Referencia))})");
                 if (Math.Abs(fila.Diferencia) > Tolerancia)
                     fila.Estado = ControlArcaEstado.DifiereImporte;
                 else if (fila.FechaSistema.Value.Year != a.Fecha.Year || fila.FechaSistema.Value.Month != a.Fecha.Month)

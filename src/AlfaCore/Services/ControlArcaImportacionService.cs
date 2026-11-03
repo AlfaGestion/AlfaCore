@@ -207,6 +207,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         string? error = null;
         if (imputacion < 0 || otrosTributos < 0 || ivaTotal < 0) error = "Los importes de ARCA no cierran (IVA u otros tributos mayores al total).";
         if (alicuotas.Count(x => x.Iva != 0) > 4) error = "Tiene más de cuatro alícuotas de IVA: cargalo a mano.";
+        if (a.Total == 0) error = "ARCA lo informa con importe 0: no hay nada que registrar.";
         var proveedorDh = a.Clase == "NC" ? "D" : "H"; var otroDh = proveedorDh == "H" ? "D" : "H";
         var lineas = new List<ControlArcaAsientoLinea> { new(proveedor, proveedorDh, a.Total) };
         if (imputacion != 0) lineas.Add(new(compras, otroDh, imputacion));

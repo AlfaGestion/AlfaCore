@@ -128,7 +128,7 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
         ClaveArbaRetActividad = "IIBB_RETENCIONES_COD_ACTIVIDAD", ClaveArbaPercActividad = "IIBB_PERCEPCIONES_COD_ACTIVIDAD",
         ClaveSircarRegimen = "ALFACORE_SIRCAR_REGIMEN", ClaveSircarJurisdiccion = "ALFACORE_SIRCAR_JURISDICCION";
 
-    private static async Task<Dictionary<string, string>> ConfigAsync(SqlConnection cn, CancellationToken ct)
+    internal static async Task<Dictionary<string, string>> ConfigAsync(SqlConnection cn, CancellationToken ct)
         => (await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))), LTRIM(RTRIM(ISNULL(VALOR,''))) FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (UPPER(@j), UPPER(@r), UPPER(@p), 'CUIT', 'CONDIVA', 'SIFEREWEB_FECHACONTABLE',
@@ -143,7 +143,7 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
     public Task<RetencionesResultado> GetAsync(RetencionesFiltro filtro, CancellationToken ct = default)
         => EjecutarAsync("Consultar", cn => LeerAsync(cn, filtro, ct), ct);
 
-    private static async Task<RetencionesResultado> LeerAsync(SqlConnection cn, RetencionesFiltro f, CancellationToken ct)
+    internal static async Task<RetencionesResultado> LeerAsync(SqlConnection cn, RetencionesFiltro f, CancellationToken ct)
     {
         if (f.Hasta < f.Desde || (f.Hasta - f.Desde).TotalDays > 400) throw new ReglaException("Elegí un rango de hasta un año.");
         if (f.Alcance is not ("SUFRIDAS" or "PRACTICADAS" or "TODAS")) throw new ReglaException("Alcance inválido.");
@@ -189,6 +189,11 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
         if (sinJur > 0) avisos.Add($"{sinJur} retención(es)/percepción(es) de IIBB sin jurisdicción: la cuenta no tiene provincia. Para SIFERE se usa la jurisdicción por defecto.");
         var sinCert = filas.Count(x => x.Sufrida && x.Clase == "Retención" && x.Certificado.Length == 0);
         if (sinCert > 0) avisos.Add($"{sinCert} retención(es) sufrida(s) sin número de certificado: SIFERE usa el número del recibo.");
+        var recaudaciones = filas.Where(x => x.Clase == ClaseRecaudacion).ToList();
+        if (recaudaciones.Count > 0)
+            avisos.Add($"{recaudaciones.Count} recaudación(es) bancaria(s) o de tarjetas por {recaudaciones.Sum(x => x.Importe).ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (liquidaciones sin CUIT de agente, SIRCREB): no van en los archivos; SIFERE ya las trae precargadas.");
+        var sinCuit = filas.Count(x => x.Sufrida && x.Impuesto == "IIBB" && x.Clase != ClaseRecaudacion && x.Cuit.Length != 11);
+        if (sinCuit > 0) avisos.Add($"{sinCuit} retención(es)/percepción(es) de IIBB sin CUIT del agente: SIFERE las rechaza; revisá el CUIT del cliente o proveedor.");
         return new RetencionesResultado
         {
             Filtro = f, Filas = filas, Avisos = avisos,
@@ -207,6 +212,8 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
         public string Provincia { get; set; } = ""; public string CodJurisdiccion { get; set; } = "";
     }
 
+    internal const string ClaseRecaudacion = "Recaudación bancaria";
+
     internal static string Origen(string tc, string livaTipo) => tc.ToUpperInvariant() switch
     {
         "CB" or "CBCT" or "RC" => "Cobranza",
@@ -220,14 +227,20 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
     {
         var sufrida = s.Cuenta.StartsWith('1');
         var origen = Origen(s.Tc, s.LivaTipo);
+        var cuit = Digitos(s.Cuit);
+        // Liquidaciones de banco o tarjeta (CC/LT que no son una factura, o asientos sueltos sin CUIT): recaudación bancaria
+        // (SIRCREB), que ya viene precargada en SIFERE; no es una percepción de un proveedor.
+        var recaudacion = sufrida && ((s.Tc.ToUpperInvariant() is "CC" or "LT" && s.Letra.ToUpperInvariant() is not ("A" or "B" or "C" or "M"))
+            || (origen == "Asiento" && cuit.Length != 11));
+        if (recaudacion) origen = "Banco / tarjeta";
         // Sufrida (activo): Debe suma. Practicada (pasivo): Haber suma. El contrario es devolución (NC).
         var signo = (sufrida ? s.Dh == "D" : s.Dh == "H") ? 1 : -1;
         return new RetencionFila
         {
             Fecha = s.Fecha, FechaContable = s.FechaContable, Tc = s.Tc, Sucursal = s.Sucursal, Numero = s.Numero, Letra = s.Letra, Origen = origen,
             Impuesto = s.Medio switch { "RI" => "IVA", "RB" => "IIBB", "RG" => "Ganancias", _ => "Otros" },
-            Clase = origen is "Compra" or "Venta" ? "Percepción" : "Retención", Sufrida = sufrida,
-            Cuenta = s.Cuenta, CuentaNombre = s.CuentaNombre, Contraparte = s.Contraparte, Nombre = s.Nombre.Trim(), Cuit = Digitos(s.Cuit),
+            Clase = recaudacion ? ClaseRecaudacion : origen is "Compra" or "Venta" ? "Percepción" : "Retención", Sufrida = sufrida,
+            Cuenta = s.Cuenta, CuentaNombre = s.CuentaNombre, Contraparte = s.Contraparte, Nombre = recaudacion && s.Nombre.Trim().Length == 0 ? "(sin agente)" : s.Nombre.Trim(), Cuit = cuit,
             CondicionIva = s.CondicionIva, Importe = signo * Math.Abs(s.Importe), Base = s.Base is { } b && b != 0 ? Math.Abs(b) : null,
             Certificado = s.Certificado, Unidad = s.Unidad,
             Jurisdiccion = JurisdiccionDe(s.Provincia, s.CodJurisdiccion),
@@ -331,7 +344,7 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
     }
 
     /// <summary>Detalle por provincia de C_MV_CPTE_PERCEPCIONES (carga de percepciones del legacy).</summary>
-    private static async Task<Dictionary<(string Tc, string Id, string Cuenta), List<(string Jur, decimal Importe)>>> PercepcionesPorProvinciaAsync(
+    internal static async Task<Dictionary<(string Tc, string Id, string Cuenta), List<(string Jur, decimal Importe)>>> PercepcionesPorProvinciaAsync(
         SqlConnection cn, IReadOnlyList<RetencionFila> filas, CancellationToken ct)
     {
         var claves = filas.Where(x => x.Sufrida && x.Impuesto == "IIBB" && x.Origen is "Compra" or "Pago").Select(x => x.Sucursal + x.Numero + x.Letra).Distinct().ToArray();
@@ -415,7 +428,7 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
     /// Cabeceras de V_MV_CPTE con una retención practicada: RETGAN/RETIBR en órdenes de pago y pagos (como SICORE y VT_AFIP_02),
     /// RETIVA en facturas, notas de crédito y débito de venta (percepción de IVA).
     /// </summary>
-    private static async Task<List<RetencionPago>> PagosAsync(SqlConnection cn, RetencionesFiltro f, string prefijo, CancellationToken ct)
+    internal static async Task<List<RetencionPago>> PagosAsync(SqlConnection cn, RetencionesFiltro f, string prefijo, CancellationToken ct)
     {
         if (prefijo is not ("RETGAN" or "RETIBR" or "RETIVA")) throw new ArgumentOutOfRangeException(nameof(prefijo));
         var tcs = prefijo == "RETIVA"
@@ -441,7 +454,7 @@ public sealed class RetencionesService(ISessionService sessions, IAppUserSession
     }
 
     /// <summary>Comprobantes del libro de IVA ventas con percepción de IIBB (ARBA, ARCIBA, SIRCAR).</summary>
-    private static async Task<List<PercepcionVenta>> VentasAsync(SqlConnection cn, RetencionesFiltro f, CancellationToken ct)
+    internal static async Task<List<PercepcionVenta>> VentasAsync(SqlConnection cn, RetencionesFiltro f, CancellationToken ct)
         => (await cn.QueryAsync<PercepcionVenta>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(a.TC)) Tc, LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) Sucursal, LTRIM(RTRIM(ISNULL(a.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(a.LETRA,''))) Letra,
                    a.FECHA Fecha, ISNULL(a.FechaSubdiario, a.FECHA) FechaContable, ISNULL(NULLIF(LTRIM(RTRIM(a.CABCUIT)),''), ISNULL(ad.NUMERO_DOCUMENTO,'')) Cuit,
