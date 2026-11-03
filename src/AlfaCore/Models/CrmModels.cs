@@ -64,6 +64,38 @@ public sealed class CrmOpportunityDetailDto : CrmOpportunityDto
     public List<CrmActividadDto> Actividad { get; set; } = [];
     public List<CrmMensajeOrigenDto> MensajesOrigenDetalle { get; set; } = [];
     public List<CrmTareaDto> Tareas { get; set; } = [];
+    public List<CrmAdjuntoDto> Adjuntos { get; set; } = [];
+}
+
+public sealed class CrmAdjuntoDto
+{
+    public long IdAdjunto { get; set; }
+    public long IdOportunidad { get; set; }
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long TamanoBytes { get; set; }
+    public string Origen { get; set; } = string.Empty;
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public DateTime FechaHoraAlta { get; set; }
+}
+
+public sealed class CrmAdjuntoSubirRequest
+{
+    public long IdOportunidad { get; set; }
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string? MimeType { get; set; }
+    public byte[] Contenido { get; set; } = [];
+    public string? UsuarioAccion { get; set; }
+}
+
+/// <summary>Adjunto listo para servir: el contenido viene de SQL o, si está en disco, la ruta absoluta ya validada.</summary>
+public sealed class CrmAdjuntoArchivoDto
+{
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
+    public string RutaArchivo { get; set; } = string.Empty;
+    public DateTime FechaHoraAlta { get; set; }
 }
 
 public sealed class CrmTareaDto

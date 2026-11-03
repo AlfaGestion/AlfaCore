@@ -49,6 +49,7 @@ Todas las tablas nuevas usan prefijo `CRM_*`.
 | `CRM_OPORTUNIDAD_ETIQUETAS` | relación oportunidad-etiqueta |
 | `CRM_OPORTUNIDAD_MENSAJES` | mensajes de conversaciones vinculados como origen |
 | `CRM_ACTIVIDAD` | timeline de alta, edición, movimientos y notas |
+| `CRM_OPORTUNIDAD_ADJUNTOS` | archivos adjuntos de la oportunidad (solapa Adjuntos) |
 
 ## Etapas
 
@@ -107,6 +108,15 @@ Cuando se conecte el botón desde `Conversaciones`, el flujo recomendado es:
 - `src/AlfaCore/Components/Pages/Crm.razor.css`
 - `src/AlfaCore/App_Data/updates/2026-07-28-001__crm_oportunidades_modelo_inicial.sql`
 - `src/AlfaCore/App_Data/updates/2026-07-28-002__crm_oportunidades_menu_web.sql`
+- `src/AlfaCore/App_Data/updates/2026-11-03-004__crm_oportunidades_adjuntos.sql`
+
+## Adjuntos
+
+La ficha de la oportunidad tiene la solapa **Adjuntos**: subir varios archivos a la vez, abrirlos, descargarlos y quitarlos (baja lógica). Cada alta o baja deja una línea `ADJUNTO` en `CRM_ACTIVIDAD`.
+
+- Lo que se sube desde la pantalla se guarda en SQL (`ArchivoContenido`, con hash SHA-256), así queda en el backup de la base. Tamaño máximo por archivo: `CRM-ADJUNTOS-MAX-MB` (grupo `CRM`, 25 por defecto).
+- Lo que se trae en volumen de otro sistema (p. ej. la migración de Odoo, `Origen = 'ODOO'`) queda en disco: `RutaLocal` relativa a la instalación. Solo se sirve si está dentro de la carpeta de adjuntos de la base, la misma que usa Conversaciones (`IConversacionesService.ResolveStoredAttachmentPath`).
+- Se sirven por `GET /api/crm/adjuntos/{idAdjunto}?idBase=..` con la misma autorización y política de tipos que los adjuntos de Conversaciones.
 
 ## Decisiones técnicas
 

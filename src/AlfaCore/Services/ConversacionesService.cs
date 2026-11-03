@@ -6751,6 +6751,18 @@ public sealed partial class ConversacionesService(
         }
     }
 
+    public string ResolveStoredAttachmentPath(string rutaLocal)
+    {
+        if (string.IsNullOrWhiteSpace(rutaLocal))
+            return string.Empty;
+
+        var tenant = ResolveActiveTenantContext(null, "ResolveStoredAttachmentPath");
+        var path = ToAbsoluteAttachmentPath(rutaLocal.Trim());
+        return IsAttachmentPathAllowedForRoot(path, GetUploadsBasePath(tenant)) && File.Exists(path)
+            ? path
+            : string.Empty;
+    }
+
     internal bool IsAttachmentPathAllowed(string candidatePath, int? expectedBaseId = null)
     {
         var tenant = ResolveActiveTenantContext(expectedBaseId, "IsAttachmentPathAllowed");

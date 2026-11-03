@@ -142,5 +142,11 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionAdjuntoDto>> GetMessageAttachmentsAsync(long idConversacion, IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<ConversacionAdjuntosRecoveryResultDto> RecoverConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default);
     Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, bool includeDownloadName = true, CancellationToken ct = default);
+    /// <summary>
+    /// Ruta absoluta de un archivo guardado en disco (RutaLocal relativa a la instalación) solo si existe y
+    /// está dentro de la carpeta de adjuntos de la base activa; si no, vacío. La usan otros módulos
+    /// (p. ej. adjuntos del CRM) para servir archivos con la misma regla que Conversaciones.
+    /// </summary>
+    string ResolveStoredAttachmentPath(string rutaLocal);
     string GetAttachmentScopeKey();
 }

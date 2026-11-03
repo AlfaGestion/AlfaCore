@@ -14,6 +14,10 @@ public interface ICrmService
     Task<long> SaveTareaAsync(CrmTareaSaveRequest request, CancellationToken ct = default);
     Task CompleteTareaAsync(long idTarea, bool completada, string? usuarioAccion = null, CancellationToken ct = default);
     Task DeleteTareaAsync(long idTarea, string? usuarioAccion = null, CancellationToken ct = default);
+    Task<int> GetAdjuntoMaxMbAsync(CancellationToken ct = default);
+    Task<long> AddAdjuntoAsync(CrmAdjuntoSubirRequest request, CancellationToken ct = default);
+    Task DeleteAdjuntoAsync(long idAdjunto, string? usuarioAccion = null, CancellationToken ct = default);
+    Task<CrmAdjuntoArchivoDto?> GetAdjuntoArchivoAsync(long idAdjunto, CancellationToken ct = default);
     Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default);
     Task<ConversacionExtraccionDto?> ExtractOportunidadDesdeConversacionAsync(long idConversacion, CancellationToken ct = default);
     Task<CrmDashboardDto> GetDashboardAsync(int diasEstancamiento = 7, CancellationToken ct = default);

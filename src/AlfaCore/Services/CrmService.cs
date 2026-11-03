@@ -167,6 +167,7 @@ public sealed class CrmService(
             item.Actividad = (await GetActivityAsync(cn, idOportunidad, token)).ToList();
             item.MensajesOrigenDetalle = (await GetSourceMessagesAsync(cn, idOportunidad, token)).ToList();
             item.Tareas = (await GetTareasAsync(cn, idOportunidad, token)).ToList();
+            item.Adjuntos = (await GetAdjuntosAsync(cn, idOportunidad, token)).ToList();
             return item;
         }, "No se pudo cargar el detalle de la oportunidad.", ct);
 
@@ -498,6 +499,138 @@ public sealed class CrmService(
                 WHERE IdTarea = @IdTarea;
                 """, new { IdTarea = idTarea }, cancellationToken: token));
         }, "No se pudo eliminar la acción.", ct);
+
+    public Task<int> GetAdjuntoMaxMbAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetAdjuntoMaxMb", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await GetAdjuntoMaxMbAsync(cn, token);
+        }, "No se pudo leer el tamaño máximo de adjuntos.", ct);
+
+    public Task<long> AddAdjuntoAsync(CrmAdjuntoSubirRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("AddAdjunto", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdOportunidad <= 0)
+                throw new InvalidOperationException("Guardá la oportunidad antes de adjuntar archivos.");
+            if (request.Contenido.Length == 0)
+                throw new InvalidOperationException("El archivo está vacío.");
+
+            var nombre = Path.GetFileName((request.NombreArchivo ?? string.Empty).Trim());
+            if (string.IsNullOrWhiteSpace(nombre))
+                nombre = "adjunto";
+            if (nombre.Length > 255)
+                nombre = nombre[^255..];
+            var mimeType = (request.MimeType ?? string.Empty).Trim();
+            if (mimeType.Length is 0 or > 100)
+                mimeType = "application/octet-stream";
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var maxMb = await GetAdjuntoMaxMbAsync(cn, token);
+            if (request.Contenido.LongLength > maxMb * 1024L * 1024L)
+                throw new InvalidOperationException($"El archivo supera el máximo de {maxMb} MB.");
+
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            var idAdjunto = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+                INSERT INTO dbo.CRM_OPORTUNIDAD_ADJUNTOS
+                    (IdOportunidad, NombreArchivo, MimeType, TamanoBytes, ArchivoContenido, ArchivoHashSha256, Origen, UsuarioAlta, FechaHoraAlta)
+                VALUES
+                    (@IdOportunidad, @NombreArchivo, @MimeType, @TamanoBytes, @Contenido, @Hash, N'MANUAL', @Usuario, GETDATE());
+                SELECT CAST(SCOPE_IDENTITY() AS bigint);
+                """, new
+                {
+                    request.IdOportunidad,
+                    NombreArchivo = nombre,
+                    MimeType = mimeType,
+                    TamanoBytes = request.Contenido.LongLength,
+                    request.Contenido,
+                    Hash = Convert.ToHexString(SHA256.HashData(request.Contenido)).ToLowerInvariant(),
+                    Usuario = NormalizeUser(request.UsuarioAccion)
+                }, tx, cancellationToken: token));
+            await AddActivityAsync(cn, tx, request.IdOportunidad, "ADJUNTO", $"Adjuntó {nombre}", request.UsuarioAccion, token);
+            await tx.CommitAsync(token);
+            return idAdjunto;
+        }, "No se pudo adjuntar el archivo.", ct);
+
+    public Task DeleteAdjuntoAsync(long idAdjunto, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeleteAdjunto", async token =>
+        {
+            if (idAdjunto <= 0)
+                throw new InvalidOperationException("Seleccioná un adjunto válido.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            var adjunto = await cn.QueryFirstOrDefaultAsync<(long IdOportunidad, string NombreArchivo)>(new CommandDefinition("""
+                UPDATE dbo.CRM_OPORTUNIDAD_ADJUNTOS
+                SET Baja = 1, UsuarioBaja = @Usuario, FechaHoraBaja = GETDATE()
+                OUTPUT inserted.IdOportunidad, inserted.NombreArchivo
+                WHERE IdAdjunto = @IdAdjunto AND Baja = 0;
+                """, new { IdAdjunto = idAdjunto, Usuario = NormalizeUser(usuarioAccion) }, tx, cancellationToken: token));
+            if (adjunto.IdOportunidad > 0)
+                await AddActivityAsync(cn, tx, adjunto.IdOportunidad, "ADJUNTO", $"Quitó el adjunto {adjunto.NombreArchivo}", usuarioAccion, token);
+            await tx.CommitAsync(token);
+        }, "No se pudo quitar el adjunto.", ct);
+
+    public Task<CrmAdjuntoArchivoDto?> GetAdjuntoArchivoAsync(long idAdjunto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetAdjuntoArchivo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var row = await cn.QueryFirstOrDefaultAsync<(string NombreArchivo, string MimeType, string RutaLocal, byte[]? Contenido, DateTime FechaHoraAlta)>(new CommandDefinition("""
+                SELECT ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''), a.ArchivoContenido, a.FechaHoraAlta
+                FROM dbo.CRM_OPORTUNIDAD_ADJUNTOS a
+                INNER JOIN dbo.CRM_OPORTUNIDADES o ON o.IdOportunidad = a.IdOportunidad
+                WHERE a.IdAdjunto = @IdAdjunto AND a.Baja = 0 AND ISNULL(o.Baja, 0) = 0;
+                """, new { IdAdjunto = idAdjunto }, cancellationToken: token));
+            if (string.IsNullOrEmpty(row.NombreArchivo))
+                return null;
+
+            var contenido = row.Contenido ?? [];
+            var ruta = contenido.Length > 0 ? string.Empty : conversacionesService.ResolveStoredAttachmentPath(row.RutaLocal);
+            if (contenido.Length == 0 && ruta.Length == 0)
+                return null;
+
+            return new CrmAdjuntoArchivoDto
+            {
+                NombreArchivo = row.NombreArchivo,
+                MimeType = row.MimeType,
+                Contenido = contenido,
+                RutaArchivo = ruta,
+                FechaHoraAlta = row.FechaHoraAlta
+            };
+        }, "No se pudo abrir el adjunto.", ct);
+
+    private static async Task<int> GetAdjuntoMaxMbAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var raw = await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) LTRIM(RTRIM(CONVERT(nvarchar(50), VALOR)))
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CRM-ADJUNTOS-MAX-MB';
+            """, cancellationToken: ct));
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mb) && mb > 0 ? mb : 25;
+    }
+
+    private static Task<IEnumerable<CrmAdjuntoDto>> GetAdjuntosAsync(SqlConnection cn, long idOportunidad, CancellationToken ct)
+        => cn.QueryAsync<CrmAdjuntoDto>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.CRM_OPORTUNIDAD_ADJUNTOS', N'U') IS NULL
+                SELECT TOP (0) CAST(0 AS bigint) AS IdAdjunto;
+            ELSE
+                SELECT
+                    a.IdAdjunto,
+                    a.IdOportunidad,
+                    ISNULL(a.NombreArchivo, N'') AS NombreArchivo,
+                    ISNULL(a.MimeType, N'') AS MimeType,
+                    ISNULL(a.TamanoBytes, 0) AS TamanoBytes,
+                    ISNULL(a.Origen, N'') AS Origen,
+                    ISNULL(a.UsuarioAlta, N'') AS UsuarioAlta,
+                    a.FechaHoraAlta
+                FROM dbo.CRM_OPORTUNIDAD_ADJUNTOS a
+                WHERE a.IdOportunidad = @IdOportunidad AND a.Baja = 0
+                ORDER BY a.FechaHoraAlta DESC, a.IdAdjunto DESC;
+            """, new { IdOportunidad = idOportunidad }, cancellationToken: ct));
 
     public Task<CrmDashboardDto> GetDashboardAsync(int diasEstancamiento = 7, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetDashboard", async token =>

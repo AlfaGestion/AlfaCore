@@ -1299,3 +1299,38 @@
     .crm-ficha__titulo input, .crm-ficha__codigo { font-size: 18px; }
     .crm-etapa { padding: 6px 14px 6px 18px; font-size: 12px; }
 }
+
+/* --- Adjuntos de la oportunidad --- */
+.crm-adjunto-subir {
+    position: relative;
+    cursor: pointer;
+}
+
+.crm-adjunto-subir.is-disabled {
+    opacity: .6;
+    pointer-events: none;
+}
+
+.crm-adjunto-subir ::deep input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.crm-adjunto__icono {
+    font-size: 1.15rem;
+    color: var(--color-muted, #64748b);
+    padding: 0 .2rem;
+}
+
+.crm-accion__body a {
+    color: inherit;
+    text-decoration: none;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.crm-accion__body a:hover strong {
+    text-decoration: underline;
+}

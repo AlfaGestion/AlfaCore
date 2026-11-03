@@ -9,6 +9,7 @@
 @inject AlfaCore.Services.ICuentasComercialesService ClientesSvc
 @inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
@@ -1264,6 +1265,45 @@
                 }
             </div>
 
+            <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabAdjuntos)">
+                @if (_detail is null)
+                {
+                    <p class="muted">Guardá la oportunidad para adjuntar archivos.</p>
+                }
+                else
+                {
+                    <div class="crm-solapa__acciones">
+                        <label class="btn btn--primary btn--sm crm-adjunto-subir @(_subiendoAdjunto ? "is-disabled" : string.Empty)" title="Hasta @_adjuntoMaxMb MB por archivo">
+                            <i class="bi @(_subiendoAdjunto ? "bi-hourglass-split" : "bi-paperclip")"></i> @(_subiendoAdjunto ? "Subiendo..." : "Adjuntar archivos")
+                            <InputFile OnChange="SubirAdjuntosAsync" multiple disabled="@(_subiendoAdjunto || _saving)" />
+                        </label>
+                    </div>
+                    @if (_detail.Adjuntos.Count == 0)
+                    {
+                        <p class="muted">Sin archivos adjuntos. Podés subir presupuestos, listas de precios, fotos o planos.</p>
+                    }
+                    else
+                    {
+                        <div class="crm-accion-list">
+                            @foreach (var adjunto in _detail.Adjuntos)
+                            {
+                                <article class="crm-accion">
+                                    <i class="bi @GetAdjuntoIcon(adjunto) crm-adjunto__icono"></i>
+                                    <div class="crm-accion__body">
+                                        <a href="@GetAdjuntoUrl(adjunto, descargar: false)" target="_blank" rel="noopener"><strong>@adjunto.NombreArchivo</strong></a>
+                                        <small>@FormatTamano(adjunto.TamanoBytes) · @FormatDate(adjunto.FechaHoraAlta)@(string.IsNullOrWhiteSpace(adjunto.UsuarioAlta) ? string.Empty : $" · {adjunto.UsuarioAlta}")@(adjunto.Origen == "ODOO" ? " · Odoo" : string.Empty)</small>
+                                    </div>
+                                    <div>
+                                        <a class="crm-accion__del" href="@GetAdjuntoUrl(adjunto, descargar: true)" title="Descargar"><i class="bi bi-download"></i></a>
+                                        <button type="button" class="crm-accion__del" title="Quitar" @onclick="() => QuitarAdjuntoAsync(adjunto)" disabled="@_saving"><i class="bi bi-trash"></i></button>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
             <div class="crm-solapa" hidden="@(_crmFichaTab != CrmTabOrigen)">
                 @if (_detail?.IdConversacion is long idConv)
                 {
@@ -1811,8 +1851,11 @@
     private const string CrmTabActividad = "actividad";
     private const string CrmTabAcciones = "acciones";
     private const string CrmTabCotizaciones = "cotizaciones";
+    private const string CrmTabAdjuntos = "adjuntos";
     private const string CrmTabOrigen = "origen";
     private string _crmFichaTab = CrmTabDescripcion;
+    private bool _subiendoAdjunto;
+    private int _adjuntoMaxMb = 25;
     private bool _showTagPicker;
     private bool _cambiandoEtapa;
 
@@ -1822,6 +1865,7 @@
         new(CrmTabActividad, "Actividad", Badge: Contar(_detail?.Actividad.Count)),
         new(CrmTabAcciones, "Próximas acciones", Badge: Contar(_detail?.Tareas.Count(t => !t.Completada))),
         new(CrmTabCotizaciones, "Cotizaciones", Badge: Contar(_cotizaciones.Count)),
+        new(CrmTabAdjuntos, "Adjuntos", Badge: Contar(_detail?.Adjuntos.Count)),
         new(CrmTabOrigen, "Origen", Badge: Contar(_detail?.MensajesOrigenDetalle.Count))
     ];
 
@@ -2274,6 +2318,96 @@
             _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
         });
     }
+
+    private async Task SubirAdjuntosAsync(InputFileChangeEventArgs args)
+    {
+        if (_detail is null || _subiendoAdjunto)
+            return;
+
+        _subiendoAdjunto = true;
+        var idOportunidad = _detail.IdOportunidad;
+        await RunAsync(async () =>
+        {
+            try
+            {
+                _adjuntoMaxMb = await CrmSvc.GetAdjuntoMaxMbAsync();
+                var maxBytes = _adjuntoMaxMb * 1024L * 1024L;
+                var rechazados = new List<string>();
+                foreach (var archivo in args.GetMultipleFiles(20))
+                {
+                    if (archivo.Size > maxBytes)
+                    {
+                        rechazados.Add(archivo.Name);
+                        continue;
+                    }
+
+                    await using var origen = archivo.OpenReadStream(maxBytes);
+                    using var memoria = new MemoryStream();
+                    await origen.CopyToAsync(memoria);
+                    await CrmSvc.AddAdjuntoAsync(new CrmAdjuntoSubirRequest
+                    {
+                        IdOportunidad = idOportunidad,
+                        NombreArchivo = archivo.Name,
+                        MimeType = archivo.ContentType,
+                        Contenido = memoria.ToArray(),
+                        UsuarioAccion = CurrentUserName
+                    });
+                }
+
+                _detail = await CrmSvc.GetByIdAsync(idOportunidad);
+                if (rechazados.Count > 0)
+                    _feedback = new Feedback("Algunos archivos no se adjuntaron", $"Superan el máximo de {_adjuntoMaxMb} MB: {string.Join(", ", rechazados)}.", null);
+            }
+            finally
+            {
+                _subiendoAdjunto = false;
+            }
+        });
+    }
+
+    private async Task QuitarAdjuntoAsync(CrmAdjuntoDto adjunto)
+    {
+        if (_detail is null)
+            return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"¿Quitar el adjunto {adjunto.NombreArchivo}?"))
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteAdjuntoAsync(adjunto.IdAdjunto, CurrentUserName);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private string GetAdjuntoUrl(CrmAdjuntoDto adjunto, bool descargar)
+    {
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        var token = string.IsNullOrWhiteSpace(AppUserSession.CurrentToken)
+            ? string.Empty
+            : $"&token={Uri.EscapeDataString(AppUserSession.CurrentToken)}";
+        return $"/api/crm/adjuntos/{adjunto.IdAdjunto}?idBase={idBase}{(descargar ? "&download=1" : string.Empty)}{token}";
+    }
+
+    private static string GetAdjuntoIcon(CrmAdjuntoDto adjunto)
+    {
+        var mime = adjunto.MimeType.ToLowerInvariant();
+        var extension = Path.GetExtension(adjunto.NombreArchivo).ToLowerInvariant();
+        if (mime.StartsWith("image/", StringComparison.Ordinal))
+            return "bi-file-earmark-image";
+        if (mime == "application/pdf" || extension == ".pdf")
+            return "bi-file-earmark-pdf";
+        if (extension is ".xls" or ".xlsx" or ".csv")
+            return "bi-file-earmark-spreadsheet";
+        if (extension is ".doc" or ".docx")
+            return "bi-file-earmark-word";
+        if (mime.StartsWith("video/", StringComparison.Ordinal))
+            return "bi-file-earmark-play";
+        return "bi-file-earmark";
+    }
+
+    private static string FormatTamano(long bytes)
+        => bytes >= 1024 * 1024
+            ? $"{bytes / 1024d / 1024d:0.#} MB"
+            : $"{Math.Max(1, bytes / 1024)} KB";
 
     private static string GetTareaIcon(string tipo) => tipo switch
     {

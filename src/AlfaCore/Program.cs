@@ -3424,6 +3424,49 @@ public class Program
                 enableRangeProcessing: true);
         });
 
+        // Adjuntos de las oportunidades del CRM: misma autorización y política de tipos que los de Conversaciones.
+        app.MapGet("/api/crm/adjuntos/{idAdjunto:long}", async (
+            long idAdjunto,
+            HttpRequest request,
+            ISessionService sessionService,
+            IAppUserSessionService appUserSession,
+            ICrmService svc,
+            CancellationToken ct) =>
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+            request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+            var idBase = int.TryParse(request.Query["idBase"].ToString(), out var parsedIdBase) && parsedIdBase > 0
+                ? parsedIdBase
+                : (int?)null;
+            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            if (!TryActivateAuthorizedAttachmentBase(idBase, sessionService, appUserSession))
+                return Results.NotFound();
+
+            var adjunto = await svc.GetAdjuntoArchivoAsync(idAdjunto, ct);
+            if (adjunto is null)
+                return Results.NotFound();
+
+            var servePolicy = BuildAttachmentServePolicy(adjunto.MimeType, adjunto.NombreArchivo, null, download);
+            request.HttpContext.Response.Headers.CacheControl = "private, no-cache";
+            if (adjunto.Contenido.Length > 0)
+            {
+                return Results.File(
+                    adjunto.Contenido,
+                    contentType: servePolicy.ContentType,
+                    fileDownloadName: servePolicy.FileDownloadName,
+                    lastModified: new DateTimeOffset(adjunto.FechaHoraAlta),
+                    enableRangeProcessing: true);
+            }
+
+            return Results.File(
+                adjunto.RutaArchivo,
+                contentType: servePolicy.ContentType,
+                fileDownloadName: servePolicy.FileDownloadName,
+                lastModified: new DateTimeOffset(File.GetLastWriteTimeUtc(adjunto.RutaArchivo), TimeSpan.Zero),
+                enableRangeProcessing: true);
+        });
+
         app.MapGet("/api/notificaciones-push/settings", async (
             string? deviceId,
             HttpRequest request,
