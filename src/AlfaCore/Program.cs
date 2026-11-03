@@ -343,6 +343,7 @@ public class Program
         builder.Services.AddScoped<IFechasCierreService, FechasCierreService>();
         builder.Services.AddScoped<IControlArcaService, ControlArcaService>();
         builder.Services.AddScoped<IControlArcaImportacionService, ControlArcaImportacionService>();
+        builder.Services.AddScoped<IRetencionesService, RetencionesService>();
         builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
         builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();

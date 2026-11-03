@@ -60,6 +60,7 @@ public static class ModuleTopNavPresets
             ("sumas-saldos", "Sumas y saldos", "/contabilidad/sumas-y-saldos"),
             ("balance-general", "Balance general", "/contabilidad/balance-general"),
             ("plan", "Plan de cuentas", "/contabilidad/plan-de-cuentas"),
+            ("retenciones", "Retenciones", "/contabilidad/retenciones"),
             ("fechas-cierre", "Fechas de cierre", "/contabilidad/fechas-de-cierre"),
             ("control-arca", "Control ARCA", "/contabilidad/control-arca")
         ]);

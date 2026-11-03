@@ -1,0 +1,234 @@
+@page "/contabilidad/retenciones"
+@page "/{idweb}/{idbase:int}/contabilidad/retenciones"
+@using AlfaCore.Services
+@inject IRetencionesService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Retenciones y percepciones | Alfa Gestión</PageTitle>
+
+@* Retenciones y percepciones sufridas y practicadas (cuentas RI/RB/RG/RO del asiento) con las exportaciones de SIFERE WEB y F.2002. *@
+<div class="gd-page gd rp-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="rp-filtros">
+        <label>Desde <input type="date" class="rp-input" value="@_f.Desde.ToString("yyyy-MM-dd")" @onchange="e => CambiarFecha(e, true)" /></label>
+        <label>Hasta <input type="date" class="rp-input" value="@_f.Hasta.ToString("yyyy-MM-dd")" @onchange="e => CambiarFecha(e, false)" /></label>
+        <label>Ver
+            <select class="rp-input" value="@_f.Alcance" @onchange="e => _f.Alcance = e.Value?.ToString() ?? _f.Alcance">
+                <option value="SUFRIDAS">Sufridas</option>
+                <option value="PRACTICADAS">Practicadas</option>
+                <option value="TODAS">Todas</option>
+            </select>
+        </label>
+        @if (_cfg is { Unidades.Count: > 1 })
+        {
+            <label>Unidad
+                <select class="rp-input" value="@_f.Unidad" @onchange="e => _f.Unidad = e.Value?.ToString() ?? string.Empty">
+                    <option value="">Todas</option>
+                    @foreach (var u in _cfg.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                </select>
+            </label>
+        }
+        <div class="rp-meses">
+            <button type="button" @onclick="() => Mes(-1)">Mes anterior</button>
+            <button type="button" @onclick="() => Mes(0)">Este mes</button>
+        </div>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="_busy" OnClick="_ => ConsultarAsync()">Consultar</AlfaButton>
+    </section>
+
+    @if (_r is { } r)
+    {
+        @foreach (var a in r.Avisos) { <AlfaNotification Message="@AppUiMessage.Warning("Revisar", a)" /> }
+        @if (r.Totales.Count > 0)
+        {
+            <div class="kpi-grid rp-kpis">
+                @foreach (var t in r.Totales)
+                {
+                    <KpiCard Titulo="@($"{t.Impuesto} · {t.Clase} {(t.Sufrida ? "sufrida" : "practicada")}")" Valor="@t.Importe.ToString("C2", Culture)"
+                             Icono="@Icono(t.Sufrida ? "bi-box-arrow-in-down" : "bi-box-arrow-up")" Descripcion="@($"{t.Cantidad} movimiento(s)")" />
+                }
+            </div>
+        }
+
+        <section class="rp-export">
+            <strong><i class="bi bi-file-earmark-arrow-down" aria-hidden="true"></i> Archivos para presentar (sufridas del período)</strong>
+            <div class="rp-export__botones">
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SIFERE_RET")'>SIFERE · retenciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("SIFERE_PERC")'>SIFERE · percepciones IIBB</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("IVA_RET")'>F.2002 · retenciones IVA</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick='_ => ExportarAsync("IVA_PERC")'>F.2002 · percepciones IVA</AlfaButton>
+            </div>
+            <small>SIFERE WEB (Comisión Arbitral) va en un .zip con un archivo por jurisdicción. F.2002 es «Mis Aplicaciones Web» de ARCA (IVA por actividad). Mismos formatos que el Alfa Gestión.</small>
+        </section>
+
+        @if (r.Filas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin movimientos" Message="No hay retenciones ni percepciones en ese período." />
+        }
+        else
+        {
+            <section class="rp-tabla__marco"><div class="rp-tabla__scroll">
+                <table class="rp-tabla">
+                    <thead><tr><th>Fecha</th><th>Impuesto</th><th>Origen</th><th>Comprobante</th><th>Agente / sujeto</th><th>Jurisdicción</th><th>Certificado</th>
+                        <th class="n">Base</th><th class="n">Importe</th></tr></thead>
+                    <tbody>
+                    @foreach (var x in r.Filas)
+                    {
+                        <tr>
+                            <td>@x.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td><span class="rp-chip @(x.Sufrida ? "is-sufrida" : "is-practicada")">@x.Impuesto</span><small>@x.Clase @(x.Sufrida ? "sufrida" : "practicada")</small></td>
+                            <td>@x.Origen<small>@x.Cuenta · @x.CuentaNombre</small></td>
+                            <td>@x.Comprobante</td>
+                            <td>@x.Nombre<small>@x.Cuit</small></td>
+                            <td>@x.JurisdiccionNombre</td>
+                            <td>@x.Certificado</td>
+                            <td class="n">@(x.Base is { } b ? b.ToString("N2", Culture) : "")</td>
+                            <td class="n @(x.Importe < 0 ? "is-neg" : null)">@x.Importe.ToString("N2", Culture)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></section>
+        }
+    }
+    else if (!_busy)
+    {
+        <AlfaEmptyState Title="Elegí el período" Message="Consultá las retenciones y percepciones sufridas o practicadas del período." />
+    }
+</div>
+
+<AlfaDialog Open="@(_cfgEdit is not null)" Title="Configurar exportaciones" Size="AlfaDialogSize.Md" Loading="@_cfgBusy"
+            ErrorMessage="@_cfgError" CloseOnBackdrop="false" OnClose="() => _cfgEdit = null">
+    <ChildContent>
+    @if (_cfgEdit is { } c)
+    {
+        <div class="rp-cfg">
+            <AlfaSelect Label="Jurisdicción por defecto (SIFERE)" Value="@c.JurisdiccionDefecto" ValueChanged="v => c.JurisdiccionDefecto = v ?? string.Empty"
+                        Options="@(new[] { new AlfaSelectOption("", "Sin jurisdicción por defecto") }.Concat(c.Jurisdicciones.Select(j => new AlfaSelectOption(j.Codigo, $"{j.Codigo} · {j.Nombre}"))).ToList())" />
+            <small>Se usa cuando la cuenta de la retención o percepción de IIBB no tiene provincia cargada.</small>
+            <AlfaInput Label="Régimen F.2002 · retenciones de IVA" Value="@c.RegimenRetencionIva" ValueChanged="v => c.RegimenRetencionIva = v ?? string.Empty" MaxLength="3" />
+            <AlfaInput Label="Régimen F.2002 · percepciones de IVA" Value="@c.RegimenPercepcionIva" ValueChanged="v => c.RegimenPercepcionIva = v ?? string.Empty" MaxLength="3"
+                       HelpText="Código de régimen de ARCA (tres dígitos). Son los mismos datos del Alfa Gestión." />
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_cfgBusy" OnClick="_ => _cfgEdit = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_cfgBusy" OnClick="_ => GuardarConfigAsync()">Guardar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private readonly RetencionesFiltro _f = new();
+    private RetencionesResultado? _r;
+    private RetencionesConfig? _cfg, _cfgEdit;
+    private AppUiMessage? _feedback;
+    private string? _cfgError;
+    private bool _busy, _cfgBusy, _disposed;
+    private PageHeaderConfig? _header;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Mes(-1, consultar: false);
+        UpdateHeader();
+        var c = await UiOps.RunAsync(() => Service.GetConfigAsync(), "Retenciones");
+        if (c.Success) _cfg = c.Value; else _feedback = c.Feedback;
+        if (_cfg is not null) await ConsultarAsync();
+    }
+
+    private void CambiarFecha(ChangeEventArgs e, bool desde)
+    {
+        if (!DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) return;
+        if (desde) _f.Desde = d; else _f.Hasta = d;
+    }
+
+    private void Mes(int delta, bool consultar = true)
+    {
+        var inicio = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(delta);
+        _f.Desde = inicio; _f.Hasta = inicio.AddMonths(1).AddDays(-1);
+        if (consultar) _ = ConsultarAsync();
+    }
+
+    private async Task ConsultarAsync()
+    {
+        if (_busy) return;
+        _busy = true; _feedback = null; UpdateHeader(); await InvokeAsync(StateHasChanged);
+        try
+        {
+            var filtro = new RetencionesFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Alcance = _f.Alcance, Unidad = _f.Unidad };
+            var r = await UiOps.RunAsync(() => Service.GetAsync(filtro), "Retenciones y percepciones");
+            if (r.Success) _r = r.Value; else _feedback = r.Feedback;
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private async Task ExportarAsync(string formato)
+    {
+        if (_busy) return;
+        _busy = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var filtro = new RetencionesFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Alcance = _f.Alcance, Unidad = _f.Unidad };
+            var r = await UiOps.RunAsync(() => Service.ExportarAsync(filtro, formato), "Exportar");
+            if (!r.Success) { _feedback = r.Feedback; return; }
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(r.Value!.Contenido), r.Value.ContentType, r.Value.Nombre);
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private Task AbrirConfig()
+    {
+        if (_cfg is null) return Task.CompletedTask;
+        _cfgError = null;
+        _cfgEdit = new RetencionesConfig
+        {
+            JurisdiccionDefecto = _cfg.JurisdiccionDefecto, RegimenRetencionIva = _cfg.RegimenRetencionIva, RegimenPercepcionIva = _cfg.RegimenPercepcionIva,
+            Jurisdicciones = _cfg.Jurisdicciones, Unidades = _cfg.Unidades
+        };
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarConfigAsync()
+    {
+        if (_cfgEdit is null || _cfgBusy) return;
+        _cfgBusy = true; _cfgError = null;
+        try
+        {
+            await Service.GuardarConfigAsync(_cfgEdit);
+            _cfg = _cfgEdit; _cfgEdit = null;
+            _feedback = AppUiMessage.Success("Configuración guardada", "Se guardaron la jurisdicción y los regímenes.");
+        }
+        catch (Exception ex) { _cfgError = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo guardar."; }
+        finally { _cfgBusy = false; }
+    }
+
+    private async Task ExcelAsync() => await ExportarAsync("EXCEL");
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Retenciones y percepciones",
+        Breadcrumb = ["Contabilidad", "Retenciones y percepciones"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "retenciones"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "config", Label = "Configurar", Icon = "bi-gear", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _cfg is null, OnClick = AbrirConfig },
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || _r is null, OnClick = ExcelAsync }
+        ]
+    });
+
+    private static string Icono(string bi) => $"<i class=\"bi {bi}\" aria-hidden=\"true\"></i>";
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
