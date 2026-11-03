@@ -12,7 +12,7 @@ namespace AlfaCore.Services;
 /// </summary>
 public sealed partial class ContabilidadReportesService
 {
-    private const int MaximoRenglonesDiario = 30000;
+    internal const int MaximoRenglonesDiario = 30000;
 
     private static async Task<List<ContabilidadOpcion>> SubdiariosAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -46,6 +46,8 @@ public sealed partial class ContabilidadReportesService
         var filtroSub = sub.Equals("DG", StringComparison.OrdinalIgnoreCase) || (!subdiarios && f.ExcluirSubdiarios)
             ? $" AND NOT EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND ISNULL(LTRIM(RTRIM(s.TIPO_REG)),'') NOT IN ('', CHAR(255) + 'RS'))"
             : sub.Length > 0 ? $" AND EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND LTRIM(RTRIM(s.TIPO_REG)) = @Subdiario)" : "";
+        var excluirTcs = (f.ExcluirTcs ?? []).Select(t => t.Trim().ToUpperInvariant()).Where(t => t.Length > 0).Distinct().ToArray();
+        if (excluirTcs.Length > 0) { filtroSub += " AND UPPER(LTRIM(RTRIM(ISNULL(a.TC,'')))) NOT IN @ExcluirTcs"; p.Add("ExcluirTcs", excluirTcs); }
         p.Add("Subdiario", sub); p.Add("Maximo", MaximoRenglonesDiario + 1);
         var cuentas = (await PlanAsync(cn, ct)).GroupBy(c => c.Codigo, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Descripcion, StringComparer.OrdinalIgnoreCase);
         var renglones = (await cn.QueryAsync<RenglonSql>(new CommandDefinition($"""

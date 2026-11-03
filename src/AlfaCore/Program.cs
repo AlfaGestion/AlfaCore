@@ -344,6 +344,8 @@ public class Program
         builder.Services.AddScoped<IControlArcaService, ControlArcaService>();
         builder.Services.AddScoped<IControlArcaImportacionService, ControlArcaImportacionService>();
         builder.Services.AddScoped<IRetencionesService, RetencionesService>();
+        builder.Services.AddScoped<IEstudioPaqueteService, EstudioPaqueteService>();
+        builder.Services.AddSingleton<EstudioPaqueteDescargas>();
         builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
         builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
@@ -669,6 +671,12 @@ public class Program
 
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
+
+        // Paquete para el estudio: el zip se arma en disco y se baja con un token de un solo dueño que vence (no pasa por el circuito).
+        app.MapGet("/api/estudio/paquete/{token}", (string token, EstudioPaqueteDescargas descargas) =>
+            descargas.Obtener(token) is { } z
+                ? Results.File(z.Ruta, "application/zip", z.Nombre, enableRangeProcessing: true)
+                : Results.NotFound("El paquete venció o no existe. Generalo de nuevo."));
 
         app.MapGet("/api/costos/importaciones/{batchId:int}/descargar-archivo", async (
             int batchId,

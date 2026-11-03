@@ -1,0 +1,20 @@
+.pe-page { display: flex; flex-direction: column; gap: 12px; }
+.pe-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 12px 14px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
+.pe-filtros label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--alfa-text-secondary); }
+.pe-input { height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font-size: 13px; color-scheme: light dark; }
+.pe-anio { width: 90px; }
+.pe-contenido { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
+.pe-sub { display: flex; flex-direction: column; gap: 4px; margin-left: 28px; }
+.pe-sub small, .pe-resultado small { color: var(--alfa-text-secondary); }
+.pe-avance { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; border-radius: var(--alfa-radius-md);
+    border: 1px dashed var(--alfa-accent); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
+.pe-avance progress { flex: 1 1 200px; height: 10px; accent-color: var(--alfa-accent); }
+.pe-resultado { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+    border-radius: var(--alfa-radius-md); border: 1px solid var(--alfa-border-default); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
+.pe-resultado > div { display: flex; flex-direction: column; gap: 2px; }
+.pe-descargar { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 16px; border-radius: 8px; text-decoration: none;
+    background: var(--alfa-accent); color: var(--alfa-accent-contrast, #fff); font-size: 13px; font-weight: 600; }
+.pe-descargar:hover { filter: brightness(1.08); }

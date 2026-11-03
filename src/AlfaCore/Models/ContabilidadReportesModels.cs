@@ -22,6 +22,8 @@ public sealed class ContabilidadFiltro
     /// <summary>Código de subdiario (TIPO_REG); vacío = todos; "DG" = diario general (sin subdiario).</summary>
     public string Subdiario { get; set; } = string.Empty;
     public bool ExcluirSubdiarios { get; set; }
+    /// <summary>Diario: tipos de comprobante a dejar afuera (ej. tiques y cobranzas en el paquete para el estudio).</summary>
+    public List<string> ExcluirTcs { get; set; } = [];
     /// <summary>Subdiarios: true = totales por cuenta en lugar del detalle de asientos.</summary>
     public bool Resumido { get; set; }
     // Plan de cuentas

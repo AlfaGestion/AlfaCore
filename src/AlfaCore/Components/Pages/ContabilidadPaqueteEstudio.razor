@@ -1,0 +1,177 @@
+@page "/contabilidad/paquete-estudio"
+@page "/{idweb}/{idbase:int}/contabilidad/paquete-estudio"
+@using AlfaCore.Services
+@inject IEstudioPaqueteService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Paquete para el estudio | Alfa Gestión</PageTitle>
+
+@* Paquete mensual para el estudio contable («Datos para Contadores», D9832 del legacy). *@
+<div class="gd-page gd pe-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="pe-filtros">
+        <label>Mes
+            <select class="pe-input" value="@_s.Mes" @onchange="CambiarMes" disabled="@_busy">
+                @for (var m = 1; m <= 12; m++) { var mm = m; <option value="@mm">@Culture.DateTimeFormat.GetMonthName(mm)</option> }
+            </select>
+        </label>
+        <label>Año <input type="number" class="pe-input pe-anio" value="@_s.Anio" min="2000" max="2100" disabled="@_busy"
+                          @onchange="CambiarAnio" /></label>
+        @if (_op is { Unidades.Count: > 1 })
+        {
+            <label>Unidad
+                <select class="pe-input" value="@_s.Unidad" disabled="@_busy" @onchange="CambiarUnidad">
+                    <option value="">Todas</option>
+                    @foreach (var u in _op.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                </select>
+            </label>
+        }
+    </section>
+
+    <section class="pe-contenido">
+        <strong>Qué lleva el paquete</strong>
+        <AlfaCheckbox Value="@_s.LibrosIva" ValueChanged="v => _s.LibrosIva = v ?? false" Disabled="_busy">Libros de IVA ventas y compras (PDF y Excel)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.LibroIvaDigital" ValueChanged="v => _s.LibroIvaDigital = v ?? false" Disabled="_busy">Libro IVA Digital (archivos para ARCA)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.Asientos" ValueChanged="v => _s.Asientos = v ?? false" Disabled="_busy">Asientos del mes en Excel (sin tiques, proformas ni cobranzas)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.Detalles" ValueChanged="v => _s.Detalles = v ?? false" Disabled="_busy">Detalle por artículo de ventas y compras (Excel)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.FacturasVenta" ValueChanged="v => _s.FacturasVenta = v ?? false" Disabled="_busy">
+            Facturas, notas de crédito y débito emitidas (PDF)@(_op is { } o1 ? $" · {(_s.FacturasVentaSoloA ? o1.VentasA : o1.VentasTotal):N0} comprobantes" : "")
+        </AlfaCheckbox>
+        @if (_s.FacturasVenta)
+        {
+            <div class="pe-sub">
+                <AlfaCheckbox Value="@_s.FacturasVentaSoloA" ValueChanged="v => _s.FacturasVentaSoloA = v ?? true" Disabled="_busy">Solo A y M (las que suele pedir el estudio)</AlfaCheckbox>
+                @if (_op is { } o2 && (_s.FacturasVentaSoloA ? o2.VentasA : o2.VentasTotal) > 500)
+                {
+                    <small>Son muchas: cada PDF tarda un instante, así que el paquete puede demorar varios minutos.@((_s.FacturasVentaSoloA ? o2.VentasA : o2.VentasTotal) > EstudioPaqueteMaximo ? $" Se incluyen las primeras {EstudioPaqueteMaximo:N0}." : "")</small>
+                }
+            </div>
+        }
+        <AlfaCheckbox Value="@_s.ComprobantesCompra" ValueChanged="v => _s.ComprobantesCompra = v ?? false" Disabled="_busy">
+            Archivos de las compras cargadas en AlfaCore@(_op is { } o3 ? $" · {o3.ComprasConArchivo:N0} archivo(s)" : "")
+        </AlfaCheckbox>
+    </section>
+
+    @if (_avance is { } av)
+    {
+        <section class="pe-avance">
+            <div><i class="bi bi-hourglass-split" aria-hidden="true"></i> @av.Paso @(av.Total > 0 ? $"· {av.Hechos:N0} de {av.Total:N0}" : "")</div>
+            @if (av.Total > 0) { <progress max="@av.Total" value="@av.Hechos"></progress> }
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-x-circle" OnClick="_ => Cancelar()">Cancelar</AlfaButton>
+        </section>
+    }
+
+    @if (_r is { } r)
+    {
+        <section class="pe-resultado">
+            <div>
+                <strong><i class="bi bi-file-earmark-zip" aria-hidden="true"></i> @r.Nombre</strong>
+                <small>@r.Archivos archivo(s) · @Tamano(r.Bytes) · el enlace vence en 6 horas</small>
+            </div>
+            <a class="pe-descargar" href="@Nav.ToAbsoluteUri($"api/estudio/paquete/{r.Token}")" download="@r.Nombre">
+                <i class="bi bi-download" aria-hidden="true"></i> Descargar
+            </a>
+        </section>
+        @foreach (var a in r.Avisos) { <AlfaNotification Message="@AppUiMessage.Warning("Revisar", a)" /> }
+    }
+</div>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+    private const int EstudioPaqueteMaximo = 3000;
+    private readonly EstudioPaqueteSolicitud _s = new();
+    private EstudioPaqueteOpciones? _op;
+    private EstudioPaqueteResultado? _r;
+    private EstudioPaqueteAvance? _avance;
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed;
+    private CancellationTokenSource? _cts;
+    private PageHeaderConfig? _header;
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        await CargarOpcionesAsync();
+    }
+
+    private Task CambiarMes(ChangeEventArgs e) => CambiarPeriodo(mes: int.TryParse(e.Value?.ToString(), out var m) ? m : _s.Mes);
+    private Task CambiarAnio(ChangeEventArgs e) => CambiarPeriodo(anio: int.TryParse(e.Value?.ToString(), out var a) ? a : _s.Anio);
+    private Task CambiarUnidad(ChangeEventArgs e) => CambiarPeriodo(unidad: e.Value?.ToString() ?? string.Empty);
+
+    private async Task CambiarPeriodo(int? mes = null, int? anio = null, string? unidad = null)
+    {
+        if (mes is { } m) _s.Mes = m;
+        if (anio is { } a) _s.Anio = a;
+        if (unidad is not null) _s.Unidad = unidad;
+        _r = null;
+        await CargarOpcionesAsync();
+    }
+
+    private async Task CargarOpcionesAsync()
+    {
+        var o = await UiOps.RunAsync(() => Service.OpcionesAsync(_s.Anio, _s.Mes, _s.Unidad), "Paquete para el estudio");
+        if (o.Success) _op = o.Value; else _feedback = o.Feedback;
+        UpdateHeader();
+    }
+
+    private async Task GenerarAsync()
+    {
+        if (_busy) return;
+        _busy = true; _feedback = null; _r = null; _avance = new EstudioPaqueteAvance("Preparando…", 0, 0);
+        _cts = new CancellationTokenSource();
+        UpdateHeader(); StateHasChanged();
+        var ultimo = DateTime.MinValue;
+        var progreso = new Progress<EstudioPaqueteAvance>(a =>
+        {
+            _avance = a;
+            if ((DateTime.UtcNow - ultimo).TotalMilliseconds < 400 && a.Total > 0) return;
+            ultimo = DateTime.UtcNow;
+            if (!_disposed) _ = InvokeAsync(StateHasChanged);
+        });
+        try
+        {
+            var solicitud = new EstudioPaqueteSolicitud
+            {
+                Anio = _s.Anio, Mes = _s.Mes, Unidad = _s.Unidad, LibrosIva = _s.LibrosIva, LibroIvaDigital = _s.LibroIvaDigital, Asientos = _s.Asientos,
+                Detalles = _s.Detalles, FacturasVenta = _s.FacturasVenta, FacturasVentaSoloA = _s.FacturasVentaSoloA, ComprobantesCompra = _s.ComprobantesCompra
+            };
+            var r = await UiOps.RunAsync(() => Service.GenerarAsync(solicitud, progreso, _cts.Token), "Paquete para el estudio");
+            if (r.Success) _r = r.Value;
+            else if (!_cts.IsCancellationRequested) _feedback = r.Feedback;
+            else _feedback = AppUiMessage.Info("Cancelado", "Se canceló el armado del paquete.");
+        }
+        finally
+        {
+            _busy = false; _avance = null; _cts.Dispose(); _cts = null;
+            if (!_disposed) { UpdateHeader(); StateHasChanged(); }
+        }
+    }
+
+    private void Cancelar() => _cts?.Cancel();
+
+    private static string Tamano(long b) => b > 1 << 20 ? $"{b / 1048576.0:N1} MB" : $"{b / 1024.0:N0} KB";
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Paquete para el estudio",
+        Breadcrumb = ["Contabilidad", "Paquete para el estudio"],
+        TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "paquete-estudio"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "generar", Label = "Generar paquete", Icon = "bi-file-earmark-zip", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _op is null, OnClick = GenerarAsync }
+        ]
+    });
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _cts?.Cancel();
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
