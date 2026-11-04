@@ -229,7 +229,8 @@ public static class ModuleTopNavPresets
             ("logo", "Logo y Estilo", "/configuracion-general/logo"),
             ("email", "Email", "/configuracion-general/email"),
             ("ventas", "Ventas", "/configuracion-general/ventas"),
-            ("articulos", "Artículos", "/configuracion-general/articulos")
+            ("articulos", "Artículos", "/configuracion-general/articulos"),
+            ("contable", "Gestión contable", "/configuracion-general/contable")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)

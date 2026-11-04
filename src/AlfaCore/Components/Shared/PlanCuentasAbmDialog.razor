@@ -1,0 +1,288 @@
+@using AlfaCore.Services
+@inject IPlanCuentasAbmService Service
+
+@* Alta, baja y modificación de una cuenta del plan (Actualización Plan General de Cuentas del legacy, D9510). *@
+<AlfaDialog Open="@Open" Title="@TituloDialogo" Eyebrow="Plan de cuentas" Size="AlfaDialogSize.Lg" Loading="@_busy" ErrorMessage="@_error"
+            CloseOnBackdrop="false" OnClose="CerrarAsync">
+    <ChildContent>
+    @if (_paso == Paso.Codigo)
+    {
+        <div class="pca-form">
+            <AlfaSelect Label="Cuenta madre" Value="@_madre" ValueChanged="v => ElegirMadreAsync(v)" Options="@MadreOptions" Disabled="@_busy" />
+            <AlfaInput Label="Código" Value="@_codigo" ValueChanged="v => _codigo = v ?? string.Empty" MaxLength="20" Disabled="@_busy"
+                       HelpText="@($"Elegí la cuenta madre para proponer el próximo código libre, o escribilo. Niveles: {Niveles}.")" />
+        </div>
+    }
+    else if (_paso == Paso.Reutilizar && _edit is { } r)
+    {
+        <AlfaNotification Message="@AppUiMessage.Warning("Cuenta dada de baja", $"La cuenta {r.Codigo} · {r.Descripcion} se encuentra dada de baja. ¿Querés reutilizarla?")" />
+    }
+    else if (_paso == Paso.Baja && _baja is { } b)
+    {
+        @if (b.Bloqueo.Length > 0)
+        {
+            <AlfaNotification Message="@AppUiMessage.Warning("No se puede borrar", b.Bloqueo)" />
+        }
+        else
+        {
+            <div class="pca-form">
+                <p>¿Confirmás la baja de la cuenta <strong>@b.Codigo · @b.Descripcion</strong>?</p>
+                @if (b.SeMarcaDeBaja) { <p class="pca-nota">Tiene movimientos de ejercicios anteriores: no se borra, queda marcada como dada de baja.</p> }
+                @if (b.RenglonesCashFlow > 0)
+                {
+                    <AlfaCheckbox Value="@_confirmaCash" ValueChanged="v => _confirmaCash = v == true">
+                        La cuenta está asociada a un Cash-Flow: borrar sus @b.RenglonesCashFlow renglón(es)
+                    </AlfaCheckbox>
+                }
+            </div>
+        }
+    }
+    else if (_edit is { } e && Catalogo is { } cat)
+    {
+        <div class="pca-cabecera">
+            <div><small>Código</small><strong class="mono">@PlanCuentasReglas.Formatear(e.Codigo, cat.Estructura)</strong></div>
+            <div><small>Nivel</small><span>@e.Nivel</span></div>
+            <div><small>Cuenta madre</small><span>@(e.CuentaMadre.Length == 0 ? "—" : $"{e.CuentaMadre} · {e.CuentaMadreDescripcion}")</span></div>
+            @if (cat.Estructura.UsaDigitoVerificador && !e.Titulo) { <div><small>Dígito verificador</small><span>@PlanCuentasReglas.DigitoVerificador(e.Codigo)</span></div> }
+        </div>
+        @if (e.Personalizados.Count > 0)
+        {
+            <AlfaTabs Items="@Tabs" ActiveKey="@_tab" ActiveKeyChanged='k => _tab = k ?? "general"' AriaLabel="Datos de la cuenta" />
+        }
+        @if (_tab == "general" || e.Personalizados.Count == 0)
+        {
+            <div class="pca-form">
+                <AlfaInput Label="Nombre" Value="@e.Descripcion" ValueChanged="v => e.Descripcion = v ?? string.Empty" MaxLength="50" Required="true" Disabled="@_busy" />
+                <div class="pca-par">
+                    <AlfaSelect Label="Tipo de cuenta" Value="@(e.Titulo ? "T" : "I")" ValueChanged='v => CambiarTipo(e, v == "T")' Options="@TipoOptions" Disabled="@_busy" />
+                    <AlfaSelect Label="Medio de pago (tipo de cuenta del legacy)" Value="@e.MedioPago" ValueChanged="v => e.MedioPago = v ?? string.Empty" Options="@MedioOptions" Disabled="@_busy" />
+                    @if (cat.MultiMoneda && e.MedioPago.Length > 0)
+                    {
+                        <AlfaSelect Label="Moneda" Value="@e.Moneda" ValueChanged="v => e.Moneda = v ?? string.Empty" Options="@MonedaOptions" Disabled="@_busy" />
+                    }
+                </div>
+                @if (PlanCuentasReglas.UsaDatosTarjeta(e.MedioPago))
+                {
+                    <div class="pca-par">
+                        <AlfaInput Label="@(e.MedioPago == "DB" ? "Código para conciliación automática (Datanet)" : "Código para conciliación automática (tarjetas)")"
+                                   Value="@e.CodTarjetaConcAuto" ValueChanged="v => e.CodTarjetaConcAuto = v ?? string.Empty" MaxLength="15" Disabled="@_busy" />
+                        @if (e.MedioPago is "TJ")
+                        {
+                            <AlfaCheckbox Value="@e.NoPideDatosTarjeta" ValueChanged="v => e.NoPideDatosTarjeta = v == true" Disabled="@_busy">No pide datos de la tarjeta</AlfaCheckbox>
+                        }
+                    </div>
+                }
+                <div class="pca-par">
+                    <AlfaInput Label="Código opcional" Value="@e.CodigoOpcional" ValueChanged="v => e.CodigoOpcional = v ?? string.Empty" MaxLength="15" Disabled="@_busy"
+                               HelpText="@(e.CodigoOpcional.Trim().Length > 4 ? "Con más de 4 caracteres no se puede usar en Caja y Bancos." : null)" />
+                    <AlfaInput Label="Cuenta relacionada" Value="@e.CuentaPrincipal" ValueChanged="v => e.CuentaPrincipal = v ?? string.Empty" MaxLength="20" Disabled="@_busy"
+                               HelpText="@(e.CuentaPrincipalDescripcion.Length > 0 ? e.CuentaPrincipalDescripcion : "Cuenta imputable vinculada (opcional).")" />
+                </div>
+                <div class="pca-checks">
+                    @if (!e.Titulo)
+                    {
+                        <AlfaCheckbox Value="@e.Ajuste" ValueChanged="v => e.Ajuste = v == true" Disabled="@_busy">Ajustable</AlfaCheckbox>
+                        @if (e.Ajuste)
+                        {
+                            <div class="pca-indice"><AlfaSelect Label="Índice utilizado" Value="@e.Indice.ToString()" ValueChanged="v => e.Indice = int.TryParse(v, out var n) ? n : 1" Options="@IndiceOptions" Disabled="@_busy" /></div>
+                        }
+                        @if (cat.UsaBienesDeUso) { <AlfaCheckbox Value="@e.Bienes" ValueChanged="v => e.Bienes = v == true" Disabled="@_busy">Bienes de uso</AlfaCheckbox> }
+                        @if (cat.UsaCentrosCosto)
+                        {
+                            <AlfaCheckbox Value="@e.UsaCCostos" ValueChanged="v => e.UsaCCostos = v == true" Disabled="@(_busy || !cat.HayCentrosCosto)">Usa centros de costos@(cat.HayCentrosCosto ? "" : " (no hay centros de costo cargados)")</AlfaCheckbox>
+                        }
+                    }
+                    <AlfaCheckbox Value="@e.CajaYBanco" ValueChanged="v => e.CajaYBanco = v == true" Disabled="@_busy">Habilitada para el módulo de Caja y Bancos</AlfaCheckbox>
+                    <AlfaCheckbox Value="@e.PideVencimiento" ValueChanged="v => e.PideVencimiento = v == true" Disabled="@_busy">Pide vencimiento</AlfaCheckbox>
+                    @if (e.Existe && !e.Titulo) { <AlfaCheckbox Value="@e.Bloqueo" ValueChanged="v => e.Bloqueo = v == true" Disabled="@_busy">Bloqueada</AlfaCheckbox> }
+                </div>
+                @if (e.TieneNivelInferior) { <p class="pca-nota">Tiene niveles inferiores: no se puede pasar a imputable ni borrar.</p> }
+                else if (e.TieneMovimientos) { <p class="pca-nota">Tiene movimientos contables: no se puede pasar a título.</p> }
+            </div>
+        }
+        else
+        {
+            <div class="pca-form">
+                <p class="pca-nota">Campos personalizados de la cuenta (columnas P_ de MA_CUENTAS). Un valor vacío no modifica lo grabado.</p>
+                <div class="pca-par">
+                    @foreach (var campo in e.Personalizados)
+                    {
+                        <AlfaInput @key="campo.Nombre" Label="@campo.Nombre[2..]" Value="@campo.Valor" ValueChanged="v => campo.Valor = v ?? string.Empty" Disabled="@_busy" />
+                    }
+                </div>
+            </div>
+        }
+    }
+    </ChildContent>
+    <Footer>
+        @if (_paso == Paso.Codigo)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => CerrarAsync()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-right" Disabled="_busy" OnClick="_ => ContinuarAsync()">Continuar</AlfaButton>
+        }
+        else if (_paso == Paso.Reutilizar)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => { _paso = Paso.Codigo; _edit = null; }">No</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="_busy" OnClick="_ => { _edit!.ReutilizarBaja = true; _paso = Paso.Datos; }">Sí, reutilizarla</AlfaButton>
+        }
+        else if (_paso == Paso.Baja)
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => { _paso = Paso.Datos; _baja = null; }">Volver</AlfaButton>
+            @if (_baja is { Bloqueo.Length: 0 } bj)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="@(_busy || bj.RenglonesCashFlow > 0 && !_confirmaCash)" OnClick="_ => EliminarAsync()">
+                    @(bj.SeMarcaDeBaja ? "Dar de baja" : "Borrar")
+                </AlfaButton>
+            }
+        }
+        else
+        {
+            @if (_edit is { Existe: true, DadaDeBaja: false } && !_alta)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => ConsultarBajaAsync()">Borrar</AlfaButton>
+            }
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => CerrarAsync()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
+        }
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private enum Paso { Codigo, Reutilizar, Datos, Baja }
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public PlanCuentasAbmCatalogo? Catalogo { get; set; }
+    /// <summary>Cuenta a modificar; vacío = alta.</summary>
+    [Parameter] public string? Codigo { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Se grabó o borró una cuenta: el mensaje para mostrar.</summary>
+    [Parameter] public EventCallback<AppUiMessage> OnChanged { get; set; }
+
+    private Paso _paso = Paso.Codigo;
+    private PlanCuentaEdicion? _edit;
+    private PlanCuentaBajaInfo? _baja;
+    private bool _alta, _busy, _confirmaCash, _abierto;
+    private string _codigo = string.Empty, _madre = string.Empty, _tab = "general";
+    private string? _error;
+
+    private string TituloDialogo => _paso switch
+    {
+        Paso.Codigo => "Nueva cuenta",
+        Paso.Baja => "Baja de la cuenta",
+        _ => _edit is { } e ? $"{(e.Existe && !_alta ? "Cuenta" : "Nueva cuenta")} {e.Codigo}" : "Cuenta"
+    };
+
+    private string Niveles => Catalogo is { } c
+        ? string.Join(" · ", c.Estructura.Largos.Select((l, i) => (l, i)).Where(x => c.Estructura.Digitos[x.i] > 0).Select(x => $"{PlanCuentasReglas.NombreNivel(x.i, c.Estructura)} {x.l}"))
+        : string.Empty;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> TipoOptions = [new("I", "Imputable"), new("T", "Título")];
+    private static readonly IReadOnlyList<AlfaSelectOption> MedioOptions = PlanCuentasReglas.MediosPago.Select(m => new AlfaSelectOption(m.Clave, m.Nombre)).ToList();
+    private IReadOnlyList<AlfaSelectOption> IndiceOptions => (Catalogo?.Indices ?? []).Select((n, i) => new AlfaSelectOption((i + 1).ToString(), n)).ToList();
+    private IReadOnlyList<AlfaSelectOption> MonedaOptions => (Catalogo?.Monedas ?? []).Select(m => new AlfaSelectOption(m.Codigo, m.Descripcion)).ToList();
+    private IReadOnlyList<AlfaSelectOption> MadreOptions =>
+        [new("", "Sin cuenta madre (escribir el código)"), .. (Catalogo?.Titulos ?? []).Select(t => new AlfaSelectOption(t.Codigo, $"{new string(' ', Math.Max(0, t.Codigo.Length - 1) * 2)}{t.Codigo} · {t.Descripcion}"))];
+    private IReadOnlyList<AlfaTabItem> Tabs => [new("general", "Datos generales"), new("mas", "Más datos", Badge: _edit?.Personalizados.Count.ToString())];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_abierto)
+        {
+            _abierto = true;
+            _error = null; _baja = null; _edit = null; _tab = "general"; _confirmaCash = false; _madre = string.Empty; _codigo = string.Empty;
+            _alta = string.IsNullOrWhiteSpace(Codigo);
+            _paso = _alta ? Paso.Codigo : Paso.Datos;
+            if (!_alta) await CargarAsync(Codigo!);
+        }
+        else if (!Open) _abierto = false;
+    }
+
+    private async Task CargarAsync(string codigo)
+    {
+        _busy = true;
+        try { _edit = await Service.PrepararAsync(codigo); }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo leer la cuenta."); }
+        finally { _busy = false; }
+    }
+
+    private async Task ElegirMadreAsync(string? madre)
+    {
+        _madre = madre ?? string.Empty;
+        if (_madre.Length == 0) return;
+        _busy = true; _error = null;
+        try { _codigo = await Service.SiguienteCodigoAsync(_madre); }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo proponer el código."); _codigo = _madre; }
+        finally { _busy = false; }
+    }
+
+    private async Task ContinuarAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var c = await Service.PrepararAsync(_codigo);
+            _edit = c;
+            if (c.Existe && c.DadaDeBaja) _paso = Paso.Reutilizar;
+            else
+            {
+                // Como el legacy: si el código ya existe se abre para modificarlo.
+                if (c.Existe) _alta = false;
+                _paso = Paso.Datos;
+            }
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo preparar la cuenta."); }
+        finally { _busy = false; }
+    }
+
+    private static void CambiarTipo(PlanCuentaEdicion e, bool titulo)
+    {
+        e.Titulo = titulo;
+        if (titulo) { e.Ajuste = false; e.Bienes = false; e.UsaCCostos = false; e.Bloqueo = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var g = await Service.GuardarAsync(_edit, _alta || !_edit.Existe || _edit.ReutilizarBaja);
+            await OnChanged.InvokeAsync(AppUiMessage.Success(_alta ? "Cuenta agregada" : "Cuenta grabada", $"{g.Codigo} · {g.Descripcion}."));
+            await CerrarAsync();
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo grabar la cuenta."); }
+        finally { _busy = false; }
+    }
+
+    private async Task ConsultarBajaAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null; _confirmaCash = false;
+        try { _baja = await Service.ConsultarBajaAsync(_edit.Codigo); _paso = Paso.Baja; }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo revisar la baja."); }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_baja is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var r = await Service.EliminarAsync(_baja.Codigo, _confirmaCash);
+            await OnChanged.InvokeAsync(AppUiMessage.Success(r == PlanCuentaBajaResultado.Borrada ? "Cuenta borrada" : "Cuenta dada de baja", $"{_baja.Codigo} · {_baja.Descripcion}."));
+            await CerrarAsync();
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo dar de baja la cuenta."); }
+        finally { _busy = false; }
+    }
+
+    private async Task CerrarAsync()
+    {
+        _abierto = false;
+        await OnClose.InvokeAsync();
+    }
+
+    private static string Mensaje(Exception ex, string porDefecto) => ex is AppUserFacingException or InvalidOperationException ? ex.Message : porDefecto;
+}

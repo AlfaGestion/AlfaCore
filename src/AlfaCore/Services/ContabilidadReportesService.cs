@@ -40,7 +40,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
     public const string MenuBalanceGeneral = "D957006";
     private async Task<bool> TieneAlgunReporteAsync(CancellationToken ct)
     {
-        foreach (var m in new[] { MenuMayor, MenuSumasSaldos, MenuPlanCuentas, MenuDiario, MenuSubdiarios, MenuBalanceGeneral })
+        foreach (var m in new[] { MenuMayor, MenuSumasSaldos, MenuPlanCuentas, MenuDiario, MenuSubdiarios, MenuBalanceGeneral, PlanCuentasAbmService.MenuAbm })
             if (await permissions.HasAccessAsync(m, ct)) return true;
         return false;
     }
@@ -407,6 +407,10 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
 
     // ── Ejecución con permiso ───────────────────────────────────────────────────────────────────
 
+    /// <summary>El plan de cuentas también lo ve quien tiene la actualización del plan (D9510), que se hace desde esta consulta.</summary>
+    private async Task<bool> PuedeVerAsync(string menu, CancellationToken ct)
+        => await permissions.HasAccessAsync(menu, ct) || menu == MenuPlanCuentas && await permissions.HasAccessAsync(PlanCuentasAbmService.MenuAbm, ct);
+
     private async Task<T> EjecutarAsync<T>(string? menu, string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
     {
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var id))
@@ -414,7 +418,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
         try
         {
             await using var cn = new SqlConnection(sessions.GetConnectionString()); await cn.OpenAsync(ct);
-            if (menu is not null && !await permissions.HasAccessAsync(menu, ct))
+            if (menu is not null && !await PuedeVerAsync(menu, ct))
                 throw new ReglaContableException("Tu usuario no tiene permiso para este reporte contable.");
             if (menu is null && !await TieneAlgunReporteAsync(ct))
                 throw new ReglaContableException("Tu usuario no tiene permiso para los reportes contables.");

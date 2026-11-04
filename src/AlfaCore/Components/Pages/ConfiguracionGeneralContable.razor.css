@@ -1,0 +1,11 @@
+.cfgcont-page { display: flex; flex-direction: column; gap: 14px; }
+.cfgcont-intro { margin: 0; color: var(--alfa-text-secondary); }
+.cfgcont-niveles { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.cfgcont-nivel { display: grid; grid-template-columns: 28px minmax(180px, 1fr) minmax(120px, 180px); gap: 10px; align-items: end; }
+.cfgcont-nivel__n { font-weight: 700; color: var(--alfa-text-secondary); padding-bottom: 10px; text-align: center; }
+.cfgcont-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+.cfgcont-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 20px; margin-top: 10px; }
+.cfgcont-check { display: flex; flex-direction: column; gap: 2px; }
+.cfgcont-check small, .cfgcont-nota { color: var(--alfa-text-secondary); font-size: 12px; }
+.cfgcont-nota { margin: 8px 0 0; }
+@media (max-width: 600px) { .cfgcont-nivel { grid-template-columns: 24px 1fr; } .cfgcont-nivel > :last-child { grid-column: 2; } }

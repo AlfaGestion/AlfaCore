@@ -31,3 +31,4 @@
 .ctr-tabla .is-acreedor { color: var(--alfa-danger, #e5484d); }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .ctr-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }
+.ctr-tabla tr.is-editable { cursor: pointer; }

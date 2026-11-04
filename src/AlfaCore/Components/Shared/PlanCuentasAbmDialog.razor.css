@@ -1,0 +1,10 @@
+.pca-form { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.pca-par { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+.pca-checks { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.pca-indice { min-width: 200px; }
+.pca-nota { color: var(--alfa-text-secondary); font-size: 12px; margin: 0; }
+.pca-cabecera { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface-raised, var(--alfa-bg-surface)); }
+.pca-cabecera div { display: flex; flex-direction: column; gap: 2px; }
+.pca-cabecera small { color: var(--alfa-text-secondary); font-size: 11px; }
+.mono { font-family: ui-monospace, Consolas, monospace; }

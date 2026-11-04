@@ -351,6 +351,7 @@ public class Program
         builder.Services.AddScoped<IAsientosService, AsientosService>();
         builder.Services.AddScoped<IChequerasService, ChequerasService>();
         builder.Services.AddScoped<ArcaServidorService>();
+        builder.Services.AddScoped<IPlanCuentasAbmService, PlanCuentasAbmService>();
         builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
         builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
@@ -387,6 +388,7 @@ public class Program
         builder.Services.AddScoped<IMercadoPagoPointPosService, MercadoPagoPointPosService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ConfiguracionCargaComprobantesService>();
+        builder.Services.AddScoped<ConfiguracionContableService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();

@@ -1,0 +1,201 @@
+@page "/configuracion-general/contable"
+@page "/{idweb}/{idbase:int}/configuracion-general/contable"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ConfiguracionContableService Configuracion
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Gestión contable | Alfa Gestión</PageTitle>
+
+@* Configuración → Gestión contable: la solapa «Gestión Contable» de Config.frm del legacy, con las mismas claves de TA_CONFIGURACION. *@
+<div class="gd-page gd cfgcont-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_snapshot is null)
+    {
+        @if (!_busy) { <AlfaEmptyState Title="Sin configuración cargada" Message="Usá Cancelar para volver a leer la base activa." /> }
+    }
+    else
+    {
+        <p class="cfgcont-intro">
+            Mismos parámetros que la solapa Gestión Contable de la configuración de Alfa Gestión: cambiarlos acá afecta a los dos sistemas.
+            @if (!_snapshot.PuedeGuardar) { <strong> Solo un administrador central puede modificarlos.</strong> }
+        </p>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">@ConfiguracionContableService.SeccionPlan</h3>
+            <p class="panel-card__subtitle">Estructura de codificación: nombre y cantidad de dígitos de cada nivel. Total: @TotalDigitos dígitos@(Ejemplo.Length > 0 ? $" · ejemplo de cuenta: {Ejemplo}" : "").</p>
+            <div class="cfgcont-niveles">
+                @for (var i = 0; i < 6; i++)
+                {
+                    var nivel = i;
+                    <div class="cfgcont-nivel" @key="nivel">
+                        <span class="cfgcont-nivel__n">@(nivel + 1)</span>
+                        @Campo(PlanCuentasReglas.ClavesNiveles[nivel])
+                        @Campo(Definicion(PlanCuentasReglas.ClavesDigitos[nivel]).Clave)
+                    </div>
+                }
+            </div>
+            <p class="cfgcont-nota">Con cuentas cargadas solo se aceptan cambios de dígitos que dejen a todas las cuentas en un nivel válido; para reestructurar el plan usá la recodificación del plan de cuentas.</p>
+            <div class="cfgcont-checks">
+                @foreach (var clave in new[] { "CuentasAlfanumericas", "Rubro_Imputable", "USADIGITOVERIFICADOR", "PlanCuentas_CLyPR" }) { @Campo(clave) }
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">@ConfiguracionContableService.SeccionIndices</h3>
+            <div class="cfgcont-grid">@foreach (var d in De(ConfiguracionContableService.SeccionIndices)) { @Campo(d.Clave) }</div>
+        </section>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">@ConfiguracionContableService.SeccionDatos</h3>
+            <div class="cfgcont-checks">@foreach (var d in De(ConfiguracionContableService.SeccionDatos)) { @Campo(d.Clave) }</div>
+        </section>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">@ConfiguracionContableService.SeccionCentros</h3>
+            <div class="cfgcont-checks">@Campo("USACCOSTO")</div>
+            <div class="cfgcont-niveles">
+                @for (var i = 1; i <= 4; i++)
+                {
+                    var nivel = i;
+                    <div class="cfgcont-nivel" @key="nivel">
+                        <span class="cfgcont-nivel__n">@nivel</span>
+                        @Campo($"CC_NIVEL_{nivel}")
+                        @Campo($"CC_digitos_{nivel}")
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <h3 class="panel-card__title">@ConfiguracionContableService.SeccionEjercicio</h3>
+            <p class="panel-card__subtitle">El ejercicio vigente se muestra como referencia: se crea y se cambia desde Alfa Gestión.</p>
+            <div class="cfgcont-grid">@foreach (var d in De(ConfiguracionContableService.SeccionEjercicio)) { @Campo(d.Clave) }</div>
+        </section>
+    }
+</div>
+
+@code {
+    private ConfiguracionCargaSnapshot? _snapshot;
+    private Dictionary<string, string> _original = [];
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed;
+    private PageHeaderConfig? _header;
+
+    private static ConfiguracionContableDefinicion Definicion(string clave) => ConfiguracionContableService.Definiciones.Single(d => d.Clave == clave);
+    private static IEnumerable<ConfiguracionContableDefinicion> De(string seccion) => ConfiguracionContableService.Definiciones.Where(d => d.Seccion == seccion);
+    private ConfiguracionCargaValor? Valor(string clave) => _snapshot?.Valores.SingleOrDefault(v => v.Clave == clave);
+    private bool Editable(ConfiguracionContableDefinicion d) => d.Tipo != "LECTURA" && _snapshot?.PuedeGuardar == true && !_busy;
+
+    private int Digito(string clave) => int.TryParse(Valor(clave)?.Valor, out var n) && n > 0 ? n : 0;
+    private int TotalDigitos => PlanCuentasReglas.ClavesDigitos.Sum(Digito);
+    /// <summary>Un código de ejemplo con todos los niveles: 1-1-1-01-0001.</summary>
+    private string Ejemplo => string.Join("-", PlanCuentasReglas.ClavesDigitos.Select(Digito).Where(n => n > 0).Select(n => "1".PadLeft(n, '0')));
+
+    private RenderFragment Campo(string clave) => __builder =>
+    {
+        var d = Definicion(clave);
+        var v = Valor(clave);
+        if (v is null) return;
+        if (d.Tipo == "SI_NO")
+        {
+            <div class="cfgcont-check" @key="clave">
+                <AlfaCheckbox Value="@(v.Valor == "SI")" ValueChanged='x => v.Valor = x == true ? "SI" : "NO"' Disabled="@(!Editable(d))">@d.Titulo</AlfaCheckbox>
+                @if (d.Ayuda.Length > 0) { <small>@d.Ayuda</small> }
+            </div>
+        }
+        else if (d.Tipo == "FECHA")
+        {
+            <AlfaInput @key="clave" Type="date" Label="@d.Titulo" Value="@AIso(v.Valor)" ValueChanged="x => v.Valor = DeIso(x)" Disabled="@(!Editable(d))" HelpText="@d.Ayuda" />
+        }
+        else if (d.Tipo == "DIGITOS")
+        {
+            <AlfaInput @key="clave" Type="number" Step="1" Label="@d.Titulo" Value="@v.Valor" ValueChanged="x => v.Valor = (x ?? string.Empty).Trim()" Disabled="@(!Editable(d))" />
+        }
+        else
+        {
+            <AlfaInput @key="clave" Label="@d.Titulo" Value="@v.Valor" ValueChanged="x => v.Valor = x ?? string.Empty" MaxLength="50" Disabled="@(!Editable(d))"
+                       HelpText="@(d.Ayuda.Length > 0 ? d.Ayuda : null)" />
+        }
+    };
+
+    private static string AIso(string v) => DateTime.TryParseExact(v, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var f)
+        ? f.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+    private static string DeIso(string? v) => DateTime.TryParseExact(v, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var f)
+        ? f.ToString("dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+
+    protected override void OnInitialized() => UpdateHeader();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        await RecargarAsync();
+    }
+
+    private async Task RecargarAsync()
+    {
+        if (_busy) return;
+        _busy = true; UpdateHeader(); await InvokeAsync(StateHasChanged);
+        try
+        {
+            var r = await UiOps.RunAsync(() => Configuracion.GetAsync(), "No se pudo leer la configuración contable.");
+            if (_disposed) return;
+            if (r.Success && r.Value is not null)
+            {
+                _snapshot = r.Value;
+                _original = _snapshot.Valores.ToDictionary(x => x.Clave, x => x.Valor);
+            }
+            else _feedback = r.Feedback;
+        }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_busy || _snapshot is null) return;
+        var cambios = _snapshot.Valores.Where(x => x.Valor != _original[x.Clave]).Select(x => new ConfiguracionCargaCambio(x.Clave, x.Valor, x.Version)).ToList();
+        if (cambios.Count == 0) { _feedback = AppUiMessage.Info("Sin cambios", "No hay valores modificados para guardar."); return; }
+        _busy = true; UpdateHeader();
+        var r = await UiOps.RunAsync(async () => { await Configuracion.GuardarAsync(_snapshot.SesionId, cambios); return true; }, "No se pudo guardar la configuración contable.");
+        _busy = false;
+        if (r.Success)
+        {
+            await RecargarAsync();
+            _feedback = AppUiMessage.Success("Guardado", $"Se guardaron {cambios.Count} valor(es) de la configuración contable.");
+        }
+        else { _feedback = r.Feedback; UpdateHeader(); }
+    }
+
+    private async Task CancelarAsync()
+    {
+        await RecargarAsync();
+        _feedback = AppUiMessage.Info("Cambios cancelados", "Se restauró la última configuración guardada.");
+    }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "configuracion-general", Title = "Gestión contable",
+        Breadcrumb = ["Configuración General", "Gestión contable"],
+        TopNavigationItems = ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "contable"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new PageHeaderAction { Key = "guardar-contable", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy || _snapshot?.PuedeGuardar != true, Busy = _busy, OnClick = GuardarAsync },
+            new PageHeaderAction { Key = "cancelar-contable", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy, OnClick = CancelarAsync }
+        ]
+    });
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

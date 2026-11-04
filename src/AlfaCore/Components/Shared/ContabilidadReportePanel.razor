@@ -1,5 +1,6 @@
 @using AlfaCore.Services
 @inject IContabilidadReportesService Service
+@inject IPlanCuentasAbmService PlanAbm
 @inject ISessionService Sessions
 @inject IAppUiOperationService UiOps
 @inject IPageHeaderService PageHeader
@@ -226,13 +227,20 @@
                 <tbody>
                 @foreach (var c in pc.Cuentas)
                 {
-                    <tr class="@(c.Titulo ? "is-titulo" : null)"><td>@c.Codigo</td><td style="padding-left:@(12 + c.Nivel * 14)px">@c.Descripcion@(c.Baja ? " (dada de baja)" : "")</td>
+                    <tr class="@(c.Titulo ? "is-titulo" : null) @(PuedeEditarPlan ? "is-editable" : null)" title="@(PuedeEditarPlan ? "Modificar o borrar la cuenta" : null)"
+                        @onclick="() => EditarCuenta(c.Codigo)"><td>@c.Codigo</td><td style="padding-left:@(12 + c.Nivel * 14)px">@c.Descripcion@(c.Baja ? " (dada de baja)" : "")</td>
                         <td>@c.NivelNombre</td><td>@(c.Titulo ? "Título" : c.TipoVista switch { "CL" => "Cliente", "PR" => "Proveedor", "BC" => "Caja/Banco", _ => "Imputable" })</td></tr>
                 }
                 </tbody>
             </table>
         </div></section>
-        <p class="ctr-nota">@pc.Cuentas.Count cuentas · @pc.Cuentas.Count(c => c.Titulo) títulos y @pc.Cuentas.Count(c => !c.Titulo) imputables.</p>
+        <p class="ctr-nota">@pc.Cuentas.Count cuentas · @pc.Cuentas.Count(c => c.Titulo) títulos y @pc.Cuentas.Count(c => !c.Titulo) imputables.@(PuedeEditarPlan ? " Tocá una cuenta para modificarla o borrarla." : "")</p>
+    }
+
+    @if (EsPlan && _planAbm is { PuedeModificar: true })
+    {
+        <PlanCuentasAbmDialog Open="@_cuentaAbierta" Catalogo="@_planAbm" Codigo="@_cuentaEditada"
+                              OnClose="() => { _cuentaAbierta = false; UpdateHeader(); }" OnChanged="CuentaCambiadaAsync" />
     }
 
     @if (EsBalanceGeneral && _balance is { } bg)
@@ -280,6 +288,10 @@
     };
     private DiarioResultado? _diario;
     private PlanCuentasResultado? _plan;
+    private PlanCuentasAbmCatalogo? _planAbm;
+    private bool _cuentaAbierta;
+    private string? _cuentaEditada;
+    private bool PuedeEditarPlan => EsPlan && _planAbm is { PuedeModificar: true };
     private BalanceGeneralResultado? _balance;
     private IReadOnlyList<AlfaSelectOption> SubdiarioOptions =>
         [.. (EsSubdiarios ? Array.Empty<AlfaSelectOption>() : [new("", "Todos los asientos")]), new("DG", "Diario general (sin subdiarios)"),
@@ -326,6 +338,12 @@
             _cuenta = new ContabilidadOpcion(cu.ToString(), cu.ToString()); _cuentaTexto = cu.ToString(); _filtro.CuentaDesde = cu.ToString();
         }
         StateHasChanged();
+        if (EsPlan)
+        {
+            // El ABM (D9510) se ofrece dentro de la misma consulta si el usuario tiene permiso; si no, queda solo la consulta.
+            try { _planAbm = await PlanAbm.CatalogoAsync(); } catch (InvalidOperationException) { _planAbm = null; }
+            UpdateHeader();
+        }
         if (EsSubdiarios && _filtro.Subdiario.Length == 0) _filtro.Subdiario = _catalogos.Subdiarios.FirstOrDefault()?.Codigo ?? "DG";
         if (!EsMayor || _filtro.CuentaDesde.Length > 0) await GenerarAsync();
     }
@@ -388,6 +406,29 @@
         NivelMaximo = _filtro.NivelMaximo, Comparativo = _filtro.Comparativo
     };
 
+    private void EditarCuenta(string codigo)
+    {
+        if (!PuedeEditarPlan || _busy) return;
+        _cuentaEditada = codigo; _cuentaAbierta = true;
+    }
+
+    private Task NuevaCuentaAsync()
+    {
+        if (!PuedeEditarPlan) return Task.CompletedTask;
+        _cuentaEditada = null; _cuentaAbierta = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task CuentaCambiadaAsync(AppUiMessage mensaje)
+    {
+        _cuentaAbierta = false;
+        try { _planAbm = await PlanAbm.CatalogoAsync(); } catch (InvalidOperationException) { }
+        await GenerarAsync();
+        _feedback = mensaje;
+        await InvokeAsync(StateHasChanged);
+    }
+
     private void AbrirMayor(SumasSaldosFila f)
     {
         if (_sumas is not { } s) return;
@@ -435,6 +476,7 @@
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
         Actions =
         [
+            .. (PuedeEditarPlan ? [new PageHeaderAction { Key = "nueva-cuenta", Label = "Nueva cuenta", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = NuevaCuentaAsync }] : Array.Empty<PageHeaderAction>()),
             new() { Key = "generar", Label = "Generar", Icon = "bi-play-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = GenerarAsync },
             new() { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "pdf", OnClick = () => ExportarAsync(true) },
             new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "excel", OnClick = () => ExportarAsync(false) }
