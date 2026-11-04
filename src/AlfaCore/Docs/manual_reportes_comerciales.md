@@ -4,17 +4,43 @@ Entrá en **Compras → Reportes** o **Ventas → Reporte de Ventas**. Ambas pan
 
 ## Buscar y generar
 
-Usá la barra superior para buscar por nombre o cuenta. Abrí el embudo para seleccionar período y tipo de comprobante. Hay rangos habituales y fechas desde/hasta. Presioná **Generar reporte** o Enter para aplicar los filtros.
+Usá la barra superior para buscar por nombre o cuenta. Abrí el embudo para elegir los filtros:
+
+- **Período**: tocá un rango rápido (Hoy, Esta semana, Últimos 7 días, Mes actual, Mes anterior, Últimos 30 días, Últimos 3 meses, Trimestre actual, Trimestre anterior o Año actual) o escribí **Desde** y **Hasta**. Al hacer clic en una fecha se abre el calendario. El rango elegido queda marcado en azul.
+- **Unidades de negocio**: desplegable con selección múltiple debajo de las fechas. Cerrado muestra **Todas**, el nombre de la unidad elegida o la cantidad seleccionada. Abierto, marcá las que quieras; la lista tiene su propio desplazamiento.
+- **Comprobante** y **Cartera del cliente**: tipo de comprobante y datos del maestro (ver más abajo).
+
+Presioná **Generar reporte** o Enter para aplicar los filtros. Elegir un rango no genera solo: así podés combinar varios filtros antes de consultar.
 
 - **Resumen**: importes del período agrupados por cuenta, neto, IVA, total y participación.
-- **Detalle**: comprobantes con fecha, cuenta, motivo, neto, IVA, total y usuario. El botón del ojo abre el visor conservando la base; no se ofrece al entrar en modo de módulo aislado (`directo=1`).
-- **Cuenta corriente**: movimientos contables de proveedores en Compras y de clientes en Ventas. En ventas, Debe suma deuda y Haber la resta; en compras ocurre al revés.
-
-En **Ventas**, la cuenta corriente agrupa por código de cliente y muestra saldo inicial, movimientos cronológicos, saldo parcial en cada línea y saldo al cierre. Al cambiar de página, el saldo sigue desde la anterior. Los clientes sin movimientos pero con saldo inicial también aparecen. Un saldo positivo es deuda a cobrar; uno negativo es saldo a favor del cliente. No es todavía un listado de comprobantes pendientes por aplicación.
+- **Detalle**: comprobantes con fecha, cuenta, motivo, neto, IVA, total y usuario. **Ver** abre el detalle del comprobante encima del reporte; al cerrarlo se conservan la página y los filtros.
+- **Cuenta corriente**: movimientos contables de proveedores en Compras y de clientes en Ventas. En ventas, Debe suma deuda y Haber la resta; en compras ocurre al revés. Ver el artículo **Cuenta corriente**.
 
 En el embudo de Ventas podés seleccionar una o varias **unidades de negocio**, **vendedor del cliente** y **zona del cliente**. Vendedor y zona se toman del maestro actual, aunque el comprobante haya sido emitido por otro vendedor. Sin seleccionar unidades se incluyen todas, incluso movimientos sin unidad; también podés seleccionar únicamente los movimientos sin unidad. Los filtros se aplican a Resumen, Detalle y Cuenta corriente; en esta última afectan tanto la apertura como los movimientos. Si filtrás por tipo de comprobante, solo se ocultan líneas: los saldos siguen contemplando los demás tipos, incluidos los pagos.
 
-En **Compras**, la cuenta corriente también agrupa por código de proveedor e incluye saldo inicial, acumulado por línea y cierre. **Haber suma deuda y Debe la resta**. Conserva saldos de proveedores sin movimientos en el período y mantiene el acumulado al cambiar de página. Un saldo positivo es deuda a pagar; uno negativo es saldo a favor de la empresa. El filtro por tipo solo oculta líneas y no recorta los saldos. El embudo permite seleccionar unidades de negocio también en Compras.
+El embudo permite seleccionar unidades de negocio también en Compras.
+
+## Cuenta corriente
+
+Agrupa los movimientos por código de cliente (Ventas) o de proveedor (Compras), en orden cronológico.
+
+Cada cuenta se ve como un bloque separado:
+
+1. **Encabezado**: código y razón social destacados, con el **Saldo inicial** debajo.
+2. **Movimientos**: fecha, tipo, comprobante con su botón **Ver**, debe, haber y **Saldo parcial** acumulado en cada línea.
+3. **Saldo al cierre**: fila resaltada con el saldo final de la cuenta. Después hay un espacio antes de la cuenta siguiente.
+
+Si una cuenta no tuvo movimientos en el período pero tiene saldo inicial, se muestra la línea «Sin movimientos en el período. Se conserva el saldo inicial.». Las cuentas cuyo saldo, redondeado a centavos, es cero y no tuvieron movimientos no se listan.
+
+Cuando una cuenta sigue en la página siguiente, el encabezado aclara **Continuación de la cuenta** y el saldo con que viene de la página anterior. El acumulado no se reinicia al cambiar de página.
+
+Las tarjetas superiores muestran saldo inicial, movimiento neto del período y saldo al cierre de todas las cuentas del filtro.
+
+- En **Ventas**, **Debe suma deuda y Haber la resta**. Un saldo positivo es deuda a cobrar; uno negativo es saldo a favor del cliente.
+- En **Compras**, **Haber suma deuda y Debe la resta**. Un saldo positivo es deuda a pagar; uno negativo es saldo a favor de la empresa.
+- Filtrar por tipo de comprobante solo oculta líneas: los saldos siguen contemplando los demás tipos, incluidos los pagos.
+
+No es un listado de comprobantes pendientes por aplicación: para eso usá **Cuenta corriente resumida**.
 
 ## Cuenta corriente resumida y analítica
 
@@ -40,7 +66,7 @@ El control presenta saldo de la selección, deuda global del cliente, límite ac
 
 Este control mide deuda contable: no agrega exposición adicional por cheques pendientes de acreditación ni remitos sin facturar. No cambia límites ni bloquea la emisión. Excel exporta todas las cuentas del filtro con total general; PDF imprime la página visible.
 
-En **Ventas**, el campo **Código exacto del cliente** del embudo permite buscar por nombre o código y seleccionar un cliente. El reporte filtra únicamente el código exacto seleccionado. Si escribís sin seleccionar, debés elegir un cliente o limpiar el campo antes de generar. Se combina con el texto de búsqueda general; vaciá ese texto si solo querés filtrar por código. **Provincia del cliente**, vendedor y zona consultan los datos actuales del maestro, mientras **Tipo (TC)** corresponde al comprobante. Estos filtros se conservan en todas las pestañas, la paginación y Excel.
+En **Ventas**, el campo **Cliente** de la columna Cartera del cliente permite buscar por nombre o código y seleccionar un cliente. El reporte filtra únicamente el código exacto seleccionado. Si escribís sin seleccionar, debés elegir un cliente o limpiar el campo antes de generar. Se combina con el texto de búsqueda general; vaciá ese texto si solo querés filtrar por código. **Provincia del cliente**, vendedor y zona consultan los datos actuales del maestro, mientras **Tipo (TC)** corresponde al comprobante. Estos filtros se conservan en todas las pestañas, la paginación y Excel.
 
 La opción **Incluir proforma** aparece únicamente si la configuración general **UsaFacturaProforma** vale **SI** y el usuario tiene habilitado **VerProforma**. Por defecto está marcada al abrir el reporte, cambiar de sesión o limpiar los filtros, siempre que la configuración y el permiso lo permitan. Si la desmarcás, excluye **FP, NCFP y CBFP**, también de la apertura y los saldos contables. Al marcarla se incluyen. En la analítica, sin proformas se omiten también sus referencias en las aplicaciones; los importes original, aplicado y pendiente siguen siendo los de la vista oficial actual. El resultado y el archivo Excel muestran los filtros efectivamente aplicados; editar el buscador no cambia ese resumen hasta generar nuevamente.
 
@@ -59,3 +85,12 @@ Si cambiás de base o cerrás sesión durante una consulta, el resultado se desc
 Entrá en **Configuración** y escribí en la barra superior. Podés buscar por nombre, descripción, módulo o palabra clave, sin distinguir mayúsculas ni acentos. El embudo permite limitar por área; Limpiar quita texto y área.
 
 Hay accesos a Carga de comprobantes, Punto de Venta, Facturación electrónica y Padrón ARCA. Podés buscar una clave como **MaxDto** para localizar su sección. Dentro de Configuración → Ventas → Carga de comprobantes también hay búsqueda de campos por nombre, clave, grupo o alcance; filtrar no borra cambios ni guarda parámetros.
+
+## Actividad de compras
+
+Entrá en **Compras → Actividad**. Muestra cuántos comprobantes de compra cargó cada usuario y con qué ritmo.
+
+- En el embudo elegí el **Período** con un rango rápido o con Desde y Hasta. También podés filtrar por **Artículo** (código o descripción), **Rubro** y **Familia**, y en **Más filtros** por **Usuario** y **Sucursal**.
+- Las tarjetas resumen comprobantes cargados, ítems cargados, usuarios activos y promedios.
+- La tabla por usuario informa comprobantes, ítems, importe total, cuántos se cargaron **con detalle** de artículos y cuántos como **contables** (solo importes), última actividad y días activos.
+- Tocá un usuario para ver sus comprobantes. Cada uno indica el **Tipo de carga**, una **Alerta** si corresponde, y **Ver** para abrir el comprobante.

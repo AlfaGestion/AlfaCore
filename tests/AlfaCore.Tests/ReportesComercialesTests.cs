@@ -159,7 +159,7 @@ public sealed class ReportesComercialesTests
                 var searchHtml=System.Net.WebUtility.HtmlDecode(search.ToHtmlString());
                 if(ventas) {
                     Assert.Contains("Vendedor del cliente",searchHtml);Assert.Contains("Zona del cliente",searchHtml);
-                    Assert.Contains("Código exacto del cliente",searchHtml);Assert.Contains("Provincia del cliente",searchHtml);
+                    Assert.Contains(">Cliente</label>",searchHtml);Assert.Contains("Provincia del cliente",searchHtml);
                     var opciones=(ReporteComprasOptionsDto)typeof(ReporteComercialPanel).GetField("_options",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(panel)!;
                     Assert.Equal(opciones.PuedeIncluirProforma,searchHtml.Contains("Incluir proforma"));
                     Assert.Contains("Filtros aplicados:",html);

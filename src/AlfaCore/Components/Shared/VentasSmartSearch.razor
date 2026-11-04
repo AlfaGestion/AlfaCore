@@ -84,7 +84,9 @@
             @if (!SoloPeriodo)
             {
                 <div class="smart-search__column">
-                    <h4><i class="bi bi-diagram-3"></i> Unidad de negocio</h4>
+                    <details class="smart-search__multiselect">
+                        <summary>Unidades de negocio · @(Model.UnidadesNegocio.Count == 0 ? "Todas" : $"{Model.UnidadesNegocio.Count} seleccionadas")</summary>
+                        <div class="smart-search__multiselect-options">
                     <button type="button" class="@OptionClass(Model.UnidadesNegocio.Count == 0)" @onclick="() => Model.UnidadesNegocio.Clear()">Todas</button>
                     @foreach (var unidad in Options.UnidadesNegocio)
                     {
@@ -98,6 +100,8 @@
                     {
                         <span class="smart-search__hint">Con más de una unidad elegida, el tablero las compara por separado.</span>
                     }
+                        </div>
+                    </details>
                 </div>
 
                 <div class="smart-search__column">

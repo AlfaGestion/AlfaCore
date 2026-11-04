@@ -13,7 +13,7 @@
 <div class="gd-page gd gd-legacy autorizacion-page">
     <header class="gd-header">
         <h2>Autorización de tareas</h2>
-        <p>Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
+        <p>Administrá los permisos del menú web y las asignaciones de cada usuario.</p>
     </header>
 
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
@@ -59,22 +59,6 @@
                 </div>
 
                 <div class="auth-tree-toolbar">
-                    <div class="auth-tree-toolbar__group auth-tree-toolbar__search">
-                        <i class="bi bi-search"></i>
-                        <input type="search"
-                               placeholder="Buscar por nombre, clave o ruta web..."
-                               value="@_searchText"
-                               @oninput="OnSearchChanged"
-                               @onkeydown="HandleSearchKeyDownAsync"
-                               disabled="@(!_treeLoaded)" />
-                        @if (!string.IsNullOrWhiteSpace(_searchText))
-                        {
-                            <button type="button" class="auth-tree-toolbar__clear" title="Limpiar búsqueda" @onclick="LimpiarFiltrosAsync">
-                                <i class="bi bi-x-circle"></i>
-                            </button>
-                        }
-                    </div>
-
                     <div class="auth-tree-toolbar__group">
                         <button type="button" class="btn btn--ghost" @onclick="SeleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
                             <i class="bi bi-check2-square"></i> Seleccionar visible
@@ -124,37 +108,6 @@
 
             <aside class="auth-sidebar">
                 <div class="auth-panel auth-panel--compact">
-                    <div class="auth-panel__title-wrap">
-                        <h4 class="auth-panel__title">Usuario</h4>
-                        @if (_currentUserAdministrador)
-                        {
-                            <span class="auth-badge auth-badge--shared">Administrador</span>
-                        }
-                    </div>
-
-                    <div class="field field--full">
-                        <label>Usuario del sistema</label>
-                        <select @bind="_selectedUser" disabled="@(_loadingUsers || _loadingTree)">
-                            <option value="">Seleccioná un usuario</option>
-                            @foreach (var item in _users)
-                            {
-                                <option value="@item.Nombre">@item.Nombre</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="auth-sidebar__actions">
-                        <button type="button" class="btn btn--secondary" @onclick="ConsultarAsync" disabled="@(_loadingTree || string.IsNullOrWhiteSpace(_selectedUser))">
-                            <i class="bi bi-search"></i> Consultar
-                        </button>
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@(!_canSave)">
-                            <i class="bi bi-floppy"></i> Grabar
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="CancelarCambios" disabled="@(!_dirty || _loadingTree)">
-                            <i class="bi bi-x-circle"></i> Cancelar
-                        </button>
-                    </div>
-
                     <div class="field field--full">
                         <label>Aplicar mismos permisos que...</label>
                         <input list="auth-users-copy"
@@ -260,6 +213,7 @@
     private List<AutorizacionCatalogoItemDto> _cajas = [];
     private List<AutorizacionCatalogoItemDto> _depositos = [];
     private string _selectedUser = string.Empty;
+    private string _consultaUsuario = string.Empty;
     private string _copyFromUser = string.Empty;
     private string _searchText = string.Empty;
     private string _selectedUNegocio = string.Empty;
@@ -296,7 +250,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => _loadingUsers.ToString();
+    private string HeaderSnapshot() => $"{_loadingUsers}|{_loadingTree}|{_dirty}|{_selectedUser}|{_consultaUsuario}|{_selectedUNegocio}|{_searchText}";
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -321,8 +275,12 @@
             ModuleKey = "seguridad",
             Title = "Autorización de tareas",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildSeguridad(RouteContext, Nav, "autorizacion"),
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderFiltrosUsuario(),
             Actions =
             [
+                new() { Key = "grabar", Label = "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Disabled = !_canSave, OnClick = () => InvokeAsync(async () => { await GuardarAsync(); StateHasChanged(); }) },
+                new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Disabled = !_dirty || _loadingTree, OnClick = () => InvokeAsync(() => { CancelarCambios(); StateHasChanged(); }) },
                 new PageHeaderAction
                 {
                     Key = "recargar",
@@ -335,6 +293,14 @@
             ],
         });
     }
+
+    private RenderFragment RenderFiltrosUsuario() => @<FiltrosSmartSearch Resumen="@(string.IsNullOrEmpty(_selectedUser) ? "Usuario" : _selectedUser)" Placeholder="Usuario y permisos..." Texto="@_searchText" TextoChanged="v => OnSearchChanged(new ChangeEventArgs { Value = v })" OnApply="ConsultarAsync" Disabled="@(_loadingUsers || _loadingTree || _dirty || string.IsNullOrWhiteSpace(_consultaUsuario))" PanelClass="smart-search__panel--uno">
+        <div class="smart-search__column">
+            <AlfaSelect Label="Usuario" Placeholder="Seleccioná un usuario" Value="@_consultaUsuario" ValueChanged="v => { _consultaUsuario = v ?? string.Empty; UpdatePageHeader(); }"
+                Options="@_users.Select(x => new AlfaSelectOption(x.Nombre, x.Nombre)).ToList()" Disabled="@(_loadingUsers || _loadingTree || _dirty)" />
+            @if (_dirty) { <span class="smart-search__hint">Grabá o cancelá los cambios antes de consultar otro usuario.</span> }
+        </div>
+    </FiltrosSmartSearch>;
 
     protected override async Task OnInitializedAsync()
     {
@@ -365,17 +331,20 @@
 
     private async Task ConsultarAsync()
     {
+        if (_loadingTree || _dirty || string.IsNullOrWhiteSpace(_consultaUsuario)) return;
+        var usuario = _consultaUsuario;
         _feedback = null;
         _loadingTree = true;
         try
         {
-            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _selectedUser), "No se pudo cargar la autorización.");
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, usuario), "No se pudo cargar la autorización.");
             if (!result.Success)
             {
                 SetFeedback(result.Feedback!);
                 return;
             }
 
+            _selectedUser = usuario;
             var dto = result.Value!;
             var items = dto.Items ?? Array.Empty<MenuAutorizacionItemDto>();
             _tree = CloneTree(items);
@@ -426,6 +395,7 @@
 
     private async Task GuardarAsync()
     {
+        if (!_canSave) return;
         var selectedKeys = EnumerateAuthorizedKeys(_tree).ToArray();
         var result = await UiOps.RunAsync(() => AutorizacionSvc.GuardarAutorizacionAsync(new GuardarAutorizacionTareasRequest
         {

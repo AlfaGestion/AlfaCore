@@ -98,7 +98,7 @@
                             <td>@x.Fecha.ToString("dd/MM/yyyy")</td>
                             <td><span class="rp-chip @(x.Sufrida ? "is-sufrida" : "is-practicada")">@x.Impuesto</span><small>@x.Clase @(x.Sufrida ? "sufrida" : "practicada")</small></td>
                             <td>@x.Origen<small>@x.Cuenta · @x.CuentaNombre</small></td>
-                            <td>@x.Comprobante</td>
+                            <td>@x.Comprobante <ComprobanteVerAccion Tc="@x.Tc" Comprobante="@($"{x.Sucursal}-{x.Numero} {x.Letra}")" /></td>
                             <td>@x.Nombre<small>@x.Cuit</small></td>
                             <td>@x.JurisdiccionNombre</td>
                             <td>@x.Certificado</td>

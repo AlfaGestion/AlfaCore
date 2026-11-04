@@ -1,11 +1,8 @@
 .ctr-page { display: flex; flex-direction: column; gap: 12px; }
-.ctr-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 12px;
-    border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); }
-.ctr-filtros__ejercicio { flex: 1 1 280px; min-width: 240px; }
-.ctr-filtros__unidad { flex: 0 1 220px; min-width: 180px; }
-.ctr-filtros__cuenta { flex: 2 1 320px; min-width: 260px; }
-.ctr-filtros__cuenta--hasta { flex: 1 1 260px; }
-.ctr-filtros__checks { display: flex; flex-wrap: wrap; gap: 6px 18px; flex: 1 1 100%; }
+/* Columna "Opciones" del Smart Search: controles apilados, mismo ritmo que la columna Período. */
+.ctr-filtros { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ctr-filtros__ejercicio { margin-top: 8px; }
+.ctr-filtros__checks { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 
 .ctr-desbalance { border: 1px solid var(--alfa-border-default); border-left: 3px solid var(--alfa-warning, #d9a400); border-radius: 8px;
     background: var(--alfa-bg-surface); color: var(--alfa-text-primary); font-size: 13px; }
@@ -31,3 +28,36 @@
 .ctr-tabla .is-acreedor { color: var(--alfa-danger, #e5484d); }
 .n { text-align: right !important; font-variant-numeric: tabular-nums; }
 .ctr-nota { margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }
+
+/* Mayor sin cuenta: lista para elegir con un clic. */
+.ctr-elegir { display: flex; flex-direction: column; gap: 12px; }
+.ctr-elegir__intro h3 { margin: 0; color: var(--alfa-text-primary); font-size: 15px; font-weight: 600; }
+.ctr-elegir__intro p { margin: 4px 0 0; color: var(--alfa-text-secondary); font-size: 12px; }
+.ctr-tabla--elegir tbody tr { cursor: pointer; }
+.ctr-tabla--elegir tbody tr:hover, .ctr-tabla--elegir tbody tr:focus-visible { background: var(--alfa-bg-row-hover); outline: none; }
+.ctr-tabla--elegir tbody tr:hover td:nth-child(2) { color: var(--alfa-accent-hover); }
+.ctr-elegir__ir { width: 28px; color: var(--alfa-text-disabled); text-align: right; }
+.ctr-tabla--elegir tbody tr:hover .ctr-elegir__ir { color: var(--alfa-accent-hover); }
+
+/* Plan de cuentas como árbol (Figma: Data Table Row + Tag). */
+.plan-intro { margin: 0; color: var(--alfa-text-secondary); font-size: 13px; line-height: 1.5; }
+.plan-intro strong { color: var(--alfa-text-primary); font-weight: 600; }
+.plan-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--alfa-text-secondary); font-size: 12px; }
+.plan-barra > div { display: flex; gap: 4px; }
+.plan-tabla tbody tr { cursor: pointer; }
+.plan-tabla tbody tr:hover, .plan-tabla tbody tr:focus-visible { background: var(--alfa-bg-row-hover); outline: none; }
+.plan-tabla .plan-codigo { width: 130px; color: var(--alfa-text-secondary); font-variant-numeric: tabular-nums; }
+.plan-tabla .is-titulo .plan-codigo { color: var(--alfa-text-primary); }
+.plan-desc { display: inline-flex; align-items: center; gap: 6px; }
+.plan-flecha { display: inline-block; width: 14px; color: var(--alfa-text-secondary); font-size: 11px; }
+.plan-cantidad { margin-left: 4px; color: var(--alfa-text-disabled); font-size: 11.5px; font-weight: 400; }
+.plan-tabla .is-baja td { color: var(--alfa-text-disabled); }
+.plan-tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; margin-right: 4px; padding: 0 8px; border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-full); background: var(--alfa-bg-surface-raised); color: var(--alfa-text-secondary); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.plan-tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.plan-tag.is-accent { border-color: color-mix(in srgb, var(--alfa-accent) 55%, transparent); background: color-mix(in srgb, var(--alfa-accent) 16%, var(--alfa-bg-surface)); color: var(--alfa-accent-hover); }
+.plan-tag.is-success { border-color: color-mix(in srgb, var(--alfa-success) 55%, transparent); background: color-mix(in srgb, var(--alfa-success) 16%, var(--alfa-bg-surface)); color: var(--alfa-success); }
+.plan-tag.is-warning { border-color: color-mix(in srgb, var(--alfa-warning) 55%, transparent); background: color-mix(in srgb, var(--alfa-warning) 14%, var(--alfa-bg-surface)); color: var(--alfa-warning); }
+.plan-tag.is-danger { border-color: color-mix(in srgb, var(--alfa-danger) 55%, transparent); background: color-mix(in srgb, var(--alfa-danger) 16%, var(--alfa-bg-surface)); color: var(--alfa-danger); }
+.plan-ir { width: 100px; color: transparent; font-size: 12px; text-align: right; white-space: nowrap; }
+.plan-tabla tbody tr:hover .plan-ir, .plan-tabla tbody tr:focus-visible .plan-ir { color: var(--alfa-accent-hover); }

@@ -29,6 +29,7 @@ public sealed class ContabilidadFiltro
     // Plan de cuentas
     public bool PlanIncluirTerceros { get; set; }
     public bool PlanIncluirBaja { get; set; }
+    public string PlanTexto { get; set; } = string.Empty;
     // Balance general
     /// <summary>Nivel máximo a mostrar (1 = capítulos ... 0 = todos).</summary>
     public int NivelMaximo { get; set; }

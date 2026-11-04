@@ -1,16 +1,5 @@
 .liva-page { display: flex; flex-direction: column; gap: 12px; }
 
-.liva-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 12px;
-    border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); }
-.liva-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--alfa-text-secondary); }
-.liva-campo input { padding: 7px 10px; font: inherit; font-size: 14px; font-weight: 600; border-radius: 6px; color-scheme: light dark;
-    border: 1px solid var(--alfa-border-default); background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); }
-.liva-atajos { display: flex; gap: 4px; }
-.liva-atajos button { width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--alfa-border-default); background: transparent;
-    color: var(--alfa-text-primary); cursor: pointer; }
-.liva-atajos button:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
-.liva-unidad { flex: 1 1 320px; min-width: 240px; }
-
 .liva-cierre { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 14px; font-size: 13px;
     border: 1px solid var(--alfa-border-default); border-left: 3px solid var(--alfa-warning, #d9a400); border-radius: 8px;
     background: var(--alfa-bg-surface); color: var(--alfa-text-secondary); }
@@ -41,3 +30,14 @@
 .liva-alicuotas th { background: var(--alfa-bg-table-header, var(--alfa-bg-surface-raised, var(--alfa-bg-surface))); color: var(--alfa-text-secondary); font-size: 11px; text-align: left; }
 .liva-nota { flex: 1; min-width: 260px; margin: 0; font-size: 12px; color: var(--alfa-text-secondary); }
 .liva-aviso { color: var(--alfa-warning, #d9a400); }
+
+/* Columnas del Smart Search del libro. */
+.liva-filtros { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.liva-meses { display: flex; flex-direction: column; gap: 2px; }
+.liva-meses .smart-option { width: 100%; text-align: left; justify-content: flex-start; }
+.liva-campo-label { margin-top: 6px; color: var(--alfa-text-secondary); font-size: 11px; font-weight: 500; }
+.liva-mes { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 4px; align-items: center; }
+.liva-mes input { height: 32px; min-width: 0; padding: 0 8px; border: 1px solid var(--alfa-border-default); border-radius: 6px;
+    background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font: inherit; font-size: 12px; color-scheme: light dark; }
+.liva-mes__flecha { height: 32px; border: 1px solid var(--alfa-border-default); border-radius: 6px; background: transparent; color: var(--alfa-text-secondary); cursor: pointer; }
+.liva-mes__flecha:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }

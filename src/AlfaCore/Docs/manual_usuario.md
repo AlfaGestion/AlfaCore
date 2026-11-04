@@ -239,6 +239,25 @@ Al abrir un registro, podés ver información ampliada para analizar mejor el ca
 
 ## 8. Filtros, búsquedas y listados
 
+### Buscador y filtros de la barra superior
+
+En casi todos los listados y reportes, la búsqueda y los filtros están en la barra superior, en el centro:
+
+- Escribí en el buscador y pulsá Enter para buscar por texto (nombre, cuenta, número…).
+- El **embudo** o la **flecha** de la derecha abren el panel de filtros. Está organizado en columnas con título, por ejemplo **Período**, **Comprobante** u **Opciones**.
+- Los filtros aplicados se ven como **chips** dentro del buscador, por ejemplo «Mes anterior».
+- Para cerrar el panel, hacé clic afuera o pulsá Esc.
+
+En los listados, como Ver comprobantes o Asientos, tocar un rango rápido actualiza la lista enseguida. En los reportes, como Libro diario o Reporte de Ventas, elegís los filtros y después pulsás **Generar** o **Aplicar**. Así no se recalcula un reporte grande con cada clic.
+
+### Rangos rápidos de fecha
+
+La columna **Período** ofrece los mismos rangos en todas las pantallas: **Hoy**, **Esta semana**, **Últimos 7 días**, **Mes actual**, **Mes anterior**, **Últimos 30 días**, **Últimos 3 meses**, **Trimestre actual**, **Trimestre anterior** y **Año actual**. **Todo** aparece donde la consulta lo admite. El rango elegido queda marcado en azul.
+
+Por ejemplo, con fecha de hoy 04/11/2026: Últimos 7 días va del 29/10 al 04/11; Mes anterior, del 01/10 al 31/10; Trimestre actual, del 01/10 al 04/11; Trimestre anterior, del 01/07 al 30/09.
+
+Debajo están **Desde** y **Hasta**. Al hacer clic en una fecha se abre el calendario. El aspecto del calendario depende del navegador y de Windows.
+
 ### Filtros
 
 Los filtros ayudan a responder preguntas concretas.
@@ -295,7 +314,9 @@ El detalle suele mostrar:
 
 ### Abrir comprobante o registro relacionado
 
-En algunos módulos podés ir del listado a la ficha o visor del comprobante.
+En los listados que muestran comprobantes (reportes contables, cuentas corrientes, libros de IVA, retenciones, actividad, asientos) aparece **Ver**, con un ícono de ojo, junto al número. Abre el detalle del comprobante encima de la pantalla. Al cerrarlo seguís en el mismo lugar: se conservan el listado, los filtros y la página.
+
+No aparece en las filas que no corresponden a un comprobante, como totales o saldos iniciales.
 
 ### Exportar
 
@@ -327,7 +348,7 @@ Pulsá el icono **?**, junto a las notificaciones de la barra superior. La ayuda
 
 ### Consultar las guías
 
-La ayuda abre el tema correspondiente a la pantalla cuando está disponible; en otros módulos muestra la guía general. Elegí **General**, **Consultas**, **Conciliación** o **Cobranzas**, buscá una palabra y seleccioná la tarea. **Ver manual completo** permite consultar todo el tema.
+La ayuda abre directamente la explicación de la pantalla en la que estás, cuando está documentada; en otras pantallas muestra la guía general. Con las pestañas de arriba podés cambiar de manual (**General**, **Contabilidad**, **Ventas: comprobantes**, **Reportes**, **Seguridad**, **Consultas**, **Conciliación**, **Conciliación de tarjetas** o **Cobranzas**). Buscá una palabra y seleccioná la tarea. **Ver manual completo** permite consultar todo el tema.
 
 ### Preguntar a IA
 

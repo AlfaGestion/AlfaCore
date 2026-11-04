@@ -1,0 +1,15 @@
+@implements IDisposable
+@inject AlfaCore.Services.ComprobanteVerService Visor
+@* Diálogo único de detalle de comprobante (ver ComprobanteVerService). Va una sola vez en el layout. *@
+<AlfaDialog Open="@(Visor.Actual is not null)" Title="Detalle del comprobante" Size="AlfaDialogSize.Xl" OnClose="Visor.Cerrar">
+    @if (Visor.Actual is { } pedido)
+    {
+        <ComprobanteViewer @key="pedido" Tc="@pedido.Tc" IdComprobante="@ComprobanteVerAccion.NormalizarNumero(pedido.Comprobante)"
+                           IdComplemento="@pedido.IdComplemento" ModoDetalleCompleto="true" />
+    }
+</AlfaDialog>
+@code {
+    protected override void OnInitialized() => Visor.Changed += Refrescar;
+    private void Refrescar() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Visor.Changed -= Refrescar;
+}

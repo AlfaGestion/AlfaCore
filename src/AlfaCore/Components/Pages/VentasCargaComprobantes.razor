@@ -1170,21 +1170,20 @@
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
             <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="TeclaBusquedaAsync" @onkeydown:stopPropagation>
-                <div class="smart-search__column">
-                    @if (EsFa(_filtro))
-                    {
+                @if (EsFa(_filtro))
+                {
+                    <div class="smart-search__column">
                         <h4><i class="bi bi-calendar-event"></i> Facturación</h4>
                         <AlfaInput Type="date" Label="Fecha a facturar" Value="@FechaHtml(_filtro.FechaFacturacion ?? DateTime.Today)" ValueChanged="v => CambiarFiltro(() => _filtro.FechaFacturacion = LeerFecha(v))" Disabled="@_busy" />
                         <span class="smart-search__hint">Muestra los clientes que corresponde facturar a esa fecha según su periodicidad y su última factura automática.</span>
-                    }
-                    else
-                    {
-                        <h4><i class="bi bi-calendar-range"></i> Período</h4>
-                        <AlfaInput Type="date" Label="Fecha desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => _filtro.FechaDesde = LeerFecha(v)" Disabled="@_busy" />
-                        <AlfaInput Type="date" Label="Fecha hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => _filtro.FechaHasta = LeerFecha(v)" Disabled="@_busy" />
-                        <span class="smart-search__hint">Sin fechas: todo el historial pendiente.</span>
-                    }
-                </div>
+                    </div>
+                }
+                else
+                {
+                    <FiltroPeriodo Desde="@_filtro.FechaDesde" Hasta="@_filtro.FechaHasta" IncluirTodo="true" Disabled="@_busy"
+                                   EtiquetaDesde="Fecha desde" EtiquetaHasta="Fecha hasta" Ayuda="Sin fechas: todo el historial pendiente."
+                                   PeriodoChanged="p => CambiarFiltro(() => (_filtro.FechaDesde, _filtro.FechaHasta) = p)" />
+                }
                 <div class="smart-search__column">
                     <h4><i class="bi bi-people"></i> Comercial</h4>
                     <AlfaSelect Label="Vendedor" Value="@_filtro.Vendedor" ValueChanged="v => _filtro.Vendedor = v ?? string.Empty" Options="@Opciones(_contexto.Vendedores)" Disabled="@_busy" />

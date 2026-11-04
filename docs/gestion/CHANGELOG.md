@@ -4,6 +4,102 @@ Formato: `[versión] — fecha — descripción`
 
 ---
 
+## [Sin versión] — 2026-11-04
+
+### Filtros, consulta de comprobantes y autorización de tareas
+
+Se reutilizan el shell AlfaDesign, sus controles, el visor central y los servicios de consulta existentes. No hay rutas, tablas, permisos ni dependencias nuevos; no requiere actualización SQL.
+
+| Archivo (relativo a `src/AlfaCore/`) | Cambio |
+|---|---|
+| `Components/Shared/FiltrosSmartSearch.razor` (nuevo) | Contenedor de búsqueda y filtros con cierre por Escape y aplicación por Enter; usa el posicionamiento compartido. |
+| `Components/Shared/ContabilidadReportePanel.razor` | Filtros de Plan de cuentas, Diario, Subdiarios, Mayor y balances en el Context Toolbar; rangos rápidos y acceso al visor. |
+| `Components/Shared/ContabilidadReportePanel.razor.css` | Filtros ocupan el ancho del panel y conservan el ajuste de campos. |
+| `Components/Pages/ContabilidadAsientos.razor` | Integración posterior al pull: filtros en Smart Search del encabezado con período, origen, unidad y cuenta; rangos rápidos y Ver en comprobantes de origen. Se conserva la apertura del asiento y sus reglas de edición. |
+| `Components/Pages/ContabilidadAsientos.razor.css` | Panel de filtros de Asientos al ancho del popover y rangos con ajuste de línea. |
+| `Models/ContabilidadReportesModels.cs` | Texto de búsqueda del plan de cuentas. |
+| `Services/ContabilidadReportesService.Libros.cs` | Búsqueda por código/descripción con el mismo filtro en pantalla, Excel y PDF; conserva niveles calculados sobre el plan completo. |
+| `Components/Shared/GestionRangosFecha.cs` | Últimos siete días inclusivos, trimestre actual y trimestre anterior; conserva los demás rangos. |
+| `wwwroot/js/alfa-smart-search-popover.js` | Abre el selector nativo al pulsar un campo de fecha; conserva fallback del navegador. |
+| `Components/App.razor` | Actualiza la versión del recurso JavaScript. |
+| `Components/Pages/VentasCargaComprobantes.razor` | Rangos rápidos para los pendientes por período; conserva el tratamiento especial de fecha de facturación automática. |
+| `Components/Pages/VentasVisorComprobantes.razor` | Rangos compartidos y Excel/PDF de todas las páginas del filtro aplicado; cancela exportación al cambiar sesión o usuario. |
+| `Services/ComprobantesVisorExportador.cs` (nuevo) | Excel con códigos de texto e importes numéricos y HTML escapado para el generador PDF existente. |
+| `Components/Shared/ReporteComercialPanel.razor` | Unidades en desplegable múltiple cerca del período; acción Ver compartida para compras y ventas. |
+| `Components/Shared/VentasSmartSearch.razor` | Unidades en desplegable múltiple acotado. |
+| `Components/Shared/CuentaCorrienteVentasTabla.razor` | Inicio y cierre de cada cuenta diferenciados; saldo previo solo al continuar una cuenta; Ver en movimientos. |
+| `Components/Shared/ComprobantesCuentaCorrienteTabla.razor` | Separación de cuentas y Ver para documentos/aplicaciones de resumida y analítica. |
+| `wwwroot/css/gestion-alfadesign.css` | Apariencia compartida de desplegables y separación de cuentas. |
+| `Components/Shared/ComprobanteVerAccion.razor` (nuevo) | Botón Ver y diálogo AlfaDesign con visor existente; convierte número visible contable al ID interno. |
+| `Components/Shared/ComprobanteViewer.razor` | Conserva `directo=1` al abrir el visor en otra pestaña. |
+| `Components/Pages/Actividad.razor` | Ver desde el listado de comprobantes del usuario. |
+| `Components/Pages/Comprobantes.razor` | Ver desde el listado de compras. |
+| `Components/Pages/Familias.razor` | Ver en el detalle de comprobantes de compras. |
+| `Components/Pages/Rubros.razor` | Ver en el detalle de comprobantes de compras. |
+| `Components/Shared/LibroIvaPanel.razor` | Ver desde libros de IVA, con identificador interno completo. |
+| `Components/Pages/ContabilidadRetenciones.razor` | Ver comprobante de origen de retenciones. |
+| `Components/Pages/AutorizacionTareas.razor` | Selector de usuario y búsqueda en Smart Search; Grabar/Cancelar en toolbar. No cambia el usuario cargado hasta consultar correctamente y exige resolver cambios pendientes antes de consultar otro. |
+
+Pruebas nuevas: `tests/AlfaCore.Tests/GestionRangosFechaTests.cs` cubre límites de fechas, trimestre anterior y bisiestos. `tests/AlfaCore.Tests/ComprobantesVisorExportadorTests.cs` verifica códigos, importes, texto seguro para Excel/PDF y conversión del número para el visor.
+
+Revisión de accesos existentes: auditoría, análisis de ventas, visor de ventas, conciliación bancaria, punto de venta y Portal Cliente ya cuentan con acciones propias de consulta; se mantienen sus recorridos y permisos. No se agrega un acceso genérico a filas sin clave de comprobante confirmada (totales por TC, documentos ARCA aún no ingresados, referencias de extractos o presentaciones de tarjetas).
+
+Validación posterior al pull: 167 pruebas dirigidas aprobadas y 59 omitidas por sus condiciones de entorno. Compilación final con cero errores y cinco advertencias preexistentes, en salida aislada `.tmp/ui-validation`. La instancia existente responde HTTP 200 en `http://localhost:5055`; no se interrumpió su sesión y requiere reinicio para cargar el último ajuste de Asientos. Cinco casos del handler de calendario aprobados con Node (fecha, deshabilitado, texto, fallback y otro elemento). Catálogo: 107 rutinas, sin advertencias ni errores. UTF-8 sin BOM y `git diff --check` revisados.
+
+Integración: se realizó pull fast-forward de ocho commits hasta `abf7abcd`, conservando los cambios locales sin conflictos. Llegaron Asientos y el visor de Compras; se completó la migración de los filtros de Asientos al encabezado. Se conservó un stash de resguardo previo a la integración.
+
+Limitaciones de verificación visual: la instancia local arrancó y la extensión de Chrome quedó instalada, pero la herramienta no consiguió conectar su host de navegador; la apertura explícita con Navegador venció por timeout. No se validaron aún las resoluciones 2048/1440/1024, calendarios nativos ni apertura de comprobantes reales. Las pruebas automáticas se ejecutan con salida aislada para no sobrescribir el ejecutable de la instancia local en uso.
+
+### Revisión contra Figma, prueba con datos y ayuda por pantalla
+
+Prueba con datos en ALFA NET - PRUEBAS (base 4283) y comparación con el archivo Figma AlfaCore (02 Components: Filter Popover, Filter Item, Context Toolbar, Data Table Row). No hay tablas, permisos ni scripts SQL nuevos.
+
+| Archivo (relativo a `src/AlfaCore/`) | Cambio |
+|---|---|
+| `Components/Shared/FiltroPeriodo.razor` (nuevo) | Columna "Período" única para todo el Smart Search: título con ícono, rangos verticales con el activo en azul, Desde/Hasta y contenido opcional. Reemplaza cinco copias distintas. |
+| `Components/Shared/ContabilidadReportePanel.razor` y `.razor.css` | El panel de filtros se veía desarmado (estilos de bloque viejo dentro del popover). Ahora dos columnas, Período y Opciones. El chip de Mayor quedaba en «01/01/01» al entrar: se refresca al cargar catálogos. El chip del Plan de cuentas resume las opciones aplicadas. |
+| `Components/Pages/ContabilidadAsientos.razor` y `.razor.css` | Columnas Período y Asientos con selectores estándar; el rango sigue aplicando al tocarlo. |
+| `Components/Pages/VentasVisorComprobantes.razor` y `.razor.css` | Rangos como lista vertical (antes, botones redondeados distintos al resto). |
+| `Components/Pages/VentasCargaComprobantes.razor` | Usa `FiltroPeriodo`; conserva «Fecha a facturar» de facturación automática. |
+| `Components/Shared/ReporteComercialPanel.razor` | Usa `FiltroPeriodo`; Unidades de negocio con etiqueta y desplegable de 32 px; muestra el nombre si hay una sola unidad elegida. |
+| `Components/Shared/FiltrosSmartSearch.razor` | Ancho del panel configurable (2 o 3 columnas) y foco en el panel al abrirlo con el embudo, para que Escape lo cierre. |
+| `Components/Shared/ComprobanteVerAccion.razor`, `ComprobanteVerHost.razor` (nuevo), `Services/ComprobanteVerService.cs` (nuevo), `Components/Layout/MainLayout.razor`, `Program.cs` | «Ver» compacto (20 px, no agranda la fila) y un único diálogo por sesión. Antes cada fila creaba su propio diálogo (1190 en un Libro diario anual). |
+| `Services/ReporteComercialService.CuentaCorrienteVentas.cs` | Cuenta corriente: no lista cuentas sin movimientos cuyo saldo inicial redondeado a centavos es cero (restos de milésimos se veían como «$ 0,00»). |
+| `wwwroot/css/gestion-alfadesign.css` | Estilos de `FiltroPeriodo`, desplegable múltiple y acción Ver. Variantes de panel `--dos` (640 px, 2 columnas) y `--uno` (380 px): antes el bloque Aplicar sumaba una tercera columna vacía y angostaba los selectores. |
+| `Components/Shared/LibroIvaPanel.razor` y `.razor.css` | Libros de IVA: filtros al Smart Search (Período con los últimos seis meses y «Otro mes» con flechas; Libro con la unidad/CUIT). Se quitan el bloque de filtros de la página y el «Generar» duplicado; elegir mes o unidad regenera al instante. |
+| `wwwroot/js/alfa-smart-search-popover.js`, `Components/App.razor` | Escape cierra el panel de filtros abierto en cualquier pantalla (salvo que haya un diálogo encima). El calendario nativo también se abre en campos de mes. Versión de recursos actualizada para evitar caché. |
+| `Services/AyudaManuales.cs`, `AlfaCore.csproj` | Nuevos manuales Contabilidad, Ventas: comprobantes, Reportes y Seguridad. Mapa pantalla → artículo: el ícono de ayuda abre la explicación de la pantalla actual. |
+| `Docs/manual_contabilidad.md` (nuevo), `Docs/manual_seguridad.md` (nuevo) | Un artículo por pantalla: reportes contables, Plan de cuentas, Asientos, Retenciones, Libros de IVA y Autorización de tareas. |
+| `Docs/manual_carga_comprobantes.md`, `Docs/manual_reportes_comerciales.md`, `Docs/manual_usuario.md` | Artículos Buscar pendientes, Ver comprobantes, Cuenta corriente, Actividad de compras, buscador superior, rangos rápidos y botón Ver. |
+
+Prueba nueva: `AyudaContextualTests.CadaPantallaDocumentadaAbreUnArticuloQueExiste`. Suite completa: 2566 aprobadas, 132 omitidas, 12 fallidas preexistentes (11 de WhatsApp Embedded Signup sin conexión central y 1 del carrito). Catálogo sin errores.
+
+Verificación visual en una instancia aislada (puerto 5065, procesos en segundo plano deshabilitados) contra ALFA NET - PRUEBAS: los diez paneles de filtros con columnas, rango activo y cierre con Escape; filas con Ver de 33 px (antes 47 px); un solo diálogo de detalle; Libro diario con Mes anterior (71 asientos); Cuenta corriente sin cuentas en cero; Libro de IVA por mes; ayuda abriendo el artículo de cada pantalla.
+
+Ajustes tras la prueba de la usuaria:
+
+| Archivo (relativo a `src/AlfaCore/`) | Cambio |
+|---|---|
+| `Components/Shared/ComprobanteViewer.razor` y `.razor.css` | Detalle de comprobante con estética AlfaDesign v1 (Figma Ficha / Lectura): tokens en lugar de colores fijos, botón primario azul, estados como Tag con punto, secciones con título simple y divisor. Totales sin renglones fijos en 0,00: Subtotal, IVA y Total siempre; descuentos, impuestos internos y recargo solo con importe. |
+| `Components/Shared/ContabilidadReportePanel.razor` y `.razor.css` | Mayor: al entrar lista las cuentas del período (sumas y saldos agrupado), el buscador superior las filtra, un clic abre el mayor, Enter con una coincidencia la abre y «Cuentas» vuelve a la lista. Plan de cuentas: introducción, KPIs, árbol plegable (resumido hasta rubros), tipo como Tag y clic en una cuenta abre su Mayor. |
+| `Components/Shared/FiltrosSmartSearch.razor` | Si el buscador admite texto, enfocarlo ya no abre el panel de filtros (tapaba la lista filtrada). |
+| `Components/Shared/ReporteComercialPanel.razor` | Cartera del cliente: se quitan dos párrafos de ayuda (quedan en un ícono de información) y el campo pasa a llamarse «Cliente». |
+| `Components/Shared/CuentaCorrienteVentasTabla.razor`, `ComprobantesCuentaCorrienteTabla.razor`, `wwwroot/css/gestion-alfadesign.css` | Encabezado de cada cuenta con franja azul, nombre en azul y código en gris; saldo al cierre sobre superficie elevada. |
+| `Docs/manual_contabilidad.md`, `Docs/manual_reportes_comerciales.md` | Textos de Mayor, Plan de cuentas y Cliente acordes al nuevo funcionamiento. |
+| `tests/AlfaCore.Tests/ReporteVentasFiltrosTests.cs`, `ReportesComercialesTests.cs` | Etiqueta y texto de ayuda del campo Cliente. |
+
+Segunda ronda de ajustes:
+
+| Archivo (relativo a `src/AlfaCore/`) | Cambio |
+|---|---|
+| `wwwroot/css/sticky-list-headers.css`, `Components/App.razor` | Los encabezados fijos de **todos** los listados usaban azul marino y celeste con `!important`; ahora usan los tokens AlfaDesign (con el color anterior como respaldo). Versiones de recursos actualizadas para evitar caché. |
+| `Components/Shared/ComprobanteViewer.razor` y `.razor.css` | Sin restos de azul marino (fondo de `page-grid`, encabezados de tabla, subtarjeta de relacionados). La barra de acciones fija tiene fondo y divisor. Subtítulo de relacionados en lenguaje claro. |
+| `Components/Shared/ComprobanteViewerModal.razor` (se elimina su `.razor.css`) | Pasa a usar la ventana estándar `AlfaDialog`: Ver comprobantes y el informe de Punto de Venta muestran el detalle igual que el resto. |
+| `Components/Shared/BusquedaDiferida.cs` (nuevo), `FiltrosSmartSearch.razor`, `ContabilidadReportePanel.razor`, `ContabilidadAsientos.razor`, `VentasVisorComprobantes.razor` | Filtrado mientras se escribe (350 ms de pausa) en Plan de cuentas, Asientos y Ver comprobantes; el buscador de Ver comprobantes ya no se deshabilita mientras consulta. |
+| `Docs/manual_contabilidad.md`, `Docs/manual_carga_comprobantes.md` | Búsqueda sin Enter en Plan, Asientos y Ver comprobantes. |
+
+Decisiones: **Guardar** se mantiene en azul en todo el sistema (Figma lo muestra en verde). Retenciones conserva su panel de filtros dentro de la página.
+
 ## [Sin versión] — 2026-10-28
 
 ### Tableros — GENESIS (base 97)

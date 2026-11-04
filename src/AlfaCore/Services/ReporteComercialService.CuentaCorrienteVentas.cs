@@ -51,7 +51,8 @@ public sealed partial class ReporteComercialService
                     FROM {Terceros(ventas)} GROUP BY LTRIM(RTRIM(CTACODIGO))) p ON p.Cuenta=m.Cuenta
                 GROUP BY m.Cuenta
                 HAVING SUM(CASE WHEN @FechaDesde IS NULL OR m.FECHA>=@FechaDesde THEN 1 ELSE 0 END)>0
-                    OR SUM(CASE WHEN @FechaDesde IS NOT NULL AND m.FECHA<@FechaDesde THEN m.Signado ELSE 0 END)<>0;
+                    -- Redondeo a centavos: restos de milésimos (se ven como $ 0,00) no justifican listar la cuenta.
+                    OR ROUND(SUM(CASE WHEN @FechaDesde IS NOT NULL AND m.FECHA<@FechaDesde THEN m.Signado ELSE 0 END),2)<>0;
 
                 SELECT m.*,c.RazonSocial,c.SaldoInicial,c.SaldoFinal,
                         ROW_NUMBER() OVER(PARTITION BY m.Cuenta ORDER BY m.FECHA,m.PERIODO,m.MES_OPERATIVO,

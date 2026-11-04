@@ -16,21 +16,6 @@
 <div class="gd-page gd liva-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-    <section class="liva-filtros" aria-label="Período y unidad de negocio">
-        <label class="liva-campo">
-            <span>Período</span>
-            <input type="month" value="@_mes.ToString("yyyy-MM")" disabled="@_busy" @onchange="e => CambiarMes(e.Value?.ToString())" />
-        </label>
-        <div class="liva-atajos">
-            <button type="button" disabled="@_busy" @onclick="() => IrAMesAsync(-1)" title="Mes anterior"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
-            <button type="button" disabled="@_busy" @onclick="() => IrAMesAsync(1)" title="Mes siguiente"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
-        </div>
-        <div class="liva-unidad">
-            <AlfaSelect Label="Unidad de negocio (CUIT)" Value="@_unidad" ValueChanged="v => CambiarUnidadAsync(v ?? string.Empty)" Options="@UnidadOptions" Disabled="@_busy" />
-        </div>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-journal-text" Loading="@_busy" Disabled="@_busy" OnClick="_ => GenerarAsync()">Generar</AlfaButton>
-    </section>
-
     @if (_r is { } r)
     {
         <div class="kpi-grid liva-kpis">
@@ -81,7 +66,7 @@
                                 <td title="@(f.CodigoArca == 0 ? "Sin código ARCA: no va al TXT del Libro IVA Digital" : $"Código ARCA {f.CodigoArca}")">
                                     @f.Tc @f.Letra @if (f.CodigoArca == 0) { <i class="bi bi-exclamation-triangle liva-aviso" aria-hidden="true"></i> }
                                 </td>
-                                <td>@f.Comprobante</td>
+                                <td>@f.Comprobante <ComprobanteVerAccion Tc="@f.Tc" Comprobante="@($"{f.PuntoVenta:0000}{f.Numero:00000000}{f.Letra}")" /></td>
                                 <td>@f.RazonSocial<small>@f.Cuenta</small></td>
                                 <td>@f.Cuit</td>
                                 <td>@f.CondicionIva</td>
@@ -182,7 +167,7 @@
         if (DateTime.TryParseExact(valor, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var m))
         { _mes = m; _ = GenerarAsync(); }
     }
-    private Task IrAMesAsync(int delta) { _mes = _mes.AddMonths(delta); return GenerarAsync(); }
+    private Task IrAMesAsync(DateTime mes) { _mes = new DateTime(mes.Year, mes.Month, 1); return GenerarAsync(); }
     private Task CambiarUnidadAsync(string unidad) { _unidad = unidad; return GenerarAsync(); }
 
     private async Task GenerarAsync()
@@ -249,6 +234,43 @@
         finally { _exportando = null; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
     }
 
+    // Smart Search del encabezado (Figma: Filter Popover). El libro es mensual: últimos meses como ítems,
+    // mes a mano con flechas, y la unidad (CUIT). Elegir mes o unidad regenera al instante.
+    private RenderFragment RenderFiltros() => @<FiltrosSmartSearch Resumen="@ResumenFiltros" Placeholder="Período y unidad del libro..." OnApply="GenerarAsync" Disabled="@_busy" PanelClass="smart-search__panel--dos">
+        <div class="smart-search__column liva-filtros">
+            <h4><i class="bi bi-calendar-month" aria-hidden="true"></i> Período</h4>
+            <div class="liva-meses" role="group" aria-label="Meses recientes">
+                @foreach (var mes in MesesRecientes)
+                {
+                    <button type="button" class="@(mes == _mes ? "smart-option is-active" : "smart-option")" aria-pressed="@(mes == _mes ? "true" : "false")"
+                            disabled="@_busy" @onclick="() => IrAMesAsync(mes)">@NombreMes(mes)</button>
+                }
+            </div>
+            <span class="liva-campo-label">Otro mes</span>
+            <div class="liva-mes">
+                <button type="button" class="liva-mes__flecha" disabled="@_busy" @onclick="() => IrAMesAsync(_mes.AddMonths(-1))" title="Mes anterior" aria-label="Mes anterior"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
+                <input type="month" aria-label="Mes del libro" value="@_mes.ToString("yyyy-MM")" disabled="@_busy" @onchange="e => CambiarMes(e.Value?.ToString())" />
+                <button type="button" class="liva-mes__flecha" disabled="@_busy" @onclick="() => IrAMesAsync(_mes.AddMonths(1))" title="Mes siguiente" aria-label="Mes siguiente"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+            </div>
+        </div>
+        <div class="smart-search__column liva-filtros">
+            <h4><i class="bi bi-building" aria-hidden="true"></i> Libro</h4>
+            <AlfaSelect Label="Unidad de negocio (CUIT)" Value="@_unidad" ValueChanged="v => CambiarUnidadAsync(v ?? string.Empty)" Options="@UnidadOptions" Disabled="@_busy" />
+            <span class="smart-search__hint">Cada CUIT presenta su propio libro.</span>
+        </div>
+    </FiltrosSmartSearch>;
+
+    private IEnumerable<DateTime> MesesRecientes
+    {
+        get
+        {
+            var actual = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            for (var i = 1; i <= 6; i++) yield return actual.AddMonths(-i);
+        }
+    }
+    private static string NombreMes(DateTime mes) => Culture.TextInfo.ToTitleCase(mes.ToString("MMMM yyyy", Culture));
+    private string ResumenFiltros => _unidad.Length == 0 ? NombreMes(_mes) : $"{NombreMes(_mes)} · {_unidad}";
+
     private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = Compras ? "compras" : "ventas", Title = Titulo,
@@ -256,6 +278,7 @@
         // Opción propia del menú: no comparte la barra del dashboard ni del Reporte de Ventas/Compras.
         TopNavigationItems = [new() { Key = "libro-iva", Label = Titulo, Active = true }],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig(), SearchContent = RenderFiltros(),
         Actions =
         [
             new() { Key = "generar", Label = "Generar", Icon = "bi-journal-text", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = GenerarAsync },

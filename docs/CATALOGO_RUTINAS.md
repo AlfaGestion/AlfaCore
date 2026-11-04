@@ -43,6 +43,38 @@ Criterio aplicado:
 - Datos que usa: contenido Markdown embebido/documental del proyecto.
 - Observaciones: no resuelve lógica de negocio, pero sí es parte funcional del producto para soporte y adopción.
 
+### AyudaManuales
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/AyudaManuales.cs`
+- Propósito: catálogo cerrado de manuales embebidos (`src/AlfaCore/Docs/manual_*.md`) y mapa pantalla → manual y artículo que abre el ícono de ayuda (`Pantallas`, `TemaParaRuta`, `SeccionParaRuta`).
+- Datos que usa: recursos Markdown embebidos; no lee base de datos ni rutas aportadas por el usuario.
+- Observaciones: cada `##`/`###` de un manual es un artículo. Al documentar una pantalla nueva, agregar su ruta a `Pantallas`; `AyudaContextualTests` falla si el artículo no existe en el manual.
+
+### FiltroPeriodo
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/FiltroPeriodo.razor`
+- Propósito: columna "Período" estándar del Smart Search (Figma → Filter Popover): rangos rápidos verticales con el activo marcado, Desde/Hasta y contenido adicional opcional.
+- Datos que usa: `GestionRangosFecha` (rangos y detección del rango activo); no consulta datos.
+- Observaciones: única implementación para reportes contables, Asientos, Ver comprobantes, Carga de comprobantes y reportes comerciales. `RangoElegido` aplica al tocar un rango (listados livianos); sin él, la pantalla espera Generar/Aplicar.
+
+### BusquedaDiferida
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Components/Shared/BusquedaDiferida.cs`
+- Propósito: buscar mientras se escribe; ejecuta la búsqueda cuando el usuario deja de tipear (350 ms) y, si hay una consulta en curso, espera a que termine.
+- Datos que usa: ninguno; recibe la acción de búsqueda y la condición de ocupado.
+- Observaciones: la usan `FiltrosSmartSearch` (`BuscarAlEscribir`, en Plan de cuentas y Asientos) y Ver comprobantes.
+
+### ComprobanteVerService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ComprobanteVerService.cs`
+- Propósito: abrir el detalle de un comprobante en un único diálogo por sesión (`ComprobanteVerHost` en `MainLayout`) en lugar de un diálogo por fila.
+- Datos que usa: solo el pedido en memoria (TC, número, complemento); el detalle lo carga `ComprobanteViewer`.
+- Observaciones: `ComprobanteVerAccion` es el botón "Ver" compacto de las tablas; si la pantalla no tiene host, abre un diálogo propio.
+
 ### SessionService
 
 - Tipo: Service

@@ -18,11 +18,11 @@
         @foreach(var cuenta in Resultado.Items.GroupBy(x=>x.Cuenta))
         {
             var primero=cuenta.First();
-            <tr class="data-table__totals"><td colspan="6"><strong>@cuenta.Key · @primero.RazonSocial</strong> · Pendiente en este reporte: @Moneda(primero.PendienteCliente)</td></tr>
+            <tr class="cc-cuenta-inicio"><td colspan="6"><strong><span class="cc-cuenta-codigo">@cuenta.Key</span> @primero.RazonSocial</strong><small>Pendiente en este reporte: @Moneda(primero.PendienteCliente)</small></td></tr>
             @foreach(var doc in cuenta)
             {
                 <tr>
-                    <td>@doc.Fecha.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.IdComprobante</strong></td>
+                    <td>@doc.Fecha.ToString("dd/MM/yyyy")</td><td><strong>@doc.Tc @doc.IdComprobante</strong> <ComprobanteVerAccion Tc="@doc.Tc" Comprobante="@doc.IdComprobante" /></td>
                     <td>@(doc.Vencimiento?.ToString("dd/MM/yyyy")??"Sin vencimiento")</td>
                     <td style="text-align:right;">@Moneda(doc.Importe)</td><td style="text-align:right;">@Moneda(doc.Aplicado)</td>
                     <td style="text-align:right;"><strong>@Moneda(doc.Pendiente)</strong>@if(doc.Pendiente<0){<div>Sobreaplicado</div>}</td>
@@ -40,7 +40,7 @@
                     @foreach(var ap in doc.Aplicaciones)
                     {
                         <tr>
-                            <td>@(ap.Fecha?.ToString("dd/MM/yyyy")??"Sin fecha confirmada")</td><td colspan="3">Aplicación: @ap.Tc @ap.IdComprobante @(ap.ReferenciaAmbigua ? "· Referencia a revisar" : "")</td>
+                            <td>@(ap.Fecha?.ToString("dd/MM/yyyy")??"Sin fecha confirmada")</td><td colspan="3">Aplicación: @ap.Tc @ap.IdComprobante <ComprobanteVerAccion Tc="@ap.Tc" Comprobante="@ap.IdComprobante" /> @(ap.ReferenciaAmbigua ? "· Referencia a revisar" : "")</td>
                             <td style="text-align:right;">@Moneda(ap.Importe)</td><td style="text-align:right;">@Moneda(ap.SaldoRestante)</td>
                         </tr>
                     }

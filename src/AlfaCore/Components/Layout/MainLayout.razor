@@ -969,7 +969,8 @@ else
 
 @if (AppUserSession.IsAuthenticated && !_isInitializing)
 {
-    <AyudaContextualDialog Open="_ayudaGlobalAbierta" Tema="@AlfaCore.Services.AyudaManuales.TemaParaRuta(Nav.Uri)" OnClose="()=>_ayudaGlobalAbierta=false" @key="(SessionSvc.GetActiveSession()?.Id, AppUserSession.CurrentUser?.UserName)" />
+    <AyudaContextualDialog Open="_ayudaGlobalAbierta" Tema="@AlfaCore.Services.AyudaManuales.TemaParaRuta(Nav.Uri)" SeccionInicial="@AlfaCore.Services.AyudaManuales.SeccionParaRuta(Nav.Uri)" OnClose="()=>_ayudaGlobalAbierta=false" @key="(SessionSvc.GetActiveSession()?.Id, AppUserSession.CurrentUser?.UserName)" />
+    <ComprobanteVerHost />
 }
 
 <SessionDrawer Open="_drawerOpen"

@@ -1,0 +1,69 @@
+@* Columna "Período" estándar del Smart Search (Figma AlfaCore → 02 Components → Filter Popover):
+   título con ícono, rangos rápidos como lista vertical (el activo en azul) y Desde/Hasta debajo.
+   Única implementación para todas las pantallas: no copiar este bloque en cada página. *@
+<div class="smart-search__column filtro-periodo">
+    <h4><i class="bi @Icono" aria-hidden="true"></i> @Titulo</h4>
+    @if (MostrarRangos)
+    {
+        var activo = MostrarDesde ? GestionRangosFecha.Detectar(Desde, Hasta) : null;
+        <div class="filtro-periodo__rangos" role="group" aria-label="Rangos rápidos de fecha">
+            @foreach (var rango in GestionRangosFecha.Todos.Where(r => IncluirTodo || r.Key != "todo"))
+            {
+                <button type="button" class="@(activo == rango.Key ? "smart-option is-active" : "smart-option")"
+                        aria-pressed="@(activo == rango.Key ? "true" : "false")" disabled="@Disabled"
+                        @onclick="() => ElegirRangoAsync(rango.Key)">@rango.Label</button>
+            }
+        </div>
+    }
+    @Antes
+    <div class="filtro-periodo__fechas">
+        @if (MostrarDesde)
+        {
+            <AlfaInput Type="date" Label="@EtiquetaDesde" Value="@Html(Desde)" ValueChanged="v => CambiarAsync(Leer(v), Hasta)" Disabled="@Disabled" />
+        }
+        <AlfaInput Type="date" Label="@EtiquetaHasta" Value="@Html(Hasta)" ValueChanged="v => CambiarAsync(Desde, Leer(v))" Disabled="@Disabled" />
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Ayuda))
+    {
+        <span class="smart-search__hint">@Ayuda</span>
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Titulo { get; set; } = "Período";
+    [Parameter] public string Icono { get; set; } = "bi-calendar-range";
+    [Parameter] public DateTime? Desde { get; set; }
+    [Parameter] public DateTime? Hasta { get; set; }
+    /// <summary>Se invoca con las dos fechas cada vez que cambia el período (rango rápido o fecha a mano).</summary>
+    [Parameter] public EventCallback<(DateTime? Desde, DateTime? Hasta)> PeriodoChanged { get; set; }
+    /// <summary>Opcional: los listados livianos aplican el filtro apenas se elige un rango rápido.</summary>
+    [Parameter] public EventCallback<string> RangoElegido { get; set; }
+    [Parameter] public bool IncluirTodo { get; set; }
+    [Parameter] public bool MostrarRangos { get; set; } = true;
+    /// <summary>False para filtros de "fecha de corte" (saldos al día): solo se muestra Hasta.</summary>
+    [Parameter] public bool MostrarDesde { get; set; } = true;
+    [Parameter] public string EtiquetaDesde { get; set; } = "Desde";
+    [Parameter] public string EtiquetaHasta { get; set; } = "Hasta";
+    [Parameter] public string? Ayuda { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Contenido entre los rangos y las fechas (por ejemplo, el ejercicio contable).</summary>
+    [Parameter] public RenderFragment? Antes { get; set; }
+    /// <summary>Contenido al final de la columna (por ejemplo, unidades de negocio).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task ElegirRangoAsync(string key)
+    {
+        var (desde, hasta) = GestionRangosFecha.Calcular(key);
+        await PeriodoChanged.InvokeAsync((desde, hasta));
+        if (RangoElegido.HasDelegate) await RangoElegido.InvokeAsync(key);
+    }
+
+    private Task CambiarAsync(DateTime? desde, DateTime? hasta) => PeriodoChanged.InvokeAsync((desde, hasta));
+
+    private static string? Html(DateTime? fecha) => fecha is { } f && f != default
+        ? f.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : null;
+
+    private static DateTime? Leer(string? valor) => DateTime.TryParseExact(valor, "yyyy-MM-dd",
+        System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var fecha) ? fecha : null;
+}

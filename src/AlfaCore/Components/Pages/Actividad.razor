@@ -215,7 +215,7 @@
                         <tr class="@GetActividadRowCss(item)">
                             <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
                             <td>@item.Tc</td>
-                            <td>@item.IdComprobante</td>
+                            <td>@item.IdComprobante <ComprobanteVerAccion Tc="@item.Tc" Comprobante="@item.IdComprobante" /></td>
                             <td><strong>@item.RazonSocial</strong><span class="text-muted">@item.Cuenta</span></td>
                             <td style="text-align:right;">@Moneda(item.ImporteDashboard)</td>
                             <td><span class="@ActividadFlagCss(item.TieneDetalle)">@ActividadFlagLabel(item.TieneDetalle)</span></td>

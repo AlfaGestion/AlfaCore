@@ -13,10 +13,13 @@ public static class GestionRangosFecha
     [
         new("hoy", "Hoy"),
         new("semana", "Esta semana"),
+        new("ultimos-7", "Últimos 7 días"),
         new("mes", "Mes actual"),
         new("mes-anterior", "Mes anterior"),
         new("ultimos-30", "Últimos 30 días"),
         new("ultimos-3-meses", "Últimos 3 meses"),
+        new("trimestre", "Trimestre actual"),
+        new("trimestre-anterior", "Trimestre anterior"),
         new("anio", "Año actual"),
         new("todo", "Todo")
     ];
@@ -25,8 +28,12 @@ public static class GestionRangosFecha
     {
         var today = (hoy ?? DateTime.Today).Date;
         var primeroDelMes = new DateTime(today.Year, today.Month, 1);
+        var trimestre = new DateTime(today.Year, ((today.Month - 1) / 3) * 3 + 1, 1);
         return key switch
         {
+            "ultimos-7" => (today.AddDays(-6), today),
+            "trimestre" => (trimestre, today),
+            "trimestre-anterior" => (trimestre.AddMonths(-3), trimestre.AddDays(-1)),
             "hoy" => (today, today),
             "semana" => (today.AddDays(-(((int)today.DayOfWeek + 6) % 7)), today),
             "mes" => (primeroDelMes, today),

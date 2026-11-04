@@ -1,0 +1,38 @@
+@inject IServiceProvider Services
+@* Acción "Ver" de una fila con comprobante. Es un botón liviano (no agranda la fila) y abre el diálogo
+   único del layout (ComprobanteVerHost). Si la pantalla no tiene host, usa un diálogo propio. *@
+@if (!string.IsNullOrWhiteSpace(Tc) && !string.IsNullOrWhiteSpace(Comprobante))
+{
+    <button type="button" class="cpte-ver" title="@($"Ver {Tc.Trim()} {Comprobante.Trim()}")" aria-label="@($"Ver comprobante {Tc.Trim()} {Comprobante.Trim()}")"
+            @onclick="Abrir" @onclick:stopPropagation="true"><i class="bi bi-eye" aria-hidden="true"></i><span>Ver</span></button>
+}
+@if (_local)
+{
+    <AlfaDialog Open="true" Title="Detalle del comprobante" Size="AlfaDialogSize.Xl" OnClose="() => _local = false">
+        <ComprobanteViewer Tc="@Tc.Trim()" IdComprobante="@NormalizarNumero(Comprobante)" IdComplemento="@IdComplemento" ModoDetalleCompleto="true" />
+    </AlfaDialog>
+}
+@code {
+    [Parameter] public string Tc { get; set; } = string.Empty;
+    [Parameter] public string Comprobante { get; set; } = string.Empty;
+    [Parameter] public int IdComplemento { get; set; }
+    private bool _local;
+
+    private void Abrir()
+    {
+        if (Services.GetService(typeof(AlfaCore.Services.ComprobanteVerService)) is AlfaCore.Services.ComprobanteVerService { HayHost: true } visor)
+            visor.Abrir(Tc, Comprobante, IdComplemento);
+        else
+            _local = true;
+    }
+
+    // Los reportes contables muestran sucursal-número letra; el visor recibe IDCOMPROBANTE.
+    public static string NormalizarNumero(string numero)
+    {
+        var valor = numero.Trim();
+        var formato = System.Text.RegularExpressions.Regex.Match(valor, @"^(\d{1,4})-(\d{1,8})\s*([A-Za-z]?)$");
+        return formato.Success
+            ? formato.Groups[1].Value.PadLeft(4, '0') + formato.Groups[2].Value.PadLeft(8, '0') + formato.Groups[3].Value.ToUpperInvariant()
+            : valor;
+    }
+}

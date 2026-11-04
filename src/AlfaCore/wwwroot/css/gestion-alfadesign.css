@@ -1285,3 +1285,54 @@ body:has(.shell--alfa-design) .alfacore-sticky-x-scroll__track:hover::-webkit-sc
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* Columna "Período" compartida (FiltroPeriodo.razor): ítems verticales como el Filter Popover de Figma. */
+.filtro-periodo__rangos { display: flex; flex-direction: column; gap: 2px; }
+.filtro-periodo__rangos .smart-option { width: 100%; text-align: left; justify-content: flex-start; }
+.filtro-periodo__fechas { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; margin-top: 8px; }
+.filtro-periodo__fechas > * { min-width: 0; }
+
+/* Selección múltiple dentro del Smart Search: cerrado se ve como un select (32 px, una línea). */
+.smart-search__multiselect { width: 100%; min-width: 0; margin-top: 8px; }
+.smart-search__multiselect-label { display: block; margin-bottom: 4px; color: var(--alfa-text-secondary); font-size: var(--alfa-font-caption, 11px); font-weight: 500; }
+.smart-search__multiselect summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 32px; padding: 0 10px;
+    border: 1px solid var(--alfa-border-default); border-radius: 6px; background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small, 12px); cursor: pointer; white-space: nowrap; overflow: hidden; }
+.smart-search__multiselect summary::-webkit-details-marker { display: none; }
+.smart-search__multiselect summary::after { content: "\F282"; font-family: "bootstrap-icons"; font-size: 11px; color: var(--alfa-text-secondary); transition: transform .15s ease; }
+.smart-search__multiselect details[open] summary { border-color: var(--alfa-accent); }
+.smart-search__multiselect details[open] summary::after { transform: rotate(180deg); }
+.smart-search__multiselect summary span { overflow: hidden; text-overflow: ellipsis; }
+.smart-search__multiselect-options { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; margin-top: 4px; padding: 6px 8px;
+    border: 1px solid var(--alfa-border-default); border-radius: 6px; background: var(--alfa-bg-surface); }
+
+/* Acción "Ver" de comprobante dentro de tablas: compacta para no agrandar la fila (Data Table Row = 32 px). */
+.cpte-ver { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin-left: 6px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent;
+    color: var(--alfa-text-secondary); font: inherit; font-size: 12px; line-height: 20px; vertical-align: middle; cursor: pointer; white-space: nowrap; }
+.cpte-ver:hover { background: var(--alfa-state-hover); color: var(--alfa-accent-hover); }
+.cpte-ver:focus-visible { outline: 2px solid color-mix(in srgb, var(--alfa-accent) 76%, transparent); outline-offset: 1px; }
+.cpte-ver .bi { font-size: 13px; }
+.smart-search__panel:focus { outline: none; }
+
+/* Ancho del panel según la cantidad real de columnas (el bloque Aplicar no debe sumar una columna vacía). */
+/* Especificidad alta a propósito: debe ganarle al ancho fijo del panel en MainPageHeader.razor.css. */
+body .shell .main-page-header .main-page-header__search .smart-search__panel.smart-search__panel--dos,
+.smart-search__panel.smart-search__panel--dos { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; width: min(640px, calc(100vw - 32px)) !important; }
+body .shell .main-page-header .main-page-header__search .smart-search__panel.smart-search__panel--uno,
+.smart-search__panel.smart-search__panel--uno { grid-template-columns: minmax(0, 1fr) !important; width: min(380px, calc(100vw - 32px)) !important; }
+@media (max-width: 720px) {
+    body .shell .main-page-header .main-page-header__search .smart-search__panel.smart-search__panel--dos,
+    .smart-search__panel.smart-search__panel--dos { grid-template-columns: minmax(0, 1fr) !important; }
+}
+/* Cuenta corriente: cada cuenta empieza con un encabezado que se distingue de sus movimientos
+   (franja azul a la izquierda, nombre en azul, código en gris) y termina con su saldo al cierre. */
+.cc-cuenta-inicio td { border-top: 16px solid var(--alfa-bg-canvas) !important; border-bottom: 1px solid var(--alfa-border-default);
+    background: color-mix(in srgb, var(--alfa-accent) 9%, var(--alfa-bg-surface)) !important; box-shadow: inset 3px 0 0 var(--alfa-accent); padding: 10px 12px !important; }
+.cc-cuenta-inicio strong { display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 600; color: var(--alfa-accent-hover); }
+.cc-cuenta-inicio .cc-cuenta-codigo { color: var(--alfa-text-secondary); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.cc-cuenta-inicio small { display: block; margin-top: 4px; color: var(--alfa-text-secondary); font-weight: 400; }
+.cc-cuenta-cierre td { border-bottom: 1px solid var(--alfa-border-default); background: var(--alfa-bg-surface-raised) !important; font-weight: 600; padding: 10px 12px !important; }
+
+/* Ícono de ayuda breve junto al título de una columna del Smart Search (el texto va en el tooltip). */
+.smart-search__info { margin-left: 4px; color: var(--alfa-text-secondary); font-size: 12px; cursor: help; }
+.smart-search__info:hover, .smart-search__info:focus-visible { color: var(--alfa-accent-hover); outline: none; }

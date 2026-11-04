@@ -61,8 +61,8 @@ public sealed partial class CuentaCorrienteVentasTests
                 return System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
             }
             var html=await Html();
-            Assert.Contains("Código exacto del cliente",html);Assert.Contains("value=\"112010681 · Hotel Prueba\"",html);
-            Assert.Contains("Buscar por código o nombre",html);
+            Assert.Contains(">Cliente</label>",html);Assert.Contains("value=\"112010681 · Hotel Prueba\"",html);
+            Assert.Contains("placeholder=\"Código o nombre\"",html);
             Assert.Contains("Provincia del cliente",html);Assert.DoesNotContain("Incluir proforma",html);
             type.GetMethod("AplicarOpciones",flags)!.Invoke(panel,[new ReporteComprasOptionsDto { PuedeIncluirProforma=true }]);
             type.GetMethod("UpdatePageHeader",flags)!.Invoke(panel,null);

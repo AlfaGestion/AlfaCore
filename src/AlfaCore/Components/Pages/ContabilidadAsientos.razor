@@ -16,35 +16,6 @@
 
     @if (_edit is null)
     {
-        @if (_filtros)
-        {
-            <section class="as-filtros">
-                <label>Desde <input type="date" class="as-input" value="@_f.Desde.ToString("yyyy-MM-dd")" @onchange="e => Fecha(e, true)" /></label>
-                <label>Hasta <input type="date" class="as-input" value="@_f.Hasta.ToString("yyyy-MM-dd")" @onchange="e => Fecha(e, false)" /></label>
-                <label>Mostrar
-                    <select class="as-input" value="@_f.Origen" @onchange="CambiarOrigen">
-                        <option value="MANUALES">Asientos manuales</option>
-                        <option value="COMPROBANTES">De comprobantes (compras, ventas, cobranzas…)</option>
-                        <option value="TODOS">Todos</option>
-                    </select>
-                </label>
-                @if (_cat is { Unidades.Count: > 1 })
-                {
-                    <label>Unidad
-                        <select class="as-input" value="@_f.Unidad" @onchange="CambiarUnidad">
-                            <option value="">Todas</option>
-                            @foreach (var u in _cat.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
-                        </select>
-                    </label>
-                }
-                @if (_cat is not null)
-                {
-                    <div class="as-filtros__cuenta"><AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="CambiarCuenta" Cuentas="_cat.Cuentas" /></div>
-                }
-                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="_busy" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
-            </section>
-        }
-
         @if (_lista.Count == 0 && _buscado)
         {
             <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos" Message="No hay asientos con esos filtros. Probá con otro período o con «Todos»." />
@@ -60,7 +31,12 @@
                         <tr class="as-fila" @onclick="() => AbrirAsync(x.Clave)">
                             <td>@x.Fecha.ToString("dd/MM/yyyy")</td>
                             <td class="mono">@x.Clave.Texto@(x.TipoReg.Trim().Length > 0 ? $" · {x.TipoReg.Trim()}" : "")</td>
-                            <td>@x.Tc @x.Comprobante</td>
+                            <td>@x.Tc @x.Comprobante
+                                @if (!x.Manual)
+                                {
+                                    <ComprobanteVerAccion Tc="@x.Tc" Comprobante="@x.Comprobante" />
+                                }
+                            </td>
                             <td>@x.Detalle</td>
                             <td class="n">@x.Total.ToString("N2", Culture)</td>
                             <td>@x.Usuario</td>
@@ -308,7 +284,7 @@
     private AsientoDetalle? _edit;
     private AsientoControlArca? _arca;
     private AppUiMessage? _feedback;
-    private bool _busy, _buscado, _filtros = true, _confirmarAnular, _sucio;
+    private bool _busy, _buscado, _confirmarAnular, _sucio;
     private string _texto = string.Empty;
     private PageHeaderConfig? _header;
     private AsientoModelo? _modelo, _guardarModelo;
@@ -666,13 +642,21 @@
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
-    private void Fecha(ChangeEventArgs e, bool desde)
+    private void CambiarPeriodo((DateTime? Desde, DateTime? Hasta) periodo)
     {
-        if (!DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) return;
-        if (desde) _f.Desde = d; else _f.Hasta = d;
+        if (periodo.Desde is { } desde) _f.Desde = desde;
+        if (periodo.Hasta is { } hasta) _f.Hasta = hasta;
+        UpdateHeader();
     }
-    private Task CambiarOrigen(ChangeEventArgs e) { _f.Origen = e.Value?.ToString() ?? "MANUALES"; return BuscarAsync(); }
-    private Task CambiarUnidad(ChangeEventArgs e) { _f.Unidad = e.Value?.ToString() ?? ""; return BuscarAsync(); }
+    private Task CambiarOrigen(string? v) { _f.Origen = string.IsNullOrEmpty(v) ? "MANUALES" : v; return BuscarAsync(); }
+    private Task CambiarUnidad(string? v) { _f.Unidad = v ?? ""; return BuscarAsync(); }
+    private static readonly IReadOnlyList<AlfaSelectOption> OrigenOptions =
+    [
+        new("MANUALES", "Asientos manuales"),
+        new("COMPROBANTES", "De comprobantes (compras, ventas, cobranzas…)"),
+        new("TODOS", "Todos")
+    ];
+    private IReadOnlyList<AlfaSelectOption> UnidadOptions => [new("", "Todas"), .. (_cat?.Unidades ?? []).Select(u => new AlfaSelectOption(u.Codigo, $"{u.Codigo} · {u.Descripcion}"))];
     private Task CambiarCuenta(string v) { _f.Cuenta = v; return BuscarAsync(); }
 
     private static string Origen(AsientoResumen x) => x.Manual ? "Manual" : x.LivaTipo.ToUpperInvariant() switch
@@ -858,8 +842,26 @@
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
-    private Task CambiarTexto(string t) { _texto = t; return Task.CompletedTask; }
-    private Task AlternarFiltros() { _filtros = !_filtros; UpdateHeader(); StateHasChanged(); return Task.CompletedTask; }
+    private Task CambiarTexto(string t) { _texto = t; UpdateHeader(); return Task.CompletedTask; }
+
+    private RenderFragment RenderFiltros() => @<FiltrosSmartSearch
+        Resumen="@GestionRangosFecha.Etiqueta(_f.Desde, _f.Hasta)"
+        Placeholder="Número, comprobante, cuenta o usuario..."
+        Texto="@_texto" TextoChanged="CambiarTexto" OnApply="BuscarAsync" Disabled="@_busy" PanelClass="smart-search__panel--dos" BuscarAlEscribir="true">
+        <FiltroPeriodo Desde="@_f.Desde" Hasta="@_f.Hasta" PeriodoChanged="CambiarPeriodo" RangoElegido="_ => BuscarAsync()" Disabled="@_busy" />
+        <div class="smart-search__column as-filtros">
+            <h4><i class="bi bi-journal-text" aria-hidden="true"></i> Asientos</h4>
+            <AlfaSelect Label="Mostrar" Value="@_f.Origen" ValueChanged="v => CambiarOrigen(v)" Options="@OrigenOptions" Disabled="@_busy" />
+            @if (_cat is { Unidades.Count: > 1 })
+            {
+                <AlfaSelect Label="Unidad" Value="@_f.Unidad" ValueChanged="v => CambiarUnidad(v)" Options="@UnidadOptions" Disabled="@_busy" />
+            }
+            @if (_cat is not null)
+            {
+                <AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="CambiarCuenta" Cuentas="_cat.Cuentas" />
+            }
+        </div>
+    </FiltrosSmartSearch>;
 
     private void UpdateHeader()
     {
@@ -886,11 +888,8 @@
             Breadcrumb = _edit is null ? ["Contabilidad", "Asientos"] : ["Contabilidad", "Asientos", _edit.Clave?.Texto ?? "Nuevo"],
             TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "asientos"),
             State = _busy ? PageHeaderState.Loading : _edit is null ? PageHeaderState.List : PageHeaderState.Editing,
-            Search = _edit is null ? new PageHeaderSearchConfig
-            {
-                Text = _texto, Placeholder = "Buscar: número (10-25), comprobante, detalle, cuenta o usuario", ShowFiltersToggle = true, FiltersOpen = _filtros,
-                OnTextChanged = CambiarTexto, OnSearch = BuscarAsync, OnToggleFilters = AlternarFiltros, Disabled = _busy
-            } : null,
+            Search = _edit is null ? new PageHeaderSearchConfig() : null,
+            SearchContent = _edit is null ? RenderFiltros() : null,
             Actions = acciones
         });
     }

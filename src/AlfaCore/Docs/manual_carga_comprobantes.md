@@ -8,6 +8,47 @@ Ingresar en **Ventas → Carga de Comprobantes**. La ruta es `/ventas/carga-comp
 
 Esta entrega prepara una factura a partir de **uno o varios pedidos, o uno o varios remitos compatibles**. Permite emitir y grabar un circuito comercial simple en **homologación**, con sus movimientos en la base de pruebas. No admite emisión en producción. Los casos todavía no incorporados se informan al validar; no se omiten sus controles para permitir grabarlos.
 
+## Buscar pendientes y filtrar
+
+La pantalla lista los documentos pendientes de facturar (pedidos, remitos u otro origen).
+
+- En la barra superior buscá por cliente, cuenta o número de comprobante.
+- Abrí el embudo:
+  - **Período**: rangos rápidos (incluye **Todo**) o **Fecha desde** y **Fecha hasta**. Al hacer clic en una fecha se abre el calendario. Sin fechas se ve todo el historial pendiente.
+  - **Comercial**: vendedor y zona del cliente.
+  - **Documentos**: origen (pedidos, remitos…), unidad de negocio y depósito.
+- Pulsá **Aplicar**. Los cambios del embudo no se aplican hasta que lo hagas.
+
+Con **Facturación automática** como origen, la columna Período se reemplaza por **Fecha a facturar**: muestra los clientes que corresponde facturar a esa fecha según su periodicidad y su última factura automática.
+
+**Ver comprobantes**, en la parte superior, abre el listado de comprobantes ya emitidos.
+
+## Ver comprobantes
+
+Entrá en **Ventas → Carga de Comprobantes → Ver comprobantes**. Lista los comprobantes de venta emitidos.
+
+**Buscar**
+
+- En la barra superior escribí el cliente (nombre o cuenta) o el número de comprobante: la lista se actualiza mientras escribís.
+- En el embudo, **Período**: al tocar un rango rápido la lista se actualiza enseguida. Si escribís las fechas a mano, pulsá **Aplicar**.
+- **Comprobante**: elegí el **Tipo** y si querés **Incluir anulados**.
+
+Las tarjetas muestran la cantidad de comprobantes, el importe sin anulados y cuántos hay en la página. Las flechas de arriba a la derecha cambian de página. Tocá el título de una columna para ordenar.
+
+**Acciones por comprobante**
+
+- **Ver** (o doble clic en la fila) abre el detalle: artículos, otros conceptos, comprobantes aplicados, asientos e historial.
+- **Reimprimir** abre el PDF del comprobante.
+- **Mail** lo envía al cliente. Podés revisar el asunto y el mensaje antes de enviar.
+
+**Enviar varios por mail**
+
+Marcá las casillas de la izquierda (la del título marca toda la página). Arriba aparece **Enviar por mail (N)**: cada comprobante se envía a los mails de su cliente con el asunto y el mensaje de **Configuración General → Ventas → Mail de facturación**. **Quitar selección** desmarca todo. Los anulados no se pueden seleccionar.
+
+**Exportar**
+
+**Excel** y **PDF** exportan **todas las páginas** del filtro aplicado, no solo la visible. Excel conserva los códigos como texto y los importes como números. El PDF indica el período, la cantidad y si incluye anulados. **Actualizar** vuelve a consultar con el mismo filtro.
+
 ## Preparar la factura
 
 1. Abrir el embudo de la barra de búsqueda superior y elegir **Pedidos** o **Remitos** en Origen.

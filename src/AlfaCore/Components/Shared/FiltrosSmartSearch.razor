@@ -1,0 +1,60 @@
+@implements IDisposable
+<div class="smart-search" @onclick:stopPropagation>
+    <div class="smart-search__bar @(_open ? "is-open" : "")">
+        <span class="smart-search__search-icon"><i class="bi bi-search" aria-hidden="true"></i></span>
+        <button type="button" class="smart-search__filter-button" aria-label="Abrir filtros" aria-expanded="@_open" @onclick="Toggle"><i class="bi bi-funnel-fill"></i></button>
+        <div class="smart-search__active-filters"><span class="smart-search__active-filter"><span>@Resumen</span></span></div>
+        <input type="search" placeholder="@Placeholder" value="@Texto" readonly="@(!TextoChanged.HasDelegate)" @oninput="e => EscribirAsync(e.Value?.ToString() ?? string.Empty)" @onfocus="AlEnfocar" @onkeydown="TeclaBusquedaAsync" />
+        <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_open" @onclick="Toggle"><i class="bi @(_open ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+    </div>
+    @if (_open)
+    {
+        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="() => _open = false"></button>
+        <div class="smart-search__panel @PanelClass" tabindex="-1" @ref="_panel" @onkeydown="Tecla">
+            @ChildContent
+            <div class="smart-search__actions"><AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-check2" Disabled="@Disabled" OnClick="AplicarAsync">Aplicar</AlfaButton></div>
+        </div>
+    }
+</div>
+@code {
+    [Parameter] public string Resumen { get; set; } = "Filtros";
+    [Parameter] public string Placeholder { get; set; } = "Buscar y filtrar...";
+    [Parameter] public string? Texto { get; set; }
+    [Parameter] public EventCallback<string> TextoChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+    /// <summary>Variante de ancho del panel: smart-search__panel--wide (3 columnas), --standard (2) o --compact.</summary>
+    [Parameter] public string PanelClass { get; set; } = "smart-search__panel--wide";
+    private bool _open;
+    private Task TeclaBusquedaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") return AplicarAsync();
+        if (e.Key == "Escape") _open = false;
+        return Task.CompletedTask;
+    }
+    private void Tecla(KeyboardEventArgs e) { if (e.Key == "Escape") _open = false; }
+    // Si el buscador admite texto, enfocarlo es para escribir: el panel no se abre solo (taparía lo que se filtra).
+    /// <summary>Filtra mientras se escribe (aplica solo, sin Enter) cuando la pantalla lo admite.</summary>
+    [Parameter] public bool BuscarAlEscribir { get; set; }
+    private readonly BusquedaDiferida _diferida = new();
+    private async Task EscribirAsync(string texto)
+    {
+        await TextoChanged.InvokeAsync(texto);
+        if (BuscarAlEscribir) await _diferida.ProgramarAsync(() => OnApply.InvokeAsync(), () => Disabled);
+    }
+    public void Dispose() => _diferida.Dispose();
+
+    private void AlEnfocar() { if (!TextoChanged.HasDelegate) _open = true; }
+    private ElementReference _panel;
+    private bool _enfocarPanel;
+    // Abierto con el embudo o la flecha: el foco pasa al panel para que Escape lo cierre.
+    private void Toggle() { _open = !_open; _enfocarPanel = _open; }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_enfocarPanel || !_open) return;
+        _enfocarPanel = false;
+        try { await _panel.FocusAsync(preventScroll: true); } catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
+    private async Task AplicarAsync() { if (Disabled) return; _open = false; await OnApply.InvokeAsync(); }
+}
