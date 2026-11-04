@@ -90,6 +90,47 @@ public sealed class ActualizacionesScriptsTests
             "aplicaron el anterior nunca van a correr el nuevo. Usar el siguiente número libre: " + string.Join(" | ", choques));
     }
 
+    [Fact]
+    public void UnScriptNuevoNoQuedaPorDebajoDeLoQueYaTieneOriginMain()
+    {
+        // El panel solo recuerda la versión más alta aplicada (FECHAUPDATE_CORE): un script nuevo con número
+        // menor al máximo de origin/main queda "salteado" en las bases que ya corrieron algo más alto.
+        var root = Directory.GetParent(UpdatesPath())!.Parent!.Parent!.Parent!.FullName;
+        string salida;
+        try
+        {
+            using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("git",
+                "ls-tree -r --name-only origin/main -- src/AlfaCore/App_Data/updates")
+            {
+                WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+            })!;
+            salida = git.StandardOutput.ReadToEnd();
+            git.WaitForExit();
+            if (git.ExitCode != 0 || string.IsNullOrWhiteSpace(salida))
+                return; // Sin repositorio u origin/main: no hay con qué comparar.
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return; // git no instalado.
+        }
+
+        var enOrigin = salida.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maximo = enOrigin.Select(n => Formato.Match(n!)).Where(m => m.Success)
+            .Select(m => m.Groups["version"].Value).DefaultIfEmpty("").Max(StringComparer.Ordinal);
+
+        var bajos = Directory.GetFiles(UpdatesPath(), "*.sql").Select(Path.GetFileName)
+            .Where(n => !enOrigin.Contains(n!))
+            .Select(n => Formato.Match(n!))
+            .Where(m => m.Success && string.CompareOrdinal(m.Groups["version"].Value, maximo) <= 0)
+            .Select(m => m.Value)
+            .ToList();
+
+        Assert.True(bajos.Count == 0,
+            $"Estos scripts nuevos tienen una versión menor o igual a la última de origin/main ({maximo}); en las bases que " +
+            "ya la aplicaron quedarían salteados. Hacer git fetch y usar un número mayor: " + string.Join(" | ", bajos));
+    }
+
     private static readonly Regex FuncionesSql2012 = new(
         @"\b(TRY_CONVERT|TRY_CAST|TRY_PARSE|IIF|CHOOSE|FORMAT|CONCAT|EOMONTH|DATEFROMPARTS|DATETIMEFROMPARTS|STRING_AGG|STRING_SPLIT)\s*\(",
         RegexOptions.IgnoreCase);
