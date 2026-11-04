@@ -57,12 +57,36 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.NotNull(ControlArcaImportacionService.Armar(new ArcaMisComprobante { Clase = "FC", Letra = "A", Total = 10m, Iva = 21m }, "P", "C", "I", "O").Error);
     }
 
-    [Fact]
-    public void RutasDelScriptComoElLegacy()
+    public class EntornoProxy : DispatchProxy
     {
-        Assert.Equal(@"C:\X\python\python.exe", ArcaDescargaService.Python(@"C:\X\scripts_preproceso\arca_comprobantes.py"));
-        Assert.Equal(@"C:\X\ARCA_Descargas", ArcaDescargaService.CarpetaEfectiva("", @"C:\X\scripts_preproceso\arca_comprobantes.py"));
-        Assert.Equal(@"D:\Bajadas", ArcaDescargaService.CarpetaEfectiva(@" D:\Bajadas ", @"C:\X\scripts_preproceso\a.py"));
+        public string Raiz = "";
+        protected override object? Invoke(MethodInfo? m, object?[]? args) => m?.Name == "get_ContentRootPath" ? Raiz : null;
+    }
+
+    [Fact]
+    public void ScriptPropioDeAlfaCoreYCarpetaPorBase()
+    {
+        var raiz = Path.Combine(Path.GetTempPath(), "arca-" + Guid.NewGuid().ToString("N"));
+        var env = DispatchProxy.Create<Microsoft.AspNetCore.Hosting.IWebHostEnvironment, EntornoProxy>();
+        ((EntornoProxy)(object)env).Raiz = raiz;
+        try
+        {
+            var svc = new ArcaServidorService(env, null!, null!);
+            var e = svc.Estado(7);
+            Assert.Equal(Path.Combine(raiz, "App_Data", "scripts", "arca", "arca_comprobantes.py"), e.Script);
+            Assert.Equal(Path.Combine(raiz, "App_Data", "scripts", "arca", "python", "python.exe"), e.Python);
+            Assert.Equal(Path.Combine(raiz, "App_Data", "arca_descargas", "base-7"), e.Carpeta);
+            Assert.False(e.ScriptExiste);
+            Assert.False(e.PythonExiste);
+            Assert.Equal(Path.Combine(raiz, "App_Data", "arca_descargas"), svc.Estado(0).Carpeta);
+            Directory.CreateDirectory(Path.Combine(raiz, "App_Data", "servidor"));
+            File.WriteAllText(Path.Combine(raiz, "App_Data", "servidor", "arca.json"), System.Text.Json.JsonSerializer.Serialize(new ArcaServidorConfiguracion { Carpeta = @"D:\Bajadas" }));
+            Assert.Equal(Path.Combine(@"D:\Bajadas", "base-7"), svc.Estado(7).Carpeta);
+        }
+        finally { if (Directory.Exists(raiz)) Directory.Delete(raiz, true); }
+        Assert.Throws<InvalidOperationException>(() => ArcaServidorService.Validar(new ArcaServidorConfiguracion { Script = "arca.py" }));
+        Assert.Throws<InvalidOperationException>(() => ArcaServidorService.Validar(new ArcaServidorConfiguracion { Carpeta = "relativa" }));
+        Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "App_Data", "scripts", "arca", "arca_comprobantes.py")), "El script de ARCA debe viajar con AlfaCore.");
         Assert.Matches(ArcaDescargaService.NombreArchivo, "ARCA_RECIBIDOS_27228073259_202609.xls");
         Assert.DoesNotMatch(ArcaDescargaService.NombreArchivo, @"..\ARCA_RECIBIDOS_27228073259_202609.xls");
     }

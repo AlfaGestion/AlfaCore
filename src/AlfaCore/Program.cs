@@ -350,6 +350,7 @@ public class Program
         builder.Services.AddScoped<IEstudioPortalService, EstudioPortalService>();
         builder.Services.AddScoped<IAsientosService, AsientosService>();
         builder.Services.AddScoped<IChequerasService, ChequerasService>();
+        builder.Services.AddScoped<ArcaServidorService>();
         builder.Services.AddScoped<IArcaDescargaService, ArcaDescargaService>();
         builder.Services.AddSingleton<ArcaDescargaRegistro>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();

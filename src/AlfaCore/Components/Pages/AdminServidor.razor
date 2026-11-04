@@ -4,6 +4,7 @@
 @using AlfaCore.Services
 @implements IDisposable
 @inject LectoresServidorService Lectores
+@inject ArcaServidorService ArcaServidor
 @inject IAppUserSessionService Usuario
 @inject IAppUiOperationService UiOps
 @inject IPageHeaderService PageHeader
@@ -28,15 +29,28 @@
             <p>La ruta común tiene prioridad sobre la configuración anterior de Recepción documental. Una ruta propia de TARJETAS-PYTHON sigue siendo una excepción explícita para esa base.</p>
             <p>Probar verifica Python y pypdf con la misma identidad que ejecuta AlfaCore. No importa documentos ni modifica contabilidad.</p>
         </section>
+        <section class="panel-card">
+            <h2>Descarga de Mis Comprobantes (ARCA)</h2>
+            <p>El script viene incluido en AlfaCore (App_Data\scripts\arca\arca_comprobantes.py) y es independiente del Alfa Gestión. Los clientes solo cargan su CUIT y clave fiscal; esto lo define únicamente ALFA NET. Vacío usa lo incluido.</p>
+            <AlfaInput Label="Python con playwright y pywin32 (opcional)" Value="@_aPython" ValueChanged="v=>_aPython=v??string.Empty" Placeholder="App_Data\scripts\arca\python\python.exe" HelpText="Por defecto, la carpeta python junto al script. El script usa Excel instalado en este servidor." Disabled="_busy" />
+            <AlfaInput Label="Script alternativo (opcional)" Value="@_aScript" ValueChanged="v=>_aScript=v??string.Empty" Placeholder="App_Data\scripts\arca\arca_comprobantes.py" Disabled="_busy" />
+            <AlfaInput Label="Carpeta raíz de descargas (opcional)" Value="@_aCarpeta" ValueChanged="v=>_aCarpeta=v??string.Empty" HelpText="Cada base baja en su propia subcarpeta (base-N). Por defecto, App_Data\arca_descargas." Disabled="_busy" />
+            <div class="d-flex gap-2">
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-save" Disabled="_busy" OnClick="_ => GuardarArca()">Guardar ARCA</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-play-circle" Disabled="_busy" OnClick="_ => ProbarArca()">Probar descarga</AlfaButton>
+            </div>
+            <p>Probar verifica el script, python, playwright y pywin32. No entra a ARCA ni descarga nada.</p>
+        </section>
     }
 </div>
 
 @code {
-    private string _python="",_script="",_carpeta="";
+    private string _python="",_script="",_carpeta="",_aPython="",_aScript="",_aCarpeta="";
     private bool _busy;
     private AppUiMessage? _feedback;
     private PageHeaderConfig? _publicado;
     private bool EsAdministrador=>Usuario.IsAuthenticated&&Usuario.CurrentUser?.SuperAdmin==true;
+    private ArcaServidorConfiguracion ConfigArca=>new(){PythonExe=_aPython,Script=_aScript,Carpeta=_aCarpeta};
     private LectoresServidorConfiguracion Config=>new(){PythonExe=_python,ComprasScriptPath=_script,ComprasWorkDir=_carpeta};
     protected override async Task OnInitializedAsync()
     {
@@ -45,6 +59,7 @@
         await Ejecutar(async()=>
         {
             var config=await Lectores.ObtenerAsync();_python=config.PythonExe;_script=config.ComprasScriptPath;_carpeta=config.ComprasWorkDir;
+            var arca=await ArcaServidor.ObtenerAsync();_aPython=arca.PythonExe;_aScript=arca.Script;_aCarpeta=arca.Carpeta;
             _feedback=null;
         });
     }
@@ -53,6 +68,16 @@
     {
         await Lectores.GuardarAsync(Config);
         _feedback=AppUiMessage.Success("Configuración guardada","Las bases de esta instalación usarán el ejecutable común sin reiniciar AlfaCore.");
+    });
+    private Task GuardarArca()=>Ejecutar(async()=>
+    {
+        await ArcaServidor.GuardarAsync(ConfigArca);
+        _feedback=AppUiMessage.Success("Configuración de ARCA guardada","La descarga de Mis Comprobantes usará estos valores en todas las bases, sin reiniciar AlfaCore.");
+    });
+    private Task ProbarArca()=>Ejecutar(async()=>
+    {
+        var resultado=await ArcaServidor.ProbarAsync(ConfigArca);
+        _feedback=AppUiMessage.Success("Descarga de ARCA disponible",resultado+". Guardá para aplicar esta configuración.");
     });
     private Task Probar()=>Ejecutar(async()=>
     {

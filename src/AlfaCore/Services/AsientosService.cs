@@ -36,7 +36,7 @@ public interface IAsientosService
 /// modifican: el asiento tiene que seguir coincidiendo con el comprobante, el libro de IVA y la cuenta corriente.
 /// </summary>
 public sealed class AsientosService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
-    IAppEventService events) : IAsientosService
+    IAppEventService events, ArcaServidorService? arcaServidor = null) : IAsientosService
 {
     internal const string MenuAsientos = "D9550", MenuModelos = "D9540";
     /// <summary>Para ver asientos alcanza con el diario; para cargar hace falta la opción del legacy.</summary>
@@ -924,9 +924,10 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         var cab = r.FirstOrDefault(x => x.LivaTipo.Length > 0);
         if (cab is null) return new AsientoControlArca { Mensaje = "No es el asiento de una factura." };
         var recibidos = cab.LivaTipo.Equals("COMPRAS", StringComparison.OrdinalIgnoreCase);
-        var config = await ArcaDescargaService.LeerConfigAsync(cn, ct);
+        var servidor = arcaServidor?.Estado(sessions.GetActiveSession()?.BaseId ?? 0) ?? new ArcaServidorEstado("", false, "", false, "");
+        var config = await ArcaDescargaService.LeerConfigAsync(cn, servidor, ct);
         var periodo = cab.Fecha.ToString("yyyyMM", CultureInfo.InvariantCulture);
-        var archivo = ArcaDescargaService.Listar(config.Carpeta, config.CuitRepresentado).FirstOrDefault(x => x.Recibidos == recibidos && x.Periodo == periodo);
+        var archivo = ArcaDescargaService.Listar(servidor.Carpeta, config.CuitRepresentado).FirstOrDefault(x => x.Recibidos == recibidos && x.Periodo == periodo);
         if (archivo is null)
             return new AsientoControlArca
             {

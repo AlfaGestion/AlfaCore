@@ -16,18 +16,18 @@ public interface IArcaDescargaService
     Task GuardarConfigAsync(ArcaDescargaConfig config, CancellationToken ct = default);
     Task<IReadOnlyList<ArcaArchivoDescargado>> ArchivosAsync(CancellationToken ct = default);
     Task<byte[]> LeerArchivoAsync(string nombre, CancellationToken ct = default);
-    /// <summary>Corre el script de pre-proceso (descarga de Mis Comprobantes) y devuelve el archivo bajado.</summary>
+    /// <summary>Corre el script de descarga de Mis Comprobantes y devuelve el archivo bajado.</summary>
     Task<ArcaArchivoDescargado> DescargarAsync(bool recibidos, int anio, int mes, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Descarga de «Mis Comprobantes» con el script de pre-proceso del legacy (scripts_preproceso\arca_comprobantes.py, con su
-/// python portable al lado). Usa las mismas claves de TA_CONFIGURACION que EM_ImportacionComprobantes: ARCA_CUIT_LOGIN,
-/// ARCA_CLAVE (ofuscada con Codifica), ARCA_CUIT_REPRESENTADO, ARCA_CARPETA_DESTINO y PreProceso_ARCA_RECIBIDOS/EMITIDOS.
-/// La clave nunca se devuelve ni se registra.
+/// Descarga de «Mis Comprobantes» con el script propio de AlfaCore (App_Data\scripts\arca; python, script y carpeta los define
+/// el servidor en ArcaServidorService, no el cliente). Comparte con EM_ImportacionComprobantes solo los datos de acceso de
+/// TA_CONFIGURACION: ARCA_CUIT_LOGIN, ARCA_CLAVE (ofuscada con Codifica) y ARCA_CUIT_REPRESENTADO. No usa PreProceso_ARCA_*
+/// ni ARCA_CARPETA_DESTINO (quedan para el legacy). La clave nunca se devuelve ni se registra.
 /// </summary>
 public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
-    IAppEventService events, ArcaDescargaRegistro registro) : IArcaDescargaService
+    IAppEventService events, ArcaDescargaRegistro registro, ArcaServidorService servidor) : IArcaDescargaService
 {
     internal const string ClaveAutoRecibidos = "ALFACORE_ARCA_AUTO_RECIBIDOS", ClaveAutoEmitidos = "ALFACORE_ARCA_AUTO_EMITIDOS",
         ClaveAutoHora = "ALFACORE_ARCA_AUTO_HORA", ClaveUltimaRecibidos = "ALFACORE_ARCA_ULTIMA_RECIBIDOS", ClaveUltimaEmitidos = "ALFACORE_ARCA_ULTIMA_EMITIDOS";
@@ -36,8 +36,10 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     internal static readonly Regex NombreArchivo = new(@"^ARCA_(RECIBIDOS|EMITIDOS)_(\d{11})_(\d{6})\.xlsx?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private sealed class ReglaException(string message) : InvalidOperationException(message);
 
+    private int IdBase => sessions.GetActiveSession()?.BaseId ?? 0;
+
     public Task<ArcaDescargaConfig> GetConfigAsync(CancellationToken ct = default)
-        => EjecutarAsync("Configuracion", cn => LeerConfigAsync(cn, ct), ct);
+        => EjecutarAsync("Configuracion", cn => LeerConfigAsync(cn, servidor.Estado(IdBase), ct), ct);
 
     public Task GuardarConfigAsync(ArcaDescargaConfig c, CancellationToken ct = default)
         => EjecutarAsync("GuardarConfiguracion", async cn =>
@@ -46,33 +48,32 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             if (cuitLogin.Length is not (0 or 11) || cuitRep.Length is not (0 or 11)) throw new ReglaException("Los CUIT deben tener 11 dígitos.");
             if (!TimeSpan.TryParseExact(c.HoraAuto.Trim(), @"hh\:mm", CultureInfo.InvariantCulture, out _)) throw new ReglaException("Indicá la hora en formato HH:MM.");
             if ((c.AutoRecibidos || c.AutoEmitidos) && (cuitLogin.Length == 0 || cuitRep.Length == 0)) throw new ReglaException("Para la descarga automática completá los CUIT y la clave fiscal.");
-            var antes = await LeerConfigAsync(cn, ct);
+            var antes = await LeerConfigAsync(cn, servidor.Estado(IdBase), ct);
             var valores = new List<(string Clave, string Valor)>
             {
-                ("ARCA_CUIT_LOGIN", cuitLogin), ("ARCA_CUIT_REPRESENTADO", cuitRep), ("ARCA_CARPETA_DESTINO", c.Carpeta.Trim()),
-                ("PreProceso_ARCA_RECIBIDOS", c.ScriptRecibidos.Trim()), ("PreProceso_ARCA_EMITIDOS", c.ScriptEmitidos.Trim()),
+                ("ARCA_CUIT_LOGIN", cuitLogin), ("ARCA_CUIT_REPRESENTADO", cuitRep),
                 (ClaveAutoRecibidos, c.AutoRecibidos ? "SI" : "NO"), (ClaveAutoEmitidos, c.AutoEmitidos ? "SI" : "NO"), (ClaveAutoHora, c.HoraAuto.Trim())
             };
             if (!string.IsNullOrEmpty(c.ClaveNueva)) valores.Add(("ARCA_CLAVE", Codifica(c.ClaveNueva.Trim())));
             if ((c.AutoRecibidos || c.AutoEmitidos) && !antes.TieneClave && string.IsNullOrEmpty(c.ClaveNueva))
                 throw new ReglaException("Para la descarga automática cargá la clave fiscal.");
             foreach (var (clave, valor) in valores) await GuardarClaveAsync(cn, clave, valor, ct);
-            registro.Actualizar(sessions.GetActiveSession()?.BaseId ?? 0, c.AutoRecibidos || c.AutoEmitidos);
+            registro.Actualizar(IdBase, c.AutoRecibidos || c.AutoEmitidos);
             await events.LogAuditAsync("ControlArca", "ConfigurarDescarga", "TA_CONFIGURACION", "ARCA",
                 "Configuró la descarga de Mis Comprobantes de ARCA.",
-                new { CuitLogin = cuitLogin, CuitRepresentado = cuitRep, c.Carpeta, c.ScriptRecibidos, c.ScriptEmitidos, c.AutoRecibidos, c.AutoEmitidos, c.HoraAuto,
+                new { CuitLogin = cuitLogin, CuitRepresentado = cuitRep, c.AutoRecibidos, c.AutoEmitidos, c.HoraAuto,
                       CambioClave = !string.IsNullOrEmpty(c.ClaveNueva) }, CancellationToken.None);
             return true;
         }, ct);
 
     public Task<IReadOnlyList<ArcaArchivoDescargado>> ArchivosAsync(CancellationToken ct = default)
-        => EjecutarAsync<IReadOnlyList<ArcaArchivoDescargado>>("Archivos", async cn => Listar(await CarpetaAsync(cn, ct), (await LeerConfigAsync(cn, ct)).CuitRepresentado), ct);
+        => EjecutarAsync<IReadOnlyList<ArcaArchivoDescargado>>("Archivos", async cn => Listar(servidor.Estado(IdBase).Carpeta, (await LeerConfigAsync(cn, servidor.Estado(IdBase), ct)).CuitRepresentado), ct);
 
     public Task<byte[]> LeerArchivoAsync(string nombre, CancellationToken ct = default)
         => EjecutarAsync("LeerArchivo", async cn =>
         {
             if (!NombreArchivo.IsMatch(nombre ?? "")) throw new ReglaException("Archivo no válido.");
-            var ruta = Path.Combine(await CarpetaAsync(cn, ct), nombre!);
+            var ruta = Path.Combine(servidor.Estado(IdBase).Carpeta, nombre!);
             if (!File.Exists(ruta)) throw new ReglaException("El archivo ya no está en la carpeta de descargas.");
             return await File.ReadAllBytesAsync(ruta, ct);
         }, ct);
@@ -80,7 +81,7 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     public Task<ArcaArchivoDescargado> DescargarAsync(bool recibidos, int anio, int mes, CancellationToken ct = default)
         => EjecutarAsync("Descargar", async cn =>
         {
-            var r = await DescargarEnConexionAsync(cn, recibidos, anio, mes, visible: false, ct);
+            var r = await DescargarEnConexionAsync(cn, servidor.Estado(IdBase), recibidos, anio, mes, visible: false, ct);
             await events.LogAuditAsync("ControlArca", "Descargar", "MIS_COMPROBANTES", r.Nombre,
                 $"Descargó de ARCA Mis Comprobantes {(recibidos ? "Recibidos" : "Emitidos")} {mes:00}/{anio}.", new { r.Nombre, r.Bytes }, CancellationToken.None);
             return r;
@@ -88,48 +89,32 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
 
     // ── Núcleo (también lo usa la descarga automática, sin usuario) ──────────────────────────────
 
-    internal static async Task<ArcaDescargaConfig> LeerConfigAsync(SqlConnection cn, CancellationToken ct)
+    internal static async Task<ArcaDescargaConfig> LeerConfigAsync(SqlConnection cn, ArcaServidorEstado servidor, CancellationToken ct)
     {
         var v = await ValoresAsync(cn, ct);
         string G(string k) => v.GetValueOrDefault(k.ToUpperInvariant(), "");
-        var c = new ArcaDescargaConfig
+        return new ArcaDescargaConfig
         {
             CuitLogin = G("ARCA_CUIT_LOGIN"), TieneClave = G("ARCA_CLAVE").Length > 0, CuitRepresentado = G("ARCA_CUIT_REPRESENTADO"),
-            Carpeta = G("ARCA_CARPETA_DESTINO"), ScriptRecibidos = G("PreProceso_ARCA_RECIBIDOS"), ScriptEmitidos = G("PreProceso_ARCA_EMITIDOS"),
-            AutoRecibidos = G(ClaveAutoRecibidos).Equals("SI", StringComparison.OrdinalIgnoreCase),
+            Carpeta = servidor.Carpeta, AutoRecibidos = G(ClaveAutoRecibidos).Equals("SI", StringComparison.OrdinalIgnoreCase),
             AutoEmitidos = G(ClaveAutoEmitidos).Equals("SI", StringComparison.OrdinalIgnoreCase),
             HoraAuto = G(ClaveAutoHora) is { Length: 5 } h ? h : "07:00",
-            UltimaAutoRecibidos = G(ClaveUltimaRecibidos), UltimaAutoEmitidos = G(ClaveUltimaEmitidos)
+            UltimaAutoRecibidos = G(ClaveUltimaRecibidos), UltimaAutoEmitidos = G(ClaveUltimaEmitidos),
+            ScriptExiste = servidor.ScriptExiste, PythonExiste = servidor.PythonExiste
         };
-        c.ScriptRecibidosExiste = c.ScriptRecibidos.Length > 0 && File.Exists(c.ScriptRecibidos);
-        c.ScriptEmitidosExiste = c.ScriptEmitidos.Length > 0 && File.Exists(c.ScriptEmitidos);
-        var listo = ScriptConPython(c, recibidos: true) ?? ScriptConPython(c, recibidos: false);
-        c.Python = listo is { } l ? Python(l)! : Python(c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos) ?? "";
-        c.PythonExiste = c.Python.Length > 0 && File.Exists(c.Python);
-        var carpeta = CarpetaEfectiva(c.Carpeta, listo ?? (c.ScriptRecibidosExiste ? c.ScriptRecibidos : c.ScriptEmitidos));
-        c.CarpetaExiste = carpeta.Length > 0 && Directory.Exists(carpeta);
-        if (c.Carpeta.Length == 0) c.Carpeta = carpeta;
-        return c;
     }
 
-    internal static async Task<ArcaArchivoDescargado> DescargarEnConexionAsync(SqlConnection cn, bool recibidos, int anio, int mes, bool visible, CancellationToken ct)
+    internal static async Task<ArcaArchivoDescargado> DescargarEnConexionAsync(SqlConnection cn, ArcaServidorEstado servidor, bool recibidos, int anio, int mes, bool visible, CancellationToken ct)
     {
         if (anio is < 2000 or > 2100 || mes is < 1 or > 12) throw new ReglaException("Período inválido.");
-        var c = await LeerConfigAsync(cn, ct);
-        var configurado = recibidos ? c.ScriptRecibidos : c.ScriptEmitidos;
-        if (configurado.Length == 0 && (recibidos ? c.ScriptEmitidos : c.ScriptRecibidos).Length == 0)
-            throw new ReglaException("No hay un script de pre-proceso configurado para esta opción.");
-        // El mismo script baja recibidos y emitidos (el tipo va por parámetro): si el configurado no está en este servidor
-        // o no tiene el python portable al lado, se usa el del otro tipo.
-        var script = ScriptConPython(c, recibidos) ?? ScriptConPython(c, !recibidos)
-            ?? throw new ReglaException(File.Exists(configurado) || File.Exists(recibidos ? c.ScriptEmitidos : c.ScriptRecibidos)
-                ? "No se encuentra python.exe junto al script (carpeta python). Instalá el python portable del legacy."
-                : $"No se encuentra el script en este servidor: {(configurado.Length > 0 ? configurado : recibidos ? c.ScriptEmitidos : c.ScriptRecibidos)}");
-        var python = Python(script)!;
+        if (!servidor.ScriptExiste || !servidor.PythonExiste)
+            throw new ReglaException("La descarga de ARCA no está instalada en este servidor. Avisá a ALFA NET (Administrar → Servidor).");
+        var c = await LeerConfigAsync(cn, servidor, ct);
+        var script = servidor.Script; var python = servidor.Python;
         var clave = Decodifica((await ValoresAsync(cn, ct)).GetValueOrDefault("ARCA_CLAVE", ""));
         if (c.CuitLogin.Length == 0 || clave.Length == 0 || c.CuitRepresentado.Length == 0)
             throw new ReglaException("Faltan datos de acceso a ARCA (CUIT de ingreso, clave fiscal o CUIT representado).");
-        var carpeta = CarpetaEfectiva(c.Carpeta, script);
+        var carpeta = servidor.Carpeta;
         Directory.CreateDirectory(carpeta);
         var tipo = recibidos ? "RECIBIDOS" : "EMITIDOS";
         var periodo = $"{anio:0000}{mes:00}";
@@ -164,13 +149,6 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         finally { semaforo.Release(); }
     }
 
-    /// <summary>Script configurado para el tipo, si existe en este servidor y tiene python.exe al lado.</summary>
-    internal static string? ScriptConPython(ArcaDescargaConfig c, bool recibidos)
-    {
-        var s = recibidos ? c.ScriptRecibidos : c.ScriptEmitidos;
-        return s.Length > 0 && File.Exists(s) && Python(s) is { } py && File.Exists(py) ? s : null;
-    }
-
     internal static string MensajeSalida(int codigo) => codigo switch
     {
         1 => "Parámetros incorrectos del script.",
@@ -191,30 +169,6 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             .Where(x => x.m.Success && (cuit.Length == 0 || x.m.Groups[2].Value == cuit))
             .Select(x => new ArcaArchivoDescargado(x.f.Name, x.m.Groups[1].Value.Equals("RECIBIDOS", StringComparison.OrdinalIgnoreCase), x.m.Groups[3].Value, x.f.LastWriteTime, x.f.Length))
             .OrderByDescending(x => x.Periodo).ThenBy(x => x.Recibidos ? 0 : 1).Take(48).ToList();
-    }
-
-    /// <summary>python portable del legacy: …\python\python.exe al lado de la carpeta del script (App.path del exe).</summary>
-    internal static string? Python(string script)
-    {
-        if (script.Length == 0) return null;
-        var dir = Path.GetDirectoryName(script);
-        foreach (var d in new[] { dir, Path.GetDirectoryName(dir ?? "") })
-            if (!string.IsNullOrEmpty(d) && Path.Combine(d, "python", "python.exe") is var py && File.Exists(py)) return py;
-        return string.IsNullOrEmpty(Path.GetDirectoryName(dir ?? "")) ? null : Path.Combine(Path.GetDirectoryName(dir!)!, "python", "python.exe");
-    }
-
-    /// <summary>ARCA_CARPETA_DESTINO o, como el legacy, App.path\ARCA_Descargas.</summary>
-    internal static string CarpetaEfectiva(string carpeta, string script)
-    {
-        if (carpeta.Trim().Length > 0) return carpeta.Trim();
-        var dir = Path.GetDirectoryName(Path.GetDirectoryName(script) ?? "");
-        return string.IsNullOrEmpty(dir) ? "" : Path.Combine(dir, "ARCA_Descargas");
-    }
-
-    private static async Task<string> CarpetaAsync(SqlConnection cn, CancellationToken ct)
-    {
-        var c = await LeerConfigAsync(cn, ct);
-        return CarpetaEfectiva(c.Carpeta, c.ScriptRecibidos.Length > 0 ? c.ScriptRecibidos : c.ScriptEmitidos);
     }
 
     private static async Task<Dictionary<string, string>> ValoresAsync(SqlConnection cn, CancellationToken ct)

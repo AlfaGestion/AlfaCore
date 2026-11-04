@@ -151,7 +151,10 @@ public sealed class ProduccionSoloLecturaTests(ITestOutputHelper output)
     {
         if (Environment.GetEnvironmentVariable("ALFACORE_TEST_ARCA") != "1") { output.WriteLine("ALFACORE_TEST_ARCA no está en 1: no se baja de ARCA."); return; }
         await using var cn = await AbrirAsync();
-        var c = await ArcaDescargaService.LeerConfigAsync(cn, default);
+        var env = System.Reflection.DispatchProxy.Create<Microsoft.AspNetCore.Hosting.IWebHostEnvironment, ControlArcaImportacionTests.EntornoProxy>();
+        ((ControlArcaImportacionTests.EntornoProxy)(object)env).Raiz = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "AlfaCore"));
+        var servidor = new ArcaServidorService(env, null!, null!).Estado(0);
+        var c = await ArcaDescargaService.LeerConfigAsync(cn, servidor, default);
         output.WriteLine($"CUIT ingreso {c.CuitLogin} · representado {c.CuitRepresentado} · clave {(c.TieneClave ? "cargada" : "FALTA")} · python {(c.PythonExiste ? "ok" : "FALTA")} · carpeta {c.Carpeta}");
         var anio = int.Parse(Environment.GetEnvironmentVariable("ALFACORE_TEST_ARCA_PERIODO")?[..4] ?? "2026");
         var mes = int.Parse(Environment.GetEnvironmentVariable("ALFACORE_TEST_ARCA_PERIODO")?[4..] ?? "10");
@@ -160,11 +163,10 @@ public sealed class ProduccionSoloLecturaTests(ITestOutputHelper output)
             var tipo = recibidos ? "RECIBIDOS" : "EMITIDOS";
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ArcaArchivoDescargado archivo;
-            try { archivo = await ArcaDescargaService.DescargarEnConexionAsync(cn, recibidos, anio, mes, visible: false, default); }
+            try { archivo = await ArcaDescargaService.DescargarEnConexionAsync(cn, servidor, recibidos, anio, mes, visible: false, default); }
             catch (InvalidOperationException ex) { output.WriteLine($"\n{tipo}: no se pudo bajar: {ex.Message}"); continue; }
             output.WriteLine($"\n{tipo}: {archivo.Nombre} ({archivo.Bytes:N0} bytes) en {sw.Elapsed.TotalSeconds:N0} s");
-            var carpeta = ArcaDescargaService.CarpetaEfectiva(c.Carpeta, recibidos ? c.ScriptRecibidos : c.ScriptEmitidos);
-            var arca = ControlArcaService.Leer(await File.ReadAllBytesAsync(Path.Combine(carpeta, archivo.Nombre)), archivo.Nombre);
+            var arca = ControlArcaService.Leer(await File.ReadAllBytesAsync(Path.Combine(servidor.Carpeta, archivo.Nombre)), archivo.Nombre);
             sw.Restart();
             var r = await ControlArcaService.ControlarEnConexionAsync(cn, arca, default);
             output.WriteLine($"  ARCA {r.ComprobantesArca} cptes · {r.TotalArca:N2} | sistema {r.ComprobantesSistema} · {r.TotalSistema:N2} | {r.Desde:dd/MM}–{r.Hasta:dd/MM} en {sw.ElapsedMilliseconds} ms");

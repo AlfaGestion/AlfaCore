@@ -39,17 +39,17 @@
                 {
                     <span>@(_cfgError ?? "Leyendo la configuración…")</span>
                 }
-                else if (!_cfg.Configurado(true) && !_cfg.Configurado(false))
+                else if (!_cfg.Configurado)
                 {
-                    <span>Usa el script de pre-proceso del Alfa Gestión (Importar Comprobantes). Tocá «Configurar descarga» para cargar el acceso a ARCA y la ruta del script.</span>
+                    <span>@(_cfg.ScriptExiste && _cfg.PythonExiste ? "Tocá «Configurar descarga» para cargar el acceso a ARCA (CUIT, clave fiscal y CUIT representado)." : "La descarga de ARCA todavía no está instalada en el servidor: avisá a ALFA NET.")</span>
                 }
                 else
                 {
                     <div class="ca-descarga__fila">
                         <input type="month" class="ca-input" value="@_periodo" @onchange="e => _periodo = e.Value?.ToString() ?? _periodo" disabled="@_busy" aria-label="Período" />
                         <select class="ca-input" value="@(_descargaRecibidos ? "R" : "E")" @onchange='e => _descargaRecibidos = e.Value?.ToString() == "R"' disabled="@_busy" aria-label="Tipo">
-                            @if (_cfg.Configurado(true)) { <option value="R">Recibidos (compras)</option> }
-                            @if (_cfg.Configurado(false)) { <option value="E">Emitidos (ventas)</option> }
+                            <option value="R">Recibidos (compras)</option>
+                            <option value="E">Emitidos (ventas)</option>
                         </select>
                         <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-cloud-download" Disabled="_busy" OnClick="_ => DescargarAsync()">
                             @(_descargando ? "Descargando de ARCA…" : "Descargar y comparar")
@@ -235,14 +235,7 @@
                            Placeholder="@(c.TieneClave ? "Guardada · escribí para cambiarla" : "")" HelpText="Se guarda ofuscada, como en el Alfa Gestión; nunca se muestra." />
                 <AlfaInput Label="CUIT representado (empresa)" Value="@c.CuitRepresentado" ValueChanged="v => c.CuitRepresentado = v ?? string.Empty" MaxLength="13" />
             </div>
-            <AlfaInput Label="Script de recibidos" Value="@c.ScriptRecibidos" ValueChanged="v => c.ScriptRecibidos = v ?? string.Empty" MaxLength="150"
-                       HelpText="@Estado(c.ScriptRecibidos, c.ScriptRecibidosExiste, EjemploScript)" />
-            <AlfaInput Label="Script de emitidos" Value="@c.ScriptEmitidos" ValueChanged="v => c.ScriptEmitidos = v ?? string.Empty" MaxLength="150"
-                       HelpText="@Estado(c.ScriptEmitidos, c.ScriptEmitidosExiste, "Suele ser el mismo script.")" />
-            <AlfaInput Label="Carpeta de descargas" Value="@c.Carpeta" ValueChanged="v => c.Carpeta = v ?? string.Empty" MaxLength="150"
-                       HelpText="@(c.CarpetaExiste ? "La carpeta existe en el servidor de AlfaCore." : "Se crea al descargar. Por defecto, ARCA_Descargas al lado del sistema.")" />
-            <p class="ca-nota">@(c.PythonExiste ? $"Python: {c.Python}." : "No se encontró el python portable (carpeta python al lado de la carpeta del script): sin él solo se puede subir el archivo a mano.")
-                El script corre en el servidor de AlfaCore y usa Excel instalado, como en el Alfa Gestión.</p>
+            <p class="ca-nota">@(c.ScriptExiste && c.PythonExiste ? "La descarga corre en el servidor de AlfaCore (script y carpeta administrados por ALFA NET)." : "La descarga de ARCA todavía no está instalada en el servidor: por ahora solo se puede subir el archivo a mano. Avisá a ALFA NET.")</p>
             <div class="ca-cfg__auto">
                 <strong>Todos los días, bajar de ARCA y comparar</strong>
                 <AlfaCheckbox Value="@c.AutoRecibidos" ValueChanged="v => c.AutoRecibidos = v == true">Recibidos (contra el libro de IVA compras)</AlfaCheckbox>
@@ -262,7 +255,6 @@
 @code {
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private const long MaximoArchivo = 15 * 1024 * 1024;
-    private const string EjemploScript = @"Ej.: C:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT\scripts_preproceso\arca_comprobantes.py";
     private ControlArcaResultado? _r;
     private ControlArcaEstado? _estado;
     private string? _archivo;
@@ -320,7 +312,7 @@
         try
         {
             _cfg = await Descarga.GetConfigAsync();
-            _descargaRecibidos = _cfg.Configurado(true) || !_cfg.Configurado(false);
+            _descargaRecibidos = true;
             _archivos = await Descarga.ArchivosAsync();
             _cfgError = null;
         }
@@ -341,19 +333,15 @@
         return $"Todos los días desde las {c.HoraAuto}: {string.Join(" y ", tipos)}. " + (ultima.Count > 0 ? "Última: " + string.Join(" | ", ultima) : "Todavía no corrió.");
     }
 
-    private static string Estado(string ruta, bool existe, string ayuda)
-        => ruta.Trim().Length == 0 ? ayuda : existe ? "Encontrado en el servidor de AlfaCore." : "No se encuentra en el servidor de AlfaCore.";
-
     private Task AbrirConfig()
     {
         if (_cfg is null) return Task.CompletedTask;
         _cfgEditError = null;
         _cfgEdit = new ArcaDescargaConfig
         {
-            CuitLogin = _cfg.CuitLogin, TieneClave = _cfg.TieneClave, CuitRepresentado = _cfg.CuitRepresentado, Carpeta = _cfg.Carpeta,
-            ScriptRecibidos = _cfg.ScriptRecibidos, ScriptEmitidos = _cfg.ScriptEmitidos, AutoRecibidos = _cfg.AutoRecibidos, AutoEmitidos = _cfg.AutoEmitidos,
-            HoraAuto = _cfg.HoraAuto, ScriptRecibidosExiste = _cfg.ScriptRecibidosExiste, ScriptEmitidosExiste = _cfg.ScriptEmitidosExiste,
-            Python = _cfg.Python, PythonExiste = _cfg.PythonExiste, CarpetaExiste = _cfg.CarpetaExiste
+            CuitLogin = _cfg.CuitLogin, TieneClave = _cfg.TieneClave, CuitRepresentado = _cfg.CuitRepresentado,
+            AutoRecibidos = _cfg.AutoRecibidos, AutoEmitidos = _cfg.AutoEmitidos, HoraAuto = _cfg.HoraAuto,
+            ScriptExiste = _cfg.ScriptExiste, PythonExiste = _cfg.PythonExiste
         };
         StateHasChanged();
         return Task.CompletedTask;

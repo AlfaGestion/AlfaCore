@@ -49,23 +49,23 @@ public sealed class ArcaDescargaHostedService(IServiceProvider services, IConfig
                     BaseId = b.IdBase, Nombre = b.Nombre, Servidor = b.DbServer, BaseDatos = b.DbName,
                     Usuario = b.DbUser, Password = b.DbPassword, TrustServerCertificate = true
                 });
-                await BaseAsync(session.GetConnectionString(), b.Nombre, ct);
+                await BaseAsync(scope.ServiceProvider.GetRequiredService<ArcaServidorService>().Estado(b.IdBase), session.GetConnectionString(), b.Nombre, ct);
             }
         }
         else
         {
             using var scope = services.CreateScope();
-            await BaseAsync(scope.ServiceProvider.GetRequiredService<ISessionService>().GetConnectionString(), "", ct);
+            await BaseAsync(scope.ServiceProvider.GetRequiredService<ArcaServidorService>().Estado(0), scope.ServiceProvider.GetRequiredService<ISessionService>().GetConnectionString(), "", ct);
         }
     }
 
-    private async Task BaseAsync(string connectionString, string nombre, CancellationToken ct)
+    private async Task BaseAsync(ArcaServidorEstado servidor, string connectionString, string nombre, CancellationToken ct)
     {
         try
         {
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
-            var c = await ArcaDescargaService.LeerConfigAsync(cn, ct);
+            var c = await ArcaDescargaService.LeerConfigAsync(cn, servidor, ct);
             if (!TimeSpan.TryParseExact(c.HoraAuto, @"hh\:mm", CultureInfo.InvariantCulture, out var hora) || DateTime.Now.TimeOfDay < hora) return;
             foreach (var recibidos in new[] { true, false })
             {
@@ -80,9 +80,8 @@ public sealed class ArcaDescargaHostedService(IServiceProvider services, IConfig
                 {
                     try
                     {
-                        var archivo = await ArcaDescargaService.DescargarEnConexionAsync(cn, recibidos, p.Year, p.Month, visible: false, ct);
-                        var carpeta = ArcaDescargaService.CarpetaEfectiva(c.Carpeta, recibidos ? c.ScriptRecibidos : c.ScriptEmitidos);
-                        var bytes = await File.ReadAllBytesAsync(Path.Combine(carpeta, archivo.Nombre), ct);
+                        var archivo = await ArcaDescargaService.DescargarEnConexionAsync(cn, servidor, recibidos, p.Year, p.Month, visible: false, ct);
+                        var bytes = await File.ReadAllBytesAsync(Path.Combine(servidor.Carpeta, archivo.Nombre), ct);
                         var r = await ControlArcaService.ControlarEnConexionAsync(cn, ControlArcaService.Leer(bytes, archivo.Nombre), ct);
                         partes.Add($"{p:MM/yyyy}: {r.ComprobantesArca} en ARCA, {r.Cantidad(ControlArcaEstado.FaltaEnSistema)} faltan, " +
                                    $"{r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo)} con diferencias");

@@ -134,7 +134,7 @@ public sealed class ControlArcaImportacionSolicitud
 
 public sealed record ControlArcaAsientoLinea(string Cuenta, string DebeHaber, decimal Importe);
 
-// ── Descarga desde ARCA (script de pre-proceso del legacy) ─────────────────────────────────────
+// ── Descarga desde ARCA (script propio de AlfaCore, configurado en Administrar → Servidor) ─────────────────────────────────────
 
 public sealed class ArcaDescargaConfig
 {
@@ -143,23 +143,19 @@ public sealed class ArcaDescargaConfig
     public string? ClaveNueva { get; set; }
     public bool TieneClave { get; set; }
     public string CuitRepresentado { get; set; } = string.Empty;
+    /// <summary>Carpeta efectiva de esta base en el servidor (solo lectura: la define Administrar → Servidor).</summary>
     public string Carpeta { get; set; } = string.Empty;
-    public string ScriptRecibidos { get; set; } = string.Empty;
-    public string ScriptEmitidos { get; set; } = string.Empty;
     /// <summary>Descarga y control automático diario (AlfaCore).</summary>
     public bool AutoRecibidos { get; set; }
     public bool AutoEmitidos { get; set; }
     public string HoraAuto { get; set; } = "07:00";
     // Estado en este servidor (solo lectura).
-    public bool ScriptRecibidosExiste { get; set; }
-    public bool ScriptEmitidosExiste { get; set; }
-    public string Python { get; set; } = string.Empty;
+    public bool ScriptExiste { get; set; }
     public bool PythonExiste { get; set; }
-    public bool CarpetaExiste { get; set; }
     public string UltimaAutoRecibidos { get; set; } = string.Empty;
     public string UltimaAutoEmitidos { get; set; } = string.Empty;
-    public bool Configurado(bool recibidos) => CuitLogin.Length > 0 && TieneClave && CuitRepresentado.Length > 0
-        && (recibidos ? ScriptRecibidosExiste : ScriptEmitidosExiste) && PythonExiste;
+    /// <summary>El servidor tiene el script y python, y la base tiene sus datos de acceso a ARCA.</summary>
+    public bool Configurado => CuitLogin.Length > 0 && TieneClave && CuitRepresentado.Length > 0 && ScriptExiste && PythonExiste;
 }
 
 public sealed record ArcaArchivoDescargado(string Nombre, bool Recibidos, string Periodo, DateTime Fecha, long Bytes);
