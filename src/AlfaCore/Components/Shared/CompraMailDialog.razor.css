@@ -1,0 +1,15 @@
+.cm-form { display: flex; flex-direction: column; gap: 10px; }
+.cm-form__label { font-size: 12px; font-weight: 600; color: var(--alfa-text-secondary); }
+.cm-form__mensaje {
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+    resize: vertical;
+}
+.cm-form__prueba { margin: 0; padding: 8px 10px; border-radius: var(--alfa-radius-md); background: var(--alfa-bg-row-hover); font-size: 12px; }
+.cm-form__ultimo, .cm-form__nota { color: var(--alfa-text-secondary); font-size: 12px; }
+.cm-form__nota { margin-right: auto; }

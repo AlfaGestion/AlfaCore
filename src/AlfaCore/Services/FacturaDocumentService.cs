@@ -471,7 +471,7 @@ public sealed class FacturaDocumentService(
         };
     }
 
-    private static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades, string CuitQr)> BuildEmpresaAsync(SqlConnection cn, SqlTransaction? tx, string? uNegocio, CancellationToken ct)
+    internal static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades, string CuitQr)> BuildEmpresaAsync(SqlConnection cn, SqlTransaction? tx, string? uNegocio, CancellationToken ct)
     {
         var config = (await cn.QueryAsync<ConfiguracionRow>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,

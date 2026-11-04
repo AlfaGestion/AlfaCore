@@ -10,7 +10,9 @@ MV_ASIENTOS continúa como fuente contable oficial de tarjetas presentadas. Los 
 
 ## Objetivo
 
-Compras web: `ALFACORE_COMPRA_OPERACION` (actualización `2026-11-03-003`) conserva idempotencia, solicitud, resultado y origen documental de altas nuevas. Las fuentes comerciales/fiscales siguen siendo `C_MV_CPTE`, `C_MV_CPTE_OBSERV` y `MV_ASIENTOS`, insertadas en la misma transacción. No sustituye configuración, stock ni aplicaciones. Ver [carga de compras](modulos/compras-carga.md).
+Compras web: `ALFACORE_COMPRA_OPERACION` (actualización `2026-11-03-021`, alias de 003 y 006) conserva idempotencia, solicitud, resultado y origen documental de altas nuevas. Las fuentes comerciales/fiscales siguen siendo `C_MV_CPTE`, `C_MV_CPTE_OBSERV` y `MV_ASIENTOS`, insertadas en la misma transacción. No sustituye configuración, stock ni aplicaciones. Ver [carga de compras](modulos/compras-carga.md).
+
+`ALFACORE_COMPRA_BORRADOR` y `ALFACORE_COMPRA_ANULACION` (011, alias de 007) conservan edición persistente por usuario y snapshots de anulación de compras web. No son configuración ni reemplazan C_MV_CPTE, MV_ASIENTOS o sus libros. La distribución contable se graba en `MV_ASIENTOSCCOSTO` con centros imputables de `TA_CCOSTO`. El saldo oficial para aplicar notas a facturas es `CO_CPTES_SALDOS_UNEG`. Ver el contrato vigente de [carga de compras](modulos/compras-carga.md).
 
 Este archivo define objetos SQL importantes de Alfa Gestión y aclara su **tipo real o uso recomendado**.
 
@@ -291,3 +293,8 @@ BK_Conciliacion, BK_ConciliacionBanco y BK_ConciliacionAlfa son auxiliares de la
 BK_CobroExistente (actualización 2026-10-20-002) vincula un movimiento importado con la clave completa del recibo existente en MV_ASIENTOS, guardando usuario/fecha/importe. No reemplaza ni graba comprobantes, asientos, aplicaciones o conciliaciones. Tiene unicidad por movimiento y recibo; el servicio audita COBRO_EXISTENTE y actualiza exclusivamente EstadoRevision a Cobrado. Ver [Conciliación bancaria](modulos/conciliacion-bancaria.md).
 
 La actualización 2026-10-20-003 agrega ImporteBanco y Observacion a BK_CobroExistente para reconocer manualmente cobros con diferencias justificadas por el usuario. Importe conserva el total del recibo; ambos importes y la observación se auditan sin ajustar MV_ASIENTOS ni conciliar la diferencia.
+
+
+## Cantidades pendientes de compras (03/11/2026)
+
+`VT_C_MV_INSUMOS_APLICACION` (VIEW, verificada en ALFANET/SERVER-ALFAVB6) es la lectura legacy de cantidades aplicadas por cuenta, tipo/origen y artículo para RMC. `CO_AplicacionOC` (VIEW) ofrece `Aplicado` para OC. Sus definiciones suman los artículos de cada destino unido por MV_APLICACION: no distinguen líneas de varios orígenes reunidos en una factura. La carga web admite aplicaciones parciales de un único origen y bloquea destinos con otros orígenes, artículos repetidos o saldos ambiguos; no modifica estas vistas. Ver [compras](modulos/compras-carga.md).

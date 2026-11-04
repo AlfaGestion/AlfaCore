@@ -13,80 +13,154 @@
 @inject IAppEventService Eventos
 @inject NavigationManager Nav
 @inject IPermissionService Permisos
+@inject Microsoft.JSInterop.IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Preparar compra | AlfaCore</PageTitle>
-<div class="gd-page gd compra-carga">
+<PageTitle>Carga de comprobantes de compras | AlfaCore</PageTitle>
+<div id="@_editorId" class="gd-page gd compra-carga">
     <AlfaNotification Message="_feedback" OnDismiss="()=>_feedback=null" />
-    <AlfaFeedbackPanel Message="@(_busy?AppUiMessage.InProgress("Preparando compra…","Consultando proveedor, configuración y controles de la base activa."):AppUiMessage.Info("Preparación de compras","Seleccioná un comprobante configurado. Revisá el asiento y luego registrá FCC A/C de servicios y gastos en pesos. No incluye stock ni pagos."))" Dismissible="false" />
+    @if(_busy){<AlfaFeedbackPanel Message="@AppUiMessage.InProgress("Procesando compra…","Esperá el resultado antes de continuar.")" Dismissible="false" />}
     @if(_contexto is {} contexto)
     {
         <div class="compra-carga-layout">
             <div class="compra-carga-editor">
                 <section class="panel-card" aria-label="Datos del comprobante de compra">
                     <div class="compra-carga-campos">
-                        <AlfaLookup TItem="CompraCargaProveedor" Label="Proveedor" Placeholder="Código, razón social o CUIT" MinimumCharacters="1"
-                            SearchText="@_buscarProveedor" SearchTextChanged="v=>_buscarProveedor=v" SelectedItem="_proveedor" SelectedItemChanged="ProveedorChanged"
+                        <AlfaLookup TItem="CompraCargaProveedor" Label="Proveedor" Placeholder="Escribí código, nombre o CUIT" MinimumCharacters="0"
+                            @bind-SearchText="_buscarProveedor" DebounceMilliseconds="100" SelectedItem="_proveedor" SelectedItemChanged="ProveedorChanged"
                             SearchFunc="BuscarProveedores" ItemKey="p=>p.Codigo" Disabled="EdicionBloqueada">
                             <ItemTemplate Context="p">@p.Codigo · @p.Nombre · @p.Documento</ItemTemplate>
                         </AlfaLookup>
+                        <AlfaSelect Label="Depósito de artículos" Value="@_borrador.Deposito" ValueChanged="v=>Cambiar(()=>_borrador.Deposito=v)" Options="@Opciones(contexto.Depositos)" Disabled="@(EdicionBloqueada||_borrador.CompraOrigenId is not null)" />
                         <AlfaSelect Label="Unidad de negocio" Value="@_borrador.Unidad" ValueChanged="CambiarUnidad" Options="@Opciones(contexto.Unidades)" Disabled="EdicionBloqueada" />
                         <AlfaSelect Label="Comprobante / talonario" Value="@TipoActual?.Clave" ValueChanged="CambiarTipo" Options="TiposComprobantes" Disabled="EdicionBloqueada" />
-                        <AlfaSelect Label="Motivo de compra" Value="@_borrador.Motivo" ValueChanged="v=>Cambiar(()=>_borrador.Motivo=v)" Options="@Opciones(contexto.Motivos)" Disabled="EdicionBloqueada" />
-                        <AlfaSelect Label="Letra habilitada" Value="@_borrador.Letra" ValueChanged="v=>Cambiar(()=>_borrador.Letra=v)" Options="Letras" Disabled="EdicionBloqueada" />
-                        @if(TipoActual?.Externo==true||TipoActual?.VistaPreviaDisponible==true)
-                        {
-                            <AlfaInput Label="Punto de venta" Value="@_borrador.Sucursal" ValueChanged="v=>Cambiar(()=>_borrador.Sucursal=v??string.Empty)" MaxLength="4" Disabled="EdicionBloqueada" />
-                            <AlfaInput Label="@(TipoActual?.Externo==true?"Número del proveedor":"Número propuesto (sin reserva)")" Value="@_borrador.Numero" ValueChanged="v=>Cambiar(()=>_borrador.Numero=v??string.Empty)" MaxLength="8" Disabled="EdicionBloqueada" />
-                        }
-                        else{<p>Numeración interna: se asignará al registrar en el circuito correspondiente. No se reserva ningún número en esta etapa.</p>}
+                        <div class="compra-nrocpte" role="group" aria-label="Número de comprobante">
+                            <label>No. comprobante · sucursal, número y letra@(TipoActual is {Letras.Length:>0} t?$" ({t.Letras})":"")</label>
+                            <div>
+                                <input class="compra-celda" aria-label="Sucursal" placeholder="0000" maxlength="4" inputmode="numeric" value="@_borrador.Sucursal" disabled="@(EdicionBloqueada||TipoActual?.Externo!=true)" @onchange="e=>Cambiar(()=>_borrador.Sucursal=RellenarNumero(e.Value?.ToString(),4))" />
+                                <input class="compra-celda" aria-label="Número" placeholder="00000000" maxlength="8" inputmode="numeric" value="@_borrador.Numero" disabled="@(EdicionBloqueada||TipoActual?.Externo!=true)" @onchange="e=>Cambiar(()=>_borrador.Numero=RellenarNumero(e.Value?.ToString(),8))" />
+                                <input class="compra-celda compra-letra" aria-label="Letra" placeholder="X" maxlength="1" value="@_borrador.Letra" disabled="@EdicionBloqueada" @onchange="e=>CambiarLetra(e.Value?.ToString())" />
+                            </div>
+                            @if(TipoActual?.Externo!=true){<small>Numeración interna: se asigna sola al guardar.</small>}
+                        </div>
                         <AlfaInput Label="Fecha del comprobante" Type="date" Value="@FechaTexto(_borrador.Fecha)" ValueChanged="v=>CambiarFecha(v,0)" Disabled="EdicionBloqueada" />
+                    </div>
+                    <details class="compra-datos-adicionales"><summary>Datos adicionales · motivo @_borrador.Motivo · vencimiento @_borrador.Vencimiento.ToString("dd/MM/yyyy")</summary><div class="compra-carga-campos">
+                        <AlfaSelect Label="Motivo de compra" Value="@_borrador.Motivo" ValueChanged="v=>Cambiar(()=>_borrador.Motivo=v)" Options="@Opciones(contexto.Motivos)" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="Fecha contable / subdiario" Type="date" Value="@FechaTexto(_borrador.FechaContable)" ValueChanged="v=>CambiarFecha(v,1)" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="Vencimiento" Type="date" Value="@FechaTexto(_borrador.Vencimiento)" ValueChanged="v=>CambiarFecha(v,2)" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="CAE / CAI (opcional)" Value="@_borrador.AutorizacionFiscal" ValueChanged="v=>Cambiar(()=>_borrador.AutorizacionFiscal=v??string.Empty)" MaxLength="14" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="Vencimiento CAE / CAI" Type="date" Value="@(_borrador.VencimientoAutorizacion?.ToString("yyyy-MM-dd")??string.Empty)" ValueChanged="v=>Cambiar(()=>_borrador.VencimientoAutorizacion=DateTime.TryParse(v,out var f)?f:null)" Disabled="EdicionBloqueada" />
-                    </div>
+                    </div></details>
                     <AlfaFeedbackPanel Message="@AppUiMessage.Info(TipoActual?.Descripcion??"Elegí un comprobante",TipoActual?.Alcance??"No hay un tipo/talonario seleccionado para esta unidad.")" Dismissible="false" />
-                    @if(TipoActual?.VistaPreviaDisponible==true&&!PuedeVista){<p role="status">La letra seleccionada está configurada, pero esta etapa solo calcula FCC A/C.</p>}
-                    @if(_proveedor is {} proveedor){<p><strong>@proveedor.Nombre</strong> · @proveedor.Documento · Condición IVA @proveedor.CondicionIva</p>}
+                    @if(TipoActual?.VistaPreviaDisponible==true&&!PuedeVista){<p role="status">La letra seleccionada está configurada, pero esta etapa solo calcula A/C para servicios y gastos.</p>}
+                    @if(_proveedor is {} proveedor){<p><strong>@proveedor.Nombre</strong> · @proveedor.Documento · Condición IVA @proveedor.CondicionIva</p>@if(_borrador.Tipo=="FCC"&&!proveedor.SinOc&&_borrador.CompraOrigenId is null){<p>Este proveedor requiere orden de compra. Cargá la factura desde Ver comprobantes → Facturar sobre su OC o remito pendiente.</p>}}
                     @if(_origen is not null)
                     {
-                        <AlfaCheckbox Value="@_borrador.ServiciosGastosConfirmados" ValueChanged="v=>Cambiar(()=>_borrador.ServiciosGastosConfirmados=v==true)" Disabled="EdicionBloqueada">Confirmo que esta carga es de servicios o gastos y no requiere movimientos de mercadería.</AlfaCheckbox>
+                        <AlfaCheckbox Value="@_borrador.ServiciosGastosConfirmados" ValueChanged="v=>Cambiar(()=>_borrador.ServiciosGastosConfirmados=v==true)" Disabled="EdicionBloqueada">Confirmo que los conceptos sin artículo corresponden a servicios o gastos.</AlfaCheckbox>
                         @foreach(var aviso in _origen.Avisos){<p class="compra-carga-aviso">@aviso</p>}
                     }
                 </section>
                 @if(PuedeVista)
                 {
-                <section class="panel-card" aria-label="Conceptos de la compra">
-                    <div class="compra-carga-scroll"><table><thead><tr><th>Concepto</th><th>Imputación contable</th><th>Tratamiento</th><th>Neto</th><th>IVA %</th><th>IVA informado</th><th></th></tr></thead><tbody>
-                    @foreach(var fila in _filas)
+                <section class="panel-card compra-articulos" aria-label="Artículos de la compra">
+                    <div class="compra-grilla-titulo"><strong>Artículos</strong><AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi-search" Disabled="NuevaLineaBloqueada" OnClick="AbrirArticulos">Buscar artículo · F5</AlfaButton></div>
+                    @if(_borrador.CompraOrigenId is not null){<p>Se cargaron las cantidades pendientes del origen. Podés reducirlas o quitar artículos para facturar una parte. El saldo queda pendiente para otra factura.</p>
+                        @if(_borrador.CompraOrigenTipo=="OC"){<label class="compra-cerrar-saldo"><input type="checkbox" checked="@_borrador.CerrarSaldoOrigen" disabled="@(EdicionBloqueada)" @onchange="e=>Cambiar(()=>_borrador.CerrarSaldoOrigen=(bool)(e.Value??false))" /> Dar por finalizada la orden de compra aunque queden artículos pendientes</label>}}
+                    <div class="compra-carga-scroll"><table><thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Cantidad</th><th>Costo unitario neto</th><th>IVA %</th><th>IVA informado</th><th>Neto</th><th>Imputación</th><th></th></tr></thead><tbody>
+                    @foreach(var fila in FilasArticulos)
                     {
-                        <tr @key="fila"><td><AlfaInput Label="Descripción" Value="@fila.Descripcion" ValueChanged="v=>Cambiar(()=>fila.Descripcion=v??string.Empty)" MaxLength="200" Disabled="EdicionBloqueada" /></td>
+                        <tr @key="fila"><td>@fila.Articulo</td><td>@fila.Descripcion</td><td>@fila.UnidadArticulo</td>
+                            <td><input class="compra-celda" aria-label="Cantidad a facturar de @fila.Articulo" inputmode="decimal" value="@CantidadTexto(fila)" @onchange="e=>Cambiar(()=>fila.CantidadTexto=e.Value?.ToString()??string.Empty)" disabled="@EdicionBloqueada" />@if(_borrador.CompraOrigenId is not null){<small>Pendiente: @fila.Cantidad.ToString("N4")</small>}</td>
+                            <td><input class="compra-celda" aria-label="Costo de @fila.Articulo" inputmode="decimal" value="@CostoTexto(fila)" @onchange="e=>Cambiar(()=>fila.CostoTexto=e.Value?.ToString()??string.Empty)" disabled="@EdicionBloqueada" /></td>
+                            <td>@fila.Tasa</td><td><AlfaInput Label="IVA del artículo" Type="number" Step="0.01" Value="@fila.Iva" ValueChanged="v=>Cambiar(()=>fila.Iva=v??string.Empty)" Placeholder="Calcular" Disabled="EdicionBloqueada" /></td><td class="numero">@Dinero(CompraCargaPlanificador.Moneda(NetoFila(fila)))</td>
+                            <td><AlfaSelect Label="Cuenta del artículo" Value="@fila.Cuenta" ValueChanged="v=>Cambiar(()=>fila.Cuenta=v)" Options="Cuentas" Disabled="EdicionBloqueada" /></td>
+                            <td><AlfaIconButton Icon="bi-trash" Label="Quitar artículo" Disabled="EdicionBloqueada" OnClick="()=>Quitar(fila)" /></td></tr>
+                    }
+                    @if(_borrador.CompraOrigenId is null)
+                    {
+                        <tr class="compra-articulo-nuevo"><td><input id="@(_editorId+"-codigo")" class="compra-celda" aria-label="Código del artículo" placeholder="Código + Enter" value="@_nuevoCodigo" @oninput="e=>{_nuevoCodigo=e.Value?.ToString()??string.Empty;_nuevoArticulo=null;}" @onkeydown="CodigoArticuloKeyDown" disabled="@NuevaLineaBloqueada" /></td>
+                            <td>@(_nuevoArticulo?.Descripcion??(_proveedor is null?"Elegí el proveedor para cargar artículos":"Código → Enter → cantidad → costo → Enter"))</td><td>@_nuevoArticulo?.Unidad</td>
+                            <td><input id="@(_editorId+"-cantidad")" class="compra-celda" aria-label="Cantidad nueva" inputmode="decimal" value="@_nuevaCantidad" @oninput="e=>_nuevaCantidad=e.Value?.ToString()??string.Empty" @onkeydown="CantidadArticuloKeyDown" disabled="@(NuevaLineaBloqueada||_nuevoArticulo is null)" /></td>
+                            <td><input id="@(_editorId+"-costo")" class="compra-celda" aria-label="Costo unitario nuevo" inputmode="decimal" value="@_nuevoCosto" @oninput="e=>_nuevoCosto=e.Value?.ToString()??string.Empty" @onkeydown="CostoArticuloKeyDown" disabled="@(NuevaLineaBloqueada||_nuevoArticulo is null)" /></td><td colspan="4">@(_nuevoArticulo is {} art?$"IVA {art.Tasa:N2} % · Stock {art.Stock:N4}":"")</td>
+                            <td><AlfaIconButton Icon="bi-plus-lg" Label="Agregar artículo" Disabled="@(NuevaLineaBloqueada||_nuevoArticulo is null)" OnClick="AgregarArticulo" /></td></tr>
+                    }
+                    </tbody></table></div>
+                </section>
+                @if(!EsComercial)
+                {
+                <section class="panel-card" aria-label="Conceptos de la compra">
+                    <div class="compra-grilla-titulo"><strong>Otros conceptos · servicios / gastos</strong><AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-plus" Disabled="@(EdicionBloqueada||_borrador.CompraOrigenId is not null)" OnClick="Agregar">Agregar concepto</AlfaButton></div>
+                    <div class="compra-carga-scroll"><table><thead><tr><th>Concepto</th><th>Imputación contable</th><th>Tratamiento</th><th>Neto</th><th>IVA %</th><th>IVA informado</th><th></th></tr></thead><tbody>
+                    @foreach(var fila in FilasConceptos)
+                    {
+                        <tr @key="fila"><td>@if(fila.Articulo.Length>0){<strong>@fila.Articulo · @fila.Cantidad.ToString("N4") @fila.UnidadArticulo</strong>}<AlfaInput Label="Descripción" Value="@fila.Descripcion" ValueChanged="v=>Cambiar(()=>fila.Descripcion=v??string.Empty)" MaxLength="200" Disabled="EdicionBloqueada" /></td>
                         <td><AlfaSelect Label="Cuenta" Value="@fila.Cuenta" ValueChanged="v=>Cambiar(()=>fila.Cuenta=v)" Options="Cuentas" Disabled="EdicionBloqueada" /></td>
                         <td><AlfaSelect Label="Tratamiento fiscal" Value="@fila.Tratamiento" ValueChanged="v=>CambiarTratamiento(fila,v)" Options="Tratamientos" Disabled="EdicionBloqueada" /></td>
                         <td><AlfaInput Label="Neto en pesos" Type="number" Step="0.01" Value="@fila.Neto" ValueChanged="v=>Cambiar(()=>fila.Neto=v??string.Empty)" Disabled="EdicionBloqueada" /></td>
                         <td><AlfaSelect Label="Alícuota" Value="@fila.Tasa" ValueChanged="v=>Cambiar(()=>fila.Tasa=v)" Options="Tasas" Disabled="EdicionBloqueada" /></td>
                         <td><AlfaInput Label="IVA del documento" Type="number" Step="0.01" Value="@fila.Iva" ValueChanged="v=>Cambiar(()=>fila.Iva=v??string.Empty)" Placeholder="Calcular" Disabled="EdicionBloqueada" /></td>
-                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-trash" Disabled="EdicionBloqueada" OnClick="()=>Quitar(fila)">Quitar</AlfaButton></td></tr>
+                        <td><AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi-trash" Disabled="@(EdicionBloqueada||_borrador.CompraOrigenId is not null)" OnClick="()=>Quitar(fila)">Quitar</AlfaButton></td></tr>
                     }
                     </tbody></table></div>
-                    <p class="compra-carga-ayuda">Cuenta automática: imputación del proveedor y luego cuenta del motivo. Podés elegir otra por concepto. IVA informado vacío calcula por tasa; si lo completás se conserva y se muestra cualquier diferencia.</p>
+                    <p class="compra-carga-ayuda">Cuenta automática: cuenta particular del artículo, imputación del proveedor y luego cuenta del motivo. Podés elegir otra por concepto. IVA informado vacío calcula por tasa; si lo completás se conserva y se muestra cualquier diferencia.</p>
                     <div class="compra-carga-campos">
                         <AlfaInput Label="Percepción IVA" Type="number" Step="0.01" Value="@_percIva" ValueChanged="v=>Cambiar(()=>_percIva=v??string.Empty)" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="Percepción Ingresos Brutos" Type="number" Step="0.01" Value="@_percIibb" ValueChanged="v=>Cambiar(()=>_percIibb=v??string.Empty)" Disabled="EdicionBloqueada" />
+                        <AlfaInput Label="Impuestos internos" Type="number" Step="0.01" Value="@_impuestoInterno" ValueChanged="v=>Cambiar(()=>_impuestoInterno=v??string.Empty)" Disabled="EdicionBloqueada" />
                         <AlfaInput Label="Percepción Ganancias" Type="number" Step="0.01" Value="@_percGan" ValueChanged="v=>Cambiar(()=>_percGan=v??string.Empty)" Disabled="EdicionBloqueada" />
-                        <AlfaInput Label="Total del documento" Type="number" Step="0.01" Value="@_totalDocumento" ValueChanged="v=>Cambiar(()=>_totalDocumento=v??string.Empty)" Disabled="EdicionBloqueada" HelpText="Se coteja con el cálculo; no genera ajustes." />
+                        <AlfaInput Label="Total del documento" Type="number" Step="0.01" Value="@_totalDocumento" ValueChanged="v=>Cambiar(()=>{_totalDocumento=v??string.Empty;_totalManual=_totalDocumento.Length>0;})" Disabled="EdicionBloqueada" HelpText="Se calcula solo. Editalo únicamente para cotejarlo con el total del comprobante del proveedor." />
                     </div>
                 </section>
+                }
+                else
+                {
+                <section class="panel-card" aria-label="Total del comprobante">
+                    <AlfaInput Label="Total del documento" Type="number" Step="0.01" Value="@_totalDocumento" ValueChanged="v=>Cambiar(()=>{_totalDocumento=v??string.Empty;_totalManual=_totalDocumento.Length>0;})" Disabled="EdicionBloqueada" HelpText="Se calcula solo. Editalo únicamente para cotejarlo con el comprobante." />
+                </section>
+                }
+                <section class="panel-card compra-totales" aria-live="polite"><span>@FilasArticulos.Count() artículos · @FilasConceptos.Count() otros conceptos</span><strong>Total calculado: $ @Dinero(TotalEstimado)</strong>@if(_totalManual){<AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="EdicionBloqueada" OnClick="()=>Cambiar(()=>_totalManual=false)">Volver al total calculado</AlfaButton>}</section>
+                @if(_borrador.Tipo=="NCC"&&!EsComercial)
+                {
+                    <section class="panel-card" aria-label="Aplicación de nota de crédito">
+                        <AlfaLookup TItem="CompraCargaService.FacturaNota" Label="Factura a aplicar (opcional)" Placeholder="Buscar por número del proveedor" MinimumCharacters="0"
+                            SearchText="@_buscarFacturaNota" SearchTextChanged="v=>_buscarFacturaNota=v" SelectedItem="_facturaNota" SelectedItemChanged="SeleccionarFacturaNota"
+                            SearchFunc="BuscarFacturasNota" ItemKey="f=>f.Id.ToString()" Disabled="EdicionBloqueada">
+                            <ItemTemplate Context="f">@f.Comprobante · @f.Fecha.ToString("dd/MM/yyyy") · Pendiente @Dinero(f.Saldo)</ItemTemplate>
+                        </AlfaLookup>
+                        <AlfaInput Label="Importe a aplicar" Type="number" Step="0.01" Value="@_notaAplicar" ValueChanged="v=>Cambiar(()=>_notaAplicar=v??string.Empty)" Disabled="EdicionBloqueada" />
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="EdicionBloqueada" OnClick="()=>SeleccionarFacturaNota(null)">Dejar sin aplicación</AlfaButton>
+                        <p>Se revalida el saldo de la factura al confirmar. Sin factura seleccionada, la nota queda a cuenta; no se registra un pago.</p>
+                    </section>
+                }
+                @if(!EsComercial)
+                {
+                <section class="panel-card" aria-label="Centros de costos">
+                    <details><summary>Distribución por centros de costos · @_borrador.CentrosCosto.Count asignaciones</summary>
+                        <p>Para cuentas que requieren distribución, elegí los centros y porcentajes hasta completar el 100 %. Se aplica a todos sus renglones del asiento.</p>
+                        <div class="compra-carga-campos">
+                            <AlfaSelect Label="Cuenta a distribuir" @bind-Value="_cuentaCc" Options="@Opciones(contexto.Cuentas.Where(c=>c.RequiereCentroCosto).ToList())" Disabled="EdicionBloqueada" />
+                            <AlfaSelect Label="Centro de costos" @bind-Value="_centroCc" Options="@Opciones(contexto.CentrosCosto)" Disabled="EdicionBloqueada" />
+                            <AlfaInput Label="Porcentaje" Type="number" Step="0.01" @bind-Value="_porcentajeCc" Disabled="EdicionBloqueada" />
+                        </div>
+                        <AlfaButton Disabled="EdicionBloqueada" OnClick="AgregarCentro">Agregar distribución</AlfaButton>
+                        @foreach(var cc in _borrador.CentrosCosto.ToList())
+                        {<p>@cc.Cuenta · @cc.Centro · @cc.Porcentaje % <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="EdicionBloqueada" OnClick="()=>Cambiar(()=>_borrador.CentrosCosto.Remove(cc))">Quitar</AlfaButton></p>}
+                    </details>
+                </section>
+                }
                 @if(_vista is {} vista)
                 {
                     <section class="panel-card" aria-label="Vista previa de la compra">
                         <p><strong>@_borrador.Tipo @vista.IdComprobante</strong> · Neto @Dinero(vista.Neto) · IVA @Dinero(vista.Iva) · Total @Dinero(vista.Total)</p>
                         @if(vista.Errores.Count>0){<AlfaFeedbackPanel Message="@AppUiMessage.Error("Revisar la propuesta",string.Join(" ",vista.Errores))" Dismissible="false" />}
                         @foreach(var aviso in vista.Avisos){<p class="compra-carga-aviso">@aviso</p>}
+                        @if(vista.Asiento.Count>0)
+                        {
                         <div class="compra-carga-scroll"><table><thead><tr><th>Cuenta</th><th>Descripción</th><th>Debe</th><th>Haber</th><th>Datos de IVA</th></tr></thead><tbody>
                         @foreach(var a in vista.Asiento){<tr><td>@(a.Cuenta.Length>0?a.Cuenta:"Sin cuenta")</td><td>@a.Descripcion</td><td class="numero">@Dinero(a.Debe)</td><td class="numero">@Dinero(a.Haber)</td><td>@(a.CabeceraIva?"Cabecera fiscal propuesta":"")</td></tr>}
                         </tbody><tfoot><tr><th colspan="2">Diferencia @Dinero(vista.DiferenciaAsiento)</th><th class="numero">@Dinero(vista.Asiento.Sum(x=>x.Debe))</th><th class="numero">@Dinero(vista.Asiento.Sum(x=>x.Haber))</th><th></th></tr></tfoot></table></div>
+                        }
                         <div class="compra-carga-scroll"><table><thead><tr><th>Base fiscal propuesta</th><th>IVA %</th><th>Neto</th><th>IVA</th></tr></thead><tbody>
                         @foreach(var b in vista.Bases.GroupBy(x=>(x.Tratamiento,x.Tasa))){<tr><td>@b.Key.Tratamiento</td><td>@b.Key.Tasa</td><td class="numero">@Dinero(b.Sum(x=>x.Neto))</td><td class="numero">@Dinero(b.Sum(x=>x.Iva))</td></tr>}
                         </tbody></table></div>
@@ -112,14 +186,21 @@
 {
     <ProveedorAltaRapida Open="_mostrarAltaProveedor" Sesion="sesion" BaseEsperada="_baseCargada" MotivoInicial="@_borrador.Motivo" Motivos="ctx.Motivos" Cuentas="ctx.Cuentas" OnSeleccionado="ProveedorCreado" OnClose="CerrarAltaProveedor" />
 }
-<AlfaDialog Open="_confirmarRegistro" Title="Registrar factura de compra" Size="AlfaDialogSize.Lg" CloseOnBackdrop="false" Loading="_busy" OnClose="CerrarRegistro">
+<AlfaDialog Open="_confirmarRegistro" Title="@TituloRegistro" Size="AlfaDialogSize.Lg" CloseOnBackdrop="false" Loading="_busy" OnClose="CerrarRegistro">
     <ChildContent>
         <AlfaFeedbackPanel Message="@(_busy?AppUiMessage.InProgress("Guardando compra…","Registrando comprobante, asiento y datos fiscales. Esperá la confirmación."):_feedback)" Dismissible="false" />
         @if(_vista is {} revision)
         {
-            <p><strong>@_proveedor?.Nombre · FCC @revision.IdComprobante</strong></p>
-            <p>Total: <strong>@Dinero(revision.Total)</strong>. Se generará una deuda con el proveedor y su asiento contable. Los datos fiscales se guardan según la configuración del libro de IVA.</p>
-            <p>Revisá las cuentas e importes del asiento antes de confirmar. Esta compra no mueve stock ni registra un pago.</p>
+            <p><strong>@_proveedor?.Nombre · @_borrador.Tipo @revision.IdComprobante</strong></p>
+            @if(EsComercial)
+            {
+            <p>Total: <strong>@Dinero(revision.Total)</strong>. @(_borrador.Tipo=="OC"?"Se registra la orden de compra aprobada, sin movimiento de stock.":"Se registra el remito y se ingresa el stock de los artículos que controlan existencias.") No genera asiento, libro de IVA ni movimiento en la cuenta corriente.</p>
+            }
+            else
+            {
+            <p>Total: <strong>@Dinero(revision.Total)</strong>. Se registrará el movimiento en la cuenta corriente del proveedor y su asiento contable. Los datos fiscales se guardan según la configuración del libro de IVA.</p>
+            <p>Revisá las cuentas e importes del asiento antes de confirmar. No registra pagos. Los artículos directos afectan stock según el comprobante. Si proviene de un remito se conserva su stock sin duplicarlo.</p>
+            }
             @foreach(var aviso in revision.Avisos.Where(a=>!a.StartsWith("Vista previa")&&!a.StartsWith("Comprobante C"))){<p>@aviso</p>}
         }
     </ChildContent>
@@ -127,4 +208,30 @@
         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="CerrarRegistro">Volver a revisar</AlfaButton>
         <AlfaButton Variant="AlfaButtonVariant.Primary" Loading="_busy" Disabled="@(_busy||_registrada is not null)" OnClick="RegistrarCompra">Confirmar registración</AlfaButton>
     </Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="_mostrarBorradores" Title="Borradores de compras" Size="AlfaDialogSize.Lg" CloseOnBackdrop="false" OnClose="()=>_mostrarBorradores=false">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@(_busy?AppUiMessage.InProgress("Recuperando borrador…","Se vuelven a consultar proveedor y documento origen."):_feedback)" Dismissible="false" />
+        <p>Guardados con tu usuario en esta base. Recuperar reemplaza la carga en pantalla: guardá antes el borrador actual si lo necesitás.</p>
+        @foreach(var b in _borradores){<p>@b.Modificado.ToString("dd/MM/yyyy HH:mm") · @b.Nombre <AlfaButton Disabled="_busy" OnClick="()=>Recuperar(b)">Recuperar</AlfaButton></p>}
+        @if(_borradores.Count==0){<p>No hay borradores guardados.</p>}
+    </ChildContent>
+    <Footer><AlfaButton Disabled="_busy" OnClick="()=>_mostrarBorradores=false">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+
+<AlfaDialog Open="_mostrarProveedores" Title="Buscar proveedor" Size="AlfaDialogSize.Lg" CloseOnBackdrop="false" Loading="_busy" OnClose="()=>_mostrarProveedores=false">
+    <ChildContent><AlfaFeedbackPanel Message="_feedback" Dismissible="false" /><div class="compra-grilla-titulo" @onkeydown="ProveedorModalKeyDown"><AlfaInput Id="@(_editorId+"-proveedor-busqueda")" Label="Código, nombre o CUIT" @bind-Value="_textoProveedores" /><AlfaButton Disabled="_busy" OnClick="BuscarProveedoresModal">Buscar</AlfaButton></div>
+        <div class="compra-carga-scroll"><table><thead><tr><th>Código</th><th>Proveedor</th><th>CUIT</th><th></th></tr></thead><tbody>
+        @foreach(var p in _proveedoresEncontrados){<tr><td>@p.Codigo</td><td>@p.Nombre</td><td>@p.Documento</td><td><AlfaButton Disabled="_busy" OnClick="()=>ElegirProveedorModal(p)">Seleccionar</AlfaButton></td></tr>}
+        </tbody></table></div>@if(!_busy&&_proveedoresEncontrados.Count==0){<p>No se encontraron proveedores activos. Probá por nombre, código o CUIT.</p>}
+    </ChildContent><Footer><AlfaButton Disabled="_busy" OnClick="()=>_mostrarProveedores=false">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+<AlfaDialog Open="_mostrarArticulos" Title="Buscar artículo de compra" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="CerrarArticulos">
+    <ChildContent><AlfaFeedbackPanel Message="_feedback" Dismissible="false" /><input class="compra-celda" id="@(_editorId+"-buscar-articulo")" data-compra-articulos="@_editorId" @onkeydown="ArticuloModalKeyDown" type="search" placeholder="Código, descripción o código de barras · flechas y Enter" aria-label="Buscar artículo" value="@_textoArticulos" @oninput="BuscarArticulosInput" />
+        @if(_buscandoArticulos){<p role="status">Buscando artículos…</p>}
+        <div class="compra-carga-scroll"><table><thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Costo</th><th>IVA %</th><th>Stock del depósito</th><th></th></tr></thead><tbody>
+        @foreach(var par in _articulosEncontrados.Select((a,i)=>(a,i))){var a=par.a;<tr id="@(_editorId+"-resultado-"+par.i)" class="@(par.i==_articuloActivo?"compra-resultado-activo":string.Empty)"><td>@a.Codigo</td><td>@a.Descripcion @(a.Especial?"· Requiere tratamiento especial":"")</td><td>@a.Unidad</td><td>@a.Costo.ToString("N4")</td><td>@a.Tasa</td><td>@(a.NoStock?"No controla stock":a.Stock.ToString("N4"))</td><td><AlfaButton Disabled="@(_busy||a.Especial)" OnClick="()=>ElegirArticulo(a)">Seleccionar</AlfaButton></td></tr>}
+        </tbody></table></div>@if(!_buscandoArticulos&&_articulosEncontrados.Count==0){<p>No se encontraron artículos activos para esa búsqueda.</p>}
+    </ChildContent><Footer><AlfaButton OnClick="CerrarArticulos">Cerrar</AlfaButton></Footer>
 </AlfaDialog>

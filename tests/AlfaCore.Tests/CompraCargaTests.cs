@@ -9,7 +9,7 @@ public sealed class CompraCargaTests
     private static CompraCargaContexto Contexto()=>new([new(){Codigo="1"}],[new(){Codigo="99"}],
         [new(){Codigo="13101",Descripcion="Compras varias"},new(){Codigo="11203",Descripcion="IVA crédito"},new(){Codigo="21209",Descripcion="Imputación particular"},new(){Codigo="11208"}],
         [21,10.5m,27],[new(){Motivo="99",CondicionIva="1",Compra="13101",Iva="11203",PercepcionIva="11208"}],"1","99",new(2025,11,3),new(2027,6,1),new(2000,1,1))
-        {Tipos=[new(){Codigo="FCC",Unidad="1",Talonario=0,Letras="AC",Externo=true}]};
+        {Tipos=[new(){Codigo="FCC",Unidad="1",Talonario=0,Letras="AC",Externo=true,DebeHaber="H"}]};
     private static CompraCargaProveedor Proveedor()=>new(){Codigo="21101",Nombre="Proveedor de prueba",CondicionIva="1",SinOc=true};
     private static CompraCargaBorrador Borrador()=>new(){Proveedor="21101",Unidad="1",Motivo="99",Fecha=new(2026,8,25),FechaContable=new(2026,8,25),Vencimiento=new(2026,9,9),Sucursal="1",Numero="2",Letra="A",TotalDocumento=12.10m,Lineas=[new(){Descripcion="Servicio de prueba",Neto=10,Tasa=21}]};
     [Fact]
@@ -97,14 +97,36 @@ public sealed class CompraCargaTests
         Assert.Throws<InvalidOperationException>(()=>CompraCargaOrigenLectura.Convertir(ia,1,[]));
     }
     [Theory]
-    [InlineData("OC")]
-    [InlineData("RMC")]
-    [InlineData("NCC")]
-    [InlineData("NDC")]
     [InlineData("PG")]
     public void UnTipoPendienteNuncaSeCalculaComoFactura(string tc)
     {
         var d=Borrador();d.Tipo=tc;Assert.Throws<InvalidOperationException>(()=>CompraCargaPlanificador.Preparar(d,Proveedor(),Contexto()));
+    }
+    private static CompraCargaContexto ContextoComercial()
+    {
+        var c=Contexto();
+        return c with{Depositos=[new(){Codigo="1"}],Tipos=[.. c.Tipos,new(){Codigo="OC",Unidad="1",Talonario=0,Letras="X",Externo=false,Stock="E"},new(){Codigo="RMC",Unidad="1",Talonario=0,Letras="ABCXREM",Externo=true,Stock="E",DebeHaber="H"}]};
+    }
+    private static CompraCargaBorrador Comercial(string tipo,string letra)=>new(){Tipo=tipo,Proveedor="21101",Unidad="1",Motivo="99",Deposito="1",Letra=letra,Fecha=new(2026,8,25),FechaContable=new(2026,8,25),Vencimiento=new(2026,9,25),
+        Sucursal="1",Numero="3",TotalDocumento=24.2m,Lineas=[new(){Articulo="1",ArticuloHuella=new string('a',64),UnidadArticulo="1",Descripcion="Artículo",Cantidad=2,CostoUnitario=10,Neto=20,Tasa=21}]};
+    [Theory]
+    [InlineData("OC","X")]
+    [InlineData("RMC","R")]
+    public void OrdenYRemitoSeCalculanSinAsiento(string tipo,string letra)
+    {
+        var r=CompraCargaPlanificador.Preparar(Comercial(tipo,letra),Proveedor(),ContextoComercial());
+        Assert.Empty(r.Errores);Assert.Empty(r.Asiento);Assert.Equal(24.2m,r.Total);Assert.Equal(4.2m,r.Iva);Assert.Equal($"000100000003{letra}",r.IdComprobante);
+    }
+    [Fact]
+    public void OrdenYRemitoAdmitenSoloArticulosYRespetanLaRegla()
+    {
+        var oc=Comercial("OC","X");oc.Lineas.Add(new(){Descripcion="Servicio",Neto=5,Tasa=21});oc.TotalDocumento=null;
+        Assert.Contains(CompraCargaPlanificador.Preparar(oc,Proveedor(),ContextoComercial()).Errores,e=>e.Contains("solamente artículos"));
+        var proveedor=Proveedor();proveedor.SinOc=false;
+        Assert.Contains(CompraCargaPlanificador.Preparar(Comercial("RMC","R"),proveedor,ContextoComercial()).Errores,e=>e.Contains("orden de compra"));
+        Assert.Empty(CompraCargaPlanificador.Preparar(Comercial("OC","X"),proveedor,ContextoComercial()).Errores);
+        var mal=Comercial("RMC","R");mal.TotalDocumento=20;
+        Assert.Contains(CompraCargaPlanificador.Preparar(mal,Proveedor(),ContextoComercial()).Errores,e=>e.Contains("no coincide"));
     }
     [Fact]
     public void RequiereTipoLetraYTalonarioConfigurados()
@@ -117,7 +139,7 @@ public sealed class CompraCargaTests
     [Fact]
     public void LaConfiguracionDeLaUnidadPrevaleceSobreLaGlobal()
     {
-        var c=Contexto() with{Tipos=[new(){Codigo="FCC",Letras="C",Unidad=""},new(){Codigo="FCC",Letras="A",Unidad="1"}]};
+        var c=Contexto() with{Tipos=[new(){Codigo="FCC",Letras="C",Unidad=""},new(){Codigo="FCC",Letras="A",Unidad="1",DebeHaber="H"}]};
         Assert.Empty(CompraCargaPlanificador.Preparar(Borrador(),Proveedor(),c).Errores);
     }
 }

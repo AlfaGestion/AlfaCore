@@ -186,6 +186,8 @@
                                         <i class="bi bi-play-circle"></i> Procesar ahora
                                     </button>
                                 }
+                                @if(_puedeVerCompra&&item.CompraRegistradaId is not null)
+                                {<button type="button" class="btn btn--ghost btn--sm" @onclick="()=>_compraDocumento=item.IdComprobanteRecibido"><i class="bi bi-receipt"></i> Ver comprobante</button>}
                                 <button type="button"
                                         class="btn btn--ghost btn--sm"
                                         @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
@@ -386,7 +388,9 @@
                                                         <span>Procesar ahora</span>
                                                     </button>
                                                 }
-                                                <button type="button"
+                                                @if(_puedeVerCompra&&item.CompraRegistradaId is not null)
+                                {<button type="button" class="btn btn--ghost btn--sm" @onclick="()=>_compraDocumento=item.IdComprobanteRecibido"><i class="bi bi-receipt"></i> Ver comprobante</button>}
+                                <button type="button"
                                                         class="btn btn--ghost btn--sm"
                                                         title="Ver detalle de lectura automática"
                                                         @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
@@ -805,6 +809,7 @@
 </div>
 @code {
     private readonly InterfacesFilters _filters = new();
+    private long? _compraDocumento;private bool _puedeVerCompra;
     private readonly List<InterfacesInboxItemDto> _items = [];
     private readonly Dictionary<long,TarjetasRecepcionTrabajo> _tarjetasEstados = [];
     private readonly List<InterfacesEstadoOptionDto> _states = [];
@@ -909,6 +914,12 @@
                         </select>
                     </div>
                     <div class="smart-search__inline">
+                        <label>Registración de compras</label>
+                        <select @bind="_filters.RegistracionCompra" @bind:after="OnFiltersChangedAsync">
+                            <option value="">Todas</option><option value="PENDIENTES">Pendientes de registrar</option><option value="REGISTRADAS">Registradas</option>
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
                         <label>Tipo</label>
                         <select @bind="_filters.IdTipoDocumento" @bind:after="OnFiltersChangedAsync">
                             <option value="">Todos</option>
@@ -948,6 +959,7 @@
         var tipo = _documentTypes.FirstOrDefault(x => x.IdTipoDocumento == _filters.IdTipoDocumento);
         if (tipo is not null)
             chips.Add(new("tipo", $"Tipo: {tipo.Descripcion}"));
+        if(_filters.RegistracionCompra.Length>0)chips.Add(new("registracion",_filters.RegistracionCompra=="REGISTRADAS"?"Compras registradas":"Compras pendientes de registrar"));
         return chips;
     }
 
@@ -962,6 +974,9 @@
             case "estado":
                 _filters.IdEstado = null;
                 break;
+            case "registracion":
+                _filters.RegistracionCompra="";
+                break;
             case "tipo":
                 _filters.IdTipoDocumento = null;
                 break;
@@ -974,7 +989,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => string.Join('|', _filters.Texto, _showSearchPanel, _loadingList, _filtersDesde, _filtersHasta, _filters.IdEstado, _filters.IdTipoDocumento, _states.Count, _documentTypes.Count);
+    private string HeaderSnapshot() => string.Join('|', _filters.Texto, _showSearchPanel, _loadingList, _filtersDesde, _filtersHasta, _filters.IdEstado, _filters.IdTipoDocumento, _filters.RegistracionCompra, _states.Count, _documentTypes.Count);
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -1202,6 +1217,8 @@
                 return;
             }
 
+            _puedeVerCompra=await PermisosTarjetas.HasAccessAsync(AlfaCore.Services.CompraCargaService.MenuKey);
+            if(!IsCurrentTenant(lease))return;
             _tarjetasEstados.Clear();_items.Clear();
             _items.AddRange(result.Value.Items);
             var tarjetasIds=_items.Where(i=>i.TipoDocumentoCodigo==AlfaCore.Services.TarjetasRecepcionService.Tipo).Select(i=>i.IdComprobanteRecibido).ToArray();
@@ -1419,6 +1436,7 @@
         _filters.Texto = string.Empty;
         _filters.IdEstado = null;
         _filters.IdTipoDocumento = null;
+                _filters.RegistracionCompra="";
         _filtersDesde = DateTime.Today.AddDays(-30);
         _filtersHasta = DateTime.Today;
     }
@@ -1921,7 +1939,7 @@
             return "interfaces-status-pill--danger";
         if (key.Contains("PEND") || key.Contains("PROCES"))
             return "interfaces-status-pill--warning";
-        if (key.Contains("FINAL") || key.Contains("CERR") || key.Contains("APROB"))
+        if (key.Contains("FINAL") || key.Contains("CERR") || key.Contains("APROB") || key.Contains("REGISTR"))
             return "interfaces-status-pill--success";
         return "interfaces-status-pill--info";
     }
@@ -1933,7 +1951,7 @@
         => job.Estado is "PENDIENTE_LECTURA";
 
     private static bool CanProcessNowInboxItem(InterfacesInboxItemDto item)
-        => IsCompraDocument(item);
+        => IsCompraDocument(item)&&item.EstadoCodigo!="REGISTRADO"&&item.CompraRegistradaId is null;
 
     private static bool CanRetryQueueJob(InterfacesCompraIaResultadoDto job)
         => job.Estado is "ERROR_LECTURA" or "CANCELADO" or "SIN_PROVEEDOR";
@@ -2056,3 +2074,6 @@
 
 
 
+
+@if(_compraDocumento is {} documentoCompra)
+{<CompraDocumentoDialog @key="documentoCompra" DocumentoId="documentoCompra" BaseEsperada="CurrentExpectedBaseId()" OnClose="()=>_compraDocumento=null" />}

@@ -1,0 +1,63 @@
+.cv-page { display: flex; flex-direction: column; gap: 12px; }
+
+.cv-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.cv-filtros__texto { flex: 1 1 260px; min-width: 200px; }
+
+.cv-tabla {
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    overflow: hidden;
+}
+
+.cv-tabla__scroll { overflow: auto; max-height: 65vh; }
+
+.cv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.cv-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.cv-table th, .cv-table td { padding: 10px 12px; border-bottom: 1px solid var(--alfa-border-default); vertical-align: middle; }
+.cv-table td small { display: block; color: var(--alfa-text-secondary); margin-top: 2px; }
+.cv-table .cv-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cv-table tbody tr { cursor: pointer; }
+.cv-table tbody tr:hover td { background: var(--alfa-bg-row-hover); }
+.cv-table tr.is-anulada td { color: var(--alfa-text-secondary); text-decoration: line-through; }
+.cv-table tr.is-anulada td.cv-acciones { text-decoration: none; }
+.cv-table td.cv-acciones { white-space: nowrap; }
+
+.cv-anulada {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--alfa-danger, #b3261e);
+    border: 1px solid currentColor;
+}
+
+.cv-tabla__pie { padding: 8px 12px; font-size: 12px; color: var(--alfa-text-secondary); }
+
+.cv-table .cv-sel { width: 36px; text-align: center; }
+.cv-table tr.is-seleccionada td { background: var(--alfa-bg-row-hover); }
+.cv-sinmail { color: var(--alfa-danger, #b3261e); font-size: 12px; }

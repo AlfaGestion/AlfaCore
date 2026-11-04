@@ -8,6 +8,7 @@ public sealed class InterfacesFilters
     public DateTime? Hasta { get; set; } = DateTime.Today;
     public int? IdEstado { get; set; }
     public int? IdTipoDocumento { get; set; }
+    public string RegistracionCompra { get; set; } = string.Empty;
     public string Texto { get; set; } = string.Empty;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
@@ -99,6 +100,7 @@ public sealed class InterfacesCompraIaProbeResultDto
 
 public sealed class InterfacesInboxItemDto
 {
+    public int? CompraRegistradaId { get; set; }
     public long IdComprobanteRecibido { get; set; }
     public DateTime FechaHoraGrabacion { get; set; }
     public string UsuarioAlta { get; set; } = string.Empty;
@@ -203,6 +205,7 @@ public sealed class InterfacesHistorialDto
 
 public sealed class InterfacesDetalleDto
 {
+    public int? CompraRegistradaId { get; set; }
     public long IdComprobanteRecibido { get; set; }
     public DateTime FechaHoraGrabacion { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }

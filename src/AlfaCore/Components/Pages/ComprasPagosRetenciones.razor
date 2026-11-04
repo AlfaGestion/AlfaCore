@@ -1,0 +1,231 @@
+@page "/compras/carga/pagos"
+@page "/{idweb}/{idbase:int}/compras/carga/pagos"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject CompraDocumentoMailService Servicio
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuarios
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject ISaaSTenantRouteGuard TenantGuard
+@inject IAppUiOperationService UiOps
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Pagos y retenciones | AlfaCore</PageTitle>
+
+@* Impresión diferida de pagos: elegir órdenes de pago / pagos o los certificados de retención, verlos en PDF y enviarlos (o reenviarlos) por mail. *@
+<div class="gd-page gd cv-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    <section class="cv-filtros" aria-label="Filtros">
+        <AlfaSelect Label="Documento" @bind-Value="_doc" Options="Documentos" Disabled="_busy" />
+        <AlfaInput Label="Desde" Type="date" @bind-Value="_desde" Disabled="_busy" />
+        <AlfaInput Label="Hasta" Type="date" @bind-Value="_hasta" Disabled="_busy" />
+        <div class="cv-filtros__texto" @onkeydown="TextoKeyDown"><AlfaInput Label="Proveedor / comprobante" @bind-Value="_texto" Disabled="_busy" /></div>
+        <AlfaButton Icon="bi bi-search" Disabled="_busy" OnClick="_ => BuscarAsync()">Buscar</AlfaButton>
+        <AlfaButton Icon="bi bi-envelope" Variant="AlfaButtonVariant.Primary" Disabled="@(_busy || _seleccion.Count == 0)" OnClick="_ => _confirmarLote = true">Enviar por mail (@_seleccion.Count)</AlfaButton>
+    </section>
+    @if (_buscado && _filas.Count == 0 && !_busy)
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin pagos" Message="No hay pagos para esos filtros en las unidades autorizadas. Probá con otro período o documento." />
+    }
+    else if (_filas.Count > 0)
+    {
+        <section class="cv-tabla" aria-label="Pagos y retenciones">
+            <div class="cv-tabla__scroll"><table class="cv-table">
+                <thead><tr>
+                    <th class="cv-sel"><input type="checkbox" aria-label="Seleccionar todos" title="Seleccionar todos"
+                        checked="@(_filas.Count > 0 && _filas.All(x => _seleccion.Contains(Clave(x))))" @onchange="e => SeleccionarTodos(e.Value is true)" /></th>
+                    <th>Fecha</th><th>Tipo</th><th>Número</th><th>Proveedor</th><th class="cv-num">Importe</th>
+                    <th class="cv-num">Ganancias</th><th class="cv-num">IVA</th><th class="cv-num">Ing. Brutos</th><th class="cv-num">SUSS</th>
+                    <th>Mail del proveedor</th><th>Último envío</th><th>Acciones</th>
+                </tr></thead>
+                <tbody>
+                @foreach (var f in _filas.Take(500))
+                {
+                    <tr @key="Clave(f)" class="@(_seleccion.Contains(Clave(f)) ? "is-seleccionada" : null)">
+                        <td class="cv-sel"><input type="checkbox" aria-label="@($"Seleccionar {f.Tc} {f.Comprobante}")" checked="@_seleccion.Contains(Clave(f))" @onchange="e => Seleccionar(f, e.Value is true)" /></td>
+                        <td>@f.Fecha.ToString("dd/MM/yyyy")</td>
+                        <td><strong>@f.Tc</strong></td>
+                        <td>@CompraDocumentoMailService.FormatoComprobante(f.Comprobante)</td>
+                        <td>@f.Nombre<small>@f.Cuenta</small></td>
+                        <td class="cv-num">@f.Importe.ToString("N2")</td>
+                        <td class="cv-num">@Retenido(f.RetGanancias)</td>
+                        <td class="cv-num">@Retenido(f.RetIva)</td>
+                        <td class="cv-num">@Retenido(f.RetIibb)</td>
+                        <td class="cv-num">@Retenido(f.RetSuss)</td>
+                        <td>@if (f.Mail.Length == 0) { <span class="cv-sinmail">Sin mail</span> } else { @f.Mail }</td>
+                        <td>@f.UltimoEnvio</td>
+                        <td class="cv-acciones">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_busy || _pdfClave is not null)"
+                                        Loading="@(_pdfClave == Clave(f))" OnClick="_ => VerPdfAsync(f)">Ver PDF</AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(_busy || _mailCargando)"
+                                        OnClick="_ => AbrirMailAsync(f)">@(f.UltimoEnvio is { Length: > 0 } ? "Reenviar" : "Mail")</AlfaButton>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table></div>
+            <footer class="cv-tabla__pie">@(_filas.Count > 500 ? "Hay más de 500 resultados: acotá los filtros para ver el resto. " : "")«Documento» elige qué se ve y se envía: el pago u orden de pago, o el certificado de cada retención. Marcá varios y usá «Enviar por mail» para mandarlos juntos.</footer>
+        </section>
+    }
+    else if (_busy)
+    {
+        <AlfaEmptyState Title="Buscando pagos" Message="Consultando la base activa." />
+    }
+</div>
+
+<CompraMailDialog Borrador="_mail" Error="@_mailError" Enviando="_busy" OnEnviar="EnviarMailAsync" OnCancelar="CerrarMail" />
+@if (_confirmarLote)
+{
+    <AlfaConfirmDialog Open="true" Title="Enviar por mail"
+        Message="@($"Se envían {_seleccion.Count} documento(s) ({NombreDoc}), cada uno a los mails de su proveedor, con el asunto y el mensaje configurados.")"
+        SecondaryMessage="Salen de a uno. Los proveedores sin mail válido quedan sin enviar y se detallan al terminar."
+        ConfirmLabel="Enviar" OnConfirm="EnviarLoteAsync" OnCancel="() => _confirmarLote = false" />
+}
+
+@code {
+    private readonly CancellationTokenSource _vida = new();
+    private readonly HashSet<string> _seleccion = [];
+    private bool _busy, _buscado, _disposed, _confirmarLote, _mailCargando;
+    private int? _baseCargada;
+    private Guid? _sesion;
+    private string? _pdfClave, _mailError;
+    private string _doc = "", _texto = "";
+    private string _desde = DateTime.Today.AddDays(-30).ToString("yyyy-MM-dd"), _hasta = DateTime.Today.ToString("yyyy-MM-dd");
+    private IReadOnlyList<CompraPagoFila> _filas = [];
+    private CompraMailBorrador? _mail;
+    private AppUiMessage? _feedback;
+    private static readonly IReadOnlyList<AlfaSelectOption> Documentos =
+    [
+        new("", "Pago / orden de pago"),
+        .. CompraCertificado.Todos.Select(c => new AlfaSelectOption(c, "Certificado de retención · " + CompraCertificado.Nombre(c)))
+    ];
+    private string NombreDoc => _doc.Length == 0 ? "pagos y órdenes de pago" : "certificados de " + CompraCertificado.Nombre(_doc);
+    private bool Directo => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo", out var v) && v == "1";
+    private static string Clave(CompraPagoFila f) => f.Tc + "|" + f.Comprobante;
+    private static string Retenido(decimal valor) => valor > 0 ? valor.ToString("N2") : "";
+
+    protected override void OnInitialized() { Sesiones.SessionChanged += CambiarSesion; Usuarios.StateChanged += CambiarSesion; UpdateHeader(); }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_sesion is not null) return;
+        await EjecutarAsync(async () =>
+        {
+            var tenant = await TenantGuard.ResolveAsync(idbase, idweb, _vida.Token);
+            if (!tenant.IsValid) throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
+            _baseCargada = idbase ?? Sesiones.GetActiveSession()?.BaseId; _sesion = Sesiones.GetActiveSession()?.Id;
+            await ConsultarAsync();
+        });
+    }
+
+    private async Task ConsultarAsync()
+    {
+        if (!DateTime.TryParseExact(_desde, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var desde)
+            || !DateTime.TryParseExact(_hasta, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var hasta))
+            throw new InvalidOperationException("Indicá fechas válidas.");
+        _filas = await Servicio.ListarPagosAsync(desde, hasta, _texto, _doc, _vida.Token);
+        // Lo marcado que ya no está en la grilla (otro documento o período) no se envía.
+        _seleccion.IntersectWith(_filas.Select(Clave));
+        _buscado = true;
+    }
+
+    private Task BuscarAsync() => EjecutarAsync(ConsultarAsync);
+    private Task TextoKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) => e.Key == "Enter" ? BuscarAsync() : Task.CompletedTask;
+    private void Seleccionar(CompraPagoFila f, bool marcado) { if (marcado) _seleccion.Add(Clave(f)); else _seleccion.Remove(Clave(f)); }
+    private void SeleccionarTodos(bool marcado) { foreach (var f in _filas.Take(500)) Seleccionar(f, marcado); }
+
+    private async Task VerPdfAsync(CompraPagoFila f)
+    {
+        if (_pdfClave is not null) return;
+        _pdfClave = Clave(f); _feedback = null;
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            var result = await UiOps.RunAsync(() => Servicio.GenerarPdfAsync(f.Tc, f.Comprobante, _doc, _vida.Token), "Ver PDF de pago", _vida.Token);
+            if (result.Success && result.Value is { Length: > 0 } bytes)
+                await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(bytes), "application/pdf", $"{(_doc.Length > 0 ? _doc + "-" : "")}{f.Tc}-{f.Comprobante}.pdf");
+            else
+                _feedback = result.Feedback;
+        }
+        catch (OperationCanceledException) { }
+        finally { _pdfClave = null; if (!_disposed) await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task AbrirMailAsync(CompraPagoFila f)
+    {
+        if (_mailCargando) return;
+        _mailCargando = true; _mailError = null; _feedback = null;
+        try { _mail = await Servicio.PrepararMailAsync(f.Tc, f.Comprobante, _doc, _vida.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _feedback = UiOps.BuildMessage(ex, "Preparar mail de pago"); }
+        finally { _mailCargando = false; if (!_disposed) await InvokeAsync(StateHasChanged); }
+    }
+
+    private void CerrarMail() { if (!_busy) { _mail = null; _mailError = null; } }
+
+    private Task EnviarMailAsync() => EjecutarAsync(async () =>
+    {
+        if (_mail is null) return;
+        var r = await Servicio.EnviarMailAsync(_mail.Tc, _mail.Comprobante, _mail.Certificado, _mail.Para, _mail.Asunto, _mail.Mensaje, _vida.Token);
+        if (!r.Enviado) { _mailError = r.Mensaje; return; }
+        _mail = null; _mailError = null;
+        await ConsultarAsync();
+        _feedback = AppUiMessage.Success("Mail enviado", r.Mensaje);
+    });
+
+    private Task EnviarLoteAsync()
+    {
+        _confirmarLote = false;
+        return EjecutarAsync(async () =>
+        {
+            var enviados = 0; var problemas = new List<string>();
+            foreach (var f in _filas.Where(x => _seleccion.Contains(Clave(x))).ToList())
+            {
+                var r = await Servicio.EnviarMailAsync(f.Tc, f.Comprobante, _doc, null, null, null, _vida.Token);
+                if (r.Enviado) { enviados++; _seleccion.Remove(Clave(f)); }
+                else problemas.Add($"{f.Tc} {CompraDocumentoMailService.FormatoComprobante(f.Comprobante)} ({f.Nombre}): {r.Mensaje}");
+            }
+            await ConsultarAsync();
+            _feedback = problemas.Count == 0
+                ? AppUiMessage.Success("Mails enviados", $"Se enviaron {enviados} documento(s).")
+                : AppUiMessage.Warning($"Se enviaron {enviados} y {problemas.Count} quedaron sin enviar", string.Join(" · ", problemas.Take(5)) + (problemas.Count > 5 ? $" · y {problemas.Count - 5} más" : ""));
+        });
+    }
+
+    private async Task EjecutarAsync(Func<Task> accion)
+    {
+        if (_busy || _disposed || _vida.IsCancellationRequested) return;
+        _busy = true; UpdateHeader();
+        try { await InvokeAsync(StateHasChanged); await accion(); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _feedback = UiOps.BuildMessage(ex, "Pagos y retenciones"); }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private void UpdateHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "compras", Title = "Pagos y retenciones",
+        ShowHistoryNavigation = false,
+        Breadcrumb = ["Compras", "Carga de comprobantes de compras", "Pagos y retenciones"],
+        TopNavigationItems =
+        [
+            new() { Key = "carga", Label = "Carga de comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga") + (Directo ? "?directo=1" : "")); return Task.CompletedTask; } },
+            new() { Key = "visor", Label = "Ver comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/visor") + (Directo ? "?directo=1" : "")); return Task.CompletedTask; } },
+            new() { Key = "pagos", Label = "Pagos y retenciones", Active = true }
+        ],
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions = [new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = BuscarAsync }]
+    });
+
+    private void CambiarSesion()
+    {
+        if (Sesiones.GetActiveSession()?.Id == _sesion && TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones, Usuarios)) return;
+        _vida.Cancel(); _filas = []; _seleccion.Clear(); _mail = null; _sesion = null;
+        _feedback = AppUiMessage.Warning("La sesión cambió", "Volvé a abrir Pagos y retenciones en la base activa.");
+        _ = InvokeAsync(StateHasChanged);
+    }
+    public void Dispose() { _disposed = true; Sesiones.SessionChanged -= CambiarSesion; Usuarios.StateChanged -= CambiarSesion; _vida.Cancel(); _vida.Dispose(); }
+}

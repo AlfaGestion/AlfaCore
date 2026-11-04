@@ -1,0 +1,24 @@
+-- Datos operativos propios de Compras web. No cambia contabilidad ni configuración legacy.
+SET NOCOUNT ON;
+IF OBJECT_ID(N'dbo.ALFACORE_COMPRA_OPERACION',N'U') IS NOT NULL
+    AND COL_LENGTH(N'dbo.ALFACORE_COMPRA_OPERACION',N'AsientoHuella') IS NULL
+    ALTER TABLE dbo.ALFACORE_COMPRA_OPERACION ADD AsientoHuella varchar(64) NULL;
+IF OBJECT_ID(N'dbo.ALFACORE_COMPRA_BORRADOR',N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ALFACORE_COMPRA_BORRADOR(
+        Id uniqueidentifier NOT NULL CONSTRAINT PK_ALFACORE_COMPRA_BORRADOR PRIMARY KEY,
+        Usuario nvarchar(100) NOT NULL,Sistema nvarchar(100) NOT NULL,
+        Version int NOT NULL,Nombre nvarchar(160) NOT NULL,Json nvarchar(max) NOT NULL,
+        Modificado datetime NOT NULL CONSTRAINT DF_COMPRA_BORRADOR_FECHA DEFAULT GETDATE()
+    );
+    CREATE INDEX IX_COMPRA_BORRADOR_USUARIO ON dbo.ALFACORE_COMPRA_BORRADOR(Usuario,Sistema,Modificado);
+END;
+IF OBJECT_ID(N'dbo.ALFACORE_COMPRA_ANULACION',N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ALFACORE_COMPRA_ANULACION(
+        CompraId int NOT NULL CONSTRAINT PK_ALFACORE_COMPRA_ANULACION PRIMARY KEY,
+        Usuario nvarchar(100) NOT NULL,Motivo nvarchar(500) NOT NULL,
+        Fecha datetime NOT NULL CONSTRAINT DF_COMPRA_ANULACION_FECHA DEFAULT GETDATE(),
+        AsientoJson nvarchar(max) NOT NULL,CentrosJson nvarchar(max) NOT NULL
+    );
+END;

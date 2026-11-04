@@ -322,8 +322,8 @@
                     <div class="contactos-form__grid">
                         <div class="field">
                             <label>Estado</label>
-                            <select @bind="_statusChange.IdEstadoNuevo" disabled="@IsSavingDetalle">
-                                @foreach (var item in _states)
+                            <select @bind="_statusChange.IdEstadoNuevo" disabled="@(IsSavingDetalle||_detail?.EstadoCodigo=="REGISTRADO")">
+                                @foreach (var item in _states.Where(e=>e.Codigo!="REGISTRADO"||e.IdEstado==_detail?.IdEstado))
                                 {
                                     <option value="@item.IdEstado">@item.Descripcion</option>
                                 }
@@ -504,6 +504,7 @@
     private bool IsSavingDetalle => _savingEdit || _changingState;
     private bool CanDetectCompra => _detail is not null
         && !_isNewMode
+        && _detail.EstadoCodigo!="REGISTRADO" && _detail.CompraRegistradaId is null
         && _detail.Adjuntos.Count > 0
         && string.Equals(_detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase);
 
@@ -512,7 +513,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => string.Join('|', _isNewMode, IdComprobanteRecibido, _puedePrepararCompra, _detail?.LecturaCompra?.Id, _loading, EsDirectoCompra);
+    private string HeaderSnapshot() => string.Join('|', _isNewMode, IdComprobanteRecibido, _puedePrepararCompra, _detail?.LecturaCompra?.Id, _detail?.CompraRegistradaId, _detail?.EstadoCodigo, _loading, EsDirectoCompra);
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -539,6 +540,9 @@
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildInterfaces(RouteContext, Navigation, "recepcion"),
             Actions =
             [
+                .. (_puedePrepararCompra && _detail?.CompraRegistradaId is not null ? new[]{new PageHeaderAction
+                {Key="ver-compra",Label="Ver comprobante",Icon="bi-receipt",Disabled=_loading,OnClick=()=>{_mostrarCompra=true;return InvokeAsync(StateHasChanged);}}}:Array.Empty<PageHeaderAction>()),
+
                 new PageHeaderAction
                 {
                     Key = "volver",
@@ -548,10 +552,10 @@
                     Disabled = false,
                     OnClick = () => InvokeAsync(() => { Navigation.NavigateTo(RouteContext.BuildRoute("/interfaces")); StateHasChanged(); })
                 },
-                .. (_puedePrepararCompra && !_isNewMode && _detail?.LecturaCompra is not null && !EsDirectoCompra ? new[] { new PageHeaderAction
+                .. (_puedePrepararCompra && !_isNewMode && _detail?.LecturaCompra is not null && _detail.EstadoCodigo!="REGISTRADO" && _detail.CompraRegistradaId is null && !EsDirectoCompra ? new[] { new PageHeaderAction
                 {
                     Key = "preparar-compra",
-                    Label = "Preparar compra",
+                    Label = "Cargar compra",
                     Icon = "bi-journal-plus",
                     Disabled = _loading || _detail?.Eliminado == true,
                     OnClick = () => { Navigation.NavigateTo(RouteContext.BuildRoute($"/compras/carga?documento={IdComprobanteRecibido}")); return Task.CompletedTask; }
@@ -597,6 +601,7 @@
         => idbase is > 0 ? idbase : Session.GetActiveSession()?.BaseId;
 
     private bool _puedePrepararCompra;
+    private bool _mostrarCompra;
     private bool EsDirectoCompra => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query).TryGetValue("directo", out var v) && v == "1";
 
     private bool IsCurrentTenant(AlfaCore.Services.SaaSTenantRouteLease lease)
@@ -1308,3 +1313,6 @@
         Historial
     }
 }
+
+@if(_mostrarCompra&&_detail?.CompraRegistradaId is not null)
+{<CompraDocumentoDialog DocumentoId="_detail.IdComprobanteRecibido" BaseEsperada="CurrentExpectedBaseId()" OnClose="()=>_mostrarCompra=false" />}

@@ -1,3 +1,4 @@
+using Dapper;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using System.Diagnostics;
@@ -124,28 +125,15 @@ public sealed partial class InterfacesService(
             return (IReadOnlyList<InterfacesTipoDocumentoOptionDto>)items;
         }, "No se pudieron cargar los tipos documentales.", ct);
 
-    public Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, CancellationToken ct = default)
-        => SearchAsync(filters, null, ct);
-
-    public Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, int? expectedBaseId, CancellationToken ct = default)
-        => ExecuteLoggedAsync("Interfaces", "Search", async token =>
-        {
-            var connectionString = ResolveConnectionString(expectedBaseId, "Interfaces.Search");
-            filters ??= new InterfacesFilters();
-            var pageSize = Math.Max(1, Math.Min(filters.PageSize, 200));
-            var pageNumber = Math.Max(1, filters.PageNumber);
-            var skip = (pageNumber - 1) * pageSize;
-
-            // Paginación con ROW_NUMBER() en vez de OFFSET/FETCH: hay bases de clientes en motores
-            // que no lo soportan en absoluto (ej.: SQL Server 2008), a diferencia de ROW_NUMBER()
-            // que funciona desde SQL Server 2005.
-            const string sql = """
+    internal const string ListadoSql = CompraDocumentoSql.PrefijoListado + """
+                DECLARE @EstadoFiltroCodigo nvarchar(30);
+                SELECT @EstadoFiltroCodigo=Codigo FROM dbo.INT_ESTADO WHERE IdEstado=@IdEstado;
                 WITH Pagina
                 (
                     IdComprobanteRecibido, FechaHora_Grabacion, UsuarioAlta, Observacion, CantidadAdjuntos,
                     Eliminado, IdEstado, EstadoCodigo, EstadoDescripcion, PermiteEdicion, IdTipoDocumento,
                     TipoCodigo, TipoDescripcion, ProveedorNombre, Total, TipoComprobante, PuntoVenta,
-                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion, RowNum
+                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion, CompraId, RowNum
                 )
                 AS
                 (
@@ -158,18 +146,20 @@ public sealed partial class InterfacesService(
                         ISNULL(c.Eliminado, 0),
                         e.IdEstado,
                         CASE
+                            WHEN r.CompraId IS NOT NULL OR ia.Estado='APROBADO' THEN 'REGISTRADO'
                             WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
                              AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
                                 THEN 'PROCESADO'
                             ELSE ISNULL(e.Codigo, '')
                         END,
                         CASE
+                            WHEN r.CompraId IS NOT NULL OR ia.Estado='APROBADO' THEN 'Registrado'
                             WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
                              AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
                                 THEN 'Procesado'
                             ELSE ISNULL(e.Descripcion, '')
                         END,
-                        ISNULL(e.PermiteEdicion, 0),
+                        CASE WHEN r.CompraId IS NOT NULL OR ia.Estado='APROBADO' THEN CAST(0 AS bit) ELSE ISNULL(e.PermiteEdicion,0) END,
                         t.IdTipoDocumento,
                         ISNULL(t.Codigo, ''),
                         ISNULL(t.Descripcion, ''),
@@ -180,10 +170,12 @@ public sealed partial class InterfacesService(
                         ISNULL(ia.Numero, ''),
                         ISNULL(ia.Letra, ''),
                         ISNULL(ia.Cuenta_Contable, ''),
-                        CASE WHEN ia.Estado = 'APROBADO' THEN ia.FechaHora_Modificacion ELSE NULL END,
-                        CASE WHEN ia.Estado = 'APROBADO' THEN ISNULL(ia.Usuario_Proceso, '') ELSE '' END,
+                        COALESCE(r.FechaHora,CASE WHEN ia.Estado = 'APROBADO' THEN ia.FechaHora_Modificacion ELSE NULL END),
+                        COALESCE(r.Usuario,CASE WHEN ia.Estado = 'APROBADO' THEN ISNULL(ia.Usuario_Proceso, '') ELSE '' END),
+                        r.CompraId,
                         ROW_NUMBER() OVER (ORDER BY c.FechaHora_Grabacion DESC, c.IdComprobanteRecibido DESC)
                     FROM dbo.INT_COMPROBANTE_RECIBIDO c
+                    LEFT JOIN #ComprasRegistradas r ON r.DocumentoId=c.IdComprobanteRecibido
                     INNER JOIN dbo.INT_ESTADO e
                         ON e.IdEstado = c.IdEstado
                     INNER JOIN dbo.INT_TIPO_DOCUMENTO t
@@ -207,7 +199,13 @@ public sealed partial class InterfacesService(
                     ) ia
                     WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
                       AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
-                      AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
+                      AND (@IdEstado IS NULL OR CASE
+                           WHEN r.CompraId IS NOT NULL OR ia.Estado='APROBADO' THEN 'REGISTRADO'
+                           WHEN t.Codigo='COMPROBANTE_COMPRA' AND ia.Estado IN ('PROCESADO','SIN_PROVEEDOR') THEN 'PROCESADO'
+                           ELSE e.Codigo END=@EstadoFiltroCodigo)
+                      AND (@Registracion='' OR (t.Codigo='COMPROBANTE_COMPRA' AND
+                           ((@Registracion='REGISTRADAS' AND (r.CompraId IS NOT NULL OR ia.Estado='APROBADO'))
+                           OR (@Registracion='PENDIENTES' AND r.CompraId IS NULL AND ISNULL(ia.Estado,'')<>'APROBADO'))))
                       AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
                       AND (
                             @TextoLike = ''
@@ -222,25 +220,34 @@ public sealed partial class InterfacesService(
                     IdComprobanteRecibido, FechaHora_Grabacion, UsuarioAlta, Observacion, CantidadAdjuntos,
                     Eliminado, IdEstado, EstadoCodigo, EstadoDescripcion, PermiteEdicion, IdTipoDocumento,
                     TipoCodigo, TipoDescripcion, ProveedorNombre, Total, TipoComprobante, PuntoVenta,
-                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion
+                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion, CompraId
                 FROM Pagina
                 WHERE RowNum > @Skip AND RowNum <= @Skip + @PageSize
                 ORDER BY RowNum;
 
                 SELECT COUNT(1)
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c
+                    LEFT JOIN #ComprasRegistradas r ON r.DocumentoId=c.IdComprobanteRecibido
+                INNER JOIN dbo.INT_TIPO_DOCUMENTO t ON t.IdTipoDocumento=c.IdTipoDocumento
+                INNER JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado
                 OUTER APPLY
                 (
                     SELECT TOP (1)
-                        cab.Proveedor_Nombre
+                        cab.Proveedor_Nombre,cab.Estado
                     FROM dbo.IA_Compras_CAB cab
                     WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
                     ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
                 ) ia
                 WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
                   AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
-                  AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
-                  AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
+                  AND (@IdEstado IS NULL OR CASE
+                           WHEN r.CompraId IS NOT NULL OR ia.Estado='APROBADO' THEN 'REGISTRADO'
+                           WHEN t.Codigo='COMPROBANTE_COMPRA' AND ia.Estado IN ('PROCESADO','SIN_PROVEEDOR') THEN 'PROCESADO'
+                           ELSE e.Codigo END=@EstadoFiltroCodigo)
+                  AND (@Registracion='' OR (t.Codigo='COMPROBANTE_COMPRA' AND
+                           ((@Registracion='REGISTRADAS' AND (r.CompraId IS NOT NULL OR ia.Estado='APROBADO'))
+                           OR (@Registracion='PENDIENTES' AND r.CompraId IS NULL AND ISNULL(ia.Estado,'')<>'APROBADO'))))
+                      AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
                   AND (
                         @TextoLike = ''
                         OR ISNULL(c.Observacion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
@@ -250,6 +257,23 @@ public sealed partial class InterfacesService(
                         OR ISNULL(ia.Proveedor_Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       );
                 """;
+
+    public Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, CancellationToken ct = default)
+        => SearchAsync(filters, null, ct);
+
+    public Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, int? expectedBaseId, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "Search", async token =>
+        {
+            var connectionString = ResolveConnectionString(expectedBaseId, "Interfaces.Search");
+            filters ??= new InterfacesFilters();
+            var pageSize = Math.Max(1, Math.Min(filters.PageSize, 200));
+            var pageNumber = Math.Max(1, filters.PageNumber);
+            var skip = (pageNumber - 1) * pageSize;
+
+            // Paginación con ROW_NUMBER() en vez de OFFSET/FETCH: hay bases de clientes en motores
+            // que no lo soportan en absoluto (ej.: SQL Server 2008), a diferencia de ROW_NUMBER()
+            // que funciona desde SQL Server 2005.
+            var sql = ListadoSql;
 
             var items = new List<InterfacesInboxItemDto>();
             await using var cn = new SqlConnection(connectionString);
@@ -261,6 +285,8 @@ public sealed partial class InterfacesService(
             cmd.Parameters.AddWithValue("@IdTipoDocumento", (object?)filters.IdTipoDocumento ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Skip", skip);
+            if(filters.RegistracionCompra is not ("" or "PENDIENTES" or "REGISTRADAS"))throw new InvalidOperationException("El filtro de registración no es válido.");
+            cmd.Parameters.AddWithValue("@Registracion",filters.RegistracionCompra);
             cmd.Parameters.AddWithValue("@PageSize", pageSize);
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
@@ -288,7 +314,8 @@ public sealed partial class InterfacesService(
                     LetraDetectada = GetString(rd, 18),
                     CuentaProveedorDetectada = GetString(rd, 19),
                     FechaAprobacionCompras = rd.IsDBNull(20) ? null : rd.GetDateTime(20),
-                    UsuarioAprobacionCompras = GetString(rd, 21)
+                    UsuarioAprobacionCompras = GetString(rd, 21),
+                    CompraRegistradaId = rd.IsDBNull(22)?null:rd.GetInt32(22)
                 });
             }
 
@@ -490,6 +517,10 @@ public sealed partial class InterfacesService(
             detail.Adjuntos = await GetAttachmentsInternalAsync(cn, idComprobanteRecibido, token);
             detail.Historial = await GetHistoryInternalAsync(cn, idComprobanteRecibido, token);
             detail.LecturaCompra = await GetCompraDetectionInternalAsync(cn, idComprobanteRecibido, token);
+            detail.CompraRegistradaId=await CompraDocumentoSql.CompraIdAsync(cn,idComprobanteRecibido,token);
+            if(detail.CompraRegistradaId is not null||detail.LecturaCompra?.Estado=="APROBADO")
+            {detail.EstadoCodigo="REGISTRADO";detail.EstadoDescripcion="Registrado";detail.PermiteEdicion=false;}
+
             return detail;
         }, "No se pudo cargar el comprobante seleccionado.", ct);
 
@@ -1350,6 +1381,8 @@ public sealed partial class InterfacesService(
             var newState = await GetStateByIdAsync(cn, request.IdEstadoNuevo, token)
                 ?? throw new InvalidOperationException("El estado seleccionado no existe.");
 
+            if(detail.EstadoCodigo=="REGISTRADO"||newState.Codigo=="REGISTRADO")
+                throw new InvalidOperationException("El estado Registrado lo administra la compra. No se puede cambiar manualmente desde Recepción documental.");
             if (detail.IdEstado == newState.IdEstado)
                 return;
 
@@ -1367,7 +1400,8 @@ public sealed partial class InterfacesService(
                     UsuarioAnulacion = @UsuarioAnulacion,
                     PcAnulacion = @PcAnulacion,
                     MotivoAnulacion = @MotivoAnulacion
-                WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+                WHERE IdComprobanteRecibido = @IdComprobanteRecibido AND NOT EXISTS(SELECT 1 FROM dbo.INT_ESTADO e WHERE e.IdEstado=INT_COMPROBANTE_RECIBIDO.IdEstado AND e.Codigo='REGISTRADO');
+                SELECT @@ROWCOUNT;
                 """;
 
             var isAnulado = string.Equals(newState.Codigo, "ANULADO", StringComparison.OrdinalIgnoreCase);
@@ -1383,7 +1417,7 @@ public sealed partial class InterfacesService(
                 cmd.Parameters.AddWithValue("@PcAnulacion", isAnulado ? DbNullable(pc, 100) : DBNull.Value);
                 cmd.Parameters.AddWithValue("@MotivoAnulacion", isAnulado ? DbNullable(request.Observacion, 500) : DBNull.Value);
                 cmd.Parameters.AddWithValue("@IdComprobanteRecibido", request.IdComprobanteRecibido);
-                await cmd.ExecuteNonQueryAsync(token);
+                if(Convert.ToInt32(await cmd.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)==0)throw new InvalidOperationException("El documento fue registrado mientras lo consultabas. Recargá la ficha.");
             }
 
             await InsertHistoryAsync(
@@ -1488,7 +1522,7 @@ public sealed partial class InterfacesService(
                     SUM(CASE WHEN Estado IN ('PROCESADO', 'SIN_PROVEEDOR') THEN 1 ELSE 0 END),
                     SUM(CASE WHEN Estado = 'ERROR_LECTURA' THEN 1 ELSE 0 END),
                     SUM(CASE WHEN Estado = 'CANCELADO' THEN 1 ELSE 0 END)
-                FROM dbo.IA_Compras_CAB;
+                FROM dbo.IA_Compras_CAB WHERE NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO');
                 """;
 
             const string itemsSql = """
@@ -1538,7 +1572,7 @@ public sealed partial class InterfacesService(
                     ISNULL(Lector_Observaciones, ''),
                     ISNULL(Lector_Error, ''),
                     ISNULL(JsonResultado, '')
-                FROM dbo.IA_Compras_CAB
+                FROM dbo.IA_Compras_CAB WHERE NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO')
                 ORDER BY
                     CASE Estado
                         WHEN 'PROCESANDO_LECTURA' THEN 0
@@ -1715,6 +1749,13 @@ public sealed partial class InterfacesService(
             await using var tx = await cn.BeginTransactionAsync(token);
             try
             {
+                var registrados=await cn.ExecuteScalarAsync<int>(new CommandDefinition(CompraDocumentoSql.PrefijoListado+"""
+                    SELECT COUNT(*) FROM dbo.INT_COMPROBANTE_RECIBIDO c WITH(UPDLOCK,HOLDLOCK)
+                    JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado LEFT JOIN #ComprasRegistradas r ON r.DocumentoId=c.IdComprobanteRecibido
+                    WHERE c.IdComprobanteRecibido IN @ids AND (e.Codigo='REGISTRADO' OR r.CompraId IS NOT NULL OR EXISTS(
+                      SELECT 1 FROM dbo.IA_Compras_CAB ia WHERE ia.IdComprobanteRecibido=c.IdComprobanteRecibido AND ia.Estado='APROBADO'));
+                    """,new{ids=existingIds.ToArray()},(SqlTransaction)tx,cancellationToken:token));
+                if(registrados>0)throw new InvalidOperationException("La selección incluye documentos con compras registradas. Se conservan como testigo y no pueden eliminarse.");
                 await DeleteCompraIaByComprobanteIdsAsync(cn, (SqlTransaction)tx, existingIds, token);
                 await DeleteByIdsAsync(cn, (SqlTransaction)tx, "dbo.INT_COMPROBANTE_RECIBIDO_HIST", "IdComprobanteRecibido", existingIds, token);
                 await DeleteByIdsAsync(cn, (SqlTransaction)tx, "dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO", "IdComprobanteRecibido", existingIds, token);
@@ -3040,6 +3081,7 @@ public sealed partial class InterfacesService(
                 SELECT TOP (1) ID
                 FROM dbo.IA_Compras_CAB WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Estado = 'PENDIENTE_LECTURA'
+                  AND NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO')
                   AND ISNULL(SolicitarCancelacion, 0) = 0
                 ORDER BY FechaHora_Proceso, ID
             )
@@ -3123,6 +3165,7 @@ public sealed partial class InterfacesService(
                 FROM dbo.IA_Compras_CAB WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE ID = @ID
                   AND Estado = 'PENDIENTE_LECTURA'
+                  AND NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO')
                   AND ISNULL(SolicitarCancelacion, 0) = 0
             )
             UPDATE cab
@@ -3205,6 +3248,8 @@ public sealed partial class InterfacesService(
         string pc,
         CancellationToken ct)
     {
+        if(detail.EstadoCodigo=="REGISTRADO"||detail.CompraRegistradaId is not null||detail.LecturaCompra?.Estado=="APROBADO")
+            throw new InvalidOperationException("El documento registrado no puede volver a procesarse.");
         var settings = await interfacesConfigService.GetUploadSettingsAsync(ct);
         var storedBase = ResolveStoredBase(settings);
         var storedPath = BuildStoredFileReference(storedBase, sourceAttachment.RutaRelativa);
@@ -3245,7 +3290,8 @@ public sealed partial class InterfacesService(
                     Archivo_NombreRenombrado = @Archivo_NombreRenombrado,
                     Lector_Error = NULL,
                     JsonResultado = NULL
-                WHERE ID = @ID;
+                WHERE ID = @ID AND Estado<>'APROBADO' AND NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO');
+                IF @@ROWCOUNT=0 RAISERROR(N'El documento registrado no se puede volver a procesar.',16,1);
                 """;
 
             await using var updateCmd = new SqlCommand(updateSql, cn);
@@ -3372,7 +3418,7 @@ public sealed partial class InterfacesService(
                 Usuario_Proceso = @Usuario_Proceso,
                 Observaciones_Rev = @Observaciones_Rev,
                 Lector_Error = NULL
-            WHERE ID = @ID;
+            WHERE ID = @ID AND Estado<>'APROBADO' AND NOT EXISTS(SELECT 1 FROM dbo.INT_COMPROBANTE_RECIBIDO c JOIN dbo.INT_ESTADO e ON e.IdEstado=c.IdEstado WHERE c.IdComprobanteRecibido=IA_Compras_CAB.IdComprobanteRecibido AND e.Codigo='REGISTRADO');
 
             IF @@ROWCOUNT = 0
                 THROW 50000, 'No se encontró el registro de procesamiento indicado.', 1;
@@ -4500,7 +4546,8 @@ public sealed partial class InterfacesService(
                 FechaHora_Modificacion = GETDATE(),
                 UsuarioModificacion = @UsuarioModificacion,
                 PcModificacion = @PcModificacion
-            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido AND NOT EXISTS(SELECT 1 FROM dbo.INT_ESTADO e WHERE e.IdEstado=INT_COMPROBANTE_RECIBIDO.IdEstado AND e.Codigo='REGISTRADO');
+                SELECT @@ROWCOUNT;
             """;
 
         await using (var cmd = new SqlCommand(updateSql, cn, tx))
@@ -4509,7 +4556,7 @@ public sealed partial class InterfacesService(
             cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
             cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
             cmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
-            await cmd.ExecuteNonQueryAsync(ct);
+            if(Convert.ToInt32(await cmd.ExecuteScalarAsync(ct),CultureInfo.InvariantCulture)==0)return;
         }
 
         var observacion = string.Equals(compraIaState, "SIN_PROVEEDOR", StringComparison.OrdinalIgnoreCase)

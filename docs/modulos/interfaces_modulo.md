@@ -292,4 +292,6 @@ El script base propuesto para crear estas tablas y configuraciones iniciales que
 - `docs/interfaces_modelo_inicial.sql`
 
 
-Desde 2026-11-03, la ficha con lectura de compra ofrece **Preparar compra** (si tiene permiso y no está en modo directo): abre la vista previa de servicios y gastos sin registrar ni aprobar el documento. Ver [preparación de compras](compras-carga.md).
+Desde 2026-11-03, la ficha con lectura de compra ofrece **Cargar compra** (si tiene permiso y no está en modo directo): abre la preparación de servicios y gastos; la confirmación registra factura, asiento y recepción en una sola transacción. Ver [preparación de compras](compras-carga.md).
+
+Recepción de compras: la actualización 2026-11-03-004 incorpora Registrado, filtro de pendientes/registradas y consulta del comprobante web/asiento desde la bandeja y ficha. Se preservan originales e historial y se bloquea reencolado/borrado de documentos ya registrados. El modo directo abre la consulta dentro del módulo.

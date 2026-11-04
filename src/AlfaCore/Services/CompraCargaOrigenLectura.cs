@@ -4,6 +4,7 @@ namespace AlfaCore.Services;
 
 internal static class CompraCargaOrigenLectura
 {
+    internal static string Huella(string json)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json)));
     internal static CompraCargaBorrador Convertir(InterfacesCompraIaResultadoDto ia,long documento,List<string> avisos)
     {
         if(ia.Estado is "PENDIENTE_LECTURA" or "PROCESANDO_LECTURA" or "ERROR_LECTURA" or "CANCELADO" or "ELIMINADO" or "RECHAZADO" or "APROBADO")
@@ -18,14 +19,14 @@ internal static class CompraCargaOrigenLectura
             "OC" or "ORDEN DE COMPRA"=>"OC","RMC" or "REMITO" or "REMITO DE COMPRA"=>"RMC",
             _=>throw new InvalidOperationException("El tipo de comprobante de la lectura no se pudo identificar. Revisalo en Recepción documental; no se convirtió en factura.")
         };
-        if(tc!="FCC")avisos.Add("Se identificó el tipo original del documento. Su circuito todavía no está implementado; no se lo convirtió en una factura ni se generará un asiento.");
+        if(tc is not("FCC" or "NCC" or "NDC"))avisos.Add("Se identificó el tipo original del documento. Su circuito todavía no está implementado; no se lo convirtió en una factura ni se generará un asiento.");
         var moneda=ia.Moneda.Trim().ToUpperInvariant();
         if(moneda is not("" or "1" or "$" or "PES" or "ARS" or "PESOS"))throw new InvalidOperationException("Esta primera etapa admite compras en pesos. No se convirtió la moneda del documento.");
-        if(ia.ImpuestosInternos.GetValueOrDefault()!=0||ia.OtrosImpuestos.GetValueOrDefault()!=0)avisos.Add("El documento contiene impuestos internos u otros tributos no cubiertos por esta etapa. Su total quedará sin cuadrar hasta ampliar el circuito.");
-        var d=new CompraCargaBorrador{Tipo=tc,DocumentoRecibido=documento,ServiciosGastosConfirmados=false,Proveedor=ia.CuentaContable.Trim(),Letra=ia.Letra.Trim().ToUpperInvariant(),
+        if(ia.OtrosImpuestos.GetValueOrDefault()!=0)avisos.Add("El documento contiene otros tributos no cubiertos por esta etapa. Su total quedará sin cuadrar hasta ampliar el circuito.");
+        var d=new CompraCargaBorrador{Tipo=tc,DocumentoRecibido=documento,LecturaCompraId=ia.Id,LecturaCompraHuella=Huella(ia.JsonResultado),ServiciosGastosConfirmados=false,Proveedor=ia.CuentaContable.Trim(),Letra=ia.Letra.Trim().ToUpperInvariant(),
             Sucursal=ia.PuntoVenta.Trim(),Numero=ia.Numero.Trim(),Fecha=ia.Fecha??DateTime.Today,FechaContable=ia.Fecha??DateTime.Today,
             Vencimiento=ia.Vencimiento??ia.Fecha??DateTime.Today,PercepcionIva=ia.PercepcionIva??0,PercepcionIibb=ia.PercepcionIibb??0,
-            PercepcionGanancias=ia.PercepcionGanancias??0,TotalDocumento=ia.Total};
+            PercepcionGanancias=ia.PercepcionGanancias??0,ImpuestoInterno=ia.ImpuestosInternos??0,TotalDocumento=ia.Total};
         var tasas=new[]{(21m,ia.Iva21??0),(10.5m,ia.Iva105??0),(27m,ia.Iva27??0)}.Where(x=>x.Item2!=0).ToList();
         var neto=ia.NetoGravado??0;
         if(neto!=0||tasas.Count>0)

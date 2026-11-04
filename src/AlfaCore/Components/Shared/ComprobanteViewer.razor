@@ -34,10 +34,13 @@
             </button>
             @if (_dto?.Cabecera is not null)
             {
+                @if(DatosConsulta is null)
+                {
                 <a class="btn btn--ghost" href="@BuildPageUrl(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento)" target="_blank" rel="noopener noreferrer">
                     <i class="bi bi-box-arrow-up-right"></i>
                     <span>Abrir en otra pestaña</span>
                 </a>
+                }
                 @if (_dto.TieneAsiento)
                 {
                     <button type="button" class="btn btn--secondary" @onclick="MostrarAsientoAsync" disabled="@_asientoLoading">
@@ -45,10 +48,13 @@
                         <span>Ver asiento</span>
                     </button>
                 }
+                @if(DatosConsulta is null)
+                {
                 <button type="button" class="btn btn--primary" @onclick="VerPdfFacturaAsync" disabled="@(_loading || _generandoPdf)">
                     <i class="bi bi-file-earmark-pdf"></i>
                     <span>Ver PDF</span>
                 </button>
+                }
             }
         </div>
     </section>
@@ -294,6 +300,7 @@
     [Parameter] public int IdComplemento { get; set; }
     [Parameter] public string? ReturnUrl { get; set; }
     [Parameter] public bool ModoDetalleCompleto { get; set; }
+    [Parameter] public ComprobanteViewerDto? DatosConsulta { get; set; }
     [Parameter] public bool AbrirAsientoInicial { get; set; }
     [Parameter] public EventCallback AsientoCerrado { get; set; }
     [SupplyParameterFromQuery(Name = "reimpresion")] public string? Reimpresion { get; set; }
@@ -325,6 +332,12 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if(DatosConsulta is {} consulta)
+        {
+            if(!ReferenceEquals(_dto,consulta))
+            {_dto=consulta;_asientos=consulta.Asientos;_loading=false;_feedback=null;_history.Clear();_asientoModalAbierto=AbrirAsientoInicial;}
+            return;
+        }
         var nextKey = BuildKey(Tc, IdComprobante, IdComplemento);
         if (_routeKey == nextKey)
             return;
@@ -336,6 +349,7 @@
 
     private async Task LoadAsync(string tc, string idComprobante, int idComplemento, bool pushCurrent)
     {
+        if(DatosConsulta is not null)return;
         if (_dto?.Cabecera is not null && pushCurrent)
         {
             _history.Push(new ViewerNavItem(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento));
@@ -410,6 +424,7 @@
             return;
 
         _asientoModalAbierto = true;
+        if(DatosConsulta is not null)return;
         if (_asientoLoading || _asientos.Count > 0)
             return;
 

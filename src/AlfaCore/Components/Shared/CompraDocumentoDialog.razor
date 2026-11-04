@@ -1,0 +1,42 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject CompraCargaService Servicio
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuario
+@inject IAppUiOperationService UiOps
+@implements IDisposable
+
+<AlfaDialog Open="true" Title="Compra registrada" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="OnClose">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@(_busy?AppUiMessage.InProgress("Consultando compra…","Recuperando comprobante y asiento completo."):_feedback)" Dismissible="false" />
+        @if(_consulta is {} consulta)
+        {
+            <ComprobanteViewer DatosConsulta="consulta.Comprobante" Tc="@consulta.Comprobante.Cabecera!.Tc" IdComprobante="@consulta.Comprobante.Cabecera.IdComprobante" ModoDetalleCompleto="true" />
+        }
+    </ChildContent>
+    <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="OnClose">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+@code {
+    [Parameter] public int? CompraId{get;set;}
+    [Parameter] public long DocumentoId{get;set;}
+    [Parameter] public int? BaseEsperada{get;set;}
+    [Parameter] public EventCallback OnClose{get;set;}
+    private readonly CancellationTokenSource _vida=new();
+    private CompraDocumentoConsulta? _consulta;private AppUiMessage? _feedback;private bool _busy,_disposed;
+    protected override void OnInitialized(){Sesiones.SessionChanged+=CambioSesion;Usuario.StateChanged+=CambioSesion;}
+    protected override async Task OnParametersSetAsync()
+    {
+        _consulta=null;_feedback=null;_busy=true;
+        try
+        {
+            var sesion=Sesiones.GetActiveSession()?.Id;
+            var datos=CompraId is {} compra?await Servicio.ConsultarCompraAsync(compra,BaseEsperada,_vida.Token):await Servicio.ConsultarDocumentoAsync(DocumentoId,BaseEsperada,_vida.Token);
+            if(!_vida.IsCancellationRequested&&sesion==Sesiones.GetActiveSession()?.Id&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuario))_consulta=datos;
+        }
+        catch(OperationCanceledException){}
+        catch(Exception ex){if(!_vida.IsCancellationRequested)_feedback=UiOps.BuildMessage(ex,"Consultar compra");}
+        finally{_busy=false;}
+    }
+    private void CambioSesion(){_vida.Cancel();_consulta=null;_feedback=AppUiMessage.Warning("La sesión cambió","Cerrá esta consulta y volvé a abrirla desde la base activa.");if(!_disposed)_=InvokeAsync(StateHasChanged);}
+    public void Dispose(){_disposed=true;Sesiones.SessionChanged-=CambioSesion;Usuario.StateChanged-=CambioSesion;_vida.Cancel();_vida.Dispose();}
+}

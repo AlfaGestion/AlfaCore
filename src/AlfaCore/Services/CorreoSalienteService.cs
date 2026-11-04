@@ -142,6 +142,24 @@ public sealed class CorreoSalienteService(IConfiguration configuration)
             """, new { Clave = ClaveContadorRespaldo, Valor = valor }, cancellationToken: ct));
     }
 
+    /// <summary>Registro de un envío en V_MA_EMAILMOV (Tipo E), el mismo formato que FrmEnviar del VB6: el historial es uno solo.</summary>
+    internal static Task RegistrarEnvioAsync(SqlConnection cn, CuentaCorreo? cuenta, string usuario, string cuentaDestino, string tc, string idComprobante,
+        string para, string asunto, string mensaje, string adjunto, string estado)
+    {
+        static string Corte(string? texto, int largo) => (texto ?? string.Empty) is var t && t.Length > largo ? t[..largo] : t;
+        return cn.ExecuteAsync(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.V_MA_EMAILMOV', N'U') IS NOT NULL
+                INSERT INTO dbo.V_MA_EMAILMOV (De, Para, Asunto, Mensaje, Adjunto, FechaHora, Usuario, Status, Cuenta, TC, IdComprobante, Tipo, NombreDe, CuentaeMail)
+                VALUES (@De, @Para, @Asunto, @Mensaje, @Adjunto, GETDATE(), @Usuario, @Estado, @Cuenta, @Tc, @Id, 'E', @NombreDe, @CuentaMail);
+            """, new
+            {
+                De = Corte(cuenta?.ResponderA ?? cuenta?.Remitente, 300), Para = Corte(para, 500), Asunto = Corte(asunto, 500),
+                Mensaje = mensaje, Adjunto = Corte(adjunto, 500), Usuario = Corte(usuario, 300), Estado = Corte(estado, 300),
+                Cuenta = Corte(cuentaDestino, 30), Tc = Corte(tc, 8), Id = Corte(idComprobante, 26),
+                NombreDe = Corte(cuenta?.NombreRemitente, 500), CuentaMail = Corte(cuenta?.Login, 500)
+            }, cancellationToken: CancellationToken.None));
+    }
+
     internal static async Task<string> LeerConfigAsync(SqlConnection cn, string clave, CancellationToken ct)
         => await cn.ExecuteScalarAsync<string?>(new CommandDefinition("""
             SELECT TOP (1) COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''), CONVERT(nvarchar(max), ValorAux), '')

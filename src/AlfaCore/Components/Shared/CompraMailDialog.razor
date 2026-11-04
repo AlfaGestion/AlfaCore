@@ -1,0 +1,46 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+
+@* Mail de un documento de compras al proveedor (OC, pago o certificado de retención): el mismo formulario que el de Ventas. *@
+<AlfaDialog Open="@(Borrador is not null)" Title="@Titulo" Size="AlfaDialogSize.Lg" Description="@Descripcion"
+            ErrorMessage="@Error" CloseOnBackdrop="false" Loading="Enviando" OnClose="OnCancelar">
+    <ChildContent>
+    @if (Borrador is not null)
+    {
+        <div class="cm-form">
+            @if (!string.IsNullOrWhiteSpace(Borrador.MailPrueba))
+            {
+                <p class="cm-form__prueba">Modo prueba: el mail va a @Borrador.MailPrueba, no al proveedor (clave ALFACORE_MAIL_PRUEBA en la configuración).</p>
+            }
+            <AlfaInput Label="Para" Value="@Borrador.Para" ValueChanged="v => Borrador.Para = v ?? string.Empty" Disabled="Enviando"
+                       HelpText="Separá varios mails con «;». Se completa con el mail de la ficha del proveedor." />
+            <AlfaInput Label="Asunto" MaxLength="250" Value="@Borrador.Asunto" ValueChanged="v => Borrador.Asunto = v ?? string.Empty" Disabled="Enviando" />
+            <label class="cm-form__label" for="cm-mensaje">Mensaje</label>
+            <textarea id="cm-mensaje" class="cm-form__mensaje" rows="9" disabled="@Enviando" @bind="Borrador.Mensaje" @bind:event="oninput"></textarea>
+            @if (Borrador.UltimoEnvio is { Length: > 0 } ultimo)
+            {
+                <small class="cm-form__ultimo">Último envío: @ultimo</small>
+            }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <small class="cm-form__nota">Va adjunto en PDF: @Borrador?.Archivo</small>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="Enviando" OnClick="_ => OnCancelar.InvokeAsync()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Disabled="Enviando" Loading="Enviando" OnClick="_ => OnEnviar.InvokeAsync()">Enviar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public CompraMailBorrador? Borrador { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool Enviando { get; set; }
+    [Parameter] public EventCallback OnEnviar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string Titulo => Borrador is { Certificado.Length: > 0 } ? "Enviar certificado de retención por mail"
+        : Borrador?.Tc is "PG" or "OPG" ? "Enviar pago por mail" : "Enviar orden de compra por mail";
+
+    private string? Descripcion => Borrador is null ? null
+        : $"{(Borrador.Certificado.Length > 0 ? CompraCertificado.Nombre(Borrador.Certificado) + " · " : string.Empty)}{Borrador.Tc} {CompraDocumentoMailService.FormatoComprobante(Borrador.Comprobante)} · {Borrador.Proveedor}";
+}

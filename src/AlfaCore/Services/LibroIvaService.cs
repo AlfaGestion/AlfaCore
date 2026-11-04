@@ -156,6 +156,11 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         return (nombre, cuit, condTexto);
     }
 
+    // V_mv_Cpra guarda impuestos internos en LIVA_EXENTO. Solo se separan cuando los importes
+    // demuestran esa inclusión; se conserva la fiscalidad de lectores que ya separaron ambos conceptos.
+    internal static decimal ExentoCompras(decimal exento,decimal internos,decimal resto,decimal total)
+        =>internos!=0&&Math.Sign(exento)==Math.Sign(internos)&&Math.Abs(exento)>=Math.Abs(internos)&&resto+exento==total?exento-internos:exento;
+
     private static LibroIvaFila Convertir(FilaSql s, bool compras)
     {
         var fila = new LibroIvaFila
@@ -163,7 +168,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit,
             CondicionIva = s.CondicionIva, UnidadNegocio = s.UnidadNegocio,
             PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
-            NetoGravado = s.NetoGravado, NoGravado = s.NoGravado, Exento = s.Exento,
+            NetoGravado = s.NetoGravado, NoGravado = s.NoGravado, Exento = compras ? ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total) : s.Exento,
             PercepcionIva = s.PercepcionIva, PercepcionIibb = s.PercepcionIibb, OtrasPercepciones = s.OtrasPercepciones,
             ImpuestosInternos = s.ImpuestosInternos, Total = s.Total, CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra)
         };
