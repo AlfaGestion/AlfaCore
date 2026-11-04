@@ -88,9 +88,11 @@ Permite consultar asientos y, con permiso, cargar o modificar asientos manuales.
 
 **Buscar**
 
-- Escribí en la barra superior un número de asiento, un comprobante, una cuenta o un usuario: la lista se actualiza mientras escribís.
+- Al entrar se ven los últimos asientos cargados, sin filtro de período.
+- Escribí en la barra superior un número de asiento (por ejemplo 10-25), un comprobante, un detalle, una cuenta o un usuario y pulsá Enter. Para búsquedas por texto conviene elegir antes un período: sin período se busca en toda la historia y puede demorar.
 - En el embudo, columna **Período**: al tocar un rango rápido la lista se actualiza enseguida. Si escribís las fechas a mano, pulsá **Aplicar**.
-- Columna **Asientos**: **Mostrar** elige entre **Asientos manuales**, **De comprobantes** (compras, ventas, cobranzas, pagos) o **Todos**. También podés filtrar por **Unidad** y **Con la cuenta**. Estos cambios se aplican al momento.
+- Columna **Mostrar**: **Todos**, **Solo asientos manuales** o **Solo de comprobantes** (compras, ventas, cobranzas, pagos). En **Otros filtros** podés elegir la **Unidad** y **Con la cuenta**.
+- Los filtros elegidos se ven como chips en el buscador; la **x** de un chip lo quita. **Limpiar** vuelve a los últimos asientos.
 
 **Abrir y modificar**
 

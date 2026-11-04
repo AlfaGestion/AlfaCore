@@ -18,7 +18,8 @@
     {
         @if (_lista.Count == 0 && _buscado)
         {
-            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos" Message="No hay asientos con esos filtros. Probá con otro período o con «Todos»." />
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos"
+                            Message="@(_f.Origen == "MANUALES" ? "No hay asientos manuales con esos filtros. Cargá uno con «Nuevo asiento» o, en el embudo de filtros, elegí «Todos» para ver también los de comprobantes." : "No hay asientos con esos filtros. Probá con otro período.")" />
         }
         else if (_lista.Count > 0)
         {
@@ -46,7 +47,11 @@
                     </tbody>
                 </table>
             </div></section>
-            @if (_lista.Count >= 500) { <small class="as-nota">Se muestran los 500 más recientes: acotá el período o buscá por número.</small> }
+            @if (_f.FechaDesde is null)
+            {
+                <small class="as-nota">@(_lista.Count >= AlfaCore.Services.AsientosService.UltimosAsientos ? $"Últimos {_lista.Count} asientos, del más reciente al más antiguo. Para ver otros, elegí un período o buscá por número." : $"{_lista.Count} asiento(s) encontrados.")</small>
+            }
+            else if (_lista.Count >= 500) { <small class="as-nota">Se muestran los 500 más recientes: acotá el período o buscá por número.</small> }
         }
     }
     else
@@ -278,7 +283,7 @@
 
 @code {
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
-    private readonly AsientosFiltro _f = new();
+    private readonly AsientosBusqueda _f = new();
     private AsientosCatalogo? _cat;
     private IReadOnlyList<AsientoResumen> _lista = [];
     private AsientoDetalle? _edit;
@@ -635,29 +640,84 @@
         _busy = true; UpdateHeader();
         try
         {
-            var filtro = new AsientosFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad };
+            var filtro = Filtro();
             var r = await UiOps.RunAsync(() => Service.BuscarAsync(filtro), "Asientos");
             if (r.Success) { _lista = r.Value!; _buscado = true; } else _feedback = r.Feedback;
         }
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
-    private void CambiarPeriodo((DateTime? Desde, DateTime? Hasta) periodo)
+    private AsientosFiltro Filtro() => new()
     {
-        if (periodo.Desde is { } desde) _f.Desde = desde;
-        if (periodo.Hasta is { } hasta) _f.Hasta = hasta;
-        UpdateHeader();
+        Desde = _f.FechaDesde?.Date, Hasta = _f.FechaHasta?.Date, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad
+    };
+
+    // Buscador estándar (como Clientes y los tableros): período, origen, unidad y cuenta en el embudo, con chips.
+    private static readonly (string Key, string Label)[] Origenes =
+        [("TODOS", "Todos"), ("MANUALES", "Solo asientos manuales"), ("COMPROBANTES", "Solo de comprobantes")];
+
+    private RenderFragment RenderSmartSearch() => @<GestionSmartSearch Model="_f" Placeholder="Buscar: número (10-25), comprobante, detalle, cuenta o usuario"
+                                                                    Texto="@_texto" TextoChanged="CambiarTexto" PermitirTodo="true"
+                                                                    Chips="SmartChips" OnRemoveChip="QuitarChip" OnClear="LimpiarFiltros" OnApply="BuscarAsync">
+        <Columnas>
+            <div class="smart-search__column">
+                <h4><i class="bi bi-journal-text"></i> Mostrar</h4>
+                @foreach (var o in Origenes)
+                {
+                    <button type="button" class="@(_f.Origen == o.Key ? "smart-option is-active" : "smart-option")" @onclick="() => Filtrar(() => _f.Origen = o.Key)">@o.Label</button>
+                }
+            </div>
+            @if (_cat is { Unidades.Count: > 1 } || _cat is { Cuentas.Count: > 0 })
+            {
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel"></i> Otros filtros</h4>
+                    @if (_cat is { Unidades.Count: > 1 })
+                    {
+                        <div class="smart-search__inline">
+                            <label>Unidad</label>
+                            <select value="@_f.Unidad" @onchange="e => Filtrar(() => _f.Unidad = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">Todas</option>
+                                @foreach (var u in _cat.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                            </select>
+                        </div>
+                    }
+                    @if (_cat is { Cuentas.Count: > 0 })
+                    {
+                        <div class="as-filtros__cuenta"><AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="v => Filtrar(() => _f.Cuenta = v)" Cuentas="_cat.Cuentas" /></div>
+                    }
+                </div>
+            }
+        </Columnas>
+    </GestionSmartSearch>;
+
+    private IReadOnlyList<GestionSmartChip> SmartChips
+    {
+        get
+        {
+            var chips = new List<GestionSmartChip>();
+            if (_f.Origen != "TODOS") chips.Add(new("origen", Origenes.First(o => o.Key == _f.Origen).Label));
+            if (_f.Unidad.Length > 0) chips.Add(new("unidad", $"Unidad: {_f.Unidad}"));
+            if (_f.Cuenta.Length > 0) chips.Add(new("cuenta", $"Cuenta: {_f.Cuenta}"));
+            return chips;
+        }
     }
-    private Task CambiarOrigen(string? v) { _f.Origen = string.IsNullOrEmpty(v) ? "MANUALES" : v; return BuscarAsync(); }
-    private Task CambiarUnidad(string? v) { _f.Unidad = v ?? ""; return BuscarAsync(); }
-    private static readonly IReadOnlyList<AlfaSelectOption> OrigenOptions =
-    [
-        new("MANUALES", "Asientos manuales"),
-        new("COMPROBANTES", "De comprobantes (compras, ventas, cobranzas…)"),
-        new("TODOS", "Todos")
-    ];
-    private IReadOnlyList<AlfaSelectOption> UnidadOptions => [new("", "Todas"), .. (_cat?.Unidades ?? []).Select(u => new AlfaSelectOption(u.Codigo, $"{u.Codigo} · {u.Descripcion}"))];
-    private Task CambiarCuenta(string v) { _f.Cuenta = v; return BuscarAsync(); }
+
+    // El panel se dibuja dentro del layout: hay que volver a publicar el header para que se vea la opción elegida.
+    private void Filtrar(Action cambio) { cambio(); UpdateHeader(); }
+
+    private void QuitarChip(string key)
+    {
+        if (key == "origen") _f.Origen = "TODOS";
+        else if (key == "unidad") _f.Unidad = string.Empty;
+        else if (key == "cuenta") _f.Cuenta = string.Empty;
+    }
+
+    // «Limpiar» vuelve a lo de entrada: los últimos asientos, sin período.
+    private void LimpiarFiltros()
+    {
+        _f.FechaDesde = null; _f.FechaHasta = null;
+        _f.Origen = "TODOS"; _f.Unidad = string.Empty; _f.Cuenta = string.Empty; _texto = string.Empty;
+    }
 
     private static string Origen(AsientoResumen x) => x.Manual ? "Manual" : x.LivaTipo.ToUpperInvariant() switch
     {
@@ -819,7 +879,7 @@
 
     private async Task BuscarSinRefrescarAsync()
     {
-        var filtro = new AsientosFiltro { Desde = _f.Desde, Hasta = _f.Hasta, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad };
+        var filtro = Filtro();
         var r = await UiOps.RunAsync(() => Service.BuscarAsync(filtro), "Asientos");
         if (r.Success) _lista = r.Value!;
     }
@@ -842,26 +902,7 @@
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
-    private Task CambiarTexto(string t) { _texto = t; UpdateHeader(); return Task.CompletedTask; }
-
-    private RenderFragment RenderFiltros() => @<FiltrosSmartSearch
-        Resumen="@GestionRangosFecha.Etiqueta(_f.Desde, _f.Hasta)"
-        Placeholder="Número, comprobante, cuenta o usuario..."
-        Texto="@_texto" TextoChanged="CambiarTexto" OnApply="BuscarAsync" Disabled="@_busy" PanelClass="smart-search__panel--dos" BuscarAlEscribir="true">
-        <FiltroPeriodo Desde="@_f.Desde" Hasta="@_f.Hasta" PeriodoChanged="CambiarPeriodo" RangoElegido="_ => BuscarAsync()" Disabled="@_busy" />
-        <div class="smart-search__column as-filtros">
-            <h4><i class="bi bi-journal-text" aria-hidden="true"></i> Asientos</h4>
-            <AlfaSelect Label="Mostrar" Value="@_f.Origen" ValueChanged="v => CambiarOrigen(v)" Options="@OrigenOptions" Disabled="@_busy" />
-            @if (_cat is { Unidades.Count: > 1 })
-            {
-                <AlfaSelect Label="Unidad" Value="@_f.Unidad" ValueChanged="v => CambiarUnidad(v)" Options="@UnidadOptions" Disabled="@_busy" />
-            }
-            @if (_cat is not null)
-            {
-                <AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="CambiarCuenta" Cuentas="_cat.Cuentas" />
-            }
-        </div>
-    </FiltrosSmartSearch>;
+    private Task CambiarTexto(string? t) { _texto = t ?? string.Empty; return Task.CompletedTask; }
 
     private void UpdateHeader()
     {
@@ -889,7 +930,7 @@
             TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "asientos"),
             State = _busy ? PageHeaderState.Loading : _edit is null ? PageHeaderState.List : PageHeaderState.Editing,
             Search = _edit is null ? new PageHeaderSearchConfig() : null,
-            SearchContent = _edit is null ? RenderFiltros() : null,
+            SearchContent = _edit is null ? RenderSmartSearch() : null,
             Actions = acciones
         });
     }

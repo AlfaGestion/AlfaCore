@@ -53,6 +53,11 @@ public sealed class LibroIvaResultado
     public bool PuedeCerrar { get; set; }
     /// <summary>Comprobantes sin código ARCA (no van al TXT del Libro IVA Digital).</summary>
     public int SinCodigoArca { get; set; }
+    /// <summary>Unidades de negocio que aparecen en el libro, con su CUIT y subtotales.</summary>
+    public IReadOnlyList<LibroIvaUnidadResumen> Unidades { get; set; } = [];
+    /// <summary>Se pidieron todas las unidades y el libro mezcla más de una: no es el libro de un solo CUIT.</summary>
+    public bool Consolidado => Filtro.UnidadNegocio.Length == 0 && Unidades.Count > 1;
+    public int CantidadCuits => Unidades.Select(u => u.Cuit.Replace("-", "")).Where(c => c.Length > 0).Distinct().Count();
     public decimal NetoGravado => Filas.Sum(f => f.NetoGravado);
     public decimal NoGravado => Filas.Sum(f => f.NoGravado);
     public decimal Exento => Filas.Sum(f => f.Exento);
@@ -63,5 +68,7 @@ public sealed class LibroIvaResultado
 }
 
 public sealed record LibroIvaUnidad(string Codigo, string Descripcion, string Cuit);
+
+public sealed record LibroIvaUnidadResumen(string Codigo, string Nombre, string Cuit, int Cantidad, decimal Neto, decimal Iva, decimal Total);
 
 public sealed record LibroIvaArchivo(string Nombre, string ContentType, byte[] Contenido);

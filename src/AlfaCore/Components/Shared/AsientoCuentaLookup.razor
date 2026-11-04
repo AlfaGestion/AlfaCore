@@ -39,6 +39,8 @@
     {
         _seleccion = c;
         _anterior = c?.Codigo ?? "";
+        // Al elegir, el cuadro muestra la cuenta elegida y no lo que se escribió para buscarla (04-11-2026).
+        if (c is not null) _texto = $"{c.Codigo} · {c.Descripcion}";
         await CuentaChanged.InvokeAsync(c?.Codigo ?? "");
     }
 }

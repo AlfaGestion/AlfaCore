@@ -803,7 +803,7 @@ else
                         </button>
                     </div>
                     <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
-                        @foreach (var item in PageHeader.Current.TopNavigationItems)
+                        @foreach (var item in PageHeader.Current.TopNavigationItems.Where(TopNavItemVisible))
                         {
                             if (item.Disabled)
                             {
@@ -1721,7 +1721,51 @@ else
     }
 
     private void OnPageHeaderChanged()
-        => _ = InvokeAsync(StateHasChanged);
+        => _ = InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            if (await EnsureHiddenTopNavRoutesAsync())
+                StateHasChanged();
+        });
+
+    // Rutas del menú web que el usuario no tiene autorizadas: sus solapas no se muestran en el topbar.
+    private IReadOnlySet<string> _hiddenTopNavRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private bool _hiddenTopNavRoutesLoaded;
+    private bool _hiddenTopNavRoutesLoading;
+
+    private async Task<bool> EnsureHiddenTopNavRoutesAsync()
+    {
+        if (_hiddenTopNavRoutesLoaded || _hiddenTopNavRoutesLoading || !AppUserSession.IsAuthenticated || PageHeader.Current.TopNavigationItems.Count == 0)
+            return false;
+        _hiddenTopNavRoutesLoading = true;
+        try
+        {
+            _hiddenTopNavRoutes = await MenuSvc.GetHiddenRoutesAsync();
+            _hiddenTopNavRoutesLoaded = true;
+            return _hiddenTopNavRoutes.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "MainLayout: no se pudieron leer las rutas no autorizadas del topbar.");
+            return false;
+        }
+        finally
+        {
+            _hiddenTopNavRoutesLoading = false;
+        }
+    }
+
+    private bool TopNavItemVisible(PageHeaderTopNavItem item)
+    {
+        if (item.Active || _hiddenTopNavRoutes.Count == 0 || string.IsNullOrWhiteSpace(item.Url))
+            return true;
+        var path = item.Url.Split('?', '#')[0].TrimEnd('/');
+        if (_hiddenTopNavRoutes.Contains(path))
+            return false;
+        // En SaaS la URL lleva el prefijo /{idweb}/{idbase}.
+        var m = System.Text.RegularExpressions.Regex.Match(path, @"^/[^/]+/\d+(/.+)$");
+        return !(m.Success && _hiddenTopNavRoutes.Contains(m.Groups[1].Value));
+    }
 
     private static async Task RunTopNavigationAsync(PageHeaderTopNavItem item)
     {
@@ -2443,6 +2487,8 @@ else
         _menuSearchError = string.Empty;
         _menuSearchLoaded = false;
         _menuSearchLoading = false;
+        _hiddenTopNavRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _hiddenTopNavRoutesLoaded = false;
     }
 
     private async Task EnsureMenuSearchCatalogAsync()

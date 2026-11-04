@@ -26,8 +26,25 @@
             <KpiCard Titulo="@(Compras ? "IVA crédito fiscal" : "IVA débito fiscal")" Valor="@Moneda(r.Iva)" Icono="@Icono("bi-percent")"
                      Descripcion="@($"Percepciones {Moneda(r.Percepciones)}")" />
             <KpiCard Titulo="Total" Valor="@Moneda(r.Total)" Icono="@Icono("bi-receipt")" Destacado="true"
-                     Descripcion="@($"{r.Emisor} · CUIT {r.CuitEmisor}")" />
+                     Descripcion="@(r.Consolidado ? $"Consolidado · {r.Unidades.Count} unidades · {r.CantidadCuits} CUIT" : $"{r.Emisor} · CUIT {r.CuitEmisor}")" />
         </div>
+
+        @if (r.Consolidado)
+        {
+            <div class="liva-consolidado" role="note">
+                <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                <div>
+                    <strong>Libro consolidado: @r.Unidades.Count unidades de negocio@(r.CantidadCuits > 1 ? $" con {r.CantidadCuits} CUITs distintos" : "")</strong>
+                    <span>Es un listado de control. Para presentar en ARCA elegí cada unidad por separado.</span>
+                    <ul>
+                        @foreach (var u in r.Unidades)
+                        {
+                            <li><b>@(u.Codigo.Length > 0 ? u.Codigo : "—")</b> · @u.Nombre · CUIT @u.Cuit · @u.Cantidad cptes · @Moneda(u.Total)</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
 
         <div class="liva-cierre @(Cerrado(r) ? "is-cerrado" : null)">
             <i class="bi @(Cerrado(r) ? "bi-lock-fill" : "bi-unlock")" aria-hidden="true"></i>
@@ -269,7 +286,7 @@
         }
     }
     private static string NombreMes(DateTime mes) => Culture.TextInfo.ToTitleCase(mes.ToString("MMMM yyyy", Culture));
-    private string ResumenFiltros => _unidad.Length == 0 ? NombreMes(_mes) : $"{NombreMes(_mes)} · {_unidad}";
+    private string ResumenFiltros => _unidad.Length == 0 ? $"{NombreMes(_mes)} · Todas las unidades" : $"{NombreMes(_mes)} · {_unidad}";
 
     private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
     {

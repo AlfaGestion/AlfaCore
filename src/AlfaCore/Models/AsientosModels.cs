@@ -2,12 +2,27 @@ namespace AlfaCore.Models;
 
 public sealed class AsientosFiltro
 {
-    public DateTime Desde { get; set; } = new(DateTime.Today.Year, DateTime.Today.Month, 1);
-    public DateTime Hasta { get; set; } = DateTime.Today;
+    /// <summary>Sin fechas («Todo»): los últimos asientos cargados, buscando hacia atrás desde hoy.</summary>
+    public DateTime? Desde { get; set; }
+    public DateTime? Hasta { get; set; }
     /// <summary>Número («10-25» o «25»), comprobante, detalle, cuenta o usuario.</summary>
     public string Texto { get; set; } = string.Empty;
     /// <summary>MANUALES (editables), COMPROBANTES (de compras, ventas, cobranzas, pagos…) o TODOS.</summary>
     public string Origen { get; set; } = "MANUALES";
+    public string Cuenta { get; set; } = string.Empty;
+    public string Unidad { get; set; } = string.Empty;
+}
+
+/// <summary>Filtros de la pantalla de Asientos para el buscador estándar (GestionSmartSearch). Por defecto, «Todo».</summary>
+public sealed class AsientosBusqueda : GestionDateFilterBase
+{
+    public AsientosBusqueda()
+    {
+        FechaDesde = null;
+        FechaHasta = null;
+    }
+
+    public string Origen { get; set; } = "TODOS";
     public string Cuenta { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
 }

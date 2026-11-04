@@ -30,12 +30,13 @@ public static class ConfiguracionCatalogo
     public const string AreaEmpresa = "Empresa y sistema";
     public const string AreaUsuarios = "Usuarios y seguridad";
     public const string AreaComercial = "Comercial";
+    public const string AreaContable = "Contabilidad";
     public const string AreaConversaciones = "Conversaciones";
     public const string AreaAgenda = "Agenda";
     public const string AreaIntegraciones = "Integraciones";
 
     public static IReadOnlyList<string> Areas { get; } =
-        [AreaEmpresa, AreaUsuarios, AreaComercial, AreaConversaciones, AreaAgenda, AreaIntegraciones];
+        [AreaEmpresa, AreaUsuarios, AreaComercial, AreaContable, AreaConversaciones, AreaAgenda, AreaIntegraciones];
 
     public static IReadOnlyList<ConfiguracionEntrada> Entradas { get; } =
     [
@@ -74,6 +75,11 @@ public static class ConfiguracionCatalogo
             "/cotizaciones/configuracion", "bi-file-earmark-ruled", ["cotizaciones", "crm"], "presupuesto cotizacion", Principal: true),
         new("catalogo", "Catálogo", "Catálogos públicos, links y visibilidad de precios.", AreaComercial,
             "/catalogo/configuracion", "bi-grid-3x3-gap", ["catalogo", "catalogos"], "catalogo publico precios link", Principal: true),
+
+        new("gestion-contable", "Gestión contable", "Plan de cuentas, índices de ajuste, centros de costo y fechas del ejercicio.", AreaContable,
+            "/configuracion-general/contable", "bi-journal-bookmark", ["configuracion-general", "contabilidad"],
+            "plan de cuentas digitos niveles estructura codificacion indices ajuste centros de costo ejercicio fecha operativa " +
+            string.Join(" ", ConfiguracionContableService.Definiciones.Select(d => $"{d.Clave} {d.Titulo}")), Principal: true),
 
         new("conversaciones", "Conversaciones", "Canales, asistente IA, automatizaciones y accesos.", AreaConversaciones,
             "/conversaciones/configuracion", "bi-chat-left-text", ["conversaciones"], "whatsapp instagram facebook mercado libre", Principal: true),

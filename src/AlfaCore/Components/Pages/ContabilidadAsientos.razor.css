@@ -1,6 +1,5 @@
 .as-page { display: flex; flex-direction: column; gap: 12px; }
-/* Columna "Asientos" del Smart Search: controles apilados como la columna Período. */
-.as-filtros { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.as-filtros__cuenta { min-width: 280px; flex: 1 1 280px; }
 .as-input { height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--alfa-border-default);
     background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font-size: 13px; color-scheme: light dark; }
 .as-input:disabled { opacity: .75; }

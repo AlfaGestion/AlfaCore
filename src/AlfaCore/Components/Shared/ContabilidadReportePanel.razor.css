@@ -59,5 +59,10 @@
 .plan-tag.is-success { border-color: color-mix(in srgb, var(--alfa-success) 55%, transparent); background: color-mix(in srgb, var(--alfa-success) 16%, var(--alfa-bg-surface)); color: var(--alfa-success); }
 .plan-tag.is-warning { border-color: color-mix(in srgb, var(--alfa-warning) 55%, transparent); background: color-mix(in srgb, var(--alfa-warning) 14%, var(--alfa-bg-surface)); color: var(--alfa-warning); }
 .plan-tag.is-danger { border-color: color-mix(in srgb, var(--alfa-danger) 55%, transparent); background: color-mix(in srgb, var(--alfa-danger) 16%, var(--alfa-bg-surface)); color: var(--alfa-danger); }
-.plan-ir { width: 100px; color: transparent; font-size: 12px; text-align: right; white-space: nowrap; }
-.plan-tabla tbody tr:hover .plan-ir, .plan-tabla tbody tr:focus-visible .plan-ir { color: var(--alfa-accent-hover); }
+.plan-ir { width: 190px; font-size: 12px; text-align: right; white-space: nowrap; }
+.plan-ir__mayor { color: transparent; }
+.plan-tabla tbody tr:hover .plan-ir__mayor, .plan-tabla tbody tr:focus-visible .plan-ir__mayor { color: var(--alfa-accent-hover); }
+.ctr-tabla tr.is-editable { cursor: pointer; }
+.plan-editar { display: inline-flex; align-items: center; gap: 4px; height: 22px; margin-right: 8px; padding: 0 8px; border: 1px solid var(--alfa-border-default);
+    border-radius: 4px; background: transparent; color: var(--alfa-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.plan-editar:hover, .plan-editar:focus-visible { border-color: var(--alfa-accent); color: var(--alfa-accent-hover); outline: none; }

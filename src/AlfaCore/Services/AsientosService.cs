@@ -430,9 +430,13 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         + CASE WHEN COUNT(DISTINCT LTRIM(RTRIM(a.TC)) + a.SUCURSAL + a.NUMERO + a.LETRA) > 1 THEN 1 ELSE 0 END
         """;
 
+    /// <summary>Sin fecha desde se muestran los últimos asientos: se busca hacia atrás (3 meses, 1 año, 3 años) hasta juntar estos.</summary>
+    internal const int UltimosAsientos = 100;
+    private static readonly int[] VentanasDias = [92, 366, 1096];
+
     public Task<IReadOnlyList<AsientoResumen>> BuscarAsync(AsientosFiltro f, CancellationToken ct = default) => EjecutarAsync("Buscar", MenusConsulta, async cn =>
     {
-        if (f.Hasta < f.Desde || (f.Hasta - f.Desde).TotalDays > 400) throw new ReglaException("Elegí un rango de hasta un año.");
+        if (f.Desde is { } d0 && f.Hasta is { } h0 && (h0 < d0 || (h0 - d0).TotalDays > 400)) throw new ReglaException("Elegí un rango de hasta un año.");
         var u = await UsuarioAsync(cn, null, ct);
         var manuales = (await TalonariosAsync(cn, null, u.Unidad, ct)).Select(t => t.Codigo).ToArray();
         var texto = (f.Texto ?? "").Trim();
@@ -440,8 +444,18 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         if (Regex.Match(texto, @"^(\d{1,2})\s*-\s*(\d{1,7})$") is { Success: true } m) { mes = int.Parse(m.Groups[1].Value); numero = int.Parse(m.Groups[2].Value); texto = ""; }
         var like = texto.Length == 0 ? "" : "%" + texto.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
         var origen = (f.Origen ?? "MANUALES").ToUpperInvariant();
-        var filas = await cn.QueryAsync<ResumenSql>(new CommandDefinition($"""
-            SELECT TOP (500) LTRIM(RTRIM(a.PERIODO)) Periodo, CONVERT(int, a.MES_OPERATIVO) Mes, CONVERT(int, a.[NUMERO ASIENTO]) Numero, ISNULL(a.TIPO_REG,'') TipoReg,
+        // Sin hasta: incluye asientos con fecha futura.
+        var hasta = (f.Hasta ?? new DateTime(2100, 12, 31)).Date;
+        // Manuales: primero las claves candidatas (talonario manual, sin TIPO_REG) y después se agrupan solo esas;
+        // agrupar todo el período para descartar después tardaba más de un minuto en bases grandes.
+        var candidatos = origen == "MANUALES" ? """
+            WITH k AS (SELECT DISTINCT PERIODO, MES_OPERATIVO, [NUMERO ASIENTO] NUM FROM dbo.MV_ASIENTOS
+                       WHERE FECHA >= @Desde AND FECHA < DATEADD(day, 1, @Hasta) AND LTRIM(RTRIM(TC)) IN @Manuales AND LTRIM(ISNULL(TIPO_REG,'')) = '')
+            """ : "";
+        var conCandidatos = origen == "MANUALES"
+            ? "AND EXISTS (SELECT 1 FROM k WHERE k.PERIODO = a.PERIODO AND k.MES_OPERATIVO = a.MES_OPERATIVO AND k.NUM = a.[NUMERO ASIENTO])" : "";
+        async Task<List<ResumenSql>> ConsultarAsync(DateTime desde, int top) => (await cn.QueryAsync<ResumenSql>(new CommandDefinition($"""
+            {candidatos}SELECT TOP (@Top) LTRIM(RTRIM(a.PERIODO)) Periodo, CONVERT(int, a.MES_OPERATIVO) Mes, CONVERT(int, a.[NUMERO ASIENTO]) Numero, ISNULL(a.TIPO_REG,'') TipoReg,
                    MIN(a.FECHA) Fecha, MAX(LTRIM(RTRIM(a.TC))) Tc,
                    MAX(LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO)) + ' ' + LTRIM(RTRIM(a.LETRA))) Comprobante,
                    -- El detalle del asiento (los conceptos de renglón terminan en «.»; si todos los tienen, el primero).
@@ -455,6 +469,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             WHERE a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(a.EsResumen,0) = 0
               AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
               AND (@Mes IS NULL OR (a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero))
+              {conCandidatos}
             GROUP BY a.PERIODO, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.TIPO_REG
             HAVING (@Cuenta = '' OR MAX(CASE WHEN LTRIM(RTRIM(a.CUENTA)) = @Cuenta THEN 1 ELSE 0 END) = 1)
                AND (@Like = '' OR MAX(CASE WHEN CONVERT(nvarchar(200), a.DETALLE) LIKE @Like OR a.CUENTA LIKE @Like OR a.USUARIO_LOGEADO LIKE @Like
@@ -462,9 +477,28 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                AND (@Origen = 'TODOS'
                     OR (@Origen = 'MANUALES' AND LTRIM(MAX(ISNULL(a.TIPO_REG,''))) = '' AND MAX(LTRIM(RTRIM(a.TC))) IN @Manuales AND {BloqueosSql} = 0)
                     OR (@Origen = 'COMPROBANTES' AND NOT (LTRIM(MAX(ISNULL(a.TIPO_REG,''))) = '' AND MAX(LTRIM(RTRIM(a.TC))) IN @Manuales AND {BloqueosSql} = 0)))
-            ORDER BY MIN(a.FECHA) DESC, a.MES_OPERATIVO DESC, a.[NUMERO ASIENTO] DESC;
-            """, new { Desde = f.Desde.Date, Hasta = f.Hasta.Date, Unidad = (f.Unidad ?? "").Trim(), Cuenta = (f.Cuenta ?? "").Trim(), Like = like, Mes = mes, Numero = numero,
-                Origen = origen, Manuales = manuales.Length == 0 ? ["CC"] : manuales }, commandTimeout: 120, cancellationToken: ct));
+            ORDER BY MIN(a.FECHA) DESC, MAX(a.FechaHora_Grabacion) DESC, a.MES_OPERATIVO DESC, a.[NUMERO ASIENTO] DESC;
+            """, new { Top = top, Desde = desde, Hasta = hasta, Unidad = (f.Unidad ?? "").Trim(), Cuenta = (f.Cuenta ?? "").Trim(), Like = like, Mes = mes, Numero = numero,
+                Origen = origen, Manuales = manuales.Length == 0 ? ["CC"] : manuales }, commandTimeout: 120, cancellationToken: ct))).ToList();
+
+        List<ResumenSql> filas;
+        if (f.Desde is { } desdeElegido)
+            filas = await ConsultarAsync(desdeElegido.Date, 500);
+        else
+        {
+            // Últimos cargados: ventanas crecientes sobre el índice de FECHA (MV_ASIENTOS tiene millones de renglones).
+            // Toda la historia solo si se busca algo puntual (número, texto o cuenta).
+            var referencia = (f.Hasta ?? DateTime.Today).Date;
+            var puntual = mes is not null || like.Length > 0 || (f.Cuenta ?? "").Trim().Length > 0;
+            filas = [];
+            foreach (var dias in VentanasDias)
+            {
+                filas = await ConsultarAsync(referencia.AddDays(-dias), UltimosAsientos);
+                if (filas.Count >= UltimosAsientos) break;
+            }
+            if (filas.Count < UltimosAsientos && puntual)
+                filas = await ConsultarAsync(new DateTime(1900, 1, 1), UltimosAsientos);
+        }
         return (IReadOnlyList<AsientoResumen>)filas.Select(x => new AsientoResumen
         {
             Periodo = x.Periodo, Mes = x.Mes, Numero = x.Numero, TipoReg = x.TipoReg.Trim(), Fecha = x.Fecha, Tc = x.Tc, Comprobante = x.Comprobante,

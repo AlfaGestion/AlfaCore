@@ -529,6 +529,54 @@ Criterio aplicado:
 - Datos que usa: `IGestionDashboardService`
 - Observaciones: la agrupación depende de configuración real en `TA_CONFIGURACION`.
 
+### PlanCuentasAbmService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PlanCuentasAbmService.cs`
+- Propósito: alta, baja y modificación del plan de cuentas como «Actualización Plan General de Cuentas» del legacy (D9510, MA_CUENTAS.vbp / Cn020.frm), usado desde la consulta del plan de cuentas.
+- Datos que usa: `MA_CUENTAS`, `MA_CUENTASADIC`, `MA_CUENTASCCOSTO`, `MA_CUENTAS_USUARIOS`, `MA_CASH-DETALLE`, `MV_ASIENTOS`, `TA_CCOSTO`, `TA_MONEDAS`, `TA_RANGOS_DATOS_ADIC`, `TA_VISTAS`, `P_MA_Legajos`, `VT_CLIENTES`, `VT_PROVEEDORES`, `TA_USUARIOS`, `V_TA_CPTE`, `V_MV_CPTEACCIONES`, `TA_CONFIGURACION`.
+- Observaciones: mismas validaciones del legacy (formato y niveles, imputable/título contra el nivel superior, nivel inferior, movimientos, cuenta relacionada, código opcional único, legajos), tipo de vista por rangos de datos adicionales o títulos configurados, medios SUSS y solicitud de crédito en TA_CONFIGURACION, centros de costo y grupos de usuarios. Una cuenta con movimientos no se borra: se marca dada de baja si no tiene movimientos en el ejercicio activo y su apertura es cero. Transacción Serializable, registro en V_MV_CPTEACCIONES y auditoría. No replica a puntos de venta ni a empresas del grupo.
+
+### PlanCuentasReglas
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PlanCuentasReglas.cs`
+- Propósito: reglas puras del plan de cuentas (estructura de niveles, formato del código, imputable/título, dígito verificador, próximo código libre, medios de pago) sin acceso a datos.
+- Datos que usa: no usa objetos SQL; recibe la configuración ya leída.
+- Observaciones: copia de CuentaValida, ValidaImputable, ValidaTitulo, CalculoDV e IdentificaCuenta del legacy; cubierta por `tests/AlfaCore.Tests/PlanCuentasAbmTests.cs`.
+
+### PlanCuentasAbmDialog
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/PlanCuentasAbmDialog.razor`
+- Propósito: diálogo de alta, modificación y baja de una cuenta, embebido en la consulta del plan de cuentas (`ContabilidadReportePanel`, tipo plan).
+- Datos que usa: `IPlanCuentasAbmService`
+- Observaciones: el alta propone el próximo código libre de la cuenta madre; si el código existe lo abre para modificar y si está dado de baja ofrece reutilizarlo. Solo se muestra con el permiso D9510.
+
+### ConfiguracionContableService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConfiguracionContableService.cs`
+- Propósito: lee y graba la solapa Configuración → Gestión contable con las mismas claves que la solapa «Gestión Contable» de Config.frm del legacy.
+- Datos que usa: `TA_CONFIGURACION`, `TA_USUARIOS`, `MA_CUENTAS`.
+- Observaciones: lista blanca de claves con tipo (SI_NO, DIGITOS, TEXTO, FECHA, LECTURA), versión por clave, transacción Serializable, administrador central y auditoría por clave. No deja cambiar los dígitos del plan si alguna cuenta cargada queda fuera de los niveles.
+
+### ConfiguracionGeneralContable
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/ConfiguracionGeneralContable.razor`
+- Propósito: pantalla `/configuracion-general/contable`: plan general de cuentas, índices de ajuste, datos generales, centros de costo y fechas del ejercicio.
+- Datos que usa: `ConfiguracionContableService`
+- Observaciones: el ejercicio vigente se muestra solo como referencia; queda afuera el «Utilitario CD-W» del legacy.
+
+### ConfiguracionSql
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConfiguracionSql.cs`
+- Propósito: lectura por clave y grabación clave por clave de TA_CONFIGURACION (actualiza conservando el GRUPO o inserta con el grupo indicado).
+- Datos que usa: `TA_CONFIGURACION`.
+- Observaciones: la usan PlanCuentasAbmService y ConfiguracionContableService; nunca hace cambios masivos.
+
 ### ContabilidadIvaPosicion
 
 - Tipo: Page

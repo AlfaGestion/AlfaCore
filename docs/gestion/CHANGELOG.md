@@ -95,8 +95,12 @@ Segunda ronda de ajustes:
 | `wwwroot/css/sticky-list-headers.css`, `Components/App.razor` | Los encabezados fijos de **todos** los listados usaban azul marino y celeste con `!important`; ahora usan los tokens AlfaDesign (con el color anterior como respaldo). Versiones de recursos actualizadas para evitar caché. |
 | `Components/Shared/ComprobanteViewer.razor` y `.razor.css` | Sin restos de azul marino (fondo de `page-grid`, encabezados de tabla, subtarjeta de relacionados). La barra de acciones fija tiene fondo y divisor. Subtítulo de relacionados en lenguaje claro. |
 | `Components/Shared/ComprobanteViewerModal.razor` (se elimina su `.razor.css`) | Pasa a usar la ventana estándar `AlfaDialog`: Ver comprobantes y el informe de Punto de Venta muestran el detalle igual que el resto. |
-| `Components/Shared/BusquedaDiferida.cs` (nuevo), `FiltrosSmartSearch.razor`, `ContabilidadReportePanel.razor`, `ContabilidadAsientos.razor`, `VentasVisorComprobantes.razor` | Filtrado mientras se escribe (350 ms de pausa) en Plan de cuentas, Asientos y Ver comprobantes; el buscador de Ver comprobantes ya no se deshabilita mientras consulta. |
+| `Components/Shared/BusquedaDiferida.cs` (nuevo), `FiltrosSmartSearch.razor`, `GestionSmartSearch.razor`, `ContabilidadReportePanel.razor`, `VentasVisorComprobantes.razor` | Filtrado mientras se escribe (350 ms de pausa) en Plan de cuentas y Ver comprobantes (opción `BuscarAlEscribir`); enfocar el buscador ya no abre el panel. `GestionSmartSearch` usa la columna `FiltroPeriodo` compartida. Asientos no usa búsqueda en vivo: sin período, la búsqueda por texto recorre toda la historia y llega al tiempo límite (ver pendientes). |
 | `Docs/manual_contabilidad.md`, `Docs/manual_carga_comprobantes.md` | Búsqueda sin Enter en Plan, Asientos y Ver comprobantes. |
+
+Integración con origin/main (4 commits: ABM del plan de cuentas, Asientos con `GestionSmartSearch` y últimos asientos, libro de IVA consolidado): en Asientos se adopta el buscador del equipo; en Plan de cuentas el árbol suma «Modificar» por fila y «Nueva cuenta» del ABM.
+
+Pendientes detectados (no introducidos por este cambio): en ALFA NET - PRUEBAS (base 4283) la actualización `2026-11-03-004__crm_oportunidades_adjuntos.sql` falla con error 8152 (datos truncados) y frena las siguientes, incluida `2026-11-04-051`. En Asientos, buscar texto sin período agota los 120 s de espera (AUX_ERR `Asientos/Buscar`).
 
 Decisiones: **Guardar** se mantiene en azul en todo el sistema (Figma lo muestra en verde). Retenciones conserva su panel de filtros dentro de la página.
 

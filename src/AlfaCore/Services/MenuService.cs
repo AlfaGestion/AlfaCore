@@ -30,6 +30,12 @@ public sealed class MenuService(
         return BuildSearchItems(menu);
     }
 
+    public async Task<IReadOnlySet<string>> GetHiddenRoutesAsync(CancellationToken ct = default)
+    {
+        var menu = await LoadVisibleMenuAsync(ct);
+        return menu.HiddenRoutes;
+    }
+
     public async Task<ShellMenuNodeDto?> GetNodeByRouteAsync(string route, CancellationToken ct = default)
     {
         var menu = await LoadVisibleMenuAsync(ct);
@@ -131,6 +137,7 @@ public sealed class MenuService(
             var mapped = rows
                 .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb))
                 .ToList();
+            var todasLasRutas = mapped.Select(x => NormalizeRoute(x.RutaWeb)).ToList();
 
             var moduloFiltro = await centralAdminService.GetModuloMenuFiltroParaClienteActualAsync(ct);
             if (moduloFiltro is not null)
@@ -233,11 +240,19 @@ public sealed class MenuService(
                     .ToList();
             }
 
+            // Rutas del menú que este usuario no ve (sin permiso o módulo no contratado): las solapas del
+            // topbar que apuntan a ellas se ocultan. Una ruta que no está en el menú web no se oculta.
+            var rutasVisibles = nodes.Select(x => NormalizeRoute(x.RutaWeb)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var rutasOcultas = todasLasRutas.Where(r => !rutasVisibles.Contains(r)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             return new MenuSnapshot(
                 nodes,
                 rootModules,
                 parentByKey,
-                nameByKey);
+                nameByKey)
+            {
+                HiddenRoutes = rutasOcultas
+            };
         }
         catch (Exception ex)
         {
@@ -566,5 +581,8 @@ public sealed class MenuService(
         IReadOnlyList<ShellMenuNodeDto> Nodes,
         IReadOnlyList<ShellModuleDto> Modules,
         IReadOnlyDictionary<string, string> ParentByKey,
-        IReadOnlyDictionary<string, string> NameByKey);
+        IReadOnlyDictionary<string, string> NameByKey)
+    {
+        public IReadOnlySet<string> HiddenRoutes { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
 }
