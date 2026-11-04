@@ -3179,9 +3179,43 @@
                         <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Plantilla no disponible", "Esta plantilla todavía no está aprobada por Meta.")" Dismissible="false" />
                     }
 
-                    @if (SelectedTemplate is not null && !string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)))
+                    @if (SelectedTemplate is not null && !string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate, TemplateHeaderFileAvailable)))
                     {
-                        <p role="alert">@WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)</p>
+                        <p role="alert">@WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate, TemplateHeaderFileAvailable)</p>
+                    }
+
+                    @if (SelectedTemplate is not null && WhatsAppTemplateValidation.RequiereArchivoEncabezado(SelectedTemplate))
+                    {
+                        var esImagen = WhatsAppTemplateValidation.FormatoArchivoEncabezado(SelectedTemplate) == ConversacionPlantillaEncabezados.Imagen;
+                        <div class="field">
+                            <label>@(esImagen ? "Imagen del encabezado" : "Documento del encabezado")</label>
+                            <div class="conversations-template-header-file">
+                                @if (_templateHeaderChosen is not null)
+                                {
+                                    <span class="conversations-template-header-file__name" title="@_templateHeaderChosen.NombreArchivo">
+                                        <i class="bi @(esImagen ? "bi-image" : "bi-file-earmark-pdf")"></i> @_templateHeaderChosen.NombreArchivo
+                                    </span>
+                                    <button type="button" class="btn btn--ghost btn--sm" title="Volver al archivo de la plantilla" @onclick="ClearTemplateHeaderChosen" disabled="@_sendingTemplate">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                }
+                                else if (_templateHeaderDefault is not null)
+                                {
+                                    <span class="conversations-template-header-file__name" title="@_templateHeaderDefault.NombreArchivo">
+                                        <i class="bi @(esImagen ? "bi-image" : "bi-file-earmark-pdf")"></i> @_templateHeaderDefault.NombreArchivo <small>(de la plantilla)</small>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="context-card__muted">@(esImagen ? "Elegí la imagen para enviar la plantilla." : "Elegí el PDF para enviar la plantilla.")</span>
+                                }
+                                <label class="btn btn--ghost btn--sm" style="cursor:pointer; width: fit-content;">
+                                    <i class="bi bi-upload"></i> @(_templateHeaderChosen is null && _templateHeaderDefault is not null ? "Usar otro" : "Elegir archivo")
+                                    <InputFile OnChange="HandleTemplateHeaderFileSelectedAsync" style="display:none"
+                                               accept="@ConversacionPlantillaEncabezados.AcceptDe(esImagen ? ConversacionPlantillaEncabezados.Imagen : ConversacionPlantillaEncabezados.Documento)" />
+                                </label>
+                            </div>
+                        </div>
                     }
 
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
@@ -4014,6 +4048,8 @@
     private string? _templateAutoNotice;
     private int _templateLoadGeneration;
     private bool _uploadingTemplateFile;
+    private TemplateHeaderChosenFile? _templateHeaderChosen;
+    private ConversacionPlantillaEncabezadoArchivoDto? _templateHeaderDefault;
     /// <summary>
     /// Feedback propio del envío de plantilla, distinto de _actionError (compartido por ~15 acciones no
     /// relacionadas en esta página). Se muestra dentro del modal de plantilla, así el error de ESTE
@@ -4368,7 +4404,10 @@
            && _selectedConversation is not null
            && SelectedTemplate is not null
            && !IsSelectedTemplateUnavailable
-           && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
+           && HasRequiredTemplateValues(SelectedTemplate, TemplateValues, TemplateHeaderFileAvailable);
+    // Archivo del encabezado (PDF o imagen) para plantillas que lo llevan: el elegido al enviar o, si no,
+    // el guardado con la plantilla.
+    private bool TemplateHeaderFileAvailable => _templateHeaderChosen is not null || _templateHeaderDefault is not null;
     private bool IsAuditResultsMode
         => _selectedConversation is null && ShouldKeepAuditResultsOpen;
     private bool IsMobileChatView
@@ -9197,8 +9236,47 @@
     {
         // Cambiar de plantilla es un intento nuevo: el error/estado del intento anterior ya no aplica.
         _templateSendFeedback = null;
+        _templateHeaderChosen = null;
+        _templateHeaderDefault = null;
+        if (SelectedTemplate is { EsMetaRemota: false } template && WhatsAppTemplateValidation.RequiereArchivoEncabezado(template))
+        {
+            try
+            {
+                var archivo = await ConversacionesSvc.GetTemplateHeaderFileAsync(template.IdPlantilla, _selectedConversation?.IdNumeroWhatsApp);
+                if (_selectedTemplateId == template.IdPlantilla)
+                    _templateHeaderDefault = archivo;
+            }
+            catch (Exception ex)
+            {
+                _templateSendFeedback = AppUiMessage.Warning("No se pudo leer el archivo de la plantilla", ex.Message);
+            }
+        }
         await PrepareTemplateValuesAsync(forceReload: true);
     }
+
+    private sealed record TemplateHeaderChosenFile(string NombreArchivo, string MimeType, byte[] Contenido);
+
+    private async Task HandleTemplateHeaderFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        const long maxSize = 16L * 1024 * 1024;
+        try
+        {
+            var file = e.File;
+            if (file.Size > maxSize)
+                throw new InvalidOperationException("El archivo del encabezado supera los 16 MB.");
+            await using var stream = file.OpenReadStream(maxSize);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _templateHeaderChosen = new TemplateHeaderChosenFile(file.Name, file.ContentType, buffer.ToArray());
+            _templateSendFeedback = null;
+        }
+        catch (Exception ex)
+        {
+            _templateSendFeedback = AppUiMessage.Warning("No se pudo leer el archivo", ex.Message);
+        }
+    }
+
+    private void ClearTemplateHeaderChosen() => _templateHeaderChosen = null;
 
     private async Task PrepareTemplateValuesAsync(bool forceReload = false)
     {
@@ -9289,7 +9367,11 @@
                 ValoresVariables = TemplateValues.ToList(),
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
-                SistemaAccion = CurrentUserSystemForAudit
+                SistemaAccion = CurrentUserSystemForAudit,
+                // Sin archivo elegido, el servicio usa el guardado con la plantilla.
+                EncabezadoArchivoNombre = _templateHeaderChosen?.NombreArchivo,
+                EncabezadoArchivoMime = _templateHeaderChosen?.MimeType,
+                EncabezadoArchivoContenido = _templateHeaderChosen?.Contenido
             });
 
             var templateAttachmentsToSend = _templatePendingAttachments.ToList();
@@ -11693,6 +11775,8 @@
         _templateValuesText = string.Empty;
         _templateAutoNotice = null;
         _templatePendingAttachments = [];
+        _templateHeaderChosen = null;
+        _templateHeaderDefault = null;
     }
 
     private bool IsTemplateLoadCurrent(int generation, long conversationId, ConversationTenantLoadLease lease)
@@ -12059,10 +12143,10 @@
             result.Add(block);
     }
 
-    private static bool HasRequiredTemplateValues(ConversacionPlantillaDto template, IReadOnlyList<string> values)
+    private static bool HasRequiredTemplateValues(ConversacionPlantillaDto template, IReadOnlyList<string> values, bool headerFileAvailable = false)
         => values.Count == CountTemplateVariables(template.CuerpoTexto)
            && values.All(x => !string.IsNullOrWhiteSpace(x))
-           && string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(template));
+           && string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(template, headerFileAvailable));
 
     private static string GetTemplateDefaultVariableValue(ConversacionDetalleDto? conversation)
     {

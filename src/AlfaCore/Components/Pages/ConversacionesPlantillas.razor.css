@@ -506,3 +506,48 @@ button.variable-picker__option:hover {
     font-size: 12px;
     font-weight: 500;
 }
+
+/* Archivo de encabezado guardado con la plantilla (PDF de la oferta o imagen). */
+.templates-header-file {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.templates-header-file__name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.templates-header-file__upload {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.templates-header-file__upload ::deep input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.templates-header-file__upload.is-disabled {
+    opacity: .6;
+    pointer-events: none;
+}
+
+/* En el formulario (grilla de dos columnas) la explicación y el archivo del encabezado ocupan todo el ancho. */
+.templates-header-file,
+.templates-header-hint {
+    grid-column: 1 / -1;
+}

@@ -97,6 +97,15 @@ Tablas del módulo (`CONV_*`):
 - `CONV_ETIQUETAS` / `CONV_CONVERSACION_ETIQUETAS` — etiquetas (estructura lista, UI pendiente)
 - `CONV_WEBHOOK_LOG` — log de payloads recibidos desde Meta
 
+## Plantillas con archivo en el encabezado (PDF o imagen)
+
+- El encabezado de una plantilla puede ser texto, **documento (PDF)** o **imagen (JPG/PNG)**.
+- Cada plantilla puede guardar su archivo de encabezado (`CONV_PLANTILLAS_ENCABEZADO`, en SQL; script `2026-11-04-050`): la oferta o la imagen.
+  - Al pedir la aprobación en Meta se usa ese archivo como ejemplo (`header_handle`). Sin archivo, un documento usa un PDF de ejemplo propio y una imagen no se puede enviar a aprobar.
+  - Al enviar desde el chat, el archivo guardado viaja solo; se puede elegir otro en el momento. Una plantilla remota (sincronizada desde Meta) con encabezado de archivo pide elegirlo.
+- Cierre de caja → WhatsApp sigue mandando su Excel/PDF como documento del encabezado.
+- Límite por archivo: 16 MB (Meta: imagen hasta 5 MB).
+
 ## Adjuntos y mensajes de voz
 
 ### Almacenamiento

@@ -778,6 +778,14 @@ public sealed class ConversacionPlantillaSendRequest
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+
+    /// <summary>
+    /// Archivo del encabezado (PDF o imagen) elegido al enviar, para plantillas con HEADER DOCUMENT/IMAGE.
+    /// Vacío: se usa el archivo guardado con la plantilla (CONV_PLANTILLAS_ENCABEZADO), si tiene.
+    /// </summary>
+    public string? EncabezadoArchivoNombre { get; set; }
+    public string? EncabezadoArchivoMime { get; set; }
+    public byte[]? EncabezadoArchivoContenido { get; set; }
 }
 
 /// <summary>
@@ -858,9 +866,32 @@ public static class ConversacionPlantillaEncabezados
 {
     public const string Texto = "TEXT";
     public const string Documento = "DOCUMENT";
+    public const string Imagen = "IMAGE";
 
     public static string Normalizar(string? value)
-        => string.Equals(value?.Trim(), Documento, StringComparison.OrdinalIgnoreCase) ? Documento : Texto;
+        => value?.Trim().ToUpperInvariant() switch
+        {
+            Documento => Documento,
+            Imagen => Imagen,
+            _ => Texto
+        };
+
+    /// <summary>True si el encabezado lleva un archivo (PDF o imagen) que se manda junto con la plantilla.</summary>
+    public static bool LlevaArchivo(string? value) => Normalizar(value) is Documento or Imagen;
+
+    /// <summary>Tipos de archivo que acepta Meta para cada encabezado (para el selector de archivos).</summary>
+    public static string AcceptDe(string? value) => Normalizar(value) == Imagen ? "image/jpeg,image/png" : "application/pdf";
+}
+
+/// <summary>Archivo de encabezado guardado con la plantilla (la oferta en PDF o la imagen): se usa como
+/// ejemplo al pedir la aprobación en Meta y se manda por defecto al enviar la plantilla.</summary>
+public sealed class ConversacionPlantillaEncabezadoArchivoDto
+{
+    public long IdPlantilla { get; set; }
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
+    public long TamanoBytes { get; set; }
 }
 
 public static class ConversacionPlantillaCategorias

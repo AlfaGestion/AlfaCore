@@ -3415,6 +3415,105 @@ public sealed partial class ConversacionesService(
             return normalized.IdPlantilla;
         }, "No se pudo guardar la plantilla de WhatsApp.", ct);
 
+    // Archivo de encabezado de la plantilla (dbo.CONV_PLANTILLAS_ENCABEZADO, script 2026-11-04-001): la oferta
+    // en PDF o la imagen. Se guarda en SQL (queda con el backup de la base) y se usa como ejemplo al pedir la
+    // aprobación en Meta y como archivo por defecto al enviar.
+    private const long TemplateHeaderFileMaxBytes = 16L * 1024 * 1024;
+
+    public Task<ConversacionPlantillaEncabezadoArchivoDto?> GetTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetTemplateHeaderFile", async token =>
+        {
+            var template = await GetTemplateAsync(idPlantilla, token)
+                ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            EnsureTemplateScope(template, await ResolveTemplateContextAsync(idNumeroWhatsApp, token));
+            return await LoadTemplateHeaderFileAsync(idPlantilla, token);
+        }, "No se pudo leer el archivo del encabezado de la plantilla.", ct);
+
+    public Task SaveTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, string nombreArchivo, string mimeType, byte[] contenido, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SaveTemplateHeaderFile", async token =>
+        {
+            var template = await GetTemplateAsync(idPlantilla, token)
+                ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            EnsureTemplateScope(template, await ResolveTemplateContextAsync(idNumeroWhatsApp, token));
+            var formato = ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato);
+            if (!ConversacionPlantillaEncabezados.LlevaArchivo(formato))
+                throw new InvalidOperationException("La plantilla no tiene encabezado de documento o imagen.");
+            if (contenido.Length == 0)
+                throw new InvalidOperationException("El archivo está vacío.");
+            if (contenido.LongLength > TemplateHeaderFileMaxBytes)
+                throw new InvalidOperationException("El archivo del encabezado supera los 16 MB.");
+            var nombre = Path.GetFileName((nombreArchivo ?? string.Empty).Trim());
+            if (nombre.Length == 0)
+                nombre = formato == ConversacionPlantillaEncabezados.Imagen ? "imagen.jpg" : "documento.pdf";
+            var mime = NormalizeOutgoingMime(mimeType, nombre, formato);
+            var esperado = formato == ConversacionPlantillaEncabezados.Imagen ? mime is "image/jpeg" or "image/png" : mime == "application/pdf";
+            if (!esperado)
+                throw new InvalidOperationException(formato == ConversacionPlantillaEncabezados.Imagen
+                    ? "La imagen del encabezado tiene que ser JPG o PNG."
+                    : "El documento del encabezado tiene que ser PDF.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("""
+                IF OBJECT_ID(N'dbo.CONV_PLANTILLAS_ENCABEZADO', N'U') IS NULL
+                    RAISERROR(N'Falta la tabla CONV_PLANTILLAS_ENCABEZADO: hay que aplicar las actualizaciones de la base.', 16, 1);
+                ELSE IF EXISTS (SELECT 1 FROM dbo.CONV_PLANTILLAS_ENCABEZADO WHERE IdPlantilla = @IdPlantilla)
+                    UPDATE dbo.CONV_PLANTILLAS_ENCABEZADO
+                    SET NombreArchivo = @NombreArchivo, MimeType = @MimeType, Contenido = @Contenido, TamanoBytes = @TamanoBytes, FechaHora_Modificacion = GETDATE()
+                    WHERE IdPlantilla = @IdPlantilla;
+                ELSE
+                    INSERT INTO dbo.CONV_PLANTILLAS_ENCABEZADO (IdPlantilla, NombreArchivo, MimeType, Contenido, TamanoBytes, FechaHora_Grabacion)
+                    VALUES (@IdPlantilla, @NombreArchivo, @MimeType, @Contenido, @TamanoBytes, GETDATE());
+                """, cn);
+            cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            cmd.Parameters.AddWithValue("@NombreArchivo", nombre.Length > 255 ? nombre[..255] : nombre);
+            cmd.Parameters.AddWithValue("@MimeType", mime);
+            cmd.Parameters.Add("@Contenido", System.Data.SqlDbType.VarBinary, -1).Value = contenido;
+            cmd.Parameters.AddWithValue("@TamanoBytes", contenido.LongLength);
+            await cmd.ExecuteNonQueryAsync(token);
+        }, "No se pudo guardar el archivo del encabezado de la plantilla.", ct);
+
+    public Task DeleteTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "DeleteTemplateHeaderFile", async token =>
+        {
+            var template = await GetTemplateAsync(idPlantilla, token)
+                ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            EnsureTemplateScope(template, await ResolveTemplateContextAsync(idNumeroWhatsApp, token));
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("""
+                IF OBJECT_ID(N'dbo.CONV_PLANTILLAS_ENCABEZADO', N'U') IS NOT NULL
+                    DELETE FROM dbo.CONV_PLANTILLAS_ENCABEZADO WHERE IdPlantilla = @IdPlantilla;
+                """, cn);
+            cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            await cmd.ExecuteNonQueryAsync(token);
+        }, "No se pudo quitar el archivo del encabezado de la plantilla.", ct);
+
+    private async Task<ConversacionPlantillaEncabezadoArchivoDto?> LoadTemplateHeaderFileAsync(long idPlantilla, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand("""
+            IF OBJECT_ID(N'dbo.CONV_PLANTILLAS_ENCABEZADO', N'U') IS NOT NULL
+                SELECT IdPlantilla, ISNULL(NombreArchivo, N''), ISNULL(MimeType, N''), Contenido
+                FROM dbo.CONV_PLANTILLAS_ENCABEZADO
+                WHERE IdPlantilla = @IdPlantilla;
+            """, cn);
+        cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct) || rd.IsDBNull(3))
+            return null;
+        var contenido = (byte[])rd.GetValue(3);
+        return new ConversacionPlantillaEncabezadoArchivoDto
+        {
+            IdPlantilla = rd.GetInt64(0),
+            NombreArchivo = rd.GetString(1),
+            MimeType = rd.GetString(2),
+            Contenido = contenido,
+            TamanoBytes = contenido.LongLength
+        };
+    }
+
     public Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "ArchiveTemplate", async token =>
         {
@@ -3516,7 +3615,15 @@ public sealed partial class ConversacionesService(
 
     public Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage",
-            token => SendTemplateCoreAsync(request, documento: null, token),
+            token => SendTemplateCoreAsync(
+                request,
+                request.EncabezadoArchivoContenido is { Length: > 0 } archivo
+                    ? new TemplateDocumentPayload(
+                        string.IsNullOrWhiteSpace(request.EncabezadoArchivoNombre) ? "archivo" : request.EncabezadoArchivoNombre.Trim(),
+                        request.EncabezadoArchivoMime ?? string.Empty,
+                        archivo)
+                    : null,
+                token),
             "No se pudo enviar la plantilla por WhatsApp.", ct);
 
     private sealed record TemplateDocumentPayload(string NombreArchivo, string MimeType, byte[] Contenido);
@@ -3600,6 +3707,17 @@ public sealed partial class ConversacionesService(
             if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Solo se pueden enviar plantillas aprobadas por Meta.");
 
+            // Encabezado con archivo (PDF o imagen) sin archivo elegido al enviar: se usa el que quedó guardado
+            // con la plantilla (como en Odoo, donde la oferta viajaba sola con la plantilla).
+            var formatoArchivo = WhatsAppTemplateValidation.FormatoArchivoEncabezado(template);
+            if (documento is null && formatoArchivo.Length > 0 && !template.EsMetaRemota)
+            {
+                var guardado = await LoadTemplateHeaderFileAsync(template.IdPlantilla, token);
+                if (guardado is not null)
+                    documento = new TemplateDocumentPayload(guardado.NombreArchivo, guardado.MimeType, guardado.Contenido);
+            }
+            var tipoArchivo = formatoArchivo == ConversacionPlantillaEncabezados.Imagen ? "IMAGE" : "DOCUMENT";
+
             // Antes: guard inline "values.Count < CountTemplateVariables(...)" -- solo chequeaba "al
             // menos", no cantidad exacta ni orden/consecutividad, y NormalizeTemplateValues descartaba
             // valores vacíos en silencio (ver su comentario). WhatsAppTemplateValidation.ValidateSend
@@ -3616,7 +3734,9 @@ public sealed partial class ConversacionesService(
             string mimeDocumento = string.Empty;
             if (documento is not null)
             {
-                mimeDocumento = NormalizeOutgoingMime(documento.MimeType, documento.NombreArchivo, "DOCUMENT");
+                mimeDocumento = NormalizeOutgoingMime(documento.MimeType, documento.NombreArchivo, tipoArchivo);
+                if (tipoArchivo == "IMAGE" && mimeDocumento is not ("image/jpeg" or "image/png"))
+                    throw new InvalidOperationException("La imagen del encabezado tiene que ser JPG o PNG.");
                 var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
                 Directory.CreateDirectory(folder);
                 rutaDocumento = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(documento.NombreArchivo).ToLowerInvariant()}");
@@ -3627,7 +3747,7 @@ public sealed partial class ConversacionesService(
             {
                 ConversationId = request.IdConversacion,
                 Phone = conversation.TelefonoWhatsApp,
-                MessageType = documento is null ? "TEXT" : "DOCUMENT",
+                MessageType = documento is null ? "TEXT" : tipoArchivo,
                 Direction = "SALIENTE",
                 EstadoEnvio = "PENDIENTE",
                 Text = previewText,
@@ -3643,7 +3763,7 @@ public sealed partial class ConversacionesService(
                 // El adjunto queda registrado aunque falle el envío: el mensaje en ERROR_ENVIO sigue
                 // mostrando qué archivo se intentó mandar.
                 await InsertAttachmentRecordAsync(
-                    messageId, "DOCUMENT", documento.NombreArchivo, mimeDocumento, rutaDocumento,
+                    messageId, tipoArchivo, documento.NombreArchivo, mimeDocumento, rutaDocumento,
                     documento.Contenido.LongLength, string.Empty, documento.Contenido, token);
             }
 
@@ -3658,7 +3778,8 @@ public sealed partial class ConversacionesService(
                 {
                     var headerMediaId = await UploadWhatsAppMediaAsync(config, rutaDocumento, documento.NombreArchivo, mimeDocumento, token);
                     sendResult = await SendTemplateWithHeaderDocumentToWhatsAppAsync(
-                        config, conversation.TelefonoWhatsApp, template, values, headerMediaId, documento.NombreArchivo, token);
+                        config, conversation.TelefonoWhatsApp, template, values, headerMediaId, documento.NombreArchivo, token,
+                        headerEsImagen: tipoArchivo == "IMAGE");
                 }
             }
             catch (Exception ex)
@@ -13359,11 +13480,22 @@ public sealed partial class ConversacionesService(
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
-        // Encabezado documento: Meta exige un archivo de ejemplo subido por la Resumable Upload API
-        // (header_handle). AlfaCore manda un PDF de ejemplo propio; el documento real se elige al enviar.
+        // Encabezado documento o imagen: Meta exige un archivo de ejemplo subido por la Resumable Upload API
+        // (header_handle). Si la plantilla tiene su archivo de encabezado guardado (la oferta o la imagen) se
+        // usa ese, así quien revisa en Meta ve el contenido real; si no, un PDF de ejemplo propio (la imagen no
+        // tiene ejemplo genérico: hay que cargarla antes de pedir la aprobación).
         string? headerHandle = null;
-        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
-            headerHandle = await UploadTemplateSampleDocumentAsync(config, ct);
+        var formatoEncabezado = ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato);
+        if (ConversacionPlantillaEncabezados.LlevaArchivo(formatoEncabezado))
+        {
+            var archivo = template.IdPlantilla > 0 ? await LoadTemplateHeaderFileAsync(template.IdPlantilla, ct) : null;
+            if (archivo is not null)
+                headerHandle = await UploadTemplateSampleAsync(config, archivo.Contenido, archivo.NombreArchivo, archivo.MimeType, ct);
+            else if (formatoEncabezado == ConversacionPlantillaEncabezados.Documento)
+                headerHandle = await UploadTemplateSampleAsync(config, BuildTemplateSamplePdf(), "ejemplo_documento.pdf", "application/pdf", ct);
+            else
+                throw new InvalidOperationException("Cargá la imagen del encabezado en la plantilla antes de enviarla a aprobar.");
+        }
 
         request.Content = new StringContent(JsonSerializer.Serialize(BuildMetaTemplateCreatePayload(template, headerHandle)), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
@@ -13385,10 +13517,9 @@ public sealed partial class ConversacionesService(
     // Resumable Upload API de Meta: 1) abrir sesión en /{app-id}/uploads, 2) subir los bytes con
     // file_offset 0; devuelve el "h" (handle) que pide example.header_handle al crear la plantilla.
     // El app id se obtiene del propio token (GET /app), así no hace falta configurarlo aparte.
-    private async Task<string> UploadTemplateSampleDocumentAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct)
+    private async Task<string> UploadTemplateSampleAsync(ConversacionWhatsAppConfigDto config, byte[] bytes, string fileName, string mimeType, CancellationToken ct)
     {
-        const string fileName = "ejemplo_documento.pdf";
-        var bytes = BuildTemplateSamplePdf();
+        var fileType = NormalizeOutgoingMime(mimeType, fileName, "DOCUMENT");
         var token = config.AccessToken.Trim();
         var client = httpClientFactory.CreateClient();
         client.Timeout = MetaSendTimeout;
@@ -13409,7 +13540,7 @@ public sealed partial class ConversacionesService(
 
         string sessionId;
         var sessionUrl = $"https://graph.facebook.com/{config.ApiVersion}/{appId}/uploads"
-            + $"?file_name={Uri.EscapeDataString(fileName)}&file_length={bytes.Length}&file_type=application%2Fpdf";
+            + $"?file_name={Uri.EscapeDataString(fileName)}&file_length={bytes.Length}&file_type={Uri.EscapeDataString(fileType)}";
         using (var sessionRequest = new HttpRequestMessage(HttpMethod.Post, sessionUrl))
         {
             sessionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -13539,7 +13670,8 @@ public sealed partial class ConversacionesService(
         IReadOnlyList<string> values,
         string? headerDocumentMediaId,
         string? headerDocumentFileName,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool headerEsImagen = false)
     {
         // Defensa en profundidad: SendTemplateMessageAsync ya valida antes de llegar acá, pero este
         // método privado es el único punto real que arma el POST a Graph -- si en el futuro se agrega
@@ -13562,15 +13694,21 @@ public sealed partial class ConversacionesService(
                 ["type"] = "header",
                 ["parameters"] = new List<Dictionary<string, object?>>
                 {
-                    new()
-                    {
-                        ["type"] = "document",
-                        ["document"] = new Dictionary<string, object?>
+                    headerEsImagen
+                        ? new Dictionary<string, object?>
                         {
-                            ["id"] = headerDocumentMediaId,
-                            ["filename"] = string.IsNullOrWhiteSpace(headerDocumentFileName) ? "documento" : headerDocumentFileName
+                            ["type"] = "image",
+                            ["image"] = new Dictionary<string, object?> { ["id"] = headerDocumentMediaId }
                         }
-                    }
+                        : new Dictionary<string, object?>
+                        {
+                            ["type"] = "document",
+                            ["document"] = new Dictionary<string, object?>
+                            {
+                                ["id"] = headerDocumentMediaId,
+                                ["filename"] = string.IsNullOrWhiteSpace(headerDocumentFileName) ? "documento" : headerDocumentFileName
+                            }
+                        }
                 }
             });
         }
@@ -17959,8 +18097,8 @@ public sealed partial class ConversacionesService(
             Categoria = NormalizeTemplateCategory(request.Categoria),
             Idioma = NormalizeTemplateLanguage(request.Idioma),
             EncabezadoFormato = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato),
-            // Con encabezado documento no hay texto de encabezado: Meta admite uno u otro.
-            EncabezadoTexto = ConversacionPlantillaEncabezados.Normalizar(request.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento
+            // Con encabezado documento o imagen no hay texto de encabezado: Meta admite uno u otro.
+            EncabezadoTexto = ConversacionPlantillaEncabezados.LlevaArchivo(request.EncabezadoFormato)
                 ? string.Empty
                 : (request.EncabezadoTexto ?? string.Empty).Trim(),
             CuerpoTexto = body,
@@ -18135,15 +18273,18 @@ public sealed partial class ConversacionesService(
     private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template, string? headerHandle = null)
     {
         var components = new List<Dictionary<string, object?>>();
-        if (ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato) == ConversacionPlantillaEncabezados.Documento)
+        var formatoEncabezado = ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato);
+        if (ConversacionPlantillaEncabezados.LlevaArchivo(formatoEncabezado))
         {
             if (string.IsNullOrWhiteSpace(headerHandle))
-                throw new InvalidOperationException("Falta el documento de ejemplo para el encabezado de la plantilla.");
+                throw new InvalidOperationException(formatoEncabezado == ConversacionPlantillaEncabezados.Imagen
+                    ? "Falta la imagen de ejemplo para el encabezado de la plantilla."
+                    : "Falta el documento de ejemplo para el encabezado de la plantilla.");
 
             components.Add(new Dictionary<string, object?>
             {
                 ["type"] = "HEADER",
-                ["format"] = "DOCUMENT",
+                ["format"] = formatoEncabezado,
                 ["example"] = new Dictionary<string, object?> { ["header_handle"] = new[] { headerHandle } }
             });
         }

@@ -3800,3 +3800,8 @@
         gap: .3rem !important;
     }
 }
+
+/* Plantilla con archivo en el encabezado (PDF o imagen): archivo elegido o el guardado con la plantilla. */
+.conversations-template-header-file { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.conversations-template-header-file__name { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--alfa-font-small, 13px); }
+.conversations-template-header-file__name small { color: var(--alfa-text-secondary, #94a3b8); }

@@ -68,7 +68,13 @@
                                 Disabled="@_busy" />
                     @if (EsEncabezadoDocumento(_form))
                     {
-                        <p class="templates-header-hint">El documento se elige al enviar (por ejemplo, el Excel de Cierre de caja → WhatsApp). Para la aprobación, AlfaCore le manda a Meta un PDF de ejemplo. Una plantilla con documento se puede enviar aunque la ventana de 24 h esté vencida.</p>
+                        <p class="templates-header-hint">
+                            @(EsEncabezadoImagen(_form)
+                                ? "Cargá la imagen (JPG o PNG): se usa para la aprobación en Meta y se manda sola al enviar la plantilla; al enviar se puede cambiar por otra."
+                                : "Podés cargar el PDF de la plantilla (por ejemplo, la oferta): se usa para la aprobación y se manda solo al enviar; al enviar se puede cambiar. Sin PDF cargado, AlfaCore le manda a Meta uno de ejemplo y el documento se elige al enviar (como en Cierre de caja → WhatsApp).")
+                            Una plantilla con archivo se puede enviar aunque la ventana de 24 h esté vencida.
+                        </p>
+                        @RenderHeaderFile()
                     }
                     else
                     {
@@ -142,7 +148,7 @@
                     <article class="message-card message-card--outgoing">
                         @if (EsEncabezadoDocumento(_form))
                         {
-                            <div class="templates-doc-preview"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Documento adjunto</div>
+                            <div class="templates-doc-preview"><i class="bi @(EsEncabezadoImagen(_form) ? "bi-image" : "bi-file-earmark-text")" aria-hidden="true"></i> @HeaderFileLabel(_form)</div>
                         }
                         else if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
                         {
@@ -279,7 +285,7 @@
                                 }
                                 @ReadField("Idioma", selected.Idioma)
                                 @ReadField("Categoría", GetCategoryLabel(selected.Categoria))
-                                @ReadField("Encabezado (HEADER)", EsEncabezadoDocumento(selected) ? "Documento adjunto (se elige al enviar)" : DisplayOrFallback(selected.EncabezadoTexto))
+                                @ReadField("Encabezado (HEADER)", EsEncabezadoDocumento(selected) ? HeaderFileLabel(selected) : DisplayOrFallback(selected.EncabezadoTexto))
                                 @ReadLongField("Cuerpo (BODY)", DisplayOrFallback(selected.CuerpoTexto))
                                 @ReadField("Pie (FOOTER)", DisplayOrFallback(selected.PieTexto))
                                 @ReadField("Botones (BUTTONS)", FormatButtons(selected.ComponentesMetaJson))
@@ -297,7 +303,11 @@
                                 <article class="message-card message-card--outgoing">
                                     @if (EsEncabezadoDocumento(selected))
                                     {
-                                        <div class="templates-doc-preview"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Documento adjunto</div>
+                                        <div class="templates-doc-preview"><i class="bi @(EsEncabezadoImagen(selected) ? "bi-image" : "bi-file-earmark-text")" aria-hidden="true"></i> @HeaderFileLabel(selected)</div>
+                                        @if (!selected.EsMetaRemota)
+                                        {
+                                            @RenderHeaderFile()
+                                        }
                                     }
                                     else if (!string.IsNullOrWhiteSpace(selected.EncabezadoTexto))
                                     {
@@ -1202,6 +1212,7 @@
 
             _selectedId = item.IdPlantilla;
             _selected = item;
+            await LoadHeaderFileAsync(item.IdPlantilla);
         }
         catch (Exception)
         {
@@ -1826,11 +1837,124 @@
     private static readonly IReadOnlyList<AlfaSelectOption> HeaderFormatOptions =
     [
         new(ConversacionPlantillaEncabezados.Texto, "Texto (opcional)"),
-        new(ConversacionPlantillaEncabezados.Documento, "Documento adjunto")
+        new(ConversacionPlantillaEncabezados.Documento, "Documento adjunto (PDF)"),
+        new(ConversacionPlantillaEncabezados.Imagen, "Imagen (JPG o PNG)")
     ];
 
+    // Encabezado con archivo: documento (PDF) o imagen.
     private static bool EsEncabezadoDocumento(ConversacionPlantillaDto plantilla)
-        => AlfaCore.Services.WhatsAppTemplateValidation.RequiereDocumento(plantilla);
+        => AlfaCore.Services.WhatsAppTemplateValidation.RequiereArchivoEncabezado(plantilla);
+
+    private static bool EsEncabezadoImagen(ConversacionPlantillaDto plantilla)
+        => AlfaCore.Services.WhatsAppTemplateValidation.FormatoArchivoEncabezado(plantilla) == ConversacionPlantillaEncabezados.Imagen;
+
+    private string HeaderFileLabel(ConversacionPlantillaDto plantilla)
+    {
+        var tipo = EsEncabezadoImagen(plantilla) ? "Imagen" : "Documento adjunto";
+        return _headerFile is not null && plantilla.IdPlantilla == _headerFile.IdPlantilla && plantilla.IdPlantilla > 0
+            ? $"{tipo}: {_headerFile.NombreArchivo}"
+            : $"{tipo} (se elige al enviar)";
+    }
+
+    // Archivo de encabezado guardado con la plantilla (la oferta o la imagen que se manda por defecto).
+    private ConversacionPlantillaEncabezadoArchivoDto? _headerFile;
+    private bool _headerFileBusy;
+    private const long HeaderFileMaxBytes = 16L * 1024 * 1024;
+
+    private RenderFragment RenderHeaderFile() => __builder =>
+    {
+        <div class="templates-header-file">
+            @if (_selectedId <= 0)
+            {
+                <span class="templates-header-hint">Guardá la plantilla para cargar el archivo del encabezado.</span>
+            }
+            else
+            {
+                @if (_headerFile is not null && _headerFile.IdPlantilla == _selectedId)
+                {
+                    <span class="templates-header-file__name" title="@_headerFile.NombreArchivo">
+                        <i class="bi @(_headerFile.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ? "bi-image" : "bi-file-earmark-pdf")" aria-hidden="true"></i>
+                        @_headerFile.NombreArchivo (@FormatHeaderFileSize(_headerFile.TamanoBytes))
+                    </span>
+                    <button type="button" class="btn btn--ghost btn--sm" disabled="@(_busy || _headerFileBusy)" @onclick="DeleteHeaderFileAsync">
+                        <i class="bi bi-trash" aria-hidden="true"></i> Quitar
+                    </button>
+                }
+                <label class="btn btn--ghost btn--sm templates-header-file__upload @(_busy || _headerFileBusy ? "is-disabled" : string.Empty)">
+                    <i class="bi @(_headerFileBusy ? "bi-hourglass-split" : "bi-upload")" aria-hidden="true"></i>
+                    @(_headerFileBusy ? "Subiendo..." : _headerFile is not null && _headerFile.IdPlantilla == _selectedId ? "Cambiar archivo" : "Cargar archivo")
+                    <InputFile OnChange="UploadHeaderFileAsync" accept="@ConversacionPlantillaEncabezados.AcceptDe(_mode == PageMode.Browse ? _selected?.EncabezadoFormato : _form.EncabezadoFormato)" disabled="@(_busy || _headerFileBusy)" />
+                </label>
+            }
+        </div>
+    };
+
+    private static string FormatHeaderFileSize(long bytes)
+        => bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+
+    private async Task LoadHeaderFileAsync(long idPlantilla)
+    {
+        _headerFile = null;
+        if (idPlantilla <= 0)
+            return;
+        try
+        {
+            _headerFile = await ConversacionesSvc.GetTemplateHeaderFileAsync(idPlantilla, _filters.IdNumeroWhatsApp);
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+    }
+
+    private async Task UploadHeaderFileAsync(InputFileChangeEventArgs args)
+    {
+        if (_selectedId <= 0)
+            return;
+        _headerFileBusy = true;
+        _feedback = null;
+        try
+        {
+            var file = args.File;
+            if (file.Size > HeaderFileMaxBytes)
+                throw new InvalidOperationException("El archivo del encabezado supera los 16 MB.");
+            await using var stream = file.OpenReadStream(HeaderFileMaxBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            await ConversacionesSvc.SaveTemplateHeaderFileAsync(_selectedId, _filters.IdNumeroWhatsApp, file.Name, file.ContentType, memory.ToArray());
+            await LoadHeaderFileAsync(_selectedId);
+            SetFeedback("Archivo guardado", "El archivo del encabezado quedó guardado con la plantilla.");
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+        finally
+        {
+            _headerFileBusy = false;
+        }
+    }
+
+    private async Task DeleteHeaderFileAsync()
+    {
+        if (_selectedId <= 0)
+            return;
+        _headerFileBusy = true;
+        try
+        {
+            await ConversacionesSvc.DeleteTemplateHeaderFileAsync(_selectedId, _filters.IdNumeroWhatsApp);
+            _headerFile = null;
+            SetFeedback("Archivo quitado", "La plantilla ya no tiene archivo de encabezado guardado.");
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+        finally
+        {
+            _headerFileBusy = false;
+        }
+    }
 
     private static ConversacionPlantillaDto NewForm()
         => new()

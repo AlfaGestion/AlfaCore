@@ -10,14 +10,14 @@ namespace AlfaCore.Services;
 // rechazo explícito de componentes no soportados y mensajes de error Meta accionables.
 public static class WhatsAppTemplateValidation
 {
-    // documentoDisponible: el llamador trae el archivo para un HEADER DOCUMENT (SendTemplateWithDocumentAsync).
-    // Sin archivo, una plantilla con encabezado documento sigue siendo no soportada.
+    // documentoDisponible: hay archivo para el encabezado (el que eligió quien envía o el guardado con la
+    // plantilla), para un HEADER DOCUMENT o IMAGE. Sin archivo, esas plantillas siguen siendo no soportadas.
     public static void ValidateSend(ConversacionPlantillaDto template, IReadOnlyList<string> values, bool documentoDisponible = false)
     {
         if (!template.Activa)
             throw new InvalidOperationException("La plantilla está archivada. Elegí una plantilla activa.");
-        if (documentoDisponible && !RequiereDocumento(template))
-            throw new InvalidOperationException("La plantilla elegida no tiene encabezado de documento. Elegí una plantilla con documento adjunto.");
+        if (documentoDisponible && !RequiereArchivoEncabezado(template))
+            throw new InvalidOperationException("La plantilla elegida no tiene encabezado de documento ni de imagen. Elegí una plantilla con archivo adjunto.");
         var unsupported = UnsupportedReason(template, documentoDisponible);
         if (unsupported.Length > 0) throw new InvalidOperationException(unsupported);
         var indexes = Regex.Matches(template.CuerpoTexto, @"\{\{\s*(\d+)\s*\}\}")
@@ -30,23 +30,38 @@ public static class WhatsAppTemplateValidation
 
     /// <summary>True si la plantilla (según los componentes de Meta) tiene encabezado de tipo DOCUMENT.</summary>
     public static bool RequiereDocumento(ConversacionPlantillaDto template)
+        => FormatoArchivoEncabezado(template) == ConversacionPlantillaEncabezados.Documento;
+
+    /// <summary>True si la plantilla lleva un archivo en el encabezado (DOCUMENT o IMAGE).</summary>
+    public static bool RequiereArchivoEncabezado(ConversacionPlantillaDto template)
+        => FormatoArchivoEncabezado(template).Length > 0;
+
+    /// <summary>"DOCUMENT", "IMAGE" o vacío según el encabezado de la plantilla.</summary>
+    public static string FormatoArchivoEncabezado(ConversacionPlantillaDto template)
     {
         // Plantillas creadas en AlfaCore: el formato queda guardado aunque todavía no se haya
         // sincronizado el payload de Meta (ComponentesMetaJson vacío).
-        if (string.Equals(template.EncabezadoFormato, ConversacionPlantillaEncabezados.Documento, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (string.IsNullOrWhiteSpace(template.ComponentesMetaJson)) return false;
+        var local = ConversacionPlantillaEncabezados.Normalizar(template.EncabezadoFormato);
+        if (ConversacionPlantillaEncabezados.LlevaArchivo(local))
+            return local;
+        if (string.IsNullOrWhiteSpace(template.ComponentesMetaJson)) return string.Empty;
         try
         {
             using var document = JsonDocument.Parse(template.ComponentesMetaJson);
-            if (document.RootElement.ValueKind != JsonValueKind.Array) return false;
-            return document.RootElement.EnumerateArray().Any(component =>
-                string.Equals(component.TryGetProperty("type", out var type) ? type.GetString() : null, "HEADER", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(component.TryGetProperty("format", out var format) ? format.GetString() : null, "DOCUMENT", StringComparison.OrdinalIgnoreCase));
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return string.Empty;
+            foreach (var component in document.RootElement.EnumerateArray())
+            {
+                if (!string.Equals(component.TryGetProperty("type", out var type) ? type.GetString() : null, "HEADER", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var format = ConversacionPlantillaEncabezados.Normalizar(component.TryGetProperty("format", out var f) ? f.GetString() : null);
+                if (ConversacionPlantillaEncabezados.LlevaArchivo(format))
+                    return format;
+            }
+            return string.Empty;
         }
         catch (JsonException)
         {
-            return false;
+            return string.Empty;
         }
     }
 
@@ -56,7 +71,9 @@ public static class WhatsAppTemplateValidation
         if (template.EncabezadoTexto.Contains("{{", StringComparison.Ordinal)
             || Regex.IsMatch(template.CuerpoTexto, @"\{\{\s*[^\d\s}][^}]*\}\}")) return message;
         if (!documentoDisponible && RequiereDocumento(template))
-            return "Esta plantilla lleva un documento adjunto en el encabezado: se envía desde la pantalla que genera el documento (por ejemplo, Cierre de caja → WhatsApp).";
+            return "Esta plantilla lleva un documento adjunto en el encabezado: elegí el PDF para enviarla (o se envía desde la pantalla que genera el documento, por ejemplo Cierre de caja → WhatsApp).";
+        if (!documentoDisponible && RequiereArchivoEncabezado(template))
+            return "Esta plantilla lleva una imagen en el encabezado: elegí la imagen para enviarla.";
         if (string.IsNullOrWhiteSpace(template.ComponentesMetaJson)) return string.Empty;
         using var document = JsonDocument.Parse(template.ComponentesMetaJson);
         foreach (var component in document.RootElement.EnumerateArray())
@@ -65,7 +82,7 @@ public static class WhatsAppTemplateValidation
             if (type == "BODY" || type == "FOOTER") continue;
             if (type != "HEADER") return message;
             if (documentoDisponible && component.TryGetProperty("format", out var docFormat)
-                && string.Equals(docFormat.GetString(), "DOCUMENT", StringComparison.OrdinalIgnoreCase)) continue;
+                && ConversacionPlantillaEncabezados.LlevaArchivo(docFormat.GetString())) continue;
             if (!component.TryGetProperty("format", out var format) || format.GetString() != "TEXT") return message;
             if (component.TryGetProperty("text", out var text) && (text.GetString() ?? "").Contains("{{", StringComparison.Ordinal)) return message;
         }

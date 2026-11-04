@@ -82,7 +82,9 @@ public sealed class WhatsAppTemplateDocumentTests
     [InlineData("text", "TEXT")]
     [InlineData("document", "DOCUMENT")]
     [InlineData(" DOCUMENT ", "DOCUMENT")]
-    [InlineData("IMAGE", "TEXT")]
+    [InlineData("IMAGE", "IMAGE")]
+    [InlineData(" image ", "IMAGE")]
+    [InlineData("VIDEO", "TEXT")]
     public void EncabezadoFormato_SeNormaliza(string? valor, string esperado)
         => Assert.Equal(esperado, ConversacionPlantillaEncabezados.Normalizar(valor));
 
@@ -125,5 +127,64 @@ public sealed class WhatsAppTemplateDocumentTests
         // Sin handle no se puede armar: Meta rechazaría la plantilla.
         var ex = Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, [plantilla, null]));
         Assert.IsType<InvalidOperationException>(ex.InnerException);
+    }
+
+    private const string ComponentesConImagen =
+        """[{"type":"HEADER","format":"IMAGE"},{"type":"BODY","text":"Hola {{1}}, mirá las ofertas."}]""";
+
+    [Fact]
+    public void HeaderImagen_SeDetectaComoArchivoYNoComoDocumento()
+    {
+        var plantilla = Plantilla(ComponentesConImagen, "Hola {{1}}, mirá las ofertas.");
+
+        Assert.True(WhatsAppTemplateValidation.RequiereArchivoEncabezado(plantilla));
+        Assert.False(WhatsAppTemplateValidation.RequiereDocumento(plantilla));
+        Assert.Equal(ConversacionPlantillaEncabezados.Imagen, WhatsAppTemplateValidation.FormatoArchivoEncabezado(plantilla));
+    }
+
+    [Fact]
+    public void HeaderImagen_SinArchivoNoSePuedeEnviar_ConArchivoSi()
+    {
+        var plantilla = Plantilla(ComponentesConImagen, "Hola {{1}}, mirá las ofertas.");
+
+        Assert.Contains("imagen", WhatsAppTemplateValidation.UnsupportedReason(plantilla), StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidOperationException>(() => WhatsAppTemplateValidation.ValidateSend(plantilla, ["Ana"]));
+        Assert.Empty(WhatsAppTemplateValidation.UnsupportedReason(plantilla, documentoDisponible: true));
+        WhatsAppTemplateValidation.ValidateSend(plantilla, ["Ana"], documentoDisponible: true);
+    }
+
+    [Fact]
+    public void PlantillaLocalConEncabezadoImagen_RequiereArchivoSinPayloadDeMeta()
+    {
+        var plantilla = Plantilla(string.Empty, "Hola {{1}}.");
+        plantilla.EncabezadoFormato = ConversacionPlantillaEncabezados.Imagen;
+
+        Assert.True(WhatsAppTemplateValidation.RequiereArchivoEncabezado(plantilla));
+        Assert.NotEmpty(WhatsAppTemplateValidation.UnsupportedReason(plantilla));
+    }
+
+    [Fact]
+    public void PayloadDeCreacion_ConEncabezadoImagen_LlevaFormatoImageYHeaderHandle()
+    {
+        var plantilla = Plantilla(string.Empty, "Hola {{1}}, mirá las ofertas.");
+        plantilla.EncabezadoFormato = ConversacionPlantillaEncabezados.Imagen;
+        plantilla.Idioma = "es_AR";
+
+        var method = typeof(ConversacionesService).GetMethod("BuildMetaTemplateCreatePayload",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var json = System.Text.Json.JsonSerializer.Serialize((Dictionary<string, object?>)method.Invoke(null, [plantilla, "4::img"])!);
+
+        Assert.Contains("\"format\":\"IMAGE\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"header_handle\":[\"4::img\"]", json, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("TEXT", false, "application/pdf")]
+    [InlineData("DOCUMENT", true, "application/pdf")]
+    [InlineData("IMAGE", true, "image/jpeg,image/png")]
+    public void EncabezadoConArchivo_YTiposAceptados(string formato, bool llevaArchivo, string accept)
+    {
+        Assert.Equal(llevaArchivo, ConversacionPlantillaEncabezados.LlevaArchivo(formato));
+        Assert.Equal(accept, ConversacionPlantillaEncabezados.AcceptDe(formato));
     }
 }

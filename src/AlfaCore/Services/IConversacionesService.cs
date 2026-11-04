@@ -57,6 +57,10 @@ public interface IConversacionesService
     Task<ConversacionPlantillasSyncResultDto> SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp, int? expectedBaseId = null, CancellationToken ct = default);
     Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default);
     Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
+    /// <summary>Archivo de encabezado (PDF o imagen) guardado con la plantilla; null si no tiene.</summary>
+    Task<ConversacionPlantillaEncabezadoArchivoDto?> GetTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
+    Task SaveTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, string nombreArchivo, string mimeType, byte[] contenido, CancellationToken ct = default);
+    Task DeleteTemplateHeaderFileAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     Task SubmitTemplateForApprovalAsync(ConversacionPlantillaSubmitRequest request, CancellationToken ct = default);
     Task SyncTemplateStatusAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     /// <summary>
