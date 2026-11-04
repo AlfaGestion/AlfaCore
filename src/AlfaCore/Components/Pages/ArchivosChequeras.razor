@@ -1,0 +1,183 @@
+@page "/archivos/chequeras"
+@page "/{idweb}/{idbase:int}/archivos/chequeras"
+@using AlfaCore.Services
+@inject IChequerasService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Chequeras | Alfa Gestión</PageTitle>
+
+@* Chequeras de cheques propios (D010350 del legacy, «Control de Chequeras»). *@
+<div class="gd-page gd cq-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_lista.Count == 0 && _cargado)
+    {
+        <AlfaEmptyState Title="Sin chequeras" Message="Cargá las chequeras de cheques propios: el número de cada cheque emitido tiene que estar dentro de una." />
+    }
+    else if (_lista.Count > 0)
+    {
+        <section class="cq-tabla__marco"><div class="cq-tabla__scroll">
+            <table class="cq-tabla">
+                <thead><tr><th>Banco</th><th>Serie</th><th class="n">Control</th><th class="n">Desde</th><th class="n">Hasta</th><th>Cuenta común</th><th>Cuenta diferidos</th><th class="n">Emitidos</th><th class="n">Último</th></tr></thead>
+                <tbody>
+                @foreach (var c in Filtradas)
+                {
+                    <tr class="cq-fila" @onclick="() => Editar(c)">
+                        <td>@c.Banco<small>@c.IdBanco</small></td>
+                        <td>@c.Serie</td>
+                        <td class="n">@c.Talonario</td>
+                        <td class="n mono">@c.Desde</td>
+                        <td class="n mono">@c.Hasta</td>
+                        <td>@Cuenta(c.CuentaBanco)</td>
+                        <td>@Cuenta(c.CuentaDiferido)</td>
+                        <td class="n">@c.Emitidos de @(c.Hasta - c.Desde + 1)</td>
+                        <td class="n mono">@c.UltimoEmitido</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div></section>
+    }
+</div>
+
+<AlfaDialog Open="@(_edit is not null)" Title="@(_edit?.Id > 0 ? "Chequera" : "Nueva chequera")" Size="AlfaDialogSize.Md" Loading="@_busy" ErrorMessage="@_error"
+            CloseOnBackdrop="false" OnClose="() => _edit = null">
+    <ChildContent>
+    @if (_edit is { } e && _cat is not null)
+    {
+        <div class="cq-form">
+            <AlfaSelect Label="Banco" Value="@e.IdBanco" ValueChanged="CambiarBanco"
+                        Options="@(new[] { new AlfaSelectOption("", "Elegí el banco") }.Concat(_cat.Bancos.Select(b => new AlfaSelectOption(b.IdBanco, $"{b.Descripcion} ({b.IdBanco})"))).ToList())" />
+            <div class="cq-par">
+                <AlfaInput Label="Serie" Value="@e.Serie" ValueChanged="v => e.Serie = (v ?? string.Empty).ToUpperInvariant()" MaxLength="1" />
+                <AlfaInput Label="Nro de control" Type="number" Value="@e.Talonario.ToString()" ValueChanged="v => e.Talonario = int.TryParse(v, out var t) ? t : 0" />
+            </div>
+            <div class="cq-par">
+                <AlfaInput Label="Número desde" Type="number" Value="@(e.Desde == 0 ? string.Empty : e.Desde.ToString())" ValueChanged="v => e.Desde = long.TryParse(v, out var d) ? d : 0" />
+                <AlfaInput Label="Número hasta" Type="number" Value="@(e.Hasta == 0 ? string.Empty : e.Hasta.ToString())" ValueChanged="v => e.Hasta = long.TryParse(v, out var h) ? h : 0" />
+            </div>
+            <AlfaSelect Label="Cuenta del banco (cheques comunes)" Value="@e.CuentaBanco" ValueChanged="v => e.CuentaBanco = v ?? string.Empty"
+                        Options="@Opciones(c => c.MedioDePago is "DB" or "" || c.Bancaria)" />
+            <AlfaSelect Label="Cuenta de cheques diferidos" Value="@e.CuentaDiferido" ValueChanged="v => e.CuentaDiferido = v ?? string.Empty"
+                        Options="@Opciones(c => c.MedioDePago is "CH" or "" || c.Bancaria)" />
+            <small class="cq-nota">Al grabar, las dos cuentas quedan como cuentas bancarias (la común con medio de pago DB y la de diferidos con CH), como en el Alfa Gestión.
+                El rango no puede superponerse con otra chequera del mismo banco y serie.</small>
+            @if (e.Id > 0 && e.Emitidos > 0) { <small class="cq-nota">Tiene @e.Emitidos cheque(s) emitido(s); el último es el @e.UltimoEmitido.</small> }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (_edit is { Id: > 0, Emitidos: 0 })
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => EliminarAsync()">Borrar</AlfaButton>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _edit = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private ChequerasCatalogo? _cat;
+    private IReadOnlyList<Chequera> _lista = [];
+    private Chequera? _edit;
+    private AppUiMessage? _feedback;
+    private string? _error;
+    private string _texto = string.Empty;
+    private bool _busy, _cargado;
+    private PageHeaderConfig? _header;
+
+    private IEnumerable<Chequera> Filtradas => _texto.Trim().Length == 0 ? _lista
+        : _lista.Where(c => $"{c.Banco} {c.IdBanco} {c.Serie} {c.CuentaBanco} {c.CuentaDiferido} {c.Desde} {c.Hasta}".Contains(_texto.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        var c = await UiOps.RunAsync(() => Service.CatalogoAsync(), "Chequeras");
+        if (c.Success) _cat = c.Value; else _feedback = c.Feedback;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var r = await UiOps.RunAsync(() => Service.ListarAsync(), "Chequeras");
+        if (r.Success) _lista = r.Value!; else _feedback = r.Feedback;
+        _cargado = true;
+        UpdateHeader(); StateHasChanged();
+    }
+
+    private string Cuenta(string codigo) => codigo.Length == 0 ? "—" : $"{codigo} · {_cat?.Cuentas.FirstOrDefault(c => c.Codigo == codigo)?.Descripcion}";
+
+    private List<AlfaSelectOption> Opciones(Func<AsientoCuenta, bool> filtro)
+        => new[] { new AlfaSelectOption("", "Sin cuenta") }
+            .Concat((_cat?.Cuentas ?? []).Where(filtro).Where(c => !c.EsCheque || c.Bancaria || c.MedioDePago.Length == 0).Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} · {c.Descripcion}")))
+            .ToList();
+
+    private void CambiarBanco(string? v) { if (_edit is not null) _edit.IdBanco = v ?? string.Empty; }
+
+    private void Editar(Chequera c)
+    {
+        _error = null;
+        _edit = new Chequera { Id = c.Id, IdBanco = c.IdBanco, Banco = c.Banco, Serie = c.Serie, Talonario = c.Talonario, Desde = c.Desde, Hasta = c.Hasta,
+            CuentaBanco = c.CuentaBanco, CuentaDiferido = c.CuentaDiferido, Emitidos = c.Emitidos, UltimoEmitido = c.UltimoEmitido };
+    }
+
+    private Task Nueva()
+    {
+        _error = null;
+        _edit = new Chequera();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var nueva = _edit.Id == 0;
+            var g = await Service.GuardarAsync(_edit);
+            _edit = null;
+            _feedback = AppUiMessage.Success(nueva ? "Chequera agregada" : "Chequera grabada", $"{g.Banco} serie {g.Serie}: {g.Desde} a {g.Hasta}.");
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo grabar la chequera."; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            await Service.EliminarAsync(_edit.Id);
+            _edit = null;
+            _feedback = AppUiMessage.Success("Chequera borrada", "Se borró la chequera.");
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo borrar la chequera."; }
+        finally { _busy = false; }
+    }
+
+    private Task CambiarTexto(string t) { _texto = t; StateHasChanged(); return Task.CompletedTask; }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "archivos", Title = "Chequeras",
+        Breadcrumb = ["Archivos", "Chequeras"],
+        TopNavigationItems = ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "chequeras"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig { Text = _texto, Placeholder = "Buscar por banco, serie, cuenta o número", OnTextChanged = CambiarTexto },
+        Actions = [new() { Key = "nueva", Label = "Nueva chequera", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _cat is null, OnClick = Nueva }]
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

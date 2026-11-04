@@ -86,7 +86,8 @@ public sealed class AsientosTests
         Assert.Contains("cierre", AsientosService.MotivoSoloLectura(R("CC", cierre: true), manuales));
         Assert.Contains("FP", AsientosService.MotivoSoloLectura(R("FP"), manuales));
         Assert.Contains("tarjetas", AsientosService.MotivoSoloLectura(R("LT"), manuales));
-        Assert.Contains("cheques", AsientosService.MotivoSoloLectura(R("CC", medio: "CH"), manuales));
+        Assert.Equal("", AsientosService.MotivoSoloLectura(R("CC", medio: "CH"), manuales)); // los cheques ya se cargan acá
+        Assert.Contains("tarjeta", AsientosService.MotivoSoloLectura(R("CC", medio: "TJ"), manuales));
     }
 
     private static readonly IReadOnlyList<CompraCargaOpcion> CentrosCat = [new() { Codigo = "0000", Descripcion = "OTROS" }, new() { Codigo = "0217", Descripcion = "MOLINOS" }, new() { Codigo = "0665", Descripcion = "ENCOPRESS" }];
@@ -144,6 +145,59 @@ public sealed class AsientosTests
     }
 
     [Fact]
+    public void MonedaExtranjeraCalculaLosPesos()
+    {
+        var dolares = new AsientoCuenta("111USD", "Caja dólares", "EF", false, "2");
+        var r = new AsientoRenglon { Cuenta = "111USD", Debe = 1, ImporteMoneda = 100, Cotizacion = 1548.5m };
+        AsientosService.ValidarChequeYMoneda(r, dolares, 1, []);
+        Assert.Equal((154850m, "2"), (r.Debe, r.Moneda));
+        var h = new AsientoRenglon { Cuenta = "111USD", Haber = 1, ImporteMoneda = 10.5m, Cotizacion = 1000 };
+        AsientosService.ValidarChequeYMoneda(h, dolares, 1, []);
+        Assert.Equal(10500m, h.Haber);
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(new AsientoRenglon { Debe = 5, Cotizacion = 0, ImporteMoneda = 5 }, dolares, 1, []));
+        var pesos = new AsientoRenglon { Debe = 5, Moneda = "2", Cotizacion = 9, ImporteMoneda = 3 };
+        AsientosService.ValidarChequeYMoneda(pesos, Cuentas["511"], 1, []);
+        Assert.Equal(("1", 1m, 0m), (pesos.Moneda, pesos.Cotizacion, pesos.ImporteMoneda));
+    }
+
+    [Fact]
+    public void DatosDelCheque()
+    {
+        var ch = new AsientoCuenta("111CH", "Cheques de terceros", "CH", false);
+        AsientoRenglon R2(string serie, string nro, string banco, int clearing = 48, string cuit = "") => new()
+        { Debe = 100, Cheque = new AsientoCheque { Serie = serie, Numero = nro, IdBanco = banco, Vencimiento = DateTime.Today.AddDays(30), Clearing = clearing, Cuit = cuit } };
+        var ok = R2("a", "123456", "7", cuit: "30-71800814-6");
+        AsientosService.ValidarChequeYMoneda(ok, ch, 1, ["7"]);
+        Assert.Equal(("A", "A-123456", "30718008146"), (ok.Cheque!.Serie, ok.Cheque.NroComprobante, ok.Cheque.Cuit));
+        Assert.Equal("-99", new AsientoCheque { Numero = "99" }.NroComprobante); // como el legacy cuando no hay serie
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(new AsientoRenglon { Debe = 100 }, ch, 1, ["7"]));
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(R2("AB", "1", "7"), ch, 1, ["7"]));
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(R2("", "12a", "7"), ch, 1, ["7"]));
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(R2("", "1", "9"), ch, 1, ["7"]));
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(R2("", "1", "7", clearing: 30), ch, 1, ["7"]));
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarChequeYMoneda(R2("", "1", "7", cuit: "123"), ch, 1, ["7"]));
+        var sinCheque = new AsientoRenglon { Debe = 1, Cheque = new AsientoCheque { Numero = "1" } };
+        AsientosService.ValidarChequeYMoneda(sinCheque, Cuentas["511"], 1, []);
+        Assert.Null(sinCheque.Cheque);
+    }
+
+    [Fact]
+    public void ChequerasValidacionYSuperposicion()
+    {
+        Chequera C(int id, long d, long h, string serie = "M", int control = 1) => new() { Id = id, IdBanco = "25", Serie = serie, Talonario = control, Desde = d, Hasta = h, CuentaBanco = "111" };
+        var existentes = new[] { C(1, 100, 150), C(2, 151, 200, control: 2), C(3, 100, 150, serie: "N") };
+        Assert.Null(ChequerasService.Superpuesta(C(0, 201, 250, control: 3), existentes));
+        Assert.Equal(1, ChequerasService.Superpuesta(C(0, 140, 160, control: 3), existentes)!.Id);
+        Assert.Equal(1, ChequerasService.Superpuesta(C(0, 50, 300, control: 3), existentes)!.Id);
+        Assert.Null(ChequerasService.Superpuesta(C(1, 100, 150), existentes.Take(1)));
+        ChequerasService.Validar(C(0, 1, 50));
+        Assert.ThrowsAny<InvalidOperationException>(() => ChequerasService.Validar(C(0, 50, 1)));
+        Assert.ThrowsAny<InvalidOperationException>(() => ChequerasService.Validar(C(0, 0, 10)));
+        Assert.ThrowsAny<InvalidOperationException>(() => ChequerasService.Validar(C(0, 1, 10, serie: "")));
+        Assert.ThrowsAny<InvalidOperationException>(() => ChequerasService.Validar(new Chequera { IdBanco = "25", Serie = "M", Desde = 1, Hasta = 2 }));
+    }
+
+    [Fact]
     public void ClaveDelAsiento()
     {
         var k = new AsientoClave("20", 10, 25, "    ");
@@ -165,6 +219,131 @@ public sealed class AsientosTests
         Assert.Contains(dif.Observaciones, o => o.Contains("total"));
         Assert.Equal("NO_INFORMADO", AsientosService.ControlarComprobante(arca, "FCC", "A", "0003", "00000270", "23957694039", 1, "", DateTime.Today, "x.xls", true).Estado);
         Assert.Equal("NO_INFORMADO", AsientosService.ControlarComprobante(arca, "FCC", "A", "0003", "00000269", "20111111112", 1, "", DateTime.Today, "x.xls", true).Estado);
+    }
+}
+
+/// <summary>Contra ALFANET2007_PRUEBAS: cheques de terceros (entrada y salida de cartera), cheque propio de chequera, moneda extranjera y chequeras.</summary>
+[Collection("CargaComprobantes SQL")]
+public sealed class AsientosChequesPruebasTests(ITestOutputHelper output)
+{
+    [FacturacionAutomaticaPruebasFact]
+    public async Task ChequesMonedaYChequeras()
+    {
+        using var runtime = new CargaComprobantesArcaRuntime();
+        var cs = Environment.GetEnvironmentVariable("ALFACORE_TEST_SQL")!;
+        await using var cn = new SqlConnection(cs); await cn.OpenAsync();
+        Assert.Equal("ALFANET2007_PRUEBAS", cn.Database);
+        var sesion = new SessionDto();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)runtime.Sessions).Handler = (m, _) => m.Name switch { "GetActiveSession" => sesion, "GetConnectionString" => cs, _ => null };
+        var user = await cn.QuerySingleAsync<AppUserSessionInfo>("SELECT LTRIM(RTRIM(NOMBRE)) UserName,LTRIM(RTRIM(SISTEMA)) SystemCode FROM TA_USUARIOS WHERE NOMBRE='Alberto'");
+        var users = DispatchProxy.Create<IAppUserSessionService, CargaComprobantesUiTests.EventOnlyProxy>();
+        ((CargaComprobantesUiTests.EventOnlyProxy)(object)users).Handler = (m, _) => m.Name switch
+        { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => user.UserName, "get_CurrentUser" => user, _ => null };
+        var permisos = new PermissionService(runtime.Configuration, runtime.Sessions, users, runtime.Events);
+        var svc = new AsientosService(runtime.Sessions, users, permisos, runtime.Events);
+        var cat = await svc.CatalogoAsync();
+        var terceros = (await cn.QueryAsync<string>("SELECT LTRIM(RTRIM(CODIGO)) FROM VT_CLIENTES UNION SELECT LTRIM(RTRIM(CODIGO)) FROM VT_PROVEEDORES")).ToHashSet();
+        var libre = cat.Cuentas.First(c => c.MedioDePago.Length == 0 && !c.PideVencimiento && !c.EnMonedaExtranjera && !terceros.Contains(c.Codigo)
+            && !cat.CentrosPorCuenta.Any(d => d.Cuenta == c.Codigo)).Codigo;
+        var cartera = cat.Cuentas.First(c => c.EsCheque && !c.Bancaria && c.Codigo == "111010002").Codigo;
+        var dolares = cat.Cuentas.FirstOrDefault(c => c.EnMonedaExtranjera && c.MedioDePago is "" or "EF");
+        var banco = cat.Bancos.First(b => b.IdBanco == "7").IdBanco;
+        var fecha = new DateTime(2026, 10, 31);
+        var nro = (DateTime.Now.Ticks % 9_000_000 + 1_000_000).ToString();
+        var cotiz = await svc.CotizacionesAsync(fecha);
+        output.WriteLine($"Cuenta libre {libre} · cartera {cartera} · dólares {dolares?.Codigo} cotización {cotiz.GetValueOrDefault("2")} · cheque {nro}");
+        var creados = new List<AsientoDetalle>();
+        try
+        {
+            // 1. Entra un cheque de terceros.
+            var entrada = await svc.GuardarAsync(new AsientoDetalle
+            {
+                Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE entra cheque",
+                Renglones = [new() { Cuenta = cartera, Debe = 1000, Cheque = new() { Numero = nro, IdBanco = banco, Vencimiento = fecha.AddDays(30), Cuit = "30718008146" } },
+                             new() { Cuenta = libre, Haber = 1000 }]
+            });
+            creados.Add(entrada);
+            Assert.Equal($"-{nro}", entrada.Renglones[0].Cheque!.NroComprobante);
+            Assert.Contains(await svc.ChequesEnCarteraAsync(cartera), x => x.NroComprobante == $"-{nro}" && x.Importe == 1000);
+            // El mismo cheque no puede volver a entrar.
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.GuardarAsync(new AsientoDetalle
+            {
+                Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE duplicado",
+                Renglones = [new() { Cuenta = cartera, Debe = 1000, Cheque = new() { Numero = nro, IdBanco = banco, Vencimiento = fecha } }, new() { Cuenta = libre, Haber = 1000 }]
+            }));
+            // 2. Sale de la cartera: con otro importe no, con el mismo sí.
+            AsientoDetalle Salida(decimal importe) => new()
+            {
+                Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE sale cheque",
+                Renglones = [new() { Cuenta = libre, Debe = importe }, new() { Cuenta = cartera, Haber = importe, Cheque = new() { Numero = nro, IdBanco = banco, Vencimiento = fecha.AddDays(30) } }]
+            };
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.GuardarAsync(Salida(999)));
+            var salida = await svc.GuardarAsync(Salida(1000));
+            creados.Add(salida);
+            Assert.DoesNotContain(await svc.ChequesEnCarteraAsync(cartera), x => x.NroComprobante == $"-{nro}");
+            // Ya no está en cartera: no puede salir otra vez, y el asiento de entrada no se puede anular.
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.GuardarAsync(Salida(1000)));
+            var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.EliminarAsync(entrada.Clave!, entrada.Huella));
+            output.WriteLine("Anular la entrada: " + ex.Message);
+            // Modificar la salida (otro concepto) sigue andando: el cheque que entrega es el suyo.
+            salida.Detalle = "PRUEBA ALFACORE sale cheque (modificado)";
+            salida = await svc.GuardarAsync(salida);
+            creados[1] = salida;
+
+            // 3. Cheque propio de una chequera (banco 25 serie M) que no se haya emitido.
+            var propia = cat.Cuentas.FirstOrDefault(c => c.Codigo == "211030303");
+            if (propia is not null)
+            {
+                var usados = (await cn.QueryAsync<string>("SELECT NroComprobanteBancario FROM MV_ASIENTOS WHERE CUENTA='211030303' AND [DEBE-HABER]='H'")).ToHashSet();
+                var libreNro = Enumerable.Range(49200076, 50).Select(x => x.ToString()).First(x => !usados.Contains("M-" + x));
+                AsientoDetalle Propio(string n) => new()
+                {
+                    Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE cheque propio",
+                    Renglones = [new() { Cuenta = libre, Debe = 500 }, new() { Cuenta = "211030303", Haber = 500, Cheque = new() { Serie = "M", Numero = n, IdBanco = "25", Vencimiento = fecha.AddDays(60) } }]
+                };
+                await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.GuardarAsync(Propio("1")));        // fuera de chequera
+                var p = await svc.GuardarAsync(Propio(libreNro));
+                creados.Add(p);
+                await Assert.ThrowsAnyAsync<InvalidOperationException>(() => svc.GuardarAsync(Propio(libreNro))); // ya emitido
+                output.WriteLine($"Cheque propio M-{libreNro} emitido");
+            }
+
+            // 4. Moneda extranjera.
+            if (dolares is not null && cotiz.TryGetValue(dolares.Moneda, out var c2) && c2 > 1)
+            {
+                var usd = await svc.GuardarAsync(new AsientoDetalle
+                {
+                    Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE dólares",
+                    Renglones = [new() { Cuenta = dolares.Codigo, Debe = 1, ImporteMoneda = 100, Cotizacion = c2 }, new() { Cuenta = libre, Haber = Math.Round(100 * c2, 2) }]
+                });
+                creados.Add(usd);
+                var r = usd.Renglones[0];
+                Assert.Equal((Math.Round(100 * c2, 2), dolares.Moneda, c2, 100m), (r.Debe, r.Moneda, r.Cotizacion, r.ImporteMoneda));
+                Assert.Equal(c2, await cn.ExecuteScalarAsync<decimal>("SELECT COTIZACION FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND CUENTA=@C",
+                    new { P = usd.Clave!.Periodo, M = usd.Clave.Mes, N = usd.Clave.Numero, C = dolares.Codigo }));
+                output.WriteLine($"USD: 100 × {c2} = {r.Debe:N2}");
+            }
+
+            // 5. Anular en orden: primero la salida, después la entrada.
+            for (var i = creados.Count - 1; i >= 0; i--) { await svc.EliminarAsync(creados[i].Clave!, creados[i].Huella); }
+            creados.Clear();
+
+            // 6. Chequeras: superposición y alta/baja de una de prueba.
+            var chequeras = new ChequerasService(runtime.Sessions, users, permisos, runtime.Events);
+            var lista = await chequeras.ListarAsync();
+            output.WriteLine($"Chequeras: {string.Join(" | ", lista.Select(x => $"{x.Banco} {x.Serie} {x.Desde}-{x.Hasta} emitidos {x.Emitidos}"))}");
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => chequeras.GuardarAsync(new Chequera { IdBanco = "25", Serie = "M", Talonario = 9, Desde = 49200100, Hasta = 49200200, CuentaBanco = "111020303" }));
+            var nueva = await chequeras.GuardarAsync(new Chequera { IdBanco = "25", Serie = "Z", Talonario = 9, Desde = 1, Hasta = 50, CuentaBanco = "111020303" });
+            Assert.Equal(0, nueva.Emitidos);
+            await chequeras.EliminarAsync(nueva.Id);
+        }
+        finally
+        {
+            foreach (var a in creados)
+                await cn.ExecuteAsync("DELETE FROM MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N; DELETE FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND LTRIM(RTRIM(ISNULL(TIPO_REG,'')))=''",
+                    new { P = a.Clave!.Periodo, M = a.Clave.Mes, N = a.Clave.Numero });
+            await cn.ExecuteAsync("DELETE FROM V_TA_CTRL_CHEQUERAS WHERE IDBANCO='  25' AND SERIE='Z'");
+        }
     }
 }
 
@@ -192,7 +371,7 @@ public sealed class AsientosPruebasTests(ITestOutputHelper output)
         Assert.True(cat.PuedeCargar && cat.PuedeModificar && cat.PuedeAnular);
         // Dos cuentas sin medio de pago, que no sean de clientes ni proveedores ni pidan vencimiento.
         var terceros = (await cn.QueryAsync<string>("SELECT LTRIM(RTRIM(CODIGO)) FROM VT_CLIENTES UNION SELECT LTRIM(RTRIM(CODIGO)) FROM VT_PROVEEDORES")).ToHashSet();
-        var libres = cat.Cuentas.Where(c => c.MedioDePago.Length == 0 && !c.PideVencimiento && !terceros.Contains(c.Codigo)).Take(3).ToList();
+        var libres = cat.Cuentas.Where(c => c.MedioDePago.Length == 0 && !c.PideVencimiento && !c.EnMonedaExtranjera && !terceros.Contains(c.Codigo)).Take(3).ToList();
         Assert.True(libres.Count == 3);
         var cc = cat.Talonarios.First(t => t.Codigo == "CC");
         var proximoAntes = await cn.ExecuteScalarAsync<int>("SELECT TOP 1 X_ULTIMO_NRO FROM V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@U", new { U = cc.Unidad });

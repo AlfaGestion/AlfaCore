@@ -53,6 +53,12 @@ public sealed class AsientoRenglon
     public string Detalle { get; set; } = string.Empty;
     public decimal Debe { get; set; }
     public decimal Haber { get; set; }
+    /// <summary>Moneda de la cuenta (TA_MONEDAS). Debe y Haber van siempre en pesos; en moneda extranjera se carga la cantidad y la cotización.</summary>
+    public string Moneda { get; set; } = "1";
+    public decimal Cotizacion { get; set; } = 1;
+    public decimal ImporteMoneda { get; set; }
+    /// <summary>Datos del cheque cuando la cuenta es de cheques (MEDIODEPAGO CH).</summary>
+    public AsientoCheque? Cheque { get; set; }
     /// <summary>Distribución en centros de costo (MV_ASIENTOSCCOSTO); vacía = sin distribuir.</summary>
     public List<AsientoCentro> Centros { get; set; } = [];
     /// <summary>Vino de un modelo: si queda sin importe, se omite al grabar (como el legacy).</summary>
@@ -116,7 +122,45 @@ public sealed class AsientoDetalle
     public decimal TotalHaber => Renglones.Sum(r => r.Haber);
 }
 
-public sealed record AsientoCuenta(string Codigo, string Descripcion, string MedioDePago, bool PideVencimiento);
+public sealed record AsientoCuenta(string Codigo, string Descripcion, string MedioDePago, bool PideVencimiento, string Moneda = "1", string TipoVista = "")
+{
+    /// <summary>Cuenta de cheques (MEDIODEPAGO CH): cada renglón es un cheque.</summary>
+    public bool EsCheque => MedioDePago.Equals("CH", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Cuenta bancaria propia (TIPOVISTA BC): sus cheques son propios (salen de una chequera).</summary>
+    public bool Bancaria => TipoVista.Equals("BC", StringComparison.OrdinalIgnoreCase);
+    public bool EnMonedaExtranjera => Moneda.Trim() is not ("" or "1");
+}
+
+public sealed record AsientoMoneda(string Codigo, string Descripcion);
+
+/// <summary>Datos del cheque de un renglón (MV_ASIENTOS: NroComprobanteBancario = «Serie-Número», IdBanco, Clearing, VENCIMIENTO, TJ_OBSERVACIONES = CUIT del librador).</summary>
+public sealed class AsientoCheque
+{
+    public string Serie { get; set; } = string.Empty;
+    public string Numero { get; set; } = string.Empty;
+    public string IdBanco { get; set; } = string.Empty;
+    public string Banco { get; set; } = string.Empty;
+    public DateTime? Vencimiento { get; set; }
+    public int Clearing { get; set; } = 48;
+    public string Cuit { get; set; } = string.Empty;
+    public string NroComprobante => $"{Serie.Trim()}-{Numero.Trim()}";
+}
+
+/// <summary>Cheque de terceros en cartera (V_ChequesEnCartera): entró y todavía no salió.</summary>
+public sealed class ChequeCartera
+{
+    public string Cuenta { get; set; } = string.Empty;
+    public string NroComprobante { get; set; } = string.Empty;
+    public string IdBanco { get; set; } = string.Empty;
+    public string Banco { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public DateTime? Vencimiento { get; set; }
+    public string Cuit { get; set; } = string.Empty;
+    public int Clearing { get; set; }
+    public DateTime Fecha { get; set; }
+    public string Origen { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+}
 
 public sealed record AsientoTalonario(string Codigo, string Descripcion, string Letras, int Sucursal, int Proximo, string Unidad);
 
@@ -126,6 +170,8 @@ public sealed class AsientosCatalogo
     public IReadOnlyList<AsientoTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CompraCargaOpcion> Unidades { get; set; } = [];
     public IReadOnlyList<CompraCargaOpcion> Centros { get; set; } = [];
+    public IReadOnlyList<AsientoMoneda> Monedas { get; set; } = [];
+    public IReadOnlyList<ChequeraBanco> Bancos { get; set; } = [];
     public IReadOnlyList<AsientoCentroDefault> CentrosPorCuenta { get; set; } = [];
     public IReadOnlyList<string> Modelos { get; set; } = [];
     public bool PuedeGuardarModelos { get; set; }

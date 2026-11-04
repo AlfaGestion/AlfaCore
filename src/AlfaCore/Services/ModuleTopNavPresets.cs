@@ -157,7 +157,8 @@ public static class ModuleTopNavPresets
     public static IReadOnlyList<PageHeaderTopNavItem> BuildArchivos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [
-            ("tablas", "Tablas de referencia", "/archivos/tablas")
+            ("tablas", "Tablas de referencia", "/archivos/tablas"),
+            ("chequeras", "Chequeras", "/archivos/chequeras")
         ]);
 
     // Mismas entradas que el sidebar legacy de Seguridad.

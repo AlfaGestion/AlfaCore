@@ -24,6 +24,8 @@ public interface IAsientosService
     /// <summary>Crea o reemplaza un modelo (MA_MODELOS) con los renglones dados.</summary>
     Task GuardarModeloAsync(AsientoModelo modelo, CancellationToken ct = default);
     Task EliminarModeloAsync(string nombre, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, decimal>> CotizacionesAsync(DateTime fecha, CancellationToken ct = default);
+    Task<IReadOnlyList<ChequeCartera>> ChequesEnCarteraAsync(string cuenta, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -41,8 +43,10 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     internal static readonly string[] MenusConsulta = [MenuAsientos, "D957002", "D957003"];
     /// <summary>Talonarios contables que no son asientos manuales (liquidación de tarjetas y asiento resumen).</summary>
     internal static readonly string[] TalonariosExcluidos = ["LT", "RS", "ÿRS"];
-    /// <summary>Medios de pago que en el legacy piden datos aparte (cheques, cupones de tarjeta): se registran desde Caja.</summary>
-    internal static readonly string[] MediosConDatosExtra = ["CH", "TJ"];
+    /// <summary>Medios de pago que piden datos aparte y todavía no se cargan acá (cupones de tarjeta): se registran desde Caja o el legacy.</summary>
+    internal static readonly string[] MediosConDatosExtra = ["TJ"];
+    /// <summary>Clearing de un cheque (horas), como el legacy (FrmCpteBancario).</summary>
+    internal static readonly int[] Clearings = [0, 24, 48, 72, 96, 120, 144, 168];
     internal const int MaximoRenglones = 200, LargoDetalle = 200;
     private sealed class ReglaException(string message) : InvalidOperationException(message);
 
@@ -67,10 +71,10 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     private static Task<IEnumerable<AsientoCuenta>> CuentasAsync(SqlConnection cn, SqlTransaction? tx, CancellationToken ct)
         => cn.QueryAsync<AsientoCuenta>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(CODIGO)) Codigo, LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion, LTRIM(RTRIM(ISNULL(MedioDePago,''))) MedioDePago,
-                   CONVERT(bit, CASE WHEN ISNULL(PideVencimiento,0) <> 0 THEN 1 ELSE 0 END) PideVencimiento
+                   CONVERT(bit, CASE WHEN ISNULL(PideVencimiento,0) <> 0 THEN 1 ELSE 0 END) PideVencimiento,
+                   CASE WHEN LTRIM(RTRIM(ISNULL(Moneda,''))) = '' THEN N'1' ELSE LTRIM(RTRIM(Moneda)) END Moneda, LTRIM(RTRIM(ISNULL(TipoVista,''))) TipoVista
             FROM dbo.MA_CUENTAS
             WHERE ISNULL(TITULO,0) = 0 AND ISNULL(Dada_De_Baja,0) = 0 AND ISNULL(BLOQUEO,0) = 0
-              AND LTRIM(RTRIM(ISNULL(Moneda,'1'))) IN ('','1')
             ORDER BY CODIGO;
             """, transaction: tx, cancellationToken: ct));
 
@@ -100,6 +104,12 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         return new AsientosCatalogo
         {
             Cuentas = (await CuentasAsync(cn, null, ct)).ToList(), Talonarios = await TalonariosAsync(cn, null, u.Unidad, ct), Unidades = unidades,
+            Monedas = (await cn.QueryAsync<AsientoMoneda>(new CommandDefinition(
+                "IF OBJECT_ID(N'dbo.TA_MONEDAS', N'U') IS NULL SELECT N'1' Codigo, N'$' Descripcion ELSE SELECT LTRIM(RTRIM(CODIGO)) Codigo, LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion FROM dbo.TA_MONEDAS ORDER BY CODIGO;",
+                cancellationToken: ct))).ToList(),
+            Bancos = (await cn.QueryAsync<ChequeraBanco>(new CommandDefinition(
+                "IF OBJECT_ID(N'dbo.V_TA_Bancos', N'U') IS NULL SELECT TOP 0 N'' IdBanco, N'' Descripcion ELSE SELECT LTRIM(RTRIM(IdBanco)) IdBanco, LTRIM(RTRIM(ISNULL(Descripcion,''))) Descripcion FROM dbo.V_TA_Bancos ORDER BY Descripcion;",
+                cancellationToken: ct))).ToList(),
             Centros = await CentrosAsync(cn, null, ct), CentrosPorCuenta = await CentrosPorCuentaAsync(cn, null, u.Unidad, ct), Modelos = await ModelosAsync(cn, ct),
             PuedeGuardarModelos = await permissions.HasAccessAsync(MenuModelos, ct) || (cargar && u.Modificar),
             UnidadUsuario = u.Unidad, PuedeCargar = cargar, PuedeModificar = cargar && u.Modificar, PuedeAnular = cargar && u.Anular
@@ -154,6 +164,145 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         => defaults.Where(d => d.Cuenta.Equals(cuenta.Trim(), StringComparison.OrdinalIgnoreCase) && d.Porcentaje > 0)
             .Select(d => new AsientoCentro { CCosto = d.CCosto, Porcentaje = d.Porcentaje, Descripcion = centros.FirstOrDefault(c => c.Codigo == d.CCosto)?.Descripcion ?? "" })
             .ToList();
+
+    // ── Moneda extranjera y cheques ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Cotización de cada moneda para la fecha (TA_COTIZACION: una fila por día, columnas MONEDA1..MONEDAn). El legacy busca el día exacto;
+    /// acá se toma la última cargada hasta esa fecha, y en la pantalla se puede corregir.
+    /// </summary>
+    internal static async Task<Dictionary<string, decimal>> CotizacionesAsync(SqlConnection cn, SqlTransaction? tx, DateTime fecha, CancellationToken ct)
+    {
+        var res = new Dictionary<string, decimal> { ["1"] = 1m };
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT CASE WHEN OBJECT_ID(N'dbo.TA_COTIZACION', N'U') IS NULL THEN 0 ELSE 1 END;", transaction: tx, cancellationToken: ct)) == 0)
+            return res;
+        await using var cmd = new SqlCommand("SELECT TOP (1) * FROM dbo.TA_COTIZACION WHERE FECHA_HORA < DATEADD(day, 1, @Fecha) ORDER BY FECHA_HORA DESC;", cn, tx);
+        cmd.Parameters.AddWithValue("@Fecha", fecha.Date);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return res;
+        for (var i = 0; i < r.FieldCount; i++)
+        {
+            var nombre = r.GetName(i);
+            if (nombre.StartsWith("MONEDA", StringComparison.OrdinalIgnoreCase) && int.TryParse(nombre[6..], out var n) && !await r.IsDBNullAsync(i, ct)
+                && Convert.ToDecimal(r.GetValue(i), CultureInfo.InvariantCulture) is var v && v > 0)
+                res[n.ToString(CultureInfo.InvariantCulture)] = v;
+        }
+        return res;
+    }
+
+    public Task<IReadOnlyDictionary<string, decimal>> CotizacionesAsync(DateTime fecha, CancellationToken ct = default) => EjecutarAsync("Cotizaciones", MenusConsulta,
+        async cn => (IReadOnlyDictionary<string, decimal>)await CotizacionesAsync(cn, null, fecha, ct), ct);
+
+    private const string CarteraSql = """
+        SELECT LTRIM(RTRIM(c.CUENTA)) Cuenta, LTRIM(RTRIM(c.NroComprobanteBancario)) NroComprobante, LTRIM(RTRIM(c.IdBanco)) IdBanco,
+               LTRIM(RTRIM(ISNULL(c.BANCO_DESCRIPCION,''))) Banco, c.Saldo Importe, c.VENCIMIENTO Vencimiento, LTRIM(RTRIM(ISNULL(c.TJ_Observaciones,''))) Cuit,
+               ISNULL(c.Clearing,0) Clearing, c.FECHA Fecha,
+               LTRIM(RTRIM(c.TC)) + ' ' + LTRIM(RTRIM(c.SUCURSAL)) + '-' + LTRIM(RTRIM(c.NUMERO)) Origen,
+               LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(200), c.DETALLE),''))) Detalle
+        FROM dbo.V_ChequesEnCartera c
+        """;
+
+    /// <summary>Cheques de terceros en cartera de una cuenta (lo que se puede entregar, depositar o rechazar).</summary>
+    public Task<IReadOnlyList<ChequeCartera>> ChequesEnCarteraAsync(string cuenta, CancellationToken ct = default) => EjecutarAsync("Cartera", MenusConsulta, async cn =>
+        (IReadOnlyList<ChequeCartera>)(await cn.QueryAsync<ChequeCartera>(new CommandDefinition(CarteraSql + " WHERE c.CUENTA = @Cuenta ORDER BY c.VENCIMIENTO, c.FECHA;",
+            new { Cuenta = (cuenta ?? "").Trim() }, commandTimeout: 120, cancellationToken: ct))).ToList(), ct);
+
+    /// <summary>Datos del cheque y moneda que no dependen de la base.</summary>
+    internal static void ValidarChequeYMoneda(AsientoRenglon r, AsientoCuenta cuenta, int n, IReadOnlyCollection<string> bancos)
+    {
+        if (cuenta.EnMonedaExtranjera)
+        {
+            if (r.Cotizacion <= 0 || r.ImporteMoneda <= 0) throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es en moneda extranjera: cargá la cantidad y la cotización.");
+            if (decimal.Round(r.ImporteMoneda, 2) != r.ImporteMoneda || decimal.Round(r.Cotizacion, 6) != r.Cotizacion) throw new ReglaException($"Renglón {n}: revisá la cantidad y la cotización.");
+            var pesos = Math.Round(r.ImporteMoneda * r.Cotizacion, 2, MidpointRounding.AwayFromZero);
+            // El importe en pesos sale siempre de cantidad × cotización (como FrmCotiz del legacy).
+            if (r.Haber > 0) r.Haber = pesos; else r.Debe = pesos;
+            r.Moneda = cuenta.Moneda.Trim();
+        }
+        else { r.Moneda = "1"; r.Cotizacion = 1; r.ImporteMoneda = 0; }
+        if (!cuenta.EsCheque) { r.Cheque = null; return; }
+        var ch = r.Cheque ?? throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es de cheques: cargá los datos del cheque.");
+        ch.Serie = (ch.Serie ?? "").Trim().ToUpperInvariant(); ch.Numero = (ch.Numero ?? "").Trim(); ch.IdBanco = (ch.IdBanco ?? "").Trim();
+        ch.Cuit = new string((ch.Cuit ?? "").Where(char.IsDigit).ToArray());
+        if (ch.Serie.Length > 1) throw new ReglaException($"Renglón {n}: la serie del cheque es una sola letra.");
+        if (ch.Numero.Length is < 1 or > 20 || !ch.Numero.All(char.IsDigit)) throw new ReglaException($"Renglón {n}: cargá el número del cheque (solo dígitos).");
+        if (ch.IdBanco.Length == 0 || (bancos.Count > 0 && !bancos.Contains(ch.IdBanco))) throw new ReglaException($"Renglón {n}: elegí el banco del cheque.");
+        if (ch.Vencimiento is null) throw new ReglaException($"Renglón {n}: cargá la fecha de pago del cheque.");
+        if (!Clearings.Contains(ch.Clearing)) throw new ReglaException($"Renglón {n}: el clearing es 0, 24, 48, 72, 96, 120, 144 o 168 horas.");
+        if (ch.Cuit.Length is not (0 or 11)) throw new ReglaException($"Renglón {n}: el CUIT del librador tiene 11 dígitos.");
+    }
+
+    /// <summary>
+    /// Controles de cheques contra la base (FrmCpteBancario del legacy), sin contar el propio asiento cuando se modifica:
+    /// entrada (debe) que no esté ya en cartera; salida de terceros (haber) que esté en cartera de esa cuenta y por el mismo importe;
+    /// salida propia (cuenta bancaria) dentro de una chequera del banco y serie, y no emitida antes.
+    /// </summary>
+    private static async Task ValidarChequesAsync(SqlConnection cn, SqlTransaction tx, IReadOnlyList<AsientoRenglon> renglones, IReadOnlyDictionary<string, AsientoCuenta> cuentas,
+        AsientoClave? propio, CancellationToken ct)
+    {
+        var excluir = propio is null ? "" : " AND NOT (LTRIM(RTRIM(c.PERIODO)) = @P AND c.MES_OPERATIVO = @M AND c.[NUMERO ASIENTO] = @N)";
+        var claves = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < renglones.Count; i++)
+        {
+            var r = renglones[i]; var n = i + 1;
+            if (r.Cheque is not { } ch) continue;
+            var cuenta = cuentas[r.Cuenta.Trim()];
+            if (!claves.Add($"{ch.IdBanco}|{ch.NroComprobante}")) throw new ReglaException($"Renglón {n}: el cheque {ch.NroComprobante} ya está cargado en este asiento.");
+            var p = new DynamicParameters(new { Nro = ch.NroComprobante, Banco = CodigoPk.Format(ch.IdBanco, 4), Cuenta = r.Cuenta.Trim(), Importe = r.Debe + r.Haber,
+                P = propio?.Periodo.Trim(), M = propio?.Mes, N = propio?.Numero });
+            if (r.Debe > 0)
+            {
+                var enCartera = await cn.QueryFirstOrDefaultAsync<(string Cuenta, string Origen)?>(new CommandDefinition($"""
+                    SELECT TOP (1) LTRIM(RTRIM(c.CUENTA)), LTRIM(RTRIM(c.TC)) + ' ' + LTRIM(RTRIM(c.SUCURSAL)) + '-' + LTRIM(RTRIM(c.NUMERO))
+                    FROM dbo.V_ChequesEnCartera c WHERE LTRIM(RTRIM(c.NroComprobanteBancario)) = @Nro AND c.IdBanco = @Banco{excluir};
+                    """, p, tx, cancellationToken: ct));
+                if (enCartera is { } e) throw new ReglaException($"Renglón {n}: el cheque {ch.NroComprobante} de ese banco ya está en cartera (entró con {e.Origen}).");
+            }
+            else if (!cuenta.Bancaria)
+            {
+                var importes = (await cn.QueryAsync<decimal>(new CommandDefinition($"""
+                    SELECT c.Saldo FROM dbo.V_ChequesEnCartera c
+                    WHERE LTRIM(RTRIM(c.NroComprobanteBancario)) = @Nro AND c.IdBanco = @Banco AND c.CUENTA = @Cuenta;
+                    """, p, tx, cancellationToken: ct))).ToList();
+                // Al modificar, el cheque que este mismo asiento entregaba vuelve a estar en cartera.
+                if (propio is not null && importes.Count == 0)
+                    importes = (await cn.QueryAsync<decimal>(new CommandDefinition("""
+                        SELECT c.IMPORTE FROM dbo.MV_ASIENTOS c
+                        WHERE c.[DEBE-HABER] = 'H' AND LTRIM(RTRIM(c.NroComprobanteBancario)) = @Nro AND c.IdBanco = @Banco AND c.CUENTA = @Cuenta
+                          AND LTRIM(RTRIM(c.PERIODO)) = @P AND c.MES_OPERATIVO = @M AND c.[NUMERO ASIENTO] = @N;
+                        """, p, tx, cancellationToken: ct))).ToList();
+                if (importes.Count == 0) throw new ReglaException($"Renglón {n}: el cheque {ch.NroComprobante} no está en la cartera de {cuenta.Descripcion}.");
+                if (!importes.Contains(r.Haber)) throw new ReglaException($"Renglón {n}: el cheque {ch.NroComprobante} está en cartera por {importes[0]:N2}: el importe tiene que ser el mismo.");
+            }
+            else
+            {
+                if (!long.TryParse(ch.Numero, out var numero)) throw new ReglaException($"Renglón {n}: el número del cheque no es válido.");
+                var enChequera = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                    SELECT COUNT(*) FROM dbo.V_TA_CTRL_CHEQUERAS WHERE IDBANCO = @Banco AND LTRIM(RTRIM(SERIE)) = @Serie AND @Numero BETWEEN NUMERO_DESDE AND NUMERO_HASTA;
+                    """, new { Banco = CodigoPk.Format(ch.IdBanco, 4), ch.Serie, Numero = (double)numero }, tx, cancellationToken: ct));
+                if (enChequera == 0) throw new ReglaException($"Renglón {n}: el cheque {ch.NroComprobante} no está en ninguna chequera de ese banco y serie (Chequeras).");
+                var emitido = await cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition($"""
+                    SELECT TOP (1) LTRIM(RTRIM(c.TC)) + ' ' + LTRIM(RTRIM(c.SUCURSAL)) + '-' + LTRIM(RTRIM(c.NUMERO)) + ' del ' + CONVERT(varchar(10), c.FECHA, 103)
+                    FROM dbo.V_ChequesFirmados c WHERE c.CUENTA = @Cuenta AND LTRIM(RTRIM(c.NroComprobanteBancario)) = @Nro{excluir};
+                    """, p, tx, cancellationToken: ct));
+                if (emitido is not null) throw new ReglaException($"Renglón {n}: el cheque propio {ch.NroComprobante} ya fue emitido ({emitido}).");
+            }
+        }
+    }
+
+    /// <summary>Un asiento por el que entró un cheque que después salió (entregado, depositado) no se modifica ni se anula.</summary>
+    private static async Task ValidarChequesSinSalidaAsync(SqlConnection cn, SqlTransaction tx, AsientoClave k, CancellationToken ct)
+    {
+        var salida = await cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) LTRIM(RTRIM(e.NroComprobanteBancario)) + ' (salió con ' + LTRIM(RTRIM(s.TC)) + ' ' + LTRIM(RTRIM(s.SUCURSAL)) + '-' + LTRIM(RTRIM(s.NUMERO)) + ')'
+            FROM dbo.MV_ASIENTOS e
+            JOIN dbo.MV_ASIENTOS s ON s.[DEBE-HABER] = 'H' AND s.CUENTA = e.CUENTA AND s.NroComprobanteBancario = e.NroComprobanteBancario AND s.IdBanco = e.IdBanco
+                AND s.IMPORTE = e.IMPORTE AND NOT (s.PERIODO = e.PERIODO AND s.MES_OPERATIVO = e.MES_OPERATIVO AND s.[NUMERO ASIENTO] = e.[NUMERO ASIENTO])
+            WHERE e.[DEBE-HABER] = 'D' AND ISNULL(e.IdBanco,'') <> '' AND ISNULL(e.NroComprobanteBancario,'') <> ''
+              AND LTRIM(RTRIM(e.PERIODO)) = @P AND e.MES_OPERATIVO = @M AND e.[NUMERO ASIENTO] = @N AND ISNULL(LTRIM(RTRIM(e.TIPO_REG)),'') = @T;
+            """, new { P = k.Periodo.Trim(), M = k.Mes, N = k.Numero, T = k.TipoReg.Trim() }, tx, cancellationToken: ct));
+        if (salida is not null) throw new ReglaException($"El cheque {salida} ya no está en cartera: el asiento por el que entró no se puede modificar ni anular.");
+    }
 
     // ── Modelos de asiento (MA_MODELOS, D9540) ───────────────────────────────────────────────────
 
@@ -331,6 +480,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         public string Observaciones { get; set; } = ""; public string TcOrigen { get; set; } = ""; public bool Cierre { get; set; } public bool Resumen { get; set; }
         public bool Apertura { get; set; } public string CabCuenta { get; set; } = ""; public string CabNombre { get; set; } = ""; public string CabCuit { get; set; } = "";
         public decimal LivaTotal { get; set; } public string Cae { get; set; } = ""; public string Moneda { get; set; } = "";
+        public decimal Cotizacion { get; set; } public string NroBancario { get; set; } = ""; public string IdBanco { get; set; } = ""; public string Banco { get; set; } = "";
+        public int Clearing { get; set; }
     }
 
     private static async Task<List<RenglonSql>> RenglonesAsync(SqlConnection cn, SqlTransaction? tx, AsientoClave k, bool bloquear, CancellationToken ct)
@@ -344,9 +495,12 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                    LTRIM(RTRIM(ISNULL(a.TJ_Observaciones,''))) Observaciones, LTRIM(RTRIM(ISNULL(a.Tc_Origen,''))) TcOrigen,
                    CONVERT(bit, ISNULL(a.EsCierre,0)) Cierre, CONVERT(bit, ISNULL(a.EsResumen,0)) Resumen, CONVERT(bit, ISNULL(a.ES_SALDO_APERTURA,0)) Apertura,
                    LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) CabCuenta, LTRIM(RTRIM(ISNULL(a.CABNOMBRE,''))) CabNombre, LTRIM(RTRIM(ISNULL(a.CABCUIT,''))) CabCuit,
-                   ISNULL(a.LIVA_TOTAL,0) LivaTotal, LTRIM(RTRIM(ISNULL(a.NroCAI,''))) Cae, LTRIM(RTRIM(ISNULL(a.MONEDA,''))) Moneda
+                   ISNULL(a.LIVA_TOTAL,0) LivaTotal, LTRIM(RTRIM(ISNULL(a.NroCAI,''))) Cae, LTRIM(RTRIM(ISNULL(a.MONEDA,''))) Moneda,
+                   ISNULL(a.COTIZACION,1) Cotizacion, LTRIM(RTRIM(ISNULL(a.NroComprobanteBancario,''))) NroBancario, LTRIM(RTRIM(ISNULL(a.IdBanco,''))) IdBanco,
+                   LTRIM(RTRIM(ISNULL(b.Descripcion,''))) Banco, ISNULL(a.Clearing,0) Clearing
             FROM dbo.MV_ASIENTOS a {(bloquear ? "WITH (UPDLOCK, HOLDLOCK)" : "")}
             LEFT JOIN dbo.MA_CUENTAS c ON c.CODIGO = a.CUENTA
+            LEFT JOIN dbo.V_TA_Bancos b ON b.IdBanco = a.IdBanco
             WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero
               AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
             ORDER BY a.SECUENCIA;
@@ -427,7 +581,15 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             {
                 Cuenta = x.Cuenta, CuentaNombre = x.CuentaNombre,
                 Detalle = x.Detalle.Trim().EndsWith('.') && x.Detalle.Trim().TrimEnd('.') != detalle ? x.Detalle.Trim().TrimEnd('.') : "",
-                Debe = x.Dh == "D" ? x.Importe : 0, Haber = x.Dh == "D" ? 0 : x.Importe
+                Debe = x.Dh == "D" ? x.Importe : 0, Haber = x.Dh == "D" ? 0 : x.Importe,
+                Moneda = x.Moneda.Length == 0 ? "1" : x.Moneda, Cotizacion = x.Cotizacion <= 0 ? 1 : x.Cotizacion,
+                ImporteMoneda = x.Moneda is "" or "1" || x.Cotizacion <= 0 ? 0 : Math.Round(x.Importe / x.Cotizacion, 2),
+                Cheque = x.NroBancario.Length == 0 || x.IdBanco.Length == 0 ? null : new AsientoCheque
+                {
+                    Serie = x.NroBancario.Contains('-') ? x.NroBancario[..x.NroBancario.IndexOf('-')] : "",
+                    Numero = x.NroBancario.Contains('-') ? x.NroBancario[(x.NroBancario.IndexOf('-') + 1)..] : x.NroBancario,
+                    IdBanco = x.IdBanco, Banco = x.Banco, Vencimiento = x.Vencimiento, Clearing = x.Clearing, Cuit = x.Observaciones
+                }
             }).ToList(),
             MotivoSoloLectura = MotivoSoloLectura(r.Select(x => (x.Tc, clave.TipoReg, x.LivaTipo, x.Conciliado, x.Observaciones, x.TcOrigen, x.Cierre, x.Resumen, x.Caja,
                 x.Tc + x.Sucursal + x.Numero + x.Letra, x.MedioDePago)).ToList(), manuales),
@@ -443,7 +605,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
 
     /// <summary>Validaciones de renglones que no dependen de la base (las del legacy al grabar).</summary>
     internal static void ValidarRenglones(AsientoDetalle a, IReadOnlyDictionary<string, AsientoCuenta> cuentas, ISet<string> cuentasTerceros,
-        IReadOnlyList<CompraCargaOpcion>? centros = null, IReadOnlyList<AsientoCentroDefault>? centrosPorCuenta = null)
+        IReadOnlyList<CompraCargaOpcion>? centros = null, IReadOnlyList<AsientoCentroDefault>? centrosPorCuenta = null, IReadOnlyCollection<string>? bancos = null)
     {
         var detalle = (a.Detalle ?? "").Trim();
         if (detalle.Length is < 3 or > LargoDetalle - 1) throw new ReglaException("Escribí el detalle del asiento (concepto).");
@@ -455,15 +617,16 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         {
             var r = renglones[i]; var n = i + 1;
             if (!cuentas.TryGetValue(r.Cuenta.Trim(), out var cuenta))
-                throw new ReglaException($"Renglón {n}: la cuenta {r.Cuenta.Trim()} no existe, es un título, está dada de baja o bloqueada, o no es en pesos.");
+                throw new ReglaException($"Renglón {n}: la cuenta {r.Cuenta.Trim()} no existe, es un título o está dada de baja o bloqueada.");
             if (MediosConDatosExtra.Contains(cuenta.MedioDePago, StringComparer.OrdinalIgnoreCase))
-                throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es de cheques o tarjetas, que llevan datos aparte: registralo desde Caja y bancos o el Alfa Gestión.");
+                throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es de tarjetas, que llevan los cupones aparte: registralo desde Caja y bancos o el Alfa Gestión.");
             if (r.Debe < 0 || r.Haber < 0) throw new ReglaException($"Renglón {n}: los importes no pueden ser negativos.");
             if ((r.Debe != 0) == (r.Haber != 0)) throw new ReglaException($"Renglón {n}: cargá el importe en el debe o en el haber (uno solo).");
             if (decimal.Round(r.Debe, 2) != r.Debe || decimal.Round(r.Haber, 2) != r.Haber) throw new ReglaException($"Renglón {n}: los importes van con dos decimales.");
             if (r.Debe + r.Haber > 999_999_999_999m) throw new ReglaException($"Renglón {n}: el importe es demasiado grande.");
             if ((r.Detalle ?? "").Trim().Length > LargoDetalle - 1) throw new ReglaException($"Renglón {n}: el concepto es demasiado largo.");
-            if (cuenta.PideVencimiento && (a.Vencimiento is null || a.Vencimiento.Value.Date < a.Fecha.Date))
+            ValidarChequeYMoneda(r, cuenta, n, bancos ?? []);
+            if (cuenta.PideVencimiento && !cuenta.EsCheque && (a.Vencimiento is null || a.Vencimiento.Value.Date < a.Fecha.Date))
                 throw new ReglaException($"La cuenta {cuenta.Descripcion} pide vencimiento: cargalo (no puede ser anterior a la fecha).");
         }
         var repetidas = renglones.Select(r => r.Cuenta.Trim()).Where(cuentasTerceros.Contains).GroupBy(c => c).FirstOrDefault(g => g.Count() > 1);
@@ -536,7 +699,9 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         var terceros = (await cn.QueryAsync<string>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_CLIENTES UNION SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_PROVEEDORES;
             """, transaction: tx, commandTimeout: 60, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        ValidarRenglones(a, cuentas, terceros, await CentrosAsync(cn, tx, ct), await CentrosPorCuentaAsync(cn, tx, u.Unidad, ct));
+        var bancos = (await cn.QueryAsync<string>(new CommandDefinition(
+            "IF OBJECT_ID(N'dbo.V_TA_Bancos', N'U') IS NULL SELECT TOP 0 N'' ELSE SELECT LTRIM(RTRIM(IdBanco)) FROM dbo.V_TA_Bancos;", transaction: tx, cancellationToken: ct))).ToHashSet();
+        ValidarRenglones(a, cuentas, terceros, await CentrosAsync(cn, tx, ct), await CentrosPorCuentaAsync(cn, tx, u.Unidad, ct), bancos);
         var tocaCaja = a.Renglones.Any(r => cuentas[r.Cuenta.Trim()].MedioDePago.Length > 0);
         var periodo = await ValidarFechaAsync(cn, tx, a.Fecha, tocaCaja, ct);
         var detalle = a.Detalle.Trim();
@@ -557,6 +722,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             // El número de asiento es por período y mes: cambiar de mes es otro asiento.
             if (periodo != k.Periodo.Trim() || a.Fecha.Month != k.Mes)
                 throw new ReglaException("Para pasar el asiento a otro mes o ejercicio, anulalo y cargalo de nuevo con la fecha nueva.");
+            await ValidarChequesSinSalidaAsync(cn, tx, k, ct);
+            await ValidarChequesAsync(cn, tx, a.Renglones, cuentas, k, ct);
             var p = previo[0];
             (tc, suc, nro, letra, unidad, caja, usuarioGrabo, grabado, apertura) = (p.Tc, p.Sucursal, p.Numero, p.Letra, p.Unidad, p.Caja, p.Usuario, p.Grabado, p.Apertura);
             clave = k;
@@ -592,6 +759,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             await cn.ExecuteAsync(new CommandDefinition("""
                 UPDATE dbo.V_TA_CPTE SET X_ULTIMO_NRO = @Proximo WHERE LTRIM(RTRIM(CODIGO)) = @Codigo AND LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) = @Unidad;
                 """, new { Proximo = checked(numero + 1), tal.Codigo, tal.Unidad }, tx, cancellationToken: ct));
+            await ValidarChequesAsync(cn, tx, a.Renglones, cuentas, null, ct);
             clave = new AsientoClave(periodo, a.Fecha.Month, await NumeracionAsiento.SiguienteAsync(cn, tx, periodo, a.Fecha.Month, "", ct), "");
         }
 
@@ -602,19 +770,21 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             await cn.ExecuteAsync(new CommandDefinition("""
                 INSERT INTO dbo.MV_ASIENTOS (CUENTA, SECUENCIA, MES_OPERATIVO, [NUMERO ASIENTO], FECHA, DETALLE, TC, SUCURSAL, NUMERO, LETRA,
                     [DEBE-HABER], IMPORTE, MONEDA, COTIZACION, PERIODO, CABIMPORTE, TIPO_REG, CONTABILIZADO, FechaHora_Grabacion, FechaHora_Modificacion,
-                    FechaSubdiario, USUARIO_LOGEADO, IdCajas, UNEGOCIO, VENCIMIENTO, ES_SALDO_APERTURA)
+                    FechaSubdiario, USUARIO_LOGEADO, IdCajas, UNEGOCIO, VENCIMIENTO, ES_SALDO_APERTURA, NroComprobanteBancario, IdBanco, Clearing, TJ_Observaciones)
                 VALUES (@Cuenta, @Secuencia, @Mes, @Asiento, @Fecha, @Detalle, @Tc, @Suc, @Nro, @Letra,
-                    @Dh, @Importe, @Moneda, 1, @Periodo, @Total, @TipoReg, 0, ISNULL(@Grabado, GETDATE()), @Modificado,
-                    @Fecha, @Usuario, @Caja, @Unidad, @Vencimiento, @Apertura);
+                    @Dh, @Importe, @Moneda, @Cotizacion, @Periodo, @Total, @TipoReg, 0, ISNULL(@Grabado, GETDATE()), @Modificado,
+                    @Fecha, @Usuario, @Caja, @Unidad, @Vencimiento, @Apertura, @NroBancario, @IdBanco, @Clearing, @Librador);
                 """, new
             {
                 Cuenta = r.Cuenta.Trim(), Secuencia = i + 1, clave.Mes, Asiento = clave.Numero, Fecha = a.Fecha.Date,
                 // Como el legacy: el concepto del renglón con «.» al final; si no tiene, el detalle del asiento.
                 Detalle = concepto.Length > 0 ? concepto + "." : detalle,
                 Tc = tc, Suc = suc, Nro = nro, Letra = letra, Dh = r.Debe > 0 ? "D" : "H", Importe = r.Debe > 0 ? r.Debe : r.Haber,
-                Moneda = CodigoPk.Format("1", 4), Periodo = clave.Periodo, Total = total, TipoReg = CodigoPk.Format(clave.TipoReg, 4),
+                Moneda = CodigoPk.Format(r.Moneda, 4), r.Cotizacion, Periodo = clave.Periodo, Total = total, TipoReg = CodigoPk.Format(clave.TipoReg, 4),
+                NroBancario = r.Cheque?.NroComprobante, IdBanco = r.Cheque is { } chq ? CodigoPk.Format(chq.IdBanco, 4) : null, Clearing = r.Cheque?.Clearing,
+                Librador = r.Cheque is { Cuit.Length: > 0 } chl ? chl.Cuit : null,
                 Grabado = grabado, Modificado = accion == "M" ? DateTime.Now : (DateTime?)null, Usuario = usuarioGrabo,
-                Caja = CodigoPk.Format(caja, 4), Unidad = CodigoPk.Format(unidad, 4), Vencimiento = (a.Vencimiento ?? a.Fecha).Date, Apertura = apertura
+                Caja = CodigoPk.Format(caja, 4), Unidad = CodigoPk.Format(unidad, 4), Vencimiento = (r.Cheque?.Vencimiento ?? a.Vencimiento ?? a.Fecha).Date, Apertura = apertura
             }, tx, cancellationToken: ct));
             foreach (var c in r.Centros)
                 await cn.ExecuteAsync(new CommandDefinition("""
@@ -624,7 +794,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                     """, new
                 {
                     Periodo = clave.Periodo, clave.Mes, Asiento = clave.Numero, Cuenta = r.Cuenta.Trim(), Secuencia = i + 1, Dh = r.Debe > 0 ? "D" : "H",
-                    Moneda = CodigoPk.Format("1", 4), CCosto = CodigoPk.Format(c.CCosto, 4), Porcentaje = (double)c.Porcentaje, TipoReg = CodigoPk.Format(clave.TipoReg, 4),
+                    Moneda = CodigoPk.Format(r.Moneda, 4), CCosto = CodigoPk.Format(c.CCosto, 4), Porcentaje = (double)c.Porcentaje, TipoReg = CodigoPk.Format(clave.TipoReg, 4),
                     c.Importe, Fecha = a.Fecha.Date, Unidad = CodigoPk.Format(unidad, 4)
                 }, tx, cancellationToken: ct));
         }
@@ -666,6 +836,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         if (motivo.Length > 0) throw new ReglaException(motivo);
         if (Huella(previo.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) != huella)
             throw new ReglaException("Otro usuario modificó este asiento. Volvé a abrirlo antes de anularlo.");
+        await ValidarChequesSinSalidaAsync(cn, tx, k, ct);
         var p = previo[0];
         var cuentas = (await CuentasAsync(cn, tx, ct)).ToDictionary(c => c.Codigo, StringComparer.OrdinalIgnoreCase);
         await ValidarFechaAsync(cn, tx, p.Fecha, previo.Any(x => cuentas.TryGetValue(x.Cuenta, out var c) && c.MedioDePago.Length > 0), ct);

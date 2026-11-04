@@ -162,8 +162,8 @@
                                 else { <AsientoCuentaLookup Cuenta="@r.Cuenta" CuentaChanged="v => CambiarCuenta(r, v)" Cuentas="_cat.Cuentas" /> }
                             </td>
                             <td><input class="as-input as-input--fila" maxlength="199" value="@r.Detalle" placeholder="(el del asiento)" @onchange="e => r.Detalle = e.Value?.ToString() ?? string.Empty" /></td>
-                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Debe)" @onchange="e => Importe(r, e, debe: true)" /></td>
-                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Haber)" @onchange="e => Importe(r, e, debe: false)" /></td>
+                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Debe)" disabled="@ImporteCalculado(r)" @onchange="e => Importe(r, e, debe: true)" /></td>
+                            <td class="n"><input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Monto(r.Haber)" disabled="@ImporteCalculado(r)" @onchange="e => Importe(r, e, debe: false)" /></td>
                             <td class="as-col-cc">@Centros(r, editable: true)</td>
                             <td class="as-col-acc">
                                 @if (!r.CuentaFija) { <button type="button" class="as-icon" title="Quitar renglón" @onclick="() => Quitar(r)"><i class="bi bi-x-lg" aria-hidden="true"></i></button> }
@@ -179,6 +179,13 @@
                             <td></td>
                         }
                     </tr>
+                    @if (Cuenta(r) is { } cu && (cu.EnMonedaExtranjera || cu.EsCheque || r.Cheque is not null))
+                    {
+                        <tr class="as-sub" @key="(r, 1)">
+                            <td></td>
+                            <td colspan="6">@Extras(r, cu, Editable)</td>
+                        </tr>
+                    }
                 }
                 </tbody>
                 <tfoot>
@@ -292,6 +299,177 @@
 
     private IReadOnlyList<AsientoCentroDefault> Sugeridos(string cuenta)
         => _cat?.CentrosPorCuenta.Where(d => d.Cuenta.Equals(cuenta, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+
+    private Dictionary<string, decimal> _cotizaciones = new() { ["1"] = 1m };
+    private readonly Dictionary<string, IReadOnlyList<ChequeCartera>> _cartera = new(StringComparer.OrdinalIgnoreCase);
+
+    private AsientoCuenta? Cuenta(AsientoRenglon r) => r.Cuenta.Length == 0 ? null : _cat?.Cuentas.FirstOrDefault(c => c.Codigo == r.Cuenta);
+    private bool ImporteCalculado(AsientoRenglon r) => Cuenta(r) is { } c && (c.EnMonedaExtranjera || (c.EsCheque && !c.Bancaria && r.Haber > 0 && r.Cheque is not null));
+    private string Moneda(string codigo) => _cat?.Monedas.FirstOrDefault(m => m.Codigo == codigo.Trim())?.Descripcion ?? codigo;
+    private static string Dec(decimal v, string f = "0.00") => v == 0 ? "" : v.ToString(f, System.Globalization.CultureInfo.InvariantCulture);
+    private static decimal LeerDec(ChangeEventArgs e)
+        => decimal.TryParse((e.Value?.ToString() ?? "").Trim().Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) ? Math.Abs(v) : 0;
+
+    private async Task CargarCotizacionesAsync(DateTime fecha)
+    {
+        var r = await UiOps.RunAsync(() => Service.CotizacionesAsync(fecha), "Cotizaciones");
+        if (r.Success) _cotizaciones = new Dictionary<string, decimal>(r.Value!);
+    }
+
+    private void Convertir(AsientoRenglon r, bool? alHaber = null)
+    {
+        var pesos = Math.Round(r.ImporteMoneda * r.Cotizacion, 2, MidpointRounding.AwayFromZero);
+        var haber = alHaber ?? (r.Haber > 0);
+        if (haber) { r.Haber = pesos; r.Debe = 0; } else { r.Debe = pesos; r.Haber = 0; }
+        AlfaCore.Services.AsientosService.DistribuirImportes(r);
+        _sucio = true;
+    }
+
+    private async Task<IReadOnlyList<ChequeCartera>> CarteraAsync(string cuenta)
+    {
+        if (_cartera.TryGetValue(cuenta, out var l)) return l;
+        var r = await UiOps.RunAsync(() => Service.ChequesEnCarteraAsync(cuenta), "Cartera de cheques");
+        l = r.Success ? r.Value! : [];
+        _cartera[cuenta] = l;
+        return l;
+    }
+
+    private async Task SentidoCheque(AsientoRenglon r, AsientoCuenta c, bool sale)
+    {
+        var importe = r.Debe + r.Haber;
+        r.Cheque ??= new AsientoCheque();
+        if (sale && !c.Bancaria)
+        {
+            r.Cheque = null; r.Debe = 0; r.Haber = 0; // se elige de la cartera
+            _ = await CarteraAsync(c.Codigo);
+            _saleDeCartera.Add(r);
+        }
+        else
+        {
+            _saleDeCartera.Remove(r);
+            if (sale) { r.Haber = importe; r.Debe = 0; } else { r.Debe = importe; r.Haber = 0; }
+        }
+        _sucio = true;
+        StateHasChanged();
+    }
+    private readonly HashSet<AsientoRenglon> _saleDeCartera = [];
+
+    private void ElegirDeCartera(AsientoRenglon r, ChangeEventArgs e, IReadOnlyList<ChequeCartera> lista)
+    {
+        var sel = lista.FirstOrDefault(x => $"{x.IdBanco}|{x.NroComprobante}" == (e.Value?.ToString() ?? ""));
+        if (sel is null) { r.Cheque = null; r.Haber = 0; return; }
+        var guion = sel.NroComprobante.IndexOf('-');
+        r.Cheque = new AsientoCheque
+        {
+            Serie = guion > 0 ? sel.NroComprobante[..guion] : "", Numero = guion >= 0 ? sel.NroComprobante[(guion + 1)..] : sel.NroComprobante,
+            IdBanco = sel.IdBanco, Banco = sel.Banco, Vencimiento = sel.Vencimiento, Clearing = sel.Clearing, Cuit = sel.Cuit
+        };
+        r.Haber = sel.Importe; r.Debe = 0;
+        AlfaCore.Services.AsientosService.DistribuirImportes(r);
+        _sucio = true;
+    }
+
+    private RenderFragment Extras(AsientoRenglon r, AsientoCuenta c, bool editable) => __builder =>
+    {
+        <div class="as-extra">
+        @if (c.EnMonedaExtranjera)
+        {
+            if (editable)
+            {
+                <span class="as-extra__grupo"><i class="bi bi-currency-exchange" aria-hidden="true"></i> @Moneda(c.Moneda)
+                    <input class="as-input as-input--imp" type="number" step="0.01" min="0" placeholder="cantidad" value="@Dec(r.ImporteMoneda)"
+                           @onchange="e => SetCantidad(r, e)" />
+                    × cotización
+                    <input class="as-input as-input--imp" type="number" step="0.0001" min="0" value="@Dec(r.Cotizacion, "0.####")"
+                           @onchange="e => SetCotizacion(r, e)" />
+                    <select class="as-input" value="@(r.Haber > 0 ? "H" : "D")" @onchange="e => SetLado(r, e)">
+                        <option value="D">al debe</option><option value="H">al haber</option>
+                    </select>
+                    = $ @((r.Debe + r.Haber).ToString("N2", Culture))
+                </span>
+            }
+            else
+            {
+                <span class="as-extra__grupo"><i class="bi bi-currency-exchange" aria-hidden="true"></i> @Moneda(r.Moneda) @r.ImporteMoneda.ToString("N2", Culture) × @r.Cotizacion.ToString("0.####", Culture)</span>
+            }
+        }
+        @if (c.EsCheque || r.Cheque is not null)
+        {
+            var sale = r.Haber > 0 || _saleDeCartera.Contains(r);
+            if (!editable)
+            {
+                if (r.Cheque is { } ch)
+                {
+                    <span class="as-extra__grupo"><i class="bi bi-credit-card-2-front" aria-hidden="true"></i>
+                        Cheque @ch.NroComprobante · @(ch.Banco.Length > 0 ? ch.Banco : ch.IdBanco) · paga el @ch.Vencimiento?.ToString("dd/MM/yyyy")@(ch.Clearing > 0 ? $" · clearing {ch.Clearing} h" : "")@(ch.Cuit.Length > 0 ? $" · librador {ch.Cuit}" : "")</span>
+                }
+            }
+            else
+            {
+                <span class="as-extra__grupo">
+                    <i class="bi bi-credit-card-2-front" aria-hidden="true"></i>
+                    <select class="as-input" value="@(sale ? "S" : "E")" @onchange="e => SetSentido(r, c, e)">
+                        <option value="E">@(c.Bancaria ? "Cheque propio que vuelve (debe)" : "Entra un cheque (debe)")</option>
+                        <option value="S">@(c.Bancaria ? "Emito un cheque propio (haber)" : "Sale un cheque de la cartera (haber)")</option>
+                    </select>
+                </span>
+                @if (sale && !c.Bancaria)
+                {
+                    var lista = _cartera.TryGetValue(c.Codigo, out var l) ? l : [];
+                    <span class="as-extra__grupo">
+                        <select class="as-input as-input--cartera" value="@(r.Cheque is { } sel ? $"{CodigoBanco(sel.IdBanco)}|{sel.NroComprobante}" : "")" @onchange="e => ElegirDeCartera(r, e, lista)">
+                            <option value="">@(lista.Count == 0 ? "No hay cheques en cartera en esta cuenta" : $"Elegí el cheque ({lista.Count} en cartera)…")</option>
+                            @foreach (var x in lista)
+                            {
+                                <option value="@($"{x.IdBanco}|{x.NroComprobante}")">@x.NroComprobante · @x.Banco · $ @x.Importe.ToString("N2", Culture) · paga @x.Vencimiento?.ToString("dd/MM/yyyy") · @x.Origen</option>
+                            }
+                        </select>
+                    </span>
+                }
+                else
+                {
+                    var ch = r.Cheque ??= new AsientoCheque();
+                    <span class="as-extra__grupo">
+                        Serie <input class="as-input as-input--serie" maxlength="1" value="@ch.Serie" @onchange="e => SetSerie(ch, e)" />
+                        Número <input class="as-input as-input--nro" maxlength="20" inputmode="numeric" value="@ch.Numero" @onchange="e => SetNumero(ch, e)" />
+                        <select class="as-input" value="@ch.IdBanco" @onchange="e => SetBanco(ch, e)">
+                            <option value="">Banco…</option>
+                            @foreach (var b in _cat?.Bancos ?? []) { <option value="@b.IdBanco">@b.Descripcion</option> }
+                        </select>
+                        Paga <input type="date" class="as-input" value="@ch.Vencimiento?.ToString("yyyy-MM-dd")" @onchange="e => SetPaga(ch, e)" />
+                        Clearing <select class="as-input" value="@ch.Clearing" @onchange="e => SetClearing(ch, e)">
+                            @foreach (var h in AlfaCore.Services.AsientosService.Clearings) { <option value="@h">@h h</option> }
+                        </select>
+                        @if (!c.Bancaria)
+                        {
+                            <span>CUIT librador <input class="as-input as-input--cuit" maxlength="13" value="@ch.Cuit" @onchange="e => SetCuit(ch, e)" /></span>
+                        }
+                        @if (ch.Vencimiento is { } v && (v.Date < DateTime.Today || (v - DateTime.Today).TotalDays > 600))
+                        {
+                            <small class="as-aviso">@(v.Date < DateTime.Today ? "La fecha de pago ya pasó." : "La fecha de pago es muy lejana: revisala.")</small>
+                        }
+                    </span>
+                }
+            }
+        }
+        </div>
+    };
+
+    private static string CodigoBanco(string id) => id.Trim();
+    private void SetCantidad(AsientoRenglon r, ChangeEventArgs e) { r.ImporteMoneda = Math.Round(LeerDec(e), 2); Convertir(r); }
+    private void SetCotizacion(AsientoRenglon r, ChangeEventArgs e) { r.Cotizacion = Math.Round(LeerDec(e), 6); Convertir(r); }
+    private void SetLado(AsientoRenglon r, ChangeEventArgs e) => Convertir(r, e.Value?.ToString() == "H");
+    private Task SetSentido(AsientoRenglon r, AsientoCuenta c, ChangeEventArgs e) => SentidoCheque(r, c, e.Value?.ToString() == "S");
+    private void SetSerie(AsientoCheque ch, ChangeEventArgs e) { ch.Serie = (e.Value?.ToString() ?? string.Empty).Trim().ToUpperInvariant(); _sucio = true; }
+    private void SetNumero(AsientoCheque ch, ChangeEventArgs e) { ch.Numero = new string((e.Value?.ToString() ?? string.Empty).Where(char.IsDigit).ToArray()); _sucio = true; }
+    private void SetBanco(AsientoCheque ch, ChangeEventArgs e) { ch.IdBanco = e.Value?.ToString() ?? string.Empty; _sucio = true; }
+    private void SetPaga(AsientoCheque ch, ChangeEventArgs e)
+    {
+        ch.Vencimiento = DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+        _sucio = true;
+    }
+    private void SetClearing(AsientoCheque ch, ChangeEventArgs e) { ch.Clearing = int.TryParse(e.Value?.ToString(), out var h) ? h : 48; _sucio = true; }
+    private void SetCuit(AsientoCheque ch, ChangeEventArgs e) { ch.Cuit = new string((e.Value?.ToString() ?? string.Empty).Where(char.IsDigit).ToArray()); _sucio = true; }
 
     private string NombreCentro(string codigo) => _cat?.Centros.FirstOrDefault(c => c.Codigo == codigo)?.Descripcion ?? "";
 
@@ -490,7 +668,22 @@
         try
         {
             var r = await UiOps.RunAsync(() => Service.GetAsync(clave), "Asiento");
-            if (r.Success) { _edit = r.Value; _sucio = false; } else _feedback = r.Feedback;
+            if (r.Success)
+            {
+                _edit = r.Value; _sucio = false; _cartera.Clear(); _saleDeCartera.Clear();
+                await CargarCotizacionesAsync(_edit!.Fecha);
+                foreach (var x in _edit.Renglones.Where(x => x.Cheque is not null && x.Haber > 0 && Cuenta(x) is { Bancaria: false } c))
+                {
+                    _saleDeCartera.Add(x);
+                    // El cheque que este asiento entrega figura en la lista para poder dejarlo elegido.
+                    var lista = (await CarteraAsync(x.Cuenta)).ToList();
+                    if (!lista.Any(c => c.IdBanco == x.Cheque!.IdBanco && c.NroComprobante == x.Cheque.NroComprobante))
+                        lista.Add(new ChequeCartera { Cuenta = x.Cuenta, NroComprobante = x.Cheque!.NroComprobante, IdBanco = x.Cheque.IdBanco, Banco = x.Cheque.Banco,
+                            Importe = x.Haber, Vencimiento = x.Cheque.Vencimiento, Cuit = x.Cheque.Cuit, Clearing = x.Cheque.Clearing, Origen = "este asiento" });
+                    _cartera[x.Cuenta] = lista;
+                }
+            }
+            else _feedback = r.Feedback;
         }
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
         if (_edit is { LivaTipo.Length: > 0, Clave: { } k }) await ControlArcaAsync(k);
@@ -504,17 +697,17 @@
         StateHasChanged();
     }
 
-    private Task Nuevo()
+    private async Task Nuevo()
     {
-        if (_cat is null) return Task.CompletedTask;
+        if (_cat is null) return;
+        await CargarCotizacionesAsync(DateTime.Today);
         _edit = new AsientoDetalle
         {
             Fecha = DateTime.Today, Tc = _cat.Talonarios.FirstOrDefault()?.Codigo ?? "CC", Unidad = _cat.UnidadUsuario,
             Renglones = [new AsientoRenglon(), new AsientoRenglon()]
         };
-        _arca = null; _sucio = false; _modelo = null;
+        _arca = null; _sucio = false; _modelo = null; _cartera.Clear(); _saleDeCartera.Clear();
         UpdateHeader(); StateHasChanged();
-        return Task.CompletedTask;
     }
 
     private Task Volver()
@@ -526,7 +719,11 @@
 
     private void CambiarFechaAsiento(ChangeEventArgs e)
     {
-        if (_edit is not null && DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) { _edit.Fecha = d; _sucio = true; }
+        if (_edit is not null && DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+        {
+            _edit.Fecha = d; _sucio = true;
+            _ = InvokeAsync(async () => { await CargarCotizacionesAsync(d); StateHasChanged(); });
+        }
     }
     private void CambiarVencimiento(ChangeEventArgs e)
     {
@@ -538,6 +735,12 @@
     {
         r.Cuenta = cuenta;
         r.CuentaNombre = _cat?.Cuentas.FirstOrDefault(c => c.Codigo == cuenta)?.Descripcion ?? "";
+        var cu = Cuenta(r);
+        r.Moneda = cu?.Moneda ?? "1";
+        r.Cotizacion = cu is { EnMonedaExtranjera: true } ? _cotizaciones.GetValueOrDefault(cu.Moneda.Trim(), 1m) : 1m;
+        if (cu is { EnMonedaExtranjera: false }) r.ImporteMoneda = 0;
+        r.Cheque = cu is { EsCheque: true } ? r.Cheque ?? new AsientoCheque() : null;
+        _saleDeCartera.Remove(r);
         SugerirCentros(r);
         _sucio = true;
         // Siempre queda un renglón vacío al final para seguir cargando (salvo que el modelo no deje agregar).

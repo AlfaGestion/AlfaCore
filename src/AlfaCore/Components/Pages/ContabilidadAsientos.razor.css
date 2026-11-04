@@ -65,3 +65,13 @@
 .as-mal { color: var(--alfa-danger, #dc2626); }
 .as-dlg-sub { margin: 0 0 8px; font-size: 13px; color: var(--alfa-text-secondary); }
 .as-form { display: flex; flex-direction: column; gap: 10px; }
+.as-sub td { border-bottom: 1px solid var(--alfa-border-default); padding-top: 0; }
+.as-tabla tr:has(+ .as-sub) td { border-bottom: none; }
+.as-extra { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12px; color: var(--alfa-text-secondary); padding: 2px 0 6px; }
+.as-extra__grupo { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.as-extra .as-input { height: 30px; font-size: 12px; }
+.as-input--serie { width: 44px; text-align: center; }
+.as-input--nro { width: 130px; }
+.as-input--cuit { width: 130px; }
+.as-input--cartera { min-width: 340px; max-width: 100%; }
+.as-aviso { color: var(--alfa-warning, #d97706); }
