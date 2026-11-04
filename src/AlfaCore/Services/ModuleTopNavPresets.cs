@@ -158,7 +158,8 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("tablas", "Tablas de referencia", "/archivos/tablas"),
-            ("chequeras", "Chequeras", "/archivos/chequeras")
+            ("chequeras", "Chequeras", "/archivos/chequeras"),
+            ("bancos", "Bancos", "/archivos/bancos")
         ]);
 
     // Mismas entradas que el sidebar legacy de Seguridad.

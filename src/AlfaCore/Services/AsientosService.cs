@@ -44,7 +44,6 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     /// <summary>Talonarios contables que no son asientos manuales (liquidación de tarjetas y asiento resumen).</summary>
     internal static readonly string[] TalonariosExcluidos = ["LT", "RS", "ÿRS"];
     /// <summary>Medios de pago que piden datos aparte y todavía no se cargan acá (cupones de tarjeta): se registran desde Caja o el legacy.</summary>
-    internal static readonly string[] MediosConDatosExtra = ["TJ"];
     /// <summary>Clearing de un cheque (horas), como el legacy (FrmCpteBancario).</summary>
     internal static readonly int[] Clearings = [0, 24, 48, 72, 96, 120, 144, 168];
     internal const int MaximoRenglones = 200, LargoDetalle = 200;
@@ -208,9 +207,15 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             new { Cuenta = (cuenta ?? "").Trim() }, commandTimeout: 120, cancellationToken: ct))).ToList(), ct);
 
     /// <summary>Datos del cheque y moneda que no dependen de la base.</summary>
-    internal static void ValidarChequeYMoneda(AsientoRenglon r, AsientoCuenta cuenta, int n, IReadOnlyCollection<string> bancos)
+    internal static void ValidarChequeYMoneda(AsientoRenglon r, AsientoCuenta cuenta, int n, IReadOnlyCollection<string> bancos, string? monedaAsiento = null, decimal cotizacionAsiento = 1m)
     {
-        if (cuenta.EnMonedaExtranjera)
+        if (monedaAsiento is { Length: > 0 } and not "1")
+        {
+            // Asiento cargado en otra moneda: todos los renglones llevan la moneda y cotización del encabezado (la conversión a pesos la hace ValidarRenglones).
+            if (cuenta.EsCheque) throw new ReglaException($"Renglón {n}: los cheques se cargan en un asiento en pesos (o en una cuenta de cheques en moneda extranjera).");
+            r.Moneda = monedaAsiento; r.Cotizacion = cotizacionAsiento; r.ImporteMoneda = r.Debe + r.Haber;
+        }
+        else if (cuenta.EnMonedaExtranjera)
         {
             if (r.Cotizacion <= 0 || r.ImporteMoneda <= 0) throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es en moneda extranjera: cargá la cantidad y la cotización.");
             if (decimal.Round(r.ImporteMoneda, 2) != r.ImporteMoneda || decimal.Round(r.Cotizacion, 6) != r.Cotizacion) throw new ReglaException($"Renglón {n}: revisá la cantidad y la cotización.");
@@ -527,7 +532,6 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         if (tipoReg.Length > 0) return $"Es del subdiario {tipoReg} (cobranzas, pagos u otro módulo): se modifica desde su comprobante.";
         if (tc.Equals("LT", StringComparison.OrdinalIgnoreCase)) return "Es una liquidación de tarjetas: se maneja desde su propia opción.";
         if (!talonariosManuales.Contains(tc, StringComparer.OrdinalIgnoreCase)) return $"Lo generó un comprobante {tc}: se modifica desde ese módulo.";
-        if (r.Any(x => MediosConDatosExtra.Contains(x.MedioDePago, StringComparer.OrdinalIgnoreCase))) return "Tiene cheques o cupones de tarjeta, que llevan datos aparte: se modifica en el Alfa Gestión.";
         return "";
     }
 
@@ -598,6 +602,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             Huella = Huella(r.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha)))
         };
         d.Editable = d.MotivoSoloLectura.Length == 0;
+        DetectarMonedaAsiento(d);
         return d;
     }
 
@@ -609,6 +614,10 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     {
         var detalle = (a.Detalle ?? "").Trim();
         if (detalle.Length is < 3 or > LargoDetalle - 1) throw new ReglaException("Escribí el detalle del asiento (concepto).");
+        var moneda = a.EnOtraMoneda ? a.MonedaAsiento.Trim() : "1";
+        if (moneda != "1" && (a.CotizacionAsiento <= 0 || decimal.Round(a.CotizacionAsiento, 6) != a.CotizacionAsiento || a.CotizacionAsiento > 1_000_000m))
+            throw new ReglaException("Cargá la cotización de la moneda del asiento.");
+        if (moneda == "1") { a.MonedaAsiento = "1"; a.CotizacionAsiento = 1m; }
         // Los renglones de un modelo que quedan sin importe no se graban (como el legacy).
         var renglones = a.Renglones.Where(r => (r.Cuenta.Trim().Length > 0 || r.Debe != 0 || r.Haber != 0) && !(r.DeModelo && r.Debe == 0 && r.Haber == 0)).ToList();
         if (renglones.Count < 2) throw new ReglaException("El asiento necesita al menos dos renglones.");
@@ -618,23 +627,63 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             var r = renglones[i]; var n = i + 1;
             if (!cuentas.TryGetValue(r.Cuenta.Trim(), out var cuenta))
                 throw new ReglaException($"Renglón {n}: la cuenta {r.Cuenta.Trim()} no existe, es un título o está dada de baja o bloqueada.");
-            if (MediosConDatosExtra.Contains(cuenta.MedioDePago, StringComparer.OrdinalIgnoreCase))
-                throw new ReglaException($"Renglón {n}: {cuenta.Descripcion} es de tarjetas, que llevan los cupones aparte: registralo desde Caja y bancos o el Alfa Gestión.");
             if (r.Debe < 0 || r.Haber < 0) throw new ReglaException($"Renglón {n}: los importes no pueden ser negativos.");
             if ((r.Debe != 0) == (r.Haber != 0)) throw new ReglaException($"Renglón {n}: cargá el importe en el debe o en el haber (uno solo).");
             if (decimal.Round(r.Debe, 2) != r.Debe || decimal.Round(r.Haber, 2) != r.Haber) throw new ReglaException($"Renglón {n}: los importes van con dos decimales.");
             if (r.Debe + r.Haber > 999_999_999_999m) throw new ReglaException($"Renglón {n}: el importe es demasiado grande.");
             if ((r.Detalle ?? "").Trim().Length > LargoDetalle - 1) throw new ReglaException($"Renglón {n}: el concepto es demasiado largo.");
-            ValidarChequeYMoneda(r, cuenta, n, bancos ?? []);
+            ValidarChequeYMoneda(r, cuenta, n, bancos ?? [], moneda, a.CotizacionAsiento);
             if (cuenta.PideVencimiento && !cuenta.EsCheque && (a.Vencimiento is null || a.Vencimiento.Value.Date < a.Fecha.Date))
                 throw new ReglaException($"La cuenta {cuenta.Descripcion} pide vencimiento: cargalo (no puede ser anterior a la fecha).");
         }
         var repetidas = renglones.Select(r => r.Cuenta.Trim()).Where(cuentasTerceros.Contains).GroupBy(c => c).FirstOrDefault(g => g.Count() > 1);
         if (repetidas is not null) throw new ReglaException($"La cuenta de cliente o proveedor {repetidas.Key} está repetida: va una sola vez por asiento.");
         var debe = renglones.Sum(r => r.Debe); var haber = renglones.Sum(r => r.Haber);
-        if (debe <= 0 || debe != haber) throw new ReglaException($"El asiento no balancea: debe {debe:N2} y haber {haber:N2}.");
+        if (debe <= 0 || debe != haber) throw new ReglaException($"El asiento no balancea: debe {debe:N2} y haber {haber:N2}{(moneda == "1" ? "" : " (en la moneda del asiento)")}.");
+        if (moneda != "1") PasarAPesos(renglones, a.CotizacionAsiento);
         for (var i = 0; i < renglones.Count; i++) ValidarCentros(renglones[i], i + 1, centros ?? [], centrosPorCuenta ?? []);
         a.Renglones = renglones;
+    }
+
+    /// <summary>
+    /// Pasa a pesos un asiento cargado en otra moneda (importe × cotización, como ConvierteMoneda del legacy).
+    /// El redondeo de cada renglón puede dejar unos centavos de diferencia: se ajustan en el renglón más grande para que balancee en pesos.
+    /// </summary>
+    internal static void PasarAPesos(IReadOnlyList<AsientoRenglon> renglones, decimal cotizacion)
+    {
+        foreach (var r in renglones)
+        {
+            r.Debe = Math.Round(r.Debe * cotizacion, 2, MidpointRounding.AwayFromZero);
+            r.Haber = Math.Round(r.Haber * cotizacion, 2, MidpointRounding.AwayFromZero);
+        }
+        var dif = renglones.Sum(r => r.Debe) - renglones.Sum(r => r.Haber);
+        if (dif > 0) renglones.Where(r => r.Debe > 0).MaxBy(r => r.Debe)!.Debe -= dif;
+        else if (dif < 0) renglones.Where(r => r.Haber > 0).MaxBy(r => r.Haber)!.Haber += dif;
+    }
+
+    /// <summary>
+    /// Asiento leído: si todos los renglones están en la misma moneda extranjera con la misma cotización, se muestra en esa moneda
+    /// (debe y haber en la moneda; el centavo que se ajustó al pasar a pesos se vuelve a balancear).
+    /// </summary>
+    internal static void DetectarMonedaAsiento(AsientoDetalle d)
+    {
+        var r = d.Renglones;
+        if (r.Count == 0 || r.Any(x => x.Moneda.Trim() is "" or "1" || x.Cotizacion <= 0)) return;
+        var m = r[0].Moneda.Trim(); var cot = r[0].Cotizacion;
+        if (r.Any(x => x.Moneda.Trim() != m || x.Cotizacion != cot)) return;
+        d.MonedaAsiento = m; d.CotizacionAsiento = cot;
+        foreach (var x in r)
+        {
+            var v = Math.Round((x.Debe + x.Haber) / cot, 2, MidpointRounding.AwayFromZero);
+            if (x.Debe > 0) x.Debe = v; else x.Haber = v;
+            x.ImporteMoneda = v;
+        }
+        var dif = r.Sum(x => x.Debe) - r.Sum(x => x.Haber);
+        if (dif != 0 && Math.Abs(dif) <= 0.01m * r.Count)
+        {
+            if (dif > 0) { var x = r.Where(y => y.Debe > 0).MaxBy(y => y.Debe)!; x.Debe -= dif; x.ImporteMoneda = x.Debe; }
+            else { var x = r.Where(y => y.Haber > 0).MaxBy(y => y.Haber)!; x.Haber += dif; x.ImporteMoneda = x.Haber; }
+        }
     }
 
     /// <summary>
@@ -690,8 +739,14 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
 
     // ── Grabar ──────────────────────────────────────────────────────────────────────────────────
 
-    public Task<AsientoDetalle> GuardarAsync(AsientoDetalle a, CancellationToken ct = default) => EjecutarAsync("Guardar", [MenuAsientos], async cn =>
+    public Task<AsientoDetalle> GuardarAsync(AsientoDetalle original, CancellationToken ct = default) => EjecutarAsync("Guardar", [MenuAsientos], async cn =>
     {
+        // Se trabaja sobre una copia: la validación normaliza y pasa a pesos, y si algo falla el editor tiene que quedar como estaba.
+        var a = System.Text.Json.JsonSerializer.Deserialize<AsientoDetalle>(System.Text.Json.JsonSerializer.Serialize(original))!;
+        if (a.EnOtraMoneda && !(await cn.QueryAsync<string>(new CommandDefinition(
+                "IF OBJECT_ID(N'dbo.TA_MONEDAS', N'U') IS NULL SELECT TOP 0 N'' ELSE SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.TA_MONEDAS;", cancellationToken: ct)))
+                .Any(m => m.TrimStart('0') == a.MonedaAsiento.Trim().TrimStart('0')))
+            throw new ReglaException("La moneda del asiento no existe.");
         await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var u = await UsuarioAsync(cn, tx, ct);
         var talonarios = await TalonariosAsync(cn, tx, u.Unidad, ct);

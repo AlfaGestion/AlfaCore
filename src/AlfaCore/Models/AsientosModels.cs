@@ -105,6 +105,13 @@ public sealed class AsientoDetalle
     public DateTime? Grabado { get; set; }
     public DateTime? Modificado { get; set; }
     public List<AsientoRenglon> Renglones { get; set; } = [];
+    /// <summary>
+    /// Moneda en que se cargan los importes de todo el asiento ("1" = pesos). Como el legacy (CmbMoneda + ConvierteMoneda):
+    /// si es otra, debe y haber de los renglones van en esa moneda y al grabar se pasan a pesos con la cotización del encabezado.
+    /// </summary>
+    public string MonedaAsiento { get; set; } = "1";
+    public decimal CotizacionAsiento { get; set; } = 1m;
+    public bool EnOtraMoneda => (MonedaAsiento ?? "").Trim() is { Length: > 0 } m && m != "1";
     public bool Editable { get; set; } = true;
     /// <summary>Por qué no se puede modificar desde acá (comprobante de compras, ventas, cobranzas, conciliado…).</summary>
     public string MotivoSoloLectura { get; set; } = string.Empty;

@@ -22,6 +22,18 @@ public sealed class Chequera
 
 public sealed record ChequeraBanco(string IdBanco, string Descripcion);
 
+/// <summary>Banco de la tabla V_TA_Bancos (código de hasta 4 caracteres, como los usa el legacy en cheques y chequeras).</summary>
+public sealed class BancoTabla
+{
+    public string IdBanco { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    /// <summary>Cheques registrados con este banco (MV_ASIENTOS).</summary>
+    public int Cheques { get; set; }
+    public int Chequeras { get; set; }
+    public int Legajos { get; set; }
+    public bool EnUso => Cheques + Chequeras + Legajos > 0;
+}
+
 public sealed class ChequerasCatalogo
 {
     public IReadOnlyList<ChequeraBanco> Bancos { get; set; } = [];

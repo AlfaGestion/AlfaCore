@@ -114,6 +114,21 @@
                         </label>
                     }
                 }
+                @if (_cat is { Monedas.Count: > 1 } || a.EnOtraMoneda)
+                {
+                    <label>Moneda
+                        <select class="as-input" value="@(a.EnOtraMoneda ? a.MonedaAsiento.Trim() : "1")" disabled="@(!Editable)" @onchange="CambiarMonedaAsiento">
+                            @foreach (var m in _cat?.Monedas ?? []) { <option value="@m.Codigo">@m.Descripcion</option> }
+                        </select>
+                    </label>
+                    @if (a.EnOtraMoneda)
+                    {
+                        <label>Cotización
+                            <input class="as-input as-input--imp" type="number" step="0.0001" min="0" value="@Dec(a.CotizacionAsiento, "0.####")" disabled="@(!Editable)"
+                                   @onchange="e => { a.CotizacionAsiento = LeerDec(e); _sucio = true; }" />
+                        </label>
+                    }
+                }
                 @if (PideVencimiento || a.Vencimiento is not null)
                 {
                     <label>Vencimiento <input type="date" class="as-input" value="@a.Vencimiento?.ToString("yyyy-MM-dd")" disabled="@(!Editable)" @onchange="CambiarVencimiento" /></label>
@@ -179,7 +194,7 @@
                             <td></td>
                         }
                     </tr>
-                    @if (Cuenta(r) is { } cu && (cu.EnMonedaExtranjera || cu.EsCheque || r.Cheque is not null))
+                    @if (Cuenta(r) is { } cu && ((cu.EnMonedaExtranjera && !a.EnOtraMoneda) || cu.EsCheque || r.Cheque is not null))
                     {
                         <tr class="as-sub" @key="(r, 1)">
                             <td></td>
@@ -202,6 +217,11 @@
                         <td class="n"><b>@a.TotalHaber.ToString("N2", Culture)</b></td>
                         <td></td><td></td>
                     </tr>
+                    @if (a.EnOtraMoneda)
+                    {
+                        <tr class="as-sub"><td></td><td colspan="2">Importes en @Moneda(a.MonedaAsiento) · en pesos (× @a.CotizacionAsiento.ToString("0.####", Culture))</td>
+                            <td class="n">$ @((a.TotalDebe * a.CotizacionAsiento).ToString("N2", Culture))</td><td class="n">$ @((a.TotalHaber * a.CotizacionAsiento).ToString("N2", Culture))</td><td></td><td></td></tr>
+                    }
                     @if (Diferencia != 0)
                     {
                         <tr class="as-dif"><td></td><td colspan="2">No balancea: diferencia</td><td colspan="2" class="n">@Math.Abs(Diferencia).ToString("N2", Culture) @(Diferencia > 0 ? "de más en el debe" : "de más en el haber")</td><td></td><td></td></tr>
@@ -304,7 +324,7 @@
     private readonly Dictionary<string, IReadOnlyList<ChequeCartera>> _cartera = new(StringComparer.OrdinalIgnoreCase);
 
     private AsientoCuenta? Cuenta(AsientoRenglon r) => r.Cuenta.Length == 0 ? null : _cat?.Cuentas.FirstOrDefault(c => c.Codigo == r.Cuenta);
-    private bool ImporteCalculado(AsientoRenglon r) => Cuenta(r) is { } c && (c.EnMonedaExtranjera || (c.EsCheque && !c.Bancaria && r.Haber > 0 && r.Cheque is not null));
+    private bool ImporteCalculado(AsientoRenglon r) => Cuenta(r) is { } c && ((c.EnMonedaExtranjera && _edit is not { EnOtraMoneda: true }) || (c.EsCheque && !c.Bancaria && r.Haber > 0 && r.Cheque is not null));
     private string Moneda(string codigo) => _cat?.Monedas.FirstOrDefault(m => m.Codigo == codigo.Trim())?.Descripcion ?? codigo;
     private static string Dec(decimal v, string f = "0.00") => v == 0 ? "" : v.ToString(f, System.Globalization.CultureInfo.InvariantCulture);
     private static decimal LeerDec(ChangeEventArgs e)
@@ -372,7 +392,7 @@
     private RenderFragment Extras(AsientoRenglon r, AsientoCuenta c, bool editable) => __builder =>
     {
         <div class="as-extra">
-        @if (c.EnMonedaExtranjera)
+        @if (c.EnMonedaExtranjera && _edit is not { EnOtraMoneda: true })
         {
             if (editable)
             {
@@ -722,8 +742,22 @@
         if (_edit is not null && DateTime.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
         {
             _edit.Fecha = d; _sucio = true;
-            _ = InvokeAsync(async () => { await CargarCotizacionesAsync(d); StateHasChanged(); });
+            _ = InvokeAsync(async () =>
+            {
+                await CargarCotizacionesAsync(d);
+                if (_edit is { EnOtraMoneda: true } e2) e2.CotizacionAsiento = _cotizaciones.GetValueOrDefault(e2.MonedaAsiento.Trim(), e2.CotizacionAsiento);
+                StateHasChanged();
+            });
         }
+    }
+    /// <summary>Moneda de todo el asiento (como el legacy): los importes se cargan en esa moneda y al grabar se pasan a pesos.</summary>
+    private void CambiarMonedaAsiento(ChangeEventArgs e)
+    {
+        if (_edit is null) return;
+        var m = (e.Value?.ToString() ?? "1").Trim();
+        _edit.MonedaAsiento = m.Length == 0 ? "1" : m;
+        _edit.CotizacionAsiento = _edit.EnOtraMoneda ? _cotizaciones.GetValueOrDefault(m, 1m) : 1m;
+        _sucio = true;
     }
     private void CambiarVencimiento(ChangeEventArgs e)
     {

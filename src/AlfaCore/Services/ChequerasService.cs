@@ -14,6 +14,10 @@ public interface IChequerasService
     /// <summary>Alta (Id 0) o modificación.</summary>
     Task<Chequera> GuardarAsync(Chequera chequera, CancellationToken ct = default);
     Task EliminarAsync(int id, CancellationToken ct = default);
+    Task<IReadOnlyList<BancoTabla>> BancosAsync(CancellationToken ct = default);
+    /// <summary>Alta (nuevo) o cambio de descripción; el código no se modifica (lo usan cheques y chequeras).</summary>
+    Task<BancoTabla> GuardarBancoAsync(BancoTabla banco, bool nuevo, CancellationToken ct = default);
+    Task EliminarBancoAsync(string idBanco, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -147,12 +151,69 @@ public sealed class ChequerasService(ISessionService sessions, IAppUserSessionSe
         return true;
     }, ct);
 
+    // ── Bancos (V_TA_Bancos) ────────────────────────────────────────────────────────────────────
+
+    private const string SelectBancos = """
+        SELECT LTRIM(RTRIM(b.IdBanco)) IdBanco, LTRIM(RTRIM(ISNULL(b.Descripcion,''))) Descripcion,
+               ISNULL(a.Cheques, 0) Cheques,
+               (SELECT COUNT(*) FROM dbo.V_TA_CTRL_CHEQUERAS c WHERE c.IDBANCO = b.IdBanco) Chequeras,
+               CASE WHEN OBJECT_ID(N'dbo.P_MA_Legajos', N'U') IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM dbo.P_MA_Legajos l WHERE LTRIM(RTRIM(l.IdBanco)) = LTRIM(RTRIM(b.IdBanco))) END Legajos
+        FROM dbo.V_TA_Bancos b
+        LEFT JOIN (SELECT IdBanco, COUNT(*) Cheques FROM dbo.MV_ASIENTOS WHERE IdBanco IS NOT NULL AND IdBanco <> N'' GROUP BY IdBanco) a ON a.IdBanco = b.IdBanco
+        """;
+
+    public Task<IReadOnlyList<BancoTabla>> BancosAsync(CancellationToken ct = default) => EjecutarAsync("Bancos", async cn =>
+        (IReadOnlyList<BancoTabla>)(await cn.QueryAsync<BancoTabla>(new CommandDefinition(SelectBancos + " ORDER BY b.Descripcion;", commandTimeout: 120, cancellationToken: ct))).ToList(), ct);
+
+    /// <summary>Código: letras o dígitos, hasta 4 (los numéricos se alinean a la derecha como en el legacy). Descripción obligatoria.</summary>
+    internal static void ValidarBanco(BancoTabla b)
+    {
+        b.IdBanco = (b.IdBanco ?? "").Trim().ToUpperInvariant(); b.Descripcion = (b.Descripcion ?? "").Trim();
+        if (b.IdBanco.Length is < 1 or > 4 || !b.IdBanco.All(char.IsLetterOrDigit)) throw new ReglaException("El código del banco tiene de 1 a 4 letras o dígitos (ej. 7 Galicia, 14 Provincia).");
+        if (b.IdBanco.All(char.IsDigit)) b.IdBanco = b.IdBanco.TrimStart('0') is { Length: > 0 } sinCeros ? sinCeros : "0";
+        if (b.Descripcion.Length < 2) throw new ReglaException("Escribí el nombre del banco.");
+        if (b.Descripcion.Length > 50) throw new ReglaException("El nombre del banco puede tener hasta 50 caracteres.");
+    }
+
+    public Task<BancoTabla> GuardarBancoAsync(BancoTabla b, bool nuevo, CancellationToken ct = default) => EjecutarAsync("GuardarBanco", async cn =>
+    {
+        ValidarBanco(b);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var existentes = (await cn.QueryAsync<(string IdBanco, string Descripcion)>(new CommandDefinition(
+            "SELECT LTRIM(RTRIM(IdBanco)), LTRIM(RTRIM(ISNULL(Descripcion,''))) FROM dbo.V_TA_Bancos WITH (UPDLOCK, HOLDLOCK);", transaction: tx, cancellationToken: ct))).ToList();
+        static string Clave(string c) => c.All(char.IsDigit) ? c.TrimStart('0') : c.ToUpperInvariant();
+        var mismo = existentes.FirstOrDefault(x => Clave(x.IdBanco) == Clave(b.IdBanco));
+        if (nuevo && mismo.IdBanco is not null) throw new ReglaException($"Ya existe el banco {mismo.IdBanco} ({mismo.Descripcion}).");
+        if (!nuevo && mismo.IdBanco is null) throw new ReglaException("El banco ya no existe.");
+        if (existentes.FirstOrDefault(x => Clave(x.IdBanco) != Clave(b.IdBanco) && x.Descripcion.Equals(b.Descripcion, StringComparison.OrdinalIgnoreCase)) is { IdBanco: not null } otro)
+            throw new ReglaException($"Ya hay otro banco con ese nombre (código {otro.IdBanco}).");
+        var args = new { IdBanco = nuevo ? CodigoPk.Format(b.IdBanco, 4) : mismo.IdBanco, b.Descripcion };
+        await cn.ExecuteAsync(new CommandDefinition(nuevo
+            ? "INSERT INTO dbo.V_TA_Bancos (IdBanco, Descripcion, FechaHora_Grabacion, Transmision) VALUES (@IdBanco, @Descripcion, GETDATE(), 0);"
+            : "UPDATE dbo.V_TA_Bancos SET Descripcion = @Descripcion, FechaHora_Modificacion = GETDATE() WHERE LTRIM(RTRIM(IdBanco)) = @IdBanco;",
+            args, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        await events.LogAuditAsync("Bancos", nuevo ? "Alta" : "Modificacion", "V_TA_Bancos", b.IdBanco,
+            $"{(nuevo ? "Agregó" : "Modificó")} el banco {b.IdBanco} {b.Descripcion}.", args, CancellationToken.None);
+        return (await cn.QueryAsync<BancoTabla>(new CommandDefinition(SelectBancos + " WHERE LTRIM(RTRIM(b.IdBanco)) = LTRIM(RTRIM(@IdBanco));", args, cancellationToken: ct))).Single();
+    }, ct);
+
+    public Task EliminarBancoAsync(string idBanco, CancellationToken ct = default) => EjecutarAsync("EliminarBanco", async cn =>
+    {
+        var b = (await cn.QueryAsync<BancoTabla>(new CommandDefinition(SelectBancos + " WHERE LTRIM(RTRIM(b.IdBanco)) = @IdBanco;",
+            new { IdBanco = (idBanco ?? "").Trim() }, commandTimeout: 120, cancellationToken: ct))).SingleOrDefault() ?? throw new ReglaException("El banco ya no existe.");
+        if (b.EnUso) throw new ReglaException($"El banco {b.Descripcion} está en uso ({b.Cheques} cheque(s), {b.Chequeras} chequera(s), {b.Legajos} legajo(s)): no se puede borrar.");
+        await cn.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.V_TA_Bancos WHERE LTRIM(RTRIM(IdBanco)) = @IdBanco;", new { b.IdBanco }, cancellationToken: ct));
+        await events.LogAuditAsync("Bancos", "Eliminar", "V_TA_Bancos", b.IdBanco, $"Borró el banco {b.IdBanco} {b.Descripcion}.", new { b.IdBanco, b.Descripcion }, CancellationToken.None);
+        return true;
+    }, ct);
+
     private async Task<T> EjecutarAsync<T>(string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
     {
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out _)) throw new ReglaException("Ingresá en la base activa.");
         try
         {
-            if (!await permissions.HasAccessAsync(MenuChequeras, ct)) throw new ReglaException("Tu usuario no tiene permiso para las chequeras.");
+            if (!await permissions.HasAccessAsync(MenuChequeras, ct)) throw new ReglaException("Tu usuario no tiene permiso para las chequeras y bancos.");
             await using var cn = new SqlConnection(sessions.GetConnectionString());
             await cn.OpenAsync(ct);
             return await operacion(cn);

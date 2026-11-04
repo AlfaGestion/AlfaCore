@@ -87,7 +87,7 @@ public sealed class AsientosTests
         Assert.Contains("FP", AsientosService.MotivoSoloLectura(R("FP"), manuales));
         Assert.Contains("tarjetas", AsientosService.MotivoSoloLectura(R("LT"), manuales));
         Assert.Equal("", AsientosService.MotivoSoloLectura(R("CC", medio: "CH"), manuales)); // los cheques ya se cargan acá
-        Assert.Contains("tarjeta", AsientosService.MotivoSoloLectura(R("CC", medio: "TJ"), manuales));
+        Assert.Equal("", AsientosService.MotivoSoloLectura(R("CC", medio: "TJ"), manuales)); // tarjetas: cuenta contable común
     }
 
     private static readonly IReadOnlyList<CompraCargaOpcion> CentrosCat = [new() { Codigo = "0000", Descripcion = "OTROS" }, new() { Codigo = "0217", Descripcion = "MOLINOS" }, new() { Codigo = "0665", Descripcion = "ENCOPRESS" }];
@@ -180,6 +180,62 @@ public sealed class AsientosTests
         AsientosService.ValidarChequeYMoneda(sinCheque, Cuentas["511"], 1, []);
         Assert.Null(sinCheque.Cheque);
     }
+
+    [Fact]
+    public void AsientoEnOtraMonedaSePasaAPesosYBalancea()
+    {
+        // 3 renglones en dólares que en pesos, renglón por renglón, no balancean por redondeo.
+        var a = A(("511", 10.01m, 0), ("511", 10.01m, 0), ("211", 0, 20.02m));
+        a.MonedaAsiento = "2"; a.CotizacionAsiento = 1.333m;
+        AsientosService.ValidarRenglones(a, Cuentas, Terceros);
+        Assert.All(a.Renglones, r => Assert.Equal(("2", 1.333m), (r.Moneda, r.Cotizacion)));
+        Assert.Equal([10.01m, 10.01m, 20.02m], a.Renglones.Select(r => r.ImporteMoneda));
+        Assert.Equal(a.TotalDebe, a.TotalHaber);
+        Assert.Equal(26.68m, a.TotalHaber); // 2 × 13,34 al debe: el haber (26,69) se ajusta un centavo
+        // Leído de nuevo se muestra en dólares y balancea en dólares.
+        AsientosService.DetectarMonedaAsiento(a);
+        Assert.Equal(("2", 1.333m), (a.MonedaAsiento, a.CotizacionAsiento));
+        Assert.Equal(a.TotalDebe, a.TotalHaber);
+        Assert.Equal(20.02m, a.TotalHaber);
+
+        var sinCot = A(("511", 10, 0), ("211", 0, 10)); sinCot.MonedaAsiento = "2"; sinCot.CotizacionAsiento = 0;
+        Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarRenglones(sinCot, Cuentas, Terceros));
+        var conCheque = A(("111CH", 10, 0), ("211", 0, 10)); conCheque.MonedaAsiento = "2"; conCheque.CotizacionAsiento = 1000;
+        Assert.Contains("pesos", Assert.ThrowsAny<InvalidOperationException>(() => AsientosService.ValidarRenglones(conCheque, Cuentas, Terceros)).Message);
+        // En pesos no cambia nada.
+        var pesos = A(("511", 10, 0), ("211", 0, 10));
+        AsientosService.ValidarRenglones(pesos, Cuentas, Terceros);
+        AsientosService.DetectarMonedaAsiento(pesos);
+        Assert.Equal(("1", 10m), (pesos.MonedaAsiento, pesos.TotalDebe));
+    }
+
+    [Fact]
+    public void TarjetasSonCuentasComunes()
+    {
+        var cuentas = new Dictionary<string, AsientoCuenta>(Cuentas, StringComparer.OrdinalIgnoreCase) { ["113TJ"] = new("113TJ", "Tarjeta Visa", "TJ", false) };
+        var a = A(("113TJ", 100, 0), ("511", 0, 100));
+        AsientosService.ValidarRenglones(a, cuentas, Terceros);
+        Assert.Equal(2, a.Renglones.Count);
+    }
+
+    [Theory]
+    [InlineData("7", "Galicia", "7")]
+    [InlineData("0014", "Provincia", "14")]
+    [InlineData("brub", "Brubank", "BRUB")]
+    public void BancoValido(string codigo, string nombre, string esperado)
+    {
+        var b = new BancoTabla { IdBanco = codigo, Descripcion = nombre };
+        ChequerasService.ValidarBanco(b);
+        Assert.Equal(esperado, b.IdBanco);
+    }
+
+    [Theory]
+    [InlineData("", "Galicia")]
+    [InlineData("12345", "Galicia")]
+    [InlineData("1-2", "Galicia")]
+    [InlineData("7", "")]
+    public void BancoInvalido(string codigo, string nombre)
+        => Assert.ThrowsAny<InvalidOperationException>(() => ChequerasService.ValidarBanco(new BancoTabla { IdBanco = codigo, Descripcion = nombre }));
 
     [Fact]
     public void ChequerasValidacionYSuperposicion()
@@ -324,6 +380,26 @@ public sealed class AsientosChequesPruebasTests(ITestOutputHelper output)
                 output.WriteLine($"USD: 100 × {c2} = {r.Debe:N2}");
             }
 
+            // 4b. Asiento entero en dólares (moneda del encabezado): se graba en pesos y se lee en dólares.
+            if (cotiz.TryGetValue("2", out var c3) && c3 > 1)
+            {
+                var otra = cat.Cuentas.First(c => c.Codigo != libre && c.MedioDePago.Length == 0 && !c.PideVencimiento && !c.EnMonedaExtranjera && !terceros.Contains(c.Codigo)
+                    && cat.CentrosPorCuenta.All(d => d.Cuenta != c.Codigo)).Codigo;
+                var editor = new AsientoDetalle
+                {
+                    Fecha = fecha, Tc = "CC", Detalle = "PRUEBA ALFACORE asiento en dólares", MonedaAsiento = "2", CotizacionAsiento = c3,
+                    Renglones = [new() { Cuenta = otra, Debe = 250.50m }, new() { Cuenta = libre, Haber = 250.50m }]
+                };
+                var cab = await svc.GuardarAsync(editor);
+                creados.Add(cab);
+                Assert.Equal(250.50m, editor.Renglones[0].Debe); // el editor no se toca
+                Assert.Equal(("2", c3, 250.50m), (cab.MonedaAsiento, cab.CotizacionAsiento, cab.TotalDebe));
+                var pesos = await cn.ExecuteScalarAsync<decimal>("SELECT SUM(IMPORTE) FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND [DEBE-HABER]='D' AND LTRIM(RTRIM(ISNULL(TIPO_REG,'')))=''",
+                    new { P = cab.Clave!.Periodo, M = cab.Clave.Mes, N = cab.Clave.Numero });
+                Assert.Equal(Math.Round(250.50m * c3, 2, MidpointRounding.AwayFromZero), pesos);
+                output.WriteLine($"Asiento en U$D: 250,50 × {c3} = {pesos:N2}");
+            }
+
             // 5. Anular en orden: primero la salida, después la entrada.
             for (var i = creados.Count - 1; i >= 0; i--) { await svc.EliminarAsync(creados[i].Clave!, creados[i].Huella); }
             creados.Clear();
@@ -336,13 +412,26 @@ public sealed class AsientosChequesPruebasTests(ITestOutputHelper output)
             var nueva = await chequeras.GuardarAsync(new Chequera { IdBanco = "25", Serie = "Z", Talonario = 9, Desde = 1, Hasta = 50, CuentaBanco = "111020303" });
             Assert.Equal(0, nueva.Emitidos);
             await chequeras.EliminarAsync(nueva.Id);
+
+            // 7. Bancos: alta, cambio de nombre, repetido, en uso y baja.
+            var bancos = await chequeras.BancosAsync();
+            Assert.True(bancos.First(b => b.IdBanco == "25").EnUso);
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => chequeras.EliminarBancoAsync("25"));
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(() => chequeras.GuardarBancoAsync(new BancoTabla { IdBanco = "025", Descripcion = "Otro" }, nuevo: true));
+            var nb = await chequeras.GuardarBancoAsync(new BancoTabla { IdBanco = "ZZT", Descripcion = "PRUEBA ALFACORE banco" }, nuevo: true);
+            Assert.False(nb.EnUso);
+            nb = await chequeras.GuardarBancoAsync(new BancoTabla { IdBanco = "ZZT", Descripcion = "PRUEBA ALFACORE banco 2" }, nuevo: false);
+            Assert.Equal("PRUEBA ALFACORE banco 2", nb.Descripcion);
+            await chequeras.EliminarBancoAsync("ZZT");
+            Assert.DoesNotContain(await chequeras.BancosAsync(), b => b.IdBanco == "ZZT");
+            output.WriteLine($"Bancos: {bancos.Count}, en uso {bancos.Count(b => b.EnUso)}");
         }
         finally
         {
             foreach (var a in creados)
                 await cn.ExecuteAsync("DELETE FROM MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N; DELETE FROM MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@P AND MES_OPERATIVO=@M AND [NUMERO ASIENTO]=@N AND LTRIM(RTRIM(ISNULL(TIPO_REG,'')))=''",
                     new { P = a.Clave!.Periodo, M = a.Clave.Mes, N = a.Clave.Numero });
-            await cn.ExecuteAsync("DELETE FROM V_TA_CTRL_CHEQUERAS WHERE IDBANCO='  25' AND SERIE='Z'");
+            await cn.ExecuteAsync("DELETE FROM V_TA_CTRL_CHEQUERAS WHERE IDBANCO='  25' AND SERIE='Z'; DELETE FROM V_TA_Bancos WHERE LTRIM(RTRIM(IdBanco))='ZZT'");
         }
     }
 }

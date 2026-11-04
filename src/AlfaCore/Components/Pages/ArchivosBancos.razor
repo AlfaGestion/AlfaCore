@@ -1,0 +1,152 @@
+@page "/archivos/bancos"
+@page "/{idweb}/{idbase:int}/archivos/bancos"
+@using AlfaCore.Services
+@inject IChequerasService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Bancos | Alfa Gestión</PageTitle>
+
+@* Tabla de bancos (V_TA_Bancos): la usan los cheques de los asientos y las chequeras. *@
+<div class="gd-page gd cq-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_lista.Count == 0 && _cargado)
+    {
+        <AlfaEmptyState Title="Sin bancos" Message="Cargá los bancos que usan los cheques y las chequeras." />
+    }
+    else if (_lista.Count > 0)
+    {
+        <section class="cq-tabla__marco"><div class="cq-tabla__scroll">
+            <table class="cq-tabla">
+                <thead><tr><th class="n">Código</th><th>Banco</th><th class="n">Cheques</th><th class="n">Chequeras</th></tr></thead>
+                <tbody>
+                @foreach (var b in Filtrados)
+                {
+                    <tr class="cq-fila" @onclick="() => Editar(b)">
+                        <td class="n mono">@b.IdBanco</td>
+                        <td>@b.Descripcion</td>
+                        <td class="n">@(b.Cheques == 0 ? "" : b.Cheques.ToString("N0"))</td>
+                        <td class="n">@(b.Chequeras == 0 ? "" : b.Chequeras.ToString("N0"))</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div></section>
+    }
+</div>
+
+<AlfaDialog Open="@(_edit is not null)" Title="@(_nuevo ? "Nuevo banco" : "Banco")" Size="AlfaDialogSize.Sm" Loading="@_busy" ErrorMessage="@_error"
+            CloseOnBackdrop="false" OnClose="() => _edit = null">
+    <ChildContent>
+    @if (_edit is { } e)
+    {
+        <div class="cq-form">
+            <AlfaInput Label="Código" Value="@e.IdBanco" ValueChanged="v => e.IdBanco = (v ?? string.Empty).ToUpperInvariant()" MaxLength="4" Disabled="@(!_nuevo)" />
+            <AlfaInput Label="Nombre" Value="@e.Descripcion" ValueChanged="v => e.Descripcion = v ?? string.Empty" MaxLength="50" />
+            @if (_nuevo) { <small class="cq-nota">El código es el del banco (ej. 7 Galicia, 11 Nación, 14 Provincia). Después no se puede cambiar.</small> }
+            else if (e.EnUso) { <small class="cq-nota">Lo usan @e.Cheques cheque(s) y @e.Chequeras chequera(s)@(e.Legajos > 0 ? $" y {e.Legajos} legajo(s)" : ""): se puede cambiar el nombre, pero no borrarlo.</small> }
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (!_nuevo && _edit is { EnUso: false })
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => EliminarAsync()">Borrar</AlfaButton>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _edit = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarAsync()">Grabar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private IReadOnlyList<BancoTabla> _lista = [];
+    private BancoTabla? _edit;
+    private bool _nuevo;
+    private AppUiMessage? _feedback;
+    private string? _error;
+    private string _texto = string.Empty;
+    private bool _busy, _cargado;
+    private PageHeaderConfig? _header;
+
+    private IEnumerable<BancoTabla> Filtrados => _texto.Trim().Length == 0 ? _lista
+        : _lista.Where(b => $"{b.IdBanco} {b.Descripcion}".Contains(_texto.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var r = await UiOps.RunAsync(() => Service.BancosAsync(), "Bancos");
+        if (r.Success) _lista = r.Value!; else _feedback = r.Feedback;
+        _cargado = true;
+        UpdateHeader(); StateHasChanged();
+    }
+
+    private void Editar(BancoTabla b)
+    {
+        _error = null; _nuevo = false;
+        _edit = new BancoTabla { IdBanco = b.IdBanco, Descripcion = b.Descripcion, Cheques = b.Cheques, Chequeras = b.Chequeras, Legajos = b.Legajos };
+    }
+
+    private Task Nuevo()
+    {
+        _error = null; _nuevo = true;
+        _edit = new BancoTabla();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var g = await Service.GuardarBancoAsync(_edit, _nuevo);
+            _feedback = AppUiMessage.Success(_nuevo ? "Banco agregado" : "Banco grabado", $"{g.IdBanco} · {g.Descripcion}.");
+            _edit = null;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo grabar el banco."; }
+        finally { _busy = false; }
+    }
+
+    private async Task EliminarAsync()
+    {
+        if (_edit is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            await Service.EliminarBancoAsync(_edit.IdBanco);
+            _feedback = AppUiMessage.Success("Banco borrado", $"Se borró {_edit.Descripcion}.");
+            _edit = null;
+            await CargarAsync();
+        }
+        catch (Exception ex) { _error = ex is AppUserFacingException or InvalidOperationException ? ex.Message : "No se pudo borrar el banco."; }
+        finally { _busy = false; }
+    }
+
+    private Task CambiarTexto(string t) { _texto = t; StateHasChanged(); return Task.CompletedTask; }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "archivos", Title = "Bancos",
+        Breadcrumb = ["Archivos", "Bancos"],
+        TopNavigationItems = ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "bancos"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig { Text = _texto, Placeholder = "Buscar por código o nombre", OnTextChanged = CambiarTexto },
+        Actions = [new() { Key = "nuevo", Label = "Nuevo banco", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = Nuevo }]
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}
