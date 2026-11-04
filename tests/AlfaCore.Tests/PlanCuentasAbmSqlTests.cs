@@ -73,7 +73,7 @@ public class PlanCuentasAbmSqlTests
         }
     }
 
-    private sealed class Sesion(string connection) : ISessionService
+    internal sealed class Sesion(string connection) : ISessionService
     {
         private readonly SessionDto _sesion = new() { Nombre = "Prueba" };
         public string GetConnectionString() => connection;
@@ -90,11 +90,11 @@ public class PlanCuentasAbmSqlTests
         public event Action? SessionChanged { add { } remove { } }
     }
 
-    private sealed class Usuario : IAppUserSessionService
+    internal sealed class Usuario(string nombre = "PRUEBA-ABM-WEB") : IAppUserSessionService
     {
         public event Action? StateChanged { add { } remove { } }
         public bool IsAuthenticated => true;
-        public AppUserSessionInfo? CurrentUser { get; } = new() { UserName = "PRUEBA-ABM-WEB" };
+        public AppUserSessionInfo? CurrentUser { get; } = new() { UserName = nombre };
         public bool RequiresInternalLogin => false;
         public string? CurrentToken => null;
         public Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default) => throw new NotSupportedException();
@@ -102,18 +102,18 @@ public class PlanCuentasAbmSqlTests
         public bool TryRestoreFromToken(string token) => false;
         public void Logout() { }
         public void HandleSqlSessionChanged() { }
-        public string GetCurrentUserName(string fallback = "") => "PRUEBA-ABM-WEB";
+        public string GetCurrentUserName(string fallback = "") => nombre;
         public bool IsAuthorizedForSession(Guid? activeSessionId) => true;
         public void EnsureAuthorizedForSession(Guid? activeSessionId) { }
     }
 
-    private sealed class Permisos : IPermissionService
+    internal sealed class Permisos : IPermissionService
     {
         public Task<IReadOnlySet<string>?> GetAllowedTaskKeysAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlySet<string>?>(null);
         public Task<bool> HasAccessAsync(string clave, CancellationToken ct = default) => Task.FromResult(true);
     }
 
-    private sealed class Eventos : IAppEventService
+    internal sealed class Eventos : IAppEventService
     {
         public Task<string> LogErrorAsync(string module, string action, Exception exception, string userMessage, object? data = null,
             AppEventSeverity severity = AppEventSeverity.Error, CancellationToken ct = default) => throw exception;
