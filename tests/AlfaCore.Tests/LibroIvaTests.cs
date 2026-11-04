@@ -13,6 +13,29 @@ namespace AlfaCore.Tests;
 public sealed class LibroIvaVentasTests
 {
     [Fact]
+    public void ConVariasUnidadesElPdfDiceConsolidadoYListaLosCuits()
+    {
+        var r = new LibroIvaResultado
+        {
+            Filtro = new() { Desde = new(2026, 10, 1), Hasta = new(2026, 10, 31) },
+            Emisor = "ALFA NET", CuitEmisor = "27228073259",
+            Filas = [new() { Fecha = new(2026, 10, 2), Tc = "FC", Letra = "A", UnidadNegocio = "1", Total = 100 },
+                     new() { Fecha = new(2026, 10, 2), Tc = "FC", Letra = "A", UnidadNegocio = "2", Total = 50 }],
+            Unidades = [new("1", "ALFA NET", "27228073259", 1, 0, 0, 100), new("2", "OTRA SRL", "30712345678", 1, 0, 0, 50)]
+        };
+        Assert.True(r.Consolidado);
+        Assert.Equal(2, r.CantidadCuits);
+        var html = LibroIvaService.ArmarHtml(r);
+        Assert.Contains("CONSOLIDADO · 2 unidades de negocio · 2 CUITs", html);
+        Assert.Contains("30712345678", html);
+        Assert.DoesNotContain("CUIT 27228073259 ·", html);
+
+        r.Filtro.UnidadNegocio = "1";
+        Assert.False(r.Consolidado);
+        Assert.DoesNotContain("CONSOLIDADO", LibroIvaService.ArmarHtml(r));
+    }
+
+    [Fact]
     public void UnaAlicuotaTomaTodoElNetoGravado()
     {
         var a = Assert.Single(LibroIvaService.RepartirAlicuotas(1000m, "A", [(21m, 210m), (0, 0), (0, 0), (0, 0)]));

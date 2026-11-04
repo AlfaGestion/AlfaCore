@@ -129,8 +129,34 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             .Select(g => new LibroIvaAlicuota(g.Key, g.Sum(x => x.Neto), g.Sum(x => x.Iva))).ToList();
         resultado.SinCodigoArca = resultado.Filas.Count(f => f.CodigoArca == 0);
         (resultado.Emisor, resultado.CuitEmisor, resultado.CondicionIvaEmisor) = await EmisorAsync(cn, unidad, ct);
+        resultado.Unidades = await ResumirUnidadesAsync(cn, resultado, ct);
         return resultado;
     }
+
+    /// <summary>Agrupa las filas por unidad de negocio con su razón social y CUIT (sin unidad: los de la empresa).</summary>
+    private static async Task<IReadOnlyList<LibroIvaUnidadResumen>> ResumirUnidadesAsync(SqlConnection cn, LibroIvaResultado r, CancellationToken ct)
+    {
+        var grupos = r.Filas.GroupBy(f => f.UnidadNegocio, StringComparer.OrdinalIgnoreCase).ToList();
+        if (grupos.Count == 0) return [];
+        var tabla = (await cn.QueryAsync<LibroIvaUnidad>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(Codigo)) Codigo,
+                   COALESCE(NULLIF(LTRIM(RTRIM(RAZON_SOCIAL)),''), NULLIF(LTRIM(RTRIM(Descripcion)),''), LTRIM(RTRIM(Codigo))) Descripcion,
+                   ISNULL(LTRIM(RTRIM(CUIT)),'') Cuit
+            FROM dbo.V_TA_UnidadNegocio;
+            """, cancellationToken: ct))).GroupBy(u => u.Codigo, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        return grupos.Select(g =>
+            {
+                var u = tabla.GetValueOrDefault(g.Key);
+                var nombre = u?.Descripcion is { Length: > 0 } d ? d : g.Key.Length > 0 ? g.Key : r.Emisor;
+                var cuit = u?.Cuit is { Length: > 0 } c ? c : r.CuitEmisor;
+                return new LibroIvaUnidadResumen(g.Key, nombre, cuit, g.Count(), g.Sum(f => f.NetoGravado), g.Sum(f => f.Iva), g.Sum(f => f.Total));
+            })
+            .OrderBy(u => int.TryParse(u.Codigo, out var n) ? n : int.MaxValue).ThenBy(u => u.Codigo).ToList();
+    }
+
+    /// <summary>Texto corto para títulos: "CONSOLIDADO · 3 unidades de negocio · 2 CUITs".</summary>
+    internal static string TextoConsolidado(LibroIvaResultado r)
+        => $"CONSOLIDADO · {r.Unidades.Count} unidades de negocio · {(r.CantidadCuits == 1 ? "1 CUIT" : $"{r.CantidadCuits} CUITs")}";
 
     private static async Task<(string, string, string)> EmisorAsync(SqlConnection cn, string unidad, CancellationToken ct)
     {
@@ -379,11 +405,15 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             var r = await LeerAsync(cn, filtro, ct);
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add(r.Filtro.Compras ? "Libro IVA Compras" : "Libro IVA Ventas");
-            ws.Cell(1, 1).Value = $"{Nombre(r.Filtro.Compras)} · {r.Emisor} · CUIT {r.CuitEmisor}";
+            ws.Cell(1, 1).Value = r.Consolidado ? $"{Nombre(r.Filtro.Compras)} · {TextoConsolidado(r)}" : $"{Nombre(r.Filtro.Compras)} · {r.Emisor} · CUIT {r.CuitEmisor}";
             ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(2, 1).Value = $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.CondicionIvaEmisor}";
+            if (r.Consolidado) ws.Cell(1, 1).Style.Font.FontColor = XLColor.FromHtml("#9A3412");
+            ws.Cell(2, 1).Value = r.Consolidado
+                ? $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · " + string.Join(" | ", r.Unidades.Select(u => $"U.N. {(u.Codigo.Length > 0 ? u.Codigo : "-")} {u.Nombre} CUIT {u.Cuit}"))
+                : $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.CondicionIvaEmisor}";
             string[] titulos = ["Fecha", "Comprobante", "Número", r.Filtro.Compras ? "Proveedor" : "Cliente", "CUIT", "Cond. IVA", "Neto gravado", "No gravado", "Exento",
-                "IVA 21%", "IVA 10,5%", "IVA 27%", "IVA otras", "Percepciones", "Imp. internos", "Total"];
+                "IVA 21%", "IVA 10,5%", "IVA 27%", "IVA otras", "Percepciones", "Imp. internos", "Total", .. (r.Consolidado ? new[] { "Unidad negocio", "CUIT unidad" } : [])];
+            var cuitUnidad = r.Unidades.ToDictionary(u => u.Codigo, u => u.Cuit, StringComparer.OrdinalIgnoreCase);
             for (var c = 0; c < titulos.Length; c++) ws.Cell(4, c + 1).Value = titulos[c];
             ws.Range(4, 1, 4, titulos.Length).Style.Font.Bold = true;
             ws.Range(4, 1, 4, titulos.Length).Style.Fill.BackgroundColor = XLColor.FromHtml("#E8ECF2");
@@ -396,6 +426,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                 decimal[] valores = [f.NetoGravado, f.NoGravado, f.Exento, f.IvaDe(21), f.IvaDe(10.5m), f.IvaDe(27),
                     f.Iva - f.IvaDe(21) - f.IvaDe(10.5m) - f.IvaDe(27), f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones, f.ImpuestosInternos, f.Total];
                 for (var c = 0; c < valores.Length; c++) ws.Cell(fila, 7 + c).Value = valores[c];
+                if (r.Consolidado) { ws.Cell(fila, 17).Value = f.UnidadNegocio; ws.Cell(fila, 18).Value = cuitUnidad.GetValueOrDefault(f.UnidadNegocio, ""); }
                 fila++;
             }
             ws.Cell(fila, 4).Value = "Totales"; ws.Row(fila).Style.Font.Bold = true;
@@ -408,6 +439,20 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                 ws.Cell(fila, 1).Value = a.Alicuota == 0 ? "0% / sin IVA" : $"{a.Alicuota.ToString("0.##", Ar)}%";
                 ws.Cell(fila, 2).Value = a.Neto; ws.Cell(fila, 3).Value = a.Iva;
                 ws.Range(fila, 2, fila, 3).Style.NumberFormat.Format = "#,##0.00"; fila++;
+            }
+            if (r.Consolidado)
+            {
+                fila++;
+                ws.Cell(fila++, 1).Value = "Totales por unidad de negocio"; ws.Cell(fila - 1, 1).Style.Font.Bold = true;
+                string[] tu = ["U.N.", "Razón social", "CUIT", "Cptes.", "Neto gravado", "IVA", "Total"];
+                for (var c = 0; c < tu.Length; c++) ws.Cell(fila, c + 1).Value = tu[c];
+                ws.Range(fila, 1, fila, tu.Length).Style.Font.Bold = true; fila++;
+                foreach (var u in r.Unidades)
+                {
+                    ws.Cell(fila, 1).Value = u.Codigo.Length > 0 ? u.Codigo : "-"; ws.Cell(fila, 2).Value = u.Nombre; ws.Cell(fila, 3).Value = u.Cuit;
+                    ws.Cell(fila, 4).Value = u.Cantidad; ws.Cell(fila, 5).Value = u.Neto; ws.Cell(fila, 6).Value = u.Iva; ws.Cell(fila, 7).Value = u.Total;
+                    ws.Range(fila, 5, fila, 7).Style.NumberFormat.Format = "#,##0.00"; fila++;
+                }
             }
             ws.Columns().AdjustToContents(); ws.Column(4).Width = Math.Min(ws.Column(4).Width, 45);
             ws.SheetView.FreezeRows(4);
@@ -428,31 +473,50 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
     {
         static string M(decimal v) => v == 0 ? "" : v.ToString("N2", Ar);
         static string E(string s) => WebUtility.HtmlEncode(s);
+        var cons = r.Consolidado;
+        var k = cons ? 1 : 0; // en el consolidado la primera columna es la unidad de negocio
         var sb = new StringBuilder();
         sb.Append("""
             <!doctype html><html><head><meta charset="utf-8"><style>
             @page { size: A4 landscape; margin: 10mm 8mm 14mm 8mm; }
             body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #111; margin: 0; }
             h1 { font-size: 12pt; margin: 0 0 2px; } .sub { color: #444; margin-bottom: 6px; font-size: 8pt; }
+            h1 .cons { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 3px; background: #b45309; color: #fff; font-size: 10pt; vertical-align: middle; }
+            .aviso { border: 1.5px solid #b45309; background: #fff7ed; padding: 5px 8px; margin: 4px 0 8px; }
+            .aviso b { color: #9a3412; } .aviso p { margin: 0 0 4px; font-size: 8pt; }
+            .aviso table { width: auto; } .aviso th { background: #fde7cf; } .aviso td, .aviso th { padding: 2px 10px 2px 4px; }
             table { width: 100%; border-collapse: collapse; } thead { display: table-header-group; }
             th { background: #e8ecf2; text-align: left; padding: 3px 3px; border-bottom: 1px solid #999; font-size: 7pt; }
             td { padding: 2px 3px; border-bottom: 1px solid #e3e3e3; } .n { text-align: right; white-space: nowrap; }
-            td:nth-child(-n+3), td:nth-child(5) { white-space: nowrap; } td:nth-child(6) { font-size: 6.5pt; }
             tr { page-break-inside: avoid; } tfoot td { font-weight: bold; border-top: 1px solid #333; background: #f3f5f8; }
             .alic { margin-top: 10px; width: auto; } .alic td, .alic th { padding: 3px 10px; }
-            </style></head><body>
             """);
-        sb.Append($"<h1>{Nombre(r.Filtro.Compras)}</h1><div class=\"sub\">{E(r.Emisor)} · CUIT {E(r.CuitEmisor)} · {E(r.CondicionIvaEmisor)} · Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.Filas.Count} comprobantes</div>");
-        sb.Append($"<table><thead><tr><th>Fecha</th><th>Cpte.</th><th>Número</th><th>{(r.Filtro.Compras ? "Proveedor" : "Cliente")}</th><th>CUIT</th><th>Cond. IVA</th><th class=\"n\">Neto grav.</th><th class=\"n\">No grav.</th><th class=\"n\">Exento</th><th class=\"n\">IVA 21%</th><th class=\"n\">IVA 10,5%</th><th class=\"n\">IVA otras</th><th class=\"n\">Percep.</th><th class=\"n\">Imp. int.</th><th class=\"n\">Total</th></tr></thead><tbody>");
+        sb.Append($".det td:nth-child(-n+{3 + k}), .det td:nth-child({5 + k}) {{ white-space: nowrap; }} .det td:nth-child({6 + k}) {{ font-size: 6.5pt; }}");
+        sb.Append("</style></head><body>");
+        var periodo = $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.Filas.Count} comprobantes";
+        if (cons)
+        {
+            sb.Append($"<h1>{Nombre(r.Filtro.Compras)} <span class=\"cons\">{TextoConsolidado(r)}</span></h1><div class=\"sub\">{E(r.Emisor)} · {periodo}</div>");
+            sb.Append("<div class=\"aviso\"><p><b>Atención: este libro reúne comprobantes de varias unidades de negocio")
+              .Append(r.CantidadCuits > 1 ? " con distinto CUIT" : "")
+              .Append(".</b> Es un listado de control; para presentar en ARCA se emite el libro de cada unidad por separado.</p>")
+              .Append("<table><thead><tr><th>U.N.</th><th>Razón social</th><th>CUIT</th><th class=\"n\">Cptes.</th><th class=\"n\">Neto grav.</th><th class=\"n\">IVA</th><th class=\"n\">Total</th></tr></thead><tbody>");
+            foreach (var u in r.Unidades)
+                sb.Append($"<tr><td>{E(u.Codigo.Length > 0 ? u.Codigo : "—")}</td><td>{E(u.Nombre)}</td><td>{E(u.Cuit)}</td><td class=\"n\">{u.Cantidad}</td><td class=\"n\">{u.Neto.ToString("N2", Ar)}</td><td class=\"n\">{u.Iva.ToString("N2", Ar)}</td><td class=\"n\">{u.Total.ToString("N2", Ar)}</td></tr>");
+            sb.Append("</tbody></table></div>");
+        }
+        else
+            sb.Append($"<h1>{Nombre(r.Filtro.Compras)}</h1><div class=\"sub\">{E(r.Emisor)} · CUIT {E(r.CuitEmisor)} · {E(r.CondicionIvaEmisor)} · {periodo}</div>");
+        sb.Append($"<table class=\"det\"><thead><tr>{(cons ? "<th>U.N.</th>" : "")}<th>Fecha</th><th>Cpte.</th><th>Número</th><th>{(r.Filtro.Compras ? "Proveedor" : "Cliente")}</th><th>CUIT</th><th>Cond. IVA</th><th class=\"n\">Neto grav.</th><th class=\"n\">No grav.</th><th class=\"n\">Exento</th><th class=\"n\">IVA 21%</th><th class=\"n\">IVA 10,5%</th><th class=\"n\">IVA otras</th><th class=\"n\">Percep.</th><th class=\"n\">Imp. int.</th><th class=\"n\">Total</th></tr></thead><tbody>");
         foreach (var f in r.Filas)
         {
             var otras = f.Iva - f.IvaDe(21) - f.IvaDe(10.5m);
-            sb.Append($"<tr><td>{f.Fecha:dd/MM/yy}</td><td>{E(f.Tc)} {E(f.Letra)}</td><td>{f.Comprobante}</td><td>{E(f.RazonSocial)}</td><td>{E(f.Cuit)}</td><td>{E(f.CondicionIva)}</td>")
+            sb.Append($"<tr>{(cons ? $"<td>{E(f.UnidadNegocio)}</td>" : "")}<td>{f.Fecha:dd/MM/yy}</td><td>{E(f.Tc)} {E(f.Letra)}</td><td>{f.Comprobante}</td><td>{E(f.RazonSocial)}</td><td>{E(f.Cuit)}</td><td>{E(f.CondicionIva)}</td>")
               .Append($"<td class=\"n\">{M(f.NetoGravado)}</td><td class=\"n\">{M(f.NoGravado)}</td><td class=\"n\">{M(f.Exento)}</td><td class=\"n\">{M(f.IvaDe(21))}</td><td class=\"n\">{M(f.IvaDe(10.5m))}</td><td class=\"n\">{M(otras)}</td>")
               .Append($"<td class=\"n\">{M(f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones)}</td><td class=\"n\">{M(f.ImpuestosInternos)}</td><td class=\"n\">{M(f.Total)}</td></tr>");
         }
         var o = r.Iva - r.Filas.Sum(f => f.IvaDe(21)) - r.Filas.Sum(f => f.IvaDe(10.5m));
-        sb.Append($"</tbody><tfoot><tr><td colspan=\"6\">Totales</td><td class=\"n\">{M(r.NetoGravado)}</td><td class=\"n\">{M(r.NoGravado)}</td><td class=\"n\">{M(r.Exento)}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(21)))}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(10.5m)))}</td><td class=\"n\">{M(o)}</td><td class=\"n\">{M(r.Percepciones)}</td><td class=\"n\">{M(r.ImpuestosInternos)}</td><td class=\"n\">{M(r.Total)}</td></tr></tfoot></table>");
+        sb.Append($"</tbody><tfoot><tr><td colspan=\"{6 + k}\">Totales</td><td class=\"n\">{M(r.NetoGravado)}</td><td class=\"n\">{M(r.NoGravado)}</td><td class=\"n\">{M(r.Exento)}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(21)))}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(10.5m)))}</td><td class=\"n\">{M(o)}</td><td class=\"n\">{M(r.Percepciones)}</td><td class=\"n\">{M(r.ImpuestosInternos)}</td><td class=\"n\">{M(r.Total)}</td></tr></tfoot></table>");
         if (r.TotalesPorAlicuota.Count > 0)
         {
             sb.Append("<table class=\"alic\"><thead><tr><th>Alícuota</th><th class=\"n\">Neto gravado</th><th class=\"n\">IVA</th></tr></thead><tbody>");
