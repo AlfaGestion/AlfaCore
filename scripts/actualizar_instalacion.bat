@@ -219,8 +219,13 @@ echo.
 echo Destino detectado: %DEST_DIR_FULL%
 echo.
 
-robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "%SOURCE_DIR_FULL%\App_Data" "%SOURCE_DIR_FULL%\wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
+echo.
+echo Copiando binarios y archivos de la aplicacion...
+echo ^(se listan solo los archivos que cambian; por red puede tardar, no esta colgado^)
+echo [%TIME%] inicio de la copia principal
+robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NDL /NJH /NP /XD "%SOURCE_DIR_FULL%\App_Data" "%SOURCE_DIR_FULL%\wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
 set "ROOT_COPY_EXIT=%ERRORLEVEL%"
+echo [%TIME%] fin de la copia principal ^(codigo %ROOT_COPY_EXIT%; 0-7 es correcto^)
 
 if %ROOT_COPY_EXIT% GEQ 8 (
   echo.
