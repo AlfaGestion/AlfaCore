@@ -10,10 +10,15 @@ public sealed record ArcaServidorConfiguracion
     public string PythonExe { get; init; } = "";
     public string Script { get; init; } = "";
     public string Carpeta { get; init; } = "";
+    /// <summary>Meses de descargas que se conservan por base (0 = no borrar nunca).</summary>
+    public int RetencionMeses { get; init; } = 13;
+    /// <summary>Días que se conservan capturas, logs intermedios y archivos de diagnóstico.</summary>
+    public int DiagnosticoDias { get; init; } = 7;
 }
 
 /// <summary>Script, python y carpeta que se usan realmente en este servidor para una base.</summary>
-public sealed record ArcaServidorEstado(string Script, bool ScriptExiste, string Python, bool PythonExiste, string Carpeta);
+public sealed record ArcaServidorEstado(string Script, bool ScriptExiste, string Python, bool PythonExiste, string Carpeta,
+    int RetencionMeses = 13, int DiagnosticoDias = 7);
 
 /// <summary>
 /// Descarga de Mis Comprobantes: el script (App_Data\scripts\arca\arca_comprobantes.py) viaja con AlfaCore y no depende del
@@ -41,7 +46,8 @@ public sealed class ArcaServidorService(IWebHostEnvironment environment, IAppUse
         var script = c.Script.Length > 0 ? c.Script : Path.Combine(Propio, "arca_comprobantes.py");
         var python = c.PythonExe.Length > 0 ? c.PythonExe : Path.Combine(Propio, "python", "python.exe");
         var raiz = c.Carpeta.Length > 0 ? c.Carpeta : Path.Combine(environment.ContentRootPath, "App_Data", "arca_descargas");
-        return new(script, File.Exists(script), python, File.Exists(python), idBase > 0 ? Path.Combine(raiz, $"base-{idBase}") : raiz);
+        return new(script, File.Exists(script), python, File.Exists(python), idBase > 0 ? Path.Combine(raiz, $"base-{idBase}") : raiz,
+            c.RetencionMeses, c.DiagnosticoDias);
     }
 
     public Task<ArcaServidorConfiguracion> ObtenerAsync(CancellationToken ct = default)
@@ -55,7 +61,13 @@ public sealed class ArcaServidorService(IWebHostEnvironment environment, IAppUse
 
     internal static ArcaServidorConfiguracion Validar(ArcaServidorConfiguracion config)
     {
-        var n = new ArcaServidorConfiguracion { PythonExe = config.PythonExe.Trim(), Script = config.Script.Trim(), Carpeta = config.Carpeta.Trim() };
+        var n = new ArcaServidorConfiguracion
+        {
+            PythonExe = config.PythonExe.Trim(), Script = config.Script.Trim(), Carpeta = config.Carpeta.Trim(),
+            RetencionMeses = config.RetencionMeses, DiagnosticoDias = config.DiagnosticoDias
+        };
+        if (n.RetencionMeses is < 0 or > 240) throw new InvalidOperationException("Los meses de conservación deben estar entre 0 (no borrar) y 240.");
+        if (n.DiagnosticoDias is < 1 or > 365) throw new InvalidOperationException("Los días de conservación de diagnóstico deben estar entre 1 y 365.");
         if (n.PythonExe.Length > 0 && (!Path.IsPathFullyQualified(n.PythonExe) || !File.Exists(n.PythonExe)
             || !Path.GetFileName(n.PythonExe).Equals("python.exe", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Indicá la ruta completa de un python.exe existente en este servidor.");

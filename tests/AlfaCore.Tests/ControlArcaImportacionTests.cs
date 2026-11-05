@@ -91,6 +91,31 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.DoesNotMatch(ArcaDescargaService.NombreArchivo, @"..\ARCA_RECIBIDOS_27228073259_202609.xls");
     }
 
+    [Fact]
+    public void LimpiezaBorraSoloLoViejoConNombresDelScript()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), "arca-lim-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(carpeta);
+        var hoy = new DateTime(2026, 11, 5);
+        void Crea(string nombre, DateTime fecha) { var r = Path.Combine(carpeta, nombre); File.WriteAllText(r, "x"); File.SetLastWriteTime(r, fecha); }
+        try
+        {
+            Crea("ARCA_RECIBIDOS_27228073259_202409.xls", hoy);   // período viejo: se borra aunque sea de hoy
+            Crea("ARCA_RECIBIDOS_27228073259_202510.xlsx", hoy);  // 13 meses: se conserva
+            Crea("ARCA_EMITIDOS_27228073259_202611.xlsx", hoy);
+            Crea("error_20261001_101010.png", hoy.AddDays(-30));  // diagnóstico viejo: se borra
+            Crea("post_login_20261104_101010.png", hoy.AddDays(-1)); // diagnóstico reciente: se conserva
+            Crea("ARCA_RECIBIDOS_27228073259_202611_descarga.xlsx", hoy.AddDays(-30));
+            Crea("notas.txt", hoy.AddDays(-400));                 // ajeno: no se toca
+            Crea("arca_comprobantes.log", hoy.AddDays(-400));     // log chico: no se toca
+            Assert.Equal(3, ArcaDescargaService.Limpiar(carpeta, 13, 7, hoy));
+            var quedan = Directory.GetFiles(carpeta).Select(Path.GetFileName).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            Assert.Equal(["ARCA_EMITIDOS_27228073259_202611.xlsx", "ARCA_RECIBIDOS_27228073259_202510.xlsx", "arca_comprobantes.log", "notas.txt", "post_login_20261104_101010.png"], quedan);
+            Assert.Equal(1, ArcaDescargaService.Limpiar(carpeta, 0, 7, hoy.AddYears(5))); // retención 0: no borra períodos; solo el diagnóstico (post_login)
+        }
+        finally { Directory.Delete(carpeta, true); }
+    }
+
     /// <summary>Emitidos en el formato nuevo: títulos «Fecha de Emisión» / «Tipo de Comprobante», tipo por código, fecha serial de Excel.</summary>
     [Fact]
     public void LeeLosEmitidosDelFormatoNuevo()

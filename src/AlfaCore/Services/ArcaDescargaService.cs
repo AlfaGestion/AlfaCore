@@ -155,6 +155,8 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             var info = new[] { destino, Path.ChangeExtension(destino, ".xlsx") }.Select(f => new FileInfo(f))
                 .Where(f => f.Exists && f.LastWriteTime >= inicio.AddMinutes(-1)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault()
                 ?? throw new ReglaException("El script terminó pero no dejó el archivo esperado: " + Path.GetFileName(destino));
+            try { Limpiar(carpeta, servidor.RetencionMeses, servidor.DiagnosticoDias, DateTime.Now); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* la limpieza nunca debe hacer fallar una descarga */ }
             return new ArcaArchivoDescargado(info.Name, recibidos, periodo, info.LastWriteTime, info.Length);
         }
         finally { semaforo.Release(); }
@@ -189,6 +191,41 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         6 => "No se pudo leer la tabla o generar el Excel (el script usa Excel instalado en el servidor).",
         _ => $"El script terminó con error (código {codigo})."
     };
+
+    /// <summary>
+    /// Mantiene acotada la carpeta de una base: borra los ARCA_*.xls(x) de períodos con más de <paramref name="retencionMeses"/> meses
+    /// (0 = no borra), y las capturas, HTML de diagnóstico y archivos intermedios (*_descarga) de más de <paramref name="diagnosticoDias"/> días.
+    /// El log se recorta a sus últimas líneas cuando pasa de 1 MB. Solo toca archivos con los nombres que genera el script.
+    /// </summary>
+    internal static int Limpiar(string carpeta, int retencionMeses, int diagnosticoDias, DateTime ahora)
+    {
+        if (carpeta.Length == 0 || !Directory.Exists(carpeta)) return 0;
+        var borrados = 0;
+        var corteDiag = ahora.AddDays(-Math.Max(1, diagnosticoDias));
+        var corteMes = retencionMeses > 0 ? new DateTime(ahora.Year, ahora.Month, 1).AddMonths(-retencionMeses) : DateTime.MinValue;
+        foreach (var f in new DirectoryInfo(carpeta).EnumerateFiles())
+        {
+            var n = f.Name;
+            var m = NombreArchivo.Match(n);
+            var borrar = m.Success
+                ? retencionMeses > 0 && DateTime.TryParseExact(m.Groups[3].Value + "01", "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var periodo) && periodo < corteMes
+                : f.LastWriteTime < corteDiag && EsDiagnostico(n);
+            if (!borrar) continue;
+            try { f.Delete(); borrados++; } catch (IOException) { /* en uso: se reintenta en la próxima descarga */ }
+        }
+        var log = new FileInfo(Path.Combine(carpeta, "arca_comprobantes.log"));
+        if (log.Exists && log.Length > 1_000_000)
+        {
+            var ultimas = File.ReadLines(log.FullName).TakeLast(2000).ToList();
+            File.WriteAllLines(log.FullName, ultimas, new UTF8Encoding(false));
+        }
+        return borrados;
+    }
+
+    private static bool EsDiagnostico(string nombre)
+        => (nombre.StartsWith("error_", StringComparison.OrdinalIgnoreCase) || nombre.StartsWith("post_login_", StringComparison.OrdinalIgnoreCase)) && nombre.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+        || nombre.StartsWith("debug_tabla_", StringComparison.OrdinalIgnoreCase) && nombre.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+        || nombre.StartsWith("ARCA_", StringComparison.OrdinalIgnoreCase) && (nombre.EndsWith("_descarga.xlsx", StringComparison.OrdinalIgnoreCase) || nombre.EndsWith("_descarga.csv", StringComparison.OrdinalIgnoreCase));
 
     internal static IReadOnlyList<ArcaArchivoDescargado> Listar(string carpeta, string cuitRepresentado)
     {
