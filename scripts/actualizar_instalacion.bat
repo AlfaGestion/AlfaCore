@@ -212,6 +212,7 @@ echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(l
 echo - Se preservan App_Data y wwwroot\uploads del servidor
 echo - Se actualizan los binarios y JSON del runtime
 echo - Se actualizan los lectores PDF de App_Data\extractos y App_Data\tarjetas
+echo - Se actualiza App_Data\scripts\arca ^(script de descarga de ARCA^)
 echo - Se actualiza App_Data\updates
 echo - Se actualiza App_Data\novedades-sistema ^(notas de version^)
 echo.
@@ -288,6 +289,21 @@ if %NOVEDADES_COPY_EXIT% GEQ 8 (
   exit /b %NOVEDADES_COPY_EXIT%
 )
 
+rem Script de descarga de Mis Comprobantes (ARCA): solo codigo .py; el python/venv y las descargas del servidor no se tocan.
+set "ARCA_COPY_EXIT=0"
+if exist "%SOURCE_DIR_FULL%\App_Data\scripts\arca" (
+  robocopy "%SOURCE_DIR_FULL%\App_Data\scripts\arca" "%DEST_DIR_FULL%\App_Data\scripts\arca" *.py /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+  set "ARCA_COPY_EXIT=!ERRORLEVEL!"
+)
+
+if %ARCA_COPY_EXIT% GEQ 8 (
+  echo.
+  echo La copia de App_Data\scripts\arca fallo con codigo %ARCA_COPY_EXIT%.
+  echo Revisa permisos o la ruta destino. La descarga de ARCA no va a funcionar hasta copiarla.
+  pause
+  exit /b %ARCA_COPY_EXIT%
+)
+
 if exist "%DEST_DIR_FULL%\iniciar_dashboard.bat" (
   del /q "%DEST_DIR_FULL%\iniciar_dashboard.bat" >nul 2>&1
 )
@@ -312,6 +328,7 @@ echo   - Binarios actualizados desde publish\AlfaCoreLAN
 echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env / web.config^)
 echo   - Datos locales preservados ^(App_Data y wwwroot\uploads^)
 echo   - Lectores PDF actualizados en App_Data\extractos y App_Data\tarjetas
+echo   - Script de ARCA actualizado en App_Data\scripts\arca
 echo   - Scripts SQL publicados en App_Data\updates
 echo   - Launcher actualizado a iniciar_AlfaCore.bat
 if defined REMOTE_HOST (
