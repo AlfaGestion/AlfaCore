@@ -584,6 +584,8 @@
         var path = RouteCtx.BuildRoute($"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?idComplemento={idComplemento}");
         if (!string.IsNullOrWhiteSpace(ReturnUrl))
             path += $"&returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        if (query.TryGetValue("directo", out var directo) && directo == "1") path += "&directo=1";
         return path;
     }
 
@@ -660,36 +662,32 @@
         return items;
     }
 
+    // Totales en el orden del comprobante. Solo se muestran los conceptos con importe (antes había renglones
+    // fijos en 0,00 heredados del formulario de escritorio); el desglose de descuentos va en el título.
     private RenderFragment RenderTotales(ComprobanteCabeceraDto c) => @<div class="comprobante-viewer__totales-list">
-        <div class="comprobante-viewer__total-column">
-            <span class="comprobante-viewer__total-label">SUBTOTAL:</span>
-            <strong>@FormatMoney(GetTotal(c, "Subtotal"))</strong>
-        </div>
-        <div class="comprobante-viewer__total-column comprobante-viewer__total-column--multi">
-            <span class="comprobante-viewer__total-label">DESCUENTOS:</span>
-            <strong>1&nbsp;&nbsp;@FormatMoney(c.Descuento1)</strong>
-            <strong>2&nbsp;&nbsp;@FormatMoney(c.Descuento2)</strong>
-            <strong>3&nbsp;&nbsp;@FormatMoney(c.Descuento3)</strong>
-            <strong>4&nbsp;&nbsp;@FormatMoney(c.Descuento4)</strong>
-        </div>
-        <div class="comprobante-viewer__total-column">
-            <span class="comprobante-viewer__total-label">IMPUESTOS:</span>
-            <strong>@FormatMoney(c.ImporteImpuestosInternos)</strong>
-        </div>
-        <div class="comprobante-viewer__total-column comprobante-viewer__total-column--multi">
-            <span class="comprobante-viewer__total-label">IVA:</span>
-            <strong>@FormatMoney(c.Iva)</strong>
-            <strong>0.00</strong>
-            <strong>0.00</strong>
-        </div>
-        <div class="comprobante-viewer__total-column">
-            <span class="comprobante-viewer__total-label">IVA RECARGO:</span>
-            <strong>@FormatMoney(c.IvaRecargo)</strong>
-        </div>
+        @RenderTotal("Subtotal", GetTotal(c, "Subtotal"))
+        @if (c.Descuentos != 0m)
+        {
+            @RenderTotal("Descuentos", c.Descuentos, $"1: {c.Descuento1:N2} · 2: {c.Descuento2:N2} · 3: {c.Descuento3:N2} · 4: {c.Descuento4:N2}")
+        }
+        @if (c.ImporteImpuestosInternos != 0m)
+        {
+            @RenderTotal("Impuestos internos", c.ImporteImpuestosInternos)
+        }
+        @RenderTotal("IVA", c.Iva)
+        @if (c.IvaRecargo != 0m)
+        {
+            @RenderTotal("Recargo de IVA", c.IvaRecargo)
+        }
         <div class="comprobante-viewer__total-column comprobante-viewer__total-column--grand">
-            <span class="comprobante-viewer__total-label">TOTAL $</span>
-            <strong>@FormatMoney(c.ImporteTotal)</strong>
+            <span class="comprobante-viewer__total-label">Total</span>
+            <strong>$ @FormatMoney(c.ImporteTotal)</strong>
         </div>
+    </div>;
+
+    private RenderFragment RenderTotal(string etiqueta, decimal importe, string? detalle = null) => @<div class="comprobante-viewer__total-column" title="@detalle">
+        <span class="comprobante-viewer__total-label">@etiqueta</span>
+        <strong>@FormatMoney(importe)</strong>
     </div>;
 
     private static decimal GetTotal(ComprobanteCabeceraDto c, string label)
@@ -932,7 +930,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Comprobantes que aplican a @_dto!.Cabecera!.Tc @_dto.Cabecera.IdComprobante</h3>
-                    <p class="panel-card__subtitle">TC e IDCOMPROBANTE de los comprobantes aplicados.</p>
+                    <p class="panel-card__subtitle">Recibos, notas de crédito y otros comprobantes imputados a este.</p>
                 </div>
             </div>
             @RenderRelacionadasTable(_dto!.AplicadoPor, EsCobranza(_dto.Cabecera?.Tc))

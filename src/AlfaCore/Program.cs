@@ -483,6 +483,7 @@ public class Program
         builder.Services.AddScoped<IPuntoVentaTurnoValidator, PuntoVentaTurnoValidator>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
+        builder.Services.AddScoped<ComprobanteVerService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IPageHeaderService, PageHeaderService>();
         builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();

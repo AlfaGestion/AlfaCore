@@ -145,7 +145,7 @@
                     <tr class="@GetRowCss(item)">
                         <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
                         <td>@item.Tc</td>
-                        <td>@item.IdComprobante</td>
+                        <td>@item.IdComprobante <ComprobanteVerAccion Tc="@item.Tc" Comprobante="@item.IdComprobante" /></td>
                         <td><strong>@item.RazonSocial</strong></td>
                         <td>@item.Cuenta</td>
                         <td style="text-align:right;">@Moneda(item.NetoDashboard)</td>

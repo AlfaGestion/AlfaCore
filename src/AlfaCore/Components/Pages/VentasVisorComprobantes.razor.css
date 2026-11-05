@@ -79,12 +79,6 @@
     animation: vc-giro .8s linear infinite; display: inline-block; }
 @keyframes vc-giro { to { transform: rotate(360deg); } }
 
-/* Atajos de período en el panel de filtros. */
-.vc-rangos { display: flex; flex-wrap: wrap; gap: 6px; }
-.vc-rangos button { padding: 4px 10px; font-size: 12px; border-radius: 999px; cursor: pointer;
-    border: 1px solid var(--alfa-border-default); background: transparent; color: var(--alfa-text-primary); }
-.vc-rangos button:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
-
 /* Orden por columna y selección para el envío por mail. */
 .vc-sort { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-transform: inherit; }
 .vc-sort:hover:not(:disabled), .vc-sort.is-sorted { color: var(--alfa-text-primary); }

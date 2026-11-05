@@ -1,4 +1,31 @@
 (function () {
+    // showPicker debe ejecutarse durante el gesto del usuario, antes del viaje al servidor Blazor.
+    document.addEventListener("click", function (event) {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || (input.type !== "date" && input.type !== "month") || input.disabled || input.readOnly)
+            return;
+        if (typeof input.showPicker === "function") {
+            try {
+                input.showPicker();
+                event.preventDefault();
+            } catch {
+                // Navegadores sin permiso para showPicker conservan el selector nativo.
+            }
+        }
+    }, true);
+
+    // Escape cierra el panel de filtros abierto en cualquier pantalla: todos los paneles tienen un fondo
+    // (module-actionbar__search-backdrop) que los cierra con un clic. Si hay un diálogo encima, Escape es suyo.
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape" || event.defaultPrevented)
+            return;
+        if (document.querySelector("[role='dialog'][aria-modal='true']:not([hidden])"))
+            return;
+        const backdrop = document.querySelector(".module-actionbar__search-backdrop");
+        if (backdrop instanceof HTMLElement)
+            backdrop.click();
+    });
+
     const state = {
         started: false,
         observer: null,

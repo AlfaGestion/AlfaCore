@@ -1,6 +1,7 @@
 @page "/ventas/carga-comprobantes/visor"
 @page "/{idweb}/{idbase:int}/ventas/carga-comprobantes/visor"
 @using AlfaCore.Services
+@inject IDocumentPdfService Pdf
 @inject ICargaComprobantesService Service
 @inject ISessionService Sessions
 @inject IAppUserSessionService Users
@@ -148,6 +149,8 @@
     private AppUiMessage? _feedback;
     private PageHeaderConfig? _header;
     private bool _busy;
+    private bool _exportando;
+    private CancellationTokenSource? _exportacionCts;
     private bool _disposed;
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
 
@@ -158,7 +161,7 @@
     {
         // Por defecto los últimos 7 días: sirve para ver o reimprimir lo que se acaba de emitir.
         _filtro.FechaHasta = DateTime.Today;
-        _filtro.FechaDesde = DateTime.Today.AddDays(-7);
+        _filtro.FechaDesde = DateTime.Today.AddDays(-6);
         Sessions.SessionChanged += ContextChanged;
         Users.StateChanged += ContextChanged;
         UpdateHeader();
@@ -234,6 +237,54 @@
             _busy = false;
             if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); }
         }
+    }
+
+    private async Task ExportarListadoAsync(bool pdf)
+    {
+        if (_busy || _exportando || _resultado is null) return;
+        _exportando = true;
+        using var exportacion = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _exportacionCts = exportacion;
+        var exportToken = exportacion.Token;
+        UpdateHeader();
+        var filtro = new ComprobantesVisorFiltro
+        {
+            Tc = _filtroAplicado.Tc, Busqueda = _filtroAplicado.Busqueda,
+            FechaDesde = _filtroAplicado.FechaDesde, FechaHasta = _filtroAplicado.FechaHasta,
+            UnidadNegocio = _filtroAplicado.UnidadNegocio, IncluirAnulados = _filtroAplicado.IncluirAnulados,
+            Orden = _filtroAplicado.Orden, Descendente = _filtroAplicado.Descendente, PageSize = 200, PageNumber = 1
+        };
+        try
+        {
+            var resultado = await UiOps.RunAsync(async () =>
+            {
+                var filas = new List<ComprobantesVisorFila>();
+                while (true)
+                {
+                    var pagina = await Service.BuscarComprobantesAsync(filtro, exportToken);
+                    exportToken.ThrowIfCancellationRequested();
+                    filas.AddRange(pagina.Items);
+                    if (pagina.PageNumber >= pagina.TotalPages || pagina.Items.Count == 0) break;
+                    filtro.PageNumber++;
+                }
+                var bytes = pdf
+                    ? await Pdf.GenerateAsync(ComprobantesVisorExportador.Html(filas, filtro), ct: exportToken)
+                    : ComprobantesVisorExportador.Excel(filas);
+                exportToken.ThrowIfCancellationRequested();
+                await Js.InvokeVoidAsync(pdf ? "alfaCoreInterfacesUpload.openBlob" : "alfaCoreInterfacesUpload.downloadBlob",
+                    Convert.ToBase64String(bytes), pdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", pdf ? "Comprobantes.pdf" : "Comprobantes.xlsx");
+            }, "Exportar listado de comprobantes", exportToken);
+            if (!resultado.Success) _feedback = resultado.Feedback;
+        }
+        finally { _exportacionCts = null; _exportando = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    // Filtra mientras se escribe (cliente, cuenta o número), sin esperar Enter.
+    private readonly BusquedaDiferida _busquedaDiferida = new();
+    private Task EscribirBusquedaAsync(string texto)
+    {
+        _filtro.Busqueda = texto;
+        return _busquedaDiferida.ProgramarAsync(() => InvokeAsync(() => BuscarAsync(true)), () => _busy);
     }
 
     private Task PaginarAsync(int delta)
@@ -341,7 +392,6 @@
         if (args.Key == "Escape") CerrarFiltros();
         return Task.CompletedTask;
     }
-    private Task RangoAsync(DateTime desde, DateTime hasta) { _filtro.FechaDesde = desde; _filtro.FechaHasta = hasta; return BuscarAsync(true); }
 
     private List<(string Key, string Label)> FiltrosActivos()
     {
@@ -464,7 +514,7 @@
                 @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
             </div>
             <input type="search" aria-label="Buscar cliente, cuenta o número" placeholder="Cliente, cuenta o número (ej. 0010-00000519)..."
-                maxlength="100" value="@_filtro.Busqueda" disabled="@_busy" @oninput="e => _filtro.Busqueda = e.Value?.ToString() ?? string.Empty"
+                maxlength="100" value="@_filtro.Busqueda" @oninput="e => EscribirBusquedaAsync(e.Value?.ToString() ?? string.Empty)"
                 @onkeydown="TeclaAsync" />
             <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
                 disabled="@_busy" @onclick="AlternarFiltros"><i class="bi @(_filtrosAbiertos ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
@@ -472,18 +522,9 @@
         @if (_filtrosAbiertos)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
-            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="TeclaAsync" @onkeydown:stopPropagation>
-                <div class="smart-search__column">
-                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
-                    <AlfaInput Type="date" Label="Desde" Value="@FechaHtml(_filtro.FechaDesde)" ValueChanged="v => Cambiar(() => _filtro.FechaDesde = LeerFecha(v))" Disabled="@_busy" />
-                    <AlfaInput Type="date" Label="Hasta" Value="@FechaHtml(_filtro.FechaHasta)" ValueChanged="v => Cambiar(() => _filtro.FechaHasta = LeerFecha(v))" Disabled="@_busy" />
-                    <div class="vc-rangos">
-                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(hoy, hoy)">Hoy</button>
-                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(hoy.AddDays(-7), hoy)">7 días</button>
-                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(mes, hoy)">Este mes</button>
-                        <button type="button" disabled="@_busy" @onclick="() => RangoAsync(mes.AddMonths(-1), mes.AddDays(-1))">Mes anterior</button>
-                    </div>
-                </div>
+            <div class="smart-search__panel smart-search__panel--dos" @onclick:stopPropagation @onkeydown="TeclaAsync" @onkeydown:stopPropagation>
+                <FiltroPeriodo Desde="@_filtro.FechaDesde" Hasta="@_filtro.FechaHasta" Disabled="@_busy"
+                               PeriodoChanged="p => Cambiar(() => (_filtro.FechaDesde, _filtro.FechaHasta) = p)" RangoElegido="_ => BuscarAsync(true)" />
                 <div class="smart-search__column">
                     <h4><i class="bi bi-file-earmark-text"></i> Comprobante</h4>
                     <AlfaSelect Label="Tipo" Value="@_filtro.Tc" ValueChanged="v => Cambiar(() => _filtro.Tc = v ?? string.Empty)" Options="@TipoOptions" Disabled="@_busy" />
@@ -525,6 +566,8 @@
                         OnClick = () => { _seleccion.Clear(); UpdateHeader(); return InvokeAsync(StateHasChanged); } }
                 }
                 : []),
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Disabled = _busy || _exportando || _resultado is null, OnClick = () => ExportarListadoAsync(false) },
+            new() { Key = "pdf-listado", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Ghost, Disabled = _busy || _exportando || _resultado is null, OnClick = () => ExportarListadoAsync(true) },
             new() { Key = "buscar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = () => BuscarAsync(false) }
         ],
         Pagination = _resultado is { Total: > 0 } r ? new()
@@ -537,6 +580,7 @@
 
     private void ContextChanged()
     {
+        _exportacionCts?.Cancel();
         if (_disposed) return;
         _ = InvokeAsync(async () =>
         {
@@ -554,7 +598,7 @@
 
     public void Dispose()
     {
-        _disposed = true; Sessions.SessionChanged -= ContextChanged; Users.StateChanged -= ContextChanged;
+        _disposed = true; _busquedaDiferida.Dispose(); Sessions.SessionChanged -= ContextChanged; Users.StateChanged -= ContextChanged;
         _lifetime.Cancel(); _lifetime.Dispose();
         if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
     }

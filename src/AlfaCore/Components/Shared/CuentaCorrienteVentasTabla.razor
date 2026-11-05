@@ -20,10 +20,14 @@
         @foreach (var cuenta in Resultado.Items.GroupBy(x => x.Cuenta))
         {
             var primera = cuenta.First();
-            <tr class="data-table__totals">
+            <tr class="cc-cuenta-inicio">
                 <td colspan="6">
-                    <strong>@cuenta.Key · @primera.RazonSocial</strong>
-                    <div>Saldo inicial: @Moneda(primera.SaldoInicial) · Saldo previo a estas líneas: @Moneda(primera.SaldoAnteriorLinea)</div>
+                    <strong><span class="cc-cuenta-codigo">@cuenta.Key</span> @primera.RazonSocial</strong>
+                    <small>Saldo inicial: @Moneda(primera.SaldoInicial)</small>
+                    @if (primera.SaldoAnteriorLinea != primera.SaldoInicial)
+                    {
+                        <small>Continuación de la cuenta · Saldo de la página anterior: @Moneda(primera.SaldoAnteriorLinea)</small>
+                    }
                 </td>
             </tr>
             @foreach (var fila in cuenta)
@@ -35,7 +39,7 @@
                 else
                 {
                     <tr>
-                        <td>@fila.Fecha.ToString("dd/MM/yyyy")</td><td>@fila.Tc</td><td>@fila.IdComprobante</td>
+                        <td>@fila.Fecha.ToString("dd/MM/yyyy")</td><td>@fila.Tc</td><td>@fila.IdComprobante <ComprobanteVerAccion Tc="@fila.Tc" Comprobante="@fila.IdComprobante" /></td>
                         <td style="text-align:right;">@Moneda(fila.DebeHaber == "D" ? fila.Importe : 0)</td>
                         <td style="text-align:right;">@Moneda(fila.DebeHaber == "H" ? fila.Importe : 0)</td>
                         <td style="text-align:right;"><strong>@Moneda(fila.SaldoParcial)</strong></td>
@@ -43,7 +47,7 @@
                 }
                 @if (fila.UltimaLineaCuenta)
                 {
-                    <tr class="data-table__totals"><td colspan="5">Saldo al cierre · @fila.Cuenta</td><td style="text-align:right;">@Moneda(fila.SaldoFinalCuenta)</td></tr>
+                    <tr class="cc-cuenta-cierre"><td colspan="5">Saldo al cierre · @fila.Cuenta</td><td style="text-align:right;">@Moneda(fila.SaldoFinalCuenta)</td></tr>
                 }
             }
         }

@@ -15,78 +15,7 @@
 <div class="gd-page gd ctr-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
-    <section class="ctr-filtros" aria-label="Filtros del reporte" @onkeydown="TeclaAsync">
-        @if (!EsPlan)
-        {
-            <div class="ctr-filtros__ejercicio">
-                <AlfaSelect Label="Ejercicio" Value="@_filtro.Periodo.ToString()" ValueChanged="v => CambiarEjercicio(v)" Options="@EjercicioOptions" Disabled="@_busy" />
-            </div>
-            @if (!EsBalanceGeneral)
-            {
-                <AlfaInput Type="date" Label="Desde" Value="@Fecha(_filtro.Desde)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Desde = d; }" Disabled="@_busy" />
-            }
-            <AlfaInput Type="date" Label="@(EsBalanceGeneral ? "Saldos al" : "Hasta")" Value="@Fecha(_filtro.Hasta)" ValueChanged="v => { if (Leer(v) is { } d) _filtro.Hasta = d; }" Disabled="@_busy" />
-            <div class="ctr-filtros__unidad">
-                <AlfaSelect Label="Unidad de negocio" Value="@(_filtro.Unidades.FirstOrDefault() ?? "")" ValueChanged="v => _filtro.Unidades = string.IsNullOrEmpty(v) ? [] : [v]"
-                            Options="@UnidadOptions" Disabled="@_busy" />
-            </div>
-        }
-        @if (EsDiario || EsSubdiarios)
-        {
-            <div class="ctr-filtros__unidad">
-                <AlfaSelect Label="Subdiario" Value="@_filtro.Subdiario" ValueChanged="v => _filtro.Subdiario = v ?? string.Empty" Options="@SubdiarioOptions" Disabled="@_busy" />
-            </div>
-        }
-        @if (EsBalanceGeneral)
-        {
-            <div class="ctr-filtros__unidad">
-                <AlfaSelect Label="Detalle hasta el nivel" Value="@_filtro.NivelMaximo.ToString()" ValueChanged="v => _filtro.NivelMaximo = int.TryParse(v, out var n) ? n : 0" Options="@NivelOptions" Disabled="@_busy" />
-            </div>
-        }
-        @if (EsMayor)
-        {
-            <div class="ctr-filtros__cuenta">
-                <AlfaLookup TItem="ContabilidadOpcion" Label="Cuenta (o título: todas sus cuentas)" Placeholder="Código o nombre de la cuenta"
-                            MinimumCharacters="1" @bind-SearchText="_cuentaTexto" SelectedItem="_cuenta" SelectedItemChanged="CuentaElegida"
-                            SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
-                    <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
-                </AlfaLookup>
-            </div>
-            <div class="ctr-filtros__cuenta ctr-filtros__cuenta--hasta">
-                <AlfaLookup TItem="ContabilidadOpcion" Label="Hasta la cuenta (opcional)" Placeholder="Rango de cuentas"
-                            MinimumCharacters="1" @bind-SearchText="_cuentaHastaTexto" SelectedItem="_cuentaHasta" SelectedItemChanged="CuentaHastaElegida"
-                            SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
-                    <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
-                </AlfaLookup>
-            </div>
-        }
-        <div class="ctr-filtros__checks">
-            @if (EsSubdiarios)
-            {
-                <AlfaCheckbox Value="@_filtro.Resumido" ValueChanged="v => _filtro.Resumido = v == true" Disabled="@_busy">Resumido: totales por cuenta</AlfaCheckbox>
-            }
-            @if (EsBalanceGeneral)
-            {
-                <AlfaCheckbox Value="@_filtro.Comparativo" ValueChanged="v => _filtro.Comparativo = v == true" Disabled="@_busy">Comparativo con el ejercicio anterior</AlfaCheckbox>
-            }
-            @if (EsPlan)
-            {
-                <AlfaCheckbox Value="@_filtro.PlanIncluirTerceros" ValueChanged="v => _filtro.PlanIncluirTerceros = v == true" Disabled="@_busy">Incluir cuentas de clientes y proveedores</AlfaCheckbox>
-                <AlfaCheckbox Value="@_filtro.PlanIncluirBaja" ValueChanged="v => _filtro.PlanIncluirBaja = v == true" Disabled="@_busy">Incluir dadas de baja</AlfaCheckbox>
-            }
-            @if (EsSumas)
-            {
-                <AlfaCheckbox Value="@_filtro.AgruparTerceros" ValueChanged="v => _filtro.AgruparTerceros = v == true" Disabled="@_busy">Agrupar clientes y proveedores</AlfaCheckbox>
-                <AlfaCheckbox Value="@_filtro.MostrarTitulos" ValueChanged="v => _filtro.MostrarTitulos = v == true" Disabled="@_busy">Mostrar títulos</AlfaCheckbox>
-                <AlfaCheckbox Value="@_filtro.IncluirSinMovimientos" ValueChanged="v => _filtro.IncluirSinMovimientos = v == true" Disabled="@_busy">Cuentas sin movimientos</AlfaCheckbox>
-            }
-            @if (_catalogos?.PuedeVerProformas == true && !EsPlan)
-            {
-                <AlfaCheckbox Value="@_filtro.IncluirProformas" ValueChanged="v => _filtro.IncluirProformas = v == true" Disabled="@_busy">Incluir proformas</AlfaCheckbox>
-            }
-        </div>
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-play-fill" Loading="@_busy" Disabled="@_busy" OnClick="_ => GenerarAsync()">Generar</AlfaButton>
-    </section>
+
 
     @if (!EsMayor && _sumas is { } s)
     {
@@ -109,7 +38,7 @@
                         <tbody>
                         @foreach (var a in s.Desbalanceados)
                         {
-                            <tr><td>@a.Fecha.ToString("dd/MM/yyyy")</td><td>@a.MesOperativo-@a.Numero</td><td>@a.Tc @a.Comprobante</td><td>@a.Detalle</td>
+                            <tr><td>@a.Fecha.ToString("dd/MM/yyyy")</td><td>@a.MesOperativo-@a.Numero</td><td>@a.Tc @a.Comprobante <ComprobanteVerAccion Tc="@a.Tc" Comprobante="@a.Comprobante" /></td><td>@a.Detalle</td>
                                 <td class="n">@a.Renglones</td><td class="n">@M(a.Diferencia)</td></tr>
                         }
                         </tbody>
@@ -141,7 +70,45 @@
         <p class="ctr-nota">Saldo anterior: movimientos del ejercicio antes de la fecha desde (incluye la apertura). Saldo positivo = deudor, negativo = acreedor. Tocá una cuenta para ver su mayor.</p>
     }
 
-    @if (EsMayor && _mayor is { } m)
+    @if (EsMayor && _filtro.CuentaDesde.Length == 0 && _cuentasMayor is { } cm)
+    {
+        var lista = CuentasMayorFiltradas(cm).ToList();
+        <div class="ctr-elegir">
+            <div class="ctr-elegir__intro">
+                <h3>Elegí una cuenta</h3>
+                <p>Cuentas con saldo o movimientos del @cm.Filtro.Desde.ToString("dd/MM/yyyy") al @cm.Filtro.Hasta.ToString("dd/MM/yyyy"). Escribí en el buscador para filtrar y tocá una cuenta para ver su mayor.</p>
+            </div>
+            @if (lista.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay cuentas que coincidan" Message="Probá con otra parte del código o del nombre, o cambiá el período en el embudo." />
+            }
+            else
+            {
+                <section class="ctr-tabla__marco" aria-label="Cuentas para el mayor">
+                    <div class="ctr-tabla__scroll">
+                        <table class="ctr-tabla ctr-tabla--elegir">
+                            <thead><tr><th>Cuenta</th><th>Descripción</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th><th aria-hidden="true"></th></tr></thead>
+                            <tbody>
+                            @foreach (var f in lista)
+                            {
+                                <tr class="is-cuenta" tabindex="0" title="@($"Ver el mayor de {f.Descripcion}")" @onclick="() => AbrirCuentaAsync(f)" @onkeydown="e => TeclaCuentaAsync(e, f)">
+                                    <td>@f.Codigo</td>
+                                    <td>@f.Descripcion@(f.Agrupadas > 0 ? $" · {f.Agrupadas} cuentas" : "")</td>
+                                    <td class="n">@M(f.Debe)</td><td class="n">@M(f.Haber)</td>
+                                    <td class="n @(f.Saldo < 0 ? "is-acreedor" : null)">@M(f.Saldo)</td>
+                                    <td class="ctr-elegir__ir"><i class="bi bi-chevron-right" aria-hidden="true"></i></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                <p class="ctr-nota">@lista.Count cuenta(s). Las cuentas de clientes y proveedores se agrupan por rubro: tocá el grupo para ver el mayor de todas juntas.</p>
+            }
+        </div>
+    }
+
+    @if (EsMayor && _filtro.CuentaDesde.Length > 0 && _mayor is { } m)
     {
         @if (m.Cuentas.Count == 0)
         {
@@ -160,7 +127,7 @@
                             <tr class="is-cuenta-cab"><td colspan="4">@c.Codigo · @c.Descripcion <small>saldo anterior</small></td><td></td><td></td><td class="n">@c.SaldoAnterior.ToString("N2", Culture)</td></tr>
                             @foreach (var x in c.Movimientos)
                             {
-                                <tr><td>@x.Fecha.ToString("dd/MM/yyyy")</td><td>@x.MesOperativo-@x.Asiento</td><td>@x.Tc @x.Comprobante</td><td class="ctr-detalle">@x.Detalle</td>
+                                <tr><td>@x.Fecha.ToString("dd/MM/yyyy")</td><td>@x.MesOperativo-@x.Asiento</td><td>@x.Tc @x.Comprobante <ComprobanteVerAccion Tc="@x.Tc" Comprobante="@x.Comprobante" /></td><td class="ctr-detalle">@x.Detalle</td>
                                     <td class="n">@M(x.Debe)</td><td class="n">@M(x.Haber)</td><td class="n @(x.Saldo < 0 ? "is-acreedor" : null)">@x.Saldo.ToString("N2", Culture)</td></tr>
                             }
                             <tr class="is-total"><td colspan="4">Total @c.Codigo · @c.Movimientos.Count movimiento(s)</td><td class="n">@M(c.Debe)</td><td class="n">@M(c.Haber)</td>
@@ -204,7 +171,7 @@
                     @foreach (var a in d.Asientos)
                     {
                         <tr class="is-cuenta-cab"><td colspan="5">@a.Fecha.ToString("dd/MM/yyyy") · Asiento @a.MesOperativo-@a.Numero
-                            @if (a.Tc.Length > 0 || a.Comprobante.Length > 0) { <span> · @a.Tc @a.Comprobante</span> }
+                            @if (a.Tc.Length > 0 || a.Comprobante.Length > 0) { <span> · @a.Tc @a.Comprobante <ComprobanteVerAccion Tc="@a.Tc" Comprobante="@a.Comprobante" /></span> }
                             @if (a.Subdiario.Length > 0) { <small>@a.Subdiario</small> }
                             @if (Math.Abs(a.Debe - a.Haber) >= 0.005m) { <span class="is-acreedor"> · no balancea (@M(a.Debe - a.Haber))</span> }</td></tr>
                         @foreach (var x in a.Renglones)
@@ -221,20 +188,78 @@
 
     @if (EsPlan && _plan is { } pc)
     {
-        <section class="ctr-tabla__marco"><div class="ctr-tabla__scroll">
-            <table class="ctr-tabla">
-                <thead><tr><th>Código</th><th>Descripción</th><th>Nivel</th><th>Tipo</th></tr></thead>
-                <tbody>
-                @foreach (var c in pc.Cuentas)
-                {
-                    <tr class="@(c.Titulo ? "is-titulo" : null) @(PuedeEditarPlan ? "is-editable" : null)" title="@(PuedeEditarPlan ? "Modificar o borrar la cuenta" : null)"
-                        @onclick="() => EditarCuenta(c.Codigo)"><td>@c.Codigo</td><td style="padding-left:@(12 + c.Nivel * 14)px">@c.Descripcion@(c.Baja ? " (dada de baja)" : "")</td>
-                        <td>@c.NivelNombre</td><td>@(c.Titulo ? "Título" : c.TipoVista switch { "CL" => "Cliente", "PR" => "Proveedor", "BC" => "Caja/Banco", _ => "Imputable" })</td></tr>
-                }
-                </tbody>
-            </table>
-        </div></section>
-        <p class="ctr-nota">@pc.Cuentas.Count cuentas · @pc.Cuentas.Count(c => c.Titulo) títulos y @pc.Cuentas.Count(c => !c.Titulo) imputables.@(PuedeEditarPlan ? " Tocá una cuenta para modificarla o borrarla." : "")</p>
+        var minNivel = pc.Cuentas.Count == 0 ? 0 : pc.Cuentas.Min(x => x.Nivel);
+        <p class="plan-intro">Es la lista ordenada de las cuentas de la contabilidad. Los <strong>títulos</strong> agrupan cuentas; en las cuentas <strong>imputables</strong> se registran los movimientos. Abrí un grupo con la flecha y tocá una cuenta para ver su mayor.</p>
+        <div class="kpi-grid ctr-kpis">
+            <KpiCard Titulo="Cuentas" Valor="@pc.Cuentas.Count.ToString("N0")" Icono="@Icono("bi-list-ol")" Descripcion="@(string.IsNullOrWhiteSpace(pc.Filtro.PlanTexto) ? "En el plan" : $"Coinciden con «{pc.Filtro.PlanTexto}»")" />
+            <KpiCard Titulo="Títulos" Valor="@pc.Cuentas.Count(c => c.Titulo).ToString("N0")" Icono="@Icono("bi-diagram-3")" Descripcion="Agrupan otras cuentas" />
+            <KpiCard Titulo="Imputables" Valor="@pc.Cuentas.Count(c => !c.Titulo).ToString("N0")" Icono="@Icono("bi-pencil-square")" Descripcion="Reciben movimientos" />
+            <KpiCard Titulo="Cajas y bancos" Valor="@pc.Cuentas.Count(c => !c.Titulo && c.TipoVista == "BC").ToString("N0")" Icono="@Icono("bi-bank")" Descripcion="Cuentas de fondos" />
+        </div>
+        @if (pc.Cuentas.Count == 0)
+        {
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay cuentas que coincidan" Message="Probá con otra parte del código o de la descripción." />
+        }
+        else
+        {
+            <div class="plan-barra">
+                <span>@(_planContraidos.Count == 0 ? "Todo el plan abierto" : "Algunos grupos están cerrados")</span>
+                <div>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrows-expand" OnClick="ExpandirPlan">Expandir todo</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrows-collapse" OnClick="() => ContraerPlan(minNivel)">Contraer todo</AlfaButton>
+                </div>
+            </div>
+            <section class="ctr-tabla__marco" aria-label="Plan de cuentas"><div class="ctr-tabla__scroll">
+                <table class="ctr-tabla plan-tabla">
+                    <thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th aria-hidden="true"></th></tr></thead>
+                    <tbody>
+                    @{ var ocultarDebajoDe = int.MaxValue; }
+                    @for (var i = 0; i < pc.Cuentas.Count; i++)
+                    {
+                        var c = pc.Cuentas[i];
+                        if (c.Nivel > ocultarDebajoDe) { continue; }
+                        ocultarDebajoDe = int.MaxValue;
+                        var tieneHijos = i + 1 < pc.Cuentas.Count && pc.Cuentas[i + 1].Nivel > c.Nivel;
+                        var cerrado = tieneHijos && _planContraidos.Contains(c.Codigo);
+                        if (cerrado) { ocultarDebajoDe = c.Nivel; }
+                        var cuenta = c;
+                        <tr class="@(c.Titulo ? "is-titulo" : "is-cuenta") @(c.Baja ? "is-baja" : null)" tabindex="0"
+                            title="@(tieneHijos ? (cerrado ? "Mostrar las cuentas del grupo" : "Ocultar las cuentas del grupo") : "Ver el mayor de la cuenta")"
+                            @onclick="() => ClickPlan(cuenta, tieneHijos)" @onkeydown="e => TeclaPlan(e, cuenta, tieneHijos)">
+                            <td class="plan-codigo">@c.Codigo</td>
+                            <td>
+                                <span class="plan-desc" style="padding-left:@((c.Nivel - minNivel) * 20)px">
+                                    @if (tieneHijos)
+                                    {
+                                        <i class="bi @(cerrado ? "bi-chevron-right" : "bi-chevron-down") plan-flecha" aria-hidden="true"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="plan-flecha" aria-hidden="true"></i>
+                                    }
+                                    <span>@c.Descripcion</span>
+                                    @if (cerrado) { <span class="plan-cantidad">@CuentasDebajo(pc.Cuentas, i)</span> }
+                                </span>
+                            </td>
+                            <td>
+                                <span class="plan-tag @TonoTipo(c)">@TipoPlan(c)</span>
+                                @if (c.Baja) { <span class="plan-tag is-danger">Dada de baja</span> }
+                            </td>
+                            <td class="plan-ir">
+                                @if (PuedeEditarPlan)
+                                {
+                                    <button type="button" class="plan-editar" title="Modificar o borrar la cuenta" aria-label="@($"Modificar la cuenta {cuenta.Codigo}")"
+                                            @onclick="() => EditarCuenta(cuenta.Codigo)" @onclick:stopPropagation="true"><i class="bi bi-pencil" aria-hidden="true"></i> Modificar</button>
+                                }
+                                @if (!tieneHijos) { <span class="plan-ir__mayor">Ver mayor <i class="bi bi-chevron-right" aria-hidden="true"></i></span> }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></section>
+            <p class="ctr-nota">@pc.Cuentas.Count cuentas · @pc.Cuentas.Count(c => c.Titulo) títulos y @pc.Cuentas.Count(c => !c.Titulo) imputables.@(PuedeEditarPlan ? " Con «Modificar» cambiás o borrás una cuenta; «Nueva cuenta» agrega una." : "")</p>
+        }
     }
 
     @if (EsPlan && _planAbm is { PuedeModificar: true })
@@ -303,6 +328,10 @@
     private readonly ContabilidadFiltro _filtro = new();
     private SumasSaldosResultado? _sumas;
     private MayorResultado? _mayor;
+    // Mayor sin cuenta elegida: cuentas del período (sumas y saldos agrupado) para elegir con un clic.
+    private SumasSaldosResultado? _cuentasMayor;
+    private string? _cuentasMayorClave;
+    private string _textoMayor = string.Empty;
     private ContabilidadOpcion? _cuenta, _cuentaHasta;
     private string _cuentaTexto = "", _cuentaHastaTexto = "";
     private AppUiMessage? _feedback;
@@ -342,10 +371,10 @@
         {
             // El ABM (D9510) se ofrece dentro de la misma consulta si el usuario tiene permiso; si no, queda solo la consulta.
             try { _planAbm = await PlanAbm.CatalogoAsync(); } catch (InvalidOperationException) { _planAbm = null; }
-            UpdateHeader();
         }
+        UpdateHeader();
         if (EsSubdiarios && _filtro.Subdiario.Length == 0) _filtro.Subdiario = _catalogos.Subdiarios.FirstOrDefault()?.Codigo ?? "DG";
-        if (!EsMayor || _filtro.CuentaDesde.Length > 0) await GenerarAsync();
+        await GenerarAsync();
     }
 
     private void CambiarEjercicio(string? valor)
@@ -362,12 +391,24 @@
     private async Task GenerarAsync()
     {
         if (_busy || _disposed || _catalogos is null) return;
-        if (EsMayor && string.IsNullOrWhiteSpace(_filtro.CuentaDesde)) { _feedback = AppUiMessage.Info("Elegí la cuenta", "Buscá la cuenta por código o nombre. Si elegís un título, se muestran todas sus cuentas."); return; }
+        // Mayor sin cuenta: Enter con una sola coincidencia la abre; si no, se (re)carga la lista de cuentas del período.
+        if (EsMayor && string.IsNullOrWhiteSpace(_filtro.CuentaDesde) && _cuentasMayor is { } previas
+            && _cuentasMayorClave == ClaveCuentasMayor() && CuentasMayorFiltradas(previas).Take(2).ToList() is [var unica])
+        {
+            await AbrirCuentaAsync(unica);
+            return;
+        }
         _busy = true; _feedback = null; UpdateHeader();
         await InvokeAsync(StateHasChanged);
         try
         {
-            if (EsMayor)
+            if (EsMayor && string.IsNullOrWhiteSpace(_filtro.CuentaDesde))
+            {
+                var lista = Copia(); lista.AgruparTerceros = true; lista.MostrarTitulos = false; lista.IncluirSinMovimientos = false;
+                var r = await UiOps.RunAsync(() => Service.GetSumasSaldosAsync(lista), Titulo);
+                if (r.Success) { _cuentasMayor = r.Value; _cuentasMayorClave = ClaveCuentasMayor(); } else _feedback = r.Feedback;
+            }
+            else if (EsMayor)
             {
                 var r = await UiOps.RunAsync(() => Service.GetMayorAsync(Copia()), Titulo);
                 if (r.Success) _mayor = r.Value; else _feedback = r.Feedback;
@@ -380,7 +421,7 @@
             else if (EsPlan)
             {
                 var r = await UiOps.RunAsync(() => Service.GetPlanCuentasAsync(Copia()), Titulo);
-                if (r.Success) _plan = r.Value; else _feedback = r.Feedback;
+                if (r.Success) { _plan = r.Value; PrepararArbolPlan(); } else _feedback = r.Feedback;
             }
             else if (EsBalanceGeneral)
             {
@@ -402,7 +443,7 @@
         CuentaDesde = _filtro.CuentaDesde, CuentaHasta = _filtro.CuentaHasta, AgruparTerceros = _filtro.AgruparTerceros,
         MostrarTitulos = _filtro.MostrarTitulos, IncluirSinMovimientos = _filtro.IncluirSinMovimientos,
         Subdiario = _filtro.Subdiario, ExcluirSubdiarios = _filtro.ExcluirSubdiarios, Resumido = _filtro.Resumido,
-        PlanIncluirTerceros = _filtro.PlanIncluirTerceros, PlanIncluirBaja = _filtro.PlanIncluirBaja,
+        PlanIncluirTerceros = _filtro.PlanIncluirTerceros, PlanIncluirBaja = _filtro.PlanIncluirBaja, PlanTexto = _filtro.PlanTexto,
         NivelMaximo = _filtro.NivelMaximo, Comparativo = _filtro.Comparativo
     };
 
@@ -468,16 +509,210 @@
         _ => _sumas is { Filas.Count: > 0 }
     };
 
+    private RenderFragment RenderFiltros() => @<FiltrosSmartSearch Resumen="@ResumenFiltros" Placeholder="@(EsPlan ? "Código o descripción..." : EsMayor ? "Buscar cuenta por código o nombre..." : "Filtros del reporte...")" Texto="@(EsMayor ? _textoMayor : _filtro.PlanTexto)" TextoChanged="@(EsPlan ? EventCallback.Factory.Create<string>(this, CambiarTextoPlan) : EsMayor ? EventCallback.Factory.Create<string>(this, CambiarTextoMayor) : default)" OnApply="GenerarAsync" Disabled="@(_busy || _catalogos is null)" PanelClass="@(EsPlan ? "smart-search__panel--uno" : "smart-search__panel--dos")" BuscarAlEscribir="@EsPlan">
+    @if (!EsPlan)
+    {
+        <FiltroPeriodo Titulo="@(EsBalanceGeneral ? "Fecha de corte" : "Período")" Desde="@FechaONull(_filtro.Desde)" Hasta="@FechaONull(_filtro.Hasta)"
+                       PeriodoChanged="CambiarPeriodo" MostrarRangos="@(!EsBalanceGeneral)" MostrarDesde="@(!EsBalanceGeneral)"
+                       EtiquetaHasta="@(EsBalanceGeneral ? "Saldos al" : "Hasta")" Disabled="@_busy">
+            <Antes>
+                <div class="ctr-filtros__ejercicio">
+                    <AlfaSelect Label="Ejercicio" Value="@_filtro.Periodo.ToString()" ValueChanged="v => CambiarEjercicio(v)" Options="@EjercicioOptions" Disabled="@_busy" />
+                </div>
+            </Antes>
+        </FiltroPeriodo>
+    }
+    <div class="smart-search__column ctr-filtros" aria-label="Opciones del reporte" @onkeydown="TeclaAsync">
+        <h4><i class="bi @(EsPlan ? "bi-diagram-3" : "bi-sliders")" aria-hidden="true"></i> @(EsPlan ? "Opciones del plan" : "Opciones")</h4>
+        @if (!EsPlan)
+        {
+            <AlfaSelect Label="Unidad de negocio" Value="@(_filtro.Unidades.FirstOrDefault() ?? "")" ValueChanged="v => _filtro.Unidades = string.IsNullOrEmpty(v) ? [] : [v]"
+                        Options="@UnidadOptions" Disabled="@_busy" />
+        }
+        @if (EsDiario || EsSubdiarios)
+        {
+            <AlfaSelect Label="Subdiario" Value="@_filtro.Subdiario" ValueChanged="v => _filtro.Subdiario = v ?? string.Empty" Options="@SubdiarioOptions" Disabled="@_busy" />
+        }
+        @if (EsBalanceGeneral)
+        {
+            <AlfaSelect Label="Detalle hasta el nivel" Value="@_filtro.NivelMaximo.ToString()" ValueChanged="v => _filtro.NivelMaximo = int.TryParse(v, out var n) ? n : 0" Options="@NivelOptions" Disabled="@_busy" />
+        }
+        @if (EsMayor)
+        {
+            <AlfaLookup TItem="ContabilidadOpcion" Label="Cuenta (o título: todas sus cuentas)" Placeholder="Código o nombre de la cuenta"
+                        MinimumCharacters="1" @bind-SearchText="_cuentaTexto" SelectedItem="_cuenta" SelectedItemChanged="CuentaElegida"
+                        SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
+                <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
+            </AlfaLookup>
+            <AlfaLookup TItem="ContabilidadOpcion" Label="Hasta la cuenta (opcional)" Placeholder="Rango de cuentas"
+                        MinimumCharacters="1" @bind-SearchText="_cuentaHastaTexto" SelectedItem="_cuentaHasta" SelectedItemChanged="CuentaHastaElegida"
+                        SearchFunc="Service.BuscarCuentasAsync" ItemKey="x => x.Codigo" Disabled="@_busy">
+                <ItemTemplate Context="c">@c.Descripcion</ItemTemplate>
+            </AlfaLookup>
+        }
+        <div class="ctr-filtros__checks">
+            @if (EsSubdiarios)
+            {
+                <AlfaCheckbox Value="@_filtro.Resumido" ValueChanged="v => _filtro.Resumido = v == true" Disabled="@_busy">Resumido: totales por cuenta</AlfaCheckbox>
+            }
+            @if (EsBalanceGeneral)
+            {
+                <AlfaCheckbox Value="@_filtro.Comparativo" ValueChanged="v => _filtro.Comparativo = v == true" Disabled="@_busy">Comparativo con el ejercicio anterior</AlfaCheckbox>
+            }
+            @if (EsPlan)
+            {
+                <AlfaCheckbox Value="@_filtro.PlanIncluirTerceros" ValueChanged="v => _filtro.PlanIncluirTerceros = v == true" Disabled="@_busy">Incluir cuentas de clientes y proveedores</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.PlanIncluirBaja" ValueChanged="v => _filtro.PlanIncluirBaja = v == true" Disabled="@_busy">Incluir dadas de baja</AlfaCheckbox>
+            }
+            @if (EsSumas)
+            {
+                <AlfaCheckbox Value="@_filtro.AgruparTerceros" ValueChanged="v => _filtro.AgruparTerceros = v == true" Disabled="@_busy">Agrupar clientes y proveedores</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.MostrarTitulos" ValueChanged="v => _filtro.MostrarTitulos = v == true" Disabled="@_busy">Mostrar títulos</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.IncluirSinMovimientos" ValueChanged="v => _filtro.IncluirSinMovimientos = v == true" Disabled="@_busy">Cuentas sin movimientos</AlfaCheckbox>
+            }
+            @if (_catalogos?.PuedeVerProformas == true && !EsPlan)
+            {
+                <AlfaCheckbox Value="@_filtro.IncluirProformas" ValueChanged="v => _filtro.IncluirProformas = v == true" Disabled="@_busy">Incluir proformas</AlfaCheckbox>
+            }
+        </div>
+    </div>
+    </FiltrosSmartSearch>;
+
+    private static DateTime? FechaONull(DateTime fecha) => fecha == default ? null : fecha;
+
+    // Chip del buscador: lo que está aplicado, en pocas palabras (Figma: los filtros aplicados se ven como chips).
+    private string ResumenFiltros => EsPlan
+        ? (_filtro.PlanIncluirTerceros, _filtro.PlanIncluirBaja) switch
+        {
+            (true, true) => "Con terceros y bajas",
+            (true, false) => "Con clientes y proveedores",
+            (false, true) => "Con dadas de baja",
+            _ => "Cuentas activas"
+        }
+        : _catalogos is null ? "Cargando…"
+        : EsBalanceGeneral ? $"Al {_filtro.Hasta:dd/MM/yyyy}"
+        : EsMayor && _filtro.CuentaDesde.Length > 0 ? $"{_filtro.CuentaDesde} · {GestionRangosFecha.Etiqueta(_filtro.Desde, _filtro.Hasta)}"
+        : GestionRangosFecha.Etiqueta(_filtro.Desde, _filtro.Hasta);
+
+    private string ClaveCuentasMayor() => $"{_filtro.Periodo}|{_filtro.Desde:yyyyMMdd}|{_filtro.Hasta:yyyyMMdd}|{string.Join(",", _filtro.Unidades)}|{_filtro.IncluirProformas}";
+
+    private IEnumerable<SumasSaldosFila> CuentasMayorFiltradas(SumasSaldosResultado r)
+    {
+        var texto = AlfaCore.Services.AyudaManuales.Normalizar(_textoMayor.Trim());
+        return r.Filas.Where(f => !f.EsTitulo || f.Agrupadas > 0)
+            .Where(f => texto.Length == 0 || f.Codigo.StartsWith(texto, StringComparison.OrdinalIgnoreCase)
+                || AlfaCore.Services.AyudaManuales.Normalizar(f.Descripcion).Contains(texto, StringComparison.Ordinal));
+    }
+
+    private Task TeclaCuentaAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, SumasSaldosFila f)
+        => e.Key == "Enter" ? AbrirCuentaAsync(f) : Task.CompletedTask;
+
+    private async Task AbrirCuentaAsync(SumasSaldosFila f)
+    {
+        _cuenta = new ContabilidadOpcion(f.Codigo, f.Descripcion); _cuentaTexto = f.Descripcion;
+        _filtro.CuentaDesde = f.Codigo; _cuentaHasta = null; _cuentaHastaTexto = string.Empty; _filtro.CuentaHasta = string.Empty;
+        _mayor = null;
+        await GenerarAsync();
+    }
+
+    private Task VolverACuentasAsync()
+    {
+        _cuenta = null; _cuentaTexto = string.Empty; _filtro.CuentaDesde = string.Empty;
+        _cuentaHasta = null; _cuentaHastaTexto = string.Empty; _filtro.CuentaHasta = string.Empty; _mayor = null;
+        UpdateHeader();
+        return _cuentasMayor is not null && _cuentasMayorClave == ClaveCuentasMayor() ? InvokeAsync(StateHasChanged) : GenerarAsync();
+    }
+
+    // Escribir en el buscador del Mayor filtra las cuentas; si se estaba viendo un mayor, vuelve a la lista.
+    private async Task CambiarTextoMayor(string texto)
+    {
+        _textoMayor = texto;
+        if (_filtro.CuentaDesde.Length > 0) await VolverACuentasAsync();
+        else { UpdateHeader(); StateHasChanged(); }
+    }
+
+    // ── Plan de cuentas como árbol ──
+    private readonly HashSet<string> _planContraidos = new(StringComparer.OrdinalIgnoreCase);
+
+    // Al entrar se ve el plan hasta el nivel de rubro; con una búsqueda se abre todo para mostrar lo encontrado.
+    private void PrepararArbolPlan()
+    {
+        _planContraidos.Clear();
+        if (_plan is not { Cuentas.Count: > 0 } pc || !string.IsNullOrWhiteSpace(pc.Filtro.PlanTexto)) return;
+        var min = pc.Cuentas.Min(x => x.Nivel);
+        for (var i = 0; i + 1 < pc.Cuentas.Count; i++)
+            if (pc.Cuentas[i].Nivel >= min + 2 && pc.Cuentas[i + 1].Nivel > pc.Cuentas[i].Nivel)
+                _planContraidos.Add(pc.Cuentas[i].Codigo);
+    }
+
+    private void ExpandirPlan() => _planContraidos.Clear();
+
+    private void ContraerPlan(int minNivel)
+    {
+        if (_plan is not { } pc) return;
+        _planContraidos.Clear();
+        for (var i = 0; i + 1 < pc.Cuentas.Count; i++)
+            if (pc.Cuentas[i].Nivel >= minNivel && pc.Cuentas[i + 1].Nivel > pc.Cuentas[i].Nivel)
+                _planContraidos.Add(pc.Cuentas[i].Codigo);
+    }
+
+    private void ClickPlan(PlanCuenta c, bool tieneHijos)
+    {
+        if (tieneHijos)
+        {
+            if (!_planContraidos.Remove(c.Codigo)) _planContraidos.Add(c.Codigo);
+            return;
+        }
+        Nav.NavigateTo(RouteContext.BuildRoute("/contabilidad/mayor") + $"?cuenta={Uri.EscapeDataString(c.Codigo)}");
+    }
+
+    private void TeclaPlan(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, PlanCuenta c, bool tieneHijos)
+    {
+        if (e.Key is "Enter" or " ") ClickPlan(c, tieneHijos);
+    }
+
+    private static string CuentasDebajo(IReadOnlyList<PlanCuenta> cuentas, int i)
+    {
+        var n = 0;
+        for (var j = i + 1; j < cuentas.Count && cuentas[j].Nivel > cuentas[i].Nivel; j++) if (!cuentas[j].Titulo) n++;
+        return n == 1 ? "1 cuenta" : $"{n} cuentas";
+    }
+
+    private static string TipoPlan(PlanCuenta c) => c.Titulo ? "Título" : c.TipoVista switch
+    {
+        "CL" => "Cliente", "PR" => "Proveedor", "BC" => "Caja/Banco", _ => "Imputable"
+    };
+
+    private static string TonoTipo(PlanCuenta c) => c.Titulo ? "is-neutral" : c.TipoVista switch
+    {
+        "BC" => "is-success", "CL" or "PR" => "is-warning", _ => "is-accent"
+    };
+
+    private void CambiarTextoPlan(string texto) { _filtro.PlanTexto = texto; UpdateHeader(); }
+
+    private void CambiarPeriodo((DateTime? Desde, DateTime? Hasta) periodo)
+    {
+        if (periodo.Desde is { } desde) _filtro.Desde = desde;
+        if (periodo.Hasta is { } hasta) _filtro.Hasta = hasta;
+        var ejercicio = _catalogos?.Ejercicios.FirstOrDefault(e => _filtro.Hasta >= e.Desde && _filtro.Hasta <= e.Hasta);
+        if (ejercicio is not null) _filtro.Periodo = ejercicio.Periodo;
+        UpdateHeader();
+    }
+
     private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = Titulo,
         Breadcrumb = ["Contabilidad", "Reportes", Titulo],
         TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, Tipo),
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig(), SearchContent = RenderFiltros(),
         Actions =
         [
             .. (PuedeEditarPlan ? [new PageHeaderAction { Key = "nueva-cuenta", Label = "Nueva cuenta", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = NuevaCuentaAsync }] : Array.Empty<PageHeaderAction>()),
             new() { Key = "generar", Label = "Generar", Icon = "bi-play-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = GenerarAsync },
+            .. (EsMayor && _filtro.CuentaDesde.Length > 0
+                ? new PageHeaderAction[] { new() { Key = "cuentas", Label = "Cuentas", Icon = "bi-list-ul", Title = "Volver a la lista de cuentas", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = VolverACuentasAsync } }
+                : []),
             new() { Key = "pdf", Label = "PDF", Icon = "bi-printer", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "pdf", OnClick = () => ExportarAsync(true) },
             new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary, Disabled = _busy || !HayDatos || _exportando is not null, Busy = _exportando == "excel", OnClick = () => ExportarAsync(false) }
         ]

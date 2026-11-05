@@ -31,6 +31,27 @@ public sealed class AyudaContextualTests
     }
 
     [Fact]
+    public void CadaPantallaDocumentadaAbreUnArticuloQueExiste()
+    {
+        foreach(var (ruta,tema,articulo) in AyudaManuales.Pantallas)
+        {
+            var manual=AyudaManuales.Obtener(tema);
+            Assert.NotEmpty(manual.Articulos);
+            if(articulo is not null)
+                Assert.True(manual.Articulos.Any(a=>a.Id==AyudaManuales.IdArticulo(articulo)),$"La ruta {ruta} apunta a «{articulo}», que no está en el manual {tema}.");
+        }
+        Assert.Equal("ventas",AyudaManuales.TemaParaRuta("http://localhost:5055/ALFANET/4283/ventas/carga-comprobantes/visor?x=1"));
+        Assert.Equal("ver-comprobantes",AyudaManuales.SeccionParaRuta("http://localhost:5055/ALFANET/4283/ventas/carga-comprobantes/visor?x=1"));
+        Assert.Equal("buscar-pendientes-y-filtrar",AyudaManuales.SeccionParaRuta("/ventas/carga-comprobantes"));
+        Assert.Equal("libros-de-iva",AyudaManuales.SeccionParaRuta("/ALFANET/1/compras/libro-iva"));
+        Assert.Equal("mayor-de-cuentas",AyudaManuales.SeccionParaRuta("/contabilidad/mayor?cuenta=11101"));
+        Assert.Equal("autorizacion-de-tareas",AyudaManuales.SeccionParaRuta("/seguridad/autorizacion-tareas"));
+        Assert.Equal("cobranzas",AyudaManuales.TemaParaRuta("/caja-bancos/cobranzas"));
+        Assert.Equal("general",AyudaManuales.TemaParaRuta("/inicio"));
+        Assert.Null(AyudaManuales.SeccionParaRuta("/inicio"));
+    }
+
+    [Fact]
     public async Task AyudaAbreEnLaTareaIndicadaBuscaCambiaDeManualYVuelveSinOperar()
     {
         var services=new ServiceCollection();services.AddLogging();

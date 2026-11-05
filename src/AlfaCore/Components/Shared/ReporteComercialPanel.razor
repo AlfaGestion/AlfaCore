@@ -182,12 +182,7 @@
                             <td style="text-align:right;"><strong>@Moneda(item.Total)</strong></td>
                             <td>@item.Usuario</td>
                             <td>
-                                @if (!EsDirecto)
-                                {
-                                <a class="adm-link-button" href="@BuildViewerUrl(item.Tc, item.IdComprobante)" title="Ver detalle del comprobante" aria-label="Ver detalle del comprobante">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                                }
+                                <ComprobanteVerAccion Tc="@item.Tc" Comprobante="@item.IdComprobante" />
                             </td>
                         </tr>
                     }
@@ -480,25 +475,25 @@
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="ClosePanel"></button>
             <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation @onkeydown="HandleSearchKeyDownAsync">
-                <div class="smart-search__column">
-                    <h4><i class="bi bi-calendar-range"></i> @(EsSaldos ? "Fecha de corte" : EsDocumentosCC ? "Fechas de emisión" : "Período")</h4>
-                    @if (!EsSaldos)
-                    {
-                    var rangoActivo = GestionRangosFecha.Detectar(_filtros.FechaDesde, _filtros.FechaHasta);
-                    foreach (var rango in GestionRangosFecha.Todos.Where(r => EsDocumentosCC || r.Key != "todo"))
-                    {
-                        <button type="button" class="@(rangoActivo == rango.Key ? "smart-option is-active" : "smart-option")" @onclick="() => SetRango(rango.Key)">@rango.Label</button>
-                    }
-                    <div class="smart-search__inline">
-                        <label>Desde</label>
-                        <input type="date" value="@(_filtros.FechaDesde?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: true)" />
+                <FiltroPeriodo Titulo="@(EsSaldos ? "Fecha de corte" : EsDocumentosCC ? "Fechas de emisión" : "Período")"
+                               Desde="@_filtros.FechaDesde" Hasta="@_filtros.FechaHasta" PeriodoChanged="CambiarPeriodo"
+                               MostrarRangos="@(!EsSaldos)" MostrarDesde="@(!EsSaldos)" IncluirTodo="@EsDocumentosCC"
+                               EtiquetaHasta="@(EsSaldos ? "Al día" : "Hasta")">
+                    <div class="smart-search__multiselect">
+                        <span class="smart-search__multiselect-label">Unidades de negocio</span>
+                        <details>
+                            <summary><span>@(_filtros.UnidadesNegocio.Length == 0 ? "Todas" : _filtros.UnidadesNegocio.Length == 1 ? NombreUnidad(_filtros.UnidadesNegocio[0]) : $"{_filtros.UnidadesNegocio.Length} seleccionadas")</span></summary>
+                            <div class="smart-search__multiselect-options">
+                                <span class="smart-search__hint">Sin selección: todas las unidades, incluso movimientos sin unidad.</span>
+                                @foreach (var unidad in _options.UnidadesNegocio)
+                                {
+                                    <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(unidad.Codigo)" ValueChanged="v => CambiarUnidad(unidad.Codigo, v)">@unidad.Codigo · @unidad.Nombre</AlfaCheckbox>
+                                }
+                                <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(string.Empty)" ValueChanged="v => CambiarUnidad(string.Empty, v)">Sin unidad asignada</AlfaCheckbox>
+                            </div>
+                        </details>
                     </div>
-                    }
-                    <div class="smart-search__inline">
-                        <label>@(EsSaldos ? "Al día" : "Hasta")</label>
-                        <input type="date" value="@(_filtros.FechaHasta?.ToString("yyyy-MM-dd"))" @onchange="e => SetFecha(e, desde: false)" />
-                    </div>
-                </div>
+                </FiltroPeriodo>
                 @if (!EsSaldos)
                 {
                 <div class="smart-search__column">
@@ -528,17 +523,17 @@
                 @if (Ventas)
                 {
                     <div class="smart-search__column">
-                        <h4><i class="bi bi-person-badge"></i> Cartera del cliente</h4>
-                        <p class="gd-hint">Estos filtros usan los datos actuales del maestro del cliente. Tipo (TC) filtra el comprobante.</p>
+                        <h4><i class="bi bi-person-badge"></i> Cartera del cliente
+                            <i class="bi bi-info-circle smart-search__info" tabindex="0" role="img" aria-label="Ayuda de Cartera del cliente"
+                               title="Provincia, vendedor y zona salen de los datos actuales de la ficha del cliente, no del comprobante. El cliente elegido se filtra por su código exacto."></i></h4>
                         <div @onkeydown:stopPropagation>
-                            <AlfaLookup TItem="ReporteFiltroOpcion" Label="Código exacto del cliente" Placeholder="Buscar por código o nombre"
+                            <AlfaLookup TItem="ReporteFiltroOpcion" Label="Cliente" Placeholder="Código o nombre"
                                 SearchText="@_clienteBusqueda" SearchTextChanged="CambiarBusquedaCliente"
                                 SelectedItem="@_clienteSeleccionado" SelectedItemChanged="SeleccionarCliente"
                                 SearchFunc="BuscarClientesAsync" ItemKey="c => c.Codigo" Disabled="_isLoading">
                                 <ItemTemplate Context="cliente">@cliente.Codigo · @cliente.Nombre</ItemTemplate>
                             </AlfaLookup>
                         </div>
-                        <p class="gd-hint">Buscá por nombre o código y seleccioná el cliente. Se filtra su código exacto.</p>
                         <AlfaSelect Label="Provincia del cliente" Value="@(_filtros.Provincia ?? string.Empty)" Placeholder="Todas"
                             Options="@_options.Provincias.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
                             ValueChanged="CambiarProvincia" />
@@ -552,15 +547,7 @@
                         <AlfaCheckbox Value="_filtros.SinZona" ValueChanged="v => SinAsignacion(v, false)">Sin zona</AlfaCheckbox>
                     </div>
                 }
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-building"></i> Unidades de negocio</h4>
-                        <p class="gd-hint">Sin selección: todas las unidades, incluso movimientos sin unidad.</p>
-                        @foreach (var unidad in _options.UnidadesNegocio)
-                        {
-                            <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(unidad.Codigo)" ValueChanged="v => CambiarUnidad(unidad.Codigo, v)">@unidad.Codigo · @unidad.Nombre</AlfaCheckbox>
-                        }
-                        <AlfaCheckbox Value="@_filtros.UnidadesNegocio.Contains(string.Empty)" ValueChanged="v => CambiarUnidad(string.Empty, v)">Sin unidad asignada</AlfaCheckbox>
-                    </div>
+
                 <div class="smart-search__actions">
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => LimpiarAsync()">Limpiar</AlfaButton>
                     <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-play-fill" OnClick="_ => GenerarDesdePanelAsync()">Generar reporte</AlfaButton>
@@ -651,13 +638,6 @@
     {
         var tc = e.Value?.ToString();
         _filtros.TipoComprobante = string.IsNullOrWhiteSpace(tc) ? null : tc;
-        UpdatePageHeader();
-    }
-
-    private void SetFecha(ChangeEventArgs e, bool desde)
-    {
-        DateTime? valor = DateTime.TryParse(e.Value?.ToString(), out var fecha) ? fecha : null;
-        if (desde) _filtros.FechaDesde = valor; else _filtros.FechaHasta = valor;
         UpdatePageHeader();
     }
 
@@ -824,11 +804,14 @@
         return Task.CompletedTask;
     }
 
-    private void SetRango(string key)
+    private void CambiarPeriodo((DateTime? Desde, DateTime? Hasta) periodo)
     {
-        (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular(key);
+        (_filtros.FechaDesde, _filtros.FechaHasta) = periodo;
         UpdatePageHeader();
     }
+
+    private string NombreUnidad(string codigo) => codigo.Length == 0 ? "Sin unidad asignada"
+        : _options.UnidadesNegocio.FirstOrDefault(u => u.Codigo == codigo) is { } u ? $"{u.Codigo} · {u.Nombre}" : codigo;
 
     private sealed record FilterChip(string Key, string Label);
 

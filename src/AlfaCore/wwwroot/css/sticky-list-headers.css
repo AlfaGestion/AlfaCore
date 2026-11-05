@@ -1,3 +1,4 @@
+/* Encabezados fijos de listados con tokens AlfaDesign (antes azul marino fijo). */
 .alfacore-sticky-list-header {
     position: fixed;
     display: none;
@@ -19,7 +20,7 @@
 
 table[data-sticky-list-header] > thead,
 .alfacore-sticky-list-header table > thead {
-    background: rgba(7, 18, 34, 0.98) !important;
+    background: var(--alfa-bg-table-header, rgba(7, 18, 34, 0.98)) !important;
 }
 
 table[data-sticky-list-header] > thead > tr > th,
@@ -27,10 +28,10 @@ table[data-sticky-list-header] > thead > tr > th,
     box-sizing: border-box !important;
     height: 38px !important;
     padding: 0.5rem 0.65rem !important;
-    border-top: 1px solid rgba(56, 189, 248, 0.18) !important;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
-    background: rgba(7, 18, 34, 0.98) !important;
-    color: rgba(210, 223, 245, 0.9) !important;
+    border-top: 1px solid var(--alfa-border-default, rgba(56, 189, 248, 0.18)) !important;
+    border-bottom: 1px solid var(--alfa-border-default, rgba(148, 163, 184, 0.2)) !important;
+    background: var(--alfa-bg-table-header, rgba(7, 18, 34, 0.98)) !important;
+    color: var(--alfa-text-secondary, rgba(210, 223, 245, 0.9)) !important;
     font-size: 0.7rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.05em !important;
@@ -48,12 +49,12 @@ table[data-sticky-list-header] > thead > tr > th {
 
 table[data-sticky-list-header] > thead > tr > th:first-child,
 .alfacore-sticky-list-header table > thead > tr > th:first-child {
-    border-left: 1px solid rgba(56, 189, 248, 0.18) !important;
+    border-left: 1px solid var(--alfa-border-default, rgba(56, 189, 248, 0.18)) !important;
 }
 
 table[data-sticky-list-header] > thead > tr > th:last-child,
 .alfacore-sticky-list-header table > thead > tr > th:last-child {
-    border-right: 1px solid rgba(56, 189, 248, 0.18) !important;
+    border-right: 1px solid var(--alfa-border-default, rgba(56, 189, 248, 0.18)) !important;
 }
 
 table[data-sticky-list-header] > thead button.table-sort,
@@ -98,7 +99,7 @@ table[data-sticky-list-header] > thead button.table-sort.is-active,
 .alfacore-sticky-list-header table > thead button.table-sort:hover,
 .alfacore-sticky-list-header table > thead button.table-sort:focus-visible,
 .alfacore-sticky-list-header table > thead button.table-sort.is-active {
-    color: var(--accent, #35c2ff) !important;
+    color: var(--alfa-accent-hover, var(--accent, #35c2ff)) !important;
 }
 
 table[data-sticky-list-header] > thead button.table-sort:hover .table-sort__icon,

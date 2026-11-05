@@ -31,6 +31,10 @@
     <EmbeddedResource Include="Services\CierreCajaSql\*.sql" />
     <EmbeddedResource Include="Services\DocumentPagination.js" LogicalName="AlfaCore.DocumentPagination.js" />
     <EmbeddedResource Include="Docs\manual_consultas.md" />
+    <EmbeddedResource Include="Docs\manual_contabilidad.md" />
+    <EmbeddedResource Include="Docs\manual_carga_comprobantes.md" />
+    <EmbeddedResource Include="Docs\manual_reportes_comerciales.md" />
+    <EmbeddedResource Include="Docs\manual_seguridad.md" />
     <EmbeddedResource Include="Docs\manual_conciliacion_bancaria.md" />
     <EmbeddedResource Include="Docs\manual_conciliacion_tarjetas.md" />
     <EmbeddedResource Include="Docs\manual_cobranzas.md" />

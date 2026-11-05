@@ -1,3 +1,4 @@
+@implements IDisposable
 @using AlfaCore.Models
 
 @* Smart Search genérico de los tableros de gestión (Contabilidad, Caja y Bancos, Stock).
@@ -45,10 +46,11 @@
         </div>
         @if (TextoChanged.HasDelegate)
         {
-            <input @onfocus="() => { if (!_open) Toggle(); }" type="search"
+            @* Enfocar para escribir no abre el panel (taparía lo que se filtra); el panel se abre con el embudo. *@
+            <input type="search"
                    placeholder="@Placeholder"
                    value="@Texto"
-                   @oninput="e => TextoChanged.InvokeAsync(NullIfEmpty(e.Value?.ToString()))"
+                   @oninput="e => EscribirAsync(e.Value?.ToString())"
                    @onkeydown="HandleKeyDownAsync" />
         }
         else
@@ -64,22 +66,9 @@
     {
         <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="Close"></button>
         <div class="smart-search__panel @(Columnas is null ? "smart-search__panel--compact" : string.Empty)" @onclick:stopPropagation @onkeydown="HandleKeyDownAsync">
-            <div class="smart-search__column">
-                <h4><i class="bi bi-calendar-range"></i> Período</h4>
-                @{ var rangoActivo = GestionRangosFecha.Detectar(Model.FechaDesde, Model.FechaHasta); }
-                @foreach (var rango in GestionRangosFecha.Todos.Where(r => PermitirTodo || r.Key != "todo"))
-                {
-                    <button type="button" class="@OptionClass(rangoActivo == rango.Key)" @onclick="() => ApplyRangoAsync(rango.Key)">@rango.Label</button>
-                }
-                <div class="smart-search__inline">
-                    <label>Desde</label>
-                    <InputDate @bind-Value="Model.FechaDesde" />
-                </div>
-                <div class="smart-search__inline">
-                    <label>Hasta</label>
-                    <InputDate @bind-Value="Model.FechaHasta" />
-                </div>
-            </div>
+            @* Columna Período compartida con el resto del sistema; elegir un rango aplica y cierra el panel. *@
+            <FiltroPeriodo Desde="@Model.FechaDesde" Hasta="@Model.FechaHasta" IncluirTodo="@PermitirTodo"
+                           PeriodoChanged="CambiarPeriodo" RangoElegido="_ => ApplyAsync()" />
 
             @Columnas
 
@@ -137,12 +126,19 @@
         await OnApply.InvokeAsync();
     }
 
-    private async Task ApplyRangoAsync(string key)
+    private void CambiarPeriodo((DateTime? Desde, DateTime? Hasta) periodo) => (Model.FechaDesde, Model.FechaHasta) = periodo;
+
+    /// <summary>Filtra mientras se escribe (aplica solo, sin Enter) cuando la pantalla lo admite.</summary>
+    [Parameter] public bool BuscarAlEscribir { get; set; }
+    /// <summary>La pantalla está consultando: la búsqueda mientras se escribe espera a que termine.</summary>
+    [Parameter] public bool Ocupado { get; set; }
+    private readonly BusquedaDiferida _diferida = new();
+    private async Task EscribirAsync(string? texto)
     {
-        (Model.FechaDesde, Model.FechaHasta) = GestionRangosFecha.Calcular(key);
-        _open = false;
-        await OnApply.InvokeAsync();
+        await TextoChanged.InvokeAsync(NullIfEmpty(texto));
+        if (BuscarAlEscribir) await _diferida.ProgramarAsync(() => OnApply.InvokeAsync(), () => Ocupado);
     }
+    public void Dispose() => _diferida.Dispose();
 
     private async Task ApplyAsync()
     {
@@ -169,8 +165,6 @@
     private void Toggle() => _open = !_open;
     private void Open() => _open = true;
     private void Close() => _open = false;
-
-    private static string OptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

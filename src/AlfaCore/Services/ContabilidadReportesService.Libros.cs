@@ -107,8 +107,10 @@ public sealed partial class ContabilidadReportesService
             """, cancellationToken: ct))).ToList();
         var niveles = await NivelesAsync(cn, ct);
         var largos = filas.Select(x => x.Codigo.Length).Distinct().OrderBy(x => x).ToList();
+        var texto = f.PlanTexto.Trim();
         var cuentas = filas
             .Where(x => (f.PlanIncluirTerceros || x.TipoVista is not ("CL" or "PR")) && (f.PlanIncluirBaja || !x.Baja))
+            .Where(x => texto.Length == 0 || x.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase) || x.Descripcion.Contains(texto, StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.Codigo, StringComparer.Ordinal)
             .Select(x =>
             {

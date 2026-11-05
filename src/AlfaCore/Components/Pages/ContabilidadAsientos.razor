@@ -32,7 +32,12 @@
                         <tr class="as-fila" @onclick="() => AbrirAsync(x.Clave)">
                             <td>@x.Fecha.ToString("dd/MM/yyyy")</td>
                             <td class="mono">@x.Clave.Texto@(x.TipoReg.Trim().Length > 0 ? $" · {x.TipoReg.Trim()}" : "")</td>
-                            <td>@x.Tc @x.Comprobante</td>
+                            <td>@x.Tc @x.Comprobante
+                                @if (!x.Manual)
+                                {
+                                    <ComprobanteVerAccion Tc="@x.Tc" Comprobante="@x.Comprobante" />
+                                }
+                            </td>
                             <td>@x.Detalle</td>
                             <td class="n">@x.Total.ToString("N2", Culture)</td>
                             <td>@x.Usuario</td>

@@ -156,7 +156,7 @@
                                 <td>@item.IdComprobante</td>
                                 <td>@item.RazonSocial</td>
                                 <td style="text-align:right;">@Moneda(item.ImporteDashboard)</td>
-                                <td><a class="action-link" href="@RouteContext.BuildRoute($"/compras/comprobantes?tc={item.Tc}&id={item.IdComprobante}&cuenta={Uri.EscapeDataString(item.Cuenta)}")">Abrir</a></td>
+                                <td><ComprobanteVerAccion Tc="@item.Tc" Comprobante="@item.IdComprobante" /></td>
                             </tr>
                         }
                     </tbody>
