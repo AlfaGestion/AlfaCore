@@ -317,7 +317,26 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
           CASE WHEN @cabecera=1 THEN @cae END,CASE WHEN @cabecera=1 THEN @codigoDgi END,@transmision);
         """;
 
-    private static string Normalizar(string? s) => new((s ?? "").ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+    /// <summary>Mayúsculas, sin tildes, puntos ni espacios: «C.U.I.T.» y «Córdoba» comparan igual que «CUIT» y «CORDOBA».</summary>
+    private static string Normalizar(string? s)
+        => new((s ?? "").Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(c))
+            .Select(char.ToUpperInvariant).ToArray());
+
+    /// <summary>
+    /// Código de provincia (TA_ESTADOS) a partir del nombre del padrón de ARCA, sin tildes ni puntos («BUENOS AIRES.» en la tabla),
+    /// con «Ciudad Autónoma de Buenos Aires» como CAPITAL. Vacío si no se reconoce.
+    /// </summary>
+    internal static string ProvinciaCodigo(string? nombre, IEnumerable<CuentaComercialLookupOptionDto> provincias)
+    {
+        var p = Normalizar(nombre);
+        if (p.Length == 0) return "";
+        var lista = provincias.Select(x => (x.Codigo, Desc: Normalizar(x.Descripcion))).Where(x => x.Desc.Length > 0).ToList();
+        if (p.Contains("CIUDADAUTONOMA") || p.Contains("CAPITALFEDERAL") || p == "CABA" || p == "CAPITAL")
+            return lista.FirstOrDefault(x => x.Desc == "CAPITAL").Codigo ?? "";
+        return lista.FirstOrDefault(x => x.Desc == p).Codigo
+            ?? lista.Where(x => x.Desc.Length >= 5 && p.Contains(x.Desc)).OrderByDescending(x => x.Desc.Length).Select(x => x.Codigo).FirstOrDefault() ?? "";
+    }
 
     /// <summary>Tipo de documento CUIT por descripción (acepta «C.U.I.T.»); si no hay, el código 1, que es el que asume el legacy.</summary>
     internal static string TipoDocumentoCuit(IEnumerable<CuentaComercialLookupOptionDto> tipos)
@@ -342,6 +361,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             ?? lista.FirstOrDefault(x => x.Codigo.Trim() == (monotributo ? "5" : "1"))?.Codigo ?? "";
     }
 
+    private static string ProvinciaPorDefecto(string codigo, IEnumerable<CuentaComercialLookupOptionDto> provincias)
+        => codigo.Length > 0 ? codigo : provincias.FirstOrDefault(x => x.Codigo.Trim() == "1")?.Codigo ?? "   1";
+
     private async Task<string> CrearProveedorAsync(ArcaMisComprobante a, string condicionCompra, CuentaComercialLookupDataDto catalogo, CancellationToken ct)
     {
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var sesion)) throw new ReglaException("Ingresá en la base activa.");
@@ -361,8 +383,10 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             NumeroDocumento = cuit,
             DocumentoTipoCodigo = TipoDocumentoCuit(catalogo.TiposDocumento),
             IvaCodigo = iva,
-            Calle = persona?.Calle ?? "", Localidad = persona?.Localidad ?? "", CodigoPostal = persona?.CodigoPostal ?? "",
-            ProvinciaCodigo = persona?.Provincia is { Length: > 0 } prov ? Opcion(catalogo.Provincias, x => x.Descripcion.Equals(prov, StringComparison.OrdinalIgnoreCase)) : "",
+            // Como el legacy: la calle se recorta (50) y, si el padrón no da localidad o provincia, «A completar» y la provincia 1.
+            Calle = Corto(persona?.Calle ?? "", 50), Localidad = persona?.Localidad is { Length: > 0 } loc ? Corto(loc, 50) : "A completar",
+            CodigoPostal = persona?.CodigoPostal ?? "",
+            ProvinciaCodigo = ProvinciaPorDefecto(ProvinciaCodigo(persona?.Provincia, catalogo.Provincias), catalogo.Provincias),
             PaisCodigo = Opcion(catalogo.Paises, x => x.Descripcion.Contains("ARGENTIN", StringComparison.OrdinalIgnoreCase)),
             MonedaCodigo = Opcion(catalogo.Monedas, x => x.Codigo.Trim() == "1"),
             CondicionComercialCodigo = condicionCompra, MotivoCompraCodigo = "1", FacturaCompraSinOc = true,

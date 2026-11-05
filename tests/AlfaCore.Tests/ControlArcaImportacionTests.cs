@@ -114,6 +114,21 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void ProvinciaDelPadronSeCruzaConLaTablaDeEstados()
+    {
+        // TA_ESTADOS de ALFANET2007.
+        var tabla = new[] { Op("   0", "CAPITAL"), Op("   1", "BUENOS AIRES."), Op("   4", "CORDOBA"), Op("  16", "RIO NEGRO"), Op("  22", "TUCUMAN"), Op("  23", "TIERRA DEL FUEGO"), Op("  99", ".") };
+        Assert.Equal("   1", ControlArcaImportacionService.ProvinciaCodigo("BUENOS AIRES", tabla));
+        Assert.Equal("   0", ControlArcaImportacionService.ProvinciaCodigo("CIUDAD AUTONOMA BUENOS AIRES", tabla));
+        Assert.Equal("   0", ControlArcaImportacionService.ProvinciaCodigo("Ciudad Autónoma de Buenos Aires", tabla));
+        Assert.Equal("   4", ControlArcaImportacionService.ProvinciaCodigo("CÓRDOBA", tabla));
+        Assert.Equal("  16", ControlArcaImportacionService.ProvinciaCodigo("Río Negro", tabla));
+        Assert.Equal("  23", ControlArcaImportacionService.ProvinciaCodigo("TIERRA DEL FUEGO, ANTARTIDA E ISLAS DEL ATLANTICO SUR", tabla));
+        Assert.Equal("", ControlArcaImportacionService.ProvinciaCodigo("", tabla));
+        Assert.Equal("", ControlArcaImportacionService.ProvinciaCodigo("NO EXISTE", tabla));
+    }
+
+    [Fact]
     public void ElControlRegistraConLosMensajesDelLegacy()
     {
         Assert.Null(ArcaTransmisionRegistro.MensajeControl(ControlArcaEstado.Coincide));
