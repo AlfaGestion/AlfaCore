@@ -1306,3 +1306,92 @@
         max-width: none !important;
     }
 }
+
+/* Menú superior con «Más»: la zona izquierda cede ancho y la barra nunca pasa por debajo de los íconos de la
+   derecha; las secciones que no entran van al desplegable (alfa-topbar-nav.js). */
+.alfa-app-topbar__brand {
+    flex: 1 1 auto;
+}
+
+.alfa-app-topbar__global-actions {
+    flex: 0 0 auto;
+}
+
+.alfa-app-topbar__nav {
+    flex: 0 1 auto;
+    overflow: hidden;
+}
+
+.alfa-app-topbar__nav > [hidden],
+.alfa-app-topbar__more[hidden],
+.alfa-app-topbar__more-menu[hidden],
+.alfa-app-topbar__more-menu > [hidden] {
+    display: none !important;
+}
+
+.alfa-app-topbar__more {
+    position: relative;
+    flex: 0 0 auto;
+    margin-left: -10px;
+}
+
+.alfa-app-topbar__more-toggle {
+    cursor: pointer;
+}
+
+.alfa-app-topbar__more-toggle .bi {
+    font-size: 11px;
+}
+
+.alfa-app-topbar__more-toggle[aria-expanded="true"] {
+    color: var(--alfa-text-primary);
+}
+
+.alfa-app-topbar__more-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 2100;
+    display: flex;
+    flex-direction: column;
+    min-width: 220px;
+    padding: 4px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+}
+
+.alfa-app-topbar__more-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: var(--alfa-font-body);
+    text-align: left;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.alfa-app-topbar__more-item:hover,
+.alfa-app-topbar__more-item:focus-visible {
+    background: var(--alfa-state-hover);
+    outline: none;
+}
+
+.alfa-app-topbar__more-item.is-active {
+    background: var(--alfa-state-selected);
+    color: var(--alfa-accent-hover);
+}
+
+.alfa-app-topbar__more-item.is-disabled {
+    color: var(--alfa-text-disabled);
+    cursor: default;
+}

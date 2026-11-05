@@ -100,6 +100,14 @@ Segunda ronda de ajustes:
 
 Integración con origin/main (4 commits: ABM del plan de cuentas, Asientos con `GestionSmartSearch` y últimos asientos, libro de IVA consolidado): en Asientos se adopta el buscador del equipo; en Plan de cuentas el árbol suma «Modificar» por fila y «Nueva cuenta» del ABM.
 
+Menú superior y listas de búsqueda:
+
+| Archivo (relativo a `src/AlfaCore/`) | Cambio |
+|---|---|
+| `Components/Layout/MainLayout.razor`, `wwwroot/js/alfa-topbar-nav.js` (nuevo), `wwwroot/css/alfacore-design.css`, `Components/App.razor` | El menú de secciones del módulo quedaba debajo de los íconos de la derecha cuando tenía muchas secciones (se ocultaban sin aviso). Ahora las que no entran pasan a «Más ▾»; la sección activa siempre queda visible y se recalcula al cambiar el ancho. |
+| `wwwroot/app.css` | La animación de apertura de los paneles de filtros usaba `both` y dejaba un `transform` permanente: las listas de búsqueda (por ejemplo, Cliente en Cartera del cliente) se dibujaban fuera de la pantalla. Pasa a `backwards`. |
+| `wwwroot/js/alfa-lookup-popover.js` | La lista de búsqueda se corrige sola si un contenedor animado o con transform vuelve a desplazarla. |
+
 Pendientes detectados (no introducidos por este cambio): en ALFA NET - PRUEBAS (base 4283) la actualización `2026-11-03-004__crm_oportunidades_adjuntos.sql` falla con error 8152 (datos truncados) y frena las siguientes, incluida `2026-11-04-051`. En Asientos, buscar texto sin período agota los 120 s de espera (AUX_ERR `Asientos/Buscar`).
 
 Decisiones: **Guardar** se mantiene en azul en todo el sistema (Figma lo muestra en verde). Retenciones conserva su panel de filtros dentro de la página.

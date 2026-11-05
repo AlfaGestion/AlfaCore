@@ -1919,7 +1919,9 @@ select {
     box-shadow: 0 22px 70px rgba(0, 0, 0, .38);
     overflow: hidden;
     transform-origin: top left;
-    animation: support-dropdown-in .18s cubic-bezier(.2, .8, .2, 1) both;
+    /* backwards (no both): al terminar no deja transform, que convertía al panel en contenedor de los
+       elementos fixed (listas de búsqueda) y los corría fuera de la pantalla. */
+    animation: support-dropdown-in .18s cubic-bezier(.2, .8, .2, 1) backwards;
 }
 
 .smart-search__column,

@@ -802,41 +802,25 @@ else
                             <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
-                    <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
+                    @* Las secciones que no entran pasan al menú «Más» (alfa-topbar-nav.js); así el menú nunca queda
+                       debajo de los íconos de la derecha, tenga las secciones que tenga. *@
+                    <nav class="alfa-app-topbar__nav" aria-label="Navegación principal" data-topnav>
                         @foreach (var item in PageHeader.Current.TopNavigationItems.Where(TopNavItemVisible))
                         {
-                            if (item.Disabled)
-                            {
-                                <span class="alfa-app-topbar__nav-item is-disabled @(item.Active ? "is-active" : string.Empty)" aria-disabled="true">
-                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
-                                    {
-                                        <i class="bi @item.Icon"></i>
-                                    }
-                                    <span>@item.Label</span>
-                                </span>
-                            }
-                            else if (item.OnClick is not null)
-                            {
-                                <button type="button" class="alfa-app-topbar__nav-item @(item.Active ? "is-active" : string.Empty)" @onclick="() => RunTopNavigationAsync(item)">
-                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
-                                    {
-                                        <i class="bi @item.Icon"></i>
-                                    }
-                                    <span>@item.Label</span>
-                                </button>
-                            }
-                            else
-                            {
-                                <a class="alfa-app-topbar__nav-item @(item.Active ? "is-active" : string.Empty)" href="@item.Url">
-                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
-                                    {
-                                        <i class="bi @item.Icon"></i>
-                                    }
-                                    <span>@item.Label</span>
-                                </a>
-                            }
+                            @RenderTopNavItem(item, false)
                         }
                     </nav>
+                    <div class="alfa-app-topbar__more" data-topnav-more hidden>
+                        <button type="button" class="alfa-app-topbar__nav-item alfa-app-topbar__more-toggle" aria-haspopup="menu" aria-expanded="false" data-topnav-more-toggle>
+                            <span>Más</span><i class="bi bi-chevron-down" aria-hidden="true"></i>
+                        </button>
+                        <div class="alfa-app-topbar__more-menu" role="menu" aria-label="Más secciones" hidden data-topnav-more-menu>
+                            @foreach (var item in PageHeader.Current.TopNavigationItems.Where(TopNavItemVisible))
+                            {
+                                @RenderTopNavItem(item, true)
+                            }
+                        </div>
+                    </div>
                 </div>
                 <div class="alfa-app-topbar__global-actions">
                     @if (string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase))
@@ -1816,6 +1800,33 @@ else
             _pwaRef?.Dispose();
         });
     }
+
+    // Un ítem del menú superior; se dibuja en la barra y otra vez en «Más» (el script muestra cada uno donde entra).
+    private RenderFragment RenderTopNavItem(PageHeaderTopNavItem item, bool enMenu) => __builder =>
+    {
+        var clase = $"{(enMenu ? "alfa-app-topbar__more-item" : "alfa-app-topbar__nav-item")} {(item.Active ? "is-active" : string.Empty)}";
+        if (item.Disabled)
+        {
+            <span class="@clase is-disabled" aria-disabled="true" role="@(enMenu ? "menuitem" : null)" data-topnav-item>
+                @if (!string.IsNullOrWhiteSpace(item.Icon)) { <i class="bi @item.Icon"></i> }
+                <span>@item.Label</span>
+            </span>
+        }
+        else if (item.OnClick is not null)
+        {
+            <button type="button" class="@clase" role="@(enMenu ? "menuitem" : null)" aria-current="@(item.Active ? "page" : null)" data-topnav-item @onclick="() => RunTopNavigationAsync(item)">
+                @if (!string.IsNullOrWhiteSpace(item.Icon)) { <i class="bi @item.Icon"></i> }
+                <span>@item.Label</span>
+            </button>
+        }
+        else
+        {
+            <a class="@clase" href="@item.Url" role="@(enMenu ? "menuitem" : null)" aria-current="@(item.Active ? "page" : null)" data-topnav-item>
+                @if (!string.IsNullOrWhiteSpace(item.Icon)) { <i class="bi @item.Icon"></i> }
+                <span>@item.Label</span>
+            </a>
+        }
+    };
 
     private bool _ayudaGlobalAbierta;
     private void AbrirAyudaGlobal() => _ayudaGlobalAbierta=true;

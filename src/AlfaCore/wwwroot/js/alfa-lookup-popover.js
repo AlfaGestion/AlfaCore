@@ -23,14 +23,23 @@
         const height = Math.min(preferredHeight, availableHeight);
         const left = clamp(rootRect.left, gutter, Math.max(gutter, viewportWidth - rootRect.width - gutter));
 
+        // Si un contenedor con transform/filtro/animación hace de referencia para "fixed", las coordenadas
+        // de pantalla se corren: se descuenta su posición (y su scroll) para que la lista quede bajo el campo.
         results.style.position = "fixed";
-        results.style.left = `${Math.round(left)}px`;
+        const cb = results.offsetParent;
+        let dx = 0, dy = 0;
+        if (cb && cb !== document.body && cb !== document.documentElement) {
+            const cbRect = cb.getBoundingClientRect();
+            dx = cbRect.left + cb.clientLeft - cb.scrollLeft;
+            dy = cbRect.top + cb.clientTop - cb.scrollTop;
+        }
+        results.style.left = `${Math.round(left - dx)}px`;
         results.style.right = "auto";
         results.style.width = `${Math.round(rootRect.width)}px`;
         results.style.maxHeight = `${Math.round(height)}px`;
         results.style.top = openAbove
-            ? `${Math.round(Math.max(gutter, rootRect.top - height - gap))}px`
-            : `${Math.round(rootRect.bottom + gap)}px`;
+            ? `${Math.round(Math.max(gutter, rootRect.top - height - gap) - dy)}px`
+            : `${Math.round(rootRect.bottom + gap - dy)}px`;
         results.style.bottom = "auto";
     }
 
