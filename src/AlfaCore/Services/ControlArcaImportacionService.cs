@@ -309,7 +309,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
     internal static string TipoDocumentoCuit(IEnumerable<CuentaComercialLookupOptionDto> tipos)
     {
         var lista = tipos.ToList();
-        return lista.FirstOrDefault(x => Normalizar(x.Descripcion).Contains("CUIT"))?.Codigo
+        // «C.U.I.T.» exacto primero: hay bases con además «C.U.I.T. (Falta Comprobante)», que no es el de un alta normal.
+        return lista.FirstOrDefault(x => Normalizar(x.Descripcion) == "CUIT")?.Codigo
+            ?? lista.FirstOrDefault(x => Normalizar(x.Descripcion).Contains("CUIT") && !Normalizar(x.Descripcion).Contains("FALTA"))?.Codigo
             ?? lista.FirstOrDefault(x => x.Codigo.Trim() == "1")?.Codigo ?? "";
     }
 

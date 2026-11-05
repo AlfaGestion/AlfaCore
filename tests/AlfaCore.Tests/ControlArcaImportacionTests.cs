@@ -107,6 +107,8 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.Equal("", ControlArcaImportacionService.CondicionIvaPorLetra("A", [Op("9", "OTRA")]));
 
         Assert.Equal("  80", ControlArcaImportacionService.TipoDocumentoCuit([Op("  96", "DNI"), Op("  80", "C.U.I.T.")]));
+        // Tabla real de ALFANET2007: el CUIT es el código 1 y existe «C.U.I.T. (Falta Comprobante)» con código F.
+        Assert.Equal("   1", ControlArcaImportacionService.TipoDocumentoCuit([Op("F", "C.U.I.T. (Falta Comprobante)"), Op("   1", "C.U.I.T."), Op("   3", "D.N.I.")]));
         Assert.Equal("   1", ControlArcaImportacionService.TipoDocumentoCuit([Op("   1", "Documento tributario"), Op("   3", "DNI")]));
         Assert.Equal("", ControlArcaImportacionService.TipoDocumentoCuit([Op("  96", "DNI")]));
     }
