@@ -393,6 +393,7 @@ public class Program
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
+        builder.Services.AddSingleton<IBriefService, BriefService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<TarjetasRecepcionService>();
@@ -2891,6 +2892,8 @@ public class Program
 
         app.MapGet("/carga-viajes/descargar-excel", DescargarViajesExcel);
         app.MapGet("/{idweb}/{idbase:int}/carga-viajes/descargar-excel", DescargarViajesExcel);
+
+        app.MapBriefEndpoints();
 
         app.MapGet("/api/conversaciones", async (
             string? modo,
