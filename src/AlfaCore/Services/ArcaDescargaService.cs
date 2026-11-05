@@ -126,13 +126,16 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             var psi = new ProcessStartInfo(python)
             {
                 WorkingDirectory = Path.GetDirectoryName(script)!, UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
             };
+            // Con la salida redirigida Python usa cp1252 y el print del log revienta con los caracteres de los errores de Playwright.
+            psi.Environment["PYTHONUTF8"] = "1"; psi.Environment["PYTHONIOENCODING"] = "utf-8"; psi.Environment["PLAYWRIGHT_BROWSERS_PATH"] = "0";
             foreach (var a in new[] { script, c.CuitLogin, clave, c.CuitRepresentado, periodo, tipo, carpeta.TrimEnd('\\', '/'), visible ? "SI" : "NO" })
                 psi.ArgumentList.Add(a);
             var inicio = DateTime.Now;
             using var p = Process.Start(psi) ?? throw new ReglaException("No se pudo iniciar el script de descarga.");
-            _ = p.StandardOutput.ReadToEndAsync(CancellationToken.None); _ = p.StandardError.ReadToEndAsync(CancellationToken.None);
+            _ = p.StandardOutput.ReadToEndAsync(CancellationToken.None); var errores = p.StandardError.ReadToEndAsync(CancellationToken.None);
             using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct); limite.CancelAfter(Timeout);
             try { await p.WaitForExitAsync(limite.Token); }
             catch (OperationCanceledException)
@@ -141,12 +144,21 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
                 if (ct.IsCancellationRequested) throw;
                 throw new ReglaException("El script superó el tiempo máximo (15 minutos) y se canceló.");
             }
-            if (p.ExitCode != 0) throw new ReglaException(MensajeSalida(p.ExitCode) + $" Revisá arca_comprobantes.log en {carpeta}.");
+            if (p.ExitCode != 0) throw new ReglaException(MensajeSalida(p.ExitCode) + DetalleError(await errores.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : "", CancellationToken.None), clave)
+                + $" Revisá arca_comprobantes.log en {carpeta}.");
             var info = new FileInfo(destino);
             if (!info.Exists || info.LastWriteTime < inicio.AddMinutes(-1)) throw new ReglaException("El script terminó pero no dejó el archivo esperado: " + info.Name);
             return new ArcaArchivoDescargado(info.Name, recibidos, periodo, info.LastWriteTime, info.Length);
         }
         finally { semaforo.Release(); }
+    }
+
+    /// <summary>Última línea de lo que escribió el script por stderr (sin la clave), para ver por qué se cortó.</summary>
+    internal static string DetalleError(string stderr, string clave)
+    {
+        var linea = (stderr ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";
+        if (clave.Length > 0) linea = linea.Replace(clave, "***");
+        return linea.Length == 0 ? "" : " Detalle: " + (linea.Length > 300 ? linea[..300] : linea) + ".";
     }
 
     internal static string MensajeSalida(int codigo) => codigo switch

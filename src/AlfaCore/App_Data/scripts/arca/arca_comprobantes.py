@@ -110,7 +110,11 @@ class Logger:
 
     def write(self, mensaje: str) -> None:
         linea = f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {mensaje}"
-        print(linea, flush=True)
+        try:
+            print(linea, flush=True)
+        except UnicodeError:
+            # Con la salida redirigida (cp1252) un mensaje con caracteres especiales no debe cortar el proceso.
+            print(linea.encode("ascii", "replace").decode("ascii"), flush=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(linea + "\n")
 
