@@ -12,6 +12,9 @@ public interface IControlArcaService
 {
     Task<ControlArcaResultado> ControlarAsync(byte[] archivo, string nombreArchivo, CancellationToken ct = default);
     Task<ContabilidadArchivo> ExportarAsync(ControlArcaResultado resultado, CancellationToken ct = default);
+    /// <summary>Últimas importaciones y controles de ARCA (MV_Transmisiones, las mismas tablas del legacy).</summary>
+    Task<IReadOnlyList<ControlArcaTransmision>> HistorialAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ControlArcaTransmisionDetalle>> HistorialDetalleAsync(int transmision, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -231,6 +234,34 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
 
     private static string Norm(string s) => new string((s ?? "").Normalize(NormalizationForm.FormD)
         .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).Replace('�', ' ').Trim().ToLowerInvariant();
+
+    // ── Historial ───────────────────────────────────────────────────────────────────────────────
+
+    public Task<IReadOnlyList<ControlArcaTransmision>> HistorialAsync(CancellationToken ct = default)
+        => EjecutarAsync<IReadOnlyList<ControlArcaTransmision>>("Historial", async cn =>
+        {
+            var filas = await cn.QueryAsync<(int Transmision, DateTime Fecha, string? Hora, string? Usuario, string? Observaciones, string? Archivo, double? Enviados, double? Recibidos, string? Log)>(
+                new CommandDefinition("""
+                    SELECT TOP (60) Transmision, Fecha, Hora, Responsable_Recepcion, LTRIM(RTRIM(Observaciones)), LTRIM(RTRIM(Ubicacion_Archivo)),
+                           Registros_enviados, Registros_Recibidos, CAST([LOG] AS nvarchar(4000))
+                    FROM dbo.MV_Transmisiones WHERE Tipo='R' AND Observaciones LIKE '%ARCA%' AND ISNULL(Anulado,0)=0
+                    ORDER BY Fecha DESC, Transmision DESC;
+                    """, cancellationToken: ct));
+            return filas.Select(f => new ControlArcaTransmision(f.Transmision, f.Fecha, f.Hora ?? "", f.Usuario?.Trim() ?? "", f.Observaciones ?? "", f.Archivo ?? "",
+                (int)(f.Enviados ?? 0), (int)(f.Recibidos ?? 0), f.Log ?? "")).ToList();
+        }, ct);
+
+    public Task<IReadOnlyList<ControlArcaTransmisionDetalle>> HistorialDetalleAsync(int transmision, CancellationToken ct = default)
+        => EjecutarAsync<IReadOnlyList<ControlArcaTransmisionDetalle>>("HistorialDetalle", async cn =>
+        {
+            var filas = await cn.QueryAsync<(string? Tc, string? Sucursal, string? Numero, string? Letra, string? Cuenta, string? Nombre, DateTime? Fecha, decimal? Importe, string? Mensaje)>(
+                new CommandDefinition("""
+                    SELECT TOP (1000) TC, SUCURSAL, NUMERO, LETRA, LTRIM(RTRIM(CUENTA)), LTRIM(RTRIM(NOMBRE)), FECHA, IMPORTE, LTRIM(RTRIM(MENSAJE))
+                    FROM dbo.AUX_MV_CTROL_CPTE WHERE TRANSMISION=@transmision ORDER BY id;
+                    """, new { transmision }, cancellationToken: ct));
+            return filas.Select(f => new ControlArcaTransmisionDetalle($"{f.Tc?.Trim()} {f.Sucursal?.Trim()}-{f.Numero?.Trim()} {f.Letra?.Trim()}".Trim(),
+                f.Cuenta ?? "", f.Nombre ?? "", f.Fecha, f.Importe ?? 0, f.Mensaje ?? "")).ToList();
+        }, ct);
 
     // ── Comparación ─────────────────────────────────────────────────────────────────────────────
 

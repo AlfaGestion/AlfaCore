@@ -83,8 +83,11 @@ public sealed class ArcaDescargaHostedService(IServiceProvider services, IConfig
                         var archivo = await ArcaDescargaService.DescargarEnConexionAsync(cn, servidor, recibidos, p.Year, p.Month, visible: false, ct);
                         var bytes = await File.ReadAllBytesAsync(Path.Combine(servidor.Carpeta, archivo.Nombre), ct);
                         var r = await ControlArcaService.ControlarEnConexionAsync(cn, ControlArcaService.Leer(bytes, archivo.Nombre), ct);
+                        var registro = "";
+                        try { registro = $" (transmisión {await ArcaTransmisionRegistro.RegistrarControlAsync(cn, "AlfaCore (automático)", archivo.Nombre, r, ct)})"; }
+                        catch (Exception ex) when (ex is SqlException or InvalidOperationException) { registro = " (no se pudo registrar el historial)"; }
                         partes.Add($"{p:MM/yyyy}: {r.ComprobantesArca} en ARCA, {r.Cantidad(ControlArcaEstado.FaltaEnSistema)} faltan, " +
-                                   $"{r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo)} con diferencias");
+                                   $"{r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo)} con diferencias{registro}");
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                     catch (Exception ex) when (ex is InvalidOperationException or IOException or SqlException)

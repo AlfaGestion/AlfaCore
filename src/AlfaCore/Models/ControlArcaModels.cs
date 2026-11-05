@@ -130,7 +130,16 @@ public sealed class ControlArcaImportacionSolicitud
     public string Unidad { get; set; } = string.Empty;
     public ControlArcaProveedorModo ProveedoresNuevos { get; set; } = ControlArcaProveedorModo.Alta;
     public string CondicionCompra { get; set; } = string.Empty;
+    /// <summary>Nombre del archivo de ARCA que se está importando (queda en MV_Transmisiones.Ubicacion_Archivo).</summary>
+    public string Archivo { get; set; } = string.Empty;
 }
+
+/// <summary>Una corrida registrada en MV_Transmisiones (importación o control de ARCA).</summary>
+public sealed record ControlArcaTransmision(int Numero, DateTime Fecha, string Hora, string Usuario, string Observaciones, string Archivo,
+    int Enviados, int Recibidos, string Log);
+
+/// <summary>Un comprobante de una corrida (AUX_MV_CTROL_CPTE).</summary>
+public sealed record ControlArcaTransmisionDetalle(string Comprobante, string Cuenta, string Nombre, DateTime? Fecha, decimal Importe, string Mensaje);
 
 public sealed record ControlArcaAsientoLinea(string Cuenta, string DebeHaber, decimal Importe);
 

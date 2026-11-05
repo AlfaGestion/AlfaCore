@@ -114,6 +114,17 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void ElControlRegistraConLosMensajesDelLegacy()
+    {
+        Assert.Null(ArcaTransmisionRegistro.MensajeControl(ControlArcaEstado.Coincide));
+        Assert.Equal("EXISTE EN ARCHIVO NO EN SISTEMA", ArcaTransmisionRegistro.MensajeControl(ControlArcaEstado.FaltaEnSistema));
+        Assert.Equal("EXISTE EN SISTEMA Y NO EN ARCHIVO", ArcaTransmisionRegistro.MensajeControl(ControlArcaEstado.FaltaEnArca));
+        Assert.Equal("ERROR, DIFIERE IMPORTES", ArcaTransmisionRegistro.MensajeControl(ControlArcaEstado.DifiereImporte));
+        Assert.Equal("CORRECTO - SE DIO DE ALTA EN EL SISTEMA", ArcaTransmisionRegistro.MensajeAlta);
+        Assert.Equal("FCC", ControlArcaImportacionService.Tc("FC"));
+    }
+
+    [Fact]
     public void LimpiezaBorraSoloLoViejoConNombresDelScript()
     {
         var carpeta = Path.Combine(Path.GetTempPath(), "arca-lim-" + Guid.NewGuid().ToString("N"));

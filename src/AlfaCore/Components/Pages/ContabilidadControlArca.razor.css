@@ -31,6 +31,8 @@
 .ca-descarga { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--alfa-border-default);
     border-radius: var(--alfa-radius-md); background: var(--alfa-bg-surface); color: var(--alfa-text-primary); }
 .ca-progreso { display: inline-flex; align-items: center; gap: 6px; color: var(--alfa-color-text-muted, inherit); font-size: 0.85rem; }
+.ca-hist__titulo { margin: 14px 0 6px; font-size: 0.95rem; font-weight: 600; }
+.ca-sel-fila { background: color-mix(in srgb, var(--alfa-color-primary, #4c9aff) 14%, transparent); }
 .ca-descarga__fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .ca-input { height: 34px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--alfa-border-default);
     background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font-size: 13px; color-scheme: light dark; }

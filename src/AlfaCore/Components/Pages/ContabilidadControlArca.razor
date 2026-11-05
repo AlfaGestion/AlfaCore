@@ -232,6 +232,56 @@
     </Footer>
 </AlfaDialog>
 
+@* ── Historial de importaciones y controles (MV_Transmisiones / AUX_MV_CTROL_CPTE, como el legacy) ── *@
+<AlfaDialog Open="@_histAbierto" Title="Historial de ARCA" Size="AlfaDialogSize.Lg" Loading="@_histBusy"
+            Description="Importaciones y controles de Mis Comprobantes. Es el mismo registro que usaba Importar Comprobantes del Alfa Gestión."
+            ErrorMessage="@_histError" OnClose="() => _histAbierto = false">
+    <ChildContent>
+        <div class="ca-tablawrap"><div class="ca-tablascroll">
+            <table class="ca-tabla">
+                <thead><tr><th>Nº</th><th>Fecha</th><th>Usuario</th><th>Qué</th><th class="n">ARCA</th><th class="n">Altas</th><th>Resumen</th></tr></thead>
+                <tbody>
+                @foreach (var t in _hist)
+                {
+                    <tr class="@(_histSel == t.Numero ? "ca-sel-fila" : null)" @onclick="() => AbrirTransmisionAsync(t.Numero)" style="cursor:pointer">
+                        <td>@t.Numero</td>
+                        <td>@t.Fecha.ToString("dd/MM/yyyy") @t.Hora</td>
+                        <td>@t.Usuario</td>
+                        <td>@t.Observaciones<small>@t.Archivo</small></td>
+                        <td class="n">@t.Enviados</td>
+                        <td class="n">@t.Recibidos</td>
+                        <td class="ca-obs">@(t.Log.Length > 90 && !t.Log.Contains('\n') ? t.Log[..90] + "…" : t.Log.Split('\n')[0])</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div></div>
+        @if (_hist.Count == 0 && !_histBusy) { <small class="ca-nota">Todavía no hay importaciones ni controles registrados.</small> }
+        @if (_histSel is { } sel)
+        {
+            <h4 class="ca-hist__titulo">Transmisión @sel</h4>
+            <div class="ca-tablawrap"><div class="ca-tablascroll">
+                <table class="ca-tabla">
+                    <thead><tr><th>Comprobante</th><th>Fecha</th><th>Nombre</th><th>Cuenta</th><th class="n">Importe</th><th>Resultado</th></tr></thead>
+                    <tbody>
+                    @foreach (var d in _histDetalle)
+                    {
+                        <tr>
+                            <td>@d.Comprobante</td><td>@d.Fecha?.ToString("dd/MM/yyyy")</td><td>@d.Nombre</td><td>@d.Cuenta</td>
+                            <td class="n">@d.Importe.ToString("N2", Culture)</td>
+                            <td class="ca-obs"><span class="@(d.Mensaje.StartsWith("CORRECTO") ? "ca-ok" : "ca-mal")">@d.Mensaje</span></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></div>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => _histAbierto = false">Cerrar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
 @* ── Configuración de la descarga ── *@
 <AlfaDialog Open="@(_cfgEdit is not null)" Title="Descarga de Mis Comprobantes" Size="AlfaDialogSize.Lg" Loading="@_cfgBusy"
             Description="Mismos datos que Importar Comprobantes del Alfa Gestión: lo que se configura acá vale para los dos."
@@ -273,6 +323,12 @@
     private AppUiMessage? _feedback;
     private bool _busy, _disposed, _exportando, _descargando;
     private int _segundos;
+    // Historial
+    private bool _histAbierto, _histBusy;
+    private string? _histError;
+    private int? _histSel;
+    private IReadOnlyList<ControlArcaTransmision> _hist = [];
+    private IReadOnlyList<ControlArcaTransmisionDetalle> _histDetalle = [];
     private PageHeaderConfig? _header;
     // Descarga
     private ArcaDescargaConfig? _cfg, _cfgEdit;
@@ -343,6 +399,29 @@
         var ultima = new[] { c.AutoRecibidos && c.UltimaAutoRecibidos.Length > 0 ? "Recibidos " + c.UltimaAutoRecibidos : null,
                              c.AutoEmitidos && c.UltimaAutoEmitidos.Length > 0 ? "Emitidos " + c.UltimaAutoEmitidos : null }.OfType<string>().ToList();
         return $"Todos los días desde las {c.HoraAuto}: {string.Join(" y ", tipos)}. " + (ultima.Count > 0 ? "Última: " + string.Join(" | ", ultima) : "Todavía no corrió.");
+    }
+
+    private async Task AbrirHistorialAsync()
+    {
+        _histAbierto = true; _histBusy = true; _histError = null; _histSel = null; _histDetalle = [];
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.HistorialAsync(), "Historial de ARCA");
+            if (r.Success) _hist = r.Value!; else _histError = r.Feedback?.Message;
+        }
+        finally { _histBusy = false; if (!_disposed) StateHasChanged(); }
+    }
+
+    private async Task AbrirTransmisionAsync(int numero)
+    {
+        _histSel = numero; _histBusy = true; await InvokeAsync(StateHasChanged);
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.HistorialDetalleAsync(numero), "Detalle de la transmisión");
+            if (r.Success) _histDetalle = r.Value!; else _histError = r.Feedback?.Message;
+        }
+        finally { _histBusy = false; if (!_disposed) StateHasChanged(); }
     }
 
     private Task AbrirConfig()
@@ -459,7 +538,7 @@
             _solicitud = new ControlArcaImportacionSolicitud
             {
                 Comprobantes = comprobantes, CuentaCompras = ctx.CuentaCompras, CuentaIva = ctx.CuentaIva, CuentaOtrosTributos = ctx.CuentaOtrosTributos,
-                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra,
+                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra, Archivo = _archivo ?? string.Empty,
                 ProveedoresNuevos = ctx.PuedeCrearProveedores ? ControlArcaProveedorModo.Alta
                     : ctx.CuentaProveedoresVarios.Length > 0 ? ControlArcaProveedorModo.Varios : ControlArcaProveedorModo.Omitir
             };
@@ -521,6 +600,8 @@
         if (_r is { } r && PuedeImportar(r))
             acciones.Add(new() { Key = "importar", Label = _sel.Count > 0 ? $"Importar faltantes ({_sel.Count})" : "Importar faltantes", Icon = "bi-box-arrow-in-down",
                 Style = PageHeaderActionStyle.Primary, Disabled = _busy || _sel.Count == 0, OnClick = AbrirImportacionAsync });
+        acciones.Add(new() { Key = "historial", Label = "Historial", Icon = "bi-clock-history", Style = PageHeaderActionStyle.Secondary,
+            Disabled = _busy, OnClick = AbrirHistorialAsync });
         acciones.Add(new() { Key = "config", Label = "Configurar descarga", Icon = "bi-gear", Style = PageHeaderActionStyle.Secondary,
             Disabled = _busy || _cfg is null, OnClick = AbrirConfig });
         acciones.Add(new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Secondary,

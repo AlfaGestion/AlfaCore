@@ -94,6 +94,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             CuentaComercialLookupDataDto? catalogo = null;
             var creados = new Dictionary<string, string>();
             var resultados = new List<ControlArcaImportacionFila>();
+            // Mismas tablas que el legacy: MV_Transmisiones (cabecera) y AUX_MV_CTROL_CPTE (una fila por comprobante).
+            var transmision = await ArcaTransmisionRegistro.AbrirAsync(cn, users.GetCurrentUserName(), s.Archivo, ArcaTransmisionRegistro.ObservacionRecibidos,
+                s.Comprobantes.Min(c => c.Fecha), s.Comprobantes.Max(c => c.Fecha), s.Comprobantes.Count, ct);
             foreach (var a in s.Comprobantes)
             {
                 ct.ThrowIfCancellationRequested();
@@ -120,6 +123,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                                 catalogo ??= await cuentas.GetLookupDataAsync(CuentaComercialTipo.Proveedor, ct);
                                 var codigo = await CrearProveedorAsync(a, s.CondicionCompra, catalogo, ct);
                                 creados[Digitos(a.DocContraparte)] = codigo;
+                                await ArcaTransmisionRegistro.MarcarCuentaAsync(cn, transmision, codigo, ct);
                                 prov = await ProveedorPorCodigoAsync(cn, codigo, ct, null) ?? throw new ReglaException("No se encontró el proveedor recién creado.");
                                 fila.Resultado = $"Proveedor {codigo} creado. ";
                                 break;
@@ -129,7 +133,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                         if (bloqueo is not null) { fila.Resultado += bloqueo; continue; }
                     }
                     fila.Proveedor = prov.Codigo; fila.ProveedorNombre = prov.Nombre;
-                    var asiento = await GrabarAsync(cn, a, prov, s, cfg, ct);
+                    var asiento = await GrabarAsync(cn, a, prov, s, cfg, transmision, ct);
                     fila.Importado = true;
                     fila.Resultado += $"Importado: asiento {asiento}.";
                 }
@@ -146,9 +150,19 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                 }
             }
             var importados = resultados.Count(r => r.Importado);
+            var log = new System.Text.StringBuilder();
+            for (var i = 0; i < resultados.Count; i++)
+            {
+                var r = resultados[i]; var a = s.Comprobantes[i];
+                var mensaje = r.Importado ? ArcaTransmisionRegistro.MensajeAlta : r.Resultado.Trim();
+                await ArcaTransmisionRegistro.GrabarControlAsync(cn, transmision, Tc(a.Clase), a.PuntoVenta.ToString("0000", CultureInfo.InvariantCulture),
+                    a.NumeroDesde.ToString("00000000", CultureInfo.InvariantCulture), a.Letra, a.Total, r.Proveedor, a.Fecha, r.ProveedorNombre.Length > 0 ? r.ProveedorNombre : a.NombreContraparte, mensaje, ct);
+                log.AppendLine($"{r.Comprobante} {a.NombreContraparte}: {mensaje}");
+            }
+            await ArcaTransmisionRegistro.CerrarAsync(cn, transmision, importados, log.ToString(), ct);
             await events.LogAuditAsync("ControlArca", "ImportarFaltantes", "C_MV_CPTE", $"{importados} de {resultados.Count}",
-                $"Importó {importados} de {resultados.Count} comprobantes recibidos de ARCA al libro de IVA compras.",
-                new { s.CuentaCompras, s.CuentaIva, s.CuentaOtrosTributos, s.Unidad, s.ProveedoresNuevos,
+                $"Importó {importados} de {resultados.Count} comprobantes recibidos de ARCA al libro de IVA compras (transmisión {transmision}).",
+                new { Transmision = transmision, s.CuentaCompras, s.CuentaIva, s.CuentaOtrosTributos, s.Unidad, s.ProveedoresNuevos,
                       Comprobantes = resultados.Select(r => new { r.Comprobante, r.Cuit, r.Importado, r.Resultado }) }, CancellationToken.None);
             return resultados;
         }, ct);
@@ -221,7 +235,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
 
     // ── Grabación ───────────────────────────────────────────────────────────────────────────────
 
-    private async Task<int> GrabarAsync(SqlConnection cn, ArcaMisComprobante a, Proveedor prov, ControlArcaImportacionSolicitud s, Config cfg, CancellationToken ct)
+    private async Task<int> GrabarAsync(SqlConnection cn, ArcaMisComprobante a, Proveedor prov, ControlArcaImportacionSolicitud s, Config cfg, int transmision, CancellationToken ct)
     {
         using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
         CommandDefinition Q(string sql, object? args = null) => new(sql, args, tx, commandTimeout: 60, cancellationToken: ct);
@@ -250,7 +264,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         var condIva = prov.CondicionIva.Length > 0 ? prov.CondicionIva : a.Letra == "C" ? "5" : "1";
         var p = new DynamicParameters(new
         {
-            tc, tcAsiento, id, suc, num, letra = a.Letra, cuenta = prov.Codigo, nombre = Corto(prov.Nombre, 50), detalle = Corto(prov.Nombre, 200),
+            transmision, tc, tcAsiento, id, suc, num, letra = a.Letra, cuenta = prov.Codigo, nombre = Corto(prov.Nombre, 50), detalle = Corto(prov.Nombre, 200),
             cuit = Digitos(a.DocContraparte), fecha = a.Fecha.Date, total = a.Total, periodo, mes = a.Fecha.Month, asiento, tipo = tipoReg,
             unidad = CodigoPk.Format(s.Unidad, 4), motivo = CodigoPk.Format(prov.Motivo.Length > 0 ? prov.Motivo : "1", 4), ivaCond = CodigoPk.Format(condIva, 4),
             provincia = CodigoPk.Format(prov.Provincia, 4), usuario = UsuarioImportacion, liva,
@@ -262,9 +276,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         await cn.ExecuteAsync(Q("""
             INSERT dbo.C_MV_CPTE(TC,IDCOMPROBANTE,CUENTA,FECHA,VENCIMIENTO,FechaSubdiario,NOMBRE,DOMICILIO,LOCALIDAD,IDPROVINCIA,DOCUMENTOTIPO,DOCUMENTONUMERO,
               CONDICIONIVA,IMPORTE,ImporteIva,NetoGravado,NetoNoGravado,AlicIva,ImporteIva2,AlicIva2,SUCURSAL,NUMERO,LETRA,UNEGOCIO,MONEDA,COTIZACION,
-              USUARIO,FechaHora_Grabacion,COMENTARIOS)
+              USUARIO,FechaHora_Grabacion,Transmision,COMENTARIOS)
             VALUES(@tc,@id,@cuenta,@fecha,@fecha,@fecha,@nombre,'.','.',@provincia,'   1',@cuit,@ivaCond,@total,@ivaTotal,@netoCpte,@noGravCpte,
-              @tasa1,ABS(@iva2),@tasa2,@suc,@num,@letra,@unidad,'   1',1,@usuario,GETDATE(),N'Importado desde ARCA (Mis Comprobantes Recibidos) por AlfaCore');
+              @tasa1,ABS(@iva2),@tasa2,@suc,@num,@letra,@unidad,'   1',1,@usuario,GETDATE(),@transmision,N'Importado desde ARCA (Mis Comprobantes Recibidos) por AlfaCore');
             """, p));
         foreach (var (linea, i) in armado.Lineas.Select((l, i) => (l, i)))
         {
@@ -289,7 +303,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         INSERT dbo.MV_ASIENTOS(CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,DETALLE,TC,SUCURSAL,NUMERO,LETRA,[DEBE-HABER],IMPORTE,MONEDA,COTIZACION,
           PERIODO,CABIMPORTE,VENCIMIENTO,TIPO_REG,FechaHora_Grabacion,FechaSubdiario,USUARIO_LOGEADO,UNEGOCIO,IDMOTIVO,CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,
           LIVA_TIPO,LIVA_TOTAL,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_EXENTO,LIVA_AlicIVA,LIVA_ImpIVA,LIVA_AlicIVA2,LIVA_ImpIVA2,LIVA_AlicIVA3,LIVA_ImpIVA3,
-          LIVA_AlicIVA4,LIVA_ImpIVA4,LIVA_IMPIVAREC,LIVA_ALICIVAREC,LIVA_Ret_Perc,LIVA_Ret_IBtos,LIVA_Ret_Ganancias,NroCAI,CodCpteDGI)
+          LIVA_AlicIVA4,LIVA_ImpIVA4,LIVA_IMPIVAREC,LIVA_ALICIVAREC,LIVA_Ret_Perc,LIVA_Ret_IBtos,LIVA_Ret_Ganancias,NroCAI,CodCpteDGI,Transmision)
         VALUES(@lineaCuenta,@secuencia,@mes,@asiento,@fecha,@detalle,@tcAsiento,@suc,@num,@letra,@sentido,@importe,'   1',1,
           @periodo,@total,@fecha,@tipo,GETDATE(),@fecha,@usuario,@unidad,@motivo,
           CASE WHEN @cabecera=1 THEN @cuenta END,CASE WHEN @cabecera=1 THEN @nombre END,CASE WHEN @cabecera=1 THEN @cuit END,CASE WHEN @cabecera=1 THEN @ivaCond END,
@@ -300,7 +314,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
           CASE WHEN @cabecera=1 THEN @tasa3 ELSE 0 END,CASE WHEN @cabecera=1 THEN @iva3 ELSE 0 END,
           CASE WHEN @cabecera=1 THEN @tasa4 ELSE 0 END,CASE WHEN @cabecera=1 THEN @iva4 ELSE 0 END,0,0,
           CASE WHEN @cabecera=1 THEN @perc ELSE 0 END,0,0,
-          CASE WHEN @cabecera=1 THEN @cae END,CASE WHEN @cabecera=1 THEN @codigoDgi END);
+          CASE WHEN @cabecera=1 THEN @cae END,CASE WHEN @cabecera=1 THEN @codigoDgi END,@transmision);
         """;
 
     private static string Normalizar(string? s) => new((s ?? "").ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
