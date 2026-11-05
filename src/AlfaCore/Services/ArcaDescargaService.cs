@@ -144,10 +144,17 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
                 if (ct.IsCancellationRequested) throw;
                 throw new ReglaException("El script superó el tiempo máximo (15 minutos) y se canceló.");
             }
-            if (p.ExitCode != 0) throw new ReglaException(MensajeSalida(p.ExitCode) + DetalleError(await errores.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : "", CancellationToken.None), clave)
-                + $" Revisá arca_comprobantes.log en {carpeta}.");
-            var info = new FileInfo(destino);
-            if (!info.Exists || info.LastWriteTime < inicio.AddMinutes(-1)) throw new ReglaException("El script terminó pero no dejó el archivo esperado: " + info.Name);
+            if (p.ExitCode != 0)
+            {
+                var stderr = await errores.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : "", CancellationToken.None);
+                var detalle = DetalleError(stderr, clave);
+                if (detalle.Length == 0) detalle = DetalleError(UltimoErrorLog(carpeta), clave);
+                throw new ReglaException(MensajeSalida(p.ExitCode) + detalle + $" Revisá arca_comprobantes.log en {carpeta}.");
+            }
+            // Con Excel en el servidor el script deja .xls (formato del importador del legacy); sin Excel deja el .xlsx oficial de ARCA.
+            var info = new[] { destino, Path.ChangeExtension(destino, ".xlsx") }.Select(f => new FileInfo(f))
+                .Where(f => f.Exists && f.LastWriteTime >= inicio.AddMinutes(-1)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault()
+                ?? throw new ReglaException("El script terminó pero no dejó el archivo esperado: " + Path.GetFileName(destino));
             return new ArcaArchivoDescargado(info.Name, recibidos, periodo, info.LastWriteTime, info.Length);
         }
         finally { semaforo.Release(); }
@@ -159,6 +166,17 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         var linea = (stderr ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim() ?? "";
         if (clave.Length > 0) linea = linea.Replace(clave, "***");
         return linea.Length == 0 ? "" : " Detalle: " + (linea.Length > 300 ? linea[..300] : linea) + ".";
+    }
+
+    /// <summary>Última línea «ERROR …» que dejó el script en su log (el motivo real cuando termina con código 9).</summary>
+    internal static string UltimoErrorLog(string carpeta)
+    {
+        try
+        {
+            var log = Path.Combine(carpeta, "arca_comprobantes.log");
+            return File.Exists(log) ? File.ReadLines(log).Reverse().FirstOrDefault(l => l.Contains("] ERROR ")) ?? "" : "";
+        }
+        catch (IOException) { return ""; }
     }
 
     internal static string MensajeSalida(int codigo) => codigo switch
@@ -180,6 +198,7 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             .Select(f => (f, m: NombreArchivo.Match(f.Name)))
             .Where(x => x.m.Success && (cuit.Length == 0 || x.m.Groups[2].Value == cuit))
             .Select(x => new ArcaArchivoDescargado(x.f.Name, x.m.Groups[1].Value.Equals("RECIBIDOS", StringComparison.OrdinalIgnoreCase), x.m.Groups[3].Value, x.f.LastWriteTime, x.f.Length))
+            .GroupBy(x => (x.Recibidos, x.Periodo)).Select(g => g.OrderByDescending(x => x.Fecha).First())
             .OrderByDescending(x => x.Periodo).ThenBy(x => x.Recibidos ? 0 : 1).Take(48).ToList();
     }
 

@@ -55,7 +55,18 @@
                             @(_descargando ? "Descargando de ARCA…" : "Descargar y comparar")
                         </AlfaButton>
                     </div>
-                    <span>@AutoTexto(_cfg)</span>
+                    @if (_descargando)
+                    {
+                        <span class="ca-progreso" role="status" aria-live="polite">
+                            <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                            @(_segundos < 8 ? "Iniciando el navegador en el servidor…" : "Entrando a ARCA y bajando Mis Comprobantes…")
+                            Puede tardar 1 a 3 minutos, no cierres la pantalla. Van @_segundos s.
+                        </span>
+                    }
+                    else
+                    {
+                        <span>@AutoTexto(_cfg)</span>
+                    }
                 }
             </div>
             @if (_archivos.Count > 0)
@@ -261,6 +272,7 @@
     private byte[]? _bytes;
     private AppUiMessage? _feedback;
     private bool _busy, _disposed, _exportando, _descargando;
+    private int _segundos;
     private PageHeaderConfig? _header;
     // Descarga
     private ArcaDescargaConfig? _cfg, _cfgEdit;
@@ -367,15 +379,29 @@
         if (_busy || _cfg is null) return;
         if (!DateTime.TryParseExact(_periodo + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var p))
         { _feedback = AppUiMessage.Warning("Período", "Elegí el mes a descargar."); return; }
-        _busy = true; _descargando = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        _busy = true; _descargando = true; _segundos = 0; _feedback = null; UpdateHeader(); StateHasChanged();
+        using var reloj = new CancellationTokenSource();
+        _ = RelojAsync(reloj.Token);
         try
         {
             var r = await UiOps.RunAsync(() => Descarga.DescargarAsync(_descargaRecibidos, p.Year, p.Month), "Descarga de ARCA");
+            reloj.Cancel(); _descargando = false; StateHasChanged();
             if (!r.Success) { _feedback = r.Feedback; return; }
             _archivos = await Descarga.ArchivosAsync();
             await ControlarAsync(await Descarga.LeerArchivoAsync(r.Value!.Nombre), r.Value.Nombre);
         }
-        finally { _busy = false; _descargando = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+        finally { reloj.Cancel(); _busy = false; _descargando = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    /// <summary>Cuenta los segundos de la descarga para que se vea que no está colgado (el script tarda 1 a 3 minutos).</summary>
+    private async Task RelojAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var t = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            while (await t.WaitForNextTickAsync(ct)) { _segundos++; if (_disposed) return; await InvokeAsync(StateHasChanged); }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task CompararDescargadoAsync(ArcaArchivoDescargado a)

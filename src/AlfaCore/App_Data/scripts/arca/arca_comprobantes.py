@@ -766,6 +766,17 @@ def extraer_tabla_completa(page: Page, log: Logger) -> tuple[list[str], list[lis
 XL_EXCEL8 = 56
 
 
+class ExcelNoDisponible(Exception):
+    """Excel no esta instalado/registrado (COM) en esta maquina, p. ej. un servidor sin Office."""
+
+
+def abrir_excel():
+    try:
+        return win32.DispatchEx("Excel.Application")
+    except Exception as exc:
+        raise ExcelNoDisponible(str(exc)) from exc
+
+
 def convertir_a_xls_sheet1(origen: Path, destino_xls: Path, log: Logger) -> Path:
     """
     Abre `origen` (cualquier formato que Excel pueda leer: .xlsx, .xls, o el
@@ -774,7 +785,7 @@ def convertir_a_xls_sheet1(origen: Path, destino_xls: Path, log: Logger) -> Path
     como .xls (Excel 97-2003) en `destino_xls`. Borra `origen` si quedo en una
     ruta distinta a la final.
     """
-    excel = win32.DispatchEx("Excel.Application")
+    excel = abrir_excel()
     excel.Visible = False
     excel.DisplayAlerts = False
     libro = None
@@ -853,9 +864,20 @@ def descargar_excel_oficial(page: Page, carpeta: Path, tipo: str, cuit: str, per
             return None
 
         log.write(f"Archivo descargado desde Excel oficial de ARCA: {temp}")
-        destino = convertir_a_xls_sheet1(temp, destino, log)
-        log.write(f"Convertido a .xls (Excel 97-2003): {destino}")
-        return destino
+        try:
+            destino = convertir_a_xls_sheet1(temp, destino, log)
+            log.write(f"Convertido a .xls (Excel 97-2003): {destino}")
+            return destino
+        except ExcelNoDisponible as exc:
+            # Sin Excel no se puede armar el .xls del importador VB6: AlfaCore lee el .xlsx oficial tal cual.
+            final = carpeta / f"{nombre_base}.xlsx"
+            if final.exists():
+                final.unlink()
+            temp.replace(final)
+            if destino.exists():
+                destino.unlink()
+            log.write(f"Excel no esta disponible en este equipo ({exc}); se conserva el .xlsx oficial: {final}")
+            return final
     except Exception as exc:
         log.write(f"No se pudo descargar el Excel oficial; se usara respaldo local. Detalle: {exc}")
         return None
@@ -1041,7 +1063,10 @@ def generar_excel(encabezados: list[str], datos: list[list[str]], carpeta: Path,
     if destino.exists():
         destino.unlink()
 
-    excel = win32.DispatchEx("Excel.Application")
+    try:
+        excel = abrir_excel()
+    except ExcelNoDisponible as exc:
+        raise BotError(f"Excel no esta disponible en este equipo y no se pudo bajar el Excel oficial de ARCA: {exc}", 6)
     excel.Visible = False
     excel.DisplayAlerts = False
     libro = None
