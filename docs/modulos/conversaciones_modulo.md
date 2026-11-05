@@ -180,6 +180,45 @@ La referencia principal queda simplificada:
 
 #### Integración WhatsApp
 
+Los mensajes citados se resuelven en una consulta adicional por página, limitada a los identificadores
+referenciados y al mismo `IdConversacion`. `ConversacionMensajeDto.MensajeCitado` lleva el original
+aunque haya quedado fuera de la página cargada, sin agregarlo al timeline ni modificar sus cursores.
+Si falta la columna de referencia en un mensaje histórico, la lectura puede recuperarla del payload
+original de Meta; no modifica la fila persistida. La interfaz muestra autor y vista previa, permite
+abrir el contenido completo y sus adjuntos cuando está fuera de pantalla, e indica expresamente
+cuando el original no está guardado. No busca ni expone mensajes de otros hilos.
+
+La encuesta de satisfacción tiene prioridad sobre el bot para sus propias respuestas. El webhook
+clasifica y marca `Origen = ENCUESTA` al insertar el mensaje, antes de exponerlo al mantenimiento.
+Las calificaciones y los agradecimientos breves durante una encuesta reciente no reabren el hilo
+ni generan respuestas adicionales del asistente. Un webhook repetido tampoco vuelve a reabrirlo.
+El bot verifica el último entrante tanto al comenzar como después de generar su respuesta y antes
+de enviarla; su cola y el encadenado de mensajes no retoman una respuesta de encuesta como consulta.
+
+Dentro de la espera de comentario sólo se aceptan referencias claras a la atención o respuestas
+que citen un mensaje de esa encuesta. Una consulta nueva tiene prioridad incluso si cita la encuesta;
+los textos ambiguos siguen el circuito normal. No se usa la ausencia de signos de pregunta como
+evidencia de comentario. Una falla al agradecer la encuesta se registra centralmente y no habilita
+una segunda respuesta del bot. La calificación se valida contra la conversación propietaria.
+
+La identidad del hilo de WhatsApp es teléfono del interlocutor + línea de soporte. Compartir
+`IdContacto` no permite reutilizar ni fusionar conversaciones de teléfonos distintos. El lookup,
+la adopción de hilos provisionales y la consolidación de duplicados respetan esa identidad.
+
+La ventana para responder por Meta se valida por el `phone_number_id` receptor y el teléfono del
+interlocutor (`message.from` / `recipient_id` del payload), contra la línea y destinatario del envío.
+Un entrante de otro teléfono del mismo contacto no abre la ventana; un rechazo enviado a otro
+destinatario tampoco bloquea la ventana correcta. El indicador del chat y la guarda
+de envío comparten esta validación (`ConversacionesService.WhatsAppWindow.cs`). Un mensaje de otra
+línea o de WhatsApp QR (`SistemaAutor = WHATSAPP_WEB`) no habilita la ventana de la API.
+Para históricos sin metadata se acepta únicamente la línea asociada a la conversación.
+
+El rechazo Meta `131047` posterior al último entrante de esa línea invalida la estimación local;
+se recupera con un nuevo entrante a la misma línea. Una plantilla entregada no habilita por sí sola
+el texto libre. Los callbacks conservan el número receptor junto al
+error original y los fallos de envío de texto se registran mediante el logging centralizado.
+No se reenvían mensajes fallidos automáticamente ni se modifican los datos históricos.
+
 Se deja preparado:
 
 - log de webhook recibido

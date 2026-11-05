@@ -1368,7 +1368,7 @@
                                 }
                                 @if (!IsWhatsAppQr(_selectedConversation))
                                 {
-                                    <span class="conversation-badge">@GetWhatsAppWindowLabel(_selectedConversation)</span>
+                                    <span class="conversation-badge">@GetWhatsAppWindowLabel()</span>
                                 }
                             }
                             @if (!string.IsNullOrWhiteSpace(_selectedConversation.TecnicoNombre))
@@ -1641,7 +1641,7 @@
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
-                            <span>Esta conversación superó la ventana de 24 horas de WhatsApp.</span>
+                            <span>@GetWhatsAppWindowNotice()</span>
                             <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
                                 <i class="bi bi-send-fill"></i> Enviar plantilla
                             </button>
@@ -1839,12 +1839,19 @@
                                     {
                                         <button type="button"
                                                 class="message-card__quote"
-                                                title="Ir al mensaje citado"
-                                                @onclick="() => ScrollToQuotedMessageAsync(quotedMessage.IdMensaje)"
+                                                title="Ver mensaje citado"
+                                                @onclick="() => ScrollToQuotedMessageAsync(quotedMessage)"
                                                 @onclick:stopPropagation>
                                             <span>@GetMessageAuthor(quotedMessage)</span>
                                             <strong>@GetQuotePreview(quotedMessage)</strong>
                                         </button>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(message.WhatsAppReplyToMessageId))
+                                    {
+                                        <div class="message-card__quote" role="note">
+                                            <span>Responde a un mensaje anterior</span>
+                                            <strong>El mensaje citado no está disponible en este historial.</strong>
+                                        </div>
                                     }
                                     @if (ShouldShowMessageText(message))
                                     {
@@ -3125,6 +3132,30 @@
     </div>
 </AlfaDialog>
 
+<AlfaDialog Open="@(_quotedPreviewMessage is not null)"
+            Title="Mensaje citado"
+            Size="AlfaDialogSize.Md"
+            OnClose="CloseQuotedPreview">
+    @if (_quotedPreviewMessage is { } original)
+    {
+        <div class="message-card__meta">
+            <span>@GetMessageAuthor(original)</span>
+            <span>@FormatShortDate(original.FechaHora)</span>
+        </div>
+        <p class="message-card__text">@(string.IsNullOrWhiteSpace(original.Texto) ? GetMessageTypeLabel(original) : original.Texto)</p>
+        @if (_loadingQuotedAttachments)
+        {
+            <p>Cargando adjuntos…</p>
+        }
+        @foreach (var attachment in _quotedPreviewAttachments)
+        {
+            <a class="btn btn--ghost btn--sm" href="@GetAttachmentUrl(attachment)" target="_blank" rel="noopener noreferrer">
+                Abrir @GetAttachmentLabel(attachment)
+            </a>
+        }
+    }
+</AlfaDialog>
+
 @if (_showTemplatePanel)
 {
     <div class="modal-overlay conversations-template-modal">
@@ -4072,6 +4103,10 @@
     /// <summary>Total de conversaciones que matchean los filtros actuales en el servidor (paginación server-side del inbox).</summary>
     private int _inboxTotal;
     private List<ConversacionMensajeDto> _messages = [];
+    private ConversacionWhatsAppVentanaDto? _whatsAppSendWindow;
+    private long? _whatsAppWindowConversationId;
+    private string _whatsAppWindowOption = string.Empty;
+    private int _whatsAppWindowGeneration;
     private List<ConversacionAuditoriaMensajeDto> _auditMessages = [];
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
@@ -4165,6 +4200,10 @@
     private bool _showAnyDeskToolbarPrompt;
     private string _anyDeskIdDraft = string.Empty;
     private ConversacionMensajeDto? _quotedMessage;
+    private ConversacionMensajeDto? _quotedPreviewMessage;
+    private IReadOnlyList<ConversacionAdjuntoDto> _quotedPreviewAttachments = [];
+    private bool _loadingQuotedAttachments;
+    private int _quotedPreviewGeneration;
     private long? _quotedHighlightMessageId;
     private int _quotedHighlightVersion;
     private bool _showMessageSearch;
@@ -4355,7 +4394,11 @@
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP"
            && !IsSelectedWhatsAppQrConversation
-           && !_selectedConversation.VentanaWhatsAppActiva;
+           && CurrentWhatsAppWindow?.Activa != true;
+
+    private ConversacionWhatsAppVentanaDto? CurrentWhatsAppWindow
+        => _whatsAppWindowConversationId == _selectedConversation?.IdConversacion
+           && _whatsAppWindowOption == CurrentWhatsAppSendNumeroOptionValue ? _whatsAppSendWindow : null;
     private bool IsSelectedConversationClosed
         => _selectedConversation is not null
            && _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase));
@@ -4572,6 +4615,8 @@
 
     private void ResetTenantBoundState()
     {
+        CloseQuotedPreview();
+        InvalidateWhatsAppSendWindow();
         _tenantRequestCts?.Cancel();
         _tenantRequestCts?.Dispose();
         _tenantRequestCts = new CancellationTokenSource();
@@ -5457,6 +5502,7 @@
             _selectedConversation.EsWhatsAppQr = false;
             _actionMessage = "Los próximos mensajes saldrán por Soporte AlfaNet · API predeterminada.";
             _actionError = null;
+            await RefreshWhatsAppSendWindowAsync();
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -5479,6 +5525,7 @@
         _selectedConversation.EsWhatsAppQr = IsWhatsAppWebNumero(numero);
         _actionMessage = $"Los próximos mensajes saldrán por {GetWhatsAppSendNumeroLabel(numero)}.";
         _actionError = null;
+        await RefreshWhatsAppSendWindowAsync();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -6507,6 +6554,7 @@
         _selectedConversationId = idConversacion;
         if (conversationChanged)
         {
+            CloseQuotedPreview();
             _replyText = string.Empty;
             _syncReplyTextAfterRender = true;
             _overrideWhatsAppSendNumeroId = null;
@@ -6525,6 +6573,7 @@
 
             if (clearActionState && IsConversationCacheFresh(cachedConversation))
             {
+                await RefreshWhatsAppSendWindowAsync();
                 QueueContextTicketsLoad();
                 QueueContextNotesLoad();
                 return;
@@ -6579,6 +6628,10 @@
                 return;
             ApplyConversationMessagesPage(messagesPage, adjuntos);
             _typingUsers = (await typingTask).ToList();
+
+            await RefreshWhatsAppSendWindowAsync();
+            if (!IsTenantLoadCurrent(lease) || _selectedConversationId != idConversacion)
+                return;
 
             StoreConversationCache(idConversacion);
             if (ShouldRecoverConversationAttachments(_messages, adjuntos))
@@ -11729,6 +11782,8 @@
 
     private void ClearSelection()
     {
+        CloseQuotedPreview();
+        InvalidateWhatsAppSendWindow();
         CancelAiSuggestionRequest();
         _showAiSuggestionPanel = false;
         _selectedConversationId = null;
@@ -12070,12 +12125,62 @@
             _ => string.Empty
         };
 
-    private static string GetWhatsAppWindowLabel(ConversacionDetalleDto item)
+    private string GetWhatsAppWindowLabel()
     {
-        if (item.VentanaWhatsAppActiva && item.FechaHoraVencimientoVentanaWhatsApp is DateTime expiration)
+        var window = CurrentWhatsAppWindow;
+        if (window is null)
+            return "Ventana sin verificar para este número";
+        if (window.RechazadaPorMeta)
+            return "Ventana rechazada por WhatsApp";
+        if (window.Activa && window.Vencimiento is DateTime expiration)
             return $"Ventana activa hasta {expiration:dd/MM HH:mm}";
 
-        return "Ventana vencida";
+        return "Sin ventana activa para este número";
+    }
+
+    private string GetWhatsAppWindowNotice()
+        => CurrentWhatsAppWindow?.RechazadaPorMeta == true
+            ? "WhatsApp rechazó el envío por ventana vencida. Esperá un nuevo mensaje del cliente a este número o enviá una plantilla aprobada."
+            : "No hay una ventana de atención verificada para el número seleccionado. Usá el número que recibió el mensaje del cliente o enviá una plantilla aprobada.";
+
+    private void InvalidateWhatsAppSendWindow()
+    {
+        ++_whatsAppWindowGeneration;
+        _whatsAppSendWindow = null;
+        _whatsAppWindowConversationId = null;
+        _whatsAppWindowOption = string.Empty;
+    }
+
+    private async Task RefreshWhatsAppSendWindowAsync()
+    {
+        if (_selectedConversation?.Canal != "WHATSAPP" || !TryCaptureTenantLoad(out var lease))
+            return;
+        var conversationId = _selectedConversation.IdConversacion;
+        var option = CurrentWhatsAppSendNumeroOptionValue;
+        var generation = ++_whatsAppWindowGeneration;
+        if (_whatsAppWindowConversationId != conversationId || _whatsAppWindowOption != option)
+            _whatsAppSendWindow = null;
+        try
+        {
+            var window = await ConversacionesSvc.GetWhatsAppSendWindowAsync(conversationId,
+                CurrentWhatsAppSendNumeroId, ShouldSendUsingDefaultMetaApi, _tenantRequestCts?.Token ?? CancellationToken.None);
+            if (generation != _whatsAppWindowGeneration || !IsTenantLoadCurrent(lease)
+                || _selectedConversation?.IdConversacion != conversationId || CurrentWhatsAppSendNumeroOptionValue != option)
+                return;
+            _whatsAppWindowConversationId = conversationId;
+            _whatsAppWindowOption = option;
+            _whatsAppSendWindow = window;
+            _selectedConversation.VentanaWhatsAppActiva = window.Activa;
+            _selectedConversation.FechaHoraVencimientoVentanaWhatsApp = window.Vencimiento;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            // El servicio registra el incidente centralizado; conservar el chat y el borrador.
+            if (generation == _whatsAppWindowGeneration && IsTenantLoadCurrent(lease)
+                && _selectedConversation?.IdConversacion == conversationId)
+                _actionError = ex.Message;
+        }
     }
 
     private static string GetTemplateStatusLabel(string value)
@@ -12491,8 +12596,13 @@
             return false;
 
         quotedMessage = _messages.FirstOrDefault(x =>
-            !string.IsNullOrWhiteSpace(x.WhatsAppMessageId)
-            && string.Equals(x.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.OrdinalIgnoreCase))!;
+            x.IdConversacion == message.IdConversacion
+            && !string.IsNullOrWhiteSpace(x.WhatsAppMessageId)
+            && string.Equals(x.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.Ordinal))!;
+        quotedMessage ??= message.MensajeCitado is { } original
+            && original.IdConversacion == message.IdConversacion
+            && string.Equals(original.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.Ordinal)
+                ? original : null!;
 
         return quotedMessage is not null;
     }
@@ -12500,18 +12610,54 @@
     private static string GetMessageDomId(long idMensaje)
         => $"conversation-message-{idMensaje}";
 
-    private async Task ScrollToQuotedMessageAsync(long idMensaje)
+    private void CloseQuotedPreview()
     {
-        if (idMensaje <= 0)
+        ++_quotedPreviewGeneration;
+        _quotedPreviewMessage = null;
+        _quotedPreviewAttachments = [];
+        _loadingQuotedAttachments = false;
+    }
+
+    private async Task ScrollToQuotedMessageAsync(ConversacionMensajeDto original)
+    {
+        if (original.IdMensaje <= 0 || original.IdConversacion != _selectedConversationId || !TryCaptureTenantLoad(out var lease))
             return;
 
+        // Si el original está en la página, conservar el salto habitual; si quedó más atrás,
+        // mostrarlo sin alterar la paginación ni descargar todas las páginas intermedias.
+        if (_messages.Any(m => m.IdMensaje == original.IdMensaje))
+        {
+            try
+            {
+                if (await JS.InvokeAsync<bool>("conversacionesUi.scrollToMessage", GetMessageDomId(original.IdMensaje)))
+                    return;
+            }
+            catch (JSException ex) { Logger.LogDebug(ex, "Se mostrará el mensaje citado en una ventana."); }
+        }
+
+        var generation = ++_quotedPreviewGeneration;
+        _quotedPreviewMessage = original;
+        _quotedPreviewAttachments = [];
+        if (!original.TieneAdjuntos)
+            return;
+        _loadingQuotedAttachments = true;
         try
         {
-            await JS.InvokeVoidAsync("conversacionesUi.scrollToMessage", GetMessageDomId(idMensaje));
+            var attachments = await ConversacionesSvc.GetMessageAttachmentsAsync(original.IdConversacion, [original.IdMensaje],
+                _tenantRequestCts?.Token ?? CancellationToken.None);
+            if (generation == _quotedPreviewGeneration && IsTenantLoadCurrent(lease) && _selectedConversationId == original.IdConversacion)
+                _quotedPreviewAttachments = attachments;
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _actionError = $"No se pudo ubicar el mensaje citado: {ex.Message}";
+            if (generation == _quotedPreviewGeneration && IsTenantLoadCurrent(lease))
+                _actionError = ex.Message;
+        }
+        finally
+        {
+            if (generation == _quotedPreviewGeneration)
+                _loadingQuotedAttachments = false;
         }
     }
 

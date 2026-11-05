@@ -170,11 +170,12 @@ public sealed class WhatsAppTemplateSendTests
     {
         var source = ReadPageSource();
 
-        // Ya resuelto: cuando la ventana de 24hs está vencida, el composer de texto libre ni siquiera
-        // se renderiza (en vez de quedar habilitado y fallar sin explicación) y se muestra un banner
-        // con CTA directo a "Enviar plantilla". No se reescribe -- sólo se documenta con este test.
+        // El composer depende de la ventana del emisor elegido; el banner distingue falta de
+        // ventana verificada y rechazo de Meta, conservando el acceso a plantillas.
         Assert.Contains("@if (!IsWhatsAppWindowExpired)", source, StringComparison.Ordinal);
-        Assert.Contains("Esta conversación superó la ventana de 24 horas de WhatsApp.", source, StringComparison.Ordinal);
+        Assert.Contains("@GetWhatsAppWindowNotice()", source, StringComparison.Ordinal);
+        Assert.Contains("No hay una ventana de atención verificada para el número seleccionado.", source, StringComparison.Ordinal);
+        Assert.Contains("WhatsApp rechazó el envío por ventana vencida.", source, StringComparison.Ordinal);
         Assert.Contains("@onclick=\"OpenTemplatePanel\" disabled=\"@(!CanOpenTemplatePanel)\"", source, StringComparison.Ordinal);
     }
 

@@ -14,6 +14,61 @@ public sealed class ConversacionesEncuestaSatisfaccionTests
     private static readonly DateTime Ahora = new(2026, 10, 19, 12, 0, 0);
 
     [Theory]
+    [InlineData("buenas me surgio un nuevo problema")]
+    [InlineData("Tengo otra consulta")]
+    [InlineData("No puedo imprimir")]
+    [InlineData("La atención fue buena pero ahora no funciona el sistema")]
+    [InlineData("No me marca cantidades de stock")]
+    [InlineData("¿Me ayudan con la factura?")]
+    [InlineData("hola")]
+    public void NuevaConsultaNoSeGuardaComoComentarioAunqueNoTengaSignos(string texto)
+        => Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Ninguno,
+            ConversacionesService.ClasificarTextoEncuesta(texto, esperandoComentario: true, respuestaExplicita: false));
+
+    [Theory]
+    [InlineData("buenas me surgio un nuevo problema")]
+    [InlineData("No puedo imprimir")]
+    [InlineData("No me marca cantidades de stock")]
+    public void ConsultaNuevaTienePrioridadAunqueCiteLaEncuesta(string texto)
+        => Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Ninguno,
+            ConversacionesService.ClasificarTextoEncuesta(texto, esperandoComentario: true, respuestaExplicita: true));
+
+    [Theory]
+    [InlineData("dale muchas gracias")]
+    [InlineData("gracias")]
+    [InlineData("todo perfecto")]
+    [InlineData("genial gracias")]
+    public void DespedidaDuranteEncuestaNoGeneraOtraRespuesta(string texto)
+        => Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Agradecimiento,
+            ConversacionesService.ClasificarTextoEncuesta(texto, esperandoComentario: false, respuestaExplicita: false));
+
+    [Theory]
+    [InlineData("Muy buena atención")]
+    [InlineData("Fueron muy amables")]
+    [InlineData("Tardaron mucho en atenderme")]
+    public void ConservaLosComentariosClarosSobreLaAtencion(string texto)
+        => Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Comentario,
+            ConversacionesService.ClasificarTextoEncuesta(texto, esperandoComentario: true, respuestaExplicita: false));
+
+    [Fact]
+    public void UnTextoAmbiguoSoloEsComentarioSiCitaLaEncuestaYEstaEsperandolo()
+    {
+        const string texto = "Podrían mejorar eso";
+        Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Ninguno, ConversacionesService.ClasificarTextoEncuesta(texto, true, false));
+        Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Comentario, ConversacionesService.ClasificarTextoEncuesta(texto, true, true));
+        Assert.Equal(ConversacionesService.TipoMensajeEncuesta.Ninguno, ConversacionesService.ClasificarTextoEncuesta(texto, false, true));
+    }
+
+    [Fact]
+    public void BotReconoceCalificacionAntesDeQueTermineDeProcesarseElWebhook()
+    {
+        const string payload = """{"message":{"interactive":{"button_reply":{"id":"csat:82:3"}}}}""";
+        Assert.True(ConversacionesService.EsMensajeDeEncuesta(null, payload));
+        Assert.True(ConversacionesService.EsMensajeDeEncuesta("ENCUESTA", "{}"));
+        Assert.False(ConversacionesService.EsMensajeDeEncuesta(null, """{"message":{"text":{"body":"buenas me surgio un nuevo problema"}}}"""));
+    }
+
+    [Theory]
     [InlineData("csat:15:3", 15L, 3)]
     [InlineData("csat:7:1", 7L, 1)]
     [InlineData("csat:123456:2", 123456L, 2)]

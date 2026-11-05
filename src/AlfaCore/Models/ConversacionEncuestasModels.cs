@@ -4,8 +4,8 @@ namespace AlfaCore.Models;
 public static class ConversacionEncuestaTextos
 {
     public const string PreguntaPorDefecto = "¡Gracias por escribirnos! ¿Cómo calificarías nuestra atención?";
-    public const string AgradecimientoBueno = "¡Gracias por tu calificación! 🙌 Si querés dejarnos un comentario, escribilo acá.";
-    public const string AgradecimientoMejorable = "Gracias por avisarnos. ¿Nos contás qué podríamos mejorar? Escribilo acá.";
+    public const string AgradecimientoBueno = "¡Gracias por tu calificación! 🙌 Si querés dejarnos un comentario sobre la atención, respondé a este mensaje.";
+    public const string AgradecimientoMejorable = "Gracias por avisarnos. Si querés contarnos qué podríamos mejorar de la atención, respondé a este mensaje.";
     public const string AgradecimientoComentario = "¡Gracias por tu comentario! Lo tenemos en cuenta. 🙂";
 
     /// <summary>Prefijo del id de los botones: "csat:{IdEncuesta}:{Calificacion}".</summary>

@@ -21,6 +21,7 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default);
     Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);
+    Task<ConversacionWhatsAppVentanaDto> GetWhatsAppSendWindowAsync(long idConversacion, int? idNumeroWhatsApp = null, bool usarApiMetaPredeterminada = false, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default);
     /// <summary>
     /// PayloadJson del último mensaje saliente de este número (o null si no hay mensajes salientes o

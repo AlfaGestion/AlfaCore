@@ -338,6 +338,8 @@ public sealed class ConversacionMensajeDto
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string WhatsAppMessageId { get; set; } = string.Empty;
     public string WhatsAppReplyToMessageId { get; set; } = string.Empty;
+    /// <summary>Original citado, aunque esté fuera de la página cargada. Sólo pertenece al mismo hilo.</summary>
+    public ConversacionMensajeDto? MensajeCitado { get; set; }
     public string MessageType { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string EstadoEnvio { get; set; } = string.Empty;

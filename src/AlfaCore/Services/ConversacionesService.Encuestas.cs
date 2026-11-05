@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AlfaCore.Models;
+using Dapper;
 using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
@@ -21,6 +23,96 @@ public sealed partial class ConversacionesService
     internal const string OrigenRespuestaEncuesta = "ENCUESTA";
 
     private const int MinutosParaComentario = 30;
+
+    internal enum TipoMensajeEncuesta { Ninguno, Calificacion, Agradecimiento, Comentario }
+
+    internal static TipoMensajeEncuesta ClasificarTextoEncuesta(string? texto, bool esperandoComentario, bool respuestaExplicita)
+    {
+        var t = ConversacionAsistenteHerramientasService.NormalizarTexto(texto);
+        if (t.Length == 0)
+            return TipoMensajeEncuesta.Ninguno;
+        // Una consulta nueva tiene prioridad, aunque se haya respondido citando la encuesta.
+        if (t.Contains('?') || t.Contains('¿') || Regex.IsMatch(t,
+            @"\b(nuev[oa]|otr[oa])\s+(problema|consulta|tema|error|duda)\b|\b(me surgio|necesito|necesitamos|no puedo|no podemos|no funciona|no anda|no (me|nos) (marca|deja|muestra|sale|aparece)|me aparece|me sale|tengo un problema|tengo una consulta|sigo sin)\b"))
+            return TipoMensajeEncuesta.Ninguno;
+        if (EsMensajeSocial(texto!) && Regex.IsMatch(t, @"\b(gracias|perfecto|listo|genial|buenisimo|excelente)\b"))
+            return TipoMensajeEncuesta.Agradecimiento;
+        if (esperandoComentario && (respuestaExplicita || Regex.IsMatch(t,
+            @"\b(atencion|atendieron|atenderme|amables?|amabilidad|cordiales?|cordialidad|rapidez|rapidos?|rapidas?|demora|tardaron)\b")))
+            return TipoMensajeEncuesta.Comentario;
+        // Sin una referencia clara a la atención, el texto sigue el circuito normal.
+        return TipoMensajeEncuesta.Ninguno;
+    }
+
+    private async Task<TipoMensajeEncuesta> ClasificarMensajeEncuestaAsync(long idConversacion, IncomingWhatsAppMessage incoming, CancellationToken ct)
+    {
+        if (ParsearBotonEncuesta(ExtraerIdBotonRespuesta(incoming.RawJson)) is not null)
+            return TipoMensajeEncuesta.Calificacion;
+        if (!string.Equals(incoming.MessageType, "TEXT", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(incoming.Text))
+            return TipoMensajeEncuesta.Ninguno;
+        try
+        {
+            var sql = $"""
+                IF OBJECT_ID(N'dbo.CONV_ENCUESTAS', N'U') IS NULL RETURN;
+                SELECT TOP (1) e.EsperandoComentario,
+                    CAST(CASE WHEN EXISTS (
+                        SELECT 1 FROM dbo.CONV_MENSAJES m
+                        WHERE m.IdConversacion = e.IdConversacion AND m.Direction = N'SALIENTE'
+                          AND m.WhatsAppMessageId = @ReplyId AND {AutorMensajeSql("m")} = N'ENCUESTA'
+                          AND m.FechaHora >= e.FechaEnvio
+                    ) THEN 1 ELSE 0 END AS bit) AS RespuestaExplicita
+                FROM dbo.CONV_ENCUESTAS e
+                WHERE e.IdConversacion = @IdConversacion AND e.Estado IN (N'ENVIANDO', N'ENVIADA', N'RESPONDIDA')
+                  AND COALESCE(e.FechaRespuesta, e.FechaEnvio) >= DATEADD(minute, -@Minutos, GETDATE())
+                ORDER BY e.IdEncuesta DESC;
+                """;
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await EnsureMensajeOrigenColumnAsync(cn, ct).ConfigureAwait(false);
+            var contexto = await cn.QuerySingleOrDefaultAsync<EncuestaTextoContexto>(new CommandDefinition(sql,
+                new { IdConversacion = idConversacion, ReplyId = incoming.WhatsAppReplyToMessageId ?? string.Empty, Minutos = MinutosParaComentario }, cancellationToken: ct)).ConfigureAwait(false);
+            return contexto is null ? TipoMensajeEncuesta.Ninguno
+                : ClasificarTextoEncuesta(incoming.Text, contexto.EsperandoComentario, contexto.RespuestaExplicita);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "EncuestaClasificar", ex,
+                "No se pudo verificar si el mensaje corresponde a una encuesta; seguirá el circuito normal.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return TipoMensajeEncuesta.Ninguno;
+        }
+    }
+
+    private sealed class EncuestaTextoContexto
+    {
+        public bool EsperandoComentario { get; set; }
+        public bool RespuestaExplicita { get; set; }
+    }
+
+    internal static bool EsMensajeDeEncuesta(string? origen, string? payload)
+        => string.Equals(origen, OrigenRespuestaEncuesta, StringComparison.OrdinalIgnoreCase)
+           || ParsearBotonEncuesta(ExtraerIdBotonRespuesta(payload)) is not null;
+
+    private async Task<bool> UltimoEntranteEsEncuestaAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) Origen, PayloadJson
+            FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await EnsureMensajeOrigenColumnAsync(cn, ct).ConfigureAwait(false);
+        var ultimo = await cn.QuerySingleOrDefaultAsync<EncuestaUltimoEntrante>(new CommandDefinition(sql,
+            new { Id = idConversacion }, cancellationToken: ct)).ConfigureAwait(false);
+        return ultimo is not null && EsMensajeDeEncuesta(ultimo.Origen, ultimo.PayloadJson);
+    }
+
+    private sealed class EncuestaUltimoEntrante
+    {
+        public string? Origen { get; set; }
+        public string? PayloadJson { get; set; }
+    }
 
     private async Task TryEnviarEncuestaAlCerrarAsync(long idConversacion, string? usuarioCierre, string? idTecnicoAtendio, CancellationToken ct)
     {
@@ -218,25 +310,28 @@ public sealed partial class ConversacionesService
     /// poco después de calificar) se procesa acá y devuelve true: el que llama no reabre la conversación
     /// ni corre las respuestas automáticas.
     /// </summary>
-    private async Task<bool> TryProcesarRespuestaEncuestaAsync(long idConversacion, long idMensaje, IncomingWhatsAppMessage incoming, CancellationToken ct)
+    private async Task<bool> TryProcesarRespuestaEncuestaAsync(long idConversacion, long idMensaje, IncomingWhatsAppMessage incoming, TipoMensajeEncuesta tipo, CancellationToken ct)
     {
         try
         {
             if (ParsearBotonEncuesta(ExtraerIdBotonRespuesta(incoming.RawJson)) is { } boton)
                 return await RegistrarCalificacionAsync(idConversacion, idMensaje, boton.IdEncuesta, boton.Calificacion, ct).ConfigureAwait(false);
 
+            if (tipo == TipoMensajeEncuesta.Agradecimiento)
+                return true; // No agradecer un agradecimiento ni reabrir por una despedida.
+
             if (!string.Equals(incoming.MessageType, "TEXT", StringComparison.OrdinalIgnoreCase)
                 || string.IsNullOrWhiteSpace(incoming.Text))
                 return false;
 
-            return await TryRegistrarComentarioAsync(idConversacion, idMensaje, incoming.Text, ct).ConfigureAwait(false);
+            return await TryRegistrarComentarioAsync(idConversacion, idMensaje, incoming.Text, tipo == TipoMensajeEncuesta.Comentario, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await _appEvents.LogErrorAsync("Conversaciones", "EncuestaRespuesta", ex,
-                "No se pudo procesar la respuesta a la encuesta; el mensaje siguió el camino normal.",
+                "No se pudo completar el procesamiento de la respuesta a la encuesta.",
                 new { idConversacion, idMensaje }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
-            return false;
+            return tipo != TipoMensajeEncuesta.Ninguno; // Un fallo del agradecimiento no debe disparar al bot.
         }
     }
 
@@ -249,6 +344,11 @@ public sealed partial class ConversacionesService
             await cn.OpenAsync(ct).ConfigureAwait(false);
             await using var cmd = new SqlCommand("""
                 IF OBJECT_ID(N'dbo.CONV_ENCUESTAS', N'U') IS NULL
+                BEGIN
+                    SELECT CAST(-1 AS int), CAST(NULL AS nvarchar(20));
+                    RETURN;
+                END;
+                IF NOT EXISTS (SELECT 1 FROM dbo.CONV_ENCUESTAS WHERE IdEncuesta = @IdEncuesta AND IdConversacion = @IdConversacion)
                 BEGIN
                     SELECT CAST(-1 AS int), CAST(NULL AS nvarchar(20));
                     RETURN;
@@ -299,12 +399,12 @@ public sealed partial class ConversacionesService
     }
 
     /// <summary>
-    /// Texto que llega poco después de calificar (y sin pregunta): es el comentario de la encuesta. Si trae
-    /// una pregunta es una consulta nueva y sigue el camino normal.
+    /// Sólo se guarda como comentario un texto reconocido sobre la atención o una respuesta explícita
+    /// a la encuesta. Una consulta nueva cancela la espera y sigue el circuito normal.
     /// </summary>
-    private async Task<bool> TryRegistrarComentarioAsync(long idConversacion, long idMensaje, string texto, CancellationToken ct)
+    private async Task<bool> TryRegistrarComentarioAsync(long idConversacion, long idMensaje, string texto, bool esComentario, CancellationToken ct)
     {
-        var esConsulta = texto.Contains('?') || texto.Contains('¿');
+        var esConsulta = !esComentario;
         long? idEncuesta = null;
         await using (var cn = new SqlConnection(ConnectionString))
         {
@@ -363,7 +463,7 @@ public sealed partial class ConversacionesService
     }
 
     /// <summary>Marca el mensaje del cliente como respuesta de encuesta: el mantenimiento no reabre por él.</summary>
-    private async Task MarcarMensajeComoRespuestaEncuestaAsync(long idMensaje, CancellationToken ct)
+    private async Task MarcarMensajeComoRespuestaEncuestaAsync(long idMensaje, CancellationToken ct, bool esEncuesta = true)
     {
         if (idMensaje <= 0)
             return;
@@ -371,7 +471,7 @@ public sealed partial class ConversacionesService
         await cn.OpenAsync(ct).ConfigureAwait(false);
         await EnsureMensajeOrigenColumnAsync(cn, ct).ConfigureAwait(false);
         await using var cmd = new SqlCommand("UPDATE dbo.CONV_MENSAJES SET Origen = @Origen WHERE IdMensaje = @Id;", cn);
-        cmd.Parameters.AddWithValue("@Origen", OrigenRespuestaEncuesta);
+        cmd.Parameters.AddWithValue("@Origen", esEncuesta ? OrigenRespuestaEncuesta : (object)DBNull.Value);
         cmd.Parameters.AddWithValue("@Id", idMensaje);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
