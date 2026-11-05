@@ -91,6 +91,26 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.DoesNotMatch(ArcaDescargaService.NombreArchivo, @"..\ARCA_RECIBIDOS_27228073259_202609.xls");
     }
 
+    private static CuentaComercialLookupOptionDto Op(string codigo, string descripcion) => new() { Codigo = codigo, Descripcion = descripcion };
+
+    [Fact]
+    public void ProveedorNuevoTomaDocumentoCuitYCondicionDeIvaPorLetra()
+    {
+        // Tabla del legacy: códigos con relleno y descripciones en mayúsculas.
+        var iva = new[] { Op("   1", "RESPONSABLE INSCRIPTO"), Op("   2", "RESPONSABLE NO INSCRIPTO"), Op("   3", "A CONSUMIDOR FINAL"), Op("   5", "RESPONSABLE MONOTRIBUTO") };
+        Assert.Equal("   1", ControlArcaImportacionService.CondicionIvaPorLetra("A", iva));
+        Assert.Equal("   1", ControlArcaImportacionService.CondicionIvaPorLetra("B", iva));
+        Assert.Equal("   1", ControlArcaImportacionService.CondicionIvaPorLetra("M", iva));
+        Assert.Equal("   5", ControlArcaImportacionService.CondicionIvaPorLetra("C", iva));
+        // Tabla con otras descripciones: cae a los códigos estándar.
+        Assert.Equal("5", ControlArcaImportacionService.CondicionIvaPorLetra("C", [Op("1", "R.I."), Op("5", "MONOT.")]));
+        Assert.Equal("", ControlArcaImportacionService.CondicionIvaPorLetra("A", [Op("9", "OTRA")]));
+
+        Assert.Equal("  80", ControlArcaImportacionService.TipoDocumentoCuit([Op("  96", "DNI"), Op("  80", "C.U.I.T.")]));
+        Assert.Equal("   1", ControlArcaImportacionService.TipoDocumentoCuit([Op("   1", "Documento tributario"), Op("   3", "DNI")]));
+        Assert.Equal("", ControlArcaImportacionService.TipoDocumentoCuit([Op("  96", "DNI")]));
+    }
+
     [Fact]
     public void LimpiezaBorraSoloLoViejoConNombresDelScript()
     {

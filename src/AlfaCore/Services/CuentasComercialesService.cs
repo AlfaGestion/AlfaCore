@@ -436,7 +436,7 @@ public sealed partial class CuentasComercialesService(
                 if(Convert.ToInt32(await bloqueo.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)<0)throw new InvalidOperationException("Otro usuario está creando un proveedor. Reintentá en unos segundos.");
                 var documento=new string(normalized.NumeroDocumento.Where(char.IsAsciiDigit).ToArray());
                 if(!CuentasComercialesValidator.IsValidCuit(documento))throw new InvalidOperationException("Ingresá un CUIT válido para el alta rápida.");
-                await using var tipoDocumento=new SqlCommand("SELECT COUNT(*) FROM dbo.TA_TIPODOCUMENTO WHERE LTRIM(RTRIM(CODIGO))=@codigo AND UPPER(DESCRIPCION) LIKE '%CUIT%'",cn,(SqlTransaction)tx);
+                await using var tipoDocumento=new SqlCommand("SELECT COUNT(*) FROM dbo.TA_TIPODOCUMENTO WHERE LTRIM(RTRIM(CODIGO))=@codigo AND UPPER(REPLACE(REPLACE(DESCRIPCION,'.',''),' ','')) LIKE '%CUIT%'",cn,(SqlTransaction)tx);
                 tipoDocumento.Parameters.AddWithValue("@codigo",normalized.DocumentoTipoCodigo.Trim());
                 if(Convert.ToInt32(await tipoDocumento.ExecuteScalarAsync(token),CultureInfo.InvariantCulture)!=1)throw new InvalidOperationException("El alta rápida requiere el tipo de documento CUIT configurado en la base.");
                 await using var duplicado=new SqlCommand("SELECT COUNT(*) FROM dbo.VT_PROVEEDORES WHERE REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(NUMERO_DOCUMENTO,''))),'-',''),' ',''),'.','')=@doc",cn,(SqlTransaction)tx);

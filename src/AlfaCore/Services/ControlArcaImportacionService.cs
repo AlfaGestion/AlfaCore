@@ -303,6 +303,29 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
           CASE WHEN @cabecera=1 THEN @cae END,CASE WHEN @cabecera=1 THEN @codigoDgi END);
         """;
 
+    private static string Normalizar(string? s) => new((s ?? "").ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+
+    /// <summary>Tipo de documento CUIT por descripción (acepta «C.U.I.T.»); si no hay, el código 1, que es el que asume el legacy.</summary>
+    internal static string TipoDocumentoCuit(IEnumerable<CuentaComercialLookupOptionDto> tipos)
+    {
+        var lista = tipos.ToList();
+        return lista.FirstOrDefault(x => Normalizar(x.Descripcion).Contains("CUIT"))?.Codigo
+            ?? lista.FirstOrDefault(x => x.Codigo.Trim() == "1")?.Codigo ?? "";
+    }
+
+    /// <summary>
+    /// Condición de IVA del emisor cuando el padrón no la informa. Surge de la letra: A y M los emite un Responsable Inscripto, y la B
+    /// también (el receptor es el que no es inscripto); la C la emite un Monotributista (o un exento). Se busca por descripción y,
+    /// si la tabla no la tiene así, por los códigos estándar (1 Responsable Inscripto, 5 Monotributo).
+    /// </summary>
+    internal static string CondicionIvaPorLetra(string letra, IEnumerable<CuentaComercialLookupOptionDto> condiciones)
+    {
+        var lista = condiciones.ToList();
+        var monotributo = letra.Trim().Equals("C", StringComparison.OrdinalIgnoreCase);
+        return lista.FirstOrDefault(x => monotributo ? Normalizar(x.Descripcion).Contains("MONOTRIBUT") : Normalizar(x.Descripcion).Contains("RESPONSABLEINSCRIPTO"))?.Codigo
+            ?? lista.FirstOrDefault(x => x.Codigo.Trim() == (monotributo ? "5" : "1"))?.Codigo ?? "";
+    }
+
     private async Task<string> CrearProveedorAsync(ArcaMisComprobante a, string condicionCompra, CuentaComercialLookupDataDto catalogo, CancellationToken ct)
     {
         if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var sesion)) throw new ReglaException("Ingresá en la base activa.");
@@ -315,12 +338,12 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         string Opcion(IEnumerable<CuentaComercialLookupOptionDto> lista, Func<CuentaComercialLookupOptionDto, bool> filtro) => lista.FirstOrDefault(filtro)?.Codigo ?? "";
         var ivaPadron = persona?.CondicionIvaCodigo.Trim() ?? "";
         var iva = Opcion(catalogo.CondicionesIva, x => x.Codigo.Trim() == ivaPadron);
-        if (iva.Length == 0) iva = Opcion(catalogo.CondicionesIva, x => x.Codigo.Trim() == (a.Letra == "C" ? "5" : "1"));
+        if (iva.Length == 0) iva = CondicionIvaPorLetra(a.Letra, catalogo.CondicionesIva);
         var request = new CuentaComercialSaveRequest
         {
             RazonSocial = Corto(persona?.RazonSocial is { Length: > 0 } r ? r : a.NombreContraparte, 50),
             NumeroDocumento = cuit,
-            DocumentoTipoCodigo = Opcion(catalogo.TiposDocumento, x => x.Descripcion.Contains("CUIT", StringComparison.OrdinalIgnoreCase)),
+            DocumentoTipoCodigo = TipoDocumentoCuit(catalogo.TiposDocumento),
             IvaCodigo = iva,
             Calle = persona?.Calle ?? "", Localidad = persona?.Localidad ?? "", CodigoPostal = persona?.CodigoPostal ?? "",
             ProvinciaCodigo = persona?.Provincia is { Length: > 0 } prov ? Opcion(catalogo.Provincias, x => x.Descripcion.Equals(prov, StringComparison.OrdinalIgnoreCase)) : "",
@@ -329,8 +352,10 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             CondicionComercialCodigo = condicionCompra, MotivoCompraCodigo = "1", FacturaCompraSinOc = true,
             Observaciones = "Alta automática al importar comprobantes recibidos de ARCA."
         };
-        if (request.DocumentoTipoCodigo.Length == 0 || request.IvaCodigo.Length == 0)
-            throw new ReglaException("No se pudo dar de alta el proveedor: falta el tipo de documento CUIT o la condición de IVA en las tablas.");
+        if (request.DocumentoTipoCodigo.Length == 0)
+            throw new ReglaException("No se pudo dar de alta el proveedor: no hay un tipo de documento CUIT en la tabla de tipos de documento (TA_TIPODOCUMENTO).");
+        if (request.IvaCodigo.Length == 0)
+            throw new ReglaException("No se pudo dar de alta el proveedor: no se encontró la condición de IVA (Responsable Inscripto / Monotributo) en la tabla de condiciones de IVA (TA_CONDIVA).");
         return (await cuentas.CrearProveedorEnSesionAsync(request, sesion, ct)).Trim();
     }
 
