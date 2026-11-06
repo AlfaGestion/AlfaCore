@@ -18,7 +18,7 @@
     @if (_busy) { <AlfaNotification Message="@AppUiMessage.Info("Operación en curso", "Esperá a que aparezca el resultado.")" /> }
     @if (_resultado is { } r)
     {
-        <AlfaNotification Message="@(r.Estado == "GRABADA" ? AppUiMessage.Success("Comprobante grabado", $"{r.Tc} {r.Comprobante} · Asiento {r.NumeroAsiento}" + (r.Cae is null ? "." : $" · CAE {r.Cae}.")) : r.Estado == "RECHAZADA"
+        <AlfaNotification Message="@(r.Estado == "GRABADA" ? AppUiMessage.Success("Comprobante grabado", $"{r.Tc} {r.Comprobante}" + (r.NumeroAsiento is { } asiento ? $" · Asiento {asiento}" : "") + (r.Cobranza is { } cob ? $" · Cobranza {cob}" : "") + (r.Cae is null ? "." : $" · CAE {r.Cae}.")) : r.Estado == "RECHAZADA"
                 ? AppUiMessage.Error("ARCA rechazó el comprobante", r.Mensaje is { Length: > 0 } m ? $"{m} Usá «Corregir comprobante» para modificar la carga." : "No se grabó nada. Usá «Corregir comprobante», revisá los datos y volvé a emitir.")
                 : AppUiMessage.Warning("Emisión sin confirmar", r.Mensaje is { Length: > 0 } p ? p : CargaComprobantesRechazos.Incierta))" />
     }
@@ -32,7 +32,7 @@
                 <ItemTemplate Context="c">@c.Codigo · @c.Descripcion</ItemTemplate>
             </AlfaLookup>
             <AlfaSelect Label="Tipo de comprobante" Value="@_draft.Tc" ValueChanged="TipoChanged" Disabled="@Bloqueado"
-                Options="@(new List<AlfaSelectOption> { new("FC", "Factura electrónica"), new("NC", "Nota de crédito electrónica"), new("ND", "Nota de débito electrónica"), new("FP", "Factura proforma") })" />
+                Options="@TiposComprobante" />
             <AlfaSelect Label="Unidad de negocio" Value="@_draft.UnidadNegocio" ValueChanged="UnidadChanged" Disabled="@Bloqueado"
                 Options="@_contexto.UnidadesNegocio.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Elegí una unidad" />
             <AlfaSelect Label="Depósito" Value="@_draft.Deposito" ValueChanged="v => Cambiar(() => _draft.Deposito = v ?? string.Empty)" Disabled="@Bloqueado"
@@ -46,7 +46,7 @@
                 Options="@_contexto.ClasesPrecio.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Descripcion}")).ToList()" Placeholder="@ClaseDelCliente" />
             <AlfaInput Type="date" Label="Fecha" Value="@((_draft.Fecha ?? DateTime.Today).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))"
                 ValueChanged="FechaChanged" Disabled="@Bloqueado"
-                HelpText="@(_draft.Tc == "FP" ? null : "Electrónicos: hasta 5 días antes o después de hoy.")" />
+                HelpText="@(CargaComprobantesTipos.EsElectronico(_draft.Tc) ? "Electrónicos: hasta 5 días antes o después de hoy." : null)" />
             <AlfaSelect Label="Vendedor" Value="@_draft.Vendedor" ValueChanged="v => Cambiar(() => _draft.Vendedor = string.IsNullOrEmpty(v) ? null : v)"
                 Disabled="@Bloqueado" Options="@Vendedores" Placeholder="@VendedorDelCliente" />
         </section>
@@ -70,9 +70,10 @@
                             OnClick="_ => _fichaClienteAbierta = true">Ver / editar cliente</AlfaButton>
             </section>
         }
-        @if (_draft.Tc is "NC" or "ND")
+        @if (CargaComprobantesTipos.RequiereAsociado(_draft.Tc))
         {
-            <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="Factura asociada" Placeholder="Buscar factura del cliente"
+            <AlfaLookup TItem="CargaComprobantesOpcionFiltro" Label="@(_draft.Tc == "NCFP" ? "Factura proforma asociada" : "Factura asociada")"
+                Placeholder="@(_draft.Tc == "NCFP" ? "Buscar factura proforma del cliente" : "Buscar factura del cliente")"
                 MinimumCharacters="0" @bind-SearchText="_asociadoTexto" SelectedItem="_asociado"
                 SelectedItemChanged="AsociadoChanged" SearchFunc="BuscarAsociados" ItemKey="x => x.Codigo"
                 Disabled="@(Bloqueado || _cliente is null || string.IsNullOrEmpty(_draft.UnidadNegocio))">
@@ -100,14 +101,21 @@
                         <tr @key="item.Articulo">
                             <td class="col-n">@(i + 1)</td>
                             <td class="col-cod">@item.Articulo</td>
-                            <td>@art?.Descripcion</td>
+                            <td>
+                                @art?.Descripcion
+                                @if (PrecioLista(item) is { Etiqueta.Length: > 0 } pl)
+                                {
+                                    <span class="directa-tag @(pl.Oferta || (item.Descuento is null && pl.Descuento > 0) ? "directa-tag--activa" : "")"
+                                          title="@(pl.Oferta ? "Precio de oferta de la lista" : "Ofertas por cantidad de la lista")">@pl.Etiqueta</span>
+                                }
+                            </td>
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Cantidad {item.Articulo}")" value="@Num(item.Cantidad)"
                                 @onchange="e => CantidadChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || item.Bultos.HasValue)" /></td>
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Bultos {item.Articulo}")" value="@(item.Bultos is { } b ? Num(b) : "")"
-                                @onchange="e => BultosChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || _draft.Tc == "NC")" /></td>
+                                @onchange="e => BultosChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || EsCredito)" /></td>
                             <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Precio neto {item.Articulo}")" value="@Num(PrecioNeto(item))"
                                 @onchange="e => PrecioChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || !PuedeEditarPrecio)" /></td>
-                            <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Descuento {item.Articulo}")" value="@Num(item.Descuento ?? 0)"
+                            <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Descuento {item.Articulo}")" value="@Num(DescuentoLinea(item))" title="@(item.Descuento is null && DescuentoLinea(item) > 0 ? "Descuento automático por cantidad (lista de precios)" : null)"
                                 @onchange="e => DescuentoChanged(item, e.Value?.ToString())" disabled="@(Bloqueado || !Editable || !_contexto.PuedeEditarDescuento)" /></td>
                             <td class="num">@((art?.TasaIva ?? 0).ToString("0.##", Ar))</td>
                             <td class="num">@Dinero(TotalLinea(item))</td>
@@ -117,9 +125,47 @@
                                     <AlfaIconButton Icon="bi-arrow-counterclockwise" Label="Restablecer precio y descuento" Disabled="@Bloqueado"
                                         OnClick="() => Cambiar(() => { item.PrecioUnitarioNeto = null; item.Descuento = null; })" />
                                 }
+                                @if (FilaLista(item) is not null)
+                                {
+                                    <AlfaIconButton Icon="bi-tags" Label="Precios de la lista"
+                                        OnClick="() => _detallePrecios = _detallePrecios == item.Articulo ? null : item.Articulo" />
+                                }
                                 <AlfaIconButton Icon="bi-trash" Label="Quitar línea" Disabled="@Bloqueado" OnClick="() => Cambiar(() => _draft.Lineas.Remove(item))" />
                             </td>
                         </tr>
+                        @if (_detallePrecios == item.Articulo && FilaLista(item) is { } fl && _preciosLista is { } info)
+                        {
+                            <tr class="directa-detalle">
+                                <td></td>
+                                <td colspan="9">
+                                    <div class="directa-detalle__precios">
+                                        <span class="directa-muted">Lista @info.Lista@(info.ListaNombre.Length > 0 ? $" · {info.ListaNombre}" : "") · @(fl.ConIva ? "precios con IVA" : "precios sin IVA")</span>
+                                        @foreach (var c in ClasesDetalle(info, fl))
+                                        {
+                                            <span class="directa-chip @(c == info.Clase ? "directa-chip--activa" : "")">
+                                                @c · @info.Config.NombreClase(c): <strong>@Dinero(fl.Precio(c))</strong>
+                                                @if (c == info.Config.ClaseOferta && fl.OfertaDesde is { } od)
+                                                {
+                                                    <small>@($" {od:dd/MM}–{(fl.OfertaHasta is { } oh ? oh.ToString("dd/MM/yyyy") : "sin fin")}")</small>
+                                                }
+                                            </span>
+                                        }
+                                        @if (CargaComprobantesPreciosLista.Tramos(fl, info.Config) is { Length: > 0 } tramos)
+                                        {
+                                            <span class="directa-chip">Por cantidad: <strong>@tramos</strong></span>
+                                        }
+                                        @if (_contexto?.VeCostos == true && fl.Costo > 0)
+                                        {
+                                            <span class="directa-chip">Costo: <strong>@Dinero(fl.Costo)</strong></span>
+                                            @if (MargenSobreCosto(item, fl) is { } margen)
+                                            {
+                                                <span class="directa-chip">Margen s/costo: <strong>@margen.ToString("0.#", Ar)%</strong></span>
+                                            }
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                     }
                     <tr class="directa-nueva">
                         <td class="col-n">@(lineasArticulo.Count + 1)</td>
@@ -129,7 +175,7 @@
                         <td class="directa-nueva__desc">
                             @if (_nuevoArticulo is { } na) { @na.Descripcion }
                             else if (_cliente is null) { <span class="directa-muted">Elegí el cliente para cargar artículos.</span> }
-                            else { <span class="directa-muted">Escribí el código y Enter · F5 busca por descripción</span> }
+                            else { <span class="directa-muted">Código o código de barras y Enter · cantidad*código lo agrega directo · F5 busca por descripción</span> }
                         </td>
                         <td class="num"><input id="cd-cantidad" class="directa-cell" inputmode="decimal" aria-label="Cantidad" value="@_nuevoCantidad"
                             @oninput="e => _nuevoCantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="CantidadKeyDown" disabled="@(NuevaLineaBloqueada || _nuevoArticulo is null)" /></td>
@@ -150,7 +196,7 @@
         <section class="directa-conceptos" aria-label="Otros conceptos">
             <header class="directa-conceptos__titulo">
                 <h3>Otros conceptos</h3>
-                @if (_draft.Tc == "NC" && _draft.FacturaAsociadaId is not null)
+                @if (EsCredito && _draft.FacturaAsociadaId is not null)
                 {
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-down-circle"
                                 Disabled="@NuevaLineaBloqueada" OnClick="_ => TraerConceptosFacturaAsync()">Traer conceptos de la factura</AlfaButton>
@@ -162,7 +208,7 @@
             @if (conceptos.Count == 0)
             {
                 <p class="directa-muted">@(_cliente is null ? "Elegí el cliente para agregar conceptos."
-                    : _draft.Tc == "NC" ? (_draft.FacturaAsociadaId is null ? "Elegí la factura asociada: se traen sus conceptos y podés ajustar los importes a acreditar." : "Tocá «Traer conceptos de la factura» o «Agregar concepto» con el importe a acreditar.")
+                    : EsCredito ? (_draft.FacturaAsociadaId is null ? "Elegí la factura asociada: se traen sus conceptos y podés ajustar los importes a acreditar." : "Tocá «Traer conceptos de la factura» o «Agregar concepto» con el importe a acreditar.")
                     : "Servicios, abonos, fletes o cualquier importe sin artículo: tocá «Agregar concepto».")</p>
             }
             else
@@ -202,6 +248,7 @@
                 <span>Neto gravado @Dinero(pv.Liquidacion.NetoGravado)</span>
                 @if (pv.Liquidacion.NetoNoGravado != 0) { <span>Exento @Dinero(pv.Liquidacion.NetoNoGravado)</span> }
                 @foreach (var grupo in pv.Liquidacion.Alicuotas) { <span>IVA @grupo.Alicuota.ToString("0.##", Ar)%: @Dinero(grupo.Iva)</span> }
+                @if (pv.Liquidacion.ImpuestosInternos != 0) { <span>Imp. internos @Dinero(pv.Liquidacion.ImpuestosInternos)</span> }
                 <span class="directa-pie__total">Total <strong>@Dinero(pv.Liquidacion.Total)</strong> <small>validado</small></span>
             }
             else
@@ -212,10 +259,57 @@
             }
         </section>
 
+        @if (EsContado)
+        {
+            @* Venta de contado: los medios de pago generan la cobranza con la factura (como el POS). *@
+            <section class="directa-conceptos" aria-label="Cobranza de contado">
+                <header class="directa-conceptos__titulo">
+                    <h3>Cobranza de contado</h3>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle"
+                                Disabled="@(Bloqueado || _mediosPago.Count == 0)" OnClick="_ => AgregarPago()">Agregar medio de pago</AlfaButton>
+                </header>
+                @if (_mediosPago.Count == 0)
+                {
+                    <p class="directa-help">No hay medios de pago configurados (cuentas con medio de pago en el plan de cuentas).</p>
+                }
+                else
+                {
+                    <table class="directa-table directa-table--conceptos">
+                        <thead><tr><th>Medio de pago</th><th class="num col-total">Importe</th><th class="col-acc"></th></tr></thead>
+                        <tbody>
+                            @for (var i = 0; i < _draft.Pagos.Count; i++)
+                            {
+                                var pago = _draft.Pagos[i];
+                                var indice = i;
+                                <tr>
+                                    <td>
+                                        <select class="directa-cell directa-cell--texto" aria-label="@($"Medio de pago {indice + 1}")" disabled="@Bloqueado"
+                                                @onchange="e => Cambiar(() => pago.CodigoMedioPago = e.Value?.ToString() ?? string.Empty)">
+                                            @foreach (var medio in _mediosPago)
+                                            {
+                                                <option value="@medio.Codigo" selected="@(medio.Codigo == pago.CodigoMedioPago)">@medio.Descripcion</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td class="num"><input class="directa-cell" inputmode="decimal" aria-label="@($"Importe medio de pago {indice + 1}")"
+                                        placeholder="@(_draft.Pagos.Count == 1 ? "Total" : "")" value="@(pago.Importe == 0 ? "" : Num(pago.Importe))" disabled="@Bloqueado"
+                                        @onchange="e => Cambiar(() => pago.Importe = ParseNumero(e.Value?.ToString()) ?? 0)" /></td>
+                                    <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar medio de pago" Disabled="@(Bloqueado || _draft.Pagos.Count == 1)"
+                                        OnClick="() => Cambiar(() => _draft.Pagos.Remove(pago))" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <p class="directa-help">@TextoCobranza</p>
+                }
+            </section>
+        }
+
         @if (_plan is { } p)
         {
             <p class="directa-help">@p.Tc @p.Letra · Punto @p.PuntoVenta · Lista: @(string.IsNullOrEmpty(p.Origen.Lista) ? "Maestro de artículos" : p.Origen.Lista) · Clase: @p.ClasePrecio ·
-                Vencimiento @p.Vencimiento.ToString("dd/MM/yyyy") · Stock: @(p.SignoStock == 1 ? "entrada" : "salida") de artículos</p>
+                Vencimiento @p.Vencimiento.ToString("dd/MM/yyyy") · Stock: @(!p.DescargaStock ? "no mueve stock" : p.SignoStock == 1 ? "entrada de artículos" : "salida de artículos") ·
+                @(p.EsElectronico ? "CAE, libro de IVA y asiento" : p.GeneraAsiento ? "asiento, sin libro de IVA ni CAE" : "sin asiento, libro de IVA ni cuenta corriente")</p>
         }
         <AlfaInput Label="Observaciones" Value="@_draft.Observaciones" ValueChanged="v => Cambiar(() => _draft.Observaciones = v ?? string.Empty)" MaxLength="1000" Disabled="@Bloqueado" />
     }
@@ -267,8 +361,8 @@
         Message="@($"{confirmacion.Tc} {confirmacion.Letra} · Punto {confirmacion.PuntoVenta} · Total {Dinero(confirmacion.Liquidacion.Total)}")"
         SecondaryMessage="@(confirmacion.EsElectronico ? (_contexto?.EmisionReal == true
             ? "COMPROBANTE REAL con validez fiscal: se pedirá CAE en ARCA producción y se grabarán comprobante, artículos, stock y asiento."
-            : "Se solicitará CAE y se grabarán comprobante, artículos, stock y asiento en la base de homologación.") : "Se grabarán proforma, artículos, stock y asiento. No se solicita CAE ni se afecta el libro de IVA.")"
-        ConfirmLabel="Emitir y grabar" OnConfirm="GrabarAsync" OnCancel="() => _confirmar = false" />
+            : "Se solicitará CAE y se grabarán comprobante, artículos, stock y asiento en la base de homologación.") : DescripcionNoElectronico(confirmacion))"
+        ConfirmLabel="@(confirmacion.EsElectronico ? "Emitir y grabar" : "Grabar")" OnConfirm="GrabarAsync" OnCancel="() => _confirmar = false" />
 }
 @if (_confirmarSalida)
 {
@@ -314,13 +408,27 @@
     private bool Bloqueado => _busy || _intento;
     private bool NuevaLineaBloqueada => Bloqueado || _cliente is null || _contexto is null;
     private bool Terminal => _resultado?.Estado is "GRABADA" or "RECHAZADA";
-    private bool Editable => _draft.Tc is "FC" or "FP" or "ND";
-    // La NC acredita artículos a los precios de su factura, pero los otros conceptos se cargan con el importe a acreditar.
-    private bool PermiteConceptos => Editable || _draft.Tc == "NC";
+    private bool Editable => CargaComprobantesTipos.EsEditable(_draft.Tc);
+    // NC y NCFP acreditan artículos a los precios de su factura, pero los otros conceptos se cargan con el importe a acreditar.
+    private bool EsCredito => CargaComprobantesTipos.EsCredito(_draft.Tc);
+    private bool PermiteConceptos => Editable || EsCredito;
+    // FC/NC/ND siempre; el resto solo si la base tiene su talonario en la tabla de comprobantes (como V_mv_vta).
+    private IReadOnlyList<AlfaSelectOption> TiposComprobante => CargaComprobantesTipos.Todos
+        .Where(x => CargaComprobantesTipos.EsElectronico(x.Tc) || x.Tc == _draft.Tc ||
+            ((_contexto?.TalonariosDirecta ?? []).Any(t => t.Tc == x.Tc) && (!CargaComprobantesTipos.EsProforma(x.Tc) || _contexto?.UsaFacturaProforma == true)))
+        .Select(x => new AlfaSelectOption(x.Tc, x.Descripcion)).ToList();
+    private static string DescripcionNoElectronico(CargaComprobantesPlanGrabacion plan)
+    {
+        var stock = plan.DescargaStock ? ", stock" : "";
+        return plan.GeneraAsiento
+            ? $"Se grabarán {CargaComprobantesTipos.Descripcion(plan.Tc).ToLowerInvariant()}, artículos{stock} y asiento. No se solicita CAE ni se afecta el libro de IVA."
+            : $"Se grabarán {CargaComprobantesTipos.Descripcion(plan.Tc).ToLowerInvariant()} y artículos{stock}. No genera asiento, cuenta corriente, CAE ni libro de IVA.";
+    }
     private bool PuedeEditarPrecio => Editable && _contexto?.PuedeEditarPrecio == true;
     private const string ListaMaestro = "__MAESTRO";
     private string? ListaSeleccionada => _draft.ListaPrecio is null ? null : _draft.ListaPrecio.Length == 0 ? ListaMaestro : _draft.ListaPrecio;
-    private IReadOnlyList<AlfaSelectOption> ListasPrecio => new[] { new AlfaSelectOption(ListaMaestro, "Maestro de artículos (sin lista)") }
+    // Retail: el maestro tiene costos, no se ofrece vender sin lista.
+    private IReadOnlyList<AlfaSelectOption> ListasPrecio => (_contexto?.Retail == true ? [] : new[] { new AlfaSelectOption(ListaMaestro, "Maestro de artículos (sin lista)") })
         .Concat((_contexto?.ListasPrecio ?? []).Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion))).ToList();
 
     // Talonarios del tipo elegido: primero los de la unidad de negocio, después los generales.
@@ -340,7 +448,8 @@
     private string ListaDelCliente => _clienteResumen is not { } c ? "Del cliente"
         : c.ListaCodigo.Length == 0 ? "Del cliente: maestro de artículos (sin lista)"
         : $"Del cliente: {c.ListaCodigo}{(c.ListaNombre.Length == 0 ? "" : $" · {c.ListaNombre}")}";
-    private string ClaseDelCliente => _clienteResumen is not { } c ? "Del cliente"
+    private string ClaseDelCliente => _contexto?.Retail == true ? $"Fija (Retail): {_contexto.ClaseRetail}"
+        : _clienteResumen is not { } c ? "Del cliente"
         : $"Del cliente: {c.Clase}{(c.ClaseNombre.Length == 0 ? "" : $" · {c.ClaseNombre}")}";
     private string VendedorDelCliente => _clienteResumen is not { } c || c.VendedorCodigo.Length == 0 ? "Del cliente"
         : $"Del cliente: {c.VendedorCodigo}{(c.VendedorNombre.Length == 0 ? "" : $" · {c.VendedorNombre}")}";
@@ -352,7 +461,7 @@
         try
         {
             var resumen = await Service.GetClienteDirectaAsync(codigo, _lifetime.Token);
-            if (!_disposed && _cliente?.Codigo == codigo) { _clienteResumen = resumen; StateHasChanged(); }
+            if (!_disposed && _cliente?.Codigo == codigo) { _clienteResumen = resumen; AjustarPagos(); StateHasChanged(); }
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { _clienteResumen = null; }
     }
@@ -410,6 +519,7 @@
         var contexto = await Service.GetContextoAsync(_lifetime.Token);
         if (_disposed || version != _contextVersion) return;
         _contexto = contexto; _draft.UnidadNegocio = contexto.UnidadNegocio;
+        try { _mediosPago = await Service.GetMediosPagoAsync(_lifetime.Token); } catch (Exception ex) when (ex is not OperationCanceledException) { _mediosPago = []; }
         AplicarDefaultsUnidad();
     });
 
@@ -434,6 +544,80 @@
         if (Bloqueado) return;
         change(); _plan = null; _feedback = null; UpdateHeader();
         _ = GuardarBorradorAsync();
+        _ = RefrescarPreciosListaAsync();
+    }
+
+    // ---- Cobranza de contado (condición de venta con 0 días) ----
+    private IReadOnlyList<CargaComprobantesOpcionFiltro> _mediosPago = [];
+    private bool EsContado => _clienteResumen is { DiasVencimiento: <= 0 } && CargaComprobantesCobranzaContado.Cobra(_draft.Tc);
+    // Un medio con el total (como el cobro rápido del POS); se cambia o se agregan otros.
+    private void AjustarPagos()
+    {
+        if (!EsContado) { _draft.Pagos.Clear(); return; }
+        if (_draft.Pagos.Count == 0 && _mediosPago.Count > 0) _draft.Pagos.Add(new() { CodigoMedioPago = _mediosPago[0].Codigo });
+    }
+    private void AgregarPago()
+    {
+        if (_mediosPago.Count == 0) return;
+        Cambiar(() =>
+        {
+            // El primero deja de ser "el total": se le fija lo que falta para que la suma cierre.
+            if (_draft.Pagos.Count == 1 && _draft.Pagos[0].Importe == 0) _draft.Pagos[0].Importe = TotalACobrar;
+            _draft.Pagos.Add(new() { CodigoMedioPago = _mediosPago[0].Codigo, Importe = Math.Max(0, TotalACobrar - _draft.Pagos.Sum(x => x.Importe)) });
+        });
+    }
+    private decimal TotalACobrar => _plan?.Liquidacion.Total ?? decimal.Round(_draft.Lineas.Sum(TotalLinea), 2);
+    private string TextoCobranza
+    {
+        get
+        {
+            var total = TotalACobrar;
+            var cobrado = _draft.Pagos.Count == 1 && _draft.Pagos[0].Importe == 0 ? total : _draft.Pagos.Sum(x => x.Importe);
+            var diferencia = total - cobrado;
+            return $"Total a cobrar {Dinero(total)}{(_plan is null ? " (estimado)" : "")} · Medios {Dinero(cobrado)}"
+                + (diferencia == 0 ? "" : diferencia > 0 ? $" · Falta {Dinero(diferencia)}" : $" · Sobra {Dinero(-diferencia)}")
+                + " · Se graba la cobranza con el comprobante.";
+        }
+    }
+
+    // ---- Lista de precios de los renglones (ofertas, tramos por cantidad y detalle de clases) ----
+    private CargaComprobantesPreciosInfo? _preciosLista;
+    private string _preciosListaClave = "";
+    private readonly HashSet<string> _preciosListaPedidos = new(StringComparer.OrdinalIgnoreCase);
+    private string? _detallePrecios;
+    private async Task RefrescarPreciosListaAsync()
+    {
+        if (_cliente is null || _contexto is null || _disposed) { _preciosLista = null; _preciosListaClave = ""; return; }
+        var clave = $"{_draft.Cliente}|{_draft.Tc}|{_draft.ListaPrecio}|{_draft.ClasePrecio}";
+        var articulos = _draft.Lineas.Where(x => !x.EsConcepto && x.Articulo.Length > 0).Select(x => x.Articulo).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (clave == _preciosListaClave && articulos.All(_preciosListaPedidos.Contains)) return;
+        if (clave != _preciosListaClave) _preciosListaPedidos.Clear();
+        try
+        {
+            var info = await Service.GetPreciosListaDirectaAsync(new CargaComprobantesDirecta
+                { Cliente = _draft.Cliente, Tc = _draft.Tc, ListaPrecio = _draft.ListaPrecio, ClasePrecio = _draft.ClasePrecio }, articulos, _lifetime.Token);
+            if (_disposed || clave != $"{_draft.Cliente}|{_draft.Tc}|{_draft.ListaPrecio}|{_draft.ClasePrecio}") return;
+            _preciosLista = info; _preciosListaClave = clave;
+            foreach (var a in articulos) _preciosListaPedidos.Add(a);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _preciosLista = null; _preciosListaClave = ""; }
+    }
+    private CargaComprobantesPrecioListaFila? FilaLista(CargaComprobantesDirectaLinea item)
+        => item.EsConcepto || _preciosLista is not { } info ? null
+        : info.Filas.GetValueOrDefault(item.Articulo) is { } f && f.Precio(info.Clase) > 0 ? f : null;
+    private CargaComprobantesPrecioListaResuelto? PrecioLista(CargaComprobantesDirectaLinea item)
+        => FilaLista(item) is { } f ? CargaComprobantesPreciosLista.Resolver(f, _preciosLista!.Clase, item.Cantidad, _draft.Fecha ?? DateTime.Today, _preciosLista.Config) : null;
+    // El descuento editado gana; si no, el automático de la oferta por cantidad (como DtoArticulo en V_mv_vta).
+    private decimal DescuentoLinea(CargaComprobantesDirectaLinea item) => item.Descuento ?? PrecioLista(item)?.Descuento ?? 0;
+    // Sin permiso de costos se ven solo la clase de venta y la de oferta; con permiso, todas las clases cargadas.
+    private IEnumerable<int> ClasesDetalle(CargaComprobantesPreciosInfo info, CargaComprobantesPrecioListaFila fila)
+        => (_contexto?.VeCostos == true ? Enumerable.Range(1, 8) : new[] { info.Clase, info.Config.ClaseOferta })
+            .Where(c => c is >= 1 and <= 8 && fila.Precio(c) > 0).Distinct();
+    private decimal? MargenSobreCosto(CargaComprobantesDirectaLinea item, CargaComprobantesPrecioListaFila fila)
+    {
+        var neto = PrecioNeto(item) * (1 - DescuentoLinea(item) / 100m);
+        return fila.Costo > 0 && neto > 0 ? decimal.Round((neto - fila.Costo) * 100 / fila.Costo, 1) : null;
     }
     private void ClienteChanged(CargaComprobantesOpcionFiltro? cliente)
     {
@@ -447,7 +631,7 @@
             _draft.ListaPrecio = null; _draft.ClasePrecio = null;
             foreach (var a in _articulos.Values) { a.PrecioUnitarioConIva = 0; a.PrecioUnitarioNeto = 0; }
             LimpiarEdiciones(); LimpiarNuevaLinea();
-            _draft.Vendedor = null; _clienteResumen = null;
+            _draft.Vendedor = null; _clienteResumen = null; _draft.Pagos.Clear();
         });
         _ = CargarClienteResumenAsync();
         if (cliente is not null) _ = FocoAsync("cd-codigo");
@@ -455,7 +639,7 @@
     private void LimpiarAsociado() { _asociado = null; _asociadoTexto = ""; _draft.FacturaAsociadaId = null; }
     private void TipoChanged(string? value) => Cambiar(() =>
     {
-        _draft.Tc = value ?? "FC"; _talonario = null; LimpiarAsociado(); LimpiarEdiciones();
+        _draft.Tc = value ?? "FC"; _talonario = null; LimpiarAsociado(); LimpiarEdiciones(); AjustarPagos();
         if (!Editable) { _draft.ListaPrecio = null; _draft.ClasePrecio = null; }
         AplicarDefaultsUnidad();
     });
@@ -481,12 +665,12 @@
         AplicarDefaultsUnidad();
     });
     private Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarAsociados(string texto, CancellationToken ct)
-        => Service.BuscarFacturasAsociadasAsync(_draft.Cliente, _draft.UnidadNegocio, texto, ct);
+        => Service.BuscarFacturasAsociadasAsync(_draft.Tc, _draft.Cliente, _draft.UnidadNegocio, texto, ct);
     private async Task AsociadoChanged(CargaComprobantesOpcionFiltro? value)
     {
         Cambiar(() => { _asociado = value; if (value is not null) _asociadoTexto = value.Descripcion; _draft.FacturaAsociadaId = int.TryParse(value?.Codigo, out var id) ? id : null; });
         // NC sin renglones: se proponen los conceptos de la factura (después se ajustan o quitan).
-        if (_draft.Tc == "NC" && _draft.FacturaAsociadaId is not null && _draft.Lineas.Count == 0) await TraerConceptosFacturaAsync();
+        if (EsCredito && _draft.FacturaAsociadaId is not null && _draft.Lineas.Count == 0) await TraerConceptosFacturaAsync();
     }
 
     private async Task TraerConceptosFacturaAsync()
@@ -523,14 +707,21 @@
     private async Task CodigoKeyDown(KeyboardEventArgs e)
     {
         if (e.Key != "Enter" || NuevaLineaBloqueada) return;
-        var texto = _nuevoCodigo.Trim();
+        var (cantidad, texto) = SepararCantidad(_nuevoCodigo);
         if (texto.Length == 0) return;
-        if (_nuevoArticulo is not null) { await FocoAsync("cd-cantidad"); return; }
+        if (_nuevoArticulo is not null && cantidad is null) { await FocoAsync("cd-cantidad"); return; }
         try
         {
+            // Como el POS: código o código de barras exacto trae el artículo; "cantidad*código" lo agrega directo.
+            var exacto = await Service.GetArticuloPorCodigoDirectaAsync(new CargaComprobantesDirecta {
+                Cliente = _draft.Cliente, Tc = _draft.Tc, ListaPrecio = _draft.ListaPrecio, ClasePrecio = _draft.ClasePrecio, Fecha = _draft.Fecha }, texto, _lifetime.Token);
+            if (exacto is not null)
+            {
+                await PrepararNuevaLineaAsync(exacto);
+                if (cantidad is { } c) { _nuevoCantidad = Num(c); await AgregarNuevaLineaAsync(); }
+                return;
+            }
             var resultados = await BuscarArticulos(texto, _lifetime.Token);
-            var exacto = resultados.FirstOrDefault(x => Igual(x.IdArticulo, texto) || Igual(x.Codigo, texto));
-            if (exacto is not null) { await PrepararNuevaLineaAsync(exacto); return; }
             if (resultados.Count == 0)
             {
                 _feedback = AppUiMessage.Warning("Artículo no encontrado", $"No hay artículos para \"{texto}\". Probá con F5 para buscar por descripción.");
@@ -543,6 +734,15 @@
         {
             _feedback = AppUiMessage.Error("No se pudo buscar el artículo", ex is CargaComprobantesReglaException ? ex.Message : "Volvé a intentar.");
         }
+    }
+    // "3*7791234567890" o "1,5*826": lo anterior al asterisco es la cantidad (como el POS).
+    private static (decimal? Cantidad, string Codigo) SepararCantidad(string? entrada)
+    {
+        var raw = (entrada ?? "").Trim();
+        var i = raw.IndexOf('*');
+        if (i > 0 && i < raw.Length - 1 && ParseNumero(raw[..i].Trim()) is { } c && c > 0)
+            return (c, raw[(i + 1)..].Trim());
+        return (null, raw);
     }
     private Task CantidadKeyDown(KeyboardEventArgs e)
     {
@@ -595,7 +795,7 @@
 
     private void CantidadChanged(CargaComprobantesDirectaLinea item, string? value) => Cambiar(() => item.Cantidad = ParseNumero(value) ?? 0);
     private void BultosChanged(CargaComprobantesDirectaLinea item, string? value)
-    { if (_draft.Tc != "NC") Cambiar(() => item.Bultos = string.IsNullOrWhiteSpace(value) ? null : ParseNumero(value) ?? -1); }
+    { if (!EsCredito) Cambiar(() => item.Bultos = string.IsNullOrWhiteSpace(value) ? null : ParseNumero(value) ?? -1); }
     private void PrecioChanged(CargaComprobantesDirectaLinea item, string? value)
     { if (PuedeEditarPrecio) Cambiar(() => item.PrecioUnitarioNeto = string.IsNullOrWhiteSpace(value) ? null : ParseNumero(value) ?? -1); }
     private void DescuentoChanged(CargaComprobantesDirectaLinea item, string? value)
@@ -604,7 +804,7 @@
     private decimal PrecioNeto(CargaComprobantesDirectaLinea item)
         => item.EsConcepto ? item.PrecioUnitarioNeto ?? 0 : item.PrecioUnitarioNeto ?? _articulos.GetValueOrDefault(item.Articulo)?.PrecioUnitarioNeto ?? 0;
     private decimal NetoLinea(CargaComprobantesDirectaLinea item)
-        => decimal.Round(item.Cantidad * PrecioNeto(item) * (1 - (item.Descuento ?? 0) / 100m), 2);
+        => decimal.Round(item.Cantidad * PrecioNeto(item) * (1 - (item.EsConcepto ? item.Descuento ?? 0 : DescuentoLinea(item)) / 100m), 2);
     // Estimación: los conceptos gravan la alícuota general (la validación calcula la definitiva, ej. factura C sin IVA).
     private decimal TasaConcepto(CargaComprobantesDirectaLinea item) => item.ConceptoNoGravado ? 0 : _contexto?.AlicuotaGeneral ?? 0;
     private decimal TotalLinea(CargaComprobantesDirectaLinea item)
@@ -612,7 +812,7 @@
 
     private async Task AgregarConceptoAsync()
     {
-        if (NuevaLineaBloqueada || !Editable) return;
+        if (NuevaLineaBloqueada || !PermiteConceptos) return;
         Cambiar(() => _draft.Lineas.Add(new() { Concepto = string.Empty, Cantidad = 1, PrecioUnitarioNeto = 0 }));
         await FocoAsync($"cd-concepto-{_draft.Lineas.Count(x => x.EsConcepto) - 1}");
     }
@@ -917,7 +1117,7 @@
         }
         acciones.Add(new() { Key = "nuevo-cliente", Label = "Nuevo cliente / CUIT", Icon = "bi-person-plus", Disabled = Bloqueado, OnClick = () => AbrirClientes(true) });
         acciones.Add(new() { Key = "validar", Label = "Validar", Icon = "bi-check2-square", Disabled = Bloqueado, OnClick = ValidarAsync });
-        acciones.Add(new() { Key = "grabar", Label = _draft.Tc == "FP" ? "Grabar proforma" : "Emitir", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
+        acciones.Add(new() { Key = "grabar", Label = CargaComprobantesTipos.EsElectronico(_draft.Tc) ? "Emitir" : CargaComprobantesTipos.EsProforma(_draft.Tc) ? "Grabar proforma" : "Grabar", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
             Disabled = Bloqueado || _plan is null || _contexto?.PuedeEmitir != true, OnClick = AbrirConfirmacion });
         acciones.Add(new() { Key = "clientes", Label = "Buscar cliente", Icon = "bi-search", Priority = PageHeaderActionPriority.Overflow, Disabled = Bloqueado, OnClick = () => AbrirClientes(false) });
         acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBusquedaAsync });

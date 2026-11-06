@@ -49,6 +49,8 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         var carga = directa is null ? default : await new CargaComprobantesDirectaPreparador().PrepararAsync(cn, contexto, directa, ct, tx);
         var origen = directa is null ? await repository.GetOrigenAsync(cn, contexto, origenId, ct, tx) : carga.Origen;
         var tcDestino = directa?.Tc ?? "FC";
+        var electronico = CargaComprobantesTipos.EsElectronico(tcDestino);
+        var generaAsiento = CargaComprobantesTipos.GeneraAsiento(tcDestino, contexto.ProformaSinRegistracion);
         var asociado = directa?.FacturaAsociadaId is null ? default : await new CargaComprobantesAsociadoPreparador()
             .PrepararAsync(cn, directa, origen, fecha, ct, tx);
         if (directa is not null)
@@ -79,7 +81,7 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) Clave,
                 COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),VALORAUX),'') Valor
             FROM dbo.TA_CONFIGURACION WHERE CLAVE IN
-                ('EQU_FC','EQU_NC','EQU_ND','EQU_FP','MOTIVOSTOCKDEFAULT','PERIODO','FECHAOPERDESDE','FECHAOPERHASTA',
+                ('EQU_FC','EQU_NC','EQU_ND','EQU_FP','EQU_NCFP','MOTIVOSTOCKDEFAULT','PERIODO','FECHAOPERDESDE','FECHAOPERHASTA',
                  'DescargaStockxReparto','NoFacturaVencidos','SS_BloqueoActivo');
             """, transaction: tx, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase);
         if (cfg.GetValueOrDefault("DESCARGASTOCKXREPARTO") == "SI" || cfg.GetValueOrDefault("NOFACTURAVENCIDOS") == "SI" ||
@@ -104,6 +106,11 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
                 ISNULL(LTRIM(RTRIM(c.CodigoImputacion)),'') Imputacion,
                 ISNULL(LTRIM(RTRIM(imp.Repuestos)),'') CuentaVentas,ISNULL(LTRIM(RTRIM(imp.DFI_IVARI)),'') CuentaIva,
                 ISNULL(LTRIM(RTRIM(imp.Otros)),'') CuentaOtros,
+                -- ObtieneCuentaIVADF: V_TA_INPUT_VENTAS, luego TA_CUENTASIVA, luego CuentaImpuestoInterno.
+                COALESCE(NULLIF(LTRIM(RTRIM(imp.V_DFI_IMPINT)),''),
+                    (SELECT TOP (1) NULLIF(LTRIM(RTRIM(ci.V_DFI_IMPINT)),'') FROM dbo.TA_CUENTASIVA ci),
+                    (SELECT TOP (1) NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(50),k.VALOR))),'') FROM dbo.TA_CONFIGURACION k
+                        WHERE UPPER(LTRIM(RTRIM(k.CLAVE)))='CUENTAIMPUESTOINTERNO'),'') CuentaInternos,
                 CONVERT(bit,ISNULL(cl.BLOQUEO,0)|ISNULL(cl.Dada_De_Baja,0)) Bloqueado,
                 CONVERT(bit,ISNULL(cl.ExentoIvaArticulos,0)) Exento,ISNULL(cond.PorcRecargo,0) Recargo,
                 ISNULL(cl.Limite_Credito,0) LimiteCredito
@@ -116,68 +123,91 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
                 AND LTRIM(RTRIM(imp.CondIva))=LTRIM(RTRIM(cl.IVA))
             WHERE c.ID=@Id;
             """, new { contexto.Usuario, Id = origenId, ClienteDirecto = directa?.Cliente.Trim() }, tx, cancellationToken: ct));
-        if (datos.Bloqueado || datos.Exento != origen.ExentoIvaArticulos || datos.Dias <= 0 || datos.Recargo != 0 || datos.LimiteCredito > 0)
-            throw new CargaComprobantesReglaException("El cliente requiere revisar bloqueo, exención, cobranza de contado, recargo o límite de crédito. La primera grabación admite cuenta corriente simple.");
-        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+        // PR/NP/RM no van a cuenta corriente: no dependen de la condición de pago ni del límite de crédito.
+        // Contado (condición con 0 días): FC/FP/ND se cobran en el momento con la cobranza del POS.
+        var contado = generaAsiento && datos.Dias <= 0;
+        if (contado && (directa is null || !CargaComprobantesCobranzaContado.Cobra(tcDestino)))
+            throw new CargaComprobantesReglaException(CargaComprobantesTipos.EsCredito(tcDestino)
+                ? "El cliente es de contado: la nota de crédito con devolución de dinero todavía no está incorporada."
+                : "El cliente es de contado: la cobranza se incorporó para facturas, proformas y notas de débito cargadas directamente.");
+        if (datos.Bloqueado || datos.Exento != origen.ExentoIvaArticulos || datos.Recargo != 0 ||
+            (generaAsiento && !contado && datos.LimiteCredito > 0))
+            throw new CargaComprobantesReglaException("El cliente requiere revisar bloqueo, exención, recargo de la condición de venta o límite de crédito.");
+        if (!contado && directa?.Pagos.Count > 0)
+            throw new CargaComprobantesReglaException("El cliente es de cuenta corriente: quitá los medios de pago (la cobranza se carga aparte).");
+        if (generaAsiento && !contado && await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
             SELECT COUNT(*) FROM dbo.V_TA_Cpra_VtaDias WHERE LTRIM(RTRIM(IDCOND_CPRA_VTA))=@Condicion;
             """, new { Condicion = datos.CondicionVenta }, tx, cancellationToken: ct)) != 0)
             throw new CargaComprobantesReglaException("La condición de venta tiene vencimientos especiales pendientes de incorporar.");
         var condicionArca = ArcaCodigosAfip.ResolverCondicionIvaReceptor(datos.CondicionDescripcion, datos.CondicionIva);
         var tal = await cn.QuerySingleOrDefaultAsync<TalonarioDatos>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(ISNULL(LETRAS,''))) Letras,A_SUC_DEFAULT PuntoA,B_SUC_DEFAULT PuntoB,C_SUC_DEFAULT PuntoC,X_SUC_DEFAULT PuntoX,
-                LTRIM(RTRIM(DEBEHABER)) DebeHaber,LTRIM(RTRIM(ES)) Stock
+                M_SUC_DEFAULT PuntoM,R_SUC_DEFAULT PuntoR,E_SUC_DEFAULT PuntoE,
+                LTRIM(RTRIM(ISNULL(DEBEHABER,''))) DebeHaber,LTRIM(RTRIM(ISNULL(ES,''))) Stock
             FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))=@TipoDestino AND Talonario=@Talonario
                 AND LTRIM(RTRIM(SISTEMA))='Ventas' AND LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) IN ('',@Unidad);
             """, new { Talonario = talonario, Unidad = origen.UnidadNegocio, TipoDestino = tcDestino }, tx, cancellationToken: ct));
         // Un talonario que solo admite la letra C es de un emisor monotributista (cada unidad de negocio
         // factura con su CUIT): factura C para cualquier receptor. Si no, A/B según la condición del cliente.
         // Una nota sale con la letra de su factura (el talonario de notas suele admitir A/B/C/X).
-        var letraAsociado = asociado.Fiscal?.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => null };
-        var letra = tcDestino == "FP" ? "X"
+        // Los no electrónicos (proformas, presupuestos, pedidos y remitos) usan las letras habilitadas en el talonario.
+        var letraAsociado = electronico ? asociado.Fiscal?.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => null } : null;
+        var letra = !electronico ? CargaComprobantesTipos.LetraNoFiscal(tcDestino, tal?.Letras ?? "", ArcaCodigosAfip.RequiereFacturaA(condicionArca))
             : letraAsociado is not null && tal?.Letras.Contains(letraAsociado, StringComparison.OrdinalIgnoreCase) == true ? letraAsociado
             : tal?.Letras.Equals("C", StringComparison.OrdinalIgnoreCase) == true ? "C"
             : ArcaCodigosAfip.RequiereFacturaA(condicionArca) ? "A" : "B";
-        if (letra is "A" or "B" && !ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionArca, letra))
+        if (electronico && letra is "A" or "B" && !ArcaCodigosAfip.EsCondicionValidaParaLetra(condicionArca, letra))
             throw new CargaComprobantesReglaException("La condición fiscal del cliente no admite una factura A/B en este circuito.");
-        if (letra == "C" && (directa is null || directa.Lineas.Any(x => !x.EsConcepto)))
+        if (electronico && letra == "C" && (directa is null || directa.Lineas.Any(x => !x.EsConcepto)))
             throw new CargaComprobantesReglaException("Los comprobantes C se incorporaron para otros conceptos (abonos, servicios); los artículos en C siguen pendientes.");
-        if (asociado.Fiscal is { } asociacion && (asociacion.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => "" }) != letra)
+        if (electronico && asociado.Fiscal is { } asociacion && (asociacion.Tipo switch { 1 => "A", 6 => "B", 11 => "C", _ => "" }) != letra)
             throw new CargaComprobantesReglaException("La letra de la nota no coincide con la factura asociada y la condición actual del cliente.");
-        if (tal is null || tal.Letras.IndexOf(letra, StringComparison.OrdinalIgnoreCase) < 0)
+        // Sin letras habilitadas, los no electrónicos salen con X (como V_mv_vta).
+        if (tal is null || (tal.Letras.IndexOf(letra, StringComparison.OrdinalIgnoreCase) < 0 && (electronico || tal.Letras.Length > 0)))
             throw new CargaComprobantesReglaException($"El talonario elegido no admite la letra {letra} para este cliente y unidad de negocio.");
-        var punto = letra switch { "A" => tal.PuntoA, "C" => tal.PuntoC, "X" => tal.PuntoX, _ => tal.PuntoB };
-        if (tal.DebeHaber != (tcDestino == "NC" ? "H" : "D") || tal.Stock is not ("E" or "S") || (directa is null && tal.Stock != "S"))
+        var punto = letra switch { "A" => tal.PuntoA, "C" => tal.PuntoC, "X" => tal.PuntoX, "M" => tal.PuntoM, "R" => tal.PuntoR, "E" => tal.PuntoE, _ => tal.PuntoB };
+        if (!CargaComprobantesTipos.LetraConNumeracion(letra))
+            throw new CargaComprobantesReglaException($"La letra {letra} del talonario no tiene numeración en la tabla de comprobantes.");
+        // Stock como V_mv_vta: PR/NP no mueven stock; RM solo con DescargaStockRemitos=SI; el resto según el talonario (E/S).
+        var mueveStock = directa is null || tcDestino switch { "PR" or "NP" => false, "RM" => contexto.DescargaStockRemitos, _ => true };
+        if (((generaAsiento || directa is null) && tal.DebeHaber != (CargaComprobantesTipos.EsCredito(tcDestino) ? "H" : "D")) ||
+            (mueveStock && tal.Stock is not ("E" or "S")) || (directa is null && tal.Stock != "S"))
             throw new CargaComprobantesReglaException("El talonario no tiene un sentido contable/stock compatible con este circuito.");
         // Con factura electrónica por unidad (V_TA_UnidadNegocio.USAEFC) el punto es el de la unidad; si no, PV_EFACTURA.
         var puntoElectronico = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(ISNULL(PDV,''))) FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo))=@Unidad AND ISNULL(USAEFC,0)<>0;
             """, new { Unidad = origen.UnidadNegocio }, tx, cancellationToken: ct)) is { Length: > 0 } pdvUnidad && int.TryParse(pdvUnidad, out var pdv)
             ? pdv : contexto.PuntoVentaElectronico;
-        if ((tcDestino != "FP" && punto != puntoElectronico) || punto is null or <= 0 or > 9999)
+        if (!electronico && punto is null or <= 0 or > 9999)
+            throw new CargaComprobantesReglaException($"El talonario no tiene un punto de venta válido para la letra {letra}. Revisalo en la tabla de comprobantes.");
+        if ((electronico && punto != puntoElectronico) || punto is null or <= 0 or > 9999)
             throw new CargaComprobantesReglaException($"Elegí el talonario electrónico del punto {puntoElectronico} para la unidad del origen.");
         liquidacion = CargaComprobantesCalculador.Calcular(origen, contexto, cantidades, letra == "C");
         // Una nota de crédito no puede acreditar más que el saldo de su factura (total menos notas anteriores).
-        if (tcDestino == "NC" && asociado.Fiscal is not null && liquidacion.Total > asociado.Saldo + 0.01m)
+        if (CargaComprobantesTipos.EsCredito(tcDestino) && asociado.Fiscal is not null && liquidacion.Total > asociado.Saldo + 0.01m)
             throw new CargaComprobantesReglaException($"La nota de crédito ({liquidacion.Total:N2}) supera el saldo acreditable de la factura ({asociado.Saldo:N2}).");
-        _ = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
-        var tc = cfg.GetValueOrDefault("EQU_" + tcDestino, "");
-        if (string.IsNullOrWhiteSpace(tc)) throw new CargaComprobantesReglaException("Falta la equivalencia contable del comprobante.");
-        var subdiario = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+        var totalFiscal = CargaComprobantesDesgloseFiscal.Crear(liquidacion).Total;
+        var cobranza = contado ? await CargaComprobantesCobranzaContado.ValidarAsync(cn, tx, directa!.Pagos, totalFiscal, ct) : null;
+        // ObtieneEQCpteCont: NCFP usa su propio código si no hay EQU_NCFP. Sin asiento no hay comprobante contable.
+        var tc = !generaAsiento ? "" : cfg.GetValueOrDefault("EQU_" + tcDestino, "") is { Length: > 0 } equ ? equ.Trim()
+            : tcDestino == "NCFP" ? "NCFP" : "";
+        if (generaAsiento && string.IsNullOrWhiteSpace(tc)) throw new CargaComprobantesReglaException("Falta la equivalencia contable del comprobante.");
+        var subdiario = !generaAsiento ? "" : await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
             SELECT LTRIM(RTRIM(m.Subdiario)) FROM dbo.MA_SUBDIARIOSCOMPROBANTES m
             JOIN dbo.MA_SUBDIARIOS s ON LTRIM(RTRIM(s.CODIGO))=LTRIM(RTRIM(m.Subdiario))
             WHERE LTRIM(RTRIM(m.TC))=@Tc;
             """, new { Tc = tc }, tx, cancellationToken: ct));
         // Alfa Gestión imputa al ejercicio abierto que contiene la fecha (ej. FC de 2026 en PERIODO 20 con la
         // clave PERIODO=19 sin actualizar). Si no hay uno único, se conserva la clave como antes.
-        var periodosFecha = (await cn.QueryAsync<string>(new CommandDefinition("""
+        var periodosFecha = !generaAsiento ? new List<string>() : (await cn.QueryAsync<string>(new CommandDefinition("""
             SELECT CONVERT(nvarchar(6),PERIODO) FROM dbo.MV_EJERCICIOS
             WHERE ISNULL(CERRADO,0)=0 AND @Fecha BETWEEN [FECHA DESDE] AND [FECHA HASTA];
             """, new { Fecha = fecha.Date }, tx, cancellationToken: ct))).ToList();
-        var periodo = periodosFecha.Count == 1 ? periodosFecha[0].Trim() : cfg.GetValueOrDefault("PERIODO", "");
+        var periodo = !generaAsiento ? "" : periodosFecha.Count == 1 ? periodosFecha[0].Trim() : cfg.GetValueOrDefault("PERIODO", "");
         // ObtieneTipoRegCont retorna cuatro blancos cuando no hay asociación.
         // VB6 compara con "" sin Trim y conserva ese valor; las FC existentes de esta base lo usan.
         subdiario ??= string.Empty;
-        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+        if (generaAsiento && await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
             SELECT COUNT(*) FROM dbo.MV_EJERCICIOS WHERE CONVERT(nvarchar(6),PERIODO)=@Periodo
                 AND ISNULL(CERRADO,0)=0 AND @Fecha BETWEEN [FECHA DESDE] AND [FECHA HASTA];
             """, new { Periodo = periodo, Fecha = fecha.Date }, tx, cancellationToken: ct)) != 1)
@@ -189,7 +219,14 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         if (hayArticulos) cuentas.Add(cuentaVentas);
         if (hayConceptos) cuentas.Add(datos.CuentaOtros);
         if (liquidacion.Iva != 0) cuentas.Add(datos.CuentaIva);
-        foreach (var cuenta in cuentas.Distinct())
+        if (generaAsiento && liquidacion.ImpuestosInternos != 0)
+        {
+            if (datos.CuentaInternos.Length == 0)
+                throw new CargaComprobantesReglaException("No se informó la cuenta para imputar los impuestos internos (V_DFI_IMPINT en imputaciones de ventas o CuentaImpuestoInterno).");
+            cuentas.Add(datos.CuentaInternos);
+        }
+        // Sin asiento (PR/NP/RM) no se exigen cuentas contables.
+        foreach (var cuenta in generaAsiento ? cuentas.Distinct() : Enumerable.Empty<string>())
             if (cuenta.Length == 0 || await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
                 SELECT COUNT(*) FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(CODIGO))=@Cuenta
                     AND TITULO=0 AND BLOQUEO=0 AND Dada_De_Baja=0 AND ISNULL(usaCCostos,0)=0;
@@ -219,7 +256,9 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
             Periodo = periodo, Subdiario = subdiario, Letra = letra, PuntoVenta = punto.Value,
             CuentaCliente = datos.CuentaCliente, CuentaVentas = cuentaVentas, CuentaIva = datos.CuentaIva,
             CuentaOtros = hayConceptos ? datos.CuentaOtros : null,
-            DescargaStock = directa is not null || origen.Tc == "NP" || !contexto.DescargaStockRemitos,
+            CuentaInternos = liquidacion.ImpuestosInternos != 0 ? datos.CuentaInternos : null,
+            Cobranza = cobranza,
+            DescargaStock = directa is not null ? mueveStock : origen.Tc == "NP" || !contexto.DescargaStockRemitos,
             MotivoStock = cfg.GetValueOrDefault("MOTIVOSTOCKDEFAULT", "")
         };
         // Snapshot completo de cabecera/detalle y datos de cliente usados por la grabación.
@@ -250,6 +289,9 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         public int? PuntoB { get; set; }
         public int? PuntoC { get; set; }
         public int? PuntoX { get; set; }
+        public int? PuntoM { get; set; }
+        public int? PuntoR { get; set; }
+        public int? PuntoE { get; set; }
         public string DebeHaber { get; set; } = "";
         public string Stock { get; set; } = "";
     }
@@ -265,6 +307,7 @@ public sealed class CargaComprobantesPlanificador(CargaComprobantesRepository re
         public string CuentaVentas { get; set; } = "";
         public string CuentaIva { get; set; } = "";
         public string CuentaOtros { get; set; } = "";
+        public string CuentaInternos { get; set; } = "";
         public int Dias { get; set; }
         public bool Bloqueado { get; set; }
         public bool Exento { get; set; }

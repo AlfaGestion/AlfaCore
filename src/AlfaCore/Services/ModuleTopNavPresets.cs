@@ -153,6 +153,14 @@ public static class ModuleTopNavPresets
             ("base", "Base de datos", "/actualizaciones")
         ]);
 
+    // Maestro de artículos y sus listas de precios de ventas.
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildArticulos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("articulos", "Artículos", "/articulos"),
+            ("listas", "Listas de precios", "/articulos/listas-precios")
+        ]);
+
     // Tablas de referencia (antes sin menú propio: se llegaba desde Archivos).
     public static IReadOnlyList<PageHeaderTopNavItem> BuildArchivos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,

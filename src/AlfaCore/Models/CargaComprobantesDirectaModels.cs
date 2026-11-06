@@ -22,12 +22,22 @@ public sealed class CargaComprobantesDirecta
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Vendedor { get; set; }
     public List<CargaComprobantesDirectaLinea> Lineas { get; set; } = [];
+    /// <summary>Medios de pago de una venta de contado (condición de venta con 0 días); vacío en cuenta corriente.</summary>
+    public List<CargaComprobantesPago> Pagos { get; set; } = [];
     /// <summary>
     /// Factura generada por la facturación automática (MA_CUENTAS_AUTOCPTES): al grabar actualiza
     /// FechaUltMov y suma una cuota, igual que v_FacturacionAutomatica.vbp. Null en las cargas comunes.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? FacturacionAutomaticaCuenta { get; set; }
+}
+
+/// <summary>Medio de pago de la cobranza de contado: cuenta de MA_CUENTAS con MEDIODEPAGO (como el POS).</summary>
+public sealed class CargaComprobantesPago
+{
+    public string CodigoMedioPago { get; set; } = "";
+    /// <summary>Cero en un único medio: se completa con el total del comprobante.</summary>
+    public decimal Importe { get; set; }
 }
 
 public sealed class CargaComprobantesDirectaLinea

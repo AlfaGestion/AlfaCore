@@ -1,0 +1,723 @@
+@page "/articulos/listas-precios"
+@page "/{idweb}/{idbase:int}/articulos/listas-precios"
+@using System.Globalization
+@using AlfaCore.Services
+@inject IListasPreciosService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Listas de precios | Alfa Gestión</PageTitle>
+
+@* Listas de precios de ventas (D010504 del legacy, V_MA_PRECIOS.exe @PARAMETROADICIONAL=V), con agregado en bloque,
+   aumento por porcentaje y redondeo (V_MA_AUMENTOGLOBAL). Cada precio se graba al salir de la celda. *@
+<div class="gd-page gd lp-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    @if (_ctx is null)
+    {
+        @if (_cargado) { <AlfaEmptyState Title="Listas de precios" Message="No se pudieron cargar las listas de precios." /> }
+    }
+    else if (_ctx.Listas.Count == 0)
+    {
+        <AlfaEmptyState Title="Sin listas de precios" Message="Creá la primera lista de precios de ventas con «Nueva lista»." />
+    }
+    else
+    {
+        <section class="lp-barra">
+            <AlfaSelect Label="Lista" Value="@_idLista" ValueChanged="CambiarListaAsync" Class="lp-barra__lista"
+                        Options="@_ctx.Listas.Select(l => new AlfaSelectOption(l.IdLista.Trim(), $"{l.IdLista.Trim()} · {l.Nombre}")).ToList()" />
+            @if (Lista is { } lista)
+            {
+                <div class="lp-barra__datos">
+                    <span class="lp-tag">@(lista.ConIva ? "Precios con IVA" : "Precios sin IVA")</span>
+                    @if (lista.ConIvaMezclado) { <span class="lp-tag lp-tag--alerta" title="Hay artículos con y sin IVA: al editar la lista se unifican">IVA mezclado</span> }
+                    <span class="lp-tag">@lista.Articulos.ToString("N0", Ar) artículos</span>
+                    <span class="lp-tag">Redondeo @lista.Decimales decimales</span>
+                    @if (lista.Clientes > 0) { <span class="lp-tag">@lista.Clientes clientes</span> }
+                    @if (lista.ClasesDelMaestro.Length > 0) { <span class="lp-tag" title="Estas clases las copia la lista del maestro de artículos y no se editan acá">Del maestro: @TextoClasesMaestro(lista.ClasesDelMaestro)</span> }
+                    @if (lista.VigenciaDesde is not null || lista.VigenciaHasta is not null)
+                    {
+                        <span class="lp-tag">Vigencia @(lista.VigenciaDesde?.ToString("dd/MM/yyyy") ?? "…") a @(lista.VigenciaHasta?.ToString("dd/MM/yyyy") ?? "…")</span>
+                    }
+                </div>
+                <div class="lp-barra__acciones">
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-pencil" Disabled="_busy" OnClick="_ => EditarLista()">Datos de la lista</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-square" Disabled="_busy" OnClick="_ => AbrirAgregar()">Agregar artículos</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-percent" Disabled="_busy || _total == 0" OnClick="_ => AbrirAumento()">Aumento %</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-123" Disabled="_busy || _total == 0" OnClick="_ => AbrirRedondeo()">Redondeo</AlfaButton>
+                    @if (_seleccion.Count > 0)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-x-square" Disabled="_busy" OnClick="_ => _confirmarQuitar = true">Quitar @_seleccion.Count</AlfaButton>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="lp-filtros">
+            <AlfaSelect Label="Rubro" Value="@_filtro.RubroCodigo" ValueChanged="v => FiltrarAsync(() => _filtro.RubroCodigo = v ?? string.Empty)" Options="@Opciones(_ctx.Rubros, "Todos")" />
+            <AlfaSelect Label="Marca" Value="@_filtro.MarcaCodigo" ValueChanged="v => FiltrarAsync(() => _filtro.MarcaCodigo = v ?? string.Empty)" Options="@Opciones(_ctx.Marcas, "Todas")" />
+            @if (_ctx.Familias.Count > 0)
+            {
+                <AlfaSelect Label="Familia" Value="@_filtro.FamiliaCodigo" ValueChanged="v => FiltrarAsync(() => _filtro.FamiliaCodigo = v ?? string.Empty)" Options="@Opciones(_ctx.Familias, "Todas")" />
+            }
+            <AlfaInput Label="Proveedor (código)" Value="@_filtro.ProveedorCodigo" ValueChanged="v => FiltrarAsync(() => _filtro.ProveedorCodigo = (v ?? string.Empty).Trim())" />
+            <div class="lp-filtros__checks">
+                <AlfaCheckbox Value="@_filtro.SoloOfertas" ValueChanged="v => FiltrarAsync(() => _filtro.SoloOfertas = v == true)">Solo ofertas vigentes</AlfaCheckbox>
+                <AlfaCheckbox Value="@_filtro.IncluirSuspendidos" ValueChanged="v => FiltrarAsync(() => _filtro.IncluirSuspendidos = v == true)">Incluir suspendidos</AlfaCheckbox>
+            </div>
+        </section>
+
+        @if (_filas.Count == 0 && !_busy)
+        {
+            <AlfaEmptyState Title="Sin artículos" Message="@(HayFiltros ? "Ningún artículo de la lista coincide con el filtro." : "La lista no tiene artículos: usá «Agregar artículos».")" />
+        }
+        else
+        {
+            <section class="lp-tabla__marco"><div class="lp-tabla__scroll">
+                <table class="lp-tabla">
+                    <thead>
+                        <tr>
+                            <th class="lp-col-check"><AlfaCheckbox Value="@TodosSeleccionados" ValueChanged="SeleccionarTodos" /></th>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            <th class="n">Costo</th>
+                            @foreach (var c in _clasesVisibles)
+                            {
+                                <th class="n" title="@ClaseTitulo(c)">@NombreClase(c)@(c == _ctx.ClaseVenta ? " ★" : "")</th>
+                            }
+                            <th class="n" title="Margen del precio de venta sobre el costo, sin IVA">Margen</th>
+                            <th>Oferta</th>
+                            <th class="lp-col-acc"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var fila in _filas)
+                    {
+                        var f = fila;
+                        <tr class="@(f.Suspendido ? "lp-fila--suspendido" : "")">
+                            <td class="lp-col-check"><AlfaCheckbox Value="@_seleccion.Contains(f.Id)" ValueChanged="v => Seleccionar(f.Id, v == true)" /></td>
+                            <td class="mono">@f.IdArticulo</td>
+                            <td>@f.Descripcion<small>@f.Rubro@(f.Marca.Length > 0 ? $" · {f.Marca}" : "")@(f.Suspendido ? " · suspendido" : "")</small></td>
+                            <td class="n">@Dinero(f.Costo)</td>
+                            @foreach (var clase in _clasesVisibles)
+                            {
+                                var c = clase;
+                                @if (f.ClasesDelMaestro.Contains(c.ToString(CultureInfo.InvariantCulture)))
+                                {
+                                    <td class="n lp-del-maestro" title="Lo copia del maestro de artículos">@Dinero(f.Precio(c))</td>
+                                }
+                                else
+                                {
+                                    <td class="n"><input class="lp-celda" inputmode="decimal" aria-label="@($"{NombreClase(c)} de {f.IdArticulo}")"
+                                        value="@Num(f.Precio(c))" disabled="@_busy" @onchange="e => CambiarPrecioAsync(f, c, e.Value?.ToString())" /></td>
+                                }
+                            }
+                            <td class="n">@(Margen(f) is { } m ? m.ToString("0.#", Ar) + "%" : "—")</td>
+                            <td>@TextoOferta(f)</td>
+                            <td class="lp-col-acc">
+                                @if (_guardando.Contains(f.Id)) { <i class="bi bi-hourglass-split" title="Grabando"></i> }
+                                else { <AlfaIconButton Icon="bi-sliders" Label="Todas las clases, oferta y precios por cantidad" Disabled="_busy" OnClick="() => EditarFila(f)" /> }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div></section>
+            <div class="lp-paginas">
+                <span>@_total.ToString("N0", Ar) artículo(s)@(HayFiltros ? " con el filtro" : "")</span>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-chevron-left" Disabled="@(_busy || _filtro.PageNumber <= 1)" OnClick="_ => PaginaAsync(-1)">Anterior</AlfaButton>
+                <span>Página @_filtro.PageNumber de @Paginas</span>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-chevron-right" Disabled="@(_busy || _filtro.PageNumber >= Paginas)" OnClick="_ => PaginaAsync(1)">Siguiente</AlfaButton>
+            </div>
+        }
+    }
+</div>
+
+@* ---- Alta / edición de la lista ---- *@
+<AlfaDialog Open="@(_editLista is not null)" Title="@(_editLista?.IdListaOriginal.Length > 0 ? "Datos de la lista" : "Nueva lista de precios")" Size="AlfaDialogSize.Md"
+            Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _editLista = null">
+    <ChildContent>
+    @if (_editLista is { } e)
+    {
+        <div class="lp-form">
+            <div class="lp-par">
+                <AlfaInput Label="Código" Value="@e.IdLista" Disabled="@(e.IdListaOriginal.Length > 0)" MaxLength="4" ValueChanged="v => e.IdLista = (v ?? string.Empty).Trim()" />
+                <AlfaInput Label="Nombre" Value="@e.Nombre" MaxLength="50" ValueChanged="v => e.Nombre = v ?? string.Empty" />
+            </div>
+            <div class="lp-par">
+                <AlfaInput Label="Vigencia desde" Type="date" Value="@(e.VigenciaDesde?.ToString("yyyy-MM-dd") ?? string.Empty)" ValueChanged="v => e.VigenciaDesde = Fecha(v)" />
+                <AlfaInput Label="Vigencia hasta" Type="date" Value="@(e.VigenciaHasta?.ToString("yyyy-MM-dd") ?? string.Empty)" ValueChanged="v => e.VigenciaHasta = Fecha(v)" />
+            </div>
+            <div class="lp-par">
+                <AlfaInput Label="Decimales de redondeo" Type="number" Value="@e.Decimales.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => e.Decimales = int.TryParse(v, out var d) ? d : 2" />
+                <div class="lp-form__check">
+                    <AlfaCheckbox Value="@e.ConIva" ValueChanged="v => e.ConIva = v == true">Los precios incluyen IVA</AlfaCheckbox>
+                </div>
+            </div>
+            @if (e.IdListaOriginal.Length == 0 && _ctx is { Listas.Count: > 0 })
+            {
+                <AlfaSelect Label="Copiar artículos y precios de" Value="@(e.CopiarDeLista ?? string.Empty)" ValueChanged="v => e.CopiarDeLista = string.IsNullOrEmpty(v) ? null : v"
+                            Options="@(new[] { new AlfaSelectOption("", "No copiar: lista vacía") }.Concat(_ctx.Listas.Select(l => new AlfaSelectOption(l.IdLista.Trim(), $"{l.IdLista.Trim()} · {l.Nombre}"))).ToList())" />
+            }
+            @if (e.IdListaOriginal.Length > 0 && Lista is { ConIva: var conIvaActual } && conIvaActual != e.ConIva)
+            {
+                <small class="lp-nota lp-nota--alerta">Cambiar «con IVA» no recalcula los precios: los mismos importes pasan a leerse @(e.ConIva ? "con" : "sin") IVA. Si hace falta, ajustalos después con Aumento %.</small>
+            }
+            <small class="lp-nota">El redondeo lo aplica la base al grabar cada precio (igual que el Alfa Gestión de escritorio).</small>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        @if (_editLista is { IdListaOriginal.Length: > 0 })
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => _confirmarBorrar = true">Borrar lista</AlfaButton>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _editLista = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarListaAsync()">Grabar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@* ---- Una fila: todas las clases, oferta y precios por cantidad ---- *@
+<AlfaDialog Open="@(_editFila is not null)" Title="@($"{_editFila?.IdArticulo} · {_editFila?.Descripcion}")" Eyebrow="@Lista?.Nombre" Size="AlfaDialogSize.Md"
+            Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _editFila = null">
+    <ChildContent>
+    @if (_editFila is { } ef && _ctx is not null)
+    {
+        <div class="lp-form">
+            <div class="lp-clases">
+                @for (var clase = 1; clase <= 8; clase++)
+                {
+                    var c = clase;
+                    var delMaestro = ef.ClasesDelMaestro.Contains(c.ToString(CultureInfo.InvariantCulture));
+                    <AlfaInput Label="@ClaseTitulo(c)" Type="number" Disabled="@delMaestro" HelpText="@(delMaestro ? "Lo copia del maestro" : null)"
+                               Value="@ef.Precio(c).ToString(CultureInfo.InvariantCulture)" ValueChanged="v => ef.SetPrecio(c, Decimal(v) ?? 0)" />
+                }
+            </div>
+            <h4 class="lp-subtitulo">Oferta por fecha@(_ctx.ClaseOferta > 0 ? $" (precio: {NombreClase(_ctx.ClaseOferta)})" : "")</h4>
+            <div class="lp-par">
+                <AlfaInput Label="Desde" Type="date" Value="@(ef.OfertaDesde?.ToString("yyyy-MM-dd") ?? string.Empty)" ValueChanged="v => ef.OfertaDesde = Fecha(v)" />
+                <AlfaInput Label="Hasta" Type="date" Value="@(ef.OfertaHasta?.ToString("yyyy-MM-dd") ?? string.Empty)" ValueChanged="v => ef.OfertaHasta = Fecha(v)" />
+            </div>
+            <h4 class="lp-subtitulo">Precios por cantidad</h4>
+            <div class="lp-par">
+                <AlfaInput Label="Desde cantidad (1)" Type="number" Value="@NumOpt(ef.CantidadOf2)" ValueChanged="v => ef.CantidadOf2 = Decimal(v)" />
+                <AlfaInput Label="@(_ctx.OfertaPorDescuento ? "% de descuento (1)" : "Precio (1)")" Type="number" Value="@NumOpt(ef.Precio9)" ValueChanged="v => ef.Precio9 = Decimal(v)" />
+            </div>
+            <div class="lp-par">
+                <AlfaInput Label="Desde cantidad (2)" Type="number" Value="@NumOpt(ef.CantidadOf3)" ValueChanged="v => ef.CantidadOf3 = Decimal(v)" />
+                <AlfaInput Label="@(_ctx.OfertaPorDescuento ? "% de descuento (2)" : "Precio (2)")" Type="number" Value="@NumOpt(ef.Precio10)" ValueChanged="v => ef.Precio10 = Decimal(v)" />
+            </div>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _editFila = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => GuardarFilaDialogoAsync()">Grabar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@* ---- Agregar artículos en bloque ---- *@
+<AlfaDialog Open="@(_agregar is not null)" Title="Agregar artículos a la lista" Eyebrow="@Lista?.Nombre" Size="AlfaDialogSize.Md"
+            Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _agregar = null">
+    <ChildContent>
+    @if (_agregar is { } a && _ctx is not null)
+    {
+        <div class="lp-form">
+            <AlfaSelect Label="Qué artículos" Value="@a.Modo" ValueChanged="v => { a.Modo = v ?? ListaPrecioAgregarModo.Rubro; a.Valor = string.Empty; }"
+                        Options="@ModosAgregar" />
+            @switch (a.Modo)
+            {
+                case ListaPrecioAgregarModo.Rubro:
+                    <AlfaSelect Label="Rubro" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty" Options="@Opciones(_ctx.Rubros, "Elegí el rubro")" />
+                    break;
+                case ListaPrecioAgregarModo.Marca:
+                    <AlfaSelect Label="Marca" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty" Options="@Opciones(_ctx.Marcas, "Elegí la marca")" />
+                    break;
+                case ListaPrecioAgregarModo.Familia:
+                    <AlfaSelect Label="Familia (incluye sus subfamilias)" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty" Options="@Opciones(_ctx.Familias, "Elegí la familia")" />
+                    break;
+                case ListaPrecioAgregarModo.Proveedor:
+                    <AlfaInput Label="Código del proveedor" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty" />
+                    break;
+                case ListaPrecioAgregarModo.Articulos:
+                    <AlfaInput Label="Códigos de artículo (separados por coma o espacio)" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty" />
+                    break;
+                case ListaPrecioAgregarModo.OtraLista:
+                    <AlfaSelect Label="Copiar de la lista" Value="@a.Valor" ValueChanged="v => a.Valor = v ?? string.Empty"
+                                Options="@(new[] { new AlfaSelectOption("", "Elegí la lista") }.Concat(_ctx.Listas.Where(l => l.IdLista != Lista?.IdLista).Select(l => new AlfaSelectOption(l.IdLista.Trim(), $"{l.IdLista.Trim()} · {l.Nombre}"))).ToList())" />
+                    break;
+            }
+            @if (a.Modo != ListaPrecioAgregarModo.OtraLista)
+            {
+                <AlfaCheckbox Value="@a.IncluirSuspendidos" ValueChanged="v => a.IncluirSuspendidos = v == true">Incluir artículos suspendidos</AlfaCheckbox>
+            }
+            <small class="lp-nota">@(a.Modo == ListaPrecioAgregarModo.OtraLista
+                ? "Se copian los precios, las ofertas y los precios por cantidad de la otra lista."
+                : "Se agregan con los precios del maestro de artículos.") Los artículos que ya están en la lista no se tocan.</small>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _agregar = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-plus-lg" Disabled="_busy" OnClick="_ => AgregarAsync()">Agregar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@* ---- Aumento por porcentaje ---- *@
+<AlfaDialog Open="@(_aumento is not null)" Title="Aumento por porcentaje" Eyebrow="@Lista?.Nombre" Size="AlfaDialogSize.Md"
+            Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _aumento = null">
+    <ChildContent>
+    @if (_aumento is { } au && _ctx is not null)
+    {
+        <div class="lp-form">
+            <p class="lp-alcance">Se aplica a <strong>@_total.ToString("N0", Ar) artículo(s)</strong> @(HayFiltros ? "que coinciden con el filtro actual" : "de la lista").</p>
+            <div class="lp-par">
+                <AlfaInput Label="Porcentaje (negativo para bajar)" Type="number" Value="@NumOpt(au.Porcentaje)" ValueChanged="v => au.Porcentaje = Decimal(v) ?? 0" />
+                <AlfaSelect Label="Calcular sobre" Value="@au.Origen.ToString(CultureInfo.InvariantCulture)" ValueChanged="v => au.Origen = int.TryParse(v, out var o) ? o : 4"
+                            Options="@(new[] { new AlfaSelectOption("0", "Costo del maestro") }.Concat(Enumerable.Range(1, 8).Select(c => new AlfaSelectOption(c.ToString(CultureInfo.InvariantCulture), NombreClase(c)))).ToList())" />
+            </div>
+            <span class="lp-etiqueta">Clases a actualizar</span>
+            <div class="lp-checks">
+                @foreach (var c in ClasesEditables)
+                {
+                    var cl = c;
+                    <AlfaCheckbox Value="@au.Destinos.Contains(cl)" ValueChanged="v => Alternar(au.Destinos, cl, v == true)">@NombreClase(cl)</AlfaCheckbox>
+                }
+            </div>
+            <AlfaInput Label="Redondear hacia arriba al múltiplo de (0 = no redondear)" Type="number" Value="@NumOpt(au.RedondearA)" ValueChanged="v => au.RedondearA = Decimal(v) ?? 0" />
+            @if (au.Origen == 0 && Lista?.ConIva == true)
+            {
+                <small class="lp-nota">La lista es con IVA: al calcular desde el costo se le suma el IVA de cada artículo.</small>
+            }
+            <small class="lp-nota lp-nota--alerta">Es una actualización masiva y no se deshace. Revisá el filtro antes de confirmar.</small>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _aumento = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => AumentarAsync()">Aplicar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@* ---- Redondeo ---- *@
+<AlfaDialog Open="@(_redondeo is not null)" Title="Redondeo de precios" Eyebrow="@Lista?.Nombre" Size="AlfaDialogSize.Md"
+            Loading="@_busy" ErrorMessage="@_error" CloseOnBackdrop="false" OnClose="() => _redondeo = null">
+    <ChildContent>
+    @if (_redondeo is { } rd && _ctx is not null)
+    {
+        <div class="lp-form">
+            <p class="lp-alcance">Se aplica a <strong>@_total.ToString("N0", Ar) artículo(s)</strong> @(HayFiltros ? "que coinciden con el filtro actual" : "de la lista").</p>
+            <AlfaInput Label="Subir al múltiplo próximo de (ej. 0,50 · 1 · 10 · 100)" Type="number" Value="@NumOpt(rd.Multiplo)" ValueChanged="v => rd.Multiplo = Decimal(v) ?? 0" />
+            <span class="lp-etiqueta">Clases a redondear</span>
+            <div class="lp-checks">
+                @foreach (var c in ClasesEditables)
+                {
+                    var cl = c;
+                    <AlfaCheckbox Value="@rd.Clases.Contains(cl)" ValueChanged="v => Alternar(rd.Clases, cl, v == true)">@NombreClase(cl)</AlfaCheckbox>
+                }
+            </div>
+            <small class="lp-nota">Ejemplo con múltiplo 10: 1.234,50 pasa a 1.240. Los precios que ya son múltiplo no cambian.</small>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _redondeo = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy" OnClick="_ => RedondearAsync()">Aplicar</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaConfirmDialog Open="@_confirmarQuitar" Title="Quitar artículos de la lista" Loading="@_busy"
+                   Message="@($"Se quitan {_seleccion.Count} artículo(s) de la lista {Lista?.Nombre}.")"
+                   SecondaryMessage="Queda registrado en el histórico de precios. Para volver a venderlos con esta lista hay que agregarlos de nuevo."
+                   ConfirmLabel="Quitar" OnConfirm="QuitarAsync" OnCancel="() => _confirmarQuitar = false" />
+
+<AlfaConfirmDialog Open="@_confirmarBorrar" Title="Borrar la lista de precios" Loading="@_busy"
+                   Message="@($"Se borra la lista {Lista?.IdLista.Trim()} · {Lista?.Nombre} con sus {Lista?.Articulos ?? 0} artículo(s).")"
+                   SecondaryMessage="No se puede borrar si algún cliente la tiene asignada. Queda registrado en el histórico de precios."
+                   ConfirmLabel="Borrar" OnConfirm="BorrarListaAsync" OnCancel="() => _confirmarBorrar = false" />
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private ListaPrecioContextoDto? _ctx;
+    private string _idLista = string.Empty;
+    private ListaPrecioFiltro _filtro = new();
+    private List<ListaPrecioFilaDto> _filas = [];
+    private ListaPrecioDto? _listaActual;
+    private int _total;
+    private List<int> _clasesVisibles = [];
+    private readonly HashSet<int> _seleccion = [];
+    private readonly HashSet<int> _guardando = [];
+    private AppUiMessage? _feedback;
+    private string? _error;
+    private bool _busy, _cargado, _confirmarQuitar, _confirmarBorrar;
+    private ListaPrecioGuardarRequest? _editLista;
+    private ListaPrecioFilaDto? _editFila;
+    private ListaPrecioAgregarRequest? _agregar;
+    private ListaPrecioAumentoRequest? _aumento;
+    private ListaPrecioRedondeoRequest? _redondeo;
+    private PageHeaderConfig? _header;
+    private CancellationTokenSource? _busqueda;
+
+    private ListaPrecioDto? Lista => _listaActual;
+    private int Paginas => Math.Max(1, (int)Math.Ceiling(_total / (double)Math.Max(1, _filtro.PageSize)));
+    private bool HayFiltros => _filtro.Texto.Trim().Length > 0 || _filtro.RubroCodigo.Length > 0 || _filtro.MarcaCodigo.Length > 0
+        || _filtro.FamiliaCodigo.Length > 0 || _filtro.ProveedorCodigo.Length > 0 || _filtro.SoloOfertas;
+    private bool? TodosSeleccionados => _filas.Count == 0 || _seleccion.Count == 0 ? false
+        : _filas.All(f => _seleccion.Contains(f.Id)) ? true : null;
+    private IEnumerable<int> ClasesEditables => Enumerable.Range(1, 8)
+        .Where(c => Lista is null || !Lista.ClasesDelMaestro.Contains(c.ToString(CultureInfo.InvariantCulture)));
+
+    private static readonly IReadOnlyList<AlfaSelectOption> ModosAgregar =
+    [
+        new(ListaPrecioAgregarModo.Rubro, "De un rubro"),
+        new(ListaPrecioAgregarModo.Marca, "De una marca"),
+        new(ListaPrecioAgregarModo.Familia, "De una familia"),
+        new(ListaPrecioAgregarModo.Proveedor, "De un proveedor"),
+        new(ListaPrecioAgregarModo.Articulos, "Códigos puntuales"),
+        new(ListaPrecioAgregarModo.OtraLista, "Copiar de otra lista"),
+        new(ListaPrecioAgregarModo.Todos, "Todos los artículos")
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        await CargarContextoAsync();
+        _cargado = true;
+        UpdateHeader();
+    }
+
+    private async Task CargarContextoAsync(string? seleccionar = null)
+    {
+        var r = await UiOps.RunAsync(() => Service.GetContextoAsync(), "Listas de precios");
+        if (!r.Success) { _feedback = r.Feedback; return; }
+        _ctx = r.Value!;
+        var id = seleccionar ?? _idLista;
+        if (_ctx.Listas.All(l => l.IdLista.Trim() != id)) id = _ctx.Listas.FirstOrDefault()?.IdLista.Trim() ?? string.Empty;
+        _idLista = id;
+        if (_idLista.Length > 0) await BuscarAsync();
+    }
+
+    private async Task CambiarListaAsync(string? id)
+    {
+        _idLista = id ?? string.Empty;
+        _filtro.PageNumber = 1;
+        _seleccion.Clear();
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (_idLista.Length == 0) return;
+        _busqueda?.Cancel();
+        var cts = _busqueda = new CancellationTokenSource();
+        _busy = true; UpdateHeader();
+        try
+        {
+            _filtro.IdLista = _idLista;
+            var r = await UiOps.RunAsync(() => Service.BuscarAsync(_filtro, cts.Token), "Listas de precios");
+            if (cts.IsCancellationRequested) return;
+            if (!r.Success) { _feedback = r.Feedback; return; }
+            var p = r.Value!;
+            _filas = p.Filas; _total = p.Total; _listaActual = p.Lista;
+            _seleccion.IntersectWith(_filas.Select(f => f.Id));
+            CalcularClasesVisibles();
+        }
+        finally
+        {
+            if (ReferenceEquals(_busqueda, cts)) { _busy = false; UpdateHeader(); StateHasChanged(); }
+        }
+    }
+
+    /// <summary>Clases con algún precio en la página, más la de venta y la de oferta (las demás se ven en el detalle de la fila).</summary>
+    private void CalcularClasesVisibles()
+    {
+        if (_ctx is null) return;
+        _clasesVisibles = Enumerable.Range(1, 8)
+            .Where(c => c == _ctx.ClaseVenta || c == _ctx.ClaseOferta || _filas.Any(f => f.Precio(c) != 0))
+            .ToList();
+    }
+
+    private async Task FiltrarAsync(Action cambio)
+    {
+        cambio();
+        _filtro.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task PaginaAsync(int delta)
+    {
+        _filtro.PageNumber = Math.Clamp(_filtro.PageNumber + delta, 1, Paginas);
+        await BuscarAsync();
+    }
+
+    private async Task CambiarTextoAsync(string texto)
+    {
+        _filtro.Texto = texto;
+        _filtro.PageNumber = 1;
+        await Task.Delay(300);
+        if (_filtro.Texto != texto) return;
+        await BuscarAsync();
+    }
+
+    // ---- Edición en la grilla: cada precio se graba al salir de la celda ----
+    private async Task CambiarPrecioAsync(ListaPrecioFilaDto fila, int clase, string? valor)
+    {
+        var nuevo = Decimal(valor);
+        if (nuevo is null || nuevo < 0)
+        {
+            _feedback = AppUiMessage.Warning("Precio inválido", $"Ingresá un precio válido para {NombreClase(clase)} de {fila.IdArticulo}.");
+            return;
+        }
+        if (nuevo == fila.Precio(clase)) return;
+        var copia = Copiar(fila);
+        copia.SetPrecio(clase, nuevo.Value);
+        _guardando.Add(fila.Id);
+        try
+        {
+            var guardada = await Service.GuardarFilaAsync(_idLista, copia);
+            Reemplazar(guardada);
+        }
+        catch (Exception ex)
+        {
+            _feedback = UiOps.BuildMessage(ex, $"No se pudo grabar el precio de {fila.IdArticulo}.");
+            Reemplazar(fila); // vuelve a mostrar el valor anterior
+        }
+        finally { _guardando.Remove(fila.Id); StateHasChanged(); }
+    }
+
+    private void EditarFila(ListaPrecioFilaDto f) { _error = null; _editFila = Copiar(f); }
+
+    private async Task GuardarFilaDialogoAsync()
+    {
+        if (_editFila is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            Reemplazar(await Service.GuardarFilaAsync(_idLista, _editFila));
+            _editFila = null;
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo grabar el artículo."); }
+        finally { _busy = false; }
+    }
+
+    private void Reemplazar(ListaPrecioFilaDto fila)
+    {
+        var i = _filas.FindIndex(x => x.Id == fila.Id);
+        if (i >= 0) _filas[i] = fila;
+        CalcularClasesVisibles();
+    }
+
+    private static ListaPrecioFilaDto Copiar(ListaPrecioFilaDto f) => new()
+    {
+        Id = f.Id, IdArticulo = f.IdArticulo, Descripcion = f.Descripcion, CodigoBarra = f.CodigoBarra, Rubro = f.Rubro, Marca = f.Marca,
+        TasaIva = f.TasaIva, Exento = f.Exento, Suspendido = f.Suspendido, ConIva = f.ConIva, Costo = f.Costo,
+        Precio1 = f.Precio1, Precio2 = f.Precio2, Precio3 = f.Precio3, Precio4 = f.Precio4, Precio5 = f.Precio5, Precio6 = f.Precio6,
+        Precio7 = f.Precio7, Precio8 = f.Precio8, Precio9 = f.Precio9, Precio10 = f.Precio10, CantidadOf2 = f.CantidadOf2, CantidadOf3 = f.CantidadOf3,
+        OfertaDesde = f.OfertaDesde, OfertaHasta = f.OfertaHasta, ClasesDelMaestro = f.ClasesDelMaestro
+    };
+
+    private void Seleccionar(int id, bool valor) { if (valor) _seleccion.Add(id); else _seleccion.Remove(id); }
+    private void SeleccionarTodos(bool? valor)
+    {
+        if (valor == true) foreach (var f in _filas) _seleccion.Add(f.Id);
+        else _seleccion.Clear();
+    }
+
+    // ---- Lista ----
+    private async Task NuevaListaAsync()
+    {
+        _error = null;
+        var codigo = await UiOps.RunAsync(() => Service.GetProximoCodigoAsync(), "Listas de precios");
+        _editLista = new ListaPrecioGuardarRequest { IdLista = codigo.Success ? codigo.Value ?? string.Empty : string.Empty, ConIva = Lista?.ConIva ?? true, Decimales = 2 };
+        StateHasChanged();
+    }
+
+    private void EditarLista()
+    {
+        if (Lista is not { } l) return;
+        _error = null;
+        _editLista = new ListaPrecioGuardarRequest
+        {
+            IdListaOriginal = l.IdLista.Trim(), IdLista = l.IdLista.Trim(), Nombre = l.Nombre, VigenciaDesde = l.VigenciaDesde,
+            VigenciaHasta = l.VigenciaHasta, ConIva = l.ConIva, Decimales = l.Decimales
+        };
+    }
+
+    private async Task GuardarListaAsync()
+    {
+        if (_editLista is null || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            var alta = _editLista.IdListaOriginal.Length == 0;
+            var g = await Service.GuardarListaAsync(_editLista);
+            _editLista = null;
+            _feedback = AppUiMessage.Success(alta ? "Lista creada" : "Lista grabada",
+                $"{g.IdLista.Trim()} · {g.Nombre}{(alta && g.Articulos > 0 ? $" con {g.Articulos} artículo(s)" : "")}.");
+            await CargarContextoAsync(g.IdLista.Trim());
+        }
+        catch (Exception ex) { _error = Mensaje(ex, "No se pudo grabar la lista."); }
+        finally { _busy = false; UpdateHeader(); }
+    }
+
+    private async Task BorrarListaAsync()
+    {
+        if (Lista is not { } l || _busy) return;
+        _busy = true; _error = null;
+        try
+        {
+            await Service.BorrarListaAsync(l.IdLista);
+            _confirmarBorrar = false; _editLista = null;
+            _feedback = AppUiMessage.Success("Lista borrada", $"Se borró la lista {l.IdLista.Trim()} · {l.Nombre}.");
+            _idLista = string.Empty; _filas = []; _listaActual = null; _total = 0;
+            await CargarContextoAsync();
+        }
+        catch (Exception ex) { _confirmarBorrar = false; _error = Mensaje(ex, "No se pudo borrar la lista."); }
+        finally { _busy = false; UpdateHeader(); }
+    }
+
+    // ---- Operaciones en bloque ----
+    private void AbrirAgregar() { _error = null; _agregar = new ListaPrecioAgregarRequest { IdLista = _idLista }; }
+    private void AbrirAumento()
+    {
+        _error = null;
+        var venta = _ctx?.ClaseVenta ?? 4;
+        _aumento = new ListaPrecioAumentoRequest { Origen = venta, Destinos = ClasesEditables.Contains(venta) ? [venta] : [] };
+    }
+    private void AbrirRedondeo()
+    {
+        _error = null;
+        var venta = _ctx?.ClaseVenta ?? 4;
+        _redondeo = new ListaPrecioRedondeoRequest { Multiplo = 1, Clases = ClasesEditables.Contains(venta) ? [venta] : [] };
+    }
+
+    private Task AgregarAsync() => OperacionAsync(async () =>
+    {
+        var r = await Service.AgregarAsync(_agregar!);
+        _agregar = null;
+        return r;
+    }, "Artículos agregados", "No se pudieron agregar los artículos.", recargarContexto: true);
+
+    private Task AumentarAsync() => OperacionAsync(async () =>
+    {
+        _aumento!.Filtro = FiltroActual();
+        var r = await Service.AumentarAsync(_aumento);
+        _aumento = null;
+        return r;
+    }, "Aumento aplicado", "No se pudo aplicar el aumento.");
+
+    private Task RedondearAsync() => OperacionAsync(async () =>
+    {
+        _redondeo!.Filtro = FiltroActual();
+        var r = await Service.RedondearAsync(_redondeo);
+        _redondeo = null;
+        return r;
+    }, "Redondeo aplicado", "No se pudo redondear.");
+
+    private async Task QuitarAsync()
+    {
+        await OperacionAsync(async () =>
+        {
+            var r = await Service.QuitarAsync(_idLista, _seleccion.ToList());
+            _seleccion.Clear();
+            _confirmarQuitar = false;
+            return r;
+        }, "Artículos quitados", "No se pudieron quitar los artículos.", recargarContexto: true);
+        _confirmarQuitar = false;
+    }
+
+    private async Task OperacionAsync(Func<Task<ListaPrecioOperacionResultado>> op, string titulo, string error, bool recargarContexto = false)
+    {
+        if (_busy) return;
+        _busy = true; _error = null; UpdateHeader();
+        try
+        {
+            var r = await op();
+            _feedback = AppUiMessage.Success(titulo, r.Mensaje);
+            _busy = false;
+            if (recargarContexto) await CargarContextoAsync(); else await BuscarAsync();
+        }
+        catch (Exception ex)
+        {
+            if (_agregar is null && _aumento is null && _redondeo is null) _feedback = UiOps.BuildMessage(ex, error);
+            else _error = Mensaje(ex, error);
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private ListaPrecioFiltro FiltroActual() => new()
+    {
+        IdLista = _idLista, Texto = _filtro.Texto, RubroCodigo = _filtro.RubroCodigo, MarcaCodigo = _filtro.MarcaCodigo,
+        ProveedorCodigo = _filtro.ProveedorCodigo, FamiliaCodigo = _filtro.FamiliaCodigo, SoloOfertas = _filtro.SoloOfertas,
+        IncluirSuspendidos = _filtro.IncluirSuspendidos
+    };
+
+    private static void Alternar(List<int> lista, int valor, bool incluir)
+    {
+        if (incluir && !lista.Contains(valor)) lista.Add(valor);
+        if (!incluir) lista.Remove(valor);
+    }
+
+    // ---- Formato ----
+    private string NombreClase(int c) => _ctx?.NombresClases.ElementAtOrDefault(c - 1) is { Length: > 0 } n ? n : $"Clase {c}";
+    private string ClaseTitulo(int c) => $"{NombreClase(c)}{(c == _ctx?.ClaseVenta ? " (venta)" : c == _ctx?.ClaseOferta ? " (oferta)" : "")}";
+    private string TextoClasesMaestro(string mp) => string.Join(", ", mp.Select(ch => ch == '0' ? "costo" : int.TryParse(ch.ToString(), out var c) ? NombreClase(c) : ch.ToString()));
+    private static string Dinero(decimal v) => v == 0 ? "—" : v.ToString("N2", Ar);
+    private static string Num(decimal v) => v.ToString("0.####", Ar);
+    private static string NumOpt(decimal? v) => v is { } x && x != 0 ? x.ToString(CultureInfo.InvariantCulture) : string.Empty;
+    private static decimal? Decimal(string? v)
+    {
+        if (string.IsNullOrWhiteSpace(v)) return null;
+        var t = v.Trim();
+        // "1.234,50" (es-AR) o "1234.5" (input number).
+        if (t.Contains(',')) t = t.Replace(".", string.Empty).Replace(',', '.');
+        return decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ? d : null;
+    }
+    private static DateTime? Fecha(string? v) => DateTime.TryParse(v, CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f.Date : null;
+    private static string Mensaje(Exception ex, string fallback) => ex is AppUserFacingException or InvalidOperationException ? ex.Message : fallback;
+
+    private static List<AlfaSelectOption> Opciones(IEnumerable<ArticuloLookupOptionDto> items, string vacio)
+        => new[] { new AlfaSelectOption(string.Empty, vacio) }.Concat(items.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Descripcion} ({x.Codigo})"))).ToList();
+
+    /// <summary>Margen del precio de venta sobre el costo, sin IVA (CalPorcUtilidad del legacy).</summary>
+    private decimal? Margen(ListaPrecioFilaDto f)
+    {
+        var precio = f.Precio(_ctx?.ClaseVenta ?? 4);
+        if (f.Costo <= 0 || precio <= 0) return null;
+        var neto = f.ConIva && !f.Exento ? precio / (1 + f.TasaIva / 100m) : precio;
+        return decimal.Round((neto / f.Costo - 1) * 100m, 1);
+    }
+
+    private string TextoOferta(ListaPrecioFilaDto f)
+    {
+        var partes = new List<string>();
+        if (f.OfertaDesde is { } d)
+        {
+            var vigente = d.Date <= DateTime.Today && (f.OfertaHasta is null || f.OfertaHasta.Value.Date >= DateTime.Today);
+            var precio = _ctx?.ClaseOferta is > 0 and var co ? f.Precio(co) : 0;
+            partes.Add($"{(vigente ? "Vigente" : "Oferta")} {d:dd/MM}–{f.OfertaHasta?.ToString("dd/MM") ?? "…"}{(precio > 0 ? $" a {precio.ToString("N2", Ar)}" : "")}");
+        }
+        if ((f.CantidadOf2 ?? 0) > 0) partes.Add($"≥{f.CantidadOf2!.Value.ToString("0.##", Ar)}: {(_ctx?.OfertaPorDescuento == true ? $"{(f.Precio9 ?? 0).ToString("0.##", Ar)}%" : (f.Precio9 ?? 0).ToString("N2", Ar))}");
+        if ((f.CantidadOf3 ?? 0) > 0) partes.Add($"≥{f.CantidadOf3!.Value.ToString("0.##", Ar)}: {(_ctx?.OfertaPorDescuento == true ? $"{(f.Precio10 ?? 0).ToString("0.##", Ar)}%" : (f.Precio10 ?? 0).ToString("N2", Ar))}");
+        return partes.Count == 0 ? "—" : string.Join(" · ", partes);
+    }
+
+    private void UpdateHeader() => PageHeader.Set(_header = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "articulos", Title = "Listas de precios",
+        Breadcrumb = ["Artículos", "Listas de precios"],
+        TopNavigationItems = ModuleTopNavPresets.BuildArticulos(RouteContext, Nav, "listas"),
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Search = new PageHeaderSearchConfig { Text = _filtro.Texto, Placeholder = "Buscar por código, descripción o código de barras", OnTextChanged = CambiarTextoAsync },
+        Actions = [new() { Key = "nueva", Label = "Nueva lista", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _ctx is null, OnClick = NuevaListaAsync }]
+    });
+
+    public void Dispose()
+    {
+        _busqueda?.Cancel();
+        if (ReferenceEquals(PageHeader.Current, _header)) PageHeader.Clear();
+    }
+}

@@ -16,13 +16,13 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
     {
         var hoy = await cn.ExecuteScalarAsync<DateTime>(new CommandDefinition("SELECT CONVERT(date,GETDATE());", cancellationToken: ct));
         var fecha = directa?.Fecha?.Date ?? hoy.Date;
-        // WSFE (concepto productos) acepta CbteFch entre N-5 y N+5 días; la proforma no va a ARCA.
-        if (directa?.Fecha is not null && directa.Tc != "FP" && Math.Abs((fecha - hoy.Date).TotalDays) > 5)
+        // WSFE (concepto productos) acepta CbteFch entre N-5 y N+5 días; proformas, presupuestos, pedidos y remitos no van a ARCA.
+        if (directa?.Fecha is not null && CargaComprobantesTipos.EsElectronico(directa.Tc) && Math.Abs((fecha - hoy.Date).TotalDays) > 5)
             throw new CargaComprobantesReglaException($"La fecha de un comprobante electrónico puede ser hasta 5 días antes o después de hoy ({hoy:dd/MM/yyyy}).");
         var plan = await planner.CrearAsync(cn, ctx, origenId, talonario, cantidades, fecha, ct, directa: directa);
         // Período de ventas cerrado (CIERREVENTAS, Libro de IVA): el trigger de MV_ASIENTOS rechazaría el asiento.
-        // Las proformas no van al libro de IVA.
-        if (plan.Tc is not ("FP" or "NCFP" or "NDFP" or "CBFP") && await LibroIvaService.LeerCierreAsync(cn, ct) is { } cierre && fecha.Date <= cierre)
+        // Solo los electrónicos van al libro de IVA (proformas, presupuestos, pedidos y remitos no).
+        if (plan.EsElectronico && await LibroIvaService.LeerCierreAsync(cn, ct) is { } cierre && fecha.Date <= cierre)
             throw new CargaComprobantesReglaException($"Las ventas están cerradas hasta el {cierre:dd/MM/yyyy} (Libro de IVA presentado): usá una fecha posterior. No se pidió CAE.");
         // ARCA no autoriza un comprobante con fecha anterior al último del mismo tipo y punto de venta
         // (también los emitidos desde Alfa Gestión de escritorio): se avisa antes de pedir CAE.
@@ -35,26 +35,42 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             if (ultima?.Date > fecha.Date)
                 throw new CargaComprobantesReglaException($"La fecha {fecha:dd/MM/yyyy} es anterior al último {plan.Tc} {plan.Letra} del punto de venta {plan.PuntoVenta:0000} ({ultima:dd/MM/yyyy}); ARCA no la acepta. Usá una fecha igual o posterior.");
         }
-        var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
-            ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico.");
+        // Proformas, presupuestos, pedidos y remitos no van a ARCA: no necesitan certificado ni emisor.
+        if (!plan.EsElectronico)
+        {
+            await EnsayarAsync(cn, ctx, plan, fecha, ct);
+            plan.HuellaDatos = plan.Huella;
+            plan.CuitEmisor = "";
+            return plan;
+        }
+        ArcaEmisorConfig? emisorLeido;
+        try { emisorLeido = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct); }
+        catch (InvalidOperationException ex) { throw new CargaComprobantesReglaException(ex.Message); }
+        var emisor = emisorLeido ?? throw new CargaComprobantesReglaException("Falta configurar el emisor electrónico (Configuración General > Ventas > Facturación electrónica).");
         // Validar/vista previa: ensayo revertido, no exige la emisión real habilitada (sí al pedir CAE o grabar).
-        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, plan.EsElectronico ? plan.PuntoVenta : emisor.PuntoVentaElectronico, exigirEmisionHabilitada: false);
+        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, plan.PuntoVenta, exigirEmisionHabilitada: false);
         plan.AmbienteArca = emisor.Ambiente == ArcaAmbiente.Produccion ? ArcaModoEmision.Produccion : ArcaModoEmision.Homologacion;
         // La factura C la emite un monotributista (talonario solo C); la condición global CONDIVA no refleja cada unidad.
-        if (emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan.Letra != "C")
+        if (plan.EsElectronico && emisor.CondicionIvaPropiaCodigo.Trim() != "1" && plan.Letra != "C")
             throw new CargaComprobantesReglaException("Este circuito inicial requiere un emisor responsable inscripto.");
-        if (plan.Asociado is { } asociado && asociado.Cuit != emisor.Cuit)
+        if (plan.EsElectronico && plan.Asociado is { } asociado && asociado.Cuit != emisor.Cuit)
             throw new CargaComprobantesReglaException("El emisor de la nota no coincide con el emisor de la factura asociada.");
-        // Ensayo de efectos reales, siempre revertido ANTES de solicitar CAE.
-        // Detecta cierres, cuentas, stock y rechazos de triggers sin consumir el documento.
-        using var tx = cn.BeginTransaction(System.Data.IsolationLevel.Serializable);
-        try { await writer.GrabarAsync(cn, tx, ctx, plan, Guid.NewGuid(), 99999998, "00000000000000", fecha, ct); }
-        finally { if (tx.Connection is not null) tx.Rollback(); }
+        await EnsayarAsync(cn, ctx, plan, fecha, ct);
         plan.HuellaDatos = plan.Huella;
         plan.CuitEmisor = emisor.Cuit;
         plan.Huella = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
             $"{plan.HuellaDatos}|{emisor.Cuit}|{emisor.PuntoVentaElectronico}|{emisor.CondicionIvaPropiaCodigo}|{emisor.Ambiente}|{emisor.WsaaUrl}|{emisor.WsfeUrl}")));
         return plan;
+    }
+
+    /// <summary>Ensayo de efectos reales, siempre revertido ANTES de solicitar CAE o numerar.
+    /// Detecta cierres, cuentas, stock y rechazos de triggers sin consumir el documento.</summary>
+    private async Task EnsayarAsync(SqlConnection cn, CargaComprobantesContexto ctx, CargaComprobantesPlanGrabacion plan, DateTime fecha, CancellationToken ct)
+    {
+        using var tx = cn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        try { await writer.GrabarAsync(cn, tx, ctx, plan, Guid.NewGuid(), 99999998, "00000000000000", fecha, ct); }
+        catch (SqlException ex) { throw new CargaComprobantesReglaException(CargaComprobantesErroresSql.Explicar(ex)); }
+        finally { if (tx.Connection is not null) tx.Rollback(); }
     }
 
     /// <summary>Número ficticio que lleva la vista previa (se reemplaza en el documento).</summary>
@@ -183,10 +199,7 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
         CargaComprobantesPlanGrabacion plan, Guid operacion, Action validarSesion, CancellationToken ct)
     {
         validarSesion();
-        var emisor = await config.ResolveEmisorAsync(cn, plan.UnidadNegocio, ct)
-            ?? throw new CargaComprobantesReglaException("Falta el emisor de la operación.");
-        CargaComprobantesElectronicaVerificador.ValidarAmbiente(emisor, emisor.PuntoVentaElectronico);
-        if (emisor.Cuit != plan.CuitEmisor) throw new CargaComprobantesReglaException("Cambió el emisor desde la validación.");
+        // Sin ARCA: no depende del certificado ni del emisor electrónico.
         CargaComprobantesGrabacionResultado resultado;
         using (var tx = cn.BeginTransaction(System.Data.IsolationLevel.Serializable))
         {
@@ -194,23 +207,27 @@ public sealed class CargaComprobantesEmisionService(CargaComprobantesPlanificado
             {
                 // El contador legacy guarda el siguiente número. La cabecera se consulta también
                 // para no reutilizar numeraciones que hayan sido consumidas por otra terminal.
-                var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
-                    SELECT ISNULL(X_ULTIMO_NRO,1) FROM dbo.V_TA_CPTE WITH(UPDLOCK,HOLDLOCK)
-                    WHERE LTRIM(RTRIM(CODIGO))='FP' AND Talonario=@Talonario;
-                    """, new { plan.Talonario }, tx, cancellationToken: ct));
+                // Columna de numeración de la letra (whitelist: A/B/C/E/M/R/X).
+                if (!CargaComprobantesTipos.LetraConNumeracion(plan.Letra))
+                    throw new CargaComprobantesReglaException($"La letra {plan.Letra} no tiene numeración en la tabla de comprobantes.");
+                var siguiente = await cn.ExecuteScalarAsync<long>(new CommandDefinition($"""
+                    SELECT ISNULL({plan.Letra}_ULTIMO_NRO,1) FROM dbo.V_TA_CPTE WITH(UPDLOCK,HOLDLOCK)
+                    WHERE LTRIM(RTRIM(CODIGO))=@Tc AND Talonario=@Talonario;
+                    """, new { plan.Tc, plan.Talonario }, tx, cancellationToken: ct));
                 var maximo = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
                     SELECT ISNULL(MAX(CONVERT(bigint,CASE WHEN NUMERO NOT LIKE '%[^0-9]%' AND NUMERO<>'' THEN NUMERO ELSE '0' END)),0)
-                    FROM dbo.V_MV_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(TC))='FP'
-                        AND SUCURSAL=@Sucursal AND LETRA='X';
-                    """, new { Sucursal = plan.PuntoVenta.ToString("0000") }, tx, cancellationToken: ct));
+                    FROM dbo.V_MV_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(TC))=@Tc
+                        AND SUCURSAL=@Sucursal AND LETRA=@Letra;
+                    """, new { plan.Tc, plan.Letra, Sucursal = plan.PuntoVenta.ToString("0000") }, tx, cancellationToken: ct));
                 resultado = await writer.GrabarAsync(cn, tx, ctx, plan, operacion, Math.Max(Math.Max(siguiente, 1), maximo + 1), "", plan.Fecha, ct);
                 await GuardarResultadoAsync(cn, tx, resultado, ct);
                 validarSesion(); tx.Commit();
             }
             catch { if (tx.Connection is not null) tx.Rollback(); throw; }
         }
-        await events.LogAuditAsync("CargaComprobantes", "ProformaGrabada", "V_MV_CPTE", resultado.FacturaId!.Value.ToString(),
-            "Proforma grabada con asiento y sin libro de IVA ni CAE.", new { resultado.Operacion, resultado.Comprobante, resultado.NumeroAsiento }, CancellationToken.None);
+        await events.LogAuditAsync("CargaComprobantes", CargaComprobantesTipos.EsProforma(plan.Tc) ? "ProformaGrabada" : "ComprobanteGrabado",
+            "V_MV_CPTE", resultado.FacturaId!.Value.ToString(),
+            $"{CargaComprobantesTipos.Descripcion(plan.Tc)} grabado {(plan.GeneraAsiento ? "con" : "sin")} asiento, sin libro de IVA ni CAE.", new { resultado.Operacion, resultado.Comprobante, resultado.NumeroAsiento }, CancellationToken.None);
         return resultado;
     }
 

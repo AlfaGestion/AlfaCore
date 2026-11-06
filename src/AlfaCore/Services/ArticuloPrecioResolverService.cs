@@ -44,6 +44,14 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
 
         var idLista = cliente?.IdLista?.Trim() ?? string.Empty;
         var clase = cliente is { Clase: >= 1 and <= 8 } ? cliente.Clase : claseDefault;
+        // RETAIL=SI: los precios del maestro son costos. Se vende con la clase por defecto (fija) y,
+        // si el cliente no tiene lista, con la lista por defecto (GOUR_LISTAPR), como la configuración Retail de Alfa.
+        var retail = ParseBool(await ReadConfigAsync(cn, "RETAIL", ct, tx));
+        if (retail)
+        {
+            clase = claseDefault;
+            if (string.IsNullOrWhiteSpace(idLista)) idLista = (await ReadConfigAsync(cn, "GOUR_LISTAPR", ct, tx)).Trim();
+        }
         var usaLista = usaListas && !string.IsNullOrWhiteSpace(idLista);
         // Listas: si FIJALISTASCONIVA está prendido, los precios de lista ya incluyen IVA
         // (FIJALISTASSINIVA es el flag opuesto, que deja el default en false). Maestro: MaestroArticuloConIVA.
@@ -58,7 +66,8 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
             IdLista = idLista,
             ClasePrecio = clase,
             PreciosConIva = preciosConIva,
-            UsaListas = usaLista
+            UsaListas = usaLista,
+            Retail = retail
         };
     }
 
@@ -117,6 +126,8 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
         var result = new List<CrmCotizacionArticuloDto>();
         foreach (var row in rows)
         {
+            // Retail: sin precio en la lista no hay precio de venta (el maestro solo tiene costos).
+            if (pricing.Retail && !(pricing.UsaListas && row.PrecioLista > 0)) continue;
             var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
             var (neto, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
             result.Add(new CrmCotizacionArticuloDto
@@ -161,6 +172,7 @@ public sealed class ArticuloPrecioResolverService : IArticuloPrecioResolverServi
             var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, new { IdLista = pricing.IdLista, Ids = lote }, tx, cancellationToken: ct));
             foreach (var row in rows)
             {
+                if (pricing.Retail && !(pricing.UsaListas && row.PrecioLista > 0)) continue;
                 var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
                 var (_, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
                 if (conIva > 0)

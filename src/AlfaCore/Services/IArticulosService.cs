@@ -14,6 +14,11 @@ public interface IArticulosService
     Task<ArticuloDetailDto?> GetByIdAsync(string codigo, CancellationToken ct = default);
     Task<ArticuloLookupDataDto> GetLookupDataAsync(CancellationToken ct = default);
 
+    /// <summary>Solapa "Listas": todas las listas de ventas, tildadas (con sus precios) las que tienen el artículo.
+    /// Sin código (alta) vienen todas destildadas.</summary>
+    Task<List<ArticuloListaPrecioDto>> GetListasPrecioAsync(string? codigo, CancellationToken ct = default)
+        => Task.FromResult(new List<ArticuloListaPrecioDto>());
+
     /// <summary>Búsqueda por código o razón social contra vt_proveedores -- lista completa, no se
     /// precarga (puede ser grande), a diferencia de Rubros/Marcas/Unidades.</summary>
     Task<IReadOnlyList<ArticuloLookupOptionDto>> SearchProveedoresAsync(string texto, CancellationToken ct = default);

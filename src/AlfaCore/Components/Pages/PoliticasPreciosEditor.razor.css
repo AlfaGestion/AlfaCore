@@ -1,0 +1,112 @@
+.pp-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.pp-fila {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--alfa-space-8);
+    align-items: end;
+}
+
+.pp-fila--codigo {
+    grid-template-columns: minmax(90px, 120px) minmax(200px, 2fr) minmax(200px, 1fr);
+}
+
+.pp-fila--prueba {
+    grid-template-columns: minmax(200px, 320px) auto;
+    justify-content: start;
+}
+
+.pp-grupo {
+    min-width: 0;
+    margin: 0;
+    padding: var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-md);
+}
+
+.pp-grupo legend {
+    padding: 0 var(--alfa-space-4);
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+    font-weight: 600;
+}
+
+.pp-clases {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--alfa-space-8);
+}
+
+.pp-formulas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--alfa-space-8);
+}
+
+.pp-formulas ::deep input {
+    font-family: ui-monospace, Consolas, monospace;
+}
+
+.pp-nota {
+    margin: var(--alfa-space-8) 0 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.pp-ayuda {
+    margin-top: var(--alfa-space-12);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.pp-ayuda summary {
+    cursor: pointer;
+    color: var(--alfa-text-primary);
+}
+
+.pp-ayuda code {
+    margin-right: var(--alfa-space-4);
+}
+
+.pp-ayuda__tabla td {
+    padding: 2px var(--alfa-space-8) 2px 0;
+}
+
+.pp-alerta {
+    margin-top: var(--alfa-space-8);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, #e0a800 18%, transparent);
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+}
+
+.pp-preview small {
+    display: block;
+    color: var(--alfa-text-secondary);
+}
+
+.pp-preview .n {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.pp-error {
+    color: #d9534f !important;
+}
+
+::deep .pp-antes {
+    color: var(--alfa-text-secondary);
+    text-decoration: line-through;
+}
+
+@media (max-width: 720px) {
+    .pp-fila--codigo,
+    .pp-fila--prueba {
+        grid-template-columns: 1fr;
+    }
+}

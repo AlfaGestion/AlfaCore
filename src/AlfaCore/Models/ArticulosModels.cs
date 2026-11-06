@@ -81,6 +81,14 @@ public class ArticuloSaveRequest
     public decimal Utilidad { get; set; }
     public decimal TasaIva { get; set; }
     public bool Exento { get; set; }
+
+    /// <summary>Política de precios (V_TA_POLITICAPRECIOS.CODIGO); vacía = sin política. La aplica la base al grabar.</summary>
+    public string PoliticaPrecios { get; set; } = string.Empty;
+
+    /// <summary>Solapa "Listas": listas de ventas del artículo (null = no se tocan las listas).</summary>
+    public List<ArticuloListaPrecioDto>? Listas { get; set; }
+    /// <summary>Alta: agregarlo a todas las listas de ventas con los precios del artículo (las que no vengan en <see cref="Listas"/>).</summary>
+    public bool IncluirEnTodasLasListas { get; set; }
 }
 
 public sealed class ArticuloDetailDto : ArticuloSaveRequest
@@ -111,6 +119,12 @@ public sealed class ArticuloLookupDataDto
     public bool ModoRetail { get; set; }
     public int ClasePrecioVenta { get; set; } = 4;
     public List<string> NombresPrecios { get; set; } = [];
+    /// <summary>Políticas de precios para el combo de la solapa Precios.</summary>
+    public List<PoliticaPrecioDto> Politicas { get; set; } = [];
+    /// <summary>Clase de oferta por fecha de las listas (CLASEPRECIOOFERTA; 0 = sin ofertas).</summary>
+    public int ClasePrecioOferta { get; set; }
+    /// <summary>OFERTAPORDESCUENTO=SI: los precios por cantidad de las listas (PRECIO9/10) son % de descuento.</summary>
+    public bool OfertaPorDescuento { get; set; }
 }
 
 public sealed class ArticuloViewSettingsDto

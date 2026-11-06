@@ -27,7 +27,7 @@ public sealed class CargaComprobantesSeleccionPrecios
     {
         var user = await cn.QuerySingleOrDefaultAsync<Usuario>(new CommandDefinition("""
             SELECT CONVERT(bit,ISNULL(ModificaListaPrecios,0)) ModificaLista,
-                ISNULL(LTRIM(RTRIM(CLASEPUSA)),'') Clases
+                ISNULL(LTRIM(RTRIM(CLASEPUSA)),'') Clases,CONVERT(bit,ISNULL(ModificaCostos,0)) VeCostos
             FROM dbo.TA_USUARIOS WHERE UPPER(LTRIM(RTRIM(NOMBRE)))=UPPER(@Usuario);
             """, new { Usuario=usuario },tx,cancellationToken:ct))
             ?? throw new CargaComprobantesReglaException("El usuario no está definido en la base activa.");
@@ -39,8 +39,13 @@ public sealed class CargaComprobantesSeleccionPrecios
     public async Task CargarCatalogosAsync(SqlConnection cn,CargaComprobantesContexto contexto,CancellationToken ct,SqlTransaction? tx=null)
     {
         var (usuario,cfg)=await LeerAsync(cn,contexto.Usuario,ct,tx);
+        var precios=await CargaComprobantesConfigPrecios.LeerAsync(cn,ct,tx);
+        contexto.Retail=precios.Retail;
+        contexto.ClaseRetail=precios.Retail ? $"{precios.ClaseVenta} · {precios.NombreClase(precios.ClaseVenta)}" : "";
+        contexto.VeCostos=usuario.VeCostos;
         contexto.PuedeCambiarLista=usuario.ModificaLista && Si(cfg.GetValueOrDefault("USALISTASDEPRECIOS"));
-        contexto.PuedeCambiarClase=ClaseHabilitada(cfg.GetValueOrDefault("V_MODIFICACPRECIO",""));
+        // Retail: la clase de venta es fija (los clientes usan la clase por defecto).
+        contexto.PuedeCambiarClase=!precios.Retail && ClaseHabilitada(cfg.GetValueOrDefault("V_MODIFICACPRECIO",""));
         contexto.ClasesPrecio=Enumerable.Range(1,8)
             .Where(n=>cfg.ContainsKey($"NOM_PCLASE{n}") && ClasePermitida(usuario.Clases,n))
             .Select(n=>new CargaComprobantesOpcionFiltro { Codigo=n.ToString(),Descripcion=cfg[$"NOM_PCLASE{n}"] }).ToList();
@@ -55,13 +60,20 @@ public sealed class CargaComprobantesSeleccionPrecios
 
     public async Task<CrmCotizacionPricingContextDto> ResolverAsync(SqlConnection cn,string usuario,
         CargaComprobantesDirecta draft,CancellationToken ct,SqlTransaction? tx=null)
+        => (await ResolverConConfigAsync(cn,usuario,draft,ct,tx)).Precios;
+
+    /// <summary>Lista y clase del comprobante, junto con la configuración de precios por lista (Retail, ofertas).</summary>
+    public async Task<(CrmCotizacionPricingContextDto Precios, CargaComprobantesConfigPrecios Config)> ResolverConConfigAsync(SqlConnection cn,string usuario,
+        CargaComprobantesDirecta draft,CancellationToken ct,SqlTransaction? tx=null)
     {
-        if (draft.Tc is not ("FC" or "FP" or "ND" or "NC"))
+        var precios=await CargaComprobantesConfigPrecios.LeerAsync(cn,ct,tx);
+        if (!CargaComprobantesTipos.EsValido(draft.Tc))
             throw new CargaComprobantesReglaException("Tipo de comprobante no admitido.");
-        if(draft.Tc=="NC" && (draft.ListaPrecio is not null || draft.ClasePrecio is not null))
+        if(CargaComprobantesTipos.EsCredito(draft.Tc) && (draft.ListaPrecio is not null || draft.ClasePrecio is not null))
             throw new CargaComprobantesReglaException("La nota de crédito conserva los precios de su factura asociada; no permite cambiar lista ni clase.");
         var pricing=await new ArticuloPrecioResolverService().ResolveContextAsync(cn,draft.Cliente,ct,tx);
-        if(draft.Tc=="NC") return pricing;
+        if(CargaComprobantesTipos.EsCredito(draft.Tc)) return (pricing,precios);
+        AplicarRetail(pricing,precios);
         var (user,cfg)=await LeerAsync(cn,usuario,ct,tx);
         var usaListas=Si(cfg.GetValueOrDefault("USALISTASDEPRECIOS"));
         if(draft.ListaPrecio is not null)
@@ -70,7 +82,9 @@ public sealed class CargaComprobantesSeleccionPrecios
                 throw new CargaComprobantesReglaException("Tu usuario no puede cambiar la lista de precios o el uso de listas está deshabilitado.");
             pricing.IdLista=draft.ListaPrecio.Trim();
         }
-        if(draft.ClasePrecio is { } clase)
+        if(precios.Retail && draft.ClasePrecio is { } claseRetail && claseRetail!=precios.ClaseVenta)
+            throw new CargaComprobantesReglaException($"En Retail la clase de precio es fija: {precios.ClaseVenta} · {precios.NombreClase(precios.ClaseVenta)}.");
+        if(!precios.Retail && draft.ClasePrecio is { } clase)
         {
             if(!ClaseHabilitada(cfg.GetValueOrDefault("V_MODIFICACPRECIO","")))
                 throw new CargaComprobantesReglaException("La configuración V_ModificaCPrecio no permite cambiar la clase de precio.");
@@ -81,6 +95,8 @@ public sealed class CargaComprobantesSeleccionPrecios
         if(!ClasePermitida(user.Clases,pricing.ClasePrecio) || !cfg.ContainsKey($"NOM_PCLASE{pricing.ClasePrecio}"))
             throw new CargaComprobantesReglaException("La clase de precio no está definida o no está habilitada para tu usuario.");
         pricing.UsaListas=usaListas && !string.IsNullOrWhiteSpace(pricing.IdLista);
+        if(precios.Retail && !pricing.UsaListas)
+            throw new CargaComprobantesReglaException("En Retail se factura con lista de precios: el cliente no tiene lista y falta la lista por defecto (GOUR_LISTAPR), o el uso de listas está deshabilitado.");
         if(!pricing.UsaListas && string.Equals(cfg.GetValueOrDefault("LISTAOBLIGATORIO"),"SI",StringComparison.OrdinalIgnoreCase))
             throw new CargaComprobantesReglaException("La configuración exige seleccionar una lista de precios.");
         if(pricing.UsaListas && await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
@@ -90,26 +106,35 @@ public sealed class CargaComprobantesSeleccionPrecios
             """,new { Lista=pricing.IdLista.Trim() },tx,cancellationToken:ct))!=1)
             throw new CargaComprobantesReglaException("La lista de precios no existe, no es única o está fuera de vigencia.");
         pricing.PreciosConIva=Si(cfg.GetValueOrDefault(pricing.UsaListas?"FIJALISTASCONIVA":"MAESTROARTICULOCONIVA"));
-        return pricing;
+        return (pricing,precios);
+    }
+
+    /// <summary>Retail: clase de venta fija y, si el cliente no tiene lista, la lista por defecto (GOUR_LISTAPR).</summary>
+    public static void AplicarRetail(CrmCotizacionPricingContextDto pricing,CargaComprobantesConfigPrecios precios)
+    {
+        if(!precios.Retail) return;
+        pricing.ClasePrecio=precios.ClaseVenta;
+        if(string.IsNullOrWhiteSpace(pricing.IdLista) && precios.ListaDefault.Length>0) pricing.IdLista=precios.ListaDefault.Trim();
     }
 
     public async Task ValidarArticulosAsync(SqlConnection cn,string usuario,string tc,CrmCotizacionPricingContextDto pricing,
         IEnumerable<string> articulos,CancellationToken ct,SqlTransaction? tx=null)
     {
-        if(!pricing.UsaListas || tc=="NC") return;
+        if(!pricing.UsaListas || CargaComprobantesTipos.EsCredito(tc)) return;
         var (user,_)=await LeerAsync(cn,usuario,ct,tx);
         // Utl.nin significa pertenencia: FC/ND exigen artículo en lista incluso con permiso para cambiarla.
         // En FP la exigencia depende de ModificaListaPrecios (V_mv_vta.ValidaArtLista).
-        if(user.ModificaLista && tc=="FP") return;
+        if(user.ModificaLista && tc is "FP" or "PR" or "NP" or "RM") return;
         var codigos=articulos.Select(x=>x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var cantidad=await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            SELECT COUNT(DISTINCT LTRIM(RTRIM(IdArticulo))) FROM dbo.V_MA_PRECIOS
+        var enLista=(await cn.QueryAsync<string>(new CommandDefinition("""
+            SELECT DISTINCT LTRIM(RTRIM(IdArticulo)) FROM dbo.V_MA_PRECIOS
             WHERE LTRIM(RTRIM(IdLista))=@Lista AND TipoLista='V' AND LTRIM(RTRIM(IdArticulo)) IN @Codigos;
-            """,new { Lista=pricing.IdLista.Trim(),Codigos=codigos },tx,cancellationToken:ct));
-        if(cantidad!=codigos.Length)
-            throw new CargaComprobantesReglaException("Un artículo no pertenece a la lista de precios seleccionada.");
+            """,new { Lista=pricing.IdLista.Trim(),Codigos=codigos },tx,cancellationToken:ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var faltan=codigos.Where(x=>!enLista.Contains(x)).ToList();
+        if(faltan.Count>0)
+            throw new CargaComprobantesReglaException($"{(faltan.Count==1?"El artículo":"Los artículos")} {string.Join(", ",faltan)} no {(faltan.Count==1?"está":"están")} en la lista de precios {pricing.IdLista.Trim()}.");
     }
 
-    private sealed class Usuario { public bool ModificaLista {get;set;} public string Clases {get;set;}=""; }
+    private sealed class Usuario { public bool ModificaLista {get;set;} public string Clases {get;set;}=""; public bool VeCostos {get;set;} }
     private sealed class Config { public string Clave {get;set;}=""; public string Valor {get;set;}=""; }
 }

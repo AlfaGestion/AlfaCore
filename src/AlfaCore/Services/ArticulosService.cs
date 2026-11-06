@@ -19,8 +19,17 @@ public sealed class ArticulosService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IArticuloImagenFtpService imagenFtpService,
-    ICentralBasesService centralBasesService) : IArticulosService
+    ICentralBasesService centralBasesService,
+    IAppUserSessionService? appUserSession = null) : IArticulosService
 {
+    public Task<List<ArticuloListaPrecioDto>> GetListasPrecioAsync(string? codigo, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetListasPrecio", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await ListasPreciosService.LeerListasArticuloAsync(cn, (codigo ?? string.Empty).Trim(), token);
+        }, "No se pudieron cargar las listas de precios del artículo.", ct);
+
     private const string ModuleName = "Articulos";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -156,8 +165,13 @@ public sealed class ArticulosService(
                     ISNULL(a.Pesable, 0) AS Pesable,
                     ISNULL(a.COSTO, 0) AS Costo,
                     ISNULL(a.{precioColumn}, 0) AS Precio,
+                    -- Todas las clases: el UPDATE graba PRECIO1..8; sin leerlas, editar dejaba en 0 las no tocadas.
+                    ISNULL(a.PRECIO1, 0) AS Precio1, ISNULL(a.PRECIO2, 0) AS Precio2, ISNULL(a.PRECIO3, 0) AS Precio3,
+                    ISNULL(a.PRECIO4, 0) AS Precio4, ISNULL(a.PRECIO5, 0) AS Precio5, ISNULL(a.PRECIO6, 0) AS Precio6,
+                    ISNULL(a.PRECIO7, 0) AS Precio7, ISNULL(a.PRECIO8, 0) AS Precio8,
                     {precioOfertaSql.Select},
                     ISNULL(a.UTILIDAD, 0) AS Utilidad,
+                    ISNULL(LTRIM(RTRIM(a.POLITICAPRECIOS)), '') AS PoliticaPrecios,
                     ISNULL(a.TasaIVA, 0) AS TasaIva,
                     ISNULL(a.EXENTO, 0) AS Exento,
                     CASE WHEN ISNULL(a.SUSPENDIDO, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Activo,
@@ -209,10 +223,13 @@ public sealed class ArticulosService(
                 "SELECT LTRIM(RTRIM(IdUnidad)) AS Codigo, ISNULL(Descripcion, '') AS Descripcion FROM dbo.v_ta_unidad ORDER BY Descripcion;",
                 cancellationToken: token));
 
-            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta" };
+            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta", "CLASEPRECIOOFERTA", "OFERTAPORDESCUENTO" };
             claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
             var cfg = await ReadConfigMapAsync(cn, claves, token);
             var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 4;
+            var politicas = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.V_TA_POLITICAPRECIOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 1
+                ? await PoliticasPreciosService.LeerAsync(cn, null, null, token) : [];
             var nombresPrecios = Enumerable.Range(1, 8)
                 .Select(i => Get(cfg, $"NOM_PCLASE{i}").Trim())
                 .ToList();
@@ -226,7 +243,10 @@ public sealed class ArticulosService(
                 PrecioIncluyeIva = ParseBool(Get(cfg, "MAESTROARTICULOCONIVA")),
                 ModoRetail = ParseBool(Get(cfg, "RETAIL")),
                 ClasePrecioVenta = clasePrecioVenta,
-                NombresPrecios = nombresPrecios
+                NombresPrecios = nombresPrecios,
+                Politicas = politicas,
+                ClasePrecioOferta = int.TryParse(Get(cfg, "CLASEPRECIOOFERTA"), out var claseOferta) && claseOferta is >= 1 and <= 8 ? claseOferta : 0,
+                OfertaPorDescuento = ParseBool(Get(cfg, "OFERTAPORDESCUENTO"))
             };
         }, "No se pudieron cargar las referencias de artículos.", ct);
 
@@ -366,6 +386,18 @@ public sealed class ArticulosService(
             if (tasaIva <= 0 && !request.Exento)
                 tasaIva = ParseDecimal(await ReadSingleConfigValueAsync(cn, "PIVA", token));
 
+            // Política de precios: debe existir (Ma_art.frm: "La Politica informada no existe"). La aplica el trigger al grabar.
+            var politica = (request.PoliticaPrecios ?? string.Empty).Trim();
+            if (politica.Length > 0)
+            {
+                politica = CodigoPk.Format(politica, 4);
+                var existePolitica = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                    "SELECT COUNT(1) FROM dbo.V_TA_POLITICAPRECIOS WHERE LTRIM(RTRIM(CODIGO)) = LTRIM(RTRIM(@Codigo));",
+                    new { Codigo = politica }, cancellationToken: token));
+                if (existePolitica == 0)
+                    throw new InvalidOperationException($"La política de precios '{politica.Trim()}' no existe.");
+            }
+
             var parameters = new
             {
                 Codigo = codigo,
@@ -390,20 +422,25 @@ public sealed class ArticulosService(
                 request.Precio8,
                 request.Utilidad,
                 TasaIva = tasaIva,
-                request.Exento
+                request.Exento,
+                Politica = politica.Length == 0 ? null : politica
             };
 
+            // Artículo y solapa "Listas" en una sola transacción: si falla una lista no queda el artículo a medias.
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
             if (esAlta)
             {
                 var insertSql = $"""
                     INSERT INTO dbo.V_MA_ARTICULOS
                         (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
-                        CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA)
+                        CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA,
+                        POLITICAPRECIOS, DesdeTrigger)
                     VALUES
                         (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
-                         @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE());
+                         @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE(),
+                         @Politica, 0);
                     """;
-                await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, cancellationToken: token));
+                await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, tx, cancellationToken: token));
             }
             else
             {
@@ -433,13 +470,27 @@ public sealed class ArticulosService(
                         PRECIO8 = @Precio8,
                         UTILIDAD = @Utilidad,
                         TasaIVA = @TasaIva,
-                        EXENTO = @Exento
+                        EXENTO = @Exento,
+                        POLITICAPRECIOS = @Politica,
+                        -- Como Ma_art.frm al grabar: el trigger FMT_V_MA_ARTICULOS aplica la política y pasa los precios a las listas.
+                        DesdeTrigger = 0
                     WHERE LTRIM(RTRIM(IDARTICULO)) = @CodigoWhere;
                     """;
-                var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, parameters, cancellationToken: token));
+                var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, parameters, tx, cancellationToken: token));
                 if (affected == 0)
                     throw new InvalidOperationException("El artículo ya no existe en la base activa.");
             }
+
+            if (request.Listas is not null || (esAlta && request.IncluirEnTodasLasListas))
+            {
+                var usuario = appUserSession?.GetCurrentUserName().Trim() is { Length: > 0 } u ? (u.Length > 50 ? u[..50] : u) : "AlfaCore";
+                var idArticulo = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
+                    "SELECT TOP (1) IDARTICULO FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) = @Codigo;",
+                    new { Codigo = codigoCrudo }, tx, cancellationToken: token));
+                await ListasPreciosService.GuardarListasArticuloAsync(cn, tx, idArticulo, request, request.Listas,
+                    esAlta && request.IncluirEnTodasLasListas, usuario, token);
+            }
+            await tx.CommitAsync(token);
 
             return codigoCrudo;
         }, "No se pudo guardar el artículo.", ct);

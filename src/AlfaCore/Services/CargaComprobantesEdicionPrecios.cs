@@ -35,7 +35,7 @@ public sealed class CargaComprobantesEdicionPrecios
         }
         var general = Leer("MAXDTO");
         return new(datos.Precio, datos.Descuento,
-            ResolverMaximo(tc == "FP" ? Leer("MAXDTOPROFORMA") : general, datos.Condicion, datos.Vendedor),
+            ResolverMaximo(CargaComprobantesTipos.EsProforma(tc) ? Leer("MAXDTOPROFORMA") : general, datos.Condicion, datos.Vendedor),
             ResolverMaximo(general, datos.Condicion, datos.Vendedor));
     }
 
@@ -54,8 +54,8 @@ public sealed class CargaComprobantesEdicionPrecios
         string tc, CargaComprobantesPoliticaPrecio politica, decimal referenciaNeto, decimal referenciaFinal,
         decimal tasa, int decimales, decimal referenciaDescuento = 0)
     {
-        if (tc is not ("FC" or "FP" or "ND"))
-            throw new CargaComprobantesReglaException("La edición manual de precios/descuentos admite facturas, proformas y notas de débito; las notas de crédito conservan sus precios históricos.");
+        if (!CargaComprobantesTipos.EsEditable(tc))
+            throw new CargaComprobantesReglaException("La edición manual de precios/descuentos admite facturas, proformas, notas de débito, presupuestos, pedidos y remitos; las notas de crédito conservan sus precios históricos.");
         if ((linea.PrecioUnitarioNeto.HasValue && !politica.PuedeEditarPrecio) ||
             (linea.Descuento.HasValue && !politica.PuedeEditarDescuento))
             throw new CargaComprobantesReglaException("Tu usuario no tiene permiso para modificar el precio o el descuento solicitado.");

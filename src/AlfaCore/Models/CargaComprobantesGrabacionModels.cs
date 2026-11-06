@@ -26,7 +26,9 @@ public sealed class CargaComprobantesPlanGrabacion
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? AsociadoHuella { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public string Tc => Directa?.Tc ?? "FC";
-    [System.Text.Json.Serialization.JsonIgnore] public bool EsElectronico => Tc != "FP";
+    [System.Text.Json.Serialization.JsonIgnore] public bool EsElectronico => AlfaCore.Services.CargaComprobantesTipos.EsElectronico(Tc);
+    /// <summary>Sin cuenta contable de comprobante no hay asiento (PR/NP/RM, o proforma con UsaFacturaProformaSinRegistracion).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool GeneraAsiento => TcContable.Length > 0;
     [System.Text.Json.Serialization.JsonIgnore] public int TipoArca => TiposDocumentoCore.Fiscal(TiposDocumentoCore.TipoParaComprobante(Tc, Letra))?.CodigoArca ?? 0;
     public int OrigenId { get; set; }
     public int Talonario { get; set; }
@@ -51,6 +53,12 @@ public sealed class CargaComprobantesPlanGrabacion
     /// <summary>Cuenta de ventas de otros conceptos (V_TA_INPUT_VENTAS.Otros); solo si hay renglones de concepto.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? CuentaOtros { get; set; }
+    /// <summary>Cuenta de impuestos internos (V_DFI_IMPINT); solo si la liquidación tiene internos.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? CuentaInternos { get; set; }
+    /// <summary>Medios de pago validados de una venta de contado: la grabación agrega la cobranza (CBCT/CBFP).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<CargaComprobantesPago>? Cobranza { get; set; }
     public string Huella { get; set; } = "";
     public string HuellaDatos { get; set; } = "";
     public string CuitEmisor { get; set; } = "";
@@ -71,6 +79,8 @@ public sealed class CargaComprobantesGrabacionResultado
     public int? FacturaId { get; set; }
     public string? Comprobante { get; set; }
     public int? NumeroAsiento { get; set; }
+    /// <summary>Cobranza de contado generada con la factura (CBCT 0003-00000001X).</summary>
+    public string? Cobranza { get; set; }
     public string? Cae { get; set; }
     public DateTime? Vencimiento { get; set; }
     public string Mensaje { get; set; } = "";

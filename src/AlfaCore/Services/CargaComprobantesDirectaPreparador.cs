@@ -10,9 +10,12 @@ public sealed class CargaComprobantesDirectaPreparador
     public async Task<(CargaComprobantesOrigen Origen, CrmCotizacionPricingContextDto Precios)> PrepararAsync(
         SqlConnection cn, CargaComprobantesContexto ctx, CargaComprobantesDirecta draft, CancellationToken ct, SqlTransaction? tx = null)
     {
-        if (draft.Tc is not ("FC" or "NC" or "ND" or "FP")) throw new CargaComprobantesReglaException("Tipo de comprobante no admitido.");
-        if (draft.Tc is "NC" or "ND" ? draft.FacturaAsociadaId is null or <= 0 : draft.FacturaAsociadaId is not null)
-            throw new CargaComprobantesReglaException("Las notas requieren una factura asociada; las facturas nuevas y proformas no llevan asociado.");
+        if (!CargaComprobantesTipos.EsValido(draft.Tc)) throw new CargaComprobantesReglaException("Tipo de comprobante no admitido.");
+        if (CargaComprobantesTipos.EsProforma(draft.Tc) && !ctx.UsaFacturaProforma)
+            throw new CargaComprobantesReglaException("La factura proforma no está habilitada en la configuración de esta base (UsaFacturaProforma).");
+        if (CargaComprobantesTipos.RequiereAsociado(draft.Tc) ? draft.FacturaAsociadaId is null or <= 0 : draft.FacturaAsociadaId is not null)
+            throw new CargaComprobantesReglaException(draft.Tc == "NCFP" ? "La nota de crédito proforma requiere la factura proforma asociada."
+                : "Las notas requieren una factura asociada; las facturas, proformas, presupuestos, pedidos y remitos no llevan asociado.");
         // Renglones de otros conceptos (sin artículo, como la grilla "Otros" de V_mv_vta): texto + importe sin IVA.
         var conceptos = draft.Lineas.Where(x => x.EsConcepto).ToList();
         var articulos = draft.Lineas.Where(x => !x.EsConcepto).ToList();
@@ -46,8 +49,10 @@ public sealed class CargaComprobantesDirectaPreparador
             FROM dbo.VT_CLIENTES WHERE LTRIM(RTRIM(CODIGO))=@Cliente AND ISNULL(BLOQUEO,0)=0 AND ISNULL(Dada_De_Baja,0)=0;
             """, new { Cliente = draft.Cliente.Trim() }, tx, cancellationToken: ct))
             ?? throw new CargaComprobantesReglaException("El cliente no está disponible, está bloqueado o fue dado de baja.");
+        // V_mv_vta (CalculaPercepciones) no liquida percepciones en RM/PR/FP/NCFP/NP: solo los electrónicos las requieren.
+        if (!CargaComprobantesTipos.EsElectronico(draft.Tc)) origen.TienePercepciones = false;
         var seleccionPrecios = new CargaComprobantesSeleccionPrecios();
-        var pricing = await seleccionPrecios.ResolverAsync(cn, ctx.Usuario, draft, ct, tx);
+        var (pricing, preciosLista) = await seleccionPrecios.ResolverConConfigAsync(cn, ctx.Usuario, draft, ct, tx);
         if (articulos.Count > 0)
             await seleccionPrecios.ValidarArticulosAsync(cn, ctx.Usuario, draft.Tc, pricing, articulos.Select(x => x.Articulo), ct, tx);
         var edicion = new CargaComprobantesEdicionPrecios();
@@ -57,25 +62,54 @@ public sealed class CargaComprobantesDirectaPreparador
         var rows = articulos.Count == 0 ? new List<Articulo>() : (await cn.QueryAsync<Articulo>(new CommandDefinition($"""
             SELECT LTRIM(RTRIM(a.IDARTICULO)) Codigo,a.DESCRIPCION Descripcion,LTRIM(RTRIM(a.IDUNIDAD)) Unidad,
                 ISNULL(a.TasaIVA,0) Iva,CONVERT(bit,ISNULL(a.EXENTO,0)) Exento,ISNULL(a.PRECIO{clase},0) PrecioMaestro,ISNULL(p.Precio{clase},0) PrecioLista,
-                CONVERT(bit,CASE WHEN ISNULL(a.Suspendido,0)<>0 OR ISNULL(a.SuspendidoV,0)<>0 OR ISNULL(a.USASERIE,0)<>0
-                    OR ISNULL(a.USALOTE,0)<>0 OR ISNULL(a.UsaTalle,0)<>0 OR ISNULL(a.PideEquivalencia,0)<>0
-                    OR ISNULL(a.PideMedidas,0)<>0 OR ISNULL(a.EnComodato,0)<>0 OR ISNULL(a.IMPUESTOS,0)<>0 OR ISNULL(a.ITC,0)<>0
-                    OR ISNULL(LTRIM(RTRIM(a.CuentaContable)),'')<>''
-                    OR ISNULL(LTRIM(RTRIM(a.IdPercepcion)),'')<>'' OR ISNULL(LTRIM(RTRIM(a.Moneda)),'1') NOT IN ('','1')
-                    OR ISNULL(a.Dto1,0)<>0 OR ISNULL(a.Dto2,0)<>0 OR ISNULL(a.Dto3,0)<>0 OR ISNULL(a.Dto4,0)<>0
-                    OR ISNULL(a.Dto5,0)<>0 OR ISNULL(a.Dto6,0)<>0 OR ISNULL(a.Dto7,0)<>0 OR ISNULL(a.Dto8,0)<>0 OR ISNULL(a.Dto9,0)<>0
-                    OR ISNULL(a.Rec1,0)<>0 OR ISNULL(a.Rec2,0)<>0 OR ISNULL(a.Rec3,0)<>0
-                    OR ISNULL(p.Dto1,0)<>0 OR ISNULL(p.Dto2,0)<>0 OR ISNULL(p.Dto3,0)<>0 OR ISNULL(p.Dto4,0)<>0
-                    OR ISNULL(p.Dto5,0)<>0 OR ISNULL(p.Dto6,0)<>0 OR ISNULL(p.Dto7,0)<>0 OR ISNULL(p.Dto8,0)<>0 OR ISNULL(p.Dto9,0)<>0
-                    OR ISNULL(p.Rec1,0)<>0 OR ISNULL(p.Rec2,0)<>0 OR ISNULL(p.Rec3,0)<>0
-                    OR ISNULL(a.EnOferta,0)<>0 OR ISNULL(p.CantidadDesde,0)<>0 OR ISNULL(p.CantidadOf2,0)<>0
-                    OR ISNULL(p.CantidadOf3,0)<>0 THEN 1 ELSE 0 END) Especial
+                ISNULL(a.IMPUESTOS,0) Internos,
+                CASE WHEN ISNULL(a.Suspendido,0)<>0 OR ISNULL(a.SuspendidoV,0)<>0 THEN 'está suspendido para la venta'
+                    WHEN ISNULL(LTRIM(RTRIM(a.IDUNIDAD)),'')='' THEN 'no tiene unidad de medida cargada'
+                    WHEN ISNULL(a.USASERIE,0)<>0 THEN 'usa números de serie'
+                    WHEN ISNULL(a.USALOTE,0)<>0 THEN 'usa lotes'
+                    WHEN ISNULL(a.UsaTalle,0)<>0 THEN 'usa talles'
+                    WHEN ISNULL(a.PideEquivalencia,0)<>0 THEN 'pide equivalencia de unidades'
+                    WHEN ISNULL(a.PideMedidas,0)<>0 THEN 'pide medidas'
+                    WHEN ISNULL(a.EnComodato,0)<>0 THEN 'está en comodato'
+                    WHEN ISNULL(a.IMPUESTOS,0)<>0 AND @PreciosFinales=0 THEN 'tiene impuestos internos (requiere PreciosFinales=SI)'
+                    WHEN ISNULL(a.ITC,0)<>0 THEN 'tiene impuesto a los combustibles (ITC)'
+                    WHEN ISNULL(LTRIM(RTRIM(a.CuentaContable)),'')<>'' THEN 'tiene cuenta contable propia ('+LTRIM(RTRIM(a.CuentaContable))+')'
+                    WHEN ISNULL(LTRIM(RTRIM(a.IdPercepcion)),'')<>'' THEN 'tiene percepción propia ('+LTRIM(RTRIM(a.IdPercepcion))+')'
+                    WHEN ISNULL(LTRIM(RTRIM(a.Moneda)),'1') NOT IN ('','1') THEN 'está en moneda extranjera'
+                    WHEN @ConLista=0 AND (ISNULL(a.Dto1,0)<>0 OR ISNULL(a.Dto2,0)<>0 OR ISNULL(a.Dto3,0)<>0 OR ISNULL(a.Dto4,0)<>0
+                        OR ISNULL(a.Dto5,0)<>0 OR ISNULL(a.Dto6,0)<>0 OR ISNULL(a.Dto7,0)<>0 OR ISNULL(a.Dto8,0)<>0 OR ISNULL(a.Dto9,0)<>0
+                        OR ISNULL(a.Rec1,0)<>0 OR ISNULL(a.Rec2,0)<>0 OR ISNULL(a.Rec3,0)<>0) THEN 'tiene descuentos o recargos en el maestro de artículos'
+                    WHEN @ConLista=0 AND (ISNULL(p.Dto1,0)<>0 OR ISNULL(p.Dto2,0)<>0 OR ISNULL(p.Dto3,0)<>0 OR ISNULL(p.Dto4,0)<>0
+                        OR ISNULL(p.Dto5,0)<>0 OR ISNULL(p.Dto6,0)<>0 OR ISNULL(p.Dto7,0)<>0 OR ISNULL(p.Dto8,0)<>0 OR ISNULL(p.Dto9,0)<>0
+                        OR ISNULL(p.Rec1,0)<>0 OR ISNULL(p.Rec2,0)<>0 OR ISNULL(p.Rec3,0)<>0) THEN 'tiene descuentos o recargos en la lista de precios'
+                    WHEN ISNULL(p.CantidadDesde,0)<>0 THEN 'tiene precios por cantidad (CantidadDesde) en la lista'
+                    WHEN @ConLista=0 AND (ISNULL(a.EnOferta,0)<>0 OR ISNULL(p.CantidadOf2,0)<>0 OR ISNULL(p.CantidadOf3,0)<>0)
+                        THEN 'está en oferta o tiene precios por cantidad'
+                    ELSE '' END Motivo
             FROM dbo.V_MA_ARTICULOS a LEFT JOIN dbo.V_MA_PRECIOS p ON p.IdArticulo=a.IDARTICULO
                 AND LTRIM(RTRIM(p.IdLista))=@Lista AND p.TipoLista='V'
             WHERE LTRIM(RTRIM(a.IDARTICULO)) IN @Codigos;
-            """, new { Lista = pricing.UsaListas ? pricing.IdLista : "", Codigos = articulos.Select(x => x.Articulo.Trim()).ToArray() }, tx, cancellationToken: ct))).ToList();
-        if (rows.Count != articulos.Count || rows.Any(x => x.Especial || string.IsNullOrWhiteSpace(x.Unidad)))
-            throw new CargaComprobantesReglaException("Un artículo no está disponible o requiere equivalencias, impuestos, ofertas, descuentos o un circuito especial pendiente de incorporar.");
+            """, new { Lista = pricing.UsaListas ? pricing.IdLista : "", Codigos = articulos.Select(x => x.Articulo.Trim()).ToArray(),
+                ConLista = pricing.UsaListas, ctx.PreciosFinales }, tx, cancellationToken: ct))).ToList();
+        var filasLista = pricing.UsaListas
+            ? await CargaComprobantesPreciosLista.LeerAsync(cn, pricing.IdLista, rows.Select(x => x.Codigo), ct, tx)
+            : new Dictionary<string, CargaComprobantesPrecioListaFila>(StringComparer.OrdinalIgnoreCase);
+        var fechaPrecio = (draft.Fecha ?? DateTime.Today).Date;
+        var problemas = new List<string>();
+        for (var i = 0; i < draft.Lineas.Count; i++)
+        {
+            var item = draft.Lineas[i];
+            if (item.EsConcepto) continue;
+            var a = rows.FirstOrDefault(x => string.Equals(x.Codigo, item.Articulo.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (a is null) problemas.Add($"Renglón {i + 1} · artículo {item.Articulo.Trim()}: no existe en el maestro de artículos.");
+            else if (a.Motivo.Length > 0) problemas.Add($"Renglón {i + 1} · {a.Codigo} {a.Descripcion.Trim()}: {a.Motivo}.");
+            // Retail: los precios del maestro son costos; sin precio de venta en la lista no se factura.
+            else if (preciosLista.Retail && (!filasLista.TryGetValue(a.Codigo, out var filaRetail) || filaRetail.Precio(clase) <= 0))
+                problemas.Add($"Renglón {i + 1} · {a.Codigo} {a.Descripcion.Trim()}: no tiene precio de {preciosLista.NombreClase(clase)} en la lista {pricing.IdLista.Trim()}.");
+        }
+        if (problemas.Count > 0)
+            throw new CargaComprobantesReglaException(string.Join(" ", problemas)
+                + " La carga web todavía no admite ese circuito; quitá el renglón o cargalo desde el sistema de escritorio.");
         var lineas = new List<CargaComprobantesLineaOrigen>();
         var unidades = articulos.Count == 0 ? null : await CargaComprobantesUnidades.LeerAsync(cn, rows.Select(x => x.Codigo), ct, tx);
         foreach (var item in draft.Lineas)
@@ -94,27 +128,35 @@ public sealed class CargaComprobantesDirectaPreparador
                 continue;
             }
             var a = rows.Single(x => string.Equals(x.Codigo, item.Articulo.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (draft.Tc == "NC" && item.Bultos.HasValue)
+            if (CargaComprobantesTipos.EsCredito(draft.Tc) && item.Bultos.HasValue)
                 throw new CargaComprobantesReglaException("La nota de crédito conserva las unidades y cantidades de su factura; ingresá la cantidad a acreditar.");
             var medidas = unidades!.Resolver(a.Codigo,a.Unidad,item.Cantidad,item.Bultos);
             var tasa = a.Exento ? 0 : a.Iva == 0 ? ctx.AlicuotaGeneral : a.Iva;
-            var bruto = pricing.UsaListas && a.PrecioLista > 0 ? a.PrecioLista : a.PrecioMaestro;
-            var (neto, final) = ArticuloPrecioResolverService.SplitPrice(bruto, tasa, pricing.PreciosConIva);
+            // Precio de lista (clsTotales.ImporteLista): oferta por fecha y ofertas por cantidad; sin fila, el maestro.
+            // PreciosFinales: el interno (importe fijo por unidad del maestro) está dentro del precio final y se separa antes del IVA.
+            var interno = ctx.PreciosFinales ? a.Internos : 0;
+            var precio = CargaComprobantesPreciosLista.Calcular(filasLista.GetValueOrDefault(a.Codigo), a.PrecioMaestro, clase,
+                medidas.Unidades, fechaPrecio, preciosLista, tasa, pricing.PreciosConIva, interno);
+            var (neto, final) = (precio.Neto, precio.Final - interno);
+            var descuentoLista = precio.Descuento;
+            var costoLista = precio.Costo;
             if (neto <= 0) throw new CargaComprobantesReglaException($"El artículo {a.Codigo} no tiene un precio de venta positivo.");
             var referencia = neto;
-            var descuento = 0m;
+            var descuento = descuentoLista;
             var editada = item.PrecioUnitarioNeto.HasValue || item.Descuento.HasValue;
             if (editada)
                 (neto, final, descuento) = CargaComprobantesEdicionPrecios.Aplicar(new()
-                { Articulo=item.Articulo,Cantidad=medidas.Unidades,PrecioUnitarioNeto=item.PrecioUnitarioNeto,Descuento=item.Descuento }, draft.Tc, politica!, neto, final, tasa, ctx.Decimales);
+                { Articulo=item.Articulo,Cantidad=medidas.Unidades,PrecioUnitarioNeto=item.PrecioUnitarioNeto,Descuento=item.Descuento }, draft.Tc, politica!, neto, final, tasa, ctx.Decimales, descuentoLista);
+            final += interno;
             lineas.Add(new() { Id = lineas.Count + 1, Secuencia = lineas.Count + 1, Articulo = a.Codigo, Descripcion = a.Descripcion,
                 Unidad = a.Unidad, Deposito = draft.Deposito.Trim(), CantidadOriginal = medidas.Unidades, Pendiente = medidas.Unidades,
                 CoeficienteUnidad = 1, RenglonesArticulo = 1, PrecioSinIva = neto, Precio = final, AlicuotaIva = tasa,
                 CantidadReferencia = medidas.Bultos != 0 || medidas.Kilos != 0 || medidas.MetrosCubicos != 0 ? medidas.Unidades : 0,
                 BultosReferencia=medidas.Bultos,KilosReferencia=medidas.Kilos,MetrosCubicosReferencia=medidas.MetrosCubicos,
-                Exento = a.Exento, Descuento = descuento, PrecioReferenciaNeto = editada ? referencia : null });
+                Exento = a.Exento, Descuento = descuento, PrecioReferenciaNeto = editada ? referencia : null,
+                ImpuestoInternoUnitario = interno, CostoReferencia = costoLista });
         }
-        origen.Tc = draft.Tc == "FP" ? "FP" : "DIRECTA"; origen.Moneda = "1"; origen.DatosCalculoDisponibles = true;
+        origen.Tc = CargaComprobantesTipos.EsProforma(draft.Tc) ? draft.Tc : "DIRECTA"; origen.Moneda = "1"; origen.DatosCalculoDisponibles = true;
         origen.UnidadNegocio = draft.UnidadNegocio.Trim(); origen.Deposito = draft.Deposito.Trim();
         origen.Lista = pricing.UsaListas ? pricing.IdLista : ""; origen.Observaciones = draft.Observaciones; origen.Lineas = lineas;
         return (origen, pricing);
@@ -129,6 +171,7 @@ public sealed class CargaComprobantesDirectaPreparador
         public bool Exento { get; set; }
         public decimal PrecioMaestro { get; set; }
         public decimal PrecioLista { get; set; }
-        public bool Especial { get; set; }
+        public decimal Internos { get; set; }
+        public string Motivo { get; set; } = "";
     }
 }

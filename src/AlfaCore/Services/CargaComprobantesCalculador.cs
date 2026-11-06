@@ -20,7 +20,7 @@ public static class CargaComprobantesCalculador
             pendientes.Add("El cliente revaloriza remitos; falta resolver las listas y precios vigentes.");
         if (origen.TieneAjustesGlobales) pendientes.Add("El documento tiene descuentos globales, recargos o anticipos pendientes de portar.");
         if (origen.TienePercepciones) pendientes.Add("La cuenta o el origen requieren liquidar percepciones.");
-        if (origen.Tc == "FP" && !contexto.UsaFacturaProforma)
+        if (CargaComprobantesTipos.EsProforma(origen.Tc) && !contexto.UsaFacturaProforma)
             pendientes.Add("La factura proforma no está habilitada en la configuración de esta base.");
         var ids = cantidades.Where(x => x.Cantidad > 0).Select(x => x.LineaId).ToHashSet();
         if (origen.Lineas.Any(x => ids.Contains(x.Id) && (x.ItcUnitario != 0 || x.AlicuotaIvaRecargo != 0)))
@@ -66,7 +66,7 @@ public static class CargaComprobantesCalculador
                 continue;
             }
             var exento = origenLinea.Exento || origen.ExentoIvaArticulos ||
-                (origen.Tc == "FP" && !contexto.RobaIvaProforma);
+                (CargaComprobantesTipos.EsProforma(origen.Tc) && !contexto.RobaIvaProforma);
             var tasa = origenLinea.AlicuotaIva != 0 ? origenLinea.AlicuotaIva : contexto.AlicuotaGeneral;
             if (!exento && (tasa <= 0 || tasa > 100))
                 throw new CargaComprobantesReglaException("Falta una alícuota de IVA válida para el renglón.");

@@ -148,6 +148,70 @@ public sealed class CargaComprobantesUiTests
         }
     }
 
+    [Fact]
+    public async Task CargaDirectaRetailMuestraOfertasDeLaListaYClaseFija()
+    {
+        var services = new ServiceCollection(); services.AddLogging();
+        var fake = new FakeService
+        {
+            Resumen = new() { Codigo = "1", RazonSocial = "Consumidor Final", CondicionVenta = "CONTADO", DiasVencimiento = 0 },
+            Medios = [new() { Codigo = "111010001", Descripcion = "1 Caja Efectivo" }, new() { Codigo = "111030001", Descripcion = "4 Visa" }]
+        };
+        fake.Contexto.Retail = true; fake.Contexto.ClaseRetail = "4 · VENTA"; fake.Contexto.VeCostos = true; fake.Contexto.PuedeCambiarClase = false;
+        fake.PreciosLista = new()
+        {
+            Lista = "0001", ListaNombre = "AUTOSERVICIO", Clase = 4,
+            Config = new() { Retail = true, ClaseVenta = 4, ClaseOferta = 5, OfertaPorDescuento = true,
+                NombresClase = new Dictionary<int, string> { [1] = "PROVEEDOR", [4] = "VENTA", [5] = "OFERTA" } },
+            Filas = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PAPEL"] = new() { Articulo = "PAPEL", ConIva = true, Precio1 = 60, Precio4 = 121, Precio9 = 5, Precio10 = 10,
+                    CantidadOf2 = 1.5m, CantidadOf3 = 3, Costo = 60 }
+            }
+        };
+        services.AddSingleton<ICargaComprobantesService>(fake);
+        services.AddSingleton<NavigationManager, TestNavigation>();
+        services.AddSingleton<ISessionService>(DispatchProxy.Create<ISessionService, EventOnlyProxy>());
+        services.AddSingleton<IAppUserSessionService>(DispatchProxy.Create<IAppUserSessionService, EventOnlyProxy>());
+        services.AddSingleton<IPageHeaderService, PageHeaderService>();
+        services.AddSingleton<IAppUiOperationService, AppUiOperationService>();
+        services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(DispatchProxy.Create<Microsoft.JSInterop.IJSRuntime, EventOnlyProxy>());
+        services.AddSingleton(DispatchProxy.Create<ICuentasComercialesService, EventOnlyProxy>());
+        services.AddSingleton(DispatchProxy.Create<IArcaPadronService, EventOnlyProxy>());
+        var activator = new CapturingActivator(); services.AddSingleton<IComponentActivator>(activator);
+        using var provider = services.BuildServiceProvider();
+        await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.RenderComponentAsync<VentasCargaDirecta>(); var page = activator.Directa!;
+            Invoke(page, "ClienteChanged", new CargaComprobantesOpcionFiltro { Codigo = "1", Descripcion = "Cliente de prueba" });
+            Invoke(page, "AgregarArticulo", new CrmCotizacionArticuloDto { IdArticulo = "PAPEL", Descripcion = "Resma", PrecioUnitarioNeto = 100, PrecioUnitarioConIva = 121, TasaIva = 21 });
+            await InvokeAsync(page, "RefrescarPreciosListaAsync");
+            var draft = (CargaComprobantesDirecta)page.GetType().GetField("_draft", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(page)!;
+            var html = System.Net.WebUtility.HtmlDecode(root.ToHtmlString());
+            Assert.Contains("Fija (Retail): 4 · VENTA", html);
+            Assert.Contains("5% desde 1,5 · 10% desde 3", html);
+            Invoke(page, "CantidadChanged", draft.Lineas[0], "3");
+            Assert.Null(draft.Lineas[0].Descuento); // el descuento por cantidad lo resuelve la lista, no se fija en el borrador
+            Assert.Equal(10m, (decimal)Invoke(page, "DescuentoLinea", draft.Lineas[0])!);
+            page.GetType().GetField("_detallePrecios", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(page, "PAPEL");
+            typeof(ComponentBase).GetMethod("StateHasChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(page, null);
+            html = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlDecode(root.ToHtmlString()), "<[^>]+>", "");
+            Assert.Contains("Lista 0001 · AUTOSERVICIO", html);
+            Assert.Contains("Costo: $ 60,00", html);
+            Assert.Contains("Margen s/costo: 50%", html); // 100 neto - 10% = 90 sobre costo 60
+            // Cliente de contado: un medio (efectivo) por el total; al agregar otro, la suma sigue cerrando.
+            Assert.Contains("Cobranza de contado", html);
+            var pago = Assert.Single(draft.Pagos);
+            Assert.Equal(("111010001", 0m), (pago.CodigoMedioPago, pago.Importe));
+            Invoke(page, "AgregarPago");
+            Assert.Equal(2, draft.Pagos.Count);
+            Assert.Equal((decimal)page.GetType().GetProperty("TotalACobrar", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(page)!, draft.Pagos.Sum(x => x.Importe));
+            Invoke(page, "TipoChanged", "PR");
+            Assert.Empty(draft.Pagos); // presupuesto: sin cobranza
+        });
+    }
+
     [CargaComprobantesBrowserFact]
     public async Task EditorSimulaConservaCargaAnteErrorYNoDesborda()
     {
@@ -358,6 +422,14 @@ public sealed class CargaComprobantesUiTests
         { if (FallarGrabacionDirecta) throw new CargaComprobantesReglaException("Datos cambiaron antes de emitir");
             DirectasGrabadas++; return Task.FromResult(new CargaComprobantesGrabacionResultado { Operacion = operacion, Tc = directa.Tc, Estado = "GRABADA", Comprobante = "100700000187A", NumeroAsiento = 3 }); }
         public CargaComprobantesFiltro? UltimoFiltro { get; private set; }
+        public CargaComprobantesPreciosInfo? PreciosLista { get; set; }
+        public CargaComprobantesClienteResumen? Resumen { get; set; }
+        public Task<CargaComprobantesClienteResumen?> GetClienteDirectaAsync(string cliente, CancellationToken ct = default) => Task.FromResult(Resumen);
+        public IReadOnlyList<CargaComprobantesOpcionFiltro> Medios { get; set; } = [];
+        public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> GetMediosPagoAsync(CancellationToken ct = default) => Task.FromResult(Medios);
+        public Task<CargaComprobantesPreciosInfo?> GetPreciosListaDirectaAsync(CargaComprobantesDirecta directa, IReadOnlyList<string> articulos, CancellationToken ct = default)
+            => Task.FromResult(PreciosLista);
+        public CargaComprobantesContexto Contexto => _context;
         private readonly CargaComprobantesContexto _context = new()
         {
             PuedeEditarPrecio = true, PuedeEditarDescuento = true,

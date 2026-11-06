@@ -556,3 +556,98 @@
         grid-column: auto;
     }
 }
+
+/* Solapa "Listas de precios" */
+.articulos-listas {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.articulos-listas__todas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-12);
+}
+
+.articulos-lista {
+    min-width: 0;
+    padding: var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-md);
+    background: color-mix(in srgb, var(--alfa-bg-surface) 72%, transparent);
+}
+
+.articulos-lista--incluida {
+    border-color: color-mix(in srgb, var(--alfa-accent) 45%, var(--alfa-border-subtle));
+}
+
+.articulos-lista__titulo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8);
+}
+
+.articulos-lista__codigo {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.articulos-lista__tag {
+    padding: 2px var(--alfa-space-8);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, var(--alfa-text-secondary) 14%, transparent);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.articulos-lista__tag--nueva {
+    background: color-mix(in srgb, var(--alfa-accent) 16%, transparent);
+    color: var(--alfa-text-primary);
+}
+
+.articulos-lista__tag--baja {
+    background: color-mix(in srgb, #d9534f 18%, transparent);
+    color: var(--alfa-text-primary);
+}
+
+.articulos-lista__margen {
+    margin-left: auto;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.articulos-lista__precios,
+.articulos-lista__oferta {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--alfa-space-8);
+    margin-top: var(--alfa-space-8);
+}
+
+.articulos-lista__precios ::deep .alfa-field,
+.articulos-lista__oferta ::deep .alfa-field {
+    min-width: 0;
+}
+
+/* Política de precios (solapa Precios) */
+.articulos-politica {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-8);
+    margin-top: var(--alfa-space-8);
+}
+
+.articulos-politica__preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4) var(--alfa-space-12);
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-secondary);
+}
+
+.articulos-politica__error {
+    color: #d9534f;
+}

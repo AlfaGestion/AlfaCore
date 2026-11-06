@@ -57,17 +57,18 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             Mes = plan.Fecha.Month, Moneda = CodigoPk.Format("1", 4), Neto = neto, Iva = iva, Total = total,
             NetoGravado = fiscal.NetoGravado, NetoNoGravado = fiscal.Exento,
             NetoLibroNoGravado = plan.ArtExentoANoGrav ? 0 : fiscal.Exento,
-            ExentoLibro = plan.ArtExentoANoGrav ? fiscal.Exento : 0,
+            // V_mv_vta: los impuestos internos van al libro en LIVA_EXENTO.
+            ExentoLibro = (plan.ArtExentoANoGrav ? fiscal.Exento : 0) + fiscal.Internos, Internos = fiscal.Internos,
             Alicuota = slots[0].Alicuota, Iva1 = slots[0].Iva,
             Alicuota2 = slots[1].Alicuota, Iva2 = slots[1].Iva, Alicuota3 = slots[2].Alicuota, Iva3 = slots[2].Iva, Cae = plan.EsElectronico ? cae : null,
             VtoCae = plan.EsElectronico ? (DateTime?)vencimientoCae : null,
-            TcOrigen = plan.Asociado is not null ? "FC" : plan.Directa is null && plan.Origenes is null ? plan.Origen.Tc.Trim() : null,
+            TcOrigen = plan.Asociado is not null ? CargaComprobantesTipos.TcAsociado(plan.Tc) : plan.Directa is null && plan.Origenes is null ? plan.Origen.Tc.Trim() : null,
             CpteOrigen = plan.AsociadoComprobante ?? (plan.Directa is null && plan.Origenes is null ? plan.Origen.Comprobante : null),
             MotivoStock = CodigoPk.Format(plan.MotivoStock, 4), Operacion = operacion.ToString(),
             TipoAfip = plan.EsElectronico ? (int?)plan.TipoArca : null, Punto = plan.PuntoVenta, NumeroFiscal = numero,
             SignoStock = plan.SignoStock == 0 ? -1 : plan.SignoStock, AfectaIva = plan.EsElectronico,
             SignoLibro = plan.SentidoContable == "H" ? -1 : 1,
-            ExentoCabecera = plan.Origen.ExentoIvaArticulos || (plan.Tc == "FP" && liquidacion.Iva == 0),
+            ExentoCabecera = plan.Origen.ExentoIvaArticulos || (CargaComprobantesTipos.EsProforma(plan.Tc) && liquidacion.Iva == 0),
             DocTipo = solicitud?.DocTipo, DocNro = solicitud?.DocNro
         });
         p.Add("NetoInsumos", netoInsumos);
@@ -94,7 +95,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
              TCORIGEN,COMPROBANTEORIGEN,COMPLEMENTOORIGEN,IMPORTE,IMPORTE_S_IVA,IDMOTIVOCPRAVTA,IdVendedor,
              ImporteInsumos,ImporteServicios,ImporteOtrosConceptos,ImporteIva,NetoGravado,NetoNoGravado,IdDeposito,
              IdMotivoStock,IdLista,AlicIva,ImporteIva2,AlicIva2,ImpIva3,AlicIva3,Moneda,Cotizacion,SucursalCuenta,SUCURSAL,NUMERO,LETRA,UNEGOCIO,Usuario,
-             UNEGOCIO_DESTINO,FechaHora_Grabacion,CodCpteAfip,Recepcion,ExentoIVAArticulos)
+             UNEGOCIO_DESTINO,FechaHora_Grabacion,CodCpteAfip,Recepcion,ExentoIVAArticulos,ImporteImpuestosInternos)
             OUTPUT inserted.ID INTO @Insertado
             SELECT @Tc,@Comprobante,0,@Fecha,@Vencimiento,@Cuenta,cl.RAZON_SOCIAL,
                 LEFT(LTRIM(RTRIM(ISNULL(cl.CALLE,'')))+' '+LTRIM(RTRIM(ISNULL(cl.NUMERO,''))),50),
@@ -104,7 +105,7 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
                 @CondicionIva,@CondicionVenta,c.CLASEPRECIO,c.OBSERVACIONES,
                 @TcOrigen,@CpteOrigen,0,@Total,@Neto,@Motivo,c.IdVendedor,@NetoInsumos,0,@NetoOtros,@Iva1,@NetoGravado,@NetoNoGravado,c.IdDeposito,
                 @MotivoStock,c.IdLista,@Alicuota,@Iva2,@Alicuota2,@Iva3,@Alicuota3,@Moneda,1,ISNULL(c.SucursalCuenta,0),@Sucursal,@Numero,@Letra,
-                @Unidad,@Usuario,@Unidad,GETDATE(),CONVERT(nvarchar(4),@TipoAfip),-999,@ExentoCabecera
+                @Unidad,@Usuario,@Unidad,GETDATE(),CONVERT(nvarchar(4),@TipoAfip),-999,@ExentoCabecera,@Internos
             FROM {fuenteCabecera};
             SELECT ID FROM @Insertado;
             """, p, tx, cancellationToken: ct));
@@ -135,13 +136,21 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
                 continue;
             }
             var parteOrigen = plan.Directa is null ? plan.Partes.Single(x => x.Origen.Lineas.Any(l => l.Id == linea.LineaId)) : null;
-            p.Add("TcOrigenLinea", parteOrigen is null ? plan.Asociado is null ? null : "FC" : parteOrigen.Origen.Tc.Trim());
+            p.Add("TcOrigenLinea", parteOrigen is null ? plan.Asociado is null ? null : CargaComprobantesTipos.TcAsociado(plan.Tc) : parteOrigen.Origen.Tc.Trim());
             p.Add("CpteOrigenLinea", parteOrigen?.Origen.Comprobante ?? plan.AsociadoComprobante);
             p.Add("Linea", linea.LineaId); p.Add("Secuencia", ++secuencia); p.Add("Cantidad", linea.Cantidad);
-            p.Add("TotalLinea", linea.Total); p.Add("NetoLinea", linea.Neto);
-            p.Add("DtoUnitario", decimal.Round(original.PrecioSinIva * original.Descuento / 100, 4, MidpointRounding.ToEven));
+            var importeLinea = CargaComprobantesTipos.EsProforma(plan.Tc) && linea.Iva == 0 ? original.PrecioSinIva : original.Precio;
+            // Como V_mv_vta: TOTAL = IMPORTE (precio final, con internos) x cantidad; ImporteDto = TOTAL x Dto%;
+            // TotalFinal = TOTAL - ImporteDto a centavos; PrecioOld = precio neto de lista antes de editarlo.
+            var totalBruto = decimal.Round(importeLinea * linea.Cantidad, 4, MidpointRounding.ToEven);
+            var importeDto = decimal.Round(totalBruto * original.Descuento / 100, 4, MidpointRounding.ToEven);
+            p.Add("TotalLinea", original.EsConcepto ? linea.Total : totalBruto); p.Add("NetoLinea", linea.Neto);
+            p.Add("TotalFinalLinea", Red(totalBruto - importeDto));
+            p.Add("DtoUnitario", importeDto);
+            p.Add("PrecioOld", Red(original.PrecioReferenciaNeto ?? original.PrecioSinIva));
+            p.Add("InternoUnitario", original.ImpuestoInternoUnitario);
             p.Add("ArticuloDirecta", original.Articulo);
-            p.Add("PrecioDirecta", plan.Tc == "FP" && linea.Iva == 0 ? original.PrecioSinIva : original.Precio);
+            p.Add("PrecioDirecta", importeLinea);
             p.Add("NetoDirecta", original.PrecioSinIva); p.Add("DescuentoDirecta", original.Descuento);
             p.Add("ExentoLinea", linea.Exento); p.Add("AlicuotaLinea", linea.Alicuota);
             p.Add("CantidadReferencia", original.CantidadReferencia);
@@ -156,13 +165,13 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
                 (TC,IDCOMPROBANTE,IDCOMPLEMENTO,SECUENCIA,IDARTICULO,DESCRIPCION,IDUNIDAD,IDUNIDADBASE,CANTIDAD,CANTIDADUD,
                  EQUIV_UDBASE,COSTO,IMPORTE,IMPORTE_S_IVA,IMPUESTOS,TOTAL,TotalFinal,EXENTO,IdLista,CLASEPRECIO,
                  TipoLista,PorcDto,ImporteDto,AlicIVA,IDCAJA,IdDeposito,CANTIDAD_ORIGEN,Recepcion,
-                 CANTIDADPREPARADA,CANTIDADPREPARADAUD,CANTIDADAFACTURAR,CANTIDADAFACTURARUD,CANT_BL,CANT_KG,CANT_M3)
+                 CANTIDADPREPARADA,CANTIDADPREPARADAUD,CANTIDADAFACTURAR,CANTIDADAFACTURARUD,CANT_BL,CANT_KG,CANT_M3,PrecioOld)
                 OUTPUT inserted.ID INTO @DetalleInsertado
                 SELECT @Tc,@Comprobante,0,@Secuencia,i.IDARTICULO,i.DESCRIPCION,i.IDUNIDAD,i.IDUNIDADBASE,@Cantidad,i.CANTIDADUD,
-                    i.EQUIV_UDBASE,i.COSTO,@PrecioDirecta,@NetoDirecta,0,@TotalLinea,@TotalLinea,@ExentoLinea,i.IdLista,i.CLASEPRECIO,
+                    i.EQUIV_UDBASE,i.COSTO,@PrecioDirecta,@NetoDirecta,@InternoUnitario,@TotalLinea,@TotalFinalLinea,@ExentoLinea,i.IdLista,i.CLASEPRECIO,
                     'V',@DescuentoDirecta,@DtoUnitario,@AlicuotaLinea,@Caja,i.IdDeposito,
                     i.CANTIDAD,-999,0,0,0,0,COALESCE(i.CANT_BL*@Cantidad/NULLIF(i.CANTIDAD,0),0),
-                    COALESCE(i.CANT_KG*@Cantidad/NULLIF(i.CANTIDAD,0),0),COALESCE(i.CANT_M3*@Cantidad/NULLIF(i.CANTIDAD,0),0)
+                    COALESCE(i.CANT_KG*@Cantidad/NULLIF(i.CANTIDAD,0),0),COALESCE(i.CANT_M3*@Cantidad/NULLIF(i.CANTIDAD,0),0),@PrecioOld
                 FROM {fuenteDetalle};
                 SELECT ID FROM @DetalleInsertado;
                 """, p, tx, cancellationToken: ct));
@@ -195,48 +204,55 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             foreach (var parte in plan.Partes)
                 await actualizador.ActualizarAsync(cn, tx, parte.Origen, parte.Cantidades, ct);
         // Numeración de asiento serializada dentro del ejercicio/mes/subdiario.
-        var asiento = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            SELECT ISNULL(MAX([NUMERO ASIENTO]),0)+1 FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK)
-            WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Subdiario;
-            """, p, tx, cancellationToken: ct));
-        p.Add("Asiento", asiento);
-        var asientoSec = 0;
-        var debeCliente = plan.SentidoContable != "H";
-        foreach (var renglon in new[] { (plan.CuentaCliente, debeCliente ? "D" : "H", total),
-            (plan.CuentaIva, debeCliente ? "H" : "D", iva), (plan.CuentaVentas, debeCliente ? "H" : "D", netoInsumos),
-            (plan.CuentaOtros ?? plan.CuentaVentas, debeCliente ? "H" : "D", netoOtros) }.Where(x => x.Item3 != 0))
+        // PR/NP/RM (y proformas con UsaFacturaProformaSinRegistracion) no generan asiento.
+        int? numeroAsiento = null;
+        if (plan.GeneraAsiento)
         {
-            p.Add("CuentaAsiento", renglon.Item1.Trim());
-            p.Add("Dh", renglon.Item2); p.Add("ImpAsiento", renglon.Item3); p.Add("SecAsiento", ++asientoSec);
-            await cn.ExecuteAsync(new CommandDefinition("""
-                INSERT INTO dbo.MV_ASIENTOS
-                (CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,FechaSubdiario,DETALLE,TC,SUCURSAL,NUMERO,LETRA,
-                 [DEBE-HABER],IMPORTE,MONEDA,COTIZACION,PERIODO,CABIMPORTE,VENCIMIENTO,TIPO_REG,USUARIO_LOGEADO,UNEGOCIO,
-                 IdCajas,IdVendedor,IDMOTIVO,Tc_Origen,Cpte_Origen,CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,
-                 LIVA_TIPO,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_EXENTO,LIVA_AlicIVA,LIVA_ImpIVA,LIVA_AlicIva2,LIVA_ImpIva2,LIVA_AlicIVA3,LIVA_ImpIVA3,LIVA_TOTAL,NroCAI,FhVtoCAI,FechaHora_Grabacion)
-                SELECT @CuentaAsiento,@SecAsiento,@Mes,@Asiento,@Fecha,@Fecha,LEFT(c.NOMBRE,200),@TcCont,@Sucursal,@Numero,@Letra,
-                    @Dh,@ImpAsiento,@Moneda,1,@Periodo,@Total,@Vencimiento,@Subdiario,@Usuario,@Unidad,@Caja,c.IdVendedor,@Motivo,
-                    @TcOrigen,@CpteOrigen,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.CUENTA END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.NOMBRE END,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.DOCUMENTONUMERO END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @CondicionIva END,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN 'Ventas' END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@NetoGravado END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@NetoLibroNoGravado END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@ExentoLibro END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva1 END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota2 END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva2 END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota3 END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva3 END,
-                    CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Total END,@Cae,@VtoCae,GETDATE()
-                FROM dbo.V_MV_CPTE c WHERE c.ID=@FacturaId;
-                """, Agregar(p, "FacturaId", id), tx, cancellationToken: ct));
+            var asiento = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                SELECT ISNULL(MAX([NUMERO ASIENTO]),0)+1 FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK)
+                WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Subdiario;
+                """, p, tx, cancellationToken: ct));
+            p.Add("Asiento", asiento);
+            var asientoSec = 0;
+            var debeCliente = plan.SentidoContable != "H";
+            foreach (var renglon in new[] { (plan.CuentaCliente, debeCliente ? "D" : "H", total),
+                (plan.CuentaIva, debeCliente ? "H" : "D", iva), (plan.CuentaVentas, debeCliente ? "H" : "D", netoInsumos),
+                (plan.CuentaOtros ?? plan.CuentaVentas, debeCliente ? "H" : "D", netoOtros),
+                (plan.CuentaInternos ?? "", debeCliente ? "H" : "D", fiscal.Internos) }.Where(x => x.Item3 != 0))
+            {
+                p.Add("CuentaAsiento", renglon.Item1.Trim());
+                p.Add("Dh", renglon.Item2); p.Add("ImpAsiento", renglon.Item3); p.Add("SecAsiento", ++asientoSec);
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO dbo.MV_ASIENTOS
+                    (CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,FechaSubdiario,DETALLE,TC,SUCURSAL,NUMERO,LETRA,
+                     [DEBE-HABER],IMPORTE,MONEDA,COTIZACION,PERIODO,CABIMPORTE,VENCIMIENTO,TIPO_REG,USUARIO_LOGEADO,UNEGOCIO,
+                     IdCajas,IdVendedor,IDMOTIVO,Tc_Origen,Cpte_Origen,CABCUENTA,CABNOMBRE,CABCUIT,CABCONDIVA,
+                     LIVA_TIPO,LIVA_ImpNetoGrav,LIVA_ImpNetoNGrav,LIVA_EXENTO,LIVA_AlicIVA,LIVA_ImpIVA,LIVA_AlicIva2,LIVA_ImpIva2,LIVA_AlicIVA3,LIVA_ImpIVA3,LIVA_TOTAL,NroCAI,FhVtoCAI,FechaHora_Grabacion)
+                    SELECT @CuentaAsiento,@SecAsiento,@Mes,@Asiento,@Fecha,@Fecha,LEFT(c.NOMBRE,200),@TcCont,@Sucursal,@Numero,@Letra,
+                        @Dh,@ImpAsiento,@Moneda,1,@Periodo,@Total,@Vencimiento,@Subdiario,@Usuario,@Unidad,@Caja,c.IdVendedor,@Motivo,
+                        @TcOrigen,@CpteOrigen,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.CUENTA END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.NOMBRE END,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN c.DOCUMENTONUMERO END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @CondicionIva END,CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN 'Ventas' END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@NetoGravado END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@NetoLibroNoGravado END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@ExentoLibro END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva1 END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota2 END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva2 END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @Alicuota3 END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Iva3 END,
+                        CASE WHEN @SecAsiento=1 AND @AfectaIva=1 THEN @SignoLibro*@Total END,@Cae,@VtoCae,GETDATE()
+                    FROM dbo.V_MV_CPTE c WHERE c.ID=@FacturaId;
+                    """, Agregar(p, "FacturaId", id), tx, cancellationToken: ct));
+            }
+            var balance = await cn.ExecuteScalarAsync<decimal>(new CommandDefinition("""
+                SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS
+                WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Subdiario AND [NUMERO ASIENTO]=@Asiento;
+                """, p, tx, cancellationToken: ct));
+            if (balance != 0) throw new CargaComprobantesReglaException("El asiento no balancea; se revierte toda la grabación.");
+            numeroAsiento = asiento;
         }
-        var balance = await cn.ExecuteScalarAsync<decimal>(new CommandDefinition("""
-            SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS
-            WHERE PERIODO=@Periodo AND MES_OPERATIVO=@Mes AND TIPO_REG=@Subdiario AND [NUMERO ASIENTO]=@Asiento;
-            """, p, tx, cancellationToken: ct));
-        if (balance != 0) throw new CargaComprobantesReglaException("El asiento no balancea; se revierte toda la grabación.");
         if (plan.Directa?.FacturacionAutomaticaCuenta is { Length: > 0 } cuentaAutomatica)
         {
             // Mismo efecto que V_mv_vta en v_FacturacionAutomatica: fecha de la última factura automática
@@ -271,27 +287,28 @@ public sealed class CargaComprobantesGrabador(CargaComprobantesPlanificador plan
             (CUENTA,TC,SUCURSAL,NUMERO,LETRA,TCO_ORIGEN,SUCURSAL_ORIGEN,NUMERO_ORIGEN,LETRA_ORIGEN,
              IMPORTE,IDCOMPROBANTE,IDCOMPROBANTE_ORIGEN,IDCOMPLEMENTO_ORIGEN,UNEGOCIO)
             VALUES(@Cuenta,@Tc,@Sucursal,@Numero,@Letra,@TcOrigen,LEFT(@CpteOrigen,4),SUBSTRING(@CpteOrigen,5,8),RIGHT(@CpteOrigen,1),
-                CASE WHEN @TipoDestino IN ('NC','ND') THEN @Total ELSE @Neto END,@Comprobante,@CpteOrigen,0,@Unidad);
+                CASE WHEN @TipoDestino IN ('NC','ND','NCFP') THEN @Total ELSE @Neto END,@Comprobante,@CpteOrigen,0,@Unidad);
             IF @AfectaIva=1
             INSERT INTO dbo.V_MV_CPTE_ELECTRONICOS
             (IdRequerimiento,CantReg,Presta_Serv,TC,IdComprobante,Tipo_Doc,Nro_Doc,Tipo_Cpte,Punto_Vta,Cpte_Desde,Cpte_Hasta,
-             Imp_Total,Imp_NoGrav,Imp_NetoGrav,Imp_ImpuestoLiquidado,Imp_OPExentas,Fecha_Cpte,Resultado,CAE,VtoCAE,Archivado)
-            VALUES(@Operacion,1,0,@Tc,@Comprobante,@DocTipo,@DocNro,@TipoAfip,@Punto,@Numero,@Numero,@Total,0,@NetoGravado,@Iva,@NetoNoGravado,@Fecha,'A',@Cae,@VtoCae,0);
+             Imp_Total,Imp_NoGrav,Imp_NetoGrav,Imp_ImpuestoLiquidado,Imp_Impuestos_Rni,Imp_OPExentas,Fecha_Cpte,Resultado,CAE,VtoCAE,Archivado)
+            VALUES(@Operacion,1,0,@Tc,@Comprobante,@DocTipo,@DocNro,@TipoAfip,@Punto,@Numero,@Numero,@Total,0,@NetoGravado,@Iva,@Internos,@NetoNoGravado,@Fecha,'A',@Cae,@VtoCae,0);
             """, p, tx, cancellationToken: ct));
+        // Venta de contado: cobranza (CBCT/CBFP), su asiento y la aplicación, en la misma transacción.
+        var cobranza = plan.Cobranza is { Count: > 0 }
+            ? await CargaComprobantesCobranzaContado.GrabarAsync(cn, tx, plan, id, comprobante, total, ct) : null;
         // ARCA determina el número; GrabaUltimoCpte legacy conserva el siguiente (número + 1).
-        await cn.ExecuteAsync(new CommandDefinition(plan.Letra == "X" ? """
-            UPDATE dbo.V_TA_CPTE SET X_ULTIMO_NRO=CASE WHEN ISNULL(X_ULTIMO_NRO,0)<@NumeroFiscal+1 THEN @NumeroFiscal+1 ELSE X_ULTIMO_NRO END
-            WHERE LTRIM(RTRIM(CODIGO))=@TipoDestino AND Talonario=@Talonario;
-            """ : plan.Letra == "A" ? """
-            UPDATE dbo.V_TA_CPTE SET A_ULTIMO_NRO=CASE WHEN ISNULL(A_ULTIMO_NRO,0)<@NumeroFiscal+1 THEN @NumeroFiscal+1 ELSE A_ULTIMO_NRO END
-            WHERE LTRIM(RTRIM(CODIGO))=@TipoDestino AND Talonario=@Talonario;
-            """ : """
-            UPDATE dbo.V_TA_CPTE SET B_ULTIMO_NRO=CASE WHEN ISNULL(B_ULTIMO_NRO,0)<@NumeroFiscal+1 THEN @NumeroFiscal+1 ELSE B_ULTIMO_NRO END
+        // Columna de la letra del comprobante (whitelist validada en el plan).
+        if (!CargaComprobantesTipos.LetraConNumeracion(plan.Letra))
+            throw new CargaComprobantesReglaException($"La letra {plan.Letra} no tiene numeración en la tabla de comprobantes.");
+        var columnaNumero = plan.Letra + "_ULTIMO_NRO";
+        await cn.ExecuteAsync(new CommandDefinition($"""
+            UPDATE dbo.V_TA_CPTE SET {columnaNumero}=CASE WHEN ISNULL({columnaNumero},0)<@NumeroFiscal+1 THEN @NumeroFiscal+1 ELSE {columnaNumero} END
             WHERE LTRIM(RTRIM(CODIGO))=@TipoDestino AND Talonario=@Talonario;
             """, Agregar(p, "Talonario", plan.Talonario), tx, cancellationToken: ct));
         return new() { Operacion = operacion, OrigenId = plan.OrigenId, Borrador = plan.Directa?.Borrador, UnidadNegocio = plan.UnidadNegocio,
             Tc = plan.Tc, FacturaAsociadaId = plan.Directa?.FacturaAsociadaId,
-            Estado = "GRABADA", FacturaId = id, Comprobante = comprobante, NumeroAsiento = asiento,
+            Estado = "GRABADA", FacturaId = id, Comprobante = comprobante, NumeroAsiento = numeroAsiento, Cobranza = cobranza,
             Cae = plan.EsElectronico ? cae : null, Vencimiento = plan.EsElectronico ? vencimientoCae : null };
     }
 
