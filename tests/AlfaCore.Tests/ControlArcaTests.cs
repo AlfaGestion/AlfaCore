@@ -73,6 +73,26 @@ public sealed class ControlArcaTests(ITestOutputHelper output)
         Assert.DoesNotContain(r.Filas, f => f.Numero == 103 && f.Estado == ControlArcaEstado.FaltaEnArca);
     }
 
+    [Fact]
+    public void LoCargadoEnOtraUnidadNoSeInformaComoFaltante()
+    {
+        var arca = ControlArcaService.Leer(Encoding.UTF8.GetBytes(Csv), "emitidos.csv");
+        var sistema = new List<ControlArcaService.ComprobanteSistema>
+        {
+            new("FC", "C", 10, 100, new(2026, 10, 2), 1000, "30111111111", "CLIENTE UNO", "FC 0010-00000100 C", "2"),      // unidad del archivo
+            new("FC", "C", 10, 102, new(2026, 10, 5), 3000, "30333333333", "CLIENTE TRES", "FC 0010-00000102 C", "1"),    // cargado en otra unidad
+            new("FC", "C", 10, 104, new(2026, 10, 20), 500, "30555555555", "CLIENTE CINCO", "FC 0010-00000104 C", "1")    // de otra unidad: no es «falta en ARCA»
+        };
+        var r = ControlArcaService.Comparar(arca, sistema, new(2026, 10, 1), new(2026, 10, 31), ["2"]);
+        Assert.Equal(ControlArcaEstado.Coincide, r.Filas.Single(f => f.Numero == 100).Estado);
+        var otra = r.Filas.Single(f => f.Numero == 102);
+        Assert.Equal(ControlArcaEstado.OtraUnidad, otra.Estado);
+        Assert.Contains("unidad de negocio 1", otra.Observacion);
+        Assert.Equal(ControlArcaEstado.FaltaEnSistema, r.Filas.Single(f => f.Numero == 101).Estado);
+        Assert.DoesNotContain(r.Filas, f => f.Numero == 104);
+        Assert.Equal(1, r.ComprobantesSistema);
+    }
+
     /// <summary>Con un archivo real de ARCA (ALFACORE_ARCA_XLSX=ruta): lo lee completo.</summary>
     [Fact]
     public void LeeUnArchivoRealDeArca()

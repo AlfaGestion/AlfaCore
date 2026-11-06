@@ -39,7 +39,7 @@ public sealed class ArcaMisComprobantesArchivo
     public List<ArcaMisComprobante> Comprobantes { get; set; } = [];
 }
 
-public enum ControlArcaEstado { Coincide, DifiereImporte, DifiereFecha, OtroPeriodo, FaltaEnSistema, FaltaEnArca }
+public enum ControlArcaEstado { Coincide, DifiereImporte, DifiereFecha, OtroPeriodo, FaltaEnSistema, FaltaEnArca, OtraUnidad }
 
 public sealed class ControlArcaFila
 {

@@ -74,6 +74,7 @@ internal static class ArcaTransmisionRegistro
         ControlArcaEstado.DifiereImporte => MensajeDifiereImporte,
         ControlArcaEstado.DifiereFecha => "ERROR, DIFIERE FECHA",
         ControlArcaEstado.OtroPeriodo => "EXISTE EN SISTEMA EN OTRO PERIODO",
+        ControlArcaEstado.OtraUnidad => "EXISTE EN SISTEMA EN OTRA UNIDAD DE NEGOCIO",
         _ => null
     };
 
@@ -92,7 +93,7 @@ internal static class ArcaTransmisionRegistro
             registros++;
         }
         var log = new StringBuilder($"ARCA {r.ComprobantesArca} · sistema {r.ComprobantesSistema} · coinciden {r.Cantidad(ControlArcaEstado.Coincide)}");
-        foreach (var e in new[] { ControlArcaEstado.FaltaEnSistema, ControlArcaEstado.FaltaEnArca, ControlArcaEstado.DifiereImporte, ControlArcaEstado.DifiereFecha, ControlArcaEstado.OtroPeriodo })
+        foreach (var e in new[] { ControlArcaEstado.FaltaEnSistema, ControlArcaEstado.FaltaEnArca, ControlArcaEstado.DifiereImporte, ControlArcaEstado.DifiereFecha, ControlArcaEstado.OtroPeriodo, ControlArcaEstado.OtraUnidad })
             if (r.Cantidad(e) > 0) log.Append($" · {MensajeControl(e)}: {r.Cantidad(e)}");
         await CerrarAsync(cn, transmision, 0, log.ToString(), ct);
         return transmision;

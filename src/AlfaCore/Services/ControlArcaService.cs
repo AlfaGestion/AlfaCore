@@ -291,33 +291,34 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             if (propias.Count == 0 && arca.Cuit.Length > 0 && arca.Cuit != cuitEmpresa)
                 aviso = $"El archivo es del CUIT {arca.Cuit}, que no es el de ninguna unidad de negocio ni el de la empresa: se compara contra todos los comprobantes.";
             // Ventana amplia para encontrar comprobantes del archivo cargados en otro período.
-            var p = new { Desde = desde.AddDays(-62), Hasta = hasta.AddDays(62), Unidades = propias.ToArray(), SinUnidad = propias.Count == 0 };
+            // Se trae todo el sistema (de cualquier unidad) para distinguir «falta» de «cargado en otra unidad de negocio».
+            var p = new { Desde = desde.AddDays(-62), Hasta = hasta.AddDays(62) };
             var sistema = arca.Recibidos
                 ? (await cn.QueryAsync<SistemaSql>(new CommandDefinition("""
                     SELECT LTRIM(RTRIM(ISNULL(a.TC,''))) Tc, LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) Sucursal, LTRIM(RTRIM(ISNULL(a.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(a.LETRA,''))) Letra,
-                           a.FECHA Fecha, ABS(ISNULL(a.LIVA_TOTAL,0)) Total, ISNULL(a.CABCUIT,'') Doc, LTRIM(RTRIM(ISNULL(a.CABNOMBRE,''))) Nombre
+                           a.FECHA Fecha, ABS(ISNULL(a.LIVA_TOTAL,0)) Total, ISNULL(a.CABCUIT,'') Doc, LTRIM(RTRIM(ISNULL(a.CABNOMBRE,''))) Nombre,
+                           LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) Unidad
                     FROM dbo.MV_ASIENTOS a
-                    WHERE a.LIVA_TIPO = N'COMPRAS' AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day,1,@Hasta)
-                      AND (@SinUnidad = 1 OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) IN @Unidades);
+                    WHERE a.LIVA_TIPO = N'COMPRAS' AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day,1,@Hasta);
                     """, p, commandTimeout: 120, cancellationToken: ct))).ToList()
                 : (await cn.QueryAsync<SistemaSql>(new CommandDefinition("""
                     SELECT LTRIM(RTRIM(c.TC)) Tc, LTRIM(RTRIM(ISNULL(c.SUCURSAL,''))) Sucursal, LTRIM(RTRIM(ISNULL(c.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(c.LETRA,''))) Letra,
-                           c.FECHA Fecha, ISNULL(c.IMPORTE,0) Total, ISNULL(c.DOCUMENTONUMERO,'') Doc, LTRIM(RTRIM(ISNULL(c.NOMBRE,''))) Nombre
+                           c.FECHA Fecha, ISNULL(c.IMPORTE,0) Total, ISNULL(c.DOCUMENTONUMERO,'') Doc, LTRIM(RTRIM(ISNULL(c.NOMBRE,''))) Nombre,
+                           LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) Unidad
                     FROM dbo.V_MV_CPTE c
                     WHERE LTRIM(RTRIM(c.TC)) IN ('FC','NC','ND') AND ISNULL(c.IDCOMPLEMENTO,0) = 0 AND ISNULL(c.ANULADA,0) = 0
-                      AND LTRIM(RTRIM(c.LETRA)) IN ('A','B','C','M') AND c.FECHA >= @Desde AND c.FECHA < DATEADD(day,1,@Hasta)
-                      AND (@SinUnidad = 1 OR LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) IN @Unidades);
+                      AND LTRIM(RTRIM(c.LETRA)) IN ('A','B','C','M') AND c.FECHA >= @Desde AND c.FECHA < DATEADD(day,1,@Hasta);
                     """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
             var resultado = Comparar(arca, sistema.Select(s => new ComprobanteSistema(
                 ClaseSistema(s.Tc, arca.Recibidos), s.Letra, (int)Num(s.Sucursal), (long)Num(s.Numero), s.Fecha.Date, s.Total, Digitos(s.Doc), s.Nombre,
-                $"{s.Tc} {s.Sucursal}-{s.Numero} {s.Letra}".Trim())).ToList(), desde, hasta);
+                $"{s.Tc} {s.Sucursal}-{s.Numero} {s.Letra}".Trim(), s.Unidad)).ToList(), desde, hasta, propias);
             resultado.CuitArchivo = arca.Cuit; resultado.Unidades = propias; resultado.Aviso = aviso;
             resultado.Emisor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'NOMBRE';", cancellationToken: ct)) ?? "";
             return resultado;
         }
 
-    internal sealed record ComprobanteSistema(string Clase, string Letra, int PuntoVenta, long Numero, DateTime Fecha, decimal Total, string Doc, string Nombre, string Referencia);
+    internal sealed record ComprobanteSistema(string Clase, string Letra, int PuntoVenta, long Numero, DateTime Fecha, decimal Total, string Doc, string Nombre, string Referencia, string Unidad = "");
 
     private static string ClaseSistema(string tc, bool compras) => tc.Trim().ToUpperInvariant() switch
     {
@@ -328,8 +329,15 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
 
     /// <summary>Empareja por clase, letra, punto de venta y número (y CUIT del proveedor en recibidos).
     /// Los rangos «desde/hasta» de ARCA (comprobantes B/C agrupados) se comparan contra la suma del rango.</summary>
-    internal static ControlArcaResultado Comparar(ArcaMisComprobantesArchivo arca, IReadOnlyList<ComprobanteSistema> sistema, DateTime desde, DateTime hasta)
+    internal static ControlArcaResultado Comparar(ArcaMisComprobantesArchivo arca, IReadOnlyList<ComprobanteSistema> todoElSistema, DateTime desde, DateTime hasta,
+        IReadOnlyCollection<string>? unidadesPropias = null)
     {
+        // Las unidades del CUIT del archivo son las que se controlan; lo cargado en otra unidad se informa aparte y no cuenta como faltante.
+        var filtrar = unidadesPropias is { Count: > 0 };
+        bool Propia(ComprobanteSistema s) => !filtrar || unidadesPropias!.Contains(s.Unidad);
+        var sistema = todoElSistema.Where(Propia).ToList();
+        var ajenos = filtrar ? todoElSistema.Where(s => !Propia(s)).ToList() : [];
+        var ajenosPorNumero = ajenos.ToLookup(s => (s.Clase, s.PuntoVenta, s.Numero));
         var usados = new HashSet<ComprobanteSistema>();
         var filas = new List<ControlArcaFila>();
         bool MismaContraparte(ComprobanteSistema s, ArcaMisComprobante a) => !arca.Recibidos || s.Doc.Length == 0 || a.DocContraparte.Length == 0 || s.Doc == a.DocContraparte;
@@ -353,7 +361,17 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
                 Clase = a.Clase, Letra = a.Letra, PuntoVenta = a.PuntoVenta, Numero = a.NumeroDesde, NumeroHasta = a.NumeroHasta,
                 Cuit = a.DocContraparte, Nombre = a.NombreContraparte, FechaArca = a.Fecha, TotalArca = a.TotalPesos, Cae = a.Cae, Arca = a
             };
-            if (candidatos.Count == 0)
+            var enOtraUnidad = candidatos.Count > 0 || ajenos.Count == 0 || a.NumeroHasta != a.NumeroDesde ? new List<ComprobanteSistema>() : ajenosPorNumero[(a.Clase, a.PuntoVenta, a.NumeroDesde)]
+                .Where(s => (s.Letra == a.Letra || a.Letra.Length == 0) && MismaContraparte(s, a)).ToList();
+            if (enOtraUnidad.Count > 0)
+            {
+                var o = enOtraUnidad[0];
+                fila.Estado = ControlArcaEstado.OtraUnidad;
+                fila.TotalSistema = o.Total; fila.FechaSistema = o.Fecha; fila.ComprobanteSistema = o.Referencia;
+                if (fila.Nombre.Length == 0) fila.Nombre = o.Nombre;
+                fila.Observacion = $"Ya está cargado en la unidad de negocio {o.Unidad}; el archivo es de la unidad {string.Join(", ", unidadesPropias!)}. Revisá a qué unidad corresponde.";
+            }
+            else if (candidatos.Count == 0)
             {
                 fila.Estado = ControlArcaEstado.FaltaEnSistema;
                 fila.Observacion = arca.Recibidos ? "No está cargado en compras (o se cargó con otro número o proveedor)." : "No está en las ventas del sistema.";
@@ -437,6 +455,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
         ControlArcaEstado.DifiereImporte => "Difiere el importe",
         ControlArcaEstado.DifiereFecha => "Difiere la fecha",
         ControlArcaEstado.OtroPeriodo => "Otro período",
+        ControlArcaEstado.OtraUnidad => "Cargado en otra unidad",
         ControlArcaEstado.FaltaEnSistema => "Falta en el sistema",
         _ => "No está en ARCA"
     };
@@ -445,6 +464,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
     {
         public string Tc { get; set; } = ""; public string Sucursal { get; set; } = ""; public string Numero { get; set; } = ""; public string Letra { get; set; } = "";
         public DateTime Fecha { get; set; } public decimal Total { get; set; } public string Doc { get; set; } = ""; public string Nombre { get; set; } = "";
+        public string Unidad { get; set; } = "";
     }
 
     private async Task<T> EjecutarAsync<T>(string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
