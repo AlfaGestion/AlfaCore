@@ -91,7 +91,7 @@ public sealed class OrdenPagoDocumentService(
         public string Domicilio { get; set; } = ""; public string Localidad { get; set; } = ""; public string Telefono { get; set; } = "";
         public string DocumentoNumero { get; set; } = ""; public string DocumentoTipo { get; set; } = ""; public string CondicionIva { get; set; } = "";
         public string Email { get; set; } = ""; public decimal Total { get; set; } public string Moneda { get; set; } = "";
-        public decimal Retencion { get; set; } public string RetencionNro { get; set; } = "";
+        public decimal Retencion { get; set; } public string RetencionNro { get; set; } = ""; public string Comentarios { get; set; } = "";
     }
 
     /// <summary>Datos de la orden para el motor de documentos. Null si no existe, está anulada o no es una OPG/PGFP.</summary>
@@ -104,7 +104,7 @@ public sealed class OrdenPagoDocumentService(
                 ISNULL(LTRIM(RTRIM(v.DOCUMENTONUMERO)),'') DocumentoNumero, ISNULL(LTRIM(RTRIM(td.DESCRIPCION)),'') DocumentoTipo,
                 ISNULL(LTRIM(RTRIM(v.CONDICIONIVA)),'') CondicionIva, ISNULL(LTRIM(RTRIM(p.MAIL)),'') Email,
                 CONVERT(decimal(15,2), ISNULL(v.IMPORTE,0)) Total, ISNULL(LTRIM(RTRIM(v.MONEDA)),'') Moneda,
-                CONVERT(decimal(15,2), ISNULL(v.RETGAN_Importe,0)) Retencion, ISNULL(LTRIM(RTRIM(v.RETGAN_NRO)),'') RetencionNro
+                CONVERT(decimal(15,2), ISNULL(v.RETGAN_Importe,0)) Retencion, ISNULL(LTRIM(RTRIM(v.RETGAN_NRO)),'') RetencionNro, ISNULL(LTRIM(RTRIM(v.COMENTARIOS)),'') Comentarios
             FROM dbo.V_MV_CPTE v
             LEFT JOIN dbo.TA_TIPODOCUMENTO td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.DOCUMENTOTIPO,''))))
             LEFT JOIN dbo.Vt_Proveedores p ON LTRIM(RTRIM(p.CODIGO)) = LTRIM(RTRIM(v.CUENTA))
@@ -143,6 +143,12 @@ public sealed class OrdenPagoDocumentService(
             ORDER BY a.[NUMERO ASIENTO], a.SECUENCIA;
             """, new { Tc = h.Tc, S = h.Sucursal, N = h.Numero, L = h.Letra, ret = h.Retencion }, tx, cancellationToken: ct))).ToList();
 
+        // Lo que la orden aplicó por sí misma; si el total la supera, la diferencia quedó como anticipo a favor del proveedor.
+        var aplicadoPorLaOrden = await cn.ExecuteScalarAsync<decimal>(new CommandDefinition("""
+            SELECT CONVERT(decimal(18,2), ISNULL(SUM(IMPORTE),0)) FROM dbo.MV_APLICACION
+            WHERE LTRIM(RTRIM(TC)) = @Tc AND IDCOMPROBANTE = @Id AND LTRIM(RTRIM(ISNULL(TC_PRINT,''))) = @Tc AND IDCOMPROBANTE_PRINT = @Id;
+            """, new { Tc = h.Tc, Id = idComprobante }, tx, cancellationToken: ct));
+
         var (empresa, condicionEmisor, iibb, inicio, _) = await FacturaDocumentService.BuildEmpresaAsync(cn, tx, h.UNegocio, ct);
         var tipo = TiposDocumentoCore.TipoParaComprobante(h.Tc, h.Letra);
         static string Formato(string id) => CompraDocumentoMailService.FormatoComprobante(id);
@@ -150,7 +156,7 @@ public sealed class OrdenPagoDocumentService(
         var datos = new FacturaDocumentData
         {
             Empresa = empresa, CondicionIvaEmisor = condicionEmisor, IngresosBrutosEmisor = iibb, InicioActividadesEmisor = inicio,
-            EtiquetaTercero = "Proveedor",
+            EtiquetaTercero = "Proveedor", Concepto = h.Comentarios, AnticipoGenerado = Math.Max(0, h.Total - aplicadoPorLaOrden),
             Comprobante = new FacturaComprobanteDocumentData
             {
                 TipoDocumento = tipo, Tc = h.Tc, Letra = "X", PuntoVenta = h.Sucursal, Numero = h.Numero, Fecha = h.Fecha

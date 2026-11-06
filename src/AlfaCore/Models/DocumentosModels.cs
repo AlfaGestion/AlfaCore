@@ -199,7 +199,8 @@ public static class DocumentBlockFields
         ],
         [TiposBloqueDocumento.Pie] = [new("NumeroPagina", "Número de página"), new("NombreEmpresa", "Nombre de la empresa")],
         [TiposBloqueDocumento.RecuadroTipo] = [new("Letra", "Letra"), new("CodigoAfip", "Código AFIP")],
-        [TiposBloqueDocumento.MediosPago] = [new("Medios", "Medios de pago y total pagado"), new("Recibi", "Recibí conforme (firma, aclaración y fecha)")],
+        [TiposBloqueDocumento.MediosPago] = [new("Medios", "Medios de pago y total pagado"), new("EnLetras", "Total en letras"), new("Concepto", "En concepto de y anticipo generado"),
+            new("Autorizado", "Autorizado por (firma y aclaración)"), new("Recibi", "Recibí de la empresa el importe (firma y aclaración)")],
         [TiposBloqueDocumento.Cae] = [new("Cae", "CAE"), new("Vencimiento", "Vencimiento"), new("CodigoBarra", "Código de barras"), new("Estado", "Estado de autorización")]
     };
 
@@ -456,6 +457,9 @@ public sealed class FacturaDocumentData
     /// <summary>Orden de pago: medios con los que se pagó (efectivo, banco, cheques) y créditos aplicados (notas de crédito, anticipos).</summary>
     public List<FacturaPagoDocumentData> MediosPago { get; set; } = [];
     public List<FacturaPagoDocumentData> CreditosAplicados { get; set; } = [];
+    /// <summary>Orden de pago: texto «En concepto de» y anticipo generado a favor del proveedor.</summary>
+    public string Concepto { get; set; } = "";
+    public decimal AnticipoGenerado { get; set; }
 }
 
 public sealed class FacturaComprobanteDocumentData

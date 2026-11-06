@@ -128,6 +128,7 @@
             }
             <div class="op-acciones-medios">
                 <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-lg" Disabled="_busy" OnClick="_ => AgregarMedio()">Agregar medio</AlfaButton>
+                @if (_pagar.Count == 0) { <span class="op-ayuda">Sin comprobantes elegidos, lo que pagues queda como anticipo al proveedor.</span> }
                 @if (Diferencia > 0)
                 {
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-calculator" Disabled="@(_busy || _medios.Count == 0)" OnClick="_ => CompletarUltimoMedio()">Completar con @Diferencia.ToString("N2")</AlfaButton>
@@ -149,7 +150,7 @@
             </dl>
             @if (_prep.RetieneGanancias)
             {
-                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-percent" Disabled="@(_busy || _pagar.Count == 0)" OnClick="_ => CalcularRetencionAsync()">Calcular retención</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-percent" Disabled="@(_busy || (_pagar.Count == 0 && Dinero == 0))" OnClick="_ => CalcularRetencionAsync()">Calcular retención</AlfaButton>
             }
             <AlfaButton Icon="bi bi-check2-circle" Loading="_busy" Disabled="@(_busy || !PuedeGrabar)" OnClick="_ => IntentarGrabarAsync()">Grabar orden de pago</AlfaButton>
         </section>
@@ -230,7 +231,7 @@
     /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
     private decimal Anticipo => Dinero + Creditos + Retencion - APagar;
     private decimal Diferencia => Math.Max(0, APagar - Creditos - Retencion - Dinero);
-    private bool PuedeGrabar => _prep is not null && _pagar.Count > 0 && Dinero > 0 && Anticipo >= 0 && (!_prep.RetieneGanancias || RetVigente);
+    private bool PuedeGrabar => _prep is not null && (_pagar.Count > 0 || _aplicar.Count == 0) && Dinero > 0 && Anticipo >= 0 && (!_prep.RetieneGanancias || RetVigente);
 
     protected override void OnInitialized() { Sesiones.SessionChanged += CambiarSesion; Usuarios.StateChanged += CambiarSesion; UpdateHeader(); }
 

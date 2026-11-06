@@ -71,6 +71,17 @@ public sealed class OrdenPagoRetencionTests(ITestOutputHelper output)
         Assert.Equal(1000m + (776000m - 500000m) * 0.10m, r.Importe);
     }
 
+    [Theory]
+    [InlineData(1500, "Un Mil Quinientos Pesos Con 00/100")]
+    [InlineData(1, "Un Peso Con 00/100")]
+    [InlineData(100.5, "Cien Pesos Con 50/100")]
+    [InlineData(21, "Veintiun Pesos Con 00/100")]
+    [InlineData(1126900.93, "Un Millon Ciento Veintiseis Mil Novecientos Pesos Con 93/100")]
+    [InlineData(2000000, "Dos Millones Pesos Con 00/100")]
+    [InlineData(35, "Treinta Y Cinco Pesos Con 00/100")]
+    public void ElImporteSeEscribeEnLetras(double importe, string esperado)
+        => Assert.Equal(esperado, AlfaCore.Common.NumeroALetras.Pesos((decimal)importe));
+
     private static (OrdenPagoService Service, string Connection) Servicio()
     {
         var connection = Environment.GetEnvironmentVariable("ORDENPAGO_TEST_SQL")!;

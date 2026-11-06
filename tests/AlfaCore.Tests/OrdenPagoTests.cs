@@ -250,6 +250,36 @@ public sealed class OrdenPagoTests(ITestOutputHelper output)
     }
 
     [OrdenPagoSqlFact]
+    public async Task AnticipoPuroSinComprobantesExigeConfirmacionYQuedaComoCreditoDelProveedor()
+    {
+        var (service, connection) = Servicio("Administrador");
+        await using var cn = new SqlConnection(connection); await cn.OpenAsync();
+        var prov = await cn.QueryFirstAsync<string>("""
+            SELECT TOP 1 LTRIM(RTRIM(CODIGO)) FROM dbo.Vt_Proveedores WHERE ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0 AND LTRIM(RTRIM(ISNULL(RETGAN_IdRetencion,'')))='' ORDER BY CODIGO
+            """);
+        var prep = await service.PrepararAsync(prov, false);
+        var efectivo = prep.Medios.First(m => m.Tipo == "EF").Cuenta;
+        using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
+        try
+        {
+            await cn.ExecuteAsync(CrearJournal, transaction: tx);
+            var s = new OrdenPagoSolicitud { Operacion = Guid.NewGuid(), Proveedor = prov, Fecha = DateTime.Today, Medios = [new() { Cuenta = efectivo, Importe = 1000 }] };
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None));
+            Assert.Contains("anticipo", ex.Message, StringComparison.OrdinalIgnoreCase);
+            s.ConfirmaAnticipo = true;
+            var r = await service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None);
+            Assert.Equal(1000m, r.Importe); Assert.Equal(1000m, r.Anticipo);
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.MV_APLICACION WHERE IDCOMPROBANTE_PRINT=@C AND LTRIM(RTRIM(TC_PRINT))='OPG'", new { C = r.Comprobante }, tx));
+            Assert.Equal(2, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(TC))='OPG' AND SUCURSAL=@S AND NUMERO=@N AND LETRA='X'",
+                new { S = r.Comprobante[..4], N = r.Comprobante.Substring(4, 8) }, tx));
+            // Con créditos y sin comprobantes tampoco se permite.
+            s.Operacion = Guid.NewGuid(); s.Creditos = [new(new("PG", "0001", "00000001", "X"), 10)];
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None));
+        }
+        finally { tx.Rollback(); }
+    }
+
+    [OrdenPagoSqlFact]
     public async Task AnticipoSobreFacturaAplicaCreditoExistenteYRechazaProformaEnPagoNormal()
     {
         var (service, connection) = Servicio("Administrador");

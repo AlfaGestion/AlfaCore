@@ -104,8 +104,11 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
             throw new InvalidOperationException("Revisá el proveedor y la fecha de la orden de pago.");
         if (s.Detalle?.Trim().Length > 100)
             throw new InvalidOperationException("El detalle de la orden de pago admite hasta 100 caracteres.");
-        if (s.Comprobantes.Count is < 1 or > 50 || s.Comprobantes.Any(x => x.Importe <= 0 || !Dos(x.Importe)) || s.Comprobantes.Select(x => x.Clave).Distinct().Count() != s.Comprobantes.Count)
-            throw new InvalidOperationException("Elegí entre 1 y 50 comprobantes distintos, con importes positivos de hasta dos decimales.");
+        // Sin comprobantes la orden es un anticipo puro al proveedor: solo con medios de pago y con confirmación.
+        if (s.Comprobantes.Count > 50 || s.Comprobantes.Any(x => x.Importe <= 0 || !Dos(x.Importe)) || s.Comprobantes.Select(x => x.Clave).Distinct().Count() != s.Comprobantes.Count)
+            throw new InvalidOperationException("Elegí hasta 50 comprobantes distintos, con importes positivos de hasta dos decimales.");
+        if (s.Comprobantes.Count == 0 && (s.Creditos.Count > 0 || !s.ConfirmaAnticipo))
+            throw new InvalidOperationException("Para pagar sin comprobantes tenés que confirmar que es un anticipo al proveedor, y no aplicar créditos.");
         if (s.Creditos.Count > 50 || s.Creditos.Any(x => x.Importe <= 0 || !Dos(x.Importe)) || s.Creditos.Select(x => x.Clave).Distinct().Count() != s.Creditos.Count)
             throw new InvalidOperationException("Los créditos a aplicar deben ser distintos, con importes positivos de hasta dos decimales.");
         if (s.Medios.Count is < 1 or > 20 || s.Medios.Any(m => string.IsNullOrWhiteSpace(m.Cuenta) || m.Cuenta.Length > 15 || m.Importe <= 0 || !Dos(m.Importe)))

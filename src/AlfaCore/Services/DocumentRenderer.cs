@@ -403,17 +403,30 @@ public sealed class DocumentRenderer : IDocumentRenderer
     private static void AppendMediosPagoOrden(StringBuilder sb, FacturaDocumentData data, List<string>? fields, string style)
     {
         if (Shows(fields, "Medios")) AppendMediosPagoTabla(sb, data, style);
-        if (Shows(fields, "Recibi")) AppendReciboConforme(sb, style);
+        if (Shows(fields, "EnLetras")) sb.Append("<p").Append(style).Append("><strong>Total:</strong> ").Append(E(AlfaCore.Common.NumeroALetras.Pesos(data.Totales.Total))).Append("</p>");
+        if (Shows(fields, "Concepto"))
+        {
+            if (!string.IsNullOrWhiteSpace(data.Concepto)) sb.Append("<p").Append(style).Append("><strong>En concepto de:</strong> ").Append(E(data.Concepto.Trim())).Append("</p>");
+            if (data.AnticipoGenerado > 0) sb.Append("<p").Append(style).Append("><strong>Anticipo generado:</strong> ").Append(Money(data.AnticipoGenerado, data.Totales.Moneda)).Append("</p>");
+        }
+        var autorizado = Shows(fields, "Autorizado"); var recibi = Shows(fields, "Recibi");
+        if (autorizado || recibi)
+            AppendFirmas(sb, style, autorizado ? "Autorizado por" : null, recibi ? "Recibí de " + data.Empresa.Nombre + " el importe de la presente liquidación" : null);
     }
 
-    /// <summary>Constancia para el proveedor: firma, aclaración y fecha de quien recibe el pago.</summary>
-    private static void AppendReciboConforme(StringBuilder sb, string style)
+    /// <summary>Recuadros de firma como el comprobante de pagos del legacy: «Autorizado por» y «Recibí de … el importe de la presente liquidación».</summary>
+    private static void AppendFirmas(StringBuilder sb, string style, params string?[] titulos)
     {
-        sb.Append("<section class=\"card\"").Append(style).Append(" style=\"margin-top:28px;page-break-inside:avoid\"><strong>Recibí conforme</strong>")
-            .Append("<table style=\"width:100%;margin-top:34px;border-collapse:collapse\"><tr>");
-        foreach (var rotulo in new[] { "Firma", "Aclaración", "Fecha" })
-            sb.Append("<td style=\"width:33%;padding:0 12px;text-align:center\"><div style=\"border-top:1px solid #444;padding-top:4px\" class=\"muted\">").Append(rotulo).Append("</div></td>");
-        sb.Append("</tr></table></section>");
+        sb.Append("<table").Append(style).Append(" style=\"width:100%;margin-top:26px;border-collapse:separate;border-spacing:10px 0;page-break-inside:avoid\"><tr>");
+        foreach (var titulo in titulos.Where(t => t is not null))
+        {
+            sb.Append("<td style=\"width:50%;border:1px solid #444;padding:8px 10px;vertical-align:top\"><strong>").Append(E(titulo!)).Append("</strong>")
+                .Append("<table style=\"width:100%;margin-top:38px;border-collapse:collapse\"><tr>");
+            foreach (var rotulo in new[] { "Firma", "Aclaración" })
+                sb.Append("<td style=\"width:50%;padding:0 8px;text-align:center\"><div style=\"border-top:1px solid #444;padding-top:3px\" class=\"muted\">").Append(rotulo).Append("</div></td>");
+            sb.Append("</tr></table></td>");
+        }
+        sb.Append("</tr></table>");
     }
 
     private static void AppendMediosPagoTabla(StringBuilder sb, FacturaDocumentData data, string style)
