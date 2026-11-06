@@ -456,6 +456,7 @@ public class Program
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();
+        builder.Services.AddScoped<OrdenPagoService>();
         builder.Services.AddScoped<CargaComprobantesRepository>();
         builder.Services.AddScoped<CargaComprobantesElectronicaVerificador>();
         builder.Services.AddScoped<CargaComprobantesElectronicaEmisor>();

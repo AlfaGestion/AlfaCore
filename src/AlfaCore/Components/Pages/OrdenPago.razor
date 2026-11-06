@@ -1,0 +1,349 @@
+@page "/compras/pagos/orden-de-pago"
+@page "/{idweb}/{idbase:int}/compras/pagos/orden-de-pago"
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject OrdenPagoService Servicio
+@inject CompraDocumentoMailService Documentos
+@inject IJSRuntime Js
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuarios
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject ISaaSTenantRouteGuard TenantGuard
+@inject IAppUiOperationService UiOps
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Orden de Pago | AlfaCore</PageTitle>
+
+@* Orden de pago a proveedores: proveedor → comprobantes a pagar (y créditos a aplicar) → medios de pago. Con «Proforma» graba PGFP. *@
+<div class="gd-page gd op-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    @if (_ultima is not null)
+    {
+        <div class="op-ultima">
+            <span>Última orden grabada: <strong>@_ultima.Tc @CompraDocumentoMailService.FormatoComprobante(_ultima.Comprobante)</strong></span>
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-printer" Loading="_pdfBusy" Disabled="_pdfBusy" OnClick="_ => VerPdfAsync()">Ver PDF</AlfaButton>
+        </div>
+    }
+
+    <section class="op-card" aria-label="Datos de la orden de pago">
+        <div class="op-datos">
+            <AlfaLookup TItem="OrdenPagoProveedor" Label="Proveedor" Placeholder="Escribí código, nombre o CUIT" MinimumCharacters="2"
+                @bind-SearchText="_buscarProveedor" DebounceMilliseconds="150" SelectedItem="_proveedor" SelectedItemChanged="ProveedorCambiadoAsync"
+                SearchFunc="BuscarProveedores" ItemKey="p => p.Codigo" Disabled="@(_busy || TieneCargado)">
+                <ItemTemplate Context="p">@p.Codigo · @p.Nombre · @p.Documento</ItemTemplate>
+            </AlfaLookup>
+            <AlfaInput Label="Fecha" Type="date" @bind-Value="_fecha" Disabled="@(_busy || _prep is null)" />
+            <AlfaInput Label="Detalle" @bind-Value="_detalle" MaxLength="100" Placeholder="@DetalleSugerido" Disabled="@(_busy || _prep is null)" />
+            @if (_prep?.PuedeProforma == true)
+            {
+                <div class="op-proforma">
+                    <AlfaCheckbox Value="_proforma" ValueChanged="ProformaCambiadaAsync" Disabled="@(_busy || TieneCargado)">Proforma (PGFP)</AlfaCheckbox>
+                    <small>@(TieneCargado ? "Para cambiar de modo, quitá lo seleccionado." : _proforma ? "Se pagan solo facturas proforma y se graba un PGFP." : "Pago normal: no se mezclan proformas.")</small>
+                </div>
+            }
+        </div>
+        @if (_prep is not null)
+        {
+            <p class="op-tipo">Se graba como <strong>@(_proforma ? "PGFP · Pago proforma" : "OPG · Orden de pago")</strong> · Unidad de negocio @_prep.Unidad</p>
+        }
+    </section>
+
+    @if (_prep is null)
+    {
+        <AlfaEmptyState Title="Elegí un proveedor" Message="Buscá el proveedor para ver sus comprobantes pendientes de pago." />
+    }
+    else
+    {
+        <section class="op-card" aria-label="Comprobantes a pagar">
+            <h2>Comprobantes a pagar</h2>
+            @if (_prep.Comprobantes.Count == 0)
+            {
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin comprobantes pendientes" Message="@(_proforma ? "El proveedor no tiene facturas proforma pendientes." : "El proveedor no tiene comprobantes pendientes de pago.")" />
+            }
+            else
+            {
+                <div class="op-scroll"><table class="op-table">
+                    <thead><tr><th class="op-sel"></th><th>Comprobante</th><th>Fecha</th><th>Vence</th><th class="op-num">Saldo</th><th class="op-num">Importe a pagar</th></tr></thead>
+                    <tbody>
+                    @foreach (var d in _prep.Comprobantes)
+                    {
+                        var k = Clave(d);
+                        <tr @key="k" class="@(_pagar.ContainsKey(k) ? "is-seleccionada" : null) @(d.Seleccionable ? null : "is-bloqueada")" title="@d.Motivo">
+                            <td class="op-sel"><input type="checkbox" aria-label="@($"Pagar {d.Tc} {Formato(d)}")" checked="@_pagar.ContainsKey(k)" disabled="@(!d.Seleccionable || _busy)" @onchange="e => MarcarComprobante(d, e.Value is true)" /></td>
+                            <td><strong>@d.Tc</strong> @Formato(d)@if (!d.Seleccionable){<small>@d.Motivo</small>}</td>
+                            <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td>@(d.Vencimiento?.ToString("dd/MM/yyyy"))</td>
+                            <td class="op-num">@d.Saldo.ToString("N2")</td>
+                            <td class="op-num">@if (_pagar.TryGetValue(k, out var txt)) { <input class="op-importe" type="number" step="0.01" min="0" aria-label="Importe a pagar" value="@txt" disabled="@_busy" @onchange="e => _pagar[k] = e.Value?.ToString() ?? string.Empty" /> }</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table></div>
+            }
+        </section>
+
+        @if (_prep.Creditos.Count > 0)
+        {
+            <section class="op-card" aria-label="Créditos a aplicar">
+                <h2>Créditos y anticipos a aplicar <small>(notas de crédito, pagos anticipados)</small></h2>
+                <div class="op-scroll"><table class="op-table">
+                    <thead><tr><th class="op-sel"></th><th>Comprobante</th><th>Fecha</th><th class="op-num">Saldo</th><th class="op-num">Importe a aplicar</th></tr></thead>
+                    <tbody>
+                    @foreach (var d in _prep.Creditos)
+                    {
+                        var k = Clave(d);
+                        <tr @key="k" class="@(_aplicar.ContainsKey(k) ? "is-seleccionada" : null) @(d.Seleccionable ? null : "is-bloqueada")" title="@d.Motivo">
+                            <td class="op-sel"><input type="checkbox" aria-label="@($"Aplicar {d.Tc} {Formato(d)}")" checked="@_aplicar.ContainsKey(k)" disabled="@(!d.Seleccionable || _busy)" @onchange="e => MarcarCredito(d, e.Value is true)" /></td>
+                            <td><strong>@d.Tc</strong> @Formato(d)@if (!d.Seleccionable){<small>@d.Motivo</small>}</td>
+                            <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td class="op-num">@d.Saldo.ToString("N2")</td>
+                            <td class="op-num">@if (_aplicar.TryGetValue(k, out var txt)) { <input class="op-importe" type="number" step="0.01" min="0" aria-label="Importe a aplicar" value="@txt" disabled="@_busy" @onchange="e => _aplicar[k] = e.Value?.ToString() ?? string.Empty" /> }</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table></div>
+            </section>
+        }
+
+        <section class="op-card" aria-label="Medios de pago">
+            <h2>Medios de pago</h2>
+            @foreach (var m in _medios)
+            {
+                var medio = _prep.Medios.FirstOrDefault(x => x.Cuenta == m.Cuenta);
+                <div class="op-medio" @key="m.Id">
+                    <AlfaSelect Label="Medio" Value="@m.Cuenta" ValueChanged="v => CambiarMedio(m, v)" Options="OpcionesMedios" Placeholder="Elegí el medio" Disabled="_busy" />
+                    <AlfaInput Label="Importe" Type="number" Step="0.01" @bind-Value="m.Importe" Disabled="_busy" />
+                    @if (medio?.Tipo == "CH")
+                    {
+                        <AlfaInput Label="Serie" @bind-Value="m.Serie" MaxLength="1" Disabled="_busy" />
+                        <AlfaInput Label="Nº de cheque" @bind-Value="m.NumeroCheque" MaxLength="8" Disabled="_busy" />
+                        <AlfaInput Label="Fecha de pago" Type="date" @bind-Value="m.FechaCheque" Disabled="_busy" />
+                        <AlfaSelect Label="Clearing (hs)" @bind-Value="m.Clearing" Options="Clearings" Disabled="_busy" />
+                    }
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-trash" Disabled="_busy" OnClick="_ => _medios.Remove(m)">Quitar</AlfaButton>
+                </div>
+            }
+            <div class="op-acciones-medios">
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-lg" Disabled="_busy" OnClick="_ => AgregarMedio()">Agregar medio</AlfaButton>
+                @if (Diferencia > 0)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-calculator" Disabled="@(_busy || _medios.Count == 0)" OnClick="_ => CompletarUltimoMedio()">Completar con @Diferencia.ToString("N2")</AlfaButton>
+                }
+            </div>
+            <p class="op-ayuda">Efectivo, banco/transferencia y cheque propio, en pesos. Las retenciones se incorporan en la próxima versión.</p>
+        </section>
+
+        <section class="op-resumen" aria-label="Resumen">
+            <dl>
+                <div><dt>Comprobantes a pagar</dt><dd>@APagar.ToString("N2")</dd></div>
+                <div><dt>Créditos aplicados</dt><dd>@Creditos.ToString("N2")</dd></div>
+                <div><dt>Medios de pago</dt><dd>@Dinero.ToString("N2")</dd></div>
+                <div class="@(Anticipo != 0 ? "is-aviso" : null)"><dt>@(Anticipo > 0 ? "Anticipo al proveedor" : Anticipo < 0 ? "Falta cubrir" : "Diferencia")</dt><dd>@Math.Abs(Anticipo).ToString("N2")</dd></div>
+            </dl>
+            <AlfaButton Icon="bi bi-check2-circle" Loading="_busy" Disabled="@(_busy || !PuedeGrabar)" OnClick="_ => IntentarGrabarAsync()">Grabar orden de pago</AlfaButton>
+        </section>
+    }
+</div>
+
+@if (_confirmaAnticipo)
+{
+    <AlfaConfirmDialog Open="true" Title="Se genera un anticipo"
+        Message="@($"Los medios y créditos superan lo que pagás en {Anticipo:N2}. Esa diferencia queda como anticipo a favor del proveedor.")"
+        SecondaryMessage="Revisá los importes si no querías dejar un anticipo."
+        ConfirmLabel="Grabar con anticipo" OnConfirm="GrabarConAnticipoAsync" OnCancel="() => _confirmaAnticipo = false" />
+}
+
+@code {
+    private sealed class MedioFila
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string Cuenta { get; set; } = "";
+        public string? Importe { get; set; } = "";
+        public string? Serie { get; set; } = "";
+        public string? NumeroCheque { get; set; } = "";
+        public string? FechaCheque { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
+        public string? Clearing { get; set; } = "0";
+    }
+
+    private readonly CancellationTokenSource _vida = new();
+    private readonly Dictionary<string, string> _pagar = [];
+    private readonly Dictionary<string, string> _aplicar = [];
+    private readonly List<MedioFila> _medios = [];
+    private static readonly IReadOnlyList<AlfaSelectOption> Clearings = [.. new[] { 0, 24, 48, 72, 96, 120, 144, 168 }.Select(c => new AlfaSelectOption(c.ToString(), c.ToString()))];
+    private bool _busy, _disposed, _confirmaAnticipo, _pdfBusy;
+    private OrdenPagoResultado? _ultima;
+    private Guid? _sesion;
+    private Guid _operacion = Guid.NewGuid();
+    private string _buscarProveedor = "", _fecha = DateTime.Today.ToString("yyyy-MM-dd"), _detalle = "";
+    private bool _proforma;
+    private OrdenPagoProveedor? _proveedor;
+    private OrdenPagoPreparacion? _prep;
+    private AppUiMessage? _feedback;
+
+    private static string Clave(OrdenPagoDocumento d) => $"{d.Tc}|{d.Comprobante}";
+    private static string Formato(OrdenPagoDocumento d) => $"{d.Sucursal}-{d.Numero}{(d.Letra.Trim().Length > 0 ? " " + d.Letra.Trim() : "")}";
+    private bool TieneCargado => _pagar.Count > 0 || _aplicar.Count > 0;
+    private string DetalleSugerido => _proveedor is null ? "" : $"{(_proforma ? "Pago proforma" : "O. de Pago")}: {_proveedor.Nombre}";
+    private IReadOnlyList<AlfaSelectOption> OpcionesMedios => [.. (_prep?.Medios ?? []).Select(m => new AlfaSelectOption(m.Cuenta, $"{m.Descripcion} ({m.Tipo switch { "EF" => "efectivo", "DB" => "banco", _ => "cheque propio" }})"))];
+
+    private static decimal Num(string? t) => decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? decimal.Round(v, 2) : 0m;
+    private decimal APagar => _pagar.Values.Sum(Num);
+    private decimal Creditos => _aplicar.Values.Sum(Num);
+    private decimal Dinero => _medios.Sum(m => Num(m.Importe));
+    /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
+    private decimal Anticipo => Dinero + Creditos - APagar;
+    private decimal Diferencia => Math.Max(0, APagar - Creditos - Dinero);
+    private bool PuedeGrabar => _prep is not null && _pagar.Count > 0 && Dinero > 0 && Anticipo >= 0;
+
+    protected override void OnInitialized() { Sesiones.SessionChanged += CambiarSesion; Usuarios.StateChanged += CambiarSesion; UpdateHeader(); }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_sesion is not null) return;
+        await EjecutarAsync(async () =>
+        {
+            var tenant = await TenantGuard.ResolveAsync(idbase, idweb, _vida.Token);
+            if (!tenant.IsValid) throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
+            _sesion = Sesiones.GetActiveSession()?.Id;
+        });
+    }
+
+    private Task<IReadOnlyList<OrdenPagoProveedor>> BuscarProveedores(string texto, CancellationToken ct) => Servicio.BuscarProveedoresAsync(texto, ct);
+
+    private Task ProveedorCambiadoAsync(OrdenPagoProveedor? p)
+    {
+        _proveedor = p; LimpiarSeleccion(); _prep = null;
+        return p is null ? Task.CompletedTask : EjecutarAsync(CargarAsync);
+    }
+
+    private async Task CargarAsync()
+    {
+        if (_proveedor is null) return;
+        _prep = await Servicio.PrepararAsync(_proveedor.Codigo, _proforma, _vida.Token);
+        _proforma = _prep.Proforma;
+    }
+
+    private Task ProformaCambiadaAsync(bool? valor)
+    {
+        _proforma = valor == true; LimpiarSeleccion();
+        return _proveedor is null ? Task.CompletedTask : EjecutarAsync(CargarAsync);
+    }
+
+    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _operacion = Guid.NewGuid(); }
+
+    private void MarcarComprobante(OrdenPagoDocumento d, bool marcado)
+    {
+        if (marcado) _pagar[Clave(d)] = d.Saldo.ToString("0.00", CultureInfo.InvariantCulture); else _pagar.Remove(Clave(d));
+    }
+
+    private void MarcarCredito(OrdenPagoDocumento d, bool marcado)
+    {
+        if (marcado) _aplicar[Clave(d)] = d.Saldo.ToString("0.00", CultureInfo.InvariantCulture); else _aplicar.Remove(Clave(d));
+    }
+
+    private void AgregarMedio() => _medios.Add(new MedioFila { Importe = Diferencia > 0 ? Diferencia.ToString("0.00", CultureInfo.InvariantCulture) : "" });
+    private void CambiarMedio(MedioFila m, string? cuenta) => m.Cuenta = cuenta ?? "";
+    private void CompletarUltimoMedio()
+    {
+        var m = _medios.LastOrDefault(); if (m is null) return;
+        m.Importe = (Num(m.Importe) + Diferencia).ToString("0.00", CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime? Fecha(string? t) => DateTime.TryParseExact(t, "yyyy-MM-dd", null, DateTimeStyles.None, out var f) ? f : null;
+
+    private OrdenPagoSolicitud Armar(bool confirmaAnticipo)
+    {
+        if (_prep is null || _proveedor is null) throw new InvalidOperationException("Elegí un proveedor.");
+        var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
+        OrdenPagoClave ClaveDe(string key, IReadOnlyList<OrdenPagoDocumento> docs) => docs.First(d => Clave(d) == key).Clave;
+        return new OrdenPagoSolicitud
+        {
+            Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma, Detalle = _detalle.Trim(), ConfirmaAnticipo = confirmaAnticipo,
+            Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
+            Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
+            Medios = [.. _medios.Select(m =>
+            {
+                if (m.Cuenta.Length == 0) throw new InvalidOperationException("Elegí el medio de pago de cada renglón (o quitá los vacíos).");
+                return new OrdenPagoMedioLinea
+                {
+                    Cuenta = m.Cuenta, Importe = Num(m.Importe), Serie = m.Serie ?? "", NumeroCheque = m.NumeroCheque ?? "",
+                    FechaCheque = Fecha(m.FechaCheque), Clearing = int.TryParse(m.Clearing, out var c) ? c : 0
+                };
+            })]
+        };
+    }
+
+    private Task IntentarGrabarAsync()
+    {
+        if (Anticipo > 0) { _confirmaAnticipo = true; return Task.CompletedTask; }
+        return GrabarAsync(false);
+    }
+
+    private Task GrabarConAnticipoAsync() { _confirmaAnticipo = false; return GrabarAsync(true); }
+
+    private Task GrabarAsync(bool confirmaAnticipo) => EjecutarAsync(async () =>
+    {
+        var r = await Servicio.GrabarAsync(Armar(confirmaAnticipo), _vida.Token);
+        var numero = $"{r.Comprobante[..4]}-{r.Comprobante.Substring(4, 8)} {r.Comprobante[12]}";
+        _ultima = r;
+        _feedback = AppUiMessage.Success("Orden de pago grabada", $"{r.Tc} {numero} por {r.Importe:N2}. Asiento {r.NumeroAsiento}." + (r.Anticipo > 0 ? $" Anticipo al proveedor: {r.Anticipo:N2}." : ""));
+        // Nueva orden: se recarga el proveedor para ver los saldos actualizados.
+        LimpiarSeleccion();
+        await CargarAsync();
+    });
+
+    private async Task VerPdfAsync()
+    {
+        if (_ultima is null || _pdfBusy) return;
+        _pdfBusy = true; _feedback = null;
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            var tc = _ultima.Tc; var comprobante = _ultima.Comprobante;
+            var result = await UiOps.RunAsync(() => Documentos.GenerarPdfAsync(tc, comprobante, "", _vida.Token), "Ver PDF de la orden de pago", _vida.Token);
+            if (result.Success && result.Value is { Length: > 0 } bytes)
+                await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openBlob", Convert.ToBase64String(bytes), "application/pdf", $"{tc}-{comprobante}.pdf");
+            else
+                _feedback = result.Feedback;
+        }
+        catch (OperationCanceledException) { }
+        finally { _pdfBusy = false; if (!_disposed) await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task EjecutarAsync(Func<Task> accion)
+    {
+        if (_busy || _disposed || _vida.IsCancellationRequested) return;
+        _busy = true; UpdateHeader();
+        try { await InvokeAsync(StateHasChanged); await accion(); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _feedback = UiOps.BuildMessage(ex, "Orden de Pago"); }
+        finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
+    private void UpdateHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "compras", Title = "Orden de Pago",
+        ShowHistoryNavigation = false,
+        Breadcrumb = ["Compras", "Órdenes de pago", "Orden de Pago"],
+        TopNavigationItems =
+        [
+            new() { Key = "carga", Label = "Carga de comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga")); return Task.CompletedTask; } },
+            new() { Key = "pagos", Label = "Pagos y retenciones", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos")); return Task.CompletedTask; } },
+            new() { Key = "orden", Label = "Orden de Pago", Active = true }
+        ],
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List
+    });
+
+    private void CambiarSesion()
+    {
+        if (Sesiones.GetActiveSession()?.Id == _sesion && TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones, Usuarios)) return;
+        _vida.Cancel(); _prep = null; _proveedor = null; LimpiarSeleccion(); _sesion = null;
+        _feedback = AppUiMessage.Warning("La sesión cambió", "Volvé a abrir la Orden de Pago en la base activa.");
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() { _disposed = true; Sesiones.SessionChanged -= CambiarSesion; Usuarios.StateChanged -= CambiarSesion; _vida.Cancel(); _vida.Dispose(); }
+}

@@ -21,7 +21,7 @@ public sealed class ComprobanteViewerService(
     private static readonly HashSet<string> TcReciboCobros =
         new(StringComparer.OrdinalIgnoreCase) { "CB", "CBFP", "CBCT" };
     private static readonly HashSet<string> TcReciboPagos =
-        new(StringComparer.OrdinalIgnoreCase) { "PG", "OPG" };
+        new(StringComparer.OrdinalIgnoreCase) { "PG", "OPG", "PGFP" };
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()

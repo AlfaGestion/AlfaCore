@@ -18,7 +18,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
 {
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
     private static readonly string[] TiposCompra = ["OC", "RMC"];
-    private static readonly string[] TiposPago = ["PG", "OPG"];
+    private static readonly string[] TiposPago = ["PG", "OPG", "PGFP"];
     private const string ClaveMailPrueba = "ALFACORE_MAIL_PRUEBA";
 
     // Textos configurables por documento (TA_CONFIGURACION, grupo COMPRAS); si no están cargados se usa el de abajo.
@@ -53,7 +53,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                   ISNULL(c.RETIBR_Importe,0) RetIibb, ISNULL(c.RETSUSS_Importe,0) RetSuss
                 FROM dbo.V_MV_CPTE c
                 LEFT JOIN dbo.VT_PROVEEDORES p ON LTRIM(RTRIM(p.CODIGO)) = LTRIM(RTRIM(c.CUENTA))
-                WHERE LTRIM(RTRIM(c.TC)) IN ('PG','OPG') AND ISNULL(c.ANULADA,0) = 0 AND ISNULL(c.IDCOMPLEMENTO,0) = 0
+                WHERE LTRIM(RTRIM(c.TC)) IN ('PG','OPG','PGFP') AND ISNULL(c.ANULADA,0) = 0 AND ISNULL(c.IDCOMPLEMENTO,0) = 0
                   AND c.FECHA >= @desde AND c.FECHA < @fin AND LTRIM(RTRIM(c.UNEGOCIO)) IN @unidades
                   AND (@texto = '' OR c.NOMBRE LIKE @patron OR c.CUENTA LIKE @patron OR c.IDCOMPROBANTE LIKE @patron)
                   AND (@cert = ''
@@ -432,7 +432,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
 
     internal static string HtmlPago(EmpresaDocumentData empresa, Ficha f, IReadOnlyList<Retencion> retenciones, ComprobanteViewerDto? dto)
     {
-        var titulo = f.Tc == "OPG" ? "ORDEN DE PAGO" : "COMPROBANTE DE PAGO";
+        var titulo = f.Tc switch { "OPG" => "ORDEN DE PAGO", "PGFP" => "PAGO PROFORMA", _ => "COMPROBANTE DE PAGO" };
         var sb = new StringBuilder(Encabezado(empresa, titulo, f.Comprobante, f.Fecha));
         sb.Append(CajaProveedor(f));
         if (dto?.AplicaA is { Count: > 0 } aplica)
