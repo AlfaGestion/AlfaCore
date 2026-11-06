@@ -58,6 +58,8 @@ public sealed class OrdenPagoPreparacion
     public IReadOnlyList<OrdenPagoMedio> Medios { get; set; } = [];
     public IReadOnlyList<OrdenPagoChequera> Chequeras { get; set; } = [];
     public IReadOnlyList<KeyValuePair<string, string>> Bancos { get; set; } = [];
+    /// <summary>Cheques de terceros en cartera que se pueden entregar como pago.</summary>
+    public IReadOnlyList<OrdenPagoChequeCartera> Cartera { get; set; } = [];
     /// <summary>El proveedor está sujeto a retención de Ganancias en esta orden (agente de retención, régimen asignado, sin exención vigente, no proforma).</summary>
     public bool RetieneGanancias { get; set; }
 }
@@ -72,6 +74,25 @@ public sealed record OrdenPagoRetencion(
 }
 
 public sealed record OrdenPagoImporte(OrdenPagoClave Clave, decimal Importe);
+
+/// <summary>Cheque de terceros que está en cartera (recibido en una cobranza y todavía no entregado ni depositado).</summary>
+public sealed class OrdenPagoChequeCartera
+{
+    public string Cuenta { get; set; } = "";
+    public string IdBanco { get; set; } = "";
+    public string Banco { get; set; } = "";
+    public string Numero { get; set; } = "";
+    public decimal Importe { get; set; }
+    public DateTime? Vencimiento { get; set; }
+    public int Clearing { get; set; }
+    /// <summary>Código de la cuenta (cliente) que entregó el cheque.</summary>
+    public string Origen { get; set; } = "";
+    public string Unidad { get; set; } = "";
+    public string Clave => $"{Cuenta}|{IdBanco}|{Numero}|{Importe:0.00}";
+}
+
+/// <summary>Identifica el cheque de cartera elegido; el resto de sus datos se leen de la base al grabar.</summary>
+public sealed record OrdenPagoChequeTercero(string Cuenta, string IdBanco, string Numero, decimal Importe);
 
 public sealed class OrdenPagoMedioLinea
 {
@@ -98,6 +119,8 @@ public sealed class OrdenPagoSolicitud
     /// <summary>Créditos (NC, anticipos) con el importe que se aplica.</summary>
     public List<OrdenPagoImporte> Creditos { get; set; } = [];
     public List<OrdenPagoMedioLinea> Medios { get; set; } = [];
+    /// <summary>Cheques de terceros de la cartera que se entregan al proveedor (su importe suma a los medios de pago).</summary>
+    public List<OrdenPagoChequeTercero> ChequesTerceros { get; set; } = [];
     /// <summary>Confirma que lo que sobra de los medios sobre las facturas queda como anticipo del proveedor.</summary>
     public bool ConfirmaAnticipo { get; set; }
     /// <summary>Retención de Ganancias que vio el usuario (el servicio la recalcula al grabar y rechaza si cambió). 0 si no retiene.</summary>

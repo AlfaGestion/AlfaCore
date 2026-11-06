@@ -72,6 +72,8 @@
     font-size: 13px;
 }
 
+.op-subtitulo { font-size: 13px; margin: 14px 0 6px; }
+.op-subtitulo small { font-weight: 400; color: var(--alfa-text-secondary); }
 .op-retencion { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
 .op-retencion dt { font-size: 11px; color: var(--alfa-text-secondary); }
 .op-retencion dd { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }

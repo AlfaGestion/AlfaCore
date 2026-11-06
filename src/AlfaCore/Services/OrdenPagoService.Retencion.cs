@@ -187,7 +187,7 @@ public sealed partial class OrdenPagoService
             FROM dbo.V_TA_ESCALARETENCIONES WHERE LTRIM(RTRIM(IdRetencion))=@regimen;
             """, new { regimen = ctx.RegimenId }, tx, ct))).AsList();
         var resultado = CalcularRetencion(new RetencionEntrada(
-            ctx.Descripcion, Redondeo(baseFacturas), Redondeo(noGravado), s.Comprobantes.Sum(c => c.Importe), s.Medios.Sum(m => m.Importe), Redondeo(descuento),
+            ctx.Descripcion, Redondeo(baseFacturas), Redondeo(noGravado), s.Comprobantes.Sum(c => c.Importe), s.Medios.Sum(m => m.Importe) + s.ChequesTerceros.Sum(c => c.Importe), Redondeo(descuento),
             anterior, retenido, reg.MinimoNoImponible, reg.MinimoExcluido, reg.Porcentaje, escala));
         return (resultado, ctx);
     }

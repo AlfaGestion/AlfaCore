@@ -36,7 +36,8 @@ public sealed partial class OrdenPagoService
         public string? Localidad { get; set; } public string? CPostal { get; set; } public string? Provincia { get; set; } public string? Telefono { get; set; }
         public string? DocumentoTipo { get; set; } public string? DocumentoNumero { get; set; } public string? Iva { get; set; } public string? Motivo { get; set; }
     }
-    private sealed class CuentaMedio { public string Codigo { get; set; } = ""; public string Medio { get; set; } = ""; public string Vista { get; set; } = ""; public string Moneda { get; set; } = ""; }
+    private sealed class CuentaMedio { public string Codigo { get; set; } = ""; public string Medio { get; set; } = ""; public string Vista { get; set; } = ""; public string Moneda { get; set; } = ""; public string? Origen { get; set; } }
+    private sealed class ChequeCarteraFila { public string Cuenta { get; set; } = ""; public string IdBanco { get; set; } = ""; public string Numero { get; set; } = ""; public decimal Importe { get; set; } public DateTime? Vencimiento { get; set; } public int Clearing { get; set; } public string Origen { get; set; } = ""; }
     private sealed class Talonario { public int Numero { get; set; } public string Unidad { get; set; } = ""; public int Sucursal { get; set; } public int Proximo { get; set; } public int Desde { get; set; } public int Hasta { get; set; } }
     private sealed class OperacionGuardada
     {
@@ -137,6 +138,26 @@ public sealed partial class OrdenPagoService
             lineas.Add((m, cuenta, banco, nro));
         }
 
+        // Cheques de terceros: se revalida que sigan en cartera y se entregan con sus datos originales (vencimiento, clearing, banco, origen).
+        foreach (var t in s.ChequesTerceros)
+        {
+            await cn.ExecuteScalarAsync<int>(Q("""
+                SELECT COUNT(*) FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK)
+                WHERE LTRIM(RTRIM(CUENTA))=@cuenta AND LTRIM(RTRIM(IdBanco))=@banco AND LTRIM(RTRIM(NroComprobanteBancario))=@nro;
+                """, new { cuenta = t.Cuenta.Trim(), banco = t.IdBanco.Trim(), nro = t.Numero.Trim() }));
+            var fila = await cn.QueryFirstOrDefaultAsync<ChequeCarteraFila>(Q("""
+                SELECT TOP(1) LTRIM(RTRIM(CUENTA)) Cuenta, IdBanco IdBanco, LTRIM(RTRIM(NroComprobanteBancario)) Numero, CONVERT(decimal(18,2),IMPORTE) Importe,
+                    VENCIMIENTO Vencimiento, ISNULL(Clearing,0) Clearing, LTRIM(RTRIM(ISNULL(CuentaOrigen,''))) Origen
+                FROM dbo.V_ChequesEnCartera
+                WHERE LTRIM(RTRIM(CUENTA))=@cuenta AND LTRIM(RTRIM(IdBanco))=@banco AND LTRIM(RTRIM(NroComprobanteBancario))=@nro AND IMPORTE=@importe
+                    AND Saldo=IMPORTE AND ISNULL(ChPropio,0)=0 AND LTRIM(RTRIM(MONEDA))='1' AND (@unidad='' OR LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@unidad);
+                """, new { cuenta = t.Cuenta.Trim(), banco = t.IdBanco.Trim(), nro = t.Numero.Trim(), importe = t.Importe, unidad = filtraUnidad ? unidad : "" }))
+                ?? throw new InvalidOperationException($"El cheque {t.Numero.Trim()} ya no está en cartera (se entregó, se depositó o cambió). Actualizá la lista de cheques.");
+            var nro = fila.Numero; var guion = nro.IndexOf('-');
+            lineas.Add((new OrdenPagoMedioLinea { Cuenta = fila.Cuenta, Importe = fila.Importe, FechaCheque = fila.Vencimiento, Clearing = fila.Clearing },
+                new CuentaMedio { Codigo = fila.Cuenta, Medio = "CT", Origen = (guion > 0 ? nro[..guion] + "-" : "") + fila.Origen }, fila.IdBanco, nro));
+        }
+
         // Retención de Ganancias: se recalcula acá con los datos actuales; si difiere de la que vio el usuario, se rechaza.
         var (retencion, ctxRet) = await CalcularRetencionAsync(cn, tx, s, null, ct);
         if (retencion.Importe != s.Retencion)
@@ -231,11 +252,11 @@ public sealed partial class OrdenPagoService
             args.Add("CabCuenta", primera ? proveedor.Codigo : null); args.Add("CabNombre", primera ? proveedor.Nombre : null);
             args.Add("CabCuit", primera ? proveedor.DocumentoNumero?.Trim() : null); args.Add("CabCondIva", primera && !string.IsNullOrWhiteSpace(proveedor.Iva) ? CodigoPk.Format(proveedor.Iva.Trim(), 4) : null);
             args.Add("Retenciones", 0m, DbType.Decimal); args.Add("RetGanancias", primera ? retencion.Importe : 0m, DbType.Decimal);
-            var banco = m?.Cuenta.Medio is "DB" or "CH";
+            var banco = m?.Cuenta.Medio is "DB" or "CH" or "CT";
             args.Add("IdBanco", m?.IdBanco); args.Add("NroCheque", m?.NroCheque);
             args.Add("Clearing", m?.NroCheque is null ? null : m?.Linea.Clearing, DbType.Int32);
             args.Add("ChPropio", m?.Cuenta.Medio == "CH" ? 1 : 0, DbType.Int32);
-            args.Add("Origen", !banco ? null : m?.Cuenta.Medio == "CH" ? m?.Cuenta.Codigo : "-"); args.Add("Destino", banco ? proveedor.Codigo : null);
+            args.Add("Origen", !banco ? null : m?.Cuenta.Medio == "CH" ? m?.Cuenta.Codigo : m?.Cuenta.Medio == "CT" ? m?.Cuenta.Origen : "-"); args.Add("Destino", banco ? proveedor.Codigo : null);
             await cn.ExecuteAsync(Q("""
                 INSERT INTO dbo.MV_ASIENTOS(CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,DETALLE,TC,SUCURSAL,NUMERO,LETRA,[DEBE-HABER],IMPORTE,MONEDA,COTIZACION,
                     PERIODO,CABIMPORTE,TIPO_REG,CONTABILIZADO,FechaHora_Grabacion,FechaSubdiario,USUARIO_LOGEADO,IDCAJAS,UNEGOCIO,VENCIMIENTO,

@@ -280,6 +280,61 @@ public sealed class OrdenPagoTests(ITestOutputHelper output)
     }
 
     [OrdenPagoSqlFact]
+    public async Task ChequeDeTercerosDeCarteraSeEntregaYSaleDeLaCartera()
+    {
+        var (service, connection) = Servicio("Administrador");
+        await using var cn = new SqlConnection(connection); await cn.OpenAsync();
+        var par = await cn.QueryFirstOrDefaultAsync<(string Prov, string Numero)?>("""
+            SELECT TOP 1 LTRIM(RTRIM(i.CUENTA)), i.NUMERO FROM dbo.CO_CPTES_IMPAGOS i
+            JOIN dbo.Vt_Proveedores p ON LTRIM(RTRIM(p.CODIGO))=LTRIM(RTRIM(i.CUENTA)) AND LTRIM(RTRIM(ISNULL(p.RETGAN_IdRetencion,'')))=''
+            WHERE i.TC='FCC' AND i.SALDO>=5000 AND LTRIM(RTRIM(i.MONEDA))='1' ORDER BY i.SALDO
+            """);
+        var modelo = await cn.QueryFirstOrDefaultAsync<(string Cuenta, string Banco)?>(
+            "SELECT TOP 1 '111010002',(SELECT TOP 1 LTRIM(RTRIM(IdBanco)) FROM dbo.V_TA_Bancos ORDER BY IdBanco) WHERE EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS WHERE [DEBE-HABER]='D' AND LTRIM(RTRIM(CUENTA))='111010002' AND LTRIM(RTRIM(ISNULL(IdBanco,'')))<>'')");
+        if (par is not { } elegido || modelo is not { } cheque) return;
+        var prep = await service.PrepararAsync(elegido.Prov, false);
+        var factura = prep.Comprobantes.First(d => d.Tc == "FCC" && d.Numero.Trim() == elegido.Numero.Trim() && d.Seleccionable);
+        using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
+        try
+        {
+            await cn.ExecuteAsync(CrearJournal, transaction: tx);
+            // Cheque recibido de un cliente en una cobranza (copia de uno real, con otro número), todavía en cartera.
+            await cn.ExecuteAsync("""
+                SELECT TOP 1 * INTO #cheque FROM dbo.MV_ASIENTOS WHERE [DEBE-HABER]='D' AND LTRIM(RTRIM(CUENTA))='111010002' AND LTRIM(RTRIM(ISNULL(IdBanco,'')))<>'' ORDER BY FECHA DESC;
+                UPDATE #cheque SET [NUMERO ASIENTO]=(SELECT ISNULL(MAX([NUMERO ASIENTO]),0)+1 FROM dbo.MV_ASIENTOS), NroComprobanteBancario='T-77001', IdBanco=(SELECT TOP 1 IdBanco FROM dbo.V_TA_Bancos ORDER BY IdBanco), IMPORTE=5000, CABIMPORTE=5000, VENCIMIENTO=DATEADD(day,10,GETDATE()), CuentaOrigen='112010135',
+                    FECHA=CONVERT(date,GETDATE()), FechaSubdiario=CONVERT(date,GETDATE()), MES_OPERATIVO=MONTH(GETDATE()),
+                    PERIODO=(SELECT TOP 1 PERIODO FROM dbo.MV_EJERCICIOS WHERE GETDATE() BETWEEN [FECHA DESDE] AND [FECHA HASTA] AND CERRADO=0 ORDER BY [FECHA DESDE] DESC);
+                INSERT INTO dbo.MV_ASIENTOS SELECT * FROM #cheque;
+                """, transaction: tx);
+            const string EnCartera = "SELECT COUNT(*) FROM dbo.V_ChequesEnCartera WHERE LTRIM(RTRIM(NroComprobanteBancario))='T-77001' AND Saldo=IMPORTE";
+            Assert.Equal(1, await cn.ExecuteScalarAsync<int>(EnCartera, transaction: tx));
+
+            var s = new OrdenPagoSolicitud
+            {
+                Operacion = Guid.NewGuid(), Proveedor = elegido.Prov, Fecha = DateTime.Today,
+                Comprobantes = [new(factura.Clave, 5000)], ChequesTerceros = [new(cheque.Cuenta, cheque.Banco, "T-77001", 5000)]
+            };
+            // Con otro importe que el del cheque no está en cartera.
+            var malo = new OrdenPagoSolicitud { Operacion = Guid.NewGuid(), Proveedor = elegido.Prov, Fecha = DateTime.Today, Comprobantes = [new(factura.Clave, 4000)], ChequesTerceros = [new(cheque.Cuenta, cheque.Banco, "T-77001", 4000)] };
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.GrabarEnTransaccionAsync(cn, tx, malo, CancellationToken.None));
+
+            var r = await service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None);
+            Assert.Equal(5000m, r.Importe); Assert.Equal(0, r.Anticipo);
+            var linea = await cn.QuerySingleAsync<(string Cuenta, string Dh, decimal Importe, string Banco, string Nro, int ChPropio, string Origen, string Destino, int Clearing)>("""
+                SELECT LTRIM(RTRIM(CUENTA)),[DEBE-HABER],IMPORTE,LTRIM(RTRIM(IdBanco)),LTRIM(RTRIM(NroComprobanteBancario)),ChPropio,LTRIM(RTRIM(CuentaOrigen)),LTRIM(RTRIM(CuentaDestino)),ISNULL(Clearing,0)
+                FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(TC))='OPG' AND SUCURSAL=@S AND NUMERO=@N AND LETRA='X' AND [DEBE-HABER]='H'
+                """, new { S = r.Comprobante[..4], N = r.Comprobante.Substring(4, 8) }, tx);
+            Assert.Equal(("111010002", "H", 5000m, cheque.Banco, "T-77001", 0), (linea.Cuenta, linea.Dh, linea.Importe, linea.Banco, linea.Nro, linea.ChPropio));
+            Assert.Equal("T-112010135", linea.Origen); Assert.Equal(elegido.Prov, linea.Destino);
+            // Ya no está en cartera y no se puede entregar dos veces.
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>(EnCartera, transaction: tx));
+            s.Operacion = Guid.NewGuid();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None));
+        }
+        finally { tx.Rollback(); }
+    }
+
+    [OrdenPagoSqlFact]
     public async Task AnticipoSobreFacturaAplicaCreditoExistenteYRechazaProformaEnPagoNormal()
     {
         var (service, connection) = Servicio("Administrador");

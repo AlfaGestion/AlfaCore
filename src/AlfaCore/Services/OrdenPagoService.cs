@@ -111,11 +111,14 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
             throw new InvalidOperationException("Para pagar sin comprobantes tenés que confirmar que es un anticipo al proveedor, y no aplicar créditos.");
         if (s.Creditos.Count > 50 || s.Creditos.Any(x => x.Importe <= 0 || !Dos(x.Importe)) || s.Creditos.Select(x => x.Clave).Distinct().Count() != s.Creditos.Count)
             throw new InvalidOperationException("Los créditos a aplicar deben ser distintos, con importes positivos de hasta dos decimales.");
-        if (s.Medios.Count is < 1 or > 20 || s.Medios.Any(m => string.IsNullOrWhiteSpace(m.Cuenta) || m.Cuenta.Length > 15 || m.Importe <= 0 || !Dos(m.Importe)))
-            throw new InvalidOperationException("Cargá al menos un medio de pago con importe positivo de hasta dos decimales.");
+        if (s.Medios.Count + s.ChequesTerceros.Count is < 1 or > 40 || s.Medios.Count > 20 || s.Medios.Any(m => string.IsNullOrWhiteSpace(m.Cuenta) || m.Cuenta.Length > 15 || m.Importe <= 0 || !Dos(m.Importe)))
+            throw new InvalidOperationException("Cargá al menos un medio de pago o un cheque de cartera, con importes positivos de hasta dos decimales.");
+        if (s.ChequesTerceros.Any(c => string.IsNullOrWhiteSpace(c.Cuenta) || string.IsNullOrWhiteSpace(c.IdBanco) || string.IsNullOrWhiteSpace(c.Numero) || c.Importe <= 0 || !Dos(c.Importe))
+            || s.ChequesTerceros.Select(c => (c.Cuenta.Trim(), c.IdBanco.Trim(), c.Numero.Trim(), c.Importe)).Distinct().Count() != s.ChequesTerceros.Count)
+            throw new InvalidOperationException("Revisá los cheques de cartera elegidos: cada uno una sola vez y con su importe.");
         if (s.Retencion < 0 || !Dos(s.Retencion)) throw new InvalidOperationException("La retención debe ser un importe positivo de hasta dos decimales.");
         if (s.Proforma && s.Retencion != 0) throw new InvalidOperationException("El pago proforma no retiene.");
-        var medios = s.Medios.Sum(m => m.Importe);
+        var medios = s.Medios.Sum(m => m.Importe) + s.ChequesTerceros.Sum(c => c.Importe);
         var dinero = medios + s.Retencion; var creditos = s.Creditos.Sum(c => c.Importe); var pagar = s.Comprobantes.Sum(c => c.Importe);
         if (dinero + creditos >= 10000000000000000m) throw new InvalidOperationException("El importe de la orden de pago supera el máximo permitido.");
         if (creditos > pagar)
@@ -186,6 +189,14 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
                     AND (LTRIM(RTRIM(MedioDePago)) IN ('EF','DB') OR (LTRIM(RTRIM(MedioDePago))='CH' AND LTRIM(RTRIM(TipoVista))='BC'))
                 ORDER BY MedioDePago,DESCRIPCION,CODIGO;
                 """, null, null, token))).AsList();
+            var cartera = (await cn.QueryAsync<OrdenPagoChequeCartera>(Cmd("""
+                SELECT TOP(500) LTRIM(RTRIM(CUENTA)) Cuenta, LTRIM(RTRIM(IdBanco)) IdBanco, LTRIM(RTRIM(ISNULL(BANCO_DESCRIPCION,''))) Banco,
+                    LTRIM(RTRIM(NroComprobanteBancario)) Numero, CONVERT(decimal(18,2),IMPORTE) Importe, VENCIMIENTO Vencimiento, ISNULL(Clearing,0) Clearing,
+                    LTRIM(RTRIM(ISNULL(CuentaOrigen,''))) Origen, LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) Unidad
+                FROM dbo.V_ChequesEnCartera
+                WHERE Saldo=IMPORTE AND IMPORTE>0 AND ISNULL(ChPropio,0)=0 AND LTRIM(RTRIM(MONEDA))='1' AND (@unidad='' OR LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@unidad)
+                ORDER BY VENCIMIENTO, NroComprobanteBancario;
+                """, new { unidad = filtraUnidad ? unidad : "" }, null, token))).AsList();
             var chequeras = (await cn.QueryAsync<OrdenPagoChequera>(Cmd("""
                 SELECT LTRIM(RTRIM(IDBANCO)) IdBanco,LTRIM(RTRIM(SERIE)) Serie,CONVERT(bigint,NUMERO_DESDE) Desde,CONVERT(bigint,NUMERO_HASTA) Hasta,
                     LTRIM(RTRIM(CuentaBancoDiferido)) Cuenta
@@ -201,7 +212,7 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
                 Proveedor = prov, Proforma = proforma, PuedeProforma = puedeProforma, MezclaProforma = mezcla, Unidad = unidad,
                 Comprobantes = comprobantes.Where(d => CorrespondeAlModo(d, false, proforma, mezcla)).ToList(),
                 Creditos = creditos.Where(d => CorrespondeAlModo(d, true, proforma, mezcla)).ToList(),
-                Medios = medios, Chequeras = chequeras, Bancos = bancos,
+                Medios = medios, Chequeras = chequeras, Bancos = bancos, Cartera = cartera,
                 RetieneGanancias = await RetieneAsync(cn, null, prov.Codigo, proforma, DateTime.Today, token)
             };
         }, ct);

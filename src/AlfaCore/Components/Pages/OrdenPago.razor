@@ -134,7 +134,27 @@
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-calculator" Disabled="@(_busy || _medios.Count == 0)" OnClick="_ => CompletarUltimoMedio()">Completar con @Diferencia.ToString("N2")</AlfaButton>
                 }
             </div>
-            <p class="op-ayuda">Efectivo, banco/transferencia y cheque propio, en pesos.@(_prep.RetieneGanancias ? " La retención de Ganancias se descuenta del pago: calculala antes de grabar." : "")</p>
+            @if (_prep.Cartera.Count > 0)
+            {
+                <h3 class="op-subtitulo">Cheques de terceros en cartera <small>(se entregan al proveedor)</small></h3>
+                <div class="op-scroll"><table class="op-table">
+                    <thead><tr><th class="op-sel"></th><th>Banco</th><th>Nº de cheque</th><th>Origen</th><th>Vence</th><th class="op-num">Importe</th></tr></thead>
+                    <tbody>
+                    @foreach (var c in _prep.Cartera)
+                    {
+                        <tr @key="c.Clave" class="@(_cheques.Contains(c.Clave) ? "is-seleccionada" : null)">
+                            <td class="op-sel"><input type="checkbox" aria-label="@($"Entregar el cheque {c.Numero}")" checked="@_cheques.Contains(c.Clave)" disabled="@_busy" @onchange="e => MarcarCheque(c, e.Value is true)" /></td>
+                            <td>@c.Banco <small>@c.IdBanco</small></td>
+                            <td>@c.Numero</td>
+                            <td>@c.Origen</td>
+                            <td>@c.Vencimiento?.ToString("dd/MM/yyyy")</td>
+                            <td class="op-num">@c.Importe.ToString("N2")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table></div>
+            }
+            <p class="op-ayuda">Efectivo, banco/transferencia, cheque propio y cheques de terceros, en pesos.@(_prep.RetieneGanancias ? " La retención de Ganancias se descuenta del pago: calculala antes de grabar." : "")</p>
         </section>
 
         <section class="op-resumen" aria-label="Resumen">
@@ -201,6 +221,7 @@
     private readonly Dictionary<string, string> _pagar = [];
     private readonly Dictionary<string, string> _aplicar = [];
     private readonly List<MedioFila> _medios = [];
+    private readonly HashSet<string> _cheques = [];
     private static readonly IReadOnlyList<AlfaSelectOption> Clearings = [.. new[] { 0, 24, 48, 72, 96, 120, 144, 168 }.Select(c => new AlfaSelectOption(c.ToString(), c.ToString()))];
     private bool _busy, _disposed, _confirmaAnticipo, _pdfBusy;
     private OrdenPagoResultado? _ultima;
@@ -221,11 +242,12 @@
     private static decimal Num(string? t) => decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? decimal.Round(v, 2) : 0m;
     private decimal APagar => _pagar.Values.Sum(Num);
     private decimal Creditos => _aplicar.Values.Sum(Num);
-    private decimal Dinero => _medios.Sum(m => Num(m.Importe));
+    private IEnumerable<OrdenPagoChequeCartera> ChequesElegidos => _prep?.Cartera.Where(c => _cheques.Contains(c.Clave)) ?? [];
+    private decimal Dinero => _medios.Sum(m => Num(m.Importe)) + ChequesElegidos.Sum(c => c.Importe);
     private OrdenPagoRetencion? _ret;
     private string _retFirma = "";
     /// <summary>Lo que se cargó cuando se calculó la retención: si cambia algún importe, hay que recalcularla.</summary>
-    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + Dinero;
+    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + Dinero + "|" + string.Join(",", _cheques.OrderBy(k => k));
     private bool RetVigente => _ret is not null && _retFirma == Firma;
     private decimal Retencion => RetVigente ? _ret!.Importe : 0m;
     /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
@@ -267,7 +289,7 @@
         return _proveedor is null ? Task.CompletedTask : EjecutarAsync(CargarAsync);
     }
 
-    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _ret = null; _operacion = Guid.NewGuid(); }
+    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _cheques.Clear(); _ret = null; _operacion = Guid.NewGuid(); }
 
     private void MarcarComprobante(OrdenPagoDocumento d, bool marcado)
     {
@@ -279,6 +301,7 @@
         if (marcado) _aplicar[Clave(d)] = d.Saldo.ToString("0.00", CultureInfo.InvariantCulture); else _aplicar.Remove(Clave(d));
     }
 
+    private void MarcarCheque(OrdenPagoChequeCartera c, bool marcado) { if (marcado) _cheques.Add(c.Clave); else _cheques.Remove(c.Clave); }
     private void AgregarMedio() => _medios.Add(new MedioFila { Importe = Diferencia > 0 ? Diferencia.ToString("0.00", CultureInfo.InvariantCulture) : "" });
     private void CambiarMedio(MedioFila m, string? cuenta) => m.Cuenta = cuenta ?? "";
     private void CompletarUltimoMedio()
@@ -316,6 +339,7 @@
         return new OrdenPagoSolicitud
         {
             Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma, Detalle = _detalle.Trim(), ConfirmaAnticipo = confirmaAnticipo, Retencion = Retencion,
+            ChequesTerceros = [.. ChequesElegidos.Select(c => new OrdenPagoChequeTercero(c.Cuenta, c.IdBanco, c.Numero, c.Importe))],
             Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
             Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
             Medios = [.. _medios.Select(m =>
