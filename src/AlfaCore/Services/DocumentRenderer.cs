@@ -393,14 +393,30 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 break;
             case "ITEMS": AppendItemsFactura(sb, block, data.Items); break;
             case "TOTALES": AppendTotalsFactura(sb, data.Totales, data.Comprobante.Letra, fields, style); break;
-            case "MEDIOSPAGO": AppendMediosPagoOrden(sb, data, style); break;
+            case "MEDIOSPAGO": AppendMediosPagoOrden(sb, data, fields, style); break;
             case "CAE": AppendCaeBlock(sb, data.Cae, fields, style); break;
             case "QRAFIP": AppendQrAfipBlock(sb, data.QrBytes, block); break;
         }
     }
 
     /// <summary>Orden de pago: con qué se pagó (efectivo, banco, cheques), lo cancelado con créditos aplicados y el total pagado.</summary>
-    private static void AppendMediosPagoOrden(StringBuilder sb, FacturaDocumentData data, string style)
+    private static void AppendMediosPagoOrden(StringBuilder sb, FacturaDocumentData data, List<string>? fields, string style)
+    {
+        if (Shows(fields, "Medios")) AppendMediosPagoTabla(sb, data, style);
+        if (Shows(fields, "Recibi")) AppendReciboConforme(sb, style);
+    }
+
+    /// <summary>Constancia para el proveedor: firma, aclaración y fecha de quien recibe el pago.</summary>
+    private static void AppendReciboConforme(StringBuilder sb, string style)
+    {
+        sb.Append("<section class=\"card\"").Append(style).Append(" style=\"margin-top:28px;page-break-inside:avoid\"><strong>Recibí conforme</strong>")
+            .Append("<table style=\"width:100%;margin-top:34px;border-collapse:collapse\"><tr>");
+        foreach (var rotulo in new[] { "Firma", "Aclaración", "Fecha" })
+            sb.Append("<td style=\"width:33%;padding:0 12px;text-align:center\"><div style=\"border-top:1px solid #444;padding-top:4px\" class=\"muted\">").Append(rotulo).Append("</div></td>");
+        sb.Append("</tr></table></section>");
+    }
+
+    private static void AppendMediosPagoTabla(StringBuilder sb, FacturaDocumentData data, string style)
     {
         if (data.MediosPago.Count == 0 && data.CreditosAplicados.Count == 0) return;
         var moneda = data.Totales.Moneda;

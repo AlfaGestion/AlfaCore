@@ -199,6 +199,7 @@ public static class DocumentBlockFields
         ],
         [TiposBloqueDocumento.Pie] = [new("NumeroPagina", "Número de página"), new("NombreEmpresa", "Nombre de la empresa")],
         [TiposBloqueDocumento.RecuadroTipo] = [new("Letra", "Letra"), new("CodigoAfip", "Código AFIP")],
+        [TiposBloqueDocumento.MediosPago] = [new("Medios", "Medios de pago y total pagado"), new("Recibi", "Recibí conforme (firma, aclaración y fecha)")],
         [TiposBloqueDocumento.Cae] = [new("Cae", "CAE"), new("Vencimiento", "Vencimiento"), new("CodigoBarra", "Código de barras"), new("Estado", "Estado de autorización")]
     };
 

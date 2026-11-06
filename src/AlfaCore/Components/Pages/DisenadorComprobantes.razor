@@ -219,13 +219,7 @@
                 }
                 @if (MediosPagoBlock is not null)
                 {
-                    <section class="document-designer__settings-group">
-                        <div class="document-designer__settings-heading">Medios de pago</div>
-                        <label class="document-designer__toggle"><input type="checkbox" @bind="MediosPagoBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar con qué se pagó (efectivo, banco, cheques), los créditos aplicados y el total pagado</span></label>
-                        <label>Tamaño de letra (pt)
-                            <input type="number" min="6" max="24" value="@(MediosPagoBlock.FontSizePt?.ToString() ?? string.Empty)" @onchange="args => SetFontSize(MediosPagoBlock, args)" disabled="@IsTemplateReadOnly" />
-                        </label>
-                    </section>
+                    @RenderFieldBlockSettings("Medios de pago y recibí conforme", MediosPagoBlock, TiposBloqueDocumento.MediosPago)
                 }
                 @if (TotalesBlock is not null)
                 {
