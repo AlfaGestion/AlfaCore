@@ -130,6 +130,8 @@ public sealed class ControlArcaImportacionSolicitud
     public string Unidad { get; set; } = string.Empty;
     public ControlArcaProveedorModo ProveedoresNuevos { get; set; } = ControlArcaProveedorModo.Alta;
     public string CondicionCompra { get; set; } = string.Empty;
+    /// <summary>CUIT del archivo de ARCA: la unidad de negocio elegida tiene que ser una de ese CUIT.</summary>
+    public string CuitArchivo { get; set; } = string.Empty;
     /// <summary>Nombre del archivo de ARCA que se está importando (queda en MV_Transmisiones.Ubicacion_Archivo).</summary>
     public string Archivo { get; set; } = string.Empty;
 }

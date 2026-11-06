@@ -63,6 +63,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                 filas.Add(fila);
             }
             var cuit = Digitos(cuitArchivo);
+            // Si el CUIT del archivo es el de alguna unidad, solo se puede importar a esas: no se ofrece otra.
+            var delCuit = UnidadesDelCuit(cuit, unidades).ToList();
+            if (delCuit.Count > 0) unidades = delCuit;
             return new ControlArcaImportacionContexto
             {
                 CuentaCompras = defaults.Compras, CuentaIva = defaults.Iva, CuentaOtrosTributos = defaults.Otros,
@@ -87,6 +90,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT COUNT(*) FROM dbo.V_TA_UnidadNegocio WHERE LTRIM(RTRIM(Codigo))=@u;",
                 new { u = s.Unidad.Trim() }, cancellationToken: ct)) == 0)
                 throw new ReglaException("Elegí la unidad de negocio.");
+            var todasLasUnidades = (await cn.QueryAsync<(string Codigo, string Descripcion, string Cuit)>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(Codigo)), LTRIM(RTRIM(ISNULL(DESCRIPCION,''))), ISNULL(LTRIM(RTRIM(CUIT)),'') FROM dbo.V_TA_UnidadNegocio;", cancellationToken: ct))).ToList();
+            if (ValidarUnidad(s.CuitArchivo, s.Unidad, todasLasUnidades) is { } errorUnidad) throw new ReglaException(errorUnidad);
             if (s.ProveedoresNuevos == ControlArcaProveedorModo.Varios && cfg.ProveedoresVarios.Length == 0)
                 throw new ReglaException("No está configurada la cuenta de proveedores varios (CUENTAPROVEEDORESVARIOS).");
             if (s.ProveedoresNuevos == ControlArcaProveedorModo.Alta && !await permissions.HasAccessAsync(ProveedorAltaRapidaService.PermisoProveedor, ct))
@@ -318,6 +324,23 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         """;
 
     /// <summary>Mayúsculas, sin tildes, puntos ni espacios: «C.U.I.T.» y «Córdoba» comparan igual que «CUIT» y «CORDOBA».</summary>
+    private static IEnumerable<(string Codigo, string Descripcion, string Cuit)> UnidadesDelCuit(string cuit, IEnumerable<(string Codigo, string Descripcion, string Cuit)> unidades)
+        => cuit.Length == 0 ? [] : unidades.Where(u => Digitos(u.Cuit) == cuit);
+
+    /// <summary>
+    /// Evita cargar un archivo de ARCA a la unidad de negocio equivocada: si el CUIT del archivo es el de alguna unidad, la elegida
+    /// tiene que ser una de ellas. Si el CUIT no pertenece a ninguna unidad no se puede saber cuál corresponde y se deja elegir.
+    /// </summary>
+    internal static string? ValidarUnidad(string? cuitArchivo, string unidad, IEnumerable<(string Codigo, string Descripcion, string Cuit)> unidades)
+    {
+        var lista = unidades.ToList();
+        var propias = UnidadesDelCuit(Digitos(cuitArchivo), lista).ToList();
+        if (propias.Count == 0 || propias.Any(u => u.Codigo.Trim() == unidad.Trim())) return null;
+        var elegida = lista.FirstOrDefault(u => u.Codigo.Trim() == unidad.Trim());
+        return $"El archivo es del CUIT {Digitos(cuitArchivo)}, que corresponde a la unidad de negocio {string.Join(" / ", propias.Select(u => $"{u.Codigo.Trim()} · {u.Descripcion}"))}. "
+            + $"No se puede importar a la unidad {(elegida.Codigo is null ? unidad.Trim() : $"{elegida.Codigo.Trim()} · {elegida.Descripcion}")}.";
+    }
+
     private static string Normalizar(string? s)
         => new((s ?? "").Normalize(System.Text.NormalizationForm.FormD)
             .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(c))

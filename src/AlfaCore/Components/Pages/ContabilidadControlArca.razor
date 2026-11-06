@@ -538,7 +538,7 @@
             _solicitud = new ControlArcaImportacionSolicitud
             {
                 Comprobantes = comprobantes, CuentaCompras = ctx.CuentaCompras, CuentaIva = ctx.CuentaIva, CuentaOtrosTributos = ctx.CuentaOtrosTributos,
-                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra, Archivo = _archivo ?? string.Empty,
+                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra, Archivo = _archivo ?? string.Empty, CuitArchivo = cuit,
                 ProveedoresNuevos = ctx.PuedeCrearProveedores ? ControlArcaProveedorModo.Alta
                     : ctx.CuentaProveedoresVarios.Length > 0 ? ControlArcaProveedorModo.Varios : ControlArcaProveedorModo.Omitir
             };

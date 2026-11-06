@@ -140,6 +140,20 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void NoSeImportaAUnaUnidadQueNoEsDelCuitDelArchivo()
+    {
+        (string, string, string)[] unidades = [("   1", "Alberto", "23-20604479-9"), ("   2", "Saez Marta Ester", "27228073259"), ("   4", "Sin CUIT", "")];
+        Assert.Null(ControlArcaImportacionService.ValidarUnidad("27228073259", "   2", unidades));
+        var error = ControlArcaImportacionService.ValidarUnidad("27228073259", "   1", unidades);
+        Assert.NotNull(error);
+        Assert.Contains("Saez Marta Ester", error);
+        Assert.Contains("Alberto", error);
+        // CUIT que no es de ninguna unidad: no hay forma de saber, se deja elegir.
+        Assert.Null(ControlArcaImportacionService.ValidarUnidad("20111111112", "   1", unidades));
+        Assert.Null(ControlArcaImportacionService.ValidarUnidad("", "   1", unidades));
+    }
+
+    [Fact]
     public void LimpiezaBorraSoloLoViejoConNombresDelScript()
     {
         var carpeta = Path.Combine(Path.GetTempPath(), "arca-lim-" + Guid.NewGuid().ToString("N"));
