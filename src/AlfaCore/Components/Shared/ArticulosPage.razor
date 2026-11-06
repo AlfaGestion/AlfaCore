@@ -2,6 +2,7 @@
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.WebUtilities
 @inject IArticulosService ArticulosSvc
+@inject IPoliticasPreciosService PoliticasSvc
 @inject IArticuloImagenFtpService ArticuloImagenFtpSvc
 @inject IBaseMaestraImagenService BaseMaestraImagenSvc
 @inject IAppUiOperationService UiOps
@@ -311,7 +312,7 @@
                     </div>
                 </div>
                     }
-                    else
+                    else if (_activeTab == ArticuloTab.Precios)
                     {
                 <div class="articulos-precios-layout">
                     <section class="articulos-precios-config" aria-labelledby="articulos-precios-config-title">
@@ -324,6 +325,46 @@
                             <AlfaInput Label="Alícuota de IVA" Type="number" Value="@_form.TasaIva.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                        ValueChanged="v => _form.TasaIva = ParseDecimal(v)" />
                         </div>
+                        @if (_lookups.Politicas.Count > 0 || _form.PoliticaPrecios.Length > 0)
+                        {
+                            <div class="articulos-politica">
+                                <AlfaSelect Label="Política de precios" Value="@_form.PoliticaPrecios" ValueChanged="PoliticaChanged"
+                                            Options="@OpcionesPolitica()" />
+                                @if (PoliticaActual is { } pol)
+                                {
+                                    <div class="articulos-hint">
+                                        <i class="bi bi-calculator"></i>
+                                        <span>@ResumenPolitica(pol). Al guardar, la base recalcula @(pol.UsaFormulas ? "el costo y las clases" : "las clases con porcentaje") con esta política.</span>
+                                    </div>
+                                    @if (!_isNewMode)
+                                    {
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" Loading="@_previendoPolitica" Disabled="@_previendoPolitica"
+                                                    OnClick="_ => PrevisualizarPoliticaAsync()">Ver cómo quedan los precios</AlfaButton>
+                                    }
+                                    @if (_previewPolitica is { } pv)
+                                    {
+                                        <div class="articulos-politica__preview">
+                                            @if (pv.Error is { } err) { <span class="articulos-politica__error">@err</span> }
+                                            else
+                                            {
+                                                <span>Costo @Cambio(pv.CostoActual, pv.CostoNuevo)</span>
+                                                @for (var c = 1; c <= 8; c++)
+                                                {
+                                                    if (pv.PreciosActuales[c - 1] != pv.PreciosNuevos[c - 1])
+                                                    {
+                                                        <span>@GetPrecioLabel(c) @Cambio(pv.PreciosActuales[c - 1], pv.PreciosNuevos[c - 1])</span>
+                                                    }
+                                                }
+                                                @if (pv.CostoActual > 0 && pv.CostoNuevo == 0)
+                                                {
+                                                    <span class="articulos-politica__error">Con esta política la base deja el costo en 0: revisala antes de grabar.</span>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
                         <div class="articulos-precios-exento">
                             <AlfaCheckbox Value="@_form.Exento" ValueChanged="v => _form.Exento = v == true">
                                 <i class="bi bi-receipt"></i> Exento de IVA
@@ -368,6 +409,78 @@
                             </div>
                         </section>
                     </div>
+                </div>
+                    }
+                    else
+                    {
+                <div class="articulos-listas">
+                    @if (_isNewMode)
+                    {
+                        <div class="articulos-listas__todas">
+                            <AlfaCheckbox Value="@_form.IncluirEnTodasLasListas" ValueChanged="IncluirEnTodasChanged">
+                                <i class="bi bi-collection"></i> Incluir en todas las listas de ventas
+                            </AlfaCheckbox>
+                            <span class="articulos-hint">Las listas tildadas sin precios cargados toman los precios del artículo.</span>
+                        </div>
+                    }
+                    @if (_cargandoListas)
+                    {
+                        <p class="articulos-hint"><i class="bi bi-hourglass-split"></i> Cargando listas de precios...</p>
+                    }
+                    else if (_form.Listas is { Count: 0 })
+                    {
+                        <p class="articulos-hint"><i class="bi bi-info-circle"></i> No hay listas de precios de ventas. Crealas en Listas de precios.</p>
+                    }
+                    else if (_form.Listas is { } listas)
+                    {
+                        @foreach (var lista in listas)
+                        {
+                            var l = lista;
+                            <section class="articulos-lista @(l.Incluido ? "articulos-lista--incluida" : "")" aria-label="@($"Lista {l.Nombre}")">
+                                <header class="articulos-lista__titulo">
+                                    <AlfaCheckbox Value="@l.Incluido" ValueChanged="v => l.Incluido = v == true">
+                                        <strong>@l.Nombre</strong> <span class="articulos-lista__codigo">@l.IdLista.Trim()</span>
+                                    </AlfaCheckbox>
+                                    <span class="articulos-lista__tag">@(l.ConIva ? "Con IVA" : "Sin IVA")</span>
+                                    @if (l.Incluido && !l.Existia) { <span class="articulos-lista__tag articulos-lista__tag--nueva">Se agrega al guardar</span> }
+                                    @if (!l.Incluido && l.Existia) { <span class="articulos-lista__tag articulos-lista__tag--baja">Se quita al guardar</span> }
+                                    @if (l.Incluido && MargenLista(l) is { } margen)
+                                    {
+                                        <span class="articulos-lista__margen" title="Margen del precio de venta sobre el costo, sin IVA">Margen @margen.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))%</span>
+                                    }
+                                </header>
+                                @if (l.Incluido)
+                                {
+                                    <div class="articulos-lista__precios">
+                                        @for (var clase = 1; clase <= 8; clase++)
+                                        {
+                                            var c = clase;
+                                            var delMaestro = l.ClasesDelMaestro.Contains(c.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                                            <AlfaInput Label="@(GetPrecioLabel(c) + (c == _lookups.ClasePrecioVenta ? " (venta)" : c == _lookups.ClasePrecioOferta ? " (oferta)" : ""))"
+                                                       Type="number" Disabled="@delMaestro"
+                                                       HelpText="@(delMaestro ? "Lo copia del maestro" : null)"
+                                                       Value="@l.Precio(c).ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                       ValueChanged="v => l.SetPrecio(c, ParseDecimal(v))" />
+                                        }
+                                    </div>
+                                    <div class="articulos-lista__oferta">
+                                        <AlfaInput Label="Oferta desde" Type="date" Value="@(l.OfertaDesde?.ToString("yyyy-MM-dd") ?? string.Empty)"
+                                                   ValueChanged="v => l.OfertaDesde = ParseFecha(v)" />
+                                        <AlfaInput Label="Oferta hasta" Type="date" Value="@(l.OfertaHasta?.ToString("yyyy-MM-dd") ?? string.Empty)"
+                                                   ValueChanged="v => l.OfertaHasta = ParseFecha(v)" />
+                                        <AlfaInput Label="Desde cantidad (1)" Type="number" Value="@NumeroOpcional(l.CantidadOf2)"
+                                                   ValueChanged="v => l.CantidadOf2 = ParseDecimalOpcional(v)" />
+                                        <AlfaInput Label="@(_lookups.OfertaPorDescuento ? "% descuento (1)" : "Precio por cantidad (1)")" Type="number" Value="@NumeroOpcional(l.Precio9)"
+                                                   ValueChanged="v => l.Precio9 = ParseDecimalOpcional(v)" />
+                                        <AlfaInput Label="Desde cantidad (2)" Type="number" Value="@NumeroOpcional(l.CantidadOf3)"
+                                                   ValueChanged="v => l.CantidadOf3 = ParseDecimalOpcional(v)" />
+                                        <AlfaInput Label="@(_lookups.OfertaPorDescuento ? "% descuento (2)" : "Precio por cantidad (2)")" Type="number" Value="@NumeroOpcional(l.Precio10)"
+                                                   ValueChanged="v => l.Precio10 = ParseDecimalOpcional(v)" />
+                                    </div>
+                                }
+                            </section>
+                        }
+                    }
                 </div>
                     }
                 </div>
@@ -485,7 +598,8 @@
     private readonly IReadOnlyList<AlfaTabItem> _tabItems =
     [
         new(ArticuloTab.Datos.ToString(), "Datos generales"),
-        new(ArticuloTab.Precios.ToString(), "Precios")
+        new(ArticuloTab.Precios.ToString(), "Precios"),
+        new(ArticuloTab.Listas.ToString(), "Listas de precios")
     ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> PageSizeOptions =
@@ -495,7 +609,8 @@
         new("100", "100 por página")
     ];
 
-    private enum ArticuloTab { Datos, Precios }
+    private enum ArticuloTab { Datos, Precios, Listas }
+    private bool _cargandoListas;
 
     protected override async Task OnInitializedAsync()
     {
@@ -619,7 +734,7 @@
                 State = _saving ? PageHeaderState.Loading : _isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing,
                 ShellMode = PageHeaderShellMode.AlfaDesignPilot,
                 ModuleKey = "articulos",
-                TopNavigationItems = [new() { Key = "articulos", Label = "Artículos", Url = RouteContext.BuildRoute("/articulos"), Active = true }],
+                TopNavigationItems = ModuleTopNavPresets.BuildArticulos(RouteContext, Nav, "articulos"),
                 Actions = editorActions
             });
             _ = InvokeAsync(StateHasChanged);
@@ -646,7 +761,7 @@
             State = _loadingList ? PageHeaderState.Loading : _selectedCodes.Count > 0 ? PageHeaderState.Selection : _viewMode == ArticuloViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             ModuleKey = "articulos",
-            TopNavigationItems = [new() { Key = "articulos", Label = "Artículos", Url = RouteContext.BuildRoute("/articulos"), Active = true }],
+            TopNavigationItems = ModuleTopNavPresets.BuildArticulos(RouteContext, Nav, "articulos"),
             Search = new PageHeaderSearchConfig(),
             SearchContent = RenderArticulosSmartSearch(),
             Pagination = BuildHeaderPagination(),
@@ -1067,7 +1182,7 @@
         _selectedCodigo = string.Empty;
         _selectedActivo = true;
         _activeTab = ArticuloTab.Datos;
-        _form = new ArticuloSaveRequest { TasaIva = _lookups.TasaIvaDefault };
+        _form = new ArticuloSaveRequest { TasaIva = _lookups.TasaIvaDefault, IncluirEnTodasLasListas = true }; _previewPolitica = null;
         _rubroSeleccionado = null;
         _marcaSeleccionada = null;
         _unidadSeleccionada = null;
@@ -1144,7 +1259,7 @@
         _selectedCodigo = result.Value.Codigo;
         _selectedActivo = result.Value.Activo;
         _activeTab = ArticuloTab.Datos;
-        _form = result.Value;
+        _form = result.Value; _previewPolitica = null;
         _rubroSeleccionado = _lookups.Rubros.FirstOrDefault(r => string.Equals(r.Codigo, _form.RubroCodigo, StringComparison.OrdinalIgnoreCase));
         _marcaSeleccionada = _lookups.Marcas.FirstOrDefault(m => string.Equals(m.Codigo, _form.MarcaCodigo, StringComparison.OrdinalIgnoreCase));
         _unidadSeleccionada = _lookups.Unidades.FirstOrDefault(u => string.Equals(u.Codigo, _form.UnidadCodigo, StringComparison.OrdinalIgnoreCase));
@@ -1493,7 +1608,8 @@
     {
         if (Enum.TryParse<ArticuloTab>(key, out var tab))
             _activeTab = tab;
-        await Task.CompletedTask;
+        if (_activeTab == ArticuloTab.Listas && _form.Listas is null && !_cargandoListas)
+            await CargarListasAsync();
     }
 
     // ---- Rubro/Marca/Unidad/Proveedor: mismo combo con búsqueda (AlfaLookup) que el panel de
@@ -1608,6 +1724,106 @@
         }
 
         _form.Utilidad = _form.Costo >= precioNeto ? 0 : Math.Round(((precioNeto * 100m) / _form.Costo) - 100m, 2);
+    }
+
+    // ---- Solapa "Listas de precios" (Ma_art.frm, solapa Listas): se carga al abrirla; sin abrirla no se tocan las listas ----
+    private async Task CargarListasAsync()
+    {
+        var form = _form;
+        _cargandoListas = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => ArticulosSvc.GetListasPrecioAsync(_isNewMode ? null : _selectedCodigo), "No se pudieron cargar las listas de precios.");
+            if (!result.Success) { SetFeedback(result.Feedback); return; }
+            if (!ReferenceEquals(form, _form)) return; // cambió de artículo mientras cargaba
+            var listas = result.Value ?? [];
+            if (_isNewMode)
+                foreach (var l in listas) l.Incluido = _form.IncluirEnTodasLasListas;
+            _form.Listas = listas;
+        }
+        finally
+        {
+            _cargandoListas = false;
+        }
+    }
+
+    private void IncluirEnTodasChanged(bool? valor)
+    {
+        _form.IncluirEnTodasLasListas = valor == true;
+        foreach (var l in _form.Listas ?? []) l.Incluido = _form.IncluirEnTodasLasListas;
+    }
+
+    /// <summary>Margen del precio de venta de la lista sobre el costo, sin IVA (CalPorcUtilidad del legacy).</summary>
+    private decimal? MargenLista(ArticuloListaPrecioDto lista)
+    {
+        var precio = lista.Precio(_lookups.ClasePrecioVenta);
+        if (_form.Costo <= 0 || precio <= 0) return null;
+        var tasa = _form.Exento ? 0 : _form.TasaIva > 0 ? _form.TasaIva : _lookups.TasaIvaDefault;
+        var neto = lista.ConIva ? precio / (1 + tasa / 100m) : precio;
+        return decimal.Round((neto / _form.Costo - 1) * 100m, 1);
+    }
+
+    private static string NumeroOpcional(decimal? valor) => valor is { } v && v != 0 ? v.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+
+    private static decimal? ParseDecimalOpcional(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : decimal.TryParse(valor.Replace(',', '.'), System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : null;
+
+    private static DateTime? ParseFecha(string? valor)
+        => DateTime.TryParse(valor, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var f) ? f.Date : null;
+
+    // ---- Política de precios (Ma_art.frm: PoliticaPrecios) ----
+    private bool _previendoPolitica;
+    private PoliticaPrecioPreviewDto? _previewPolitica;
+
+    private PoliticaPrecioDto? PoliticaActual => _form.PoliticaPrecios.Length == 0 ? null
+        : _lookups.Politicas.FirstOrDefault(p => string.Equals(p.Codigo.Trim(), _form.PoliticaPrecios.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private List<AlfaSelectOption> OpcionesPolitica()
+    {
+        var opciones = new List<AlfaSelectOption> { new(string.Empty, "Sin política") };
+        opciones.AddRange(_lookups.Politicas.Select(p => new AlfaSelectOption(p.Codigo.Trim(), $"{p.Codigo.Trim()} · {p.Descripcion}")));
+        if (_form.PoliticaPrecios.Length > 0 && PoliticaActual is null)
+            opciones.Add(new(_form.PoliticaPrecios, $"{_form.PoliticaPrecios} (no existe)"));
+        return opciones;
+    }
+
+    private void PoliticaChanged(string? valor)
+    {
+        _form.PoliticaPrecios = (valor ?? string.Empty).Trim();
+        _previewPolitica = null;
+    }
+
+    private string ResumenPolitica(PoliticaPrecioDto p)
+    {
+        if (!p.UsaFormulas)
+            return string.Join(", ", Enumerable.Range(1, 8).Where(c => p.Porcentajes[c - 1] != 0)
+                .Select(c => $"{GetPrecioLabel(c)} costo {(p.Porcentajes[c - 1] > 0 ? "+" : "")}{p.Porcentajes[c - 1].ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}%"));
+        var cambios = new[] { ("Costo", p.FormulaCosto, PoliticasPreciosFormula.Identidad(0)) }
+            .Concat(Enumerable.Range(1, 8).Select(c => (GetPrecioLabel(c), p.Formulas[c - 1], PoliticasPreciosFormula.Identidad(c))))
+            .Where(x => !string.Equals(PoliticasPreciosFormula.Normalizar(x.Item2), x.Item3, StringComparison.OrdinalIgnoreCase))
+            .Select(x => $"{x.Item1} = {x.Item2}").ToList();
+        return cambios.Count == 0 ? "Fórmulas sin cambios" : "Fórmulas: " + string.Join(", ", cambios);
+    }
+
+    /// <summary>La calcula la base con la política grabada y los datos ya grabados del artículo (transacción revertida).</summary>
+    private async Task PrevisualizarPoliticaAsync()
+    {
+        if (PoliticaActual is not { } pol || _isNewMode) return;
+        _previendoPolitica = true;
+        try
+        {
+            var r = await UiOps.RunAsync(() => PoliticasSvc.PrevisualizarAsync(pol, _selectedCodigo), "No se pudo calcular la vista previa.");
+            if (r.Success) _previewPolitica = r.Value?.FirstOrDefault(); else SetFeedback(r.Feedback);
+        }
+        finally { _previendoPolitica = false; }
+    }
+
+    private static MarkupString Cambio(decimal antes, decimal despues)
+    {
+        var ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+        return antes == despues ? new MarkupString(antes.ToString("N2", ar))
+            : new MarkupString($"<s>{antes.ToString("N2", ar)}</s> → <strong>{despues.ToString("N2", ar)}</strong>");
     }
 
     private string GetPrecioLabel(int clase)

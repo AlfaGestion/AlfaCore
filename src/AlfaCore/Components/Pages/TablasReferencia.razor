@@ -37,6 +37,12 @@
                             @onclick="SelectUnidades">
                         Unidades de negocio
                     </button>
+                    <button type="button"
+                            class="tablas-ref__item @(_selectedClave == ClavePoliticas ? "is-active" : null)"
+                            aria-current="@(_selectedClave == ClavePoliticas ? "true" : null)"
+                            @onclick="SelectPoliticas">
+                        Políticas de precios
+                    </button>
                     @foreach (var tabla in _tablas)
                     {
                         <button type="button"
@@ -53,6 +59,10 @@
                 @if (_selectedClave == ClaveUnidades)
                 {
                     <UnidadesNegocioEditor @ref="_editorUnidades" OnAccionesCambiadas="UpdatePageHeader" />
+                }
+                else if (_selectedClave == ClavePoliticas)
+                {
+                    <PoliticasPreciosEditor @ref="_editorPoliticas" OnAccionesCambiadas="UpdatePageHeader" />
                 }
                 else if (_selectedTabla is not null)
                 {
@@ -158,7 +168,7 @@
 
     // Estado que muestra la barra superior (acciones habilitadas, buscador): si cambia, se
     // republica el header después del render de la página.
-    private string HeaderSnapshot() => _selectedClave == ClaveUnidades ? ClaveUnidades : string.Empty;
+    private string HeaderSnapshot() => _selectedClave is ClaveUnidades or ClavePoliticas ? _selectedClave : string.Empty;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -183,7 +193,8 @@
             ModuleKey = "archivos",
             Title = "Tablas de referencia",
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildArchivos(RouteContext, Nav, "tablas"),
-            Actions = _selectedClave == ClaveUnidades && _editorUnidades is not null ? _editorUnidades.Acciones : [],
+            Actions = _selectedClave == ClaveUnidades && _editorUnidades is not null ? _editorUnidades.Acciones
+                : _selectedClave == ClavePoliticas && _editorPoliticas is not null ? _editorPoliticas.Acciones : [],
         });
     }
 
@@ -192,7 +203,9 @@
         try
         {
             _tablas = (await TablasSvc.GetTablasAsync()).ToList();
-            if (string.Equals(TablaInicial, "unidades-negocio", StringComparison.OrdinalIgnoreCase) || _tablas.Count == 0)
+            if (string.Equals(TablaInicial, "politicas-precios", StringComparison.OrdinalIgnoreCase))
+                SelectPoliticas();
+            else if (string.Equals(TablaInicial, "unidades-negocio", StringComparison.OrdinalIgnoreCase) || _tablas.Count == 0)
                 SelectUnidades();
             else
                 await SelectTablaAsync(_tablas[0].Clave);
@@ -210,6 +223,18 @@
     // Unidades de negocio tiene su propio editor (no es una tabla Código/Descripción).
     private const string ClaveUnidades = "__unidades_negocio";
     private UnidadesNegocioEditor? _editorUnidades;
+
+    // Políticas de precios (V_TA_POLITICAPRECIOS): porcentajes o fórmulas, con su propio editor.
+    private const string ClavePoliticas = "__politicas_precios";
+    private PoliticasPreciosEditor? _editorPoliticas;
+
+    private void SelectPoliticas()
+    {
+        _selectedClave = ClavePoliticas;
+        _selectedTabla = null;
+        _message = string.Empty;
+        _error = string.Empty;
+    }
     [SupplyParameterFromQuery(Name = "tabla")] public string? TablaInicial { get; set; }
 
     private void SelectUnidades()

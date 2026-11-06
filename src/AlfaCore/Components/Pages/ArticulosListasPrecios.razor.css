@@ -1,0 +1,205 @@
+.lp-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.lp-barra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--alfa-space-12);
+}
+
+.lp-barra ::deep .lp-barra__lista {
+    min-width: 280px;
+}
+
+.lp-barra__datos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4);
+    align-items: center;
+}
+
+.lp-barra__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-8);
+    margin-left: auto;
+}
+
+.lp-tag {
+    padding: 2px var(--alfa-space-8);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, var(--alfa-text-secondary) 14%, transparent);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    white-space: nowrap;
+}
+
+.lp-tag--alerta {
+    background: color-mix(in srgb, #e0a800 22%, transparent);
+    color: var(--alfa-text-primary);
+}
+
+.lp-filtros {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--alfa-space-8);
+    align-items: end;
+}
+
+.lp-filtros__checks {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-4);
+}
+
+.lp-tabla__marco {
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.lp-tabla__scroll {
+    overflow-x: auto;
+}
+
+.lp-tabla {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--alfa-font-small);
+}
+
+.lp-tabla th,
+.lp-tabla td {
+    padding: var(--alfa-space-4) var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.lp-tabla th {
+    position: sticky;
+    top: 0;
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-secondary);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.lp-tabla td small {
+    display: block;
+    color: var(--alfa-text-secondary);
+}
+
+.lp-tabla .n {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.lp-tabla .mono {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.lp-col-check,
+.lp-col-acc {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.lp-del-maestro {
+    color: var(--alfa-text-secondary);
+}
+
+.lp-fila--suspendido td {
+    opacity: .6;
+}
+
+.lp-celda {
+    width: 110px;
+    padding: 4px 6px;
+    border: 1px solid var(--alfa-border-subtle);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-canvas, transparent);
+    color: var(--alfa-text-primary);
+    font: inherit;
+    text-align: right;
+}
+
+.lp-celda:focus {
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent) 60%, transparent);
+    outline-offset: 0;
+}
+
+.lp-paginas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--alfa-space-8);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.lp-paginas > span:first-child {
+    margin-right: auto;
+}
+
+.lp-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.lp-par,
+.lp-clases {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: var(--alfa-space-8);
+}
+
+.lp-form__check {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: var(--alfa-space-4);
+}
+
+.lp-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4) var(--alfa-space-12);
+}
+
+.lp-subtitulo {
+    margin: var(--alfa-space-4) 0 0;
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-primary);
+}
+
+.lp-etiqueta {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.lp-alcance {
+    margin: 0;
+}
+
+.lp-nota {
+    color: var(--alfa-text-secondary);
+}
+
+.lp-nota--alerta {
+    color: var(--alfa-text-primary);
+    padding: var(--alfa-space-4) var(--alfa-space-8);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, #e0a800 16%, transparent);
+}
+
+@media (max-width: 720px) {
+    .lp-barra__acciones {
+        margin-left: 0;
+    }
+}

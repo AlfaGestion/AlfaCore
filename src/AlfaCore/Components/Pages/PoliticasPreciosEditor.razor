@@ -1,0 +1,353 @@
+@* Políticas de precios (Archivos → Tablas), como Tablas.frm + frmPoliticaFormulas.frm del VB6 (V_TA_POLITICAPRECIOS).
+   El cálculo lo hacen los triggers de la base: la vista previa aplica la política en una transacción que se revierte. *@
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPoliticasPreciosService Svc
+@inject IAppUiOperationService UiOps
+
+<AlfaNotification Message="@_aviso" OnDismiss="() => _aviso = null" />
+
+<section class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h3 class="panel-card__title">@(_form is null ? "Políticas de precios" : _esNueva ? "Nueva política de precios" : $"Política {_form.Codigo.Trim()}")</h3>
+            <p class="panel-card__subtitle">Calculan los precios del artículo a partir del costo: con porcentajes por clase o con fórmulas. Se asignan en el artículo (solapa Precios) y la base las aplica al grabarlo.</p>
+        </div>
+    </div>
+
+    @if (_form is { } f && _ctx is not null)
+    {
+        <div class="pp-form">
+            <div class="pp-fila pp-fila--codigo">
+                <AlfaInput Label="Código" MaxLength="4" Value="@f.Codigo.Trim()" ValueChanged="v => f.Codigo = v ?? string.Empty" Disabled="@(!_esNueva || Bloqueado)" />
+                <AlfaInput Label="Descripción" MaxLength="50" Value="@f.Descripcion" ValueChanged="v => f.Descripcion = v ?? string.Empty" Disabled="@Bloqueado" />
+                <AlfaSelect Label="Cálculo" Value="@(_usaFormulas ? "F" : "P")" ValueChanged="CambiarModo" Disabled="@Bloqueado"
+                            Options="@(new List<AlfaSelectOption> { new("P", "Porcentaje sobre el costo"), new("F", "Fórmulas") })" />
+            </div>
+
+            @if (!_usaFormulas)
+            {
+                <fieldset class="pp-grupo">
+                    <legend>Porcentaje sobre el costo para cada clase</legend>
+                    <div class="pp-clases">
+                        @for (var c = 1; c <= 8; c++)
+                        {
+                            var clase = c;
+                            <AlfaInput Label="@Nombre(clase)" Type="number" Value="@Num(f.Porcentajes[clase - 1])" Disabled="@Bloqueado"
+                                       ValueChanged="v => f.Porcentajes[clase - 1] = Decimal(v)" />
+                        }
+                    </div>
+                    <p class="pp-nota">Precio = costo + %. Las clases en 0 no cambian.@(_ctx.PorcentajeSumaIva ? " Como el maestro de artículos es con IVA, la base le suma el IVA del artículo." : "")</p>
+                </fieldset>
+            }
+            else
+            {
+                <fieldset class="pp-grupo">
+                    <legend>Fórmulas</legend>
+                    <div class="pp-formulas">
+                        <AlfaInput Label="Costo" Value="@f.FormulaCosto" Disabled="@Bloqueado" ValueChanged="v => f.FormulaCosto = v ?? string.Empty"
+                                   ErrorText="@PoliticasPreciosFormula.Validar(f.FormulaCosto)" HelpText="@Ejemplo(f.FormulaCosto)" />
+                        @for (var c = 1; c <= 8; c++)
+                        {
+                            var clase = c;
+                            <AlfaInput Label="@Nombre(clase)" Value="@f.Formulas[clase - 1]" Disabled="@Bloqueado" ValueChanged="v => f.Formulas[clase - 1] = v ?? string.Empty"
+                                       ErrorText="@PoliticasPreciosFormula.Validar(f.Formulas[clase - 1])" HelpText="@Ejemplo(f.Formulas[clase - 1])" />
+                        }
+                    </div>
+                    <details class="pp-ayuda" open="@_esNueva">
+                        <summary>Cómo se escriben las fórmulas</summary>
+                        <p>Empiezan con una variable y siguen con operaciones que se aplican <strong>de izquierda a derecha</strong>, sin paréntesis: <code>&lt;COSTO&gt; + 10 * 2</code> es (costo + 10) × 2.</p>
+                        <p>Variables: @foreach (var v in PoliticasPreciosFormula.Variables) { <code>&lt;@v&gt;</code> }</p>
+                        <table class="pp-ayuda__tabla">
+                            <tbody>
+                                <tr><td><code>%+</code></td><td>Suma un porcentaje</td><td><code>&lt;COSTO&gt; %+ 30</code></td></tr>
+                                <tr><td><code>%-</code></td><td>Resta un porcentaje</td><td><code>&lt;CLASE1&gt; %- 10</code></td></tr>
+                                <tr><td><code>+ -</code></td><td>Suma / resta</td><td><code>&lt;COSTO&gt; + &lt;IMPUESTOS&gt;</code></td></tr>
+                                <tr><td><code>* /</code></td><td>Multiplica / divide</td><td><code>&lt;CLASE4&gt; / 1.21</code></td></tr>
+                                <tr><td><code>\</code></td><td>División entera (sin decimales)</td><td><code>&lt;COSTO&gt; \ 3</code></td></tr>
+                            </tbody>
+                        </table>
+                        <p>Los decimales van con punto (la coma se pasa a punto al grabar). Se calcula primero el costo y después las clases 1 a 8: cada fórmula ve el costo nuevo y las clases anteriores ya calculadas. Si la variable inicial vale 0, el resultado es 0.</p>
+                        <p class="pp-nota">El ejemplo debajo de cada fórmula usa costo 1.000, IVA 21 % y clases 1 a 8 = 1.100, 1.200 … 1.800.</p>
+                    </details>
+                </fieldset>
+            }
+
+            <fieldset class="pp-grupo">
+                <legend>Vista previa</legend>
+                <div class="pp-fila pp-fila--prueba">
+                    <AlfaInput Label="Artículo (opcional)" Value="@_articuloPrueba" ValueChanged="v => _articuloPrueba = (v ?? string.Empty).Trim()"
+                               HelpText="@(_esNueva || (_form.Articulos == 0) ? "Vacío: los primeros artículos con costo." : "Vacío: artículos que usan esta política.")" />
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-eye" Loading="@_previendo" Disabled="@_previendo" OnClick="_ => PrevisualizarAsync()">Ver cómo quedan los precios</AlfaButton>
+                </div>
+                <p class="pp-nota">La calcula la base con sus propios triggers (igual que al grabar un artículo) y no modifica nada.</p>
+                @if (_preview is { Count: > 0 } preview)
+                {
+                    @if (preview.Any(p => p.CostoActual > 0 && p.CostoNuevo == 0 && p.Error is null))
+                    {
+                        <div class="pp-alerta" role="alert"><i class="bi bi-exclamation-triangle"></i> Con esta política la base deja el costo en 0 (la configuración de costo desde la lista del proveedor, ClasePrecioListaProv, no funciona en modo Retail). Revisalo antes de asignarla.</div>
+                    }
+                    <div class="table-wrap">
+                        <table class="data-table pp-preview">
+                            <thead>
+                                <tr><th>Artículo</th><th class="n">Costo</th>
+                                    @foreach (var c in ClasesConCambios(preview)) { <th class="n">@Nombre(c)</th> }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var p in preview)
+                                {
+                                    <tr>
+                                        <td>@p.IdArticulo <small>@p.Descripcion</small>@if (p.Error is { } err) { <small class="pp-error">@err</small> }</td>
+                                        <td class="n">@Cambio(p.CostoActual, p.CostoNuevo)</td>
+                                        @foreach (var c in ClasesConCambios(preview)) { <td class="n">@Cambio(p.PreciosActuales[c - 1], p.PreciosNuevos[c - 1])</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </fieldset>
+
+            @if (!_esNueva)
+            {
+                <p class="pp-nota">La usan @_form.Articulos artículo(s) y @_form.FilasListas fila(s) de listas de precios. Al grabar los cambios no se recalculan solos: usá «Aplicar a los artículos».</p>
+            }
+        </div>
+    }
+    else if (_cargando)
+    {
+        <p class="gd-hint" role="status">Cargando políticas de precios...</p>
+    }
+    else if (_ctx is { Politicas.Count: 0 })
+    {
+        <AlfaEmptyState Title="Sin políticas de precios" Message="Creá una política para calcular los precios a partir del costo." />
+    }
+    else if (_ctx is not null)
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Código</th><th>Descripción</th><th>Cálculo</th><th class="n">Artículos</th><th class="n">Filas de listas</th><th class="tablas-ref__col-acciones"><span class="visually-hidden">Acciones</span></th></tr></thead>
+                <tbody>
+                    @foreach (var p in _ctx.Politicas)
+                    {
+                        <tr @ondblclick="() => Editar(p)">
+                            <td>@p.Codigo.Trim()</td>
+                            <td>@p.Descripcion</td>
+                            <td>@Resumen(p)</td>
+                            <td class="n">@p.Articulos</td>
+                            <td class="n">@p.FilasListas</td>
+                            <td class="tablas-ref__col-acciones">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="_ => Editar(p)">Editar</AlfaButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@if (_confirmarBorrar && _form is not null)
+{
+    <AlfaConfirmDialog Open="true" Title="Borrar política de precios" Loading="@_guardando"
+        Message="@($"Se borrará la política {_form.Codigo.Trim()} · {_form.Descripcion}.")"
+        SecondaryMessage="No se puede borrar si algún artículo o lista de precios la usa."
+        ConfirmLabel="Borrar" OnConfirm="BorrarAsync" OnCancel="() => _confirmarBorrar = false" />
+}
+@if (_confirmarAplicar && _form is not null)
+{
+    <AlfaConfirmDialog Open="true" Title="Aplicar la política" Loading="@_guardando"
+        Message="@($"Se recalculan los precios de {_form.Articulos} artículo(s) y {_form.FilasListas} fila(s) de listas con la política {_form.Codigo.Trim()} grabada.")"
+        SecondaryMessage="Es una actualización masiva y no se deshace. Mirá antes la vista previa."
+        ConfirmLabel="Aplicar" OnConfirm="AplicarAsync" OnCancel="() => _confirmarAplicar = false" />
+}
+
+@code {
+    [Parameter] public EventCallback OnAccionesCambiadas { get; set; }
+    private string _estadoAcciones = string.Empty;
+
+    private PoliticaPrecioContextoDto? _ctx;
+    private PoliticaPrecioDto? _form;
+    private bool _esNueva, _usaFormulas, _cargando = true, _guardando, _previendo, _confirmarBorrar, _confirmarAplicar;
+    private string _articuloPrueba = string.Empty;
+    private IReadOnlyList<PoliticaPrecioPreviewDto>? _preview;
+    private AppUiMessage? _aviso;
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private static readonly PoliticaPreciosVariables Muestra = new(1000m, [1100m, 1200m, 1300m, 1400m, 1500m, 1600m, 1700m, 1800m], 21m, 1m, 1m, 0m);
+
+    private bool Bloqueado => _guardando || _ctx?.PuedeEditar != true;
+
+    public IReadOnlyList<PageHeaderAction> Acciones => _form is null
+        ? [new() { Key = "pp-nueva", Label = "Nueva política", Icon = "bi-plus-lg", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _cargando || _ctx?.PuedeEditar != true, OnClick = () => Refrescar(Nueva) }]
+        : [new() { Key = "pp-grabar", Label = "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                Disabled = Bloqueado, Busy = _guardando, OnClick = GuardarDesdeBarraAsync },
+           new() { Key = "pp-cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential,
+                Disabled = _guardando, OnClick = () => Refrescar(Cancelar) },
+           .. (_esNueva ? Array.Empty<PageHeaderAction>() :
+           [new() { Key = "pp-aplicar", Label = "Aplicar a los artículos", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Secondary,
+                Disabled = Bloqueado || _form.Articulos + _form.FilasListas == 0, OnClick = () => Refrescar(() => _confirmarAplicar = true) },
+            new() { Key = "pp-borrar", Label = "Borrar", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger,
+                Disabled = Bloqueado, OnClick = () => Refrescar(() => _confirmarBorrar = true) }])];
+
+    private Task Refrescar(Action accion) { accion(); return InvokeAsync(StateHasChanged); }
+
+    private async Task GuardarDesdeBarraAsync()
+    {
+        var tarea = GuardarAsync();
+        await InvokeAsync(StateHasChanged);
+        await tarea;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var estado = $"{_form is null}|{_esNueva}|{_guardando}|{_cargando}|{_ctx?.PuedeEditar}|{_form?.Articulos + _form?.FilasListas}";
+        if (estado == _estadoAcciones) return;
+        _estadoAcciones = estado;
+        await OnAccionesCambiadas.InvokeAsync();
+    }
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _cargando = true;
+        var r = await UiOps.RunAsync(() => Svc.GetContextoAsync(), "Políticas de precios");
+        if (r.Success) _ctx = r.Value; else _aviso = r.Feedback;
+        _cargando = false;
+    }
+
+    private void Nueva()
+    {
+        var siguiente = (_ctx?.Politicas ?? []).Select(p => int.TryParse(p.Codigo.Trim(), out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
+        _form = new PoliticaPrecioDto { Codigo = siguiente.ToString(CultureInfo.InvariantCulture) };
+        _esNueva = true; _usaFormulas = false; _preview = null; _articuloPrueba = string.Empty;
+    }
+
+    private void Editar(PoliticaPrecioDto p)
+    {
+        _form = new PoliticaPrecioDto
+        {
+            CodigoOriginal = p.Codigo, Codigo = p.Codigo, Descripcion = p.Descripcion, Porcentajes = p.Porcentajes.ToArray(),
+            FormulaCosto = p.FormulaCosto, Formulas = p.Formulas.ToArray(), Articulos = p.Articulos, FilasListas = p.FilasListas
+        };
+        _esNueva = false; _usaFormulas = p.UsaFormulas; _preview = null; _articuloPrueba = string.Empty;
+    }
+
+    private void Cancelar() { _form = null; _preview = null; _confirmarBorrar = _confirmarAplicar = false; }
+
+    private void CambiarModo(string? modo)
+    {
+        if (_form is null) return;
+        _usaFormulas = modo == "F";
+        _preview = null;
+        // Con algún porcentaje distinto de 0 la base usa porcentajes e ignora las fórmulas.
+        if (_usaFormulas) _form.Porcentajes = new decimal[8];
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_form is null || _guardando) return;
+        if (!_usaFormulas && _form.Porcentajes.All(x => x == 0))
+        {
+            _aviso = AppUiMessage.Warning("Faltan los porcentajes", "Cargá al menos un porcentaje distinto de 0, o elegí «Fórmulas».");
+            return;
+        }
+        _guardando = true;
+        try
+        {
+            var g = await Svc.GuardarAsync(_form);
+            _aviso = AppUiMessage.Success(_esNueva ? "Política creada" : "Política grabada",
+                $"{g.Codigo.Trim()} · {g.Descripcion}." + (g.Articulos + g.FilasListas > 0 ? " Para recalcular los artículos que la usan, usá «Aplicar a los artículos»." : ""));
+            await CargarAsync();
+            Editar(g);
+        }
+        catch (Exception ex) { _aviso = UiOps.BuildMessage(ex, "No se pudo grabar la política."); }
+        finally { _guardando = false; }
+    }
+
+    private async Task BorrarAsync()
+    {
+        if (_form is null) return;
+        _guardando = true;
+        try
+        {
+            await Svc.BorrarAsync(_form.CodigoOriginal);
+            _aviso = AppUiMessage.Success("Política borrada", $"Se borró la política {_form.Codigo.Trim()}.");
+            Cancelar();
+            await CargarAsync();
+        }
+        catch (Exception ex) { _aviso = UiOps.BuildMessage(ex, "No se pudo borrar la política."); _confirmarBorrar = false; }
+        finally { _guardando = false; await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task AplicarAsync()
+    {
+        if (_form is null) return;
+        _guardando = true;
+        try
+        {
+            var r = await Svc.AplicarAsync(_form.CodigoOriginal);
+            _aviso = AppUiMessage.Success("Política aplicada", r.Mensaje);
+            _confirmarAplicar = false;
+        }
+        catch (Exception ex) { _aviso = UiOps.BuildMessage(ex, "No se pudo aplicar la política."); _confirmarAplicar = false; }
+        finally { _guardando = false; await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task PrevisualizarAsync()
+    {
+        if (_form is null) return;
+        _previendo = true; _preview = null;
+        try
+        {
+            var copia = new PoliticaPrecioDto
+            {
+                CodigoOriginal = _form.CodigoOriginal, Codigo = _form.Codigo, Descripcion = _form.Descripcion.Length == 0 ? "VISTA PREVIA" : _form.Descripcion,
+                Porcentajes = _usaFormulas ? new decimal[8] : _form.Porcentajes.ToArray(), FormulaCosto = _form.FormulaCosto, Formulas = _form.Formulas.ToArray()
+            };
+            _preview = await Svc.PrevisualizarAsync(copia, _articuloPrueba.Length == 0 ? null : _articuloPrueba);
+        }
+        catch (Exception ex) { _aviso = UiOps.BuildMessage(ex, "No se pudo armar la vista previa."); }
+        finally { _previendo = false; }
+    }
+
+    private string Nombre(int c) => _ctx?.NombresClases.ElementAtOrDefault(c - 1) is { Length: > 0 } n ? n : $"Clase {c}";
+
+    private string Resumen(PoliticaPrecioDto p)
+    {
+        if (!p.UsaFormulas)
+            return string.Join(" · ", Enumerable.Range(1, 8).Where(c => p.Porcentajes[c - 1] != 0)
+                .Select(c => $"{Nombre(c)} {(p.Porcentajes[c - 1] > 0 ? "+" : "")}{p.Porcentajes[c - 1].ToString("0.##", Ar)}%"));
+        var cambiadas = new[] { (Nombre: "Costo", F: p.FormulaCosto, Id: PoliticasPreciosFormula.Identidad(0)) }
+            .Concat(Enumerable.Range(1, 8).Select(c => (Nombre: Nombre(c), F: p.Formulas[c - 1], Id: PoliticasPreciosFormula.Identidad(c))))
+            .Where(x => !string.Equals(PoliticasPreciosFormula.Normalizar(x.F), x.Id, StringComparison.OrdinalIgnoreCase))
+            .Select(x => $"{x.Nombre} = {x.F}");
+        var texto = string.Join(" · ", cambiadas);
+        return texto.Length == 0 ? "Fórmulas (sin cambios)" : $"Fórmulas: {texto}";
+    }
+
+    private static string? Ejemplo(string formula)
+    {
+        if (PoliticasPreciosFormula.Validar(formula) is not null) return null;
+        try { return $"Ejemplo: {PoliticasPreciosFormula.Evaluar(PoliticasPreciosFormula.Normalizar(formula), Muestra).ToString("N2", Ar)}"; }
+        catch (Exception) { return null; }
+    }
+
+    private static IEnumerable<int> ClasesConCambios(IReadOnlyList<PoliticaPrecioPreviewDto> preview)
+    {
+        var clases = Enumerable.Range(1, 8).Where(c => preview.Any(p => p.PreciosActuales[c - 1] != p.PreciosNuevos[c - 1])).ToList();
+        return clases.Count > 0 ? clases : Enumerable.Range(1, 8).Where(c => preview.Any(p => p.PreciosActuales[c - 1] != 0));
+    }
+
+    private static MarkupString Cambio(decimal antes, decimal despues)
+        => antes == despues ? new MarkupString(antes.ToString("N2", Ar))
+            : new MarkupString($"<span class=\"pp-antes\">{antes.ToString("N2", Ar)}</span> → <strong>{despues.ToString("N2", Ar)}</strong>");
+
+    private static string Num(decimal v) => v == 0 ? string.Empty : v.ToString(CultureInfo.InvariantCulture);
+    private static decimal Decimal(string? v)
+        => decimal.TryParse((v ?? string.Empty).Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var d) ? d : 0;
+}

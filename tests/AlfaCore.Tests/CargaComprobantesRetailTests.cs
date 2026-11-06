@@ -8,6 +8,7 @@ using Xunit.Abstractions;
 namespace AlfaCore.Tests;
 
 /// <summary>Venta con listas de precios en una base Retail (clase fija, ofertas, internos) contra facturas legacy reales.</summary>
+[Collection("BasePruebasRetail")] // misma base de pruebas: sin correr en paralelo
 public sealed class CargaComprobantesRetailTests(ITestOutputHelper output)
 {
     private static readonly CargaComprobantesConfigPrecios Descuento = new() { ClaseOferta = 5, OfertaPorDescuento = true };
