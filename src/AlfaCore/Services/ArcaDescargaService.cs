@@ -33,7 +33,7 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
         ClaveAutoHora = "ALFACORE_ARCA_AUTO_HORA", ClaveUltimaRecibidos = "ALFACORE_ARCA_ULTIMA_RECIBIDOS", ClaveUltimaEmitidos = "ALFACORE_ARCA_ULTIMA_EMITIDOS";
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(15);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> EnCurso = new(StringComparer.OrdinalIgnoreCase);
-    internal static readonly Regex NombreArchivo = new(@"^ARCA_(RECIBIDOS|EMITIDOS)_(\d{11})_(\d{6})\.xlsx?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    internal static readonly Regex NombreArchivo = new(@"^ARCA_(RECIBIDOS|EMITIDOS)_(\d{11})_(\d{6})\.(?:xlsx?|csv)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private sealed class ReglaException(string message) : InvalidOperationException(message);
 
     private int IdBase => sessions.GetActiveSession()?.BaseId ?? 0;
@@ -231,7 +231,7 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     {
         if (carpeta.Length == 0 || !Directory.Exists(carpeta)) return [];
         var cuit = Digitos(cuitRepresentado);
-        return new DirectoryInfo(carpeta).EnumerateFiles("ARCA_*.xls*")
+        return new DirectoryInfo(carpeta).EnumerateFiles("ARCA_*.*")
             .Select(f => (f, m: NombreArchivo.Match(f.Name)))
             .Where(x => x.m.Success && (cuit.Length == 0 || x.m.Groups[2].Value == cuit))
             .Select(x => new ArcaArchivoDescargado(x.f.Name, x.m.Groups[1].Value.Equals("RECIBIDOS", StringComparison.OrdinalIgnoreCase), x.m.Groups[3].Value, x.f.LastWriteTime, x.f.Length))

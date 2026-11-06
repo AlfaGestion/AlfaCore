@@ -23,7 +23,7 @@ public interface IControlArcaService
 /// Solo lectura: no importa ni modifica comprobantes.
 /// </summary>
 public sealed class ControlArcaService(ISessionService sessions, IAppUserSessionService users,
-    IPermissionService permissions, IAppEventService events) : IControlArcaService
+    IPermissionService permissions, IAppEventService events, ArcaServidorService? arcaServidor = null) : IControlArcaService
 {
     // Permiso: «Importar Comprobantes» (D016023), «Planilla Control de Comprobantes» (D9562) o los reportes contables.
     private static readonly string[] Menus = ["D016023", "D9562", "D957004", "D957005"];
@@ -268,13 +268,40 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
     public Task<ControlArcaResultado> ControlarAsync(byte[] archivo, string nombreArchivo, CancellationToken ct = default)
         => EjecutarAsync("Controlar", async cn =>
         {
+            var sesionControl = sessions.GetActiveSession();
+            var carpetaControl = arcaServidor?.Estado(sesionControl?.BaseId ?? 0).Carpeta;
             var arca = Leer(archivo, nombreArchivo);
             var resultado = await ControlarEnConexionAsync(cn, arca, ct);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var actual) || actual != sesionControl?.Id)
+                throw new ReglaException("Cambió la base activa. Volvé a controlar en la base seleccionada.");
+            await ArcaTransmisionRegistro.RegistrarControlAsync(cn, users.GetCurrentUserName(), nombreArchivo, resultado, ct, automatico: false);
+            if (carpetaControl is not null && resultado.Aviso is null && LibroIvaArcaValidator.CuitValido(arca.Cuit)
+                && resultado.Desde.Year == resultado.Hasta.Year && resultado.Desde.Month == resultado.Hasta.Month)
+            {
+                var extension = Path.GetExtension(nombreArchivo).ToLowerInvariant();
+                if (extension is ".xls" or ".xlsx" or ".csv")
+                {
+                    var carpeta = carpetaControl;
+                    await ConservarArchivoAsync(carpeta, arca, resultado.Desde, extension, archivo, ct);
+                }
+            }
             await events.LogAuditAsync("ControlArca", "Controlar", "MIS_COMPROBANTES", nombreArchivo,
                 $"Controló {resultado.ComprobantesArca} comprobantes {(arca.Recibidos ? "recibidos" : "emitidos")} de ARCA ({resultado.Desde:MM/yyyy}–{resultado.Hasta:MM/yyyy}).",
                 new { arca.Cuit, Coinciden = resultado.Cantidad(ControlArcaEstado.Coincide), Faltan = resultado.Cantidad(ControlArcaEstado.FaltaEnSistema) }, CancellationToken.None);
             return resultado;
         }, ct);
+
+    internal static async Task ConservarArchivoAsync(string carpeta, ArcaMisComprobantesArchivo arca, DateTime mes, string extension, byte[] contenido, CancellationToken ct)
+    {
+        if (!LibroIvaArcaValidator.CuitValido(arca.Cuit) || extension is not (".xls" or ".xlsx" or ".csv"))
+            throw new InvalidOperationException("El archivo de control no tiene una identificación válida.");
+        Directory.CreateDirectory(carpeta);
+        var ruta = Path.Combine(carpeta, $"ARCA_{(arca.Recibidos ? "RECIBIDOS" : "EMITIDOS")}_{arca.Cuit}_{mes:yyyyMM}{extension}");
+        if (File.Exists(ruta) && (await File.ReadAllBytesAsync(ruta, ct)).SequenceEqual(contenido)) return;
+        var temporal = ruta + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { await File.WriteAllBytesAsync(temporal, contenido, ct); File.Move(temporal, ruta, true); }
+        finally { if (File.Exists(temporal)) File.Delete(temporal); }
+    }
 
     /// <summary>Compara un archivo ya leído contra la base abierta (sin controles de usuario: lo usa también la descarga automática).</summary>
     internal static async Task<ControlArcaResultado> ControlarEnConexionAsync(SqlConnection cn, ArcaMisComprobantesArchivo arca, CancellationToken ct)
@@ -283,10 +310,11 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             var hasta = arca.Comprobantes.Max(c => c.Fecha); hasta = new DateTime(hasta.Year, hasta.Month, 1).AddMonths(1).AddDays(-1);
             var unidades = (await cn.QueryAsync<(string Codigo, string Cuit)>(new CommandDefinition(
                 "SELECT LTRIM(RTRIM(Codigo)), ISNULL(LTRIM(RTRIM(CUIT)),'') FROM dbo.V_TA_UnidadNegocio;", cancellationToken: ct))).ToList();
-            var propias = unidades.Where(u => Digitos(u.Cuit) == arca.Cuit && arca.Cuit.Length > 0).Select(u => u.Codigo).ToList();
+
             var cuitEmpresa = Digitos(await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'WSFE_CUIT', N'CUIT') ORDER BY CASE WHEN UPPER(CLAVE)='WSFE_CUIT' THEN 0 ELSE 1 END;",
                 cancellationToken: ct)) ?? "");
+            var propias = unidades.Where(u => (Digitos(u.Cuit).Length > 0 ? Digitos(u.Cuit) : cuitEmpresa) == arca.Cuit && arca.Cuit.Length > 0).Select(u => u.Codigo).ToList();
             string? aviso = null;
             if (propias.Count == 0 && arca.Cuit.Length > 0 && arca.Cuit != cuitEmpresa)
                 aviso = $"El archivo es del CUIT {arca.Cuit}, que no es el de ninguna unidad de negocio ni el de la empresa: se compara contra todos los comprobantes.";
@@ -309,6 +337,11 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
                     WHERE LTRIM(RTRIM(c.TC)) IN ('FC','NC','ND') AND ISNULL(c.IDCOMPLEMENTO,0) = 0 AND ISNULL(c.ANULADA,0) = 0
                       AND LTRIM(RTRIM(c.LETRA)) IN ('A','B','C','M') AND c.FECHA >= @Desde AND c.FECHA < DATEADD(day,1,@Hasta);
                     """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
+            if (arca.Cuit == cuitEmpresa)
+            {
+                var definidas = unidades.Select(u => u.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                propias.AddRange(sistema.Select(s => s.Unidad).Where(u => !definidas.Contains(u)).Distinct());
+            }
             var resultado = Comparar(arca, sistema.Select(s => new ComprobanteSistema(
                 ClaseSistema(s.Tc, arca.Recibidos), s.Letra, (int)Num(s.Sucursal), (long)Num(s.Numero), s.Fecha.Date, s.Total, Digitos(s.Doc), s.Nombre,
                 $"{s.Tc} {s.Sucursal}-{s.Numero} {s.Letra}".Trim(), s.Unidad)).ToList(), desde, hasta, propias);
@@ -385,11 +418,14 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
                 fila.ComprobanteSistema = candidatos.Count == 1 ? candidatos[0].Referencia : $"{candidatos.Count} comprobantes";
                 if (fila.Nombre.Length == 0) fila.Nombre = candidatos[0].Nombre;
                 var notas = new List<string>();
+                var hayDuplicados = candidatos.GroupBy(s => (s.Clase, s.Letra, s.PuntoVenta, s.Numero, Doc: arca.Recibidos ? s.Doc : "")).Any(g => g.Count() > 1);
                 if (!arca.Recibidos && candidatos[0].Doc.Length > 0 && a.DocContraparte.Length > 0 && candidatos[0].Doc != a.DocContraparte && a.DocContraparte.TrimStart('0').Length > 0)
                     notas.Add($"Documento distinto en el sistema ({candidatos[0].Doc})");
-                if (candidatos.Count > 1 && a.NumeroDesde == a.NumeroHasta)
+                if (hayDuplicados)
                     notas.Add($"Cargado {candidatos.Count} veces en el sistema ({string.Join(", ", candidatos.Select(s => s.Referencia))})");
-                if (Math.Abs(fila.Diferencia) > Tolerancia)
+                if (hayDuplicados)
+                    fila.Estado = ControlArcaEstado.PosibleDuplicado;
+                else if (Math.Abs(fila.Diferencia) > Tolerancia)
                     fila.Estado = ControlArcaEstado.DifiereImporte;
                 else if (fila.FechaSistema.Value.Year != a.Fecha.Year || fila.FechaSistema.Value.Month != a.Fecha.Month)
                 {
@@ -452,6 +488,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
     public static string EstadoTexto(ControlArcaEstado e) => e switch
     {
         ControlArcaEstado.Coincide => "Coincide",
+        ControlArcaEstado.PosibleDuplicado => "Posible duplicado",
         ControlArcaEstado.DifiereImporte => "Difiere el importe",
         ControlArcaEstado.DifiereFecha => "Difiere la fecha",
         ControlArcaEstado.OtroPeriodo => "Otro período",
@@ -469,7 +506,7 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
 
     private async Task<T> EjecutarAsync<T>(string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
     {
-        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out _))
+        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var sessionId))
             throw new ReglaException("Ingresá en la base activa.");
         try
         {
@@ -477,7 +514,12 @@ public sealed class ControlArcaService(ISessionService sessions, IAppUserSession
             var permitido = false;
             foreach (var m in Menus) if (await permissions.HasAccessAsync(m, ct)) { permitido = true; break; }
             if (!permitido) throw new ReglaException("Tu usuario no tiene permiso para el control contra ARCA (Importar Comprobantes o reportes contables).");
-            return await operacion(cn);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var antes) || antes != sessionId)
+                throw new ReglaException("Cambió la base activa. Volvé a ingresar al módulo.");
+            var resultado = await operacion(cn);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var despues) || despues != sessionId)
+                throw new ReglaException("Cambió la base activa. Volvé a revisar en la base seleccionada.");
+            return resultado;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ReglaException) { throw; }

@@ -53,3 +53,5 @@
     border: 1px solid var(--alfa-border-default); color: var(--alfa-text-primary); }
 .ca-cfg__auto small { color: var(--alfa-text-secondary); }
 .ca-cfg__hora { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+.ca-estado--posibleduplicado { color: var(--alfa-warning); font-weight: 600; }

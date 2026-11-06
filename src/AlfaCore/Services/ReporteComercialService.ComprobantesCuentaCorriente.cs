@@ -14,7 +14,7 @@ public sealed partial class ReporteComercialService
     public Task<ComprobantesCuentaCorrienteResultDto> GetComprobantesCuentaCorrienteComprasAsync(
         FiltrosReporteCompras f,bool analitico,CancellationToken ct=default)
         => EjecutarAsync(false,analitico?"CuentaCorrienteAnalitica":"CuentaCorrienteResumida",
-            cn=>LeerComprobantesCuentaCorrienteAsync(cn,f,analitico,ct,ventas:false),ct);
+            cn=>LeerComprobantesCuentaCorrienteAsync(cn,f,analitico,ct,ventas:false),ct,f);
 
     internal static async Task<ComprobantesCuentaCorrienteResultDto> LeerComprobantesCuentaCorrienteAsync(
         SqlConnection cn,FiltrosReporteCompras f,bool analitico,CancellationToken ct=default,SqlTransaction? transaction=null,bool ventas=true)

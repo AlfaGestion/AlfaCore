@@ -115,12 +115,14 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             OUTER APPLY ({cpte}) c
             WHERE a.LIVA_TIPO = @Tipo AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta)
               AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
+              AND (@FiltrarUnidades = 0 OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) IN @Unidades)
+              AND (@SoloSinUnidad = 0 OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = '')
             ORDER BY a.FECHA, a.TC, a.LETRA, a.SUCURSAL, a.NUMERO;
-            """, new { Desde = desde, Hasta = hasta, Unidad = unidad, Tipo = compras ? "COMPRAS" : "VENTAS" }, commandTimeout: 120, cancellationToken: ct))).ToList();
+            """, new { Desde = desde, Hasta = hasta, Unidad = unidad, filtro.SoloSinUnidad, FiltrarUnidades = filtro.UnidadesNegocio.Count > 0, Unidades = filtro.UnidadesNegocio, Tipo = compras ? "COMPRAS" : "VENTAS" }, commandTimeout: 120, cancellationToken: ct))).ToList();
 
         var resultado = new LibroIvaResultado
         {
-            Filtro = new() { Desde = desde, Hasta = hasta, UnidadNegocio = unidad, Compras = compras },
+            Filtro = new() { Desde = desde, Hasta = hasta, UnidadNegocio = unidad, Compras = compras, SoloSinUnidad = filtro.SoloSinUnidad, General = filtro.General, UnidadesNegocio = filtro.UnidadesNegocio.ToArray() },
             Filas = filas.Select(f => Convertir(f, compras)).ToList(),
             Cierre = await LeerCierreAsync(cn, ct, compras: compras),
             PuedeCerrar = await permissions.HasAccessAsync(MenuFechasCierre, ct)
@@ -182,10 +184,13 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         return (nombre, cuit, condTexto);
     }
 
-    // V_mv_Cpra guarda impuestos internos en LIVA_EXENTO. Solo se separan cuando los importes
+    // El legacy puede guardar impuestos internos en LIVA_EXENTO, también en ventas. Solo se separan cuando los importes
     // demuestran esa inclusión; se conserva la fiscalidad de lectores que ya separaron ambos conceptos.
     internal static decimal ExentoCompras(decimal exento,decimal internos,decimal resto,decimal total)
         =>internos!=0&&Math.Sign(exento)==Math.Sign(internos)&&Math.Abs(exento)>=Math.Abs(internos)&&resto+exento==total?exento-internos:exento;
+
+    // Los asientos usan Currency (4 decimales); los libros y ARCA suman comprobantes en centavos.
+    internal static decimal MonedaLibro(decimal valor) => Math.Round(valor, 2, MidpointRounding.AwayFromZero);
 
     private static LibroIvaFila Convertir(FilaSql s, bool compras)
     {
@@ -194,13 +199,13 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit,
             CondicionIva = s.CondicionIva, UnidadNegocio = s.UnidadNegocio,
             PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
-            NetoGravado = s.NetoGravado, NoGravado = s.NoGravado, Exento = compras ? ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total) : s.Exento,
-            PercepcionIva = s.PercepcionIva, PercepcionIibb = s.PercepcionIibb, OtrasPercepciones = s.OtrasPercepciones,
-            ImpuestosInternos = s.ImpuestosInternos, Total = s.Total, CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra)
+            NetoGravado = MonedaLibro(s.NetoGravado), NoGravado = MonedaLibro(s.NoGravado), Exento = MonedaLibro(ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total)),
+            PercepcionIva = MonedaLibro(s.PercepcionIva), PercepcionIibb = MonedaLibro(s.PercepcionIibb), OtrasPercepciones = MonedaLibro(s.OtrasPercepciones),
+            ImpuestosInternos = MonedaLibro(s.ImpuestosInternos), Total = MonedaLibro(s.Total), CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra)
         };
         // En compras, las facturas B y C no discriminan IVA: no hay crédito fiscal ni alícuotas.
         fila.Alicuotas = compras && s.Letra.Trim().ToUpperInvariant() is "B" or "C" ? []
-            : RepartirAlicuotas(s.NetoGravado, s.Letra, [(s.A1, s.I1), (s.A2, s.I2), (s.A3, s.I3), (s.A4, s.I4)]);
+            : RepartirAlicuotas(fila.NetoGravado, s.Letra, [(s.A1, MonedaLibro(s.I1)), (s.A2, MonedaLibro(s.I2)), (s.A3, MonedaLibro(s.I3)), (s.A4, MonedaLibro(s.I4))]);
         return fila;
     }
 
@@ -256,10 +261,20 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
     public Task<LibroIvaArchivo> ExportarTxtArcaAsync(LibroIvaFiltro filtro, CancellationToken ct = default)
         => EjecutarAsync(filtro.Compras, "ExportarTxt", async cn =>
         {
-            if (string.IsNullOrWhiteSpace(filtro.UnidadNegocio) && await HayVariosCuitsAsync(cn, ct))
-                throw new ReglaLibroException("El Libro IVA Digital se presenta por CUIT: elegí una unidad de negocio.");
             var r = await LeerAsync(cn, filtro, ct);
+            if (r.CantidadCuits > 1)
+                throw new ReglaLibroException("El Libro IVA Digital se presenta por CUIT: elegí una unidad de negocio.");
+            if (r.Unidades.Count > 0) r.CuitEmisor = r.Unidades[0].Cuit;
+            var errores = LibroIvaArcaValidator.Validar(r);
+            if (errores.Count > 0)
+            {
+                var mensaje = $"No se generó el TXT ARCA: {errores.Count} observación(es). " + string.Join("; ", errores.Take(8));
+                await events.LogErrorAsync(filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas", "ValidarArca",
+                    new InvalidOperationException(string.Join(Environment.NewLine, errores)), mensaje, ct: ct);
+                throw new LibroIvaArcaValidationException(mensaje, errores);
+            }
             var (cbte, alic) = r.Filtro.Compras ? ArmarTxtCompras(r.Filas) : ArmarTxt(r.Filas);
+            LibroIvaArcaValidator.ValidarFormato(r, cbte, alic);
             var libro = r.Filtro.Compras ? "COMPRAS" : "VENTAS";
             using var ms = new MemoryStream();
             using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
@@ -271,7 +286,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                     await s.WriteAsync(bytes, ct);
                 }
             }
-            return new LibroIvaArchivo($"LibroIvaDigital_{(r.Filtro.Compras ? "Compras" : "Ventas")}_{r.CuitEmisor.Replace("-", "")}_{r.Filtro.Desde:yyyyMM}.zip", "application/zip", ms.ToArray());
+            return new LibroIvaArchivo($"LibroIvaDigital_{(r.Filtro.Compras ? "Compras" : "Ventas")}_{LibroIvaArcaValidator.Digitos(r.CuitEmisor)}_{r.Filtro.Desde:yyyyMM}.zip", "application/zip", ms.ToArray());
         }, ct);
 
     internal static (string Comprobantes, string Alicuotas) ArmarTxt(IEnumerable<LibroIvaFila> filas)
@@ -395,10 +410,6 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         return (limpio.Length > largo ? limpio[..largo] : limpio).PadRight(largo);
     }
 
-    private static async Task<bool> HayVariosCuitsAsync(SqlConnection cn, CancellationToken ct)
-        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT COUNT(DISTINCT LTRIM(RTRIM(CUIT))) FROM dbo.V_TA_UnidadNegocio WHERE ISNULL(LTRIM(RTRIM(CUIT)),'') <> '';", cancellationToken: ct)) > 1;
-
     public Task<LibroIvaArchivo> ExportarExcelAsync(LibroIvaFiltro filtro, CancellationToken ct = default)
         => EjecutarAsync(filtro.Compras, "ExportarExcel", async cn =>
         {
@@ -406,6 +417,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add(r.Filtro.Compras ? "Libro IVA Compras" : "Libro IVA Ventas");
             ws.Cell(1, 1).Value = r.Consolidado ? $"{Nombre(r.Filtro.Compras)} · {TextoConsolidado(r)}" : $"{Nombre(r.Filtro.Compras)} · {r.Emisor} · CUIT {r.CuitEmisor}";
+            if (r.Filtro.General) ws.Cell(1, 1).Value = "General · " + ws.Cell(1, 1).GetString();
             ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
             if (r.Consolidado) ws.Cell(1, 1).Style.Font.FontColor = XLColor.FromHtml("#9A3412");
             ws.Cell(2, 1).Value = r.Consolidado
@@ -457,7 +469,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             ws.Columns().AdjustToContents(); ws.Column(4).Width = Math.Min(ws.Column(4).Width, 45);
             ws.SheetView.FreezeRows(4);
             using var ms = new MemoryStream(); wb.SaveAs(ms);
-            return new LibroIvaArchivo($"{(r.Filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas")}_{r.Filtro.Desde:yyyyMM}{(r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.xlsx",
+            return new LibroIvaArchivo($"{(r.Filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas")}_{r.Filtro.Desde:yyyyMM}{(r.Filtro.General ? "_General" : r.Filtro.SoloSinUnidad ? "_SinUnidad" : r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ms.ToArray());
         }, ct);
 
@@ -466,7 +478,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         {
             var r = await LeerAsync(cn, filtro, ct);
             var bytes = await pdf.GenerateAsync(ArmarHtml(r), new DocumentPdfFooterOptions(true, true, r.Emisor), ct);
-            return new LibroIvaArchivo($"{(r.Filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas")}_{r.Filtro.Desde:yyyyMM}{(r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.pdf", "application/pdf", bytes);
+            return new LibroIvaArchivo($"{(r.Filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas")}_{r.Filtro.Desde:yyyyMM}{(r.Filtro.General ? "_General" : r.Filtro.SoloSinUnidad ? "_SinUnidad" : r.Filtro.UnidadNegocio.Length > 0 ? "_U" + r.Filtro.UnidadNegocio : "")}.pdf", "application/pdf", bytes);
         }, ct);
 
     internal static string ArmarHtml(LibroIvaResultado r)
@@ -493,13 +505,14 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             """);
         sb.Append($".det td:nth-child(-n+{3 + k}), .det td:nth-child({5 + k}) {{ white-space: nowrap; }} .det td:nth-child({6 + k}) {{ font-size: 6.5pt; }}");
         sb.Append("</style></head><body>");
+        if (r.Filtro.General) sb.Append("<h1>General · Todas las unidades de negocio</h1>");
         var periodo = $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.Filas.Count} comprobantes";
         if (cons)
         {
             sb.Append($"<h1>{Nombre(r.Filtro.Compras)} <span class=\"cons\">{TextoConsolidado(r)}</span></h1><div class=\"sub\">{E(r.Emisor)} · {periodo}</div>");
             sb.Append("<div class=\"aviso\"><p><b>Atención: este libro reúne comprobantes de varias unidades de negocio")
               .Append(r.CantidadCuits > 1 ? " con distinto CUIT" : "")
-              .Append(".</b> Es un listado de control; para presentar en ARCA se emite el libro de cada unidad por separado.</p>")
+              .Append(".</b> Es un listado de control; para presentar en ARCA se genera un archivo por CUIT.</p>")
               .Append("<table><thead><tr><th>U.N.</th><th>Razón social</th><th>CUIT</th><th class=\"n\">Cptes.</th><th class=\"n\">Neto grav.</th><th class=\"n\">IVA</th><th class=\"n\">Total</th></tr></thead><tbody>");
             foreach (var u in r.Unidades)
                 sb.Append($"<tr><td>{E(u.Codigo.Length > 0 ? u.Codigo : "—")}</td><td>{E(u.Nombre)}</td><td>{E(u.Cuit)}</td><td class=\"n\">{u.Cantidad}</td><td class=\"n\">{u.Neto.ToString("N2", Ar)}</td><td class=\"n\">{u.Iva.ToString("N2", Ar)}</td><td class=\"n\">{u.Total.ToString("N2", Ar)}</td></tr>");
@@ -546,6 +559,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ReglaLibroException) { throw; }
+        catch (LibroIvaArcaValidationException) { throw; }
         catch (AppUserFacingException) { throw; }
         catch (Exception ex)
         {

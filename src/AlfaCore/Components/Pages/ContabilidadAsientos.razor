@@ -626,8 +626,17 @@
     private decimal Diferencia => _edit is null ? 0 : _edit.TotalDebe - _edit.TotalHaber;
     private bool PideVencimiento => _edit is not null && _cat is not null && _edit.Renglones.Any(r => _cat.Cuentas.FirstOrDefault(c => c.Codigo == r.Cuenta)?.PideVencimiento == true);
 
+    [SupplyParameterFromQuery(Name = "buscar")] public string? BuscarComprobante { get; set; }
+    [SupplyParameterFromQuery(Name = "periodo")] public string? PeriodoRevision { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrWhiteSpace(BuscarComprobante))
+        {
+            _texto = BuscarComprobante.Trim(); _f.Origen = "TODOS";
+            if (DateTime.TryParseExact(PeriodoRevision, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var mes))
+            { _f.FechaDesde = mes; _f.FechaHasta = mes.AddMonths(1).AddDays(-1); }
+        }
         UpdateHeader();
         var c = await UiOps.RunAsync(() => Service.CatalogoAsync(), "Asientos");
         if (c.Success) _cat = c.Value; else _feedback = c.Feedback;

@@ -153,7 +153,7 @@ public sealed class LibroIvaVentasPruebasTests(ITestOutputHelper output)
             var filtro = new LibroIvaFiltro { Desde = desde, Hasta = desde.AddMonths(1).AddDays(-1), UnidadNegocio = unidad, Compras = compras };
             var r = await svc.GetAsync(filtro);
             var esperado = await cn.ExecuteScalarAsync<decimal>("""
-                SELECT ISNULL(SUM(LIVA_TOTAL),0) FROM dbo.MV_ASIENTOS WHERE LIVA_TIPO=@T AND FECHA>=@D AND FECHA<DATEADD(day,1,@H)
+                SELECT ISNULL(SUM(ROUND(LIVA_TOTAL,2)),0) FROM dbo.MV_ASIENTOS WHERE LIVA_TIPO=@T AND FECHA>=@D AND FECHA<DATEADD(day,1,@H)
                   AND (@U='' OR LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@U)
                 """, new { D = filtro.Desde, H = filtro.Hasta, U = unidad, T = compras ? "COMPRAS" : "VENTAS" });
             output.WriteLine($"{(compras ? "COMPRAS" : "VENTAS")} U«{unidad}» {r.Emisor} {r.CuitEmisor} {r.CondicionIvaEmisor}: {r.Filas.Count} cptes · neto {r.NetoGravado:N2} · IVA {r.Iva:N2} · total {r.Total:N2} (asientos {esperado:N2}) · " +

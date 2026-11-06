@@ -141,3 +141,28 @@ Las tarjetas muestran la cantidad de comprobantes, el neto gravado, el IVA y el 
 Cuando el libro está presentado, usá **Cerrar ventas hasta** (o compras) para que no se carguen más comprobantes con esas fechas. El aviso indica hasta qué fecha está cerrado.
 
 **PDF** y **Excel** exportan el libro generado. **TXT ARCA** arma el archivo para presentar el libro en ARCA.
+
+## Paquete para el estudio: libros de IVA
+
+En **Contabilidad → Paquete estudio**, elegí el mes y marcá **Libros de IVA ventas y compras por unidad y General**.
+El ZIP incluye PDF y Excel en `01_Libros_IVA`: una carpeta **General** con todas las unidades y una carpeta por cada unidad que tenga movimientos en ese libro. Una unidad puede tener ventas y no compras; en ese caso solo se genera su libro de ventas. Los movimientos sin unidad quedan identificados en **Sin_unidad** y también integran el General.
+
+**Libro IVA Digital** genera los TXT para ARCA por CUIT, reuniendo las unidades que comparten el mismo CUIT. Controla documentos y dígito verificador de CUIT, duplicados, numeración, códigos y alícuotas admitidos, consistencia de netos/IVA/tributos con los totales, longitudes y correspondencia entre comprobantes y alícuotas. Los importes se exportan en pesos; al importarlos elegí esa opción en ARCA.
+
+Si hay inconsistencias, no se genera el TXT de ese libro/CUIT. En `02_Libro_IVA_Digital` se incluye un informe **Validacion** con las observaciones y el `LEEME.txt` resume el problema. Los PDF y Excel siguen disponibles para revisar. Corregí los datos o la configuración de origen y generá nuevamente el paquete.
+
+Los importes de cada comprobante se redondean a centavos antes de sumar, para que el General coincida con las unidades y el detalle. La contabilidad conserva sus cuatro decimales originales.
+
+Estos controles son locales: no confirman la existencia de un CUIT en el padrón, ni comprueban presentaciones de otros períodos. La aceptación definitiva corresponde a la importación y validación en ARCA.
+
+### Revisión previa y Control ARCA
+
+El paquete muestra el estado de compras contra **Mis Comprobantes Recibidos** y ventas contra **Mis Comprobantes Emitidos**, por mes y CUIT. Si existe un archivo descargado o subido a Control ARCA, vuelve a compararlo con la base actual. La fecha del archivo queda visible: confirmar contra ese archivo no garantiza que ARCA no haya incorporado nuevos comprobantes después.
+
+Cuando no está el archivo, propone **Validar en Control ARCA**, conservando el mes y el tipo. Allí podés subir un Excel/CSV o usar **Descargar y comparar**. Los controles manuales quedan en el historial y sus archivos mensuales identificados por CUIT se conservan para volver a comparar. **Volver al paquete** permite revisar nuevamente antes de generar. Un control histórico sin su archivo se muestra como pendiente de actualización, no como validación vigente.
+
+**Duplicados y diferencias** muestra primero posibles repeticiones y descuadres, con comprobante, cuenta, CUIT e importes. **Revisar asiento** abre la búsqueda del comprobante para revisar también las otras cuentas. Las correcciones usan las opciones existentes y los permisos del usuario; los comprobantes que no admitan edición contable deben corregirse en su módulo de origen. Para ver documentos inválidos y demás observaciones elegí **Todas las observaciones** o **Datos fiscales**.
+
+La carpeta `00_Revision` del ZIP conserva el estado de controles y el CSV completo de observaciones. Los controles pendientes se advierten sin impedir descargar los libros.
+
+Desde el portal del estudio, el botón **Paquete estudio** de cada empresa lleva directamente al mes seleccionado. Está incluido en los perfiles Consulta y Completo.
