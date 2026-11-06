@@ -378,7 +378,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 if (!hasCompanyBlock) AppendDocumentMetaFactura(sb, data.Comprobante, fields, nombreDocumento);
                 break;
             case "CLIENTE":
-                sb.Append("<section class=\"card\"").Append(style).Append("><strong>Cliente</strong><br>");
+                sb.Append("<section class=\"card\"").Append(style).Append("><strong>").Append(E(string.IsNullOrWhiteSpace(data.EtiquetaTercero) ? "Cliente" : data.EtiquetaTercero)).Append("</strong><br>");
                 if (Shows(fields, "RazonSocial")) sb.Append("<b>").Append(E(data.Cliente.RazonSocial)).Append("</b>");
                 if (Shows(fields, "Codigo") && !string.IsNullOrWhiteSpace(data.Cliente.Codigo)) sb.Append(" <span class=\"muted\">(").Append(E(data.Cliente.Codigo)).Append(")</span>");
                 var clienteValues = new List<string>();
@@ -393,9 +393,26 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 break;
             case "ITEMS": AppendItemsFactura(sb, block, data.Items); break;
             case "TOTALES": AppendTotalsFactura(sb, data.Totales, data.Comprobante.Letra, fields, style); break;
+            case "MEDIOSPAGO": AppendMediosPagoOrden(sb, data, style); break;
             case "CAE": AppendCaeBlock(sb, data.Cae, fields, style); break;
             case "QRAFIP": AppendQrAfipBlock(sb, data.QrBytes, block); break;
         }
+    }
+
+    /// <summary>Orden de pago: con qué se pagó (efectivo, banco, cheques), lo cancelado con créditos aplicados y el total pagado.</summary>
+    private static void AppendMediosPagoOrden(StringBuilder sb, FacturaDocumentData data, string style)
+    {
+        if (data.MediosPago.Count == 0 && data.CreditosAplicados.Count == 0) return;
+        var moneda = data.Totales.Moneda;
+        sb.Append("<table class=\"items\"").Append(style).Append("><colgroup><col style=\"width:78%\"><col style=\"width:22%\"></colgroup>")
+            .Append("<thead><tr><th>Medio de pago</th><th class=\"right\">Importe</th></tr></thead><tbody>");
+        foreach (var medio in data.MediosPago)
+            sb.Append("<tr><td>").Append(E(medio.MedioPago)).Append("</td><td class=\"right\">").Append(Money(medio.Importe, moneda)).Append("</td></tr>");
+        foreach (var credito in data.CreditosAplicados)
+            sb.Append("<tr><td>Aplicado: ").Append(E(credito.MedioPago)).Append("</td><td class=\"right\">").Append(Money(credito.Importe, moneda)).Append("</td></tr>");
+        sb.Append("</tbody></table>");
+        sb.Append("<table class=\"totals\"").Append(style).Append("><tbody><tr class=\"total-final\"><td>Total pagado</td><td class=\"right\">")
+            .Append(Money(data.Totales.Total, moneda)).Append("</td></tr></tbody></table>");
     }
 
     private static void AppendRecuadroTipo(StringBuilder sb, DocumentBlockDefinition block, FacturaComprobanteDocumentData comprobante)

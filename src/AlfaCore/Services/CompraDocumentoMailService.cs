@@ -14,7 +14,8 @@ namespace AlfaCore.Services;
 /// Cada envío se registra en V_MA_EMAILMOV con el mismo formato que Alfa Gestión, así se ve cuándo se mandó y se puede reenviar.
 /// </summary>
 public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUserSessionService usuarios, IPermissionService permisos,
-    IAppEventService eventos, CompraCargaService compras, IComprobanteViewerService visor, IDocumentPdfService pdf, CorreoSalienteService correo)
+    IAppEventService eventos, CompraCargaService compras, IComprobanteViewerService visor, IDocumentPdfService pdf, CorreoSalienteService correo,
+    IOrdenPagoDocumentService ordenesPago)
 {
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
     private static readonly string[] TiposCompra = ["OC", "RMC"];
@@ -100,6 +101,9 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
 
     private async Task<byte[]> ArmarPdfAsync(SqlConnection cn, Ficha ficha, string certificado, CancellationToken ct)
     {
+        // Órdenes de pago (OPG) y pagos proforma (PGFP): salen con la plantilla del Diseñador de comprobantes (logo, columnas, etc.).
+        if (certificado.Length == 0 && ficha.Tc is "OPG" or "PGFP")
+            return await ordenesPago.GeneratePdfAsync(ficha.Tc, ficha.Comprobante, ficha.Unidad.Length == 0 ? null : ficha.Unidad, ct);
         var (empresa, _, _, _, _) = await FacturaDocumentService.BuildEmpresaAsync(cn, null, ficha.Unidad.Length == 0 ? null : ficha.Unidad, ct);
         string html;
         if (certificado.Length > 0)

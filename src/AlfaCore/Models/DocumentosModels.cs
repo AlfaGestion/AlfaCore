@@ -15,6 +15,9 @@ public static class TiposDocumentoCore
     // Se conserva la clave histórica de proformas para mantener sus plantillas guardadas.
     public const string CobranzaProforma = "COBRANZA_X";
     public const string CobranzaContado = "COBRANZA_CONTADO";
+    /// <summary>Orden de pago a proveedores (OPG) y su variante proforma (PGFP): documentos de Compras con diseño propio.</summary>
+    public const string OrdenPago = "ORDEN_PAGO";
+    public const string PagoProforma = "PAGO_PROFORMA";
     public const string NotaDebitoA = "NOTA_DEBITO_A";
     public const string NotaDebitoB = "NOTA_DEBITO_B";
     public const string NotaDebitoC = "NOTA_DEBITO_C";
@@ -51,7 +54,7 @@ public static class TiposDocumentoCore
 
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaX, CobranzaProforma, CobranzaContado,
+        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaX, CobranzaProforma, CobranzaContado, OrdenPago, PagoProforma,
         NotaDebitoA, NotaDebitoB, NotaDebitoC, NotaCreditoA, NotaCreditoB, NotaCreditoC,
         FacturaA, FacturaB, FacturaC,
         CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
@@ -62,13 +65,16 @@ public static class TiposDocumentoCore
         [FacturaA] = "A",
         [FacturaB] = "B",
         [FacturaC] = "C", [RemitoR] = "R", [RemitoX] = "X", [NotaPedido] = "X",
-        [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaX] = "X", [CobranzaProforma] = "X", [CobranzaContado] = "X",
+        [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaX] = "X", [CobranzaProforma] = "X", [CobranzaContado] = "X", [OrdenPago] = "X", [PagoProforma] = "X",
         [NotaDebitoA] = "A", [NotaDebitoB] = "B", [NotaDebitoC] = "C",
         [NotaCreditoA] = "A", [NotaCreditoB] = "B", [NotaCreditoC] = "C"
     };
 
     public static bool EsFactura(string tipoDocumento)
         => LetraPorTipo.ContainsKey(tipoDocumento ?? string.Empty) || EsFiscal(tipoDocumento ?? string.Empty);
+
+    public static bool EsOrdenPago(string tipoDocumento)
+        => string.Equals(tipoDocumento, OrdenPago, StringComparison.OrdinalIgnoreCase) || string.Equals(tipoDocumento, PagoProforma, StringComparison.OrdinalIgnoreCase);
 
     public static bool EsNotaPedido(string tipoDocumento)
         => string.Equals(tipoDocumento, NotaPedido, StringComparison.OrdinalIgnoreCase);
@@ -88,6 +94,8 @@ public static class TiposDocumentoCore
             CobranzaX => "Cobranza X",
             CobranzaProforma => "Factura proforma",
             CobranzaContado => "Cobranza contado",
+            OrdenPago => "Orden de pago",
+            PagoProforma => "Pago proforma",
             NotaDebitoA => "Nota de débito A",
             NotaDebitoB => "Nota de débito B",
             NotaDebitoC => "Nota de débito C",
@@ -118,6 +126,8 @@ public static class TiposDocumentoCore
             "RM" => l == "X" ? RemitoX : RemitoR,
             "NP" => NotaPedido,
             "CBCT" => CobranzaContado,
+            "OPG" => OrdenPago,
+            "PGFP" => PagoProforma,
             "CB" => l == "X" ? CobranzaX : l == "B" ? CobranzaB : l == "C" ? CobranzaC : CobranzaA,
             "ND" => l == "B" ? NotaDebitoB : l == "C" ? NotaDebitoC : NotaDebitoA,
             "NC" => l == "B" ? NotaCreditoB : l == "C" ? NotaCreditoC : NotaCreditoA,
@@ -154,11 +164,13 @@ public static class TiposBloqueDocumento
     public const string RecuadroTipo = "RecuadroTipo";
     public const string Cae = "Cae";
     public const string QrAfip = "QrAfip";
+    /// <summary>Medios de pago (y créditos aplicados) de una orden de pago.</summary>
+    public const string MediosPago = "MediosPago";
 
     public static readonly IReadOnlySet<string> Permitidos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         Logo, Empresa, Comprobante, Cliente, Items, Totales, Propuesta, Firma, Portada, Pie,
-        RecuadroTipo, Cae, QrAfip
+        RecuadroTipo, Cae, QrAfip, MediosPago
     };
 }
 
@@ -236,6 +248,31 @@ public sealed class DocumentTemplateDefinition
             },
             new() { Id = "totals", Type = TiposBloqueDocumento.Totales, Visible = true },
             new() { Id = "signature", Type = TiposBloqueDocumento.Firma, Visible = true },
+            new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = false }
+        ]
+    };
+
+    /// <summary>Plantilla base de la orden de pago (OPG / PGFP): empresa con logo, proveedor, comprobantes cancelados y medios de pago.</summary>
+    public static DocumentTemplateDefinition CrearOrdenPagoEstandar() => new()
+    {
+        Paper = new DocumentPaperDefinition(),
+        Blocks =
+        [
+            new() { Id = "header-logo", Type = TiposBloqueDocumento.Logo, Visible = true, Align = "left", Width = 100, CombineWithCompany = true },
+            new() { Id = "company", Type = TiposBloqueDocumento.Empresa, Visible = true },
+            new() { Id = "document", Type = TiposBloqueDocumento.Comprobante, Visible = true },
+            new() { Id = "customer", Type = TiposBloqueDocumento.Cliente, Visible = true },
+            new()
+            {
+                Id = "items", Type = TiposBloqueDocumento.Items, Visible = true,
+                Columns =
+                [
+                    new() { Field = "Codigo", Title = "Tipo", Visible = true, WidthPercent = 14, Align = "left" },
+                    new() { Field = "Descripcion", Title = "Comprobante cancelado", Visible = true, WidthPercent = 64, Align = "left" },
+                    new() { Field = "Total", Title = "Importe aplicado", Visible = true, WidthPercent = 22, Align = "right" }
+                ]
+            },
+            new() { Id = "payments", Type = TiposBloqueDocumento.MediosPago, Visible = true },
             new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = false }
         ]
     };
@@ -413,6 +450,11 @@ public sealed class FacturaDocumentData
     public FacturaCaeDocumentData? Cae { get; set; }
     /// <summary>QR fiscal generado en memoria al solicitar el reporte. Null sin autorización aprobada.</summary>
     public byte[]? QrBytes { get; set; }
+    /// <summary>Cómo se llama el tercero en el bloque Cliente ("Cliente" por defecto; "Proveedor" en las órdenes de pago).</summary>
+    public string EtiquetaTercero { get; set; } = "Cliente";
+    /// <summary>Orden de pago: medios con los que se pagó (efectivo, banco, cheques) y créditos aplicados (notas de crédito, anticipos).</summary>
+    public List<FacturaPagoDocumentData> MediosPago { get; set; } = [];
+    public List<FacturaPagoDocumentData> CreditosAplicados { get; set; } = [];
 }
 
 public sealed class FacturaComprobanteDocumentData

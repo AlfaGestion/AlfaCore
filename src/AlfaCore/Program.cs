@@ -371,6 +371,7 @@ public class Program
         builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IFacturaDocumentService, FacturaDocumentService>();
+        builder.Services.AddScoped<IOrdenPagoDocumentService, OrdenPagoDocumentService>();
         builder.Services.AddSingleton<IArcaQrService, ArcaQrService>();
         builder.Services.AddScoped<IArcaConfigService, ArcaConfigService>();
         builder.Services.AddScoped<IWsaaClient, WsaaClient>();

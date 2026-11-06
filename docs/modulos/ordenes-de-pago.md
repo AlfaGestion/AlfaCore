@@ -85,3 +85,13 @@ Dos talonarios de OPG (general sucursal 0001 y de la unidad sucursal 0003): se u
 Se grabaron de verdad en esa base (ensayo `GrabaDeVerdadOpgCreditoProformaYChequePropioEnBaseDePruebas`, solo con `ORDENPAGO_TEST_COMMIT=1`): OPG exacta en efectivo, OPG con NC aplicada, **PGFP de una FPC** y OPG con cheque propio. Cabecera, asiento (balanceado), aplicaciones, saldos, contadores y journal coinciden con el patrón real. El update `2026-11-06-003` también se aplicó ahí.
 
 PDF: el generador de pagos nunca mostraba «Comprobantes cancelados» ni los medios, porque dependía de datos que el visor de comprobantes no completa (`AplicaA`, `Asientos`) y de que los pagos figuran como «Compras» aunque se graban en `V_MV_CPTE`. Ahora `DetallePagoAsync` los arma desde `MV_APLICACION` y el asiento; con créditos aplicados agrega la línea «Cancelado con créditos y anticipos aplicados». Las capturas de OPG y PGFP salen correctas.
+
+## Diseñador de comprobantes (06/11/2026)
+
+Tipos nuevos en `TiposDocumentoCore`: `ORDEN_PAGO` (OPG) y `PAGO_PROFORMA` (PGFP), con plantilla propia por unidad de negocio o global, igual que las facturas.
+
+- **Datos:** `OrdenPagoDocumentService` (solo lee) arma una `FacturaDocumentData` desde `V_MV_CPTE` (cabecera y proveedor), `MV_APLICACION` (comprobantes cancelados, uno por comprobante, incluido lo cancelado con créditos; y los créditos aplicados) y `MV_ASIENTOS` (medios: líneas Haber, con cheque y fecha de pago). Se dibuja con `DocumentRenderer.RenderFactura`, así que hereda empresa con logo, tema, papel (A4/A5/Carta/ticket), márgenes, pie y tamaños de letra.
+- **Plantilla estándar** (`CrearOrdenPagoEstandar`): Logo + Empresa, Comprobante, Proveedor, comprobantes cancelados (columnas Tipo / Comprobante / Importe aplicado, editables) y el bloque nuevo **Medios de pago** (`TiposBloqueDocumento.MediosPago`: medios, créditos aplicados y «Total pagado»). Pie opcional. Sin plantilla guardada usa esa estándar embebida; no hace falta script SQL.
+- **Diseñador** (Utilidades → Diseñador de comprobantes): opciones «Orden de pago (OPG)» y «Pago proforma (PGFP)», vista previa y PDF beta con una orden real, panel «Datos del proveedor» y panel «Medios de pago». El logo sale de la configuración general de la empresa (`/configuracion-general`, `TA_LOGOS`).
+- **Impresión:** «Ver PDF» de Orden de Pago y los PDF/mails de «Pagos y retenciones» para OPG y PGFP usan esa plantilla. PG (pago directo) y los certificados de retención siguen con el PDF anterior.
+- Pruebas: `OrdenPagoDocumentTests` (tipos, plantilla válida, render con logo/proveedor/medios/créditos, bloque ocultable, facturas sin cambios, y las órdenes reales de la base de pruebas con captura). 319 pruebas de documentos verdes.
