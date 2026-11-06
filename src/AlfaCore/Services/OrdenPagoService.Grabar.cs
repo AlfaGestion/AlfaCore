@@ -34,7 +34,7 @@ public sealed partial class OrdenPagoService
     {
         public string Codigo { get; set; } = ""; public string Nombre { get; set; } = ""; public string? Calle { get; set; } public string? Numero { get; set; }
         public string? Localidad { get; set; } public string? CPostal { get; set; } public string? Provincia { get; set; } public string? Telefono { get; set; }
-        public string? DocumentoTipo { get; set; } public string? DocumentoNumero { get; set; } public string? Iva { get; set; }
+        public string? DocumentoTipo { get; set; } public string? DocumentoNumero { get; set; } public string? Iva { get; set; } public string? Motivo { get; set; }
     }
     private sealed class CuentaMedio { public string Codigo { get; set; } = ""; public string Medio { get; set; } = ""; public string Vista { get; set; } = ""; public string Moneda { get; set; } = ""; }
     private sealed class Talonario { public int Numero { get; set; } public string Unidad { get; set; } = ""; public int Sucursal { get; set; } public int Proximo { get; set; } public int Desde { get; set; } public int Hasta { get; set; } }
@@ -74,7 +74,7 @@ public sealed partial class OrdenPagoService
 
         var proveedor = await cn.QuerySingleOrDefaultAsync<ProveedorFila>(Q("""
             SELECT TOP(1) LTRIM(RTRIM(CODIGO)) Codigo,LEFT(LTRIM(RTRIM(RAZON_SOCIAL)),50) Nombre,CALLE Calle,NUMERO Numero,LOCALIDAD Localidad,CPOSTAL CPostal,
-                PROVINCIA Provincia,TELEFONO Telefono,DOCUMENTO_TIPO DocumentoTipo,NUMERO_DOCUMENTO DocumentoNumero,IVA Iva
+                PROVINCIA Provincia,TELEFONO Telefono,DOCUMENTO_TIPO DocumentoTipo,NUMERO_DOCUMENTO DocumentoNumero,IVA Iva,IdMotivoCpra Motivo
             FROM dbo.Vt_Proveedores WHERE LTRIM(RTRIM(CODIGO))=@proveedor AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0;
             """, new { proveedor = s.Proveedor.Trim() })) ?? throw new InvalidOperationException("El proveedor no existe o está dado de baja.");
 
@@ -180,8 +180,13 @@ public sealed partial class OrdenPagoService
         var moneda = CodigoPk.Format("1", 4);
         var dinero = reparto.Dinero;
 
+        var motivo = string.IsNullOrWhiteSpace(proveedor.Motivo) ? null : CodigoPk.Format(proveedor.Motivo.Trim(), 4);
+        if (motivo is not null && await cn.ExecuteScalarAsync<int>(Q("""
+            IF OBJECT_ID(N'dbo.V_Ta_MotivoVta',N'U') IS NULL SELECT 0 ELSE SELECT COUNT(*) FROM dbo.V_Ta_MotivoVta WHERE LTRIM(RTRIM(IdMotivoVta))=@motivo;
+            """, new { motivo = motivo.Trim() })) == 0) motivo = null;
         var cabecera = new
         {
+            Motivo = motivo,
             s.Fecha, Tc = tc, Comprobante = comprobanteOrden, Cuenta = proveedor.Codigo, proveedor.Nombre, Total = dinero, Moneda = moneda, Unidad = unidadPk,
             Usuario = user.Nombre, Detalle = detalle, Suc = suc, Numero = numeroOrden.ToString("D8"),
             Domicilio = $"{proveedor.Calle?.Trim()} {proveedor.Numero?.Trim()}".Trim() is { Length: > 0 } dom ? (dom.Length > 50 ? dom[..50] : dom) : null,
@@ -191,10 +196,10 @@ public sealed partial class OrdenPagoService
             DocNumero = proveedor.DocumentoNumero?.Trim(), CondIva = string.IsNullOrWhiteSpace(proveedor.Iva) ? null : CodigoPk.Format(proveedor.Iva.Trim(), 4)
         };
         var id = await cn.ExecuteScalarAsync<int>(Q("""
-            INSERT INTO dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,FECHA,CUENTA,NOMBRE,DOMICILIO,LOCALIDAD,CODIGOPOSTAL,IDPROVINCIA,TELEFONO,
+            INSERT INTO dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,FECHA,FECHAESTINICIO,IDMOTIVOCPRAVTA,CUENTA,NOMBRE,DOMICILIO,LOCALIDAD,CODIGOPOSTAL,IDPROVINCIA,TELEFONO,
                 DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,COMENTARIOS,TCORIGEN,COMPROBANTEORIGEN,IMPORTE,MONEDA,FINALIZADA,IdReparto,
                 ImpDescuento1,RetGan_Importe,RetIBR_Importe,RetIVA_Importe,RetSUSS_Importe,SUCURSAL,NUMERO,LETRA,UNEGOCIO,UNEGOCIO_DESTINO,USUARIO,FechaHora_Grabacion)
-            VALUES(@Tc,@Comprobante,0,@Fecha,@Cuenta,@Nombre,@Domicilio,@Localidad,@CodigoPostal,@Provincia,@Telefono,
+            VALUES(@Tc,@Comprobante,0,@Fecha,@Fecha,@Motivo,@Cuenta,@Nombre,@Domicilio,@Localidad,@CodigoPostal,@Provincia,@Telefono,
                 @DocTipo,@DocNumero,@CondIva,@Detalle,@Tc,@Comprobante,@Total,@Moneda,1,0,
                 0,0,0,0,0,@Suc,@Numero,'X',@Unidad,@Unidad,@Usuario,GETDATE());
             SELECT CONVERT(int,SCOPE_IDENTITY());
@@ -209,15 +214,15 @@ public sealed partial class OrdenPagoService
             args.Add("Detalle", detalle); args.Add("Tc", tc); args.Add("Suc", suc); args.Add("Numero", numeroOrden.ToString("D8")); args.Add("Sentido", sentido);
             args.Add("Importe", importe); args.Add("Moneda", moneda); args.Add("Periodo", periodo.ToString()); args.Add("Total", dinero);
             args.Add("TipoReg", tipoRegTrim.PadRight(4)); args.Add("Usuario", user.Nombre); args.Add("Caja", caja); args.Add("Unidad", unidadPk);
-            args.Add("Vencimiento", m?.Linea.FechaCheque ?? s.Fecha);
+            args.Add("Vencimiento", m?.NroCheque is null ? null : m?.Linea.FechaCheque, DbType.DateTime);
             args.Add("CabCuenta", primera ? proveedor.Codigo : null); args.Add("CabNombre", primera ? proveedor.Nombre : null);
             args.Add("CabCuit", primera ? proveedor.DocumentoNumero?.Trim() : null); args.Add("CabCondIva", primera && !string.IsNullOrWhiteSpace(proveedor.Iva) ? CodigoPk.Format(proveedor.Iva.Trim(), 4) : null);
-            args.Add("Retenciones", primera ? 0m : null, DbType.Decimal);
+            args.Add("Retenciones", 0m, DbType.Decimal);
             var banco = m?.Cuenta.Medio is "DB" or "CH";
             args.Add("IdBanco", m?.IdBanco); args.Add("NroCheque", m?.NroCheque);
             args.Add("Clearing", m?.NroCheque is null ? null : m?.Linea.Clearing, DbType.Int32);
             args.Add("ChPropio", m?.Cuenta.Medio == "CH" ? 1 : 0, DbType.Int32);
-            args.Add("Origen", banco ? m?.Cuenta.Codigo : null); args.Add("Destino", banco ? proveedor.Codigo : null);
+            args.Add("Origen", !banco ? null : m?.Cuenta.Medio == "CH" ? m?.Cuenta.Codigo : "-"); args.Add("Destino", banco ? proveedor.Codigo : null);
             await cn.ExecuteAsync(Q("""
                 INSERT INTO dbo.MV_ASIENTOS(CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO],FECHA,DETALLE,TC,SUCURSAL,NUMERO,LETRA,[DEBE-HABER],IMPORTE,MONEDA,COTIZACION,
                     PERIODO,CABIMPORTE,TIPO_REG,CONTABILIZADO,FechaHora_Grabacion,FechaSubdiario,USUARIO_LOGEADO,IDCAJAS,UNEGOCIO,VENCIMIENTO,

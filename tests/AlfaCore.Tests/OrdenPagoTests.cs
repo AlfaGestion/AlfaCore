@@ -4,7 +4,10 @@ using AlfaCore.Models;
 using AlfaCore.Services;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Playwright;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace AlfaCore.Tests;
 
@@ -18,7 +21,7 @@ public sealed class OrdenPagoSqlFactAttribute : FactAttribute
 }
 
 [Collection("Conciliacion SQL")]
-public sealed class OrdenPagoTests
+public sealed class OrdenPagoTests(ITestOutputHelper output)
 {
     private static OrdenPagoClave K(string tc, string num) => new(tc, "0001", num.PadLeft(8, '0'), "X");
 
@@ -112,7 +115,7 @@ public sealed class OrdenPagoTests
     private static (OrdenPagoService Service, string Connection) Servicio(string usuario)
     {
         var connection = Environment.GetEnvironmentVariable("ORDENPAGO_TEST_SQL")!;
-        Assert.Contains(new SqlConnectionStringBuilder(connection).InitialCatalog, new[] { "ALFANET_DEMO", "ALFANET2007_PRUEBAS" });
+        Assert.Contains(new SqlConnectionStringBuilder(connection).InitialCatalog, new[] { "ALFANET_DEMO", "ALFANET2007_PRUEBAS", "PRUEBAS02122025" });
         using var runtime = new CargaComprobantesArcaRuntime(); var sesion = new SessionDto();
         var sessions = Proxy<ISessionService>((m, _) => m.Name switch { "GetConnectionString" => connection, "GetActiveSession" => sesion, _ => null });
         var users = Proxy<IAppUserSessionService>((m, _) => m.Name switch { "get_IsAuthenticated" => true, "IsAuthorizedForSession" => true, "GetCurrentUserName" => usuario, _ => null });
@@ -263,8 +266,8 @@ public sealed class OrdenPagoTests
         OrdenPagoSolicitud Nueva(string serie, string nro) => new()
         {
             Operacion = Guid.NewGuid(), Proveedor = prov!, Fecha = DateTime.Today,
-            Comprobantes = [new(factura.Clave, 1)],
-            Medios = [new() { Cuenta = cheque.Cuenta, Importe = 1, Serie = serie, NumeroCheque = nro, FechaCheque = DateTime.Today.AddDays(30), Clearing = 24 }]
+            Comprobantes = [new(factura.Clave, Math.Min(1m, factura.Saldo))],
+            Medios = [new() { Cuenta = cheque.Cuenta, Importe = Math.Min(1m, factura.Saldo), Serie = serie, NumeroCheque = nro, FechaCheque = DateTime.Today.AddDays(30), Clearing = 24 }]
         };
 
         using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
@@ -286,5 +289,99 @@ public sealed class OrdenPagoTests
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.GrabarEnTransaccionAsync(cn, tx, Nueva(chequera.Serie, numero), CancellationToken.None));
         }
         finally { tx.Rollback(); }
+    }
+
+    public sealed class CommitFactAttribute : FactAttribute
+    {
+        public CommitFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ORDENPAGO_TEST_SQL")) || Environment.GetEnvironmentVariable("ORDENPAGO_TEST_COMMIT") != "1")
+                Skip = "Graba de verdad: requiere ORDENPAGO_TEST_SQL y ORDENPAGO_TEST_COMMIT=1 (solo en una base de pruebas).";
+        }
+    }
+
+    /// <summary>Graba órdenes REALES (con commit) en una base de pruebas para revisarlas en Alfa Gestión y comparar con el legacy.</summary>
+    [CommitFact]
+    public async Task GrabaDeVerdadOpgCreditoProformaYChequePropioEnBaseDePruebas()
+    {
+        var (service, connection) = Servicio(Environment.GetEnvironmentVariable("ORDENPAGO_TEST_USER") ?? "Administrador");
+        Assert.NotEqual("ALFANET2007", new SqlConnectionStringBuilder(connection).InitialCatalog);
+        await using var cn = new SqlConnection(connection); await cn.OpenAsync();
+        async Task<OrdenPagoResultado> Grabar(OrdenPagoSolicitud s) { var r = await service.GrabarAsync(s); output.WriteLine($"{r.Tc} {r.Comprobante} importe {r.Importe:N2} asiento {r.NumeroAsiento} anticipo {r.Anticipo:N2}"); return r; }
+
+        // A) Orden de pago exacta en efectivo.
+        var prepA = await service.PrepararAsync("211010066", false);
+        var fa = prepA.Comprobantes.First(d => d.Tc == "FCC" && d.Seleccionable);
+        var ef = prepA.Medios.First(m => m.Tipo == "EF").Cuenta;
+        var a = await Grabar(new() { Operacion = Guid.NewGuid(), Proveedor = "211010066", Fecha = DateTime.Today, Comprobantes = [new(fa.Clave, fa.Saldo)], Medios = [new() { Cuenta = ef, Importe = fa.Saldo }] });
+        Assert.Equal(0, (await service.PrepararAsync("211010066", false)).Comprobantes.Count(d => d.Clave == fa.Clave));
+
+        // B) Pago de una factura con una NC del proveedor + efectivo por el resto.
+        var prepB = await service.PrepararAsync("211010103", false);
+        var nc = prepB.Creditos.First(d => d.Tc == "NCC" && d.Seleccionable);
+        var fb = prepB.Comprobantes.First(d => d.Tc == "FCC" && d.Seleccionable && d.Saldo > nc.Saldo);
+        var b = await Grabar(new()
+        {
+            Operacion = Guid.NewGuid(), Proveedor = "211010103", Fecha = DateTime.Today, Comprobantes = [new(fb.Clave, fb.Saldo)], Creditos = [new(nc.Clave, nc.Saldo)],
+            Medios = [new() { Cuenta = ef, Importe = fb.Saldo - nc.Saldo }]
+        });
+        var despuesB = await service.PrepararAsync("211010103", false);
+        Assert.DoesNotContain(despuesB.Creditos, d => d.Clave == nc.Clave); Assert.DoesNotContain(despuesB.Comprobantes, d => d.Clave == fb.Clave);
+
+        // C) Pago proforma (PGFP) de una FPC.
+        var prepC = await service.PrepararAsync("211014004", true);
+        Assert.True(prepC.PuedeProforma); var fc = prepC.Comprobantes.First(d => d.Tc == "FPC" && d.Seleccionable);
+        var c = await Grabar(new() { Operacion = Guid.NewGuid(), Proveedor = "211014004", Fecha = DateTime.Today, Proforma = true, Comprobantes = [new(fc.Clave, fc.Saldo)], Medios = [new() { Cuenta = ef, Importe = fc.Saldo }] });
+        Assert.Equal("PGFP", c.Tc);
+        Assert.DoesNotContain((await service.PrepararAsync("211014004", true)).Comprobantes, d => d.Clave == fc.Clave);
+
+        // D) Pago parcial con cheque propio de una chequera.
+        var prepD = await service.PrepararAsync("211010160", false);
+        var ch = prepD.Medios.First(m => m.Tipo == "CH"); var chequera = prepD.Chequeras.First(x => x.Cuenta == ch.Cuenta);
+        var fd = prepD.Comprobantes.First(d => d.Tc == "FCC" && d.Seleccionable);
+        var nro = (await cn.ExecuteScalarAsync<long?>("SELECT MAX(CONVERT(bigint,SUBSTRING(NroComprobanteBancario,3,20))) FROM dbo.MV_ASIENTOS WHERE ChPropio=1 AND NroComprobanteBancario LIKE @S+'-%' AND CUENTA=@C", new { S = chequera.Serie, C = ch.Cuenta }) ?? chequera.Desde - 1) + 1;
+        var d = await Grabar(new()
+        {
+            Operacion = Guid.NewGuid(), Proveedor = "211010160", Fecha = DateTime.Today, Comprobantes = [new(fd.Clave, 1000)],
+            Medios = [new() { Cuenta = ch.Cuenta, Importe = 1000, Serie = chequera.Serie, NumeroCheque = Math.Max(nro, chequera.Desde).ToString(), FechaCheque = DateTime.Today.AddDays(30), Clearing = 24 }]
+        });
+        output.WriteLine($"IDS: {a.Comprobante} {b.Comprobante} {c.Comprobante} {d.Comprobante}");
+    }
+
+    /// <summary>Lee de la base las órdenes ya grabadas (viewer real), arma el HTML del PDF de pagos y lo guarda para revisarlo.</summary>
+    [CommitFact]
+    public async Task ElPdfDeLasOrdenesGrabadasMuestraFacturasMediosYTitulo()
+    {
+        var connection = Environment.GetEnvironmentVariable("ORDENPAGO_TEST_SQL")!;
+        var dir = Environment.GetEnvironmentVariable("ORDENPAGO_TEST_HTML_DIR");
+        using var runtime = new CargaComprobantesArcaRuntime(); var sesion = new SessionDto();
+        var sessions = Proxy<ISessionService>((m, _) => m.Name switch { "GetConnectionString" => connection, "GetActiveSession" => sesion, _ => null });
+        var visor = new ComprobanteViewerService(new ConfigurationBuilder().Build(), sessions, runtime.Events);
+        await using var cn = new SqlConnection(connection); await cn.OpenAsync();
+        var ultimas = (await cn.QueryAsync<(string Tc, string Cpte, string Cuenta, string Nombre, decimal Importe, DateTime Fecha)>("""
+            SELECT TOP 4 LTRIM(RTRIM(c.TC)),c.IDCOMPROBANTE,LTRIM(RTRIM(c.CUENTA)),LTRIM(RTRIM(c.NOMBRE)),c.IMPORTE,c.FECHA
+            FROM dbo.V_MV_CPTE c JOIN dbo.ALFACORE_PAGO_OPERACION o ON o.Comprobante=c.IDCOMPROBANTE AND LTRIM(RTRIM(o.Tc))=LTRIM(RTRIM(c.TC)) ORDER BY o.FechaHora DESC
+            """)).ToList();
+        Assert.NotEmpty(ultimas);
+        using var playwright = dir is null ? null : await Playwright.CreateAsync();
+        foreach (var o in ultimas)
+        {
+            var ficha = new CompraDocumentoMailService.Ficha { Tc = o.Tc, Comprobante = o.Cpte, Fecha = o.Fecha, Cuenta = o.Cuenta, Nombre = o.Nombre, Importe = o.Importe };
+            var dto = await CompraDocumentoMailService.DetallePagoAsync(cn, visor, ficha, CancellationToken.None);
+            Assert.NotEmpty(dto.AplicaA);                                   // comprobantes cancelados
+            Assert.Contains(dto.Asientos, a => a.Haber > 0);                 // medios de pago
+            var html = CompraDocumentoMailService.HtmlPago(new EmpresaDocumentData { Nombre = "ALFA NET", Cuit = "30-11111111-1", Domicilio = "Calle 1" }, ficha, [], dto);
+            Assert.Contains(o.Tc == "PGFP" ? "PAGO PROFORMA" : "ORDEN DE PAGO", html);
+            Assert.Contains("Comprobantes cancelados", html); Assert.Contains("Medios de pago", html);
+            output.WriteLine($"{o.Tc} {o.Cpte}: {dto.AplicaA.Count} aplicaciones, {dto.Asientos.Count} líneas de asiento");
+            if (dir is not null)
+            {
+                Directory.CreateDirectory(dir);
+                var archivo = Path.Combine(dir, $"{o.Tc}-{o.Cpte}.png");
+                await using var browser = await playwright!.Chromium.LaunchAsync(new() { Headless = true, ExecutablePath = CargaComprobantesBrowserFactAttribute.BrowserPath });
+                var page = await browser.NewPageAsync(); await page.SetViewportSizeAsync(900, 900);
+                await page.SetContentAsync(html); await page.ScreenshotAsync(new() { Path = archivo, FullPage = true });
+            }
+        }
     }
 }

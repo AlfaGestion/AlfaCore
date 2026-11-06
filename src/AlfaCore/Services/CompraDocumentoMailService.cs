@@ -79,6 +79,25 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
             return await ArmarPdfAsync(cn, ficha, certificado, ct);
         }, ct);
 
+    /// <summary>
+    /// Comprobantes cancelados (MV_APLICACION, por la orden/pago que los imprime: incluye lo cancelado con créditos) y medios de pago (asiento)
+    /// del pago. Los pagos están en V_MV_CPTE aunque su sistema sea Compras, por eso no se piden al visor de comprobantes.
+    /// </summary>
+    internal static async Task<ComprobanteViewerDto> DetallePagoAsync(SqlConnection cn, IComprobanteViewerService visor, Ficha ficha, CancellationToken ct)
+    {
+        var aplica = (await cn.QueryAsync<ComprobanteAplicacionDto>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(ap.TCO_ORIGEN)) TcRelacionado, ap.IDComprobante_Origen IdComprobanteRelacionado,
+                MIN(f.FECHA) FechaRelacionado, SUM(ap.IMPORTE) ImporteAplicado
+            FROM dbo.MV_APLICACION ap
+            LEFT JOIN dbo.C_MV_CPTE f ON f.TC = ap.TCO_ORIGEN AND f.IDCOMPROBANTE = ap.IDComprobante_Origen
+            WHERE (LTRIM(RTRIM(ap.TC_PRINT)) = @tc AND ap.IDCOMPROBANTE_PRINT = @id) OR (LTRIM(RTRIM(ap.TC)) = @tc AND ap.IDCOMPROBANTE = @id)
+            GROUP BY LTRIM(RTRIM(ap.TCO_ORIGEN)), ap.IDComprobante_Origen
+            ORDER BY MIN(f.FECHA), ap.IDComprobante_Origen;
+            """, new { tc = ficha.Tc, id = ficha.Comprobante }, cancellationToken: ct))).ToList();
+        var asientos = await visor.GetAsientosAsync(ficha.Tc, ficha.Comprobante, ct);
+        return new ComprobanteViewerDto { AplicaA = aplica, Asientos = asientos };
+    }
+
     private async Task<byte[]> ArmarPdfAsync(SqlConnection cn, Ficha ficha, string certificado, CancellationToken ct)
     {
         var (empresa, _, _, _, _) = await FacturaDocumentService.BuildEmpresaAsync(cn, null, ficha.Unidad.Length == 0 ? null : ficha.Unidad, ct);
@@ -87,7 +106,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
             html = HtmlCertificado(empresa, await LeerRetencionAsync(cn, ficha, certificado, ct));
         else if (TiposPago.Contains(ficha.Tc))
         {
-            var dto = await visor.GetAsync(ficha.Tc, ficha.Comprobante, 0, ct);
+            var dto = await DetallePagoAsync(cn, visor, ficha, ct);
             html = HtmlPago(empresa, ficha, await LeerRetencionesAsync(cn, ficha, ct), dto);
         }
         else
@@ -460,7 +479,11 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                   .Append("</td><td class=\"n\">").Append(M(r.Importe)).Append("</td></tr>");
             sb.Append("</tbody></table>");
         }
-        sb.Append("<table class=\"tot\"><tr><td>Total del pago</td><td class=\"n\">").Append(M(f.Importe)).Append("</td></tr></table>");
+        // Lo cancelado por encima de lo pagado y retenido se canceló con créditos (notas de crédito, anticipos) aplicados a esta orden.
+        var conCreditos = (dto?.AplicaA.Sum(a => a.ImporteAplicado) ?? 0m) - f.Importe - retenciones.Sum(r => r.Importe);
+        sb.Append("<table class=\"tot\">");
+        if (conCreditos > 0.005m) sb.Append("<tr><td>Cancelado con créditos y anticipos aplicados</td><td class=\"n\">").Append(M(conCreditos)).Append("</td></tr>");
+        sb.Append("<tr><td>Total del pago</td><td class=\"n\">").Append(M(f.Importe)).Append("</td></tr></table>");
         return Documento(sb.ToString());
     }
 

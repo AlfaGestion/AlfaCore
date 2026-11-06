@@ -2,7 +2,7 @@
 
 ## Estado
 
-v1 implementada el 06/11/2026 (fases 0-3 y 5). Pendiente: impresión PDF (fase 4) y recorrido de la pantalla en navegador con sesión real.
+v1 implementada el 06/11/2026 (fases 0-5). Pendiente: recorrido de la pantalla en navegador con sesión real.
 Verificación de base: ALFANET_DEMO en SERVER-ALFAVB6 (solo lectura + ensayos con rollback).
 
 Origen legacy: `Z:\NETSISTEMAS\SISTEMAS\NwSistemas\NMC_CONT\PAGOS.vbp`, formulario de arranque `FrmMvPagos.frm`. Líneas citadas de esa fuente a esta fecha.
@@ -75,3 +75,13 @@ No cubierto todavía: pago real de una `FPC` (no hay proformas de compra cargada
 - Fase 4: PDF de la orden de pago (reporte legacy `OPAGO`, `OPAGO-X.rpt`).
 - Verificar la pantalla de punta a punta con sesión (AlfaDesign, teclado, 390/1024/1440 px).
 - v2: retenciones (GAN, IIBB, IVA, SUSS; `PGFP` nunca retiene), OPG sin medios y su liquidación, descuentos, centros de costo, otras monedas, cheques de terceros, tarjetas.
+
+## Verificación con datos reales (PRUEBAS02122025, 06/11/2026)
+
+Base con 5.757 OPG, 3.206 PG y 1.259 PGFP reales. Se comparó una OPG real con asiento contra lo que graba el servicio y se alineó:
+`VENCIMIENTO` del asiento solo en cheques; `CuentaOrigen='-'` en transferencias (cheque propio: la cuenta del medio); `LIVA_Ret_*` en 0 en todas las líneas; cabecera con `FECHAESTINICIO=FECHA` e `IDMOTIVOCPRAVTA` del proveedor (si existe en `V_Ta_MotivoVta`).
+Dos talonarios de OPG (general sucursal 0001 y de la unidad sucursal 0003): se usa el de la unidad, como el legacy. En los PGFP reales hay dos poblaciones: con `Finalizada=1`/`TCOrigen=PGFP` (vienen de la orden de pago, como los de este módulo) y con `Finalizada=0` (pago directo).
+
+Se grabaron de verdad en esa base (ensayo `GrabaDeVerdadOpgCreditoProformaYChequePropioEnBaseDePruebas`, solo con `ORDENPAGO_TEST_COMMIT=1`): OPG exacta en efectivo, OPG con NC aplicada, **PGFP de una FPC** y OPG con cheque propio. Cabecera, asiento (balanceado), aplicaciones, saldos, contadores y journal coinciden con el patrón real. El update `2026-11-06-003` también se aplicó ahí.
+
+PDF: el generador de pagos nunca mostraba «Comprobantes cancelados» ni los medios, porque dependía de datos que el visor de comprobantes no completa (`AplicaA`, `Asientos`) y de que los pagos figuran como «Compras» aunque se graban en `V_MV_CPTE`. Ahora `DetallePagoAsync` los arma desde `MV_APLICACION` y el asiento; con créditos aplicados agrega la línea «Cancelado con créditos y anticipos aplicados». Las capturas de OPG y PGFP salen correctas.
