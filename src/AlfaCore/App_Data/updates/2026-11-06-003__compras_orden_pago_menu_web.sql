@@ -38,14 +38,15 @@ IF NOT EXISTS (SELECT 1 FROM dbo.ALFACORE_MENU_WEB WHERE Menu = N''ALFA'' AND Cl
     INSERT INTO dbo.ALFACORE_MENU_WEB (Menu, Clave, RutaWeb, Componente, Icono, HabilitadoWeb, OrdenWeb, EsFavoritoDefault, NombreWeb)
     VALUES (N''ALFA'', N''D509012'', N''/compras/pagos/orden-de-pago'', N''OrdenPago'', N''bi-cash-coin'', 1, 50404, 0, N''Orden de Pago'');';
 
--- 5. Ruta, icono, nombre y padre si la fila ya existía
+-- 5. Ruta, icono, nombre y padre si la fila ya existía (cuelga de D5090 si está en el menú web; si no, de Compras D50)
 EXEC sys.sp_executesql N'
 UPDATE dbo.ALFACORE_MENU_WEB
 SET RutaWeb = N''/compras/pagos/orden-de-pago'', Componente = N''OrdenPago'', Icono = N''bi-cash-coin'',
     NombreWeb = N''Orden de Pago'', HabilitadoWeb = 1
 WHERE Clave = N''D509012'';
-UPDATE dbo.ALFACORE_MENU_WEB SET PadreClave = N''D5090''
-WHERE Clave = N''D509012'' AND EXISTS (SELECT 1 FROM dbo.ALFACORE_MENU_WEB p WHERE p.Clave = N''D5090'');';
+UPDATE dbo.ALFACORE_MENU_WEB
+SET PadreClave = CASE WHEN EXISTS (SELECT 1 FROM dbo.ALFACORE_MENU_WEB p WHERE p.Clave = N''D5090'') THEN N''D5090'' ELSE N''D50'' END
+WHERE Clave = N''D509012'' AND EXISTS (SELECT 1 FROM dbo.ALFACORE_MENU_WEB p WHERE p.Clave IN (N''D5090'', N''D50''));';
 
 -- 6. Permisos: solo usuarios con restricciones web que ya tenían D509012 en el legacy
 IF OBJECT_ID(N'dbo.ALFACORE_TAREAS_WEB', N'U') IS NOT NULL AND OBJECT_ID(N'dbo.TA_TAREAS', N'U') IS NOT NULL
