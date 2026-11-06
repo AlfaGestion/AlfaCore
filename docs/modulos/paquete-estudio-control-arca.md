@@ -42,3 +42,15 @@ El portal del estudio ya disponía de la ruta y el permiso D9832 en los perfiles
 Ejecutar las pruebas de `LibroIva`, `EstudioPaquete`, `ControlArca`, `EstudioContable` y `AsientosTests`. La prueba de FERNANDEZF2 requiere `ALFACORE_TEST_SQL` y `ALFACORE_IVA_FERNANDEZF2=1`; no guarda credenciales en el repositorio. Comprueba los dos controles pendientes cuando no hay archivos disponibles en el entorno de prueba, las tres compras duplicadas, las dos diferencias de totales y los seis libros en ambos formatos.
 
 La generación registra la fecha del último paquete y su auditoría; los comprobantes permanecen bajo las acciones de sus módulos de origen. Ejecutar también `python tools/catalogo/check_catalogo.py`.
+
+## Identidad de compras en el visor y la importación
+
+El libro pasa `Cuenta` mediante `ComprobanteVerAccion`, `ComprobanteVerService.Pedido` y `ComprobanteVerHost` hasta `ComprobanteViewer`. La cuenta participa de la clave de recarga del componente y se conserva al abrir otra pestaña y al navegar el historial. `ComprobanteViewerPage` admite el parámetro de consulta `cuenta`.
+
+`IComprobanteViewerService.GetAsync` y `GetAsientosAsync` incorporan una cuenta opcional, conservando las llamadas anteriores. La rama de compras filtra cabecera, insumos, aplicaciones y acciones por cuenta. El asiento completo se delimita con una cabecera de la cuenta seleccionada y la clave contable completa (período, mes operativo, número de asiento y tipo de registro); filtrar las líneas solamente por CUENTA perdería IVA y gastos.
+
+`ControlArcaImportacionService.CuentaExistenteAsync` busca la identidad fiscal en `C_MV_CPTE.DOCUMENTONUMERO` y `MV_ASIENTOS.CABCUIT`, normalizando guiones, espacios y puntos. El CUIT del maestro es una alternativa solo cuando el documento del movimiento está vacío. Se mantiene también la protección por cuenta y clave de comprobante. No se filtra por mes ni unidad, porque mover el comprobante de cuenta, unidad o período no habilita reimportarlo.
+
+El control funciona sin proveedor previamente creado y se ejecuta tanto en la revisión como durante la grabación, bajo el bloqueo de compras existente. Los errores SQL pasan por el logging central. No se alteran duplicados históricos.
+
+Archivos de esta corrección: `LibroIvaPanel.razor`, `ComprobanteVerAccion.razor`, `ComprobanteVerHost.razor`, `ComprobanteViewer.razor`, `ComprobanteViewerPage.razor`, `ComprobanteVerService.cs`, `IComprobanteViewerService.cs`, `ComprobanteViewerService.cs`, `ControlArcaImportacionService.cs`, `tests/AlfaCore.Tests/ComprasIdentidadFiscalTests.cs` y el manual de contabilidad. Las pruebas incluyen propagación de la cuenta al visor/asiento y consultas de solo lectura de dos cuentas con la misma factura en FERNANDEZF2.

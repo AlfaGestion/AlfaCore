@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AlfaCore</AssemblyName>
     <UserSecretsId>AlfaCore-Development</UserSecretsId>
-    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**;App_Data\servidor\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**;App_Data\servidor\**;App_Data\scripts\arca\venv\**;App_Data\scripts\arca\python\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../docs/modulos/ventas-carga-comprobantes/configuracion-vb6.csv" LogicalName="AlfaCore.Ventas.ConfiguracionVb6.csv" />

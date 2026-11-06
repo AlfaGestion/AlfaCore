@@ -44,10 +44,17 @@ public sealed class ArcaServidorService(IWebHostEnvironment environment, IAppUse
     {
         var c = Leer();
         var script = c.Script.Length > 0 ? c.Script : Path.Combine(Propio, "arca_comprobantes.py");
-        var python = c.PythonExe.Length > 0 ? c.PythonExe : Path.Combine(Propio, "python", "python.exe");
+        var python = c.PythonExe.Length > 0 ? c.PythonExe : PythonIncluido(Propio);
         var raiz = c.Carpeta.Length > 0 ? c.Carpeta : Path.Combine(environment.ContentRootPath, "App_Data", "arca_descargas");
         return new(script, File.Exists(script), python, File.Exists(python), idBase > 0 ? Path.Combine(raiz, $"base-{idBase}") : raiz,
             c.RetencionMeses, c.DiagnosticoDias);
+    }
+
+    internal static string PythonIncluido(string carpeta)
+    {
+        var portable = Path.Combine(carpeta, "python", "python.exe");
+        var entorno = Path.Combine(carpeta, "venv", "Scripts", "python.exe");
+        return File.Exists(portable) ? portable : File.Exists(entorno) ? entorno : portable;
     }
 
     public Task<ArcaServidorConfiguracion> ObtenerAsync(CancellationToken ct = default)

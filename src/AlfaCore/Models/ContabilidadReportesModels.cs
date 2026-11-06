@@ -65,7 +65,7 @@ public sealed class SumasSaldosFila
     public int Agrupadas { get; set; }
 }
 
-public sealed record AsientoDesbalanceado(int MesOperativo, int Numero, DateTime Fecha, string Tc, string Comprobante, string Detalle, int Renglones, decimal Diferencia);
+public sealed record AsientoDesbalanceado(int MesOperativo, int Numero, DateTime Fecha, string Tc, string Comprobante, string Detalle, int Renglones, decimal Diferencia, string Subdiario = "");
 
 public sealed class SumasSaldosResultado
 {

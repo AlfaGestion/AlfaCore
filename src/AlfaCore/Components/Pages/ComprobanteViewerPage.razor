@@ -12,6 +12,7 @@
     <ComprobanteViewer Tc="@Tc"
                        IdComprobante="@IdComprobante"
                        IdComplemento="@IdComplemento"
+                       Cuenta="@Cuenta"
                        ReturnUrl="@ReturnUrl"
                        ModoDetalleCompleto="true" />
 </div>
@@ -19,6 +20,7 @@
 @code {
     [Parameter] public string Tc { get; set; } = string.Empty;
     [Parameter] public string IdComprobante { get; set; } = string.Empty;
+    [SupplyParameterFromQuery] public string? Cuenta { get; set; }
     [SupplyParameterFromQuery] public int IdComplemento { get; set; }
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
 

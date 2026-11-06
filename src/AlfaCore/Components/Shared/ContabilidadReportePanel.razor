@@ -34,11 +34,11 @@
                     @s.Desbalanceados.Count asiento(s) del período no balancean: diferencia total @Moneda(s.Desbalanceados.Sum(a => a.Diferencia)). Tocá para ver cuáles.</summary>
                 <div class="ctr-tabla__scroll ctr-tabla__scroll--chica">
                     <table class="ctr-tabla">
-                        <thead><tr><th>Fecha</th><th>Asiento</th><th>Comprobante</th><th>Detalle</th><th class="n">Renglones</th><th class="n">Diferencia</th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>Asiento</th><th>Subdiario</th><th>Comprobante</th><th>Detalle</th><th class="n">Renglones</th><th class="n">Diferencia</th></tr></thead>
                         <tbody>
                         @foreach (var a in s.Desbalanceados)
                         {
-                            <tr><td>@a.Fecha.ToString("dd/MM/yyyy")</td><td>@a.MesOperativo-@a.Numero</td><td>@a.Tc @a.Comprobante <ComprobanteVerAccion Tc="@a.Tc" Comprobante="@a.Comprobante" /></td><td>@a.Detalle</td>
+                            <tr><td>@a.Fecha.ToString("dd/MM/yyyy")</td><td>@a.MesOperativo-@a.Numero</td><td>@(a.Subdiario.Length == 0 || a.Subdiario == "ÿRS" ? "Diario general" : a.Subdiario)</td><td>@a.Tc @a.Comprobante <ComprobanteVerAccion Tc="@a.Tc" Comprobante="@a.Comprobante" /></td><td>@a.Detalle</td>
                                 <td class="n">@a.Renglones</td><td class="n">@M(a.Diferencia)</td></tr>
                         }
                         </tbody>

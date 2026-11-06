@@ -6,15 +6,15 @@ namespace AlfaCore.Services;
 /// </summary>
 public sealed class ComprobanteVerService
 {
-    public sealed record Pedido(string Tc, string Comprobante, int IdComplemento);
+    public sealed record Pedido(string Tc, string Comprobante, int IdComplemento, string Cuenta = "");
 
     public Pedido? Actual { get; private set; }
     public bool HayHost => Changed is not null;
     public event Action? Changed;
 
-    public void Abrir(string tc, string comprobante, int idComplemento = 0)
+    public void Abrir(string tc, string comprobante, int idComplemento = 0, string? cuenta = null)
     {
-        Actual = new Pedido(tc.Trim(), comprobante.Trim(), idComplemento);
+        Actual = new Pedido(tc.Trim(), comprobante.Trim(), idComplemento, cuenta?.Trim() ?? "");
         Changed?.Invoke();
     }
 

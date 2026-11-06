@@ -297,6 +297,7 @@
 @code {
     [Parameter] public string Tc { get; set; } = string.Empty;
     [Parameter] public string IdComprobante { get; set; } = string.Empty;
+    [Parameter] public string? Cuenta { get; set; }
     [Parameter] public int IdComplemento { get; set; }
     [Parameter] public string? ReturnUrl { get; set; }
     [Parameter] public bool ModoDetalleCompleto { get; set; }
@@ -338,21 +339,21 @@
             {_dto=consulta;_asientos=consulta.Asientos;_loading=false;_feedback=null;_history.Clear();_asientoModalAbierto=AbrirAsientoInicial;}
             return;
         }
-        var nextKey = BuildKey(Tc, IdComprobante, IdComplemento);
+        var nextKey = BuildKey(Tc, IdComprobante, IdComplemento, Cuenta);
         if (_routeKey == nextKey)
             return;
 
         _routeKey = nextKey;
         _history.Clear();
-        await LoadAsync(Tc, IdComprobante, IdComplemento, false);
+        await LoadAsync(Tc, IdComprobante, IdComplemento, false, Cuenta);
     }
 
-    private async Task LoadAsync(string tc, string idComprobante, int idComplemento, bool pushCurrent)
+    private async Task LoadAsync(string tc, string idComprobante, int idComplemento, bool pushCurrent, string? cuenta = null)
     {
         if(DatosConsulta is not null)return;
         if (_dto?.Cabecera is not null && pushCurrent)
         {
-            _history.Push(new ViewerNavItem(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento));
+            _history.Push(new ViewerNavItem(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento, _dto.Cabecera.Cuenta));
         }
 
         _loading = true;
@@ -361,11 +362,11 @@
 
         var brandingTask = CompanyBrandingSvc.GetAsync();
         var asientoTask = EsCobranza(tc)
-            ? ComprobanteViewerSvc.GetAsientosAsync(tc, idComprobante)
+            ? ComprobanteViewerSvc.GetAsientosAsync(tc, idComprobante, cuenta: cuenta)
             : Task.FromResult<IReadOnlyList<ComprobanteAsientoDto>>([]);
 
         var result = await UiOps.RunAsync(
-            () => ComprobanteViewerSvc.GetAsync(tc, idComprobante, idComplemento),
+            () => ComprobanteViewerSvc.GetAsync(tc, idComprobante, idComplemento, cuenta: cuenta),
             "No se pudo cargar el comprobante.");
 
         if (!result.Success)
@@ -410,12 +411,12 @@
             return;
 
         var previous = _history.Pop();
-        await LoadAsync(previous.Tc, previous.IdComprobante, previous.IdComplemento, false);
+        await LoadAsync(previous.Tc, previous.IdComprobante, previous.IdComplemento, false, previous.Cuenta);
     }
 
     private async Task OpenRelacionadoAsync(string tc, string idComprobante, int idComplemento)
     {
-        await LoadAsync(tc, idComprobante, idComplemento, true);
+        await LoadAsync(tc, idComprobante, idComplemento, true, _dto?.Cabecera?.SistemaOrigen == "COMPRAS" ? _dto.Cabecera.Cuenta : null);
     }
 
     private async Task MostrarAsientoAsync()
@@ -432,7 +433,7 @@
         _asientoError = null;
         try
         {
-            _asientos = await ComprobanteViewerSvc.GetAsientosAsync(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante);
+            _asientos = await ComprobanteViewerSvc.GetAsientosAsync(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, cuenta: _dto.Cabecera.SistemaOrigen == "COMPRAS" ? _dto.Cabecera.Cuenta : null);
         }
         catch (Exception ex)
         {
@@ -582,6 +583,7 @@
     private string BuildPageUrl(string tc, string idComprobante, int idComplemento)
     {
         var path = RouteCtx.BuildRoute($"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?idComplemento={idComplemento}");
+        if (_dto?.Cabecera?.SistemaOrigen == "COMPRAS") path += $"&cuenta={Uri.EscapeDataString(_dto.Cabecera.Cuenta.Trim())}";
         if (!string.IsNullOrWhiteSpace(ReturnUrl))
             path += $"&returnUrl={Uri.EscapeDataString(ReturnUrl)}";
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
@@ -592,8 +594,8 @@
     private string BuildDocumentoUrl(ComprobanteDocumentoDto item)
         => $"/api/comprobantes/{Uri.EscapeDataString(_dto!.Cabecera!.Tc)}/{Uri.EscapeDataString(_dto.Cabecera.IdComprobante)}/documentos?idComplemento={_dto.Cabecera.IdComplemento}&documento={Uri.EscapeDataString(item.Documento)}";
 
-    private static string BuildKey(string tc, string idComprobante, int idComplemento)
-        => $"{tc.Trim().ToUpperInvariant()}|{idComprobante.Trim().ToUpperInvariant()}|{idComplemento}";
+    private static string BuildKey(string tc, string idComprobante, int idComplemento, string? cuenta)
+        => $"{tc.Trim().ToUpperInvariant()}|{idComprobante.Trim().ToUpperInvariant()}|{idComplemento}|{cuenta?.Trim()}";
 
     private RenderFragment RenderHeaderField(string label, string value) => @<div class="comprobante-viewer__header-field">
         <span class="comprobante-viewer__header-label">@label</span>
@@ -1174,5 +1176,5 @@
         </table>
     </div>;
 
-    private sealed record ViewerNavItem(string Tc, string IdComprobante, int IdComplemento);
+    private sealed record ViewerNavItem(string Tc, string IdComprobante, int IdComplemento, string Cuenta);
 }

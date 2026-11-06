@@ -40,9 +40,13 @@ public sealed partial class ContabilidadReportesService
         var sub = (f.Subdiario ?? string.Empty).Trim();
         if (subdiarios && sub.Length == 0) throw new ReglaContableException("Elegí el subdiario.");
         // TIPO_REG: código del subdiario; vacío (o el resumen «ÿRS») = diario general.
-        // La marca va por renglón: un asiento es del subdiario si alguno de sus renglones lo es, y del diario
-        // general si ninguno tiene subdiario.
-        const string mismoAsiento = "s.PERIODO = a.PERIODO AND s.MES_OPERATIVO = a.MES_OPERATIVO AND s.[NUMERO ASIENTO] = a.[NUMERO ASIENTO]";
+        // El legacy reutiliza mes y número entre comprobantes: conservar la identidad del movimiento.
+        var mismoAsiento = $"""
+            s.PERIODO = a.PERIODO AND s.MES_OPERATIVO = a.MES_OPERATIVO
+            AND (({EsComprobanteContableSql}) OR s.[NUMERO ASIENTO] = a.[NUMERO ASIENTO])
+            AND s.TC = a.TC AND s.SUCURSAL = a.SUCURSAL AND s.NUMERO = a.NUMERO AND s.LETRA = a.LETRA
+            AND ISNULL(s.TIPO_REG,'') = ISNULL(a.TIPO_REG,'')
+            """;
         var filtroSub = sub.Equals("DG", StringComparison.OrdinalIgnoreCase) || (!subdiarios && f.ExcluirSubdiarios)
             ? $" AND NOT EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND ISNULL(LTRIM(RTRIM(s.TIPO_REG)),'') NOT IN ('', CHAR(255) + 'RS'))"
             : sub.Length > 0 ? $" AND EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND LTRIM(RTRIM(s.TIPO_REG)) = @Subdiario)" : "";
@@ -53,19 +57,21 @@ public sealed partial class ContabilidadReportesService
         var renglones = (await cn.QueryAsync<RenglonSql>(new CommandDefinition($"""
             SELECT TOP (@Maximo) a.FECHA Fecha, CONVERT(int,a.MES_OPERATIVO) MesOperativo, CONVERT(int,a.[NUMERO ASIENTO]) Numero,
                    LTRIM(RTRIM(ISNULL(a.TC,''))) Tc,
+                   CONVERT(bit,CASE WHEN {EsComprobanteContableSql} THEN 1 ELSE 0 END) TieneComprobante,
+                   CONVERT(bit,CASE WHEN LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) <> '' THEN 1 ELSE 0 END) EsCabecera,
                    CASE WHEN ISNULL(LTRIM(RTRIM(a.NUMERO)),'') = '' THEN '' ELSE LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) + '-' + LTRIM(RTRIM(a.NUMERO)) + ' ' + LTRIM(RTRIM(ISNULL(a.LETRA,''))) END Comprobante,
                    LTRIM(RTRIM(ISNULL(a.TIPO_REG,''))) Subdiario, LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) Unidad,
                    LTRIM(RTRIM(a.CUENTA)) Cuenta, LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(500), a.DETALLE),''))) Detalle,
                    CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END Debe, CASE WHEN a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END Haber
             FROM dbo.MV_ASIENTOS a WHERE {where} AND a.FECHA >= @Desde{filtroSub}
-            ORDER BY a.FECHA, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.SECUENCIA;
+            ORDER BY a.FECHA, a.MES_OPERATIVO, a.TIPO_REG, a.TC, a.SUCURSAL, a.NUMERO, a.LETRA, a.[NUMERO ASIENTO], a.SECUENCIA;
             """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
         var truncado = renglones.Count > MaximoRenglonesDiario;
         if (truncado) renglones = renglones.Take(MaximoRenglonesDiario).ToList();
-        var asientos = renglones.GroupBy(r => (r.MesOperativo, r.Numero))
+        var asientos = renglones.GroupBy(r => (r.MesOperativo, Numero: r.TieneComprobante ? 0 : r.Numero, r.Tc, r.Comprobante, r.Subdiario))
             .Select(g =>
             {
-                var primero = g.First();
+                var primero = g.FirstOrDefault(r => r.EsCabecera) ?? g.First();
                 return new DiarioAsiento
                 {
                     Fecha = primero.Fecha, MesOperativo = primero.MesOperativo, Numero = primero.Numero, Tc = primero.Tc,
@@ -89,6 +95,7 @@ public sealed partial class ContabilidadReportesService
 
     private sealed class RenglonSql
     {
+        public bool TieneComprobante { get; set; } public bool EsCabecera { get; set; }
         public DateTime Fecha { get; set; } public int MesOperativo { get; set; } public int Numero { get; set; }
         public string Tc { get; set; } = ""; public string Comprobante { get; set; } = ""; public string Subdiario { get; set; } = ""; public string Unidad { get; set; } = "";
         public string Cuenta { get; set; } = ""; public string Detalle { get; set; } = ""; public decimal Debe { get; set; } public decimal Haber { get; set; }

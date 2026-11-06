@@ -70,7 +70,7 @@ Muestra, para cada cuenta, saldo anterior, debe y haber del período y saldo fin
 - **Cuentas sin movimientos** incluye cuentas que no tuvieron movimientos en el período.
 - Tocá una cuenta para abrir su **Mayor** con el mismo período.
 
-Si el período tiene asientos que no balancean, aparece un aviso amarillo con la diferencia total. Tocalo para ver qué asientos son.
+Si el período tiene asientos que no balancean, aparece un aviso amarillo con la diferencia total. Tocalo para ver cuáles son, identificados por asiento, subdiario y comprobante. El legacy puede reutilizar el mismo número de asiento para distintos comprobantes: cada uno se controla por separado, sin atribuir a uno la diferencia de otro.
 
 ## Balance general
 
@@ -166,3 +166,11 @@ Cuando no está el archivo, propone **Validar en Control ARCA**, conservando el 
 La carpeta `00_Revision` del ZIP conserva el estado de controles y el CSV completo de observaciones. Los controles pendientes se advierten sin impedir descargar los libros.
 
 Desde el portal del estudio, el botón **Paquete estudio** de cada empresa lleva directamente al mes seleccionado. Está incluido en los perfiles Consulta y Completo.
+
+### Compras con el mismo número y distintas cuentas
+
+El botón **Ver** del libro de IVA abre la compra de la cuenta indicada en esa fila. El detalle, los artículos, las aplicaciones y las acciones respetan esa cuenta; el asiento muestra todas sus líneas, sin mezclar otro proveedor con el mismo número de comprobante.
+
+Al importar Mis Comprobantes Recibidos, AlfaCore controla tipo, punto de venta, número, letra y CUIT del emisor en las compras y asientos existentes, aunque estén en Proveedores varios u otra cuenta. Se usa el CUIT guardado en el movimiento; si no está informado, se consulta el del proveedor. El control se repite dentro de la transacción antes de grabar. Si ya existe, indica la cuenta y no lo vuelve a importar ni crea una cuenta nueva por ese comprobante. Dos proveedores con distintos CUIT pueden tener el mismo número de factura.
+
+Los duplicados anteriores no se eliminan automáticamente: revisalos en su módulo de origen y resolvelos con las opciones y permisos correspondientes.

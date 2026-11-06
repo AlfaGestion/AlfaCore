@@ -146,11 +146,16 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex) when (ex is ReglaException or AppUserFacingException or AppValidationException or SqlException)
                 {
+                    if (ex is SqlException)
+                    {
+                        var incidente = await events.LogErrorAsync("ControlArca", "ImportarComprobante", ex,
+                            "No se pudo grabar el comprobante recibido.", new { fila.Comprobante, fila.Cuit }, ct: ct);
+                        fila.Resultado += $"No se pudo grabar el comprobante. Revisá el incidente {incidente} con soporte.";
+                        continue;
+                    }
                     fila.Resultado += ex switch
                     {
                         AppValidationException v => string.Join(" ", v.Validation.Issues.Select(i => i.Message)),
-                        // El trigger de fechas de cierre (MV_Asientos_ValidaFechas) informa por RAISERROR.
-                        SqlException sql => "No se pudo grabar: " + sql.Message,
                         _ => ex.Message
                     };
                 }
@@ -202,15 +207,38 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             SELECT COUNT(*) FROM dbo.MV_EJERCICIOS WHERE ISNULL(CERRADO,0)=0 AND @f BETWEEN [FECHA DESDE] AND [FECHA HASTA];
             """, new { f = a.Fecha.Date }, tx, cancellationToken: ct)) != 1) return "No hay un ejercicio contable abierto para esa fecha.";
         if (Armar(a, "P", "C", "I", "O").Error is { } error) return error;
-        if (proveedor is null) return null;
-        var tc = Tc(a.Clase); var suc = a.PuntoVenta.ToString("0000"); var num = a.NumeroDesde.ToString("00000000");
-        var existe = await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            SELECT CASE WHEN EXISTS(SELECT 1 FROM dbo.C_MV_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(CUENTA))=@p AND LTRIM(RTRIM(TC))=@tc AND IDCOMPROBANTE=@id)
-                  OR EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(TC)) IN (@tc,@equ) AND SUCURSAL=@suc AND NUMERO=@num AND LETRA=@l
-                            AND (LTRIM(RTRIM(CUENTA))=@p OR LTRIM(RTRIM(ISNULL(CABCUENTA,'')))=@p)) THEN 1 ELSE 0 END;
-            """, new { p = proveedor.Trim(), tc, equ = cfg.Equivalencia(tc), id = suc + num + a.Letra, suc, num, l = a.Letra }, tx, cancellationToken: ct));
-        return existe == 1 ? "Ya está cargado para ese proveedor." : null;
+        var existente = await CuentaExistenteAsync(cn, tx, a, proveedor, cfg.Equivalencia(Tc(a.Clase)), ct);
+        return existente is null ? null : $"Ya está cargado ese comprobante en la cuenta {existente}. Se verificó por CUIT o cuenta; no se vuelve a importar.";
     }
+
+    /// <summary>La identidad fiscal no cambia al pasar de Proveedores varios a una cuenta propia.
+    /// Se consulta el documento del movimiento; solo si falta se usa el CUIT del maestro.</summary>
+    internal static Task<string?> CuentaExistenteAsync(SqlConnection cn, SqlTransaction? tx, ArcaMisComprobante a,
+        string? proveedor, string equivalencia, CancellationToken ct)
+        => cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) e.Cuenta FROM (
+                SELECT 0 Orden, LTRIM(RTRIM(c.CUENTA)) Cuenta
+                FROM dbo.C_MV_CPTE c WITH(UPDLOCK,HOLDLOCK)
+                LEFT JOIN dbo.VT_PROVEEDORES p ON LTRIM(RTRIM(p.CODIGO))=LTRIM(RTRIM(c.CUENTA))
+                WHERE LTRIM(RTRIM(c.TC)) IN (@tc,@equ)
+                  AND LTRIM(RTRIM(c.SUCURSAL))=@suc AND LTRIM(RTRIM(c.NUMERO))=@num AND LTRIM(RTRIM(c.LETRA))=@letra
+                  AND ((@proveedor<>'' AND LTRIM(RTRIM(c.CUENTA))=@proveedor)
+                    OR COALESCE(NULLIF(REPLACE(REPLACE(REPLACE(ISNULL(c.DOCUMENTONUMERO,''),'-',''),' ',''),'.',''),''),
+                                REPLACE(REPLACE(REPLACE(ISNULL(p.NUMERO_DOCUMENTO,''),'-',''),' ',''),'.',''))=@cuit)
+                UNION ALL
+                SELECT 1 Orden, COALESCE(NULLIF(LTRIM(RTRIM(a.CABCUENTA)),''),LTRIM(RTRIM(a.CUENTA))) Cuenta
+                FROM dbo.MV_ASIENTOS a WITH(UPDLOCK,HOLDLOCK)
+                LEFT JOIN dbo.VT_PROVEEDORES p ON LTRIM(RTRIM(p.CODIGO))=COALESCE(NULLIF(LTRIM(RTRIM(a.CABCUENTA)),''),LTRIM(RTRIM(a.CUENTA)))
+                WHERE LTRIM(RTRIM(a.TC)) IN (@tc,@equ)
+                  AND LTRIM(RTRIM(a.SUCURSAL))=@suc AND LTRIM(RTRIM(a.NUMERO))=@num AND LTRIM(RTRIM(a.LETRA))=@letra
+                  AND UPPER(LTRIM(RTRIM(ISNULL(a.LIVA_TIPO,'')))) IN ('','COMPRAS')
+                  AND ((@proveedor<>'' AND (LTRIM(RTRIM(a.CUENTA))=@proveedor OR LTRIM(RTRIM(ISNULL(a.CABCUENTA,'')))=@proveedor))
+                    OR COALESCE(NULLIF(REPLACE(REPLACE(REPLACE(ISNULL(a.CABCUIT,''),'-',''),' ',''),'.',''),''),
+                                REPLACE(REPLACE(REPLACE(ISNULL(p.NUMERO_DOCUMENTO,''),'-',''),' ',''),'.',''))=@cuit)
+            ) e ORDER BY e.Orden,e.Cuenta;
+            """, new { tc = Tc(a.Clase), equ = equivalencia.Trim(), suc = a.PuntoVenta.ToString("0000"),
+                num = a.NumeroDesde.ToString("00000000"), letra = a.Letra.Trim(), proveedor = proveedor?.Trim() ?? "", cuit = Digitos(a.DocContraparte) },
+                tx, cancellationToken: ct));
 
     internal sealed record Armado(IReadOnlyList<ControlArcaAsientoLinea> Lineas, decimal Imputacion, decimal Iva, decimal NetoGravado, decimal NoGravado,
         decimal Exento, decimal Otros, IReadOnlyList<ArcaAlicuota> Alicuotas, string? Error);

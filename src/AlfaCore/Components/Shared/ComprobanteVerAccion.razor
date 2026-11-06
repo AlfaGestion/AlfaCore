@@ -9,19 +9,20 @@
 @if (_local)
 {
     <AlfaDialog Open="true" Title="Detalle del comprobante" Size="AlfaDialogSize.Xl" OnClose="() => _local = false">
-        <ComprobanteViewer Tc="@Tc.Trim()" IdComprobante="@NormalizarNumero(Comprobante)" IdComplemento="@IdComplemento" ModoDetalleCompleto="true" />
+        <ComprobanteViewer Tc="@Tc.Trim()" IdComprobante="@NormalizarNumero(Comprobante)" IdComplemento="@IdComplemento" Cuenta="@Cuenta" ModoDetalleCompleto="true" />
     </AlfaDialog>
 }
 @code {
     [Parameter] public string Tc { get; set; } = string.Empty;
     [Parameter] public string Comprobante { get; set; } = string.Empty;
+    [Parameter] public string? Cuenta { get; set; }
     [Parameter] public int IdComplemento { get; set; }
     private bool _local;
 
     private void Abrir()
     {
         if (Services.GetService(typeof(AlfaCore.Services.ComprobanteVerService)) is AlfaCore.Services.ComprobanteVerService { HayHost: true } visor)
-            visor.Abrir(Tc, Comprobante, IdComplemento);
+            visor.Abrir(Tc, Comprobante, IdComplemento, Cuenta);
         else
             _local = true;
     }

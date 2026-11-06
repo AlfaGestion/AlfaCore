@@ -32,7 +32,7 @@
         <section class="panel-card">
             <h2>Descarga de Mis Comprobantes (ARCA)</h2>
             <p>El script viene incluido en AlfaCore (App_Data\scripts\arca\arca_comprobantes.py) y es independiente del Alfa Gestión. Los clientes solo cargan su CUIT y clave fiscal; esto lo define únicamente ALFA NET. Vacío usa lo incluido.</p>
-            <AlfaInput Label="Python con playwright y pywin32 (opcional)" Value="@_aPython" ValueChanged="v=>_aPython=v??string.Empty" Placeholder="App_Data\scripts\arca\python\python.exe" HelpText="Por defecto, la carpeta python junto al script. El script usa Excel instalado en este servidor." Disabled="_busy" />
+            <AlfaInput Label="Python con playwright y pywin32 (opcional)" Value="@_aPython" ValueChanged="v=>_aPython=v??string.Empty" Placeholder="App_Data\scripts\arca\python\python.exe" HelpText="Vacío usa el Python portable o el venv creado por el instalador junto al script. El script usa Excel instalado en este servidor." Disabled="_busy" />
             <AlfaInput Label="Script alternativo (opcional)" Value="@_aScript" ValueChanged="v=>_aScript=v??string.Empty" Placeholder="App_Data\scripts\arca\arca_comprobantes.py" Disabled="_busy" />
             <AlfaInput Label="Carpeta raíz de descargas (opcional)" Value="@_aCarpeta" ValueChanged="v=>_aCarpeta=v??string.Empty" HelpText="Cada base baja en su propia subcarpeta (base-N). Por defecto, App_Data\arca_descargas." Disabled="_busy" />
             <AlfaInput Label="Meses de descargas que se conservan" Type="number" Value="@_aMeses" ValueChanged="v=>_aMeses=v??string.Empty" HelpText="Por base. Se borran los archivos de períodos más viejos al terminar cada descarga. 0 = no borrar nunca." Disabled="_busy" />

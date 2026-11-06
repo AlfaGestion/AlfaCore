@@ -44,6 +44,9 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
             if (await permissions.HasAccessAsync(m, ct)) return true;
         return false;
     }
+    // El legacy puede asignar números de asiento distintos a las líneas de un mismo comprobante.
+    // Los movimientos sin documento conservan su número contable como identidad.
+    private const string EsComprobanteContableSql = "LTRIM(RTRIM(ISNULL(a.TC,''))) <> '' AND LTRIM(RTRIM(ISNULL(a.NUMERO,''))) LIKE '%[^0 ]%'";
     private const int MaximoMovimientosMayor = 20000;
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     private static readonly string[] Proformas = ["FP", "NCFP", "NDFP", "CBFP", "FPC", "NCCP", "PGFP"];
@@ -144,14 +147,15 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
             GROUP BY LTRIM(RTRIM(a.CUENTA));
             """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
         var desbalanceados = (await cn.QueryAsync<AsientoDesbalanceado>(new CommandDefinition($"""
-            SELECT CONVERT(int,a.MES_OPERATIVO) MesOperativo, CONVERT(int,a.[NUMERO ASIENTO]) Numero, MIN(a.FECHA) Fecha, MIN(LTRIM(RTRIM(ISNULL(a.TC,'')))) Tc,
-                   MIN(LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) + '-' + LTRIM(RTRIM(ISNULL(a.NUMERO,''))) + ' ' + LTRIM(RTRIM(ISNULL(a.LETRA,'')))) Comprobante,
+            SELECT CONVERT(int,a.MES_OPERATIVO) MesOperativo, CONVERT(int,COALESCE(MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) <> '' THEN a.[NUMERO ASIENTO] END),MAX(a.[NUMERO ASIENTO]))) Numero, MIN(a.FECHA) Fecha, LTRIM(RTRIM(ISNULL(a.TC,''))) Tc,
+                   LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) + '-' + LTRIM(RTRIM(ISNULL(a.NUMERO,''))) + ' ' + LTRIM(RTRIM(ISNULL(a.LETRA,''))) Comprobante,
                    MIN(LEFT(LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(300), a.DETALLE),''))), 120)) Detalle, COUNT(*) Renglones,
-                   SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END) Diferencia
+                   SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END) Diferencia,
+                   LTRIM(RTRIM(ISNULL(a.TIPO_REG,''))) Subdiario
             FROM dbo.MV_ASIENTOS a WHERE {where} AND a.FECHA >= @Desde
-            GROUP BY a.MES_OPERATIVO, a.[NUMERO ASIENTO]
+            GROUP BY a.PERIODO, a.MES_OPERATIVO, CASE WHEN {EsComprobanteContableSql} THEN 0 ELSE a.[NUMERO ASIENTO] END, a.TIPO_REG, a.TC, a.SUCURSAL, a.NUMERO, a.LETRA
             HAVING ABS(SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END)) >= 0.005
-            ORDER BY MIN(a.FECHA), a.MES_OPERATIVO, a.[NUMERO ASIENTO];
+            ORDER BY MIN(a.FECHA), a.MES_OPERATIVO, Numero, a.TIPO_REG, a.TC, a.SUCURSAL, a.NUMERO, a.LETRA;
             """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
         var plan = await PlanAsync(cn, ct);
         return new SumasSaldosResultado
@@ -299,7 +303,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
             if (r.Desbalanceados.Count > 0)
             {
                 var d = wb.Worksheets.Add("Asientos desbalanceados");
-                string[] h = ["Fecha", "Mes", "Asiento", "TC", "Comprobante", "Detalle", "Renglones", "Diferencia"];
+                string[] h = ["Fecha", "Mes", "Asiento", "TC", "Comprobante", "Detalle", "Renglones", "Diferencia", "Subdiario"];
                 for (var c = 0; c < h.Length; c++) d.Cell(1, c + 1).Value = h[c];
                 Titulos(d, 1, h.Length);
                 var i = 2;
@@ -307,7 +311,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
                 {
                     d.Cell(i, 1).Value = a.Fecha; d.Cell(i, 1).Style.DateFormat.Format = "dd/MM/yyyy";
                     d.Cell(i, 2).Value = a.MesOperativo; d.Cell(i, 3).Value = a.Numero; d.Cell(i, 4).Value = a.Tc; d.Cell(i, 5).Value = a.Comprobante;
-                    d.Cell(i, 6).Value = a.Detalle; d.Cell(i, 7).Value = a.Renglones; d.Cell(i, 8).Value = a.Diferencia; i++;
+                    d.Cell(i, 6).Value = a.Detalle; d.Cell(i, 7).Value = a.Renglones; d.Cell(i, 8).Value = a.Diferencia; d.Cell(i, 9).Value = a.Subdiario.Length == 0 || a.Subdiario == "ÿRS" ? "Diario general" : a.Subdiario; i++;
                 }
                 d.Column(8).Style.NumberFormat.Format = "#,##0.00"; d.Columns().AdjustToContents();
             }

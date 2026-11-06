@@ -5,7 +5,7 @@
     @if (Visor.Actual is { } pedido)
     {
         <ComprobanteViewer @key="pedido" Tc="@pedido.Tc" IdComprobante="@ComprobanteVerAccion.NormalizarNumero(pedido.Comprobante)"
-                           IdComplemento="@pedido.IdComplemento" ModoDetalleCompleto="true" />
+                           IdComplemento="@pedido.IdComplemento" Cuenta="@pedido.Cuenta" ModoDetalleCompleto="true" />
     }
 </AlfaDialog>
 @code {

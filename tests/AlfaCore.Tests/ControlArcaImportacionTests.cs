@@ -91,6 +91,24 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.DoesNotMatch(ArcaDescargaService.NombreArchivo, @"..\ARCA_RECIBIDOS_27228073259_202609.xls");
     }
 
+    [Fact]
+    public void PythonIncluidoReconoceElVenvDelInstaladorYConservaPrioridadPortable()
+    {
+        var raiz = Path.Combine(Path.GetTempPath(), "arca-python-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var venv = Path.Combine(raiz, "venv", "Scripts", "python.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(venv)!);
+            File.WriteAllBytes(venv, []);
+            Assert.Equal(venv, ArcaServidorService.PythonIncluido(raiz));
+            var portable = Path.Combine(raiz, "python", "python.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(portable)!);
+            File.WriteAllBytes(portable, []);
+            Assert.Equal(portable, ArcaServidorService.PythonIncluido(raiz));
+        }
+        finally { if (Directory.Exists(raiz)) Directory.Delete(raiz, true); }
+    }
+
     private static CuentaComercialLookupOptionDto Op(string codigo, string descripcion) => new() { Codigo = codigo, Descripcion = descripcion };
 
     [Fact]
