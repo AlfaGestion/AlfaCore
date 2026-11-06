@@ -95,3 +95,15 @@ Tipos nuevos en `TiposDocumentoCore`: `ORDEN_PAGO` (OPG) y `PAGO_PROFORMA` (PGFP
 - **Diseñador** (Utilidades → Diseñador de comprobantes): opciones «Orden de pago (OPG)» y «Pago proforma (PGFP)», vista previa y PDF beta con una orden real, panel «Datos del proveedor» y panel «Medios de pago». El logo sale de la configuración general de la empresa (`/configuracion-general`, `TA_LOGOS`).
 - **Impresión:** «Ver PDF» de Orden de Pago y los PDF/mails de «Pagos y retenciones» para OPG y PGFP usan esa plantilla. PG (pago directo) y los certificados de retención siguen con el PDF anterior.
 - Pruebas: `OrdenPagoDocumentTests` (tipos, plantilla válida, render con logo/proveedor/medios/créditos, bloque ocultable, facturas sin cambios, y las órdenes reales de la base de pruebas con captura). 319 pruebas de documentos verdes.
+
+## Ver comprobantes: órdenes de pago cargadas (06/11/2026)
+
+Pantalla `/compras/pagos/ordenes` (solapa «Ver comprobantes» junto a «Orden de Pago» y opción de menú «Ver órdenes de pago», clave `D50-OPG-VER-WEB`, update `2026-11-06-005`; recibe el permiso quien ya tiene `D509012`). Lista las OPG y PGFP (activas, anuladas o todas) con filtros de fecha, proveedor/comprobante, tipo y estado; un usuario que no es administrador central ve solo su unidad de negocio.
+
+- **Columnas:** fecha, tipo, número, proveedor, importe, estado (Pagada / Pendiente de liquidar / Anulada), unidad, origen (AlfaCore o legacy) y último mail enviado.
+- **Acciones:** Ver (doble clic), PDF (reimpresión con la plantilla del diseñador), Mail (uno o varios, con los textos configurados de Compras).
+- **Ver** (`OrdenPagoDetalleDialog`, servicio `OrdenPagoService.DetalleAsync`): Resumen (proveedor, estado, quién y cuándo la cargó, medios de pago con cheque y fecha), **Trazabilidad** (qué canceló: por la orden y con créditos; créditos y anticipos aplicados; saldo a favor que dejó la orden y dónde se usó después), Asiento (debe/haber) e **Historial** (altas, modificaciones y bajas de `V_MV_CpteAcciones`, impresiones y mails de `V_MA_EMAILMOV`, ordenados por fecha).
+- **Historial desde AlfaCore:** al grabar una orden se registra el alta (`A`, con asiento, período y cuenta) y cada PDF queda como «Impresión / PDF» (`IM`). Los mails ya los registra el envío (`V_MA_EMAILMOV`). Las órdenes cargadas antes de este cambio no tienen alta en el historial.
+- Se probó contra PRUEBAS02122025 (listado, detalle de órdenes con crédito, mails del legacy, alta en el historial con rollback). El «último envío» se calcula en una sola consulta: por fila tardaba ~160 ms por la red.
+
+No incluye anular una orden (queda como mejora). El visor genérico de comprobantes no se usa porque está pensado para ventas/cobranzas (para pagos mostraría «OPG / OPG» en aplicaciones y no encuentra los pagos, que figuran como Compras pero se graban en `V_MV_CPTE`).

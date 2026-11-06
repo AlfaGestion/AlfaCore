@@ -270,6 +270,8 @@ public sealed partial class OrdenPagoService
             proximo = (int)numeroOrden + 1, numerarEn, Talonario = tal.Numero, UnidadTal = tal.Unidad, s.Operacion, id, tc, comprobante = comprobanteOrden, asiento,
             total = dinero, anticipo = reparto.Anticipo, hash, unidad = unidadPk, usuario = user.Nombre
         }));
+        await ComprobanteAcciones.RegistrarAsync(cn, tx, tc, comprobanteOrden, ComprobanteAcciones.Alta, user.Nombre, "AlfaCore · Orden de pago", ct,
+            comentario: "Alta desde AlfaCore", asiento: asiento, periodo: periodo.ToString(), tipoReg: tipoRegTrim.PadRight(4), fecha: s.Fecha, cuenta: proveedor.Codigo);
         return new(s.Operacion, id, tc, comprobanteOrden, asiento, dinero, reparto.Anticipo);
     }
 }

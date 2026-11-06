@@ -1,0 +1,171 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject OrdenPagoService Servicio
+@inject ISessionService Sesiones
+@inject IAppUserSessionService Usuario
+@inject IAppUiOperationService UiOps
+@implements IDisposable
+
+<AlfaDialog Open="true" Title="@($"{Nombre} {CompraDocumentoMailService.FormatoComprobante(IdComprobante)}")" Size="AlfaDialogSize.Xl" CloseOnBackdrop="false" OnClose="OnClose">
+    <ChildContent>
+        <AlfaFeedbackPanel Message="@(_busy ? AppUiMessage.InProgress("Consultando la orden de pago…", "Recuperando comprobante, asiento e historial.") : _feedback)" Dismissible="false" />
+        @if (_d is { } d)
+        {
+            <div class="opd">
+                <AlfaTabs Items="Tabs" ActiveKey="@_tab" ActiveKeyChanged='v => _tab = v ?? "resumen"' AriaLabel="Detalle de la orden de pago" />
+                @if (_tab == "resumen")
+                {
+                    <dl class="opd-datos">
+                        <div><dt>Proveedor</dt><dd>@d.Cabecera.Nombre <small>@d.Cabecera.Cuenta</small></dd></div>
+                        <div><dt>Documento</dt><dd>@(d.Documento.Length == 0 ? "—" : d.Documento)</dd></div>
+                        <div><dt>Fecha</dt><dd>@d.Cabecera.Fecha.ToString("dd/MM/yyyy")</dd></div>
+                        <div><dt>Importe pagado</dt><dd>@d.Cabecera.Importe.ToString("N2")</dd></div>
+                        <div><dt>Estado</dt><dd><span class="opd-estado @(d.Cabecera.Anulada ? "is-anulada" : d.Cabecera.Pendiente ? "is-pendiente" : null)">@d.Cabecera.Estado</span></dd></div>
+                        <div><dt>Unidad de negocio</dt><dd>@d.Cabecera.Unidad</dd></div>
+                        <div><dt>Origen</dt><dd>@(d.Cabecera.Web ? "AlfaCore" : "Sistema legacy")</dd></div>
+                        <div><dt>Cargada por</dt><dd>@(d.Usuario.Length == 0 ? "—" : d.Usuario)@(d.Grabada is { } g ? " · " + g.ToString("dd/MM/yyyy HH:mm") : "")</dd></div>
+                        @if (d.Comentarios.Length > 0) { <div class="opd-ancho"><dt>Comentarios</dt><dd>@d.Comentarios</dd></div> }
+                    </dl>
+                    <h3>Medios de pago</h3>
+                    @if (d.Medios.Count == 0) { <p class="opd-vacio">Esta orden no tiene medios de pago: queda pendiente de liquidar.</p> }
+                    else
+                    {
+                        <div class="opd-scroll"><table class="opd-table">
+                            <thead><tr><th>Cuenta</th><th>Detalle</th><th class="opd-num">Importe</th></tr></thead>
+                            <tbody>
+                            @foreach (var m in d.Medios)
+                            {
+                                <tr><td>@m.Cuenta</td><td>@m.Descripcion@if (m.Cheque.Length > 0) { <small>Cheque @m.Cheque@(m.Vencimiento is { } v ? " · al " + v.ToString("dd/MM/yyyy") : "")</small> }</td><td class="opd-num">@m.Importe.ToString("N2")</td></tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+                }
+                else if (_tab == "trazabilidad")
+                {
+                    <h3>Qué canceló esta orden</h3>
+                    @if (d.Cancelados.Count == 0) { <p class="opd-vacio">No tiene comprobantes imputados.</p> }
+                    else
+                    {
+                        <div class="opd-scroll"><table class="opd-table">
+                            <thead><tr><th>Comprobante</th><th>Fecha</th><th class="opd-num">Con medios de pago</th><th class="opd-num">Con créditos</th><th class="opd-num">Total cancelado</th></tr></thead>
+                            <tbody>
+                            @foreach (var c in d.Cancelados)
+                            {
+                                <tr><td><strong>@c.Tc</strong> @CompraDocumentoMailService.FormatoComprobante(c.Comprobante)</td><td>@(c.Fecha?.ToString("dd/MM/yyyy"))</td>
+                                    <td class="opd-num">@c.PorOrden.ToString("N2")</td><td class="opd-num">@(c.PorCreditos == 0 ? "" : c.PorCreditos.ToString("N2"))</td><td class="opd-num">@c.Total.ToString("N2")</td></tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+                    @if (d.CreditosUsados.Count > 0)
+                    {
+                        <h3>Créditos y anticipos aplicados</h3>
+                        <div class="opd-scroll"><table class="opd-table">
+                            <thead><tr><th>Comprobante</th><th class="opd-num">Importe aplicado</th></tr></thead>
+                            <tbody>
+                            @foreach (var c in d.CreditosUsados)
+                            {
+                                <tr><td><strong>@c.Tc</strong> @CompraDocumentoMailService.FormatoComprobante(c.Comprobante)</td><td class="opd-num">@c.Importe.ToString("N2")</td></tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+                    @if (d.SaldoAFavor > 0 || d.UsosDelSaldo.Count > 0)
+                    {
+                        <h3>Saldo a favor del proveedor (anticipo)</h3>
+                        <p>@(d.SaldoAFavor > 0 ? $"Esta orden dejó un saldo a favor todavía sin aplicar de {d.SaldoAFavor:N2}." : "El saldo a favor de esta orden ya se aplicó por completo.")</p>
+                        @if (d.UsosDelSaldo.Count > 0)
+                        {
+                            <div class="opd-scroll"><table class="opd-table">
+                                <thead><tr><th>Se aplicó a</th><th>Por la orden</th><th class="opd-num">Importe</th></tr></thead>
+                                <tbody>
+                                @foreach (var u in d.UsosDelSaldo)
+                                {
+                                    <tr><td><strong>@u.Tc</strong> @CompraDocumentoMailService.FormatoComprobante(u.Comprobante)</td><td>@u.Orden</td><td class="opd-num">@u.Importe.ToString("N2")</td></tr>
+                                }
+                                </tbody>
+                            </table></div>
+                        }
+                    }
+                }
+                else if (_tab == "asiento")
+                {
+                    @if (d.Asiento.Count == 0) { <p class="opd-vacio">Esta orden no generó asiento contable.</p> }
+                    else
+                    {
+                        <div class="opd-scroll"><table class="opd-table">
+                            <thead><tr><th>Asiento</th><th>Cuenta</th><th>Detalle</th><th class="opd-num">Debe</th><th class="opd-num">Haber</th></tr></thead>
+                            <tbody>
+                            @foreach (var l in d.Asiento)
+                            {
+                                <tr><td>@l.Asiento</td><td>@l.Cuenta</td><td>@l.Descripcion</td>
+                                    <td class="opd-num">@(l.DebeHaber.Trim() == "D" ? l.Importe.ToString("N2") : "")</td><td class="opd-num">@(l.DebeHaber.Trim() == "H" ? l.Importe.ToString("N2") : "")</td></tr>
+                            }
+                            </tbody>
+                            <tfoot><tr><td colspan="3">Total</td><td class="opd-num">@d.Asiento.Where(x => x.DebeHaber.Trim() == "D").Sum(x => x.Importe).ToString("N2")</td><td class="opd-num">@d.Asiento.Where(x => x.DebeHaber.Trim() == "H").Sum(x => x.Importe).ToString("N2")</td></tr></tfoot>
+                        </table></div>
+                    }
+                }
+                else
+                {
+                    @if (d.Historial.Count == 0) { <p class="opd-vacio">No hay historial registrado para esta orden.</p> }
+                    else
+                    {
+                        <div class="opd-scroll"><table class="opd-table">
+                            <thead><tr><th>Fecha y hora</th><th>Acción</th><th>Usuario</th><th>PC</th><th>Detalle</th></tr></thead>
+                            <tbody>
+                            @foreach (var e in d.Historial)
+                            {
+                                <tr><td>@e.Fecha.ToString("dd/MM/yyyy HH:mm")</td><td>@e.Tipo</td><td>@e.Usuario</td><td>@e.Pc</td><td>@e.Detalle</td></tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer><AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="OnClose">Cerrar</AlfaButton></Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public string Tc { get; set; } = "";
+    [Parameter] public string IdComprobante { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private readonly CancellationTokenSource _vida = new();
+    private OrdenPagoDetalle? _d;
+    private AppUiMessage? _feedback;
+    private bool _busy, _disposed;
+    private string _tab = "resumen";
+    private string Nombre => Tc == "PGFP" ? "Pago proforma" : "Orden de pago";
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs = [new("resumen", "Resumen"), new("trazabilidad", "Trazabilidad"), new("asiento", "Asiento"), new("historial", "Historial")];
+
+    protected override void OnInitialized() { Sesiones.SessionChanged += CambioSesion; Usuario.StateChanged += CambioSesion; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _d = null; _feedback = null; _busy = true; _tab = "resumen";
+        try
+        {
+            var sesion = Sesiones.GetActiveSession()?.Id;
+            var datos = await Servicio.DetalleAsync(Tc, IdComprobante, _vida.Token);
+            if (_vida.IsCancellationRequested || sesion != Sesiones.GetActiveSession()?.Id || !TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones, Usuario)) return;
+            if (datos is null) _feedback = AppUiMessage.Warning("No se encontró la orden", "Ya no existe o no es una orden de pago.");
+            else _d = datos;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { if (!_vida.IsCancellationRequested) _feedback = UiOps.BuildMessage(ex, "Consultar orden de pago"); }
+        finally { _busy = false; }
+    }
+
+    private void CambioSesion()
+    {
+        _vida.Cancel(); _d = null;
+        _feedback = AppUiMessage.Warning("La sesión cambió", "Cerrá esta consulta y volvé a abrirla desde la base activa.");
+        if (!_disposed) _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() { _disposed = true; Sesiones.SessionChanged -= CambioSesion; Usuario.StateChanged -= CambioSesion; _vida.Cancel(); _vida.Dispose(); }
+}

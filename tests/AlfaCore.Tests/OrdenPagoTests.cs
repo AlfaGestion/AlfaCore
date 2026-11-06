@@ -173,6 +173,12 @@ public sealed class OrdenPagoTests(ITestOutputHelper output)
                 "SELECT COUNT(*) FROM dbo.CO_CPTES_IMPAGOS WHERE LTRIM(RTRIM(CUENTA))=@P AND TC=@Tc AND NUMERO=@N AND SALDO>0", new { P = prov, Tc = factura.Tc, N = factura.Numero }, tx));
             Assert.Equal(Math.Max(antes, int.Parse(r.Comprobante.Substring(4, 8)) + 1), await cn.ExecuteScalarAsync<int>("SELECT X_ULTIMO_NRO FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='OPG'", transaction: tx));
 
+            // Trazabilidad: el alta queda en el historial (V_MV_CpteAcciones) con el asiento.
+            var alta = await cn.QuerySingleAsync<(string Tipo, string Usuario, int Asiento)>(
+                "SELECT LTRIM(RTRIM(TIPO_ACCION)),LTRIM(RTRIM(USUARIO)),ISNULL(NUMEROASIENTO,0) FROM dbo.V_MV_CpteAcciones WHERE LTRIM(RTRIM(TC))='OPG' AND IDCOMPROBANTE=@C",
+                new { C = r.Comprobante }, tx);
+            Assert.Equal(("A", "Administrador", r.NumeroAsiento), alta);
+
             // Mismo identificador y mismos datos: devuelve la misma orden, sin duplicar nada.
             var otra = await service.GrabarEnTransaccionAsync(cn, tx, s, CancellationToken.None);
             Assert.Equal(r.Id, otra.Id);

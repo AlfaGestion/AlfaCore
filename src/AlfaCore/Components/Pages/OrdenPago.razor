@@ -332,7 +332,8 @@
         [
             new() { Key = "carga", Label = "Carga de comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga")); return Task.CompletedTask; } },
             new() { Key = "pagos", Label = "Pagos y retenciones", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/carga/pagos")); return Task.CompletedTask; } },
-            new() { Key = "orden", Label = "Orden de Pago", Active = true }
+            new() { Key = "orden", Label = "Orden de Pago", Active = true },
+            new() { Key = "visor", Label = "Ver comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/pagos/ordenes")); return Task.CompletedTask; } }
         ],
         State = _busy ? PageHeaderState.Loading : PageHeaderState.List
     });

@@ -74,10 +74,14 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
     // ---- PDF --------------------------------------------------------------------------------------------------------
 
     public Task<byte[]> GenerarPdfAsync(string tc, string comprobante, string certificado = "", CancellationToken ct = default)
-        => EjecutarAsync("GenerarPdf", async (cn, unidades, _) =>
+        => EjecutarAsync("GenerarPdf", async (cn, unidades, usuario) =>
         {
             var ficha = await FichaAsync(cn, unidades, tc, comprobante, certificado, ct);
-            return await ArmarPdfAsync(cn, ficha, certificado, ct);
+            var pdf = await ArmarPdfAsync(cn, ficha, certificado, ct);
+            // Trazabilidad: cada PDF de una orden de pago queda en su historial.
+            if (certificado.Length == 0 && ficha.Tc is "OPG" or "PGFP")
+                await ComprobanteAcciones.RegistrarSiPuedeAsync(cn, ficha.Tc, ficha.Comprobante, ComprobanteAcciones.Impresion, usuario, "AlfaCore · PDF de la orden de pago", ct);
+            return pdf;
         }, ct);
 
     /// <summary>
@@ -228,7 +232,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                 ArmarTexto(mensaje.Length > 0 ? mensaje : porDefecto.Mensaje, f.Nombre, f.Comprobante, f.Fecha, importe, certificado));
     }
 
-    private static async Task<string?> UltimoEnvioAsync(SqlConnection cn, string tc, string comprobante, CancellationToken ct)
+    internal static async Task<string?> UltimoEnvioAsync(SqlConnection cn, string tc, string comprobante, CancellationToken ct)
         => await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition("""
             IF OBJECT_ID(N'dbo.V_MA_EMAILMOV', N'U') IS NOT NULL
                 SELECT TOP (1) CONVERT(nvarchar(16), FechaHora, 103) + ' ' + CONVERT(nvarchar(5), FechaHora, 108) + ' · ' + ISNULL(Para,'') + ' · ' + ISNULL(Status,'')
