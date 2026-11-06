@@ -19,7 +19,12 @@
                         <div><dt>Proveedor</dt><dd>@d.Cabecera.Nombre <small>@d.Cabecera.Cuenta</small></dd></div>
                         <div><dt>Documento</dt><dd>@(d.Documento.Length == 0 ? "—" : d.Documento)</dd></div>
                         <div><dt>Fecha</dt><dd>@d.Cabecera.Fecha.ToString("dd/MM/yyyy")</dd></div>
-                        <div><dt>Importe pagado</dt><dd>@d.Cabecera.Importe.ToString("N2")</dd></div>
+                        <div><dt>Importe cancelado</dt><dd>@d.Cabecera.Importe.ToString("N2")</dd></div>
+                        @if (d.RetencionGanancias > 0)
+                        {
+                            <div><dt>Retención de Ganancias</dt><dd>@d.RetencionGanancias.ToString("N2") <small>@(d.RetencionCertificado.Length > 0 ? "Certificado N° " + d.RetencionCertificado + " · " : "")base @d.RetencionBase.ToString("N2")</small></dd></div>
+                            <div><dt>Pagado con medios de pago</dt><dd>@d.Medios.Sum(x => x.Importe).ToString("N2")</dd></div>
+                        }
                         <div><dt>Estado</dt><dd><span class="opd-estado @(d.Cabecera.Anulada ? "is-anulada" : d.Cabecera.Pendiente ? "is-pendiente" : null)">@d.Cabecera.Estado</span></dd></div>
                         <div><dt>Unidad de negocio</dt><dd>@d.Cabecera.Unidad</dd></div>
                         <div><dt>Origen</dt><dd>@(d.Cabecera.Web ? "AlfaCore" : "Sistema legacy")</dd></div>

@@ -80,6 +80,10 @@ public sealed class OrdenPagoDetalle
     public DateTime? Grabada { get; set; }
     public List<OrdenPagoCancelado> Cancelados { get; set; } = [];
     public List<OrdenPagoMedioDetalle> Medios { get; set; } = [];
+    /// <summary>Retención de Ganancias practicada en la orden (0 si no hubo), con su certificado y la base sobre la que se calculó.</summary>
+    public decimal RetencionGanancias { get; set; }
+    public string RetencionCertificado { get; set; } = "";
+    public decimal RetencionBase { get; set; }
     /// <summary>Créditos (notas de crédito, anticipos) que se aplicaron a las facturas a través de esta orden.</summary>
     public List<OrdenPagoRelacion> CreditosUsados { get; set; } = [];
     /// <summary>Lo que quedó a favor del proveedor (anticipo) de esta orden.</summary>

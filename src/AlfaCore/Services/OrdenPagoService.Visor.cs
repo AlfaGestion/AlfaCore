@@ -56,6 +56,7 @@ public sealed partial class OrdenPagoService
         public string Unidad { get; set; } = ""; public decimal Importe { get; set; } public bool Anulada { get; set; } public bool Finalizada { get; set; }
         public string Documento { get; set; } = ""; public string Usuario { get; set; } = ""; public string Comentarios { get; set; } = ""; public DateTime? Grabada { get; set; }
         public bool Web { get; set; }
+        public decimal Retencion { get; set; } public string RetencionNro { get; set; } = ""; public decimal RetencionBase { get; set; }
     }
 
     private sealed class AplicacionFila
@@ -79,7 +80,8 @@ public sealed partial class OrdenPagoService
                     LTRIM(RTRIM(ISNULL(c.CUENTA,''))) Cuenta, LTRIM(RTRIM(ISNULL(c.NOMBRE,''))) Nombre, LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) Unidad,
                     CONVERT(decimal(18,2),ISNULL(c.IMPORTE,0)) Importe, CONVERT(bit,ISNULL(c.ANULADA,0)) Anulada, CONVERT(bit,ISNULL(c.FINALIZADA,0)) Finalizada,
                     LTRIM(RTRIM(ISNULL(c.DOCUMENTONUMERO,''))) Documento, LTRIM(RTRIM(ISNULL(c.USUARIO,''))) Usuario, LTRIM(RTRIM(ISNULL(c.COMENTARIOS,''))) Comentarios,
-                    c.FechaHora_Grabacion Grabada,
+                    c.FechaHora_Grabacion Grabada, CONVERT(decimal(18,2),ISNULL(c.RETGAN_Importe,0)) Retencion, LTRIM(RTRIM(ISNULL(c.RETGAN_NRO,''))) RetencionNro,
+                    CONVERT(decimal(18,2),ISNULL(c.RETGAN_BaseImponible,0)) RetencionBase,
                     CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.ALFACORE_PAGO_OPERACION o WHERE o.Comprobante=c.IDCOMPROBANTE AND LTRIM(RTRIM(o.Tc))=LTRIM(RTRIM(c.TC))) THEN 1 ELSE 0 END) Web
                 FROM dbo.V_MV_CPTE c WHERE LTRIM(RTRIM(c.TC))=@tc AND c.IDCOMPROBANTE=@id AND ISNULL(c.IDCOMPLEMENTO,0)=0;
                 """, new { tc, id = idComprobante }, null, token));
@@ -90,7 +92,8 @@ public sealed partial class OrdenPagoService
             {
                 Cabecera = new OrdenPagoFila { Id = h.Id, Tc = h.Tc, Comprobante = h.Comprobante, Fecha = h.Fecha, Cuenta = h.Cuenta, Nombre = h.Nombre, Unidad = h.Unidad,
                     Importe = h.Importe, Anulada = h.Anulada, Pendiente = h.Tc == TcOrdenPago && !h.Finalizada, Web = h.Web },
-                Documento = h.Documento, Usuario = h.Usuario, Comentarios = h.Comentarios, Grabada = h.Grabada
+                Documento = h.Documento, Usuario = h.Usuario, Comentarios = h.Comentarios, Grabada = h.Grabada,
+                RetencionGanancias = h.Retencion, RetencionCertificado = h.RetencionNro, RetencionBase = h.RetencionBase
             };
 
             // Qué canceló: la propia orden y, a través de ella, los créditos aplicados (NC, anticipos).
@@ -129,13 +132,14 @@ public sealed partial class OrdenPagoService
                 WHERE LTRIM(RTRIM(a.TC))=@tc AND a.SUCURSAL=@suc AND a.NUMERO=@num AND a.LETRA=@letra
                 ORDER BY ISNULL(a.[NUMERO ASIENTO],0), ISNULL(a.SECUENCIA,0);
                 """, new { tc, suc = h.Sucursal, num = h.Numero, letra = h.Letra }, null, token))).AsList();
-            detalle.Medios = (await cn.QueryAsync<OrdenPagoMedioDetalle>(Cmd("""
+            detalle.Medios = (await cn.QueryAsync<OrdenPagoMedioDetalle>(Cmd($"""
                 SELECT LTRIM(RTRIM(a.CUENTA)) Cuenta, ISNULL(NULLIF(LTRIM(RTRIM(c.DESCRIPCION)),''),LTRIM(RTRIM(a.CUENTA))) Descripcion, CONVERT(decimal(18,2),a.IMPORTE) Importe,
                     ISNULL(LTRIM(RTRIM(a.NroComprobanteBancario)),'') Cheque, CASE WHEN ISNULL(a.NroComprobanteBancario,'')<>'' THEN a.VENCIMIENTO END Vencimiento
                 FROM dbo.MV_ASIENTOS a LEFT JOIN dbo.MA_CUENTAS c ON c.CODIGO=a.CUENTA
                 WHERE LTRIM(RTRIM(a.TC))=@tc AND a.SUCURSAL=@suc AND a.NUMERO=@num AND a.LETRA=@letra AND a.[DEBE-HABER]='H'
+                    AND 0={SqlLineaEsRetencion}
                 ORDER BY ISNULL(a.[NUMERO ASIENTO],0), ISNULL(a.SECUENCIA,0);
-                """, new { tc, suc = h.Sucursal, num = h.Numero, letra = h.Letra }, null, token))).AsList();
+                """, new { tc, suc = h.Sucursal, num = h.Numero, letra = h.Letra, ret = h.Retencion }, null, token))).AsList();
 
             // Historial: acciones del comprobante (alta, modificación, baja, impresiones) y mails enviados.
             var eventos = (await cn.QueryAsync<OrdenPagoEvento>(Cmd("""

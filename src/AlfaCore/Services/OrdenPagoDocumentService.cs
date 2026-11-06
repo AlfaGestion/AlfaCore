@@ -91,6 +91,7 @@ public sealed class OrdenPagoDocumentService(
         public string Domicilio { get; set; } = ""; public string Localidad { get; set; } = ""; public string Telefono { get; set; } = "";
         public string DocumentoNumero { get; set; } = ""; public string DocumentoTipo { get; set; } = ""; public string CondicionIva { get; set; } = "";
         public string Email { get; set; } = ""; public decimal Total { get; set; } public string Moneda { get; set; } = "";
+        public decimal Retencion { get; set; } public string RetencionNro { get; set; } = "";
     }
 
     /// <summary>Datos de la orden para el motor de documentos. Null si no existe, está anulada o no es una OPG/PGFP.</summary>
@@ -102,7 +103,8 @@ public sealed class OrdenPagoDocumentService(
                 ISNULL(LTRIM(RTRIM(v.DOMICILIO)),'') Domicilio, ISNULL(LTRIM(RTRIM(v.LOCALIDAD)),'') Localidad, ISNULL(LTRIM(RTRIM(v.TELEFONO)),'') Telefono,
                 ISNULL(LTRIM(RTRIM(v.DOCUMENTONUMERO)),'') DocumentoNumero, ISNULL(LTRIM(RTRIM(td.DESCRIPCION)),'') DocumentoTipo,
                 ISNULL(LTRIM(RTRIM(v.CONDICIONIVA)),'') CondicionIva, ISNULL(LTRIM(RTRIM(p.MAIL)),'') Email,
-                CONVERT(decimal(15,2), ISNULL(v.IMPORTE,0)) Total, ISNULL(LTRIM(RTRIM(v.MONEDA)),'') Moneda
+                CONVERT(decimal(15,2), ISNULL(v.IMPORTE,0)) Total, ISNULL(LTRIM(RTRIM(v.MONEDA)),'') Moneda,
+                CONVERT(decimal(15,2), ISNULL(v.RETGAN_Importe,0)) Retencion, ISNULL(LTRIM(RTRIM(v.RETGAN_NRO)),'') RetencionNro
             FROM dbo.V_MV_CPTE v
             LEFT JOIN dbo.TA_TIPODOCUMENTO td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.DOCUMENTOTIPO,''))))
             LEFT JOIN dbo.Vt_Proveedores p ON LTRIM(RTRIM(p.CODIGO)) = LTRIM(RTRIM(v.CUENTA))
@@ -133,12 +135,13 @@ public sealed class OrdenPagoDocumentService(
             ORDER BY ap.IDCOMPROBANTE;
             """, new { Tc = h.Tc, Id = idComprobante }, tx, cancellationToken: ct))).ToList();
 
-        var medios = (await cn.QueryAsync<(string Cuenta, decimal Importe, string Cheque, DateTime? Vencimiento)>(new CommandDefinition("""
-            SELECT ISNULL(NULLIF(LTRIM(RTRIM(c.DESCRIPCION)),''), LTRIM(RTRIM(a.CUENTA))), a.IMPORTE, ISNULL(LTRIM(RTRIM(a.NroComprobanteBancario)),''), a.VENCIMIENTO
+        var medios = (await cn.QueryAsync<(string Cuenta, decimal Importe, string Cheque, DateTime? Vencimiento, bool EsRetencion)>(new CommandDefinition($"""
+            SELECT ISNULL(NULLIF(LTRIM(RTRIM(c.DESCRIPCION)),''), LTRIM(RTRIM(a.CUENTA))), a.IMPORTE, ISNULL(LTRIM(RTRIM(a.NroComprobanteBancario)),''), a.VENCIMIENTO,
+                CONVERT(bit, {OrdenPagoService.SqlLineaEsRetencion})
             FROM dbo.MV_ASIENTOS a LEFT JOIN dbo.MA_CUENTAS c ON c.CODIGO = a.CUENTA
             WHERE a.TC = @Tc AND a.SUCURSAL = @S AND a.NUMERO = @N AND a.LETRA = @L AND a.[DEBE-HABER] = 'H'
             ORDER BY a.[NUMERO ASIENTO], a.SECUENCIA;
-            """, new { Tc = h.Tc, S = h.Sucursal, N = h.Numero, L = h.Letra }, tx, cancellationToken: ct))).ToList();
+            """, new { Tc = h.Tc, S = h.Sucursal, N = h.Numero, L = h.Letra, ret = h.Retencion }, tx, cancellationToken: ct))).ToList();
 
         var (empresa, condicionEmisor, iibb, inicio, _) = await FacturaDocumentService.BuildEmpresaAsync(cn, tx, h.UNegocio, ct);
         var tipo = TiposDocumentoCore.TipoParaComprobante(h.Tc, h.Letra);
@@ -164,7 +167,8 @@ public sealed class OrdenPagoDocumentService(
             })],
             Totales = new FacturaTotalesDocumentData { Total = h.Total, Moneda = moneda },
             MediosPago = [.. medios.Select(m => new FacturaPagoDocumentData(
-                m.Cuenta + (m.Cheque.Length > 0 ? " · Cheque " + m.Cheque + (m.Vencimiento is { } v ? " al " + v.ToString("dd/MM/yyyy", Ar) : "") : ""), m.Importe))],
+                m.EsRetencion ? "Retención de Ganancias" + (h.RetencionNro.Length > 0 ? " · Certificado N° " + h.RetencionNro : "")
+                : m.Cuenta + (m.Cheque.Length > 0 ? " · Cheque " + m.Cheque + (m.Vencimiento is { } v ? " al " + v.ToString("dd/MM/yyyy", Ar) : "") : ""), m.Importe))],
             CreditosAplicados = [.. creditos.Select(c => new FacturaPagoDocumentData(c.Tc + " " + Formato(c.Cpte), c.Importe))]
         };
         return new Armado(datos, h.UNegocio);

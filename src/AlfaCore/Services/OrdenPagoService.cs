@@ -110,15 +110,18 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
             throw new InvalidOperationException("Los créditos a aplicar deben ser distintos, con importes positivos de hasta dos decimales.");
         if (s.Medios.Count is < 1 or > 20 || s.Medios.Any(m => string.IsNullOrWhiteSpace(m.Cuenta) || m.Cuenta.Length > 15 || m.Importe <= 0 || !Dos(m.Importe)))
             throw new InvalidOperationException("Cargá al menos un medio de pago con importe positivo de hasta dos decimales.");
-        var dinero = s.Medios.Sum(m => m.Importe); var creditos = s.Creditos.Sum(c => c.Importe); var pagar = s.Comprobantes.Sum(c => c.Importe);
+        if (s.Retencion < 0 || !Dos(s.Retencion)) throw new InvalidOperationException("La retención debe ser un importe positivo de hasta dos decimales.");
+        if (s.Proforma && s.Retencion != 0) throw new InvalidOperationException("El pago proforma no retiene.");
+        var medios = s.Medios.Sum(m => m.Importe);
+        var dinero = medios + s.Retencion; var creditos = s.Creditos.Sum(c => c.Importe); var pagar = s.Comprobantes.Sum(c => c.Importe);
         if (dinero + creditos >= 10000000000000000m) throw new InvalidOperationException("El importe de la orden de pago supera el máximo permitido.");
         if (creditos > pagar)
             throw new InvalidOperationException("Los créditos aplicados superan lo que pagás de comprobantes. Bajá el importe de los créditos.");
         var anticipo = dinero + creditos - pagar;
         if (anticipo < 0)
-            throw new InvalidOperationException($"Los medios de pago ({dinero:N2}) y los créditos ({creditos:N2}) no alcanzan para pagar {pagar:N2}. Bajá el importe a pagar o sumá medios.");
+            throw new InvalidOperationException($"Los medios de pago ({medios:N2}){(s.Retencion > 0 ? $", la retención ({s.Retencion:N2})" : "")} y los créditos ({creditos:N2}) no alcanzan para pagar {pagar:N2}. Bajá el importe a pagar o sumá medios.");
         if (anticipo > 0 && !s.ConfirmaAnticipo)
-            throw new InvalidOperationException($"Los medios y créditos superan lo que pagás en {anticipo:N2}. Confirmá el anticipo o ajustá los importes.");
+            throw new InvalidOperationException($"Los medios, la retención y los créditos superan lo que pagás en {anticipo:N2}. Confirmá el anticipo o ajustá los importes.");
 
         var restante = s.Comprobantes.ToDictionary(c => c.Clave, c => c.Importe);
         var porCredito = new List<(OrdenPagoClave, OrdenPagoClave, decimal)>();
@@ -195,7 +198,8 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
                 Proveedor = prov, Proforma = proforma, PuedeProforma = puedeProforma, MezclaProforma = mezcla, Unidad = unidad,
                 Comprobantes = comprobantes.Where(d => CorrespondeAlModo(d, false, proforma, mezcla)).ToList(),
                 Creditos = creditos.Where(d => CorrespondeAlModo(d, true, proforma, mezcla)).ToList(),
-                Medios = medios, Chequeras = chequeras, Bancos = bancos
+                Medios = medios, Chequeras = chequeras, Bancos = bancos,
+                RetieneGanancias = await RetieneAsync(cn, null, prov.Codigo, proforma, DateTime.Today, token)
             };
         }, ct);
 

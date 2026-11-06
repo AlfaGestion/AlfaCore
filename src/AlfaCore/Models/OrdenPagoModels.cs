@@ -58,6 +58,17 @@ public sealed class OrdenPagoPreparacion
     public IReadOnlyList<OrdenPagoMedio> Medios { get; set; } = [];
     public IReadOnlyList<OrdenPagoChequera> Chequeras { get; set; } = [];
     public IReadOnlyList<KeyValuePair<string, string>> Bancos { get; set; } = [];
+    /// <summary>El proveedor está sujeto a retención de Ganancias en esta orden (agente de retención, régimen asignado, sin exención vigente, no proforma).</summary>
+    public bool RetieneGanancias { get; set; }
+}
+
+/// <summary>Cálculo de la retención de Ganancias de una orden de pago, con el detalle que se muestra al usuario.</summary>
+public sealed record OrdenPagoRetencion(
+    bool Aplica, string Motivo, string Regimen, decimal Alicuota,
+    decimal BaseActual, decimal BaseAnterior, decimal NoImponible, decimal BaseImponible,
+    decimal Calculada, decimal RetenidoAntes, decimal Importe)
+{
+    public static OrdenPagoRetencion NoAplica(string motivo) => new(false, motivo, "", 0, 0, 0, 0, 0, 0, 0, 0);
 }
 
 public sealed record OrdenPagoImporte(OrdenPagoClave Clave, decimal Importe);
@@ -89,6 +100,8 @@ public sealed class OrdenPagoSolicitud
     public List<OrdenPagoMedioLinea> Medios { get; set; } = [];
     /// <summary>Confirma que lo que sobra de los medios sobre las facturas queda como anticipo del proveedor.</summary>
     public bool ConfirmaAnticipo { get; set; }
+    /// <summary>Retención de Ganancias que vio el usuario (el servicio la recalcula al grabar y rechaza si cambió). 0 si no retiene.</summary>
+    public decimal Retencion { get; set; }
 }
 
 public sealed record OrdenPagoResultado(Guid Operacion, int Id, string Tc, string Comprobante, int NumeroAsiento, decimal Importe, decimal Anticipo);

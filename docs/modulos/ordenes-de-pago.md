@@ -136,3 +136,18 @@ Fuente: `FrmMvPagos.frm` (`CalculaRetenciones` ~6283, `CalculaBaseImponible` ~24
 **Plan propuesto (v2a → v2b)**
 - v2a: Ganancias completo (cálculo acumulativo, asiento, certificado nº, PDF con la retención, visor y anulación que la contemplen) con un validador que **recalcula las 2.592 OPG históricas** y compara contra lo que grabó el legacy antes de habilitarlo.
 - v2b: IIBB, IVA, SUSS y alícuotas por padrón, solo si hay una base que los use para validar.
+
+## v2a: retención de Ganancias — implementado (06/11/2026)
+
+**Qué hace.** Si la empresa es agente (`AGENTEDERETENCIONGAN=SI`), el proveedor tiene régimen (`Vt_Proveedores.RETGAN_IdRetencion`), tiene CUIT y no está exento (`MA_CUENTASADIC.FhVtoExento` posterior a la fecha), la pantalla muestra **Calcular retención**. Hay que calcularla antes de grabar; si cambia un importe, se invalida y hay que recalcular. Las OPG retienen; las PGFP nunca.
+- Base de cada factura = neto gravado × pagado / total (+ exento si `CALCULARETENCIONSOBREIMPINT=SI`; total si el proveedor es condición IVA 5; lo pagado si la factura no discrimina IVA). **Decisión de Alberto (06/11):** proporcional al neto, no la rama de pagos parciales del legacy.
+- Créditos aplicados: se descuenta su parte neta (NC) o el total (anticipos). Nunca queda la base por debajo del pago real en medios.
+- **Anticipo sin factura / sobre el pago real: igual que el legacy** (base = pago real en medios).
+- Acumulativa por mes y CUIT, mínimo no imponible, escala (`V_TA_ESCALARETENCIONES`), mínimo excluido; `NoAcumulativa` ignora lo anterior.
+- Al grabar se recalcula en el servidor: si difiere de la que vio el usuario, se rechaza. Graba `RETGAN_IdRetencion/BaseImponible/Importe/NRO/ALICUOTA` (certificado = máximo + 1), `IMPORTE` = total cancelado (medios + retención), línea al Haber con la cuenta de retención (`V_TA_RETENCIONES.CUENTA` o `TA_CUENTASIVA.PG_RETGAN`) y `LIVA_Ret_Ganancias` en la línea del proveedor.
+- El visor muestra la retención con su certificado y base (los medios ya no la incluyen), y el PDF la lista como «Retención de Ganancias · Certificado N° …».
+- Si el régimen usa alícuota por padrón (`ARCH_RET_<id>` configurado) se rechaza con un mensaje: se carga desde el legacy.
+
+**Validación contra el histórico** (`OrdenPagoRetencionTests.RecalculaOrdenesHistoricasYLasCompara`, `ORDENPAGO_VALIDAR_N`): sobre 80 OPG de 2026 de PRUEBAS02122025, sin créditos coinciden **64 de 66** (los 2 restantes, por ≤ $26, en pagos parciales: es la diferencia buscada). Con créditos hay diferencias de 0,5 a 4 % porque el legacy descuenta del crédito solo el porcentaje de IVA sobre el bruto y la regla nueva descuenta su neto real, que es lo correcto. Un anticipo puro de 2026 difirió por una base que el legacy guardó dividida por 1,19 (probable carga manual). Con fechas de 2025 hay diferencias adicionales porque el mínimo no imponible y las exenciones de hoy no son las de entonces.
+
+**Sigue pendiente (v2b):** IIBB, IVA y SUSS (sin uso en esta base), alícuota por padrón, retención manual, OPG sin medios + liquidación, otras monedas, cheques de terceros y tarjetas, anular órdenes del legacy, certificado de retención en PDF aparte, anticipo puro sin factura desde la pantalla.

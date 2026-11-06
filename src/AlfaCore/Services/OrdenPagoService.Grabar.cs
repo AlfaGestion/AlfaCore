@@ -137,6 +137,17 @@ public sealed partial class OrdenPagoService
             lineas.Add((m, cuenta, banco, nro));
         }
 
+        // Retención de Ganancias: se recalcula acá con los datos actuales; si difiere de la que vio el usuario, se rechaza.
+        var (retencion, ctxRet) = await CalcularRetencionAsync(cn, tx, s, null, ct);
+        if (retencion.Importe != s.Retencion)
+            throw new InvalidOperationException($"La retención de Ganancias cambió: ahora es {retencion.Importe:N2} y la pantalla tenía {s.Retencion:N2}. Volvé a calcularla y revisá los medios de pago.");
+        var certificado = 0L;
+        if (retencion.Importe > 0)
+            certificado = 1 + await cn.ExecuteScalarAsync<long>(Q("""
+                SELECT ISNULL(MAX(CONVERT(bigint,RETGAN_NRO)),0) FROM dbo.V_MV_CPTE WITH(UPDLOCK,HOLDLOCK)
+                WHERE LTRIM(RTRIM(TC)) IN ('PG','OPG') AND RETGAN_Importe>0 AND TCORIGEN<>'0';
+                """));
+
         // Numeración comercial: talonario del tipo (NUM_<TC> si hay equivalencia) de la unidad, o el general.
         var numerarEn = await ConfigAsync(cn, tx, "NUM_" + tc, ct); if (numerarEn.Length == 0) numerarEn = tc;
         await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.V_TA_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(CODIGO))=@numerarEn;", new { numerarEn }));
@@ -187,6 +198,8 @@ public sealed partial class OrdenPagoService
         var cabecera = new
         {
             Motivo = motivo,
+            Ret = retencion.Importe, RetRegimen = retencion.Importe > 0 ? ctxRet?.RegimenId : null, RetBase = retencion.Importe > 0 ? retencion.BaseActual : (decimal?)null,
+            RetNro = retencion.Importe > 0 ? certificado.ToString() : null, RetAlicuota = retencion.Importe > 0 ? ctxRet?.Alicuota : null,
             s.Fecha, Tc = tc, Comprobante = comprobanteOrden, Cuenta = proveedor.Codigo, proveedor.Nombre, Total = dinero, Moneda = moneda, Unidad = unidadPk,
             Usuario = user.Nombre, Detalle = detalle, Suc = suc, Numero = numeroOrden.ToString("D8"),
             Domicilio = $"{proveedor.Calle?.Trim()} {proveedor.Numero?.Trim()}".Trim() is { Length: > 0 } dom ? (dom.Length > 50 ? dom[..50] : dom) : null,
@@ -198,10 +211,10 @@ public sealed partial class OrdenPagoService
         var id = await cn.ExecuteScalarAsync<int>(Q("""
             INSERT INTO dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,FECHA,FECHAESTINICIO,IDMOTIVOCPRAVTA,CUENTA,NOMBRE,DOMICILIO,LOCALIDAD,CODIGOPOSTAL,IDPROVINCIA,TELEFONO,
                 DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,COMENTARIOS,TCORIGEN,COMPROBANTEORIGEN,IMPORTE,MONEDA,FINALIZADA,IdReparto,
-                ImpDescuento1,RetGan_Importe,RetIBR_Importe,RetIVA_Importe,RetSUSS_Importe,SUCURSAL,NUMERO,LETRA,UNEGOCIO,UNEGOCIO_DESTINO,USUARIO,FechaHora_Grabacion)
+                ImpDescuento1,RetGan_Importe,RetIBR_Importe,RetIVA_Importe,RetSUSS_Importe,RETGAN_IdRetencion,RETGAN_BaseImponible,RETGAN_NRO,RETGAN_ALICUOTA,SUCURSAL,NUMERO,LETRA,UNEGOCIO,UNEGOCIO_DESTINO,USUARIO,FechaHora_Grabacion)
             VALUES(@Tc,@Comprobante,0,@Fecha,@Fecha,@Motivo,@Cuenta,@Nombre,@Domicilio,@Localidad,@CodigoPostal,@Provincia,@Telefono,
                 @DocTipo,@DocNumero,@CondIva,@Detalle,@Tc,@Comprobante,@Total,@Moneda,1,0,
-                0,0,0,0,0,@Suc,@Numero,'X',@Unidad,@Unidad,@Usuario,GETDATE());
+                0,@Ret,0,0,0,@RetRegimen,@RetBase,@RetNro,@RetAlicuota,@Suc,@Numero,'X',@Unidad,@Unidad,@Usuario,GETDATE());
             SELECT CONVERT(int,SCOPE_IDENTITY());
             """, cabecera));
 
@@ -217,7 +230,7 @@ public sealed partial class OrdenPagoService
             args.Add("Vencimiento", m?.NroCheque is null ? null : m?.Linea.FechaCheque, DbType.DateTime);
             args.Add("CabCuenta", primera ? proveedor.Codigo : null); args.Add("CabNombre", primera ? proveedor.Nombre : null);
             args.Add("CabCuit", primera ? proveedor.DocumentoNumero?.Trim() : null); args.Add("CabCondIva", primera && !string.IsNullOrWhiteSpace(proveedor.Iva) ? CodigoPk.Format(proveedor.Iva.Trim(), 4) : null);
-            args.Add("Retenciones", 0m, DbType.Decimal);
+            args.Add("Retenciones", 0m, DbType.Decimal); args.Add("RetGanancias", primera ? retencion.Importe : 0m, DbType.Decimal);
             var banco = m?.Cuenta.Medio is "DB" or "CH";
             args.Add("IdBanco", m?.IdBanco); args.Add("NroCheque", m?.NroCheque);
             args.Add("Clearing", m?.NroCheque is null ? null : m?.Linea.Clearing, DbType.Int32);
@@ -230,12 +243,13 @@ public sealed partial class OrdenPagoService
                     IdBanco,NroComprobanteBancario,Clearing,ChPropio,CuentaOrigen,CuentaDestino)
                 VALUES(@Cuenta,@Sec,@Mes,@Asiento,@Fecha,@Detalle,@Tc,@Suc,@Numero,'X',@Sentido,@Importe,@Moneda,1,
                     @Periodo,@Total,@TipoReg,0,GETDATE(),@Fecha,@Usuario,@Caja,@Unidad,@Vencimiento,
-                    @CabCuenta,@CabNombre,@CabCuit,@CabCondIva,@Retenciones,@Retenciones,@Retenciones,
+                    @CabCuenta,@CabNombre,@CabCuit,@CabCondIva,@Retenciones,@Retenciones,@RetGanancias,
                     @IdBanco,@NroCheque,@Clearing,@ChPropio,@Origen,@Destino);
                 """, args));
         }
         await Linea(proveedor.Codigo, dinero, "D", null);
         foreach (var m in lineas) await Linea(m.Cuenta.Codigo, m.Linea.Importe, "H", m);
+        if (retencion.Importe > 0) await Linea(ctxRet!.Cuenta, retencion.Importe, "H", null);
 
         async Task Aplicacion(OrdenPagoClave pagador, OrdenPagoClave pagado, decimal importe)
         {

@@ -133,18 +133,46 @@
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-calculator" Disabled="@(_busy || _medios.Count == 0)" OnClick="_ => CompletarUltimoMedio()">Completar con @Diferencia.ToString("N2")</AlfaButton>
                 }
             </div>
-            <p class="op-ayuda">Efectivo, banco/transferencia y cheque propio, en pesos. Las retenciones se incorporan en la próxima versión.</p>
+            <p class="op-ayuda">Efectivo, banco/transferencia y cheque propio, en pesos.@(_prep.RetieneGanancias ? " La retención de Ganancias se descuenta del pago: calculala antes de grabar." : "")</p>
         </section>
 
         <section class="op-resumen" aria-label="Resumen">
             <dl>
                 <div><dt>Comprobantes a pagar</dt><dd>@APagar.ToString("N2")</dd></div>
                 <div><dt>Créditos aplicados</dt><dd>@Creditos.ToString("N2")</dd></div>
+                @if (_prep.RetieneGanancias)
+                {
+                    <div class="@(RetVigente ? null : "is-aviso")"><dt>Retención de Ganancias</dt><dd>@(RetVigente ? Retencion.ToString("N2") : "Sin calcular")</dd></div>
+                }
                 <div><dt>Medios de pago</dt><dd>@Dinero.ToString("N2")</dd></div>
                 <div class="@(Anticipo != 0 ? "is-aviso" : null)"><dt>@(Anticipo > 0 ? "Anticipo al proveedor" : Anticipo < 0 ? "Falta cubrir" : "Diferencia")</dt><dd>@Math.Abs(Anticipo).ToString("N2")</dd></div>
             </dl>
+            @if (_prep.RetieneGanancias)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-percent" Disabled="@(_busy || _pagar.Count == 0)" OnClick="_ => CalcularRetencionAsync()">Calcular retención</AlfaButton>
+            }
             <AlfaButton Icon="bi bi-check2-circle" Loading="_busy" Disabled="@(_busy || !PuedeGrabar)" OnClick="_ => IntentarGrabarAsync()">Grabar orden de pago</AlfaButton>
         </section>
+        @if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: true } r)
+        {
+            <section class="op-card" aria-label="Detalle de la retención">
+                <h2>Retención de Ganancias <small>@r.Regimen · alícuota @r.Alicuota.ToString("0.##")%</small></h2>
+                <dl class="op-retencion">
+                    <div><dt>Base de esta orden</dt><dd>@r.BaseActual.ToString("N2")</dd></div>
+                    <div><dt>Base acumulada del mes (anterior)</dt><dd>@r.BaseAnterior.ToString("N2")</dd></div>
+                    <div><dt>Mínimo no imponible</dt><dd>@r.NoImponible.ToString("N2")</dd></div>
+                    <div><dt>Base imponible</dt><dd>@r.BaseImponible.ToString("N2")</dd></div>
+                    <div><dt>Retención calculada</dt><dd>@r.Calculada.ToString("N2")</dd></div>
+                    <div><dt>Retenido antes en el mes</dt><dd>@r.RetenidoAntes.ToString("N2")</dd></div>
+                    <div><dt><strong>A retener ahora</strong></dt><dd><strong>@r.Importe.ToString("N2")</strong></dd></div>
+                </dl>
+                @if (r.Importe == 0) { <p class="op-ayuda">No corresponde retener: no supera el mínimo no imponible o el importe queda por debajo del mínimo a retener.</p> }
+            </section>
+        }
+        else if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: false } n)
+        {
+            <p class="op-ayuda">@n.Motivo</p>
+        }
     }
 </div>
 
@@ -193,10 +221,16 @@
     private decimal APagar => _pagar.Values.Sum(Num);
     private decimal Creditos => _aplicar.Values.Sum(Num);
     private decimal Dinero => _medios.Sum(m => Num(m.Importe));
+    private OrdenPagoRetencion? _ret;
+    private string _retFirma = "";
+    /// <summary>Lo que se cargó cuando se calculó la retención: si cambia algún importe, hay que recalcularla.</summary>
+    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + Dinero;
+    private bool RetVigente => _ret is not null && _retFirma == Firma;
+    private decimal Retencion => RetVigente ? _ret!.Importe : 0m;
     /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
-    private decimal Anticipo => Dinero + Creditos - APagar;
-    private decimal Diferencia => Math.Max(0, APagar - Creditos - Dinero);
-    private bool PuedeGrabar => _prep is not null && _pagar.Count > 0 && Dinero > 0 && Anticipo >= 0;
+    private decimal Anticipo => Dinero + Creditos + Retencion - APagar;
+    private decimal Diferencia => Math.Max(0, APagar - Creditos - Retencion - Dinero);
+    private bool PuedeGrabar => _prep is not null && _pagar.Count > 0 && Dinero > 0 && Anticipo >= 0 && (!_prep.RetieneGanancias || RetVigente);
 
     protected override void OnInitialized() { Sesiones.SessionChanged += CambiarSesion; Usuarios.StateChanged += CambiarSesion; UpdateHeader(); }
 
@@ -232,7 +266,7 @@
         return _proveedor is null ? Task.CompletedTask : EjecutarAsync(CargarAsync);
     }
 
-    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _operacion = Guid.NewGuid(); }
+    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _ret = null; _operacion = Guid.NewGuid(); }
 
     private void MarcarComprobante(OrdenPagoDocumento d, bool marcado)
     {
@@ -254,14 +288,33 @@
 
     private static DateTime? Fecha(string? t) => DateTime.TryParseExact(t, "yyyy-MM-dd", null, DateTimeStyles.None, out var f) ? f : null;
 
+    private Task CalcularRetencionAsync() => EjecutarAsync(async () =>
+    {
+        if (_prep is null || _proveedor is null) return;
+        var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
+        OrdenPagoClave ClaveDe(string key, IReadOnlyList<OrdenPagoDocumento> docs) => docs.First(d => Clave(d) == key).Clave;
+        // Pago real en medios: lo cargado o, si todavía no hay medios, lo que se pagaría sin la retención.
+        var pagoReal = Dinero > 0 ? Dinero : Math.Max(0, APagar - Creditos);
+        var s = new OrdenPagoSolicitud
+        {
+            Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma,
+            Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
+            Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
+            Medios = [new() { Cuenta = "-", Importe = pagoReal }]
+        };
+        _ret = await Servicio.CalcularRetencionAsync(s, _vida.Token);
+        _retFirma = Firma;
+    });
+
     private OrdenPagoSolicitud Armar(bool confirmaAnticipo)
     {
         if (_prep is null || _proveedor is null) throw new InvalidOperationException("Elegí un proveedor.");
+        if (_prep.RetieneGanancias && !RetVigente) throw new InvalidOperationException("Calculá la retención de Ganancias antes de grabar (cambiaron los importes).");
         var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
         OrdenPagoClave ClaveDe(string key, IReadOnlyList<OrdenPagoDocumento> docs) => docs.First(d => Clave(d) == key).Clave;
         return new OrdenPagoSolicitud
         {
-            Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma, Detalle = _detalle.Trim(), ConfirmaAnticipo = confirmaAnticipo,
+            Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma, Detalle = _detalle.Trim(), ConfirmaAnticipo = confirmaAnticipo, Retencion = Retencion,
             Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
             Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
             Medios = [.. _medios.Select(m =>
@@ -289,7 +342,7 @@
         var r = await Servicio.GrabarAsync(Armar(confirmaAnticipo), _vida.Token);
         var numero = $"{r.Comprobante[..4]}-{r.Comprobante.Substring(4, 8)} {r.Comprobante[12]}";
         _ultima = r;
-        _feedback = AppUiMessage.Success("Orden de pago grabada", $"{r.Tc} {numero} por {r.Importe:N2}. Asiento {r.NumeroAsiento}." + (r.Anticipo > 0 ? $" Anticipo al proveedor: {r.Anticipo:N2}." : ""));
+        _feedback = AppUiMessage.Success("Orden de pago grabada", $"{r.Tc} {numero} por {r.Importe:N2}. Asiento {r.NumeroAsiento}." + (_ret is { Importe: > 0 } rr && RetVigente ? $" Retención de Ganancias: {rr.Importe:N2}." : "") + (r.Anticipo > 0 ? $" Anticipo al proveedor: {r.Anticipo:N2}." : ""));
         // Nueva orden: se recarga el proveedor para ver los saldos actualizados.
         LimpiarSeleccion();
         await CargarAsync();

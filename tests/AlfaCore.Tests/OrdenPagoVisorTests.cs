@@ -67,7 +67,7 @@ public sealed class OrdenPagoVisorTests(ITestOutputHelper output)
             Assert.True(d!.Cabecera.Web);
             Assert.NotEmpty(d.Cancelados);
             Assert.NotEmpty(d.Medios);
-            Assert.Equal(d.Cabecera.Importe, d.Medios.Sum(m => m.Importe));            // lo pagado = medios
+            Assert.Equal(d.Cabecera.Importe, d.Medios.Sum(m => m.Importe) + d.RetencionGanancias);   // lo cancelado = medios + retención
             Assert.Equal(d.Asiento.Where(l => l.DebeHaber.Trim() == "D").Sum(l => l.Importe), d.Asiento.Where(l => l.DebeHaber.Trim() == "H").Sum(l => l.Importe));
             Assert.Equal(d.Cancelados.Sum(c => c.Total), d.Cancelados.Sum(c => c.PorOrden) + d.CreditosUsados.Sum(c => c.Importe));
             output.WriteLine($"{tc} {id}: {d.Cancelados.Count} cancelados, {d.CreditosUsados.Count} créditos, {d.Medios.Count} medios, saldo a favor {d.SaldoAFavor:N2}, {d.Historial.Count} eventos");

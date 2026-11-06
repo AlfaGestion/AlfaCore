@@ -122,7 +122,7 @@ public sealed class OrdenPagoTests(ITestOutputHelper output)
         return (new OrdenPagoService(sessions, users, Proxy<IPermissionService>((_, _) => Task.FromResult(true)), runtime.Events), connection);
     }
 
-    private const string CrearJournal = """
+    internal const string CrearJournal = """
         IF OBJECT_ID(N'dbo.ALFACORE_PAGO_OPERACION',N'U') IS NULL
             CREATE TABLE dbo.ALFACORE_PAGO_OPERACION (Operacion uniqueidentifier NOT NULL PRIMARY KEY, ComprobanteId int NOT NULL, Tc nvarchar(4) NOT NULL,
                 Comprobante nvarchar(13) NOT NULL, NumeroAsiento int NOT NULL, Importe decimal(18,2) NOT NULL, Anticipo decimal(18,2) NOT NULL DEFAULT 0,
