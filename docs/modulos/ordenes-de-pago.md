@@ -106,4 +106,14 @@ Pantalla `/compras/pagos/ordenes` (solapa «Ver comprobantes» junto a «Orden d
 - **Historial desde AlfaCore:** al grabar una orden se registra el alta (`A`, con asiento, período y cuenta) y cada PDF queda como «Impresión / PDF» (`IM`). Los mails ya los registra el envío (`V_MA_EMAILMOV`). Las órdenes cargadas antes de este cambio no tienen alta en el historial.
 - Se probó contra PRUEBAS02122025 (listado, detalle de órdenes con crédito, mails del legacy, alta en el historial con rollback). El «último envío» se calcula en una sola consulta: por fila tardaba ~160 ms por la red.
 
-No incluye anular una orden (queda como mejora). El visor genérico de comprobantes no se usa porque está pensado para ventas/cobranzas (para pagos mostraría «OPG / OPG» en aplicaciones y no encuentra los pagos, que figuran como Compras pero se graban en `V_MV_CPTE`).
+El visor genérico de comprobantes no se usa porque está pensado para ventas/cobranzas (para pagos mostraría «OPG / OPG» en aplicaciones y no encuentra los pagos, que figuran como Compras pero se graban en `V_MV_CPTE`).
+
+## Anular una orden (06/11/2026)
+
+Botón **Anular** en «Ver órdenes de pago» (solo órdenes creadas desde AlfaCore, no vencidas por ejercicio cerrado). Pide un motivo de 5 a 500 caracteres.
+Hace lo mismo que el legacy: borra el asiento (`MV_ASIENTOS`) y las aplicaciones (`MV_APLICACION` con `TC_PRINT` = la orden), marca `ANULADA=1` en `V_MV_CPTE` y anota una baja (`B`) en `V_MV_CpteAcciones` con usuario y motivo. Las facturas y los créditos vuelven a tener saldo porque `CO_CPTES_IMPAGOS` y `CO_CPTES_CREDITOS_PENDIENTES` se calculan sobre las aplicaciones.
+Antes de borrar guarda una copia del asiento y de las aplicaciones en `ALFACORE_PAGO_ANULACION` (update `2026-11-06-006`).
+
+No se puede anular si: la orden no es de AlfaCore (usar el legacy), el asiento está contabilizado o conciliado (por ejemplo un cheque ya conciliado), el ejercicio está cerrado, o el saldo a favor (anticipo) que dejó la orden ya se aplicó a otros comprobantes. Anular dos veces es inocuo.
+El trigger legacy `FMT_NODEL` de `MV_ASIENTOS` agrega solo una baja «ELIMINACION FISICA» por línea borrada; es el mismo rastro que deja el sistema viejo.
+Los cheques propios quedan liberados (se calculan desde los asientos). Pendiente: anular órdenes legacy y deshacer la aplicación de un anticipo ya usado.

@@ -198,6 +198,58 @@ public sealed class OrdenPagoTests(ITestOutputHelper output)
     }
 
     [OrdenPagoSqlFact]
+    public async Task AnularRetiraAsientoYAplicacionesDevuelveElSaldoYDejaLaBaja()
+    {
+        var (service, connection) = Servicio("Administrador");
+        var prov = await new SqlConnection(connection).QueryFirstAsync<string>(
+            "SELECT TOP 1 LTRIM(RTRIM(CUENTA)) FROM dbo.CO_CPTES_IMPAGOS WHERE TC='FCC' AND SALDO>0 AND LTRIM(RTRIM(MONEDA))='1' ORDER BY SALDO");
+        var prep = await service.PrepararAsync(prov, false);
+        var factura = prep.Comprobantes.First(d => d.Tc == "FCC" && d.Seleccionable);
+        var efectivo = prep.Medios.First(m => m.Tipo == "EF").Cuenta;
+
+        await using var cn = new SqlConnection(connection); await cn.OpenAsync();
+        using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
+        try
+        {
+            await cn.ExecuteAsync(CrearJournal, transaction: tx);
+            await cn.ExecuteAsync("""
+                IF OBJECT_ID(N'dbo.ALFACORE_PAGO_ANULACION', N'U') IS NULL
+                    CREATE TABLE dbo.ALFACORE_PAGO_ANULACION (Id int IDENTITY(1,1) PRIMARY KEY, ComprobanteId int NOT NULL, Tc nvarchar(4) NOT NULL, Comprobante nvarchar(13) NOT NULL,
+                        Usuario nvarchar(50) NOT NULL, Motivo nvarchar(500) NOT NULL, AsientoJson nvarchar(max) NULL, AplicacionesJson nvarchar(max) NULL, FechaHora datetime NOT NULL DEFAULT (GETDATE()));
+                """, transaction: tx);
+            var r = await service.GrabarEnTransaccionAsync(cn, tx, new OrdenPagoSolicitud
+            {
+                Operacion = Guid.NewGuid(), Proveedor = prov, Fecha = DateTime.Today,
+                Comprobantes = [new(factura.Clave, factura.Saldo)], Medios = [new() { Cuenta = efectivo, Importe = factura.Saldo }]
+            }, CancellationToken.None);
+
+            // Un trigger del legacy (FMT_NODEL) también anota «ELIMINACION FISICA» por cada línea de asiento que se borra; la baja propia lleva el motivo.
+            const string Bajas = "SELECT COUNT(*) FROM dbo.V_MV_CpteAcciones WHERE LTRIM(RTRIM(TC))='OPG' AND IDCOMPROBANTE=@C AND LTRIM(RTRIM(TIPO_ACCION))='B' AND Proceso LIKE 'AlfaCore: anulación%'";
+            var bajasAntes = await cn.ExecuteScalarAsync<int>(Bajas, new { C = r.Comprobante }, tx);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnularEnTransaccionAsync(cn, tx, "OPG", r.Comprobante, "x", CancellationToken.None)); // motivo corto
+            await service.AnularEnTransaccionAsync(cn, tx, "OPG", r.Comprobante, "Prueba de anulación", CancellationToken.None);
+
+            Assert.Equal(1, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.V_MV_CPTE WHERE ID=@Id AND ANULADA=1", new { r.Id }, tx));
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(TC))='OPG' AND SUCURSAL=@S AND NUMERO=@N AND LETRA='X'",
+                new { S = r.Comprobante[..4], N = r.Comprobante.Substring(4, 8) }, tx));
+            Assert.Equal(0, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.MV_APLICACION WHERE IDCOMPROBANTE_PRINT=@C", new { C = r.Comprobante }, tx));
+            // La factura vuelve a tener su saldo.
+            Assert.Equal(factura.Saldo, await cn.ExecuteScalarAsync<decimal>(
+                "SELECT SUM(SALDO) FROM dbo.CO_CPTES_IMPAGOS WHERE LTRIM(RTRIM(CUENTA))=@P AND TC=@Tc AND NUMERO=@N", new { P = prov, Tc = factura.Tc, N = factura.Numero }, tx));
+            Assert.Equal(bajasAntes + 1, await cn.ExecuteScalarAsync<int>(Bajas, new { C = r.Comprobante }, tx));
+            Assert.Equal(1, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.ALFACORE_PAGO_ANULACION WHERE Comprobante=@C AND AsientoJson IS NOT NULL", new { C = r.Comprobante }, tx));
+            // Anular dos veces no hace nada más; el comprobante ya anulado queda en el historial una sola vez.
+            await service.AnularEnTransaccionAsync(cn, tx, "OPG", r.Comprobante, "Prueba de anulación", CancellationToken.None);
+            Assert.Equal(1, await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM dbo.ALFACORE_PAGO_ANULACION WHERE Comprobante=@C", new { C = r.Comprobante }, tx));
+            Assert.Equal(bajasAntes + 1, await cn.ExecuteScalarAsync<int>(Bajas, new { C = r.Comprobante }, tx));
+            // Solo se anulan órdenes y proformas; una de otro tipo o inexistente se rechaza.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnularEnTransaccionAsync(cn, tx, "PG", r.Comprobante, "Prueba de anulación", CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnularEnTransaccionAsync(cn, tx, "OPG", "000999999999X", "Prueba de anulación", CancellationToken.None));
+        }
+        finally { tx.Rollback(); }
+    }
+
+    [OrdenPagoSqlFact]
     public async Task AnticipoSobreFacturaAplicaCreditoExistenteYRechazaProformaEnPagoNormal()
     {
         var (service, connection) = Servicio("Administrador");

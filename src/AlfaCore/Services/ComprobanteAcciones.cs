@@ -7,6 +7,7 @@ namespace AlfaCore.Services;
 internal static class ComprobanteAcciones
 {
     internal const string Alta = "A";
+    internal const string Baja = "B";
     internal const string Impresion = "IM";
 
     internal static Task RegistrarAsync(SqlConnection cn, SqlTransaction? tx, string tc, string idComprobante, string tipo, string usuario, string proceso,

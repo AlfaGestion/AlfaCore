@@ -61,6 +61,10 @@
                             {
                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-envelope" Disabled="@(_busy || _mailCargando)" OnClick="_ => AbrirMailAsync(f)">Mail</AlfaButton>
                                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-printer" Disabled="@(_busy || _pdfId is not null)" Loading="@(_pdfId == f.Id)" OnClick="_ => VerPdfAsync(f)">PDF</AlfaButton>
+                                @if (f.Web)
+                                {
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-octagon" Disabled="_busy" OnClick="_ => AbrirAnular(f)">Anular</AlfaButton>
+                                }
                             }
                         </td>
                     </tr>
@@ -84,6 +88,21 @@
         SecondaryMessage="Salen de a uno. Los proveedores sin mail válido quedan sin enviar y se detallan al terminar."
         ConfirmLabel="Enviar" OnConfirm="EnviarLoteAsync" OnCancel="() => _confirmarLote = false" />
 }
+@if (_anular is { } anular)
+{
+    <AlfaDialog Open="true" Title="@($"Anular {anular.Tc} {CompraDocumentoMailService.FormatoComprobante(anular.Comprobante)}")" Size="AlfaDialogSize.Md" CloseOnBackdrop="false" OnClose="CerrarAnular">
+        <ChildContent>
+            <p>Se retira el asiento y las aplicaciones de la orden: las facturas y los créditos que había cancelado vuelven a tener saldo. Queda registrada la baja en el historial con tu usuario y el motivo.</p>
+            <p><strong>@anular.Nombre</strong> · @anular.Importe.ToString("N2")</p>
+            <AlfaInput Label="Motivo de la anulación (obligatorio)" @bind-Value="_motivo" Disabled="_busy" />
+            @if (_anularError is { Length: > 0 }) { <p role="alert">@_anularError</p> }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="_busy" OnClick="CerrarAnular">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="_busy" Loading="_busy" OnClick="_ => AnularAsync()">Anular orden</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+}
 @if (_ver is { } ver) { <OrdenPagoDetalleDialog @key="@(ver.Tc + ver.Comprobante)" Tc="@ver.Tc" IdComprobante="@ver.Comprobante" OnClose="CerrarDetalle" /> }
 
 @code {
@@ -94,7 +113,9 @@
     private Guid? _sesion;
     private string? _mailError;
     private CompraMailBorrador? _mail;
-    private OrdenPagoFila? _ver;
+    private OrdenPagoFila? _ver, _anular;
+    private string? _anularError;
+    private string _motivo = "";
     private string _texto = "", _tipo = "", _estado = "ACTIVAS";
     private string _desde = new DateTime(DateTime.Today.Year, 1, 1).ToString("yyyy-MM-dd"), _hasta = DateTime.Today.ToString("yyyy-MM-dd");
     private IReadOnlyList<OrdenPagoFila> _filas = [];
@@ -131,6 +152,19 @@
     private void Seleccionar(OrdenPagoFila f, bool marcado) { if (marcado) _seleccion.Add(f.Id); else _seleccion.Remove(f.Id); }
     private void SeleccionarTodas(bool marcado) { foreach (var f in Enviables) Seleccionar(f, marcado); }
     private void CerrarDetalle() => _ver = null;
+
+    private void AbrirAnular(OrdenPagoFila f) { _anular = f; _motivo = ""; _anularError = null; }
+    private void CerrarAnular() { if (!_busy) _anular = null; }
+
+    private Task AnularAsync() => EjecutarAsync(async () =>
+    {
+        if (_anular is not { } f) return;
+        try { await Servicio.AnularAsync(f.Tc, f.Comprobante, _motivo, _vida.Token); }
+        catch (Exception ex) when (ex is InvalidOperationException) { _anularError = ex.Message; return; }
+        _anular = null; _seleccion.Remove(f.Id);
+        await ConsultarAsync();
+        _feedback = AppUiMessage.Success("Orden anulada", $"{f.Tc} {CompraDocumentoMailService.FormatoComprobante(f.Comprobante)} quedó anulada y sus comprobantes volvieron a tener saldo.");
+    });
 
     private async Task VerPdfAsync(OrdenPagoFila f)
     {
