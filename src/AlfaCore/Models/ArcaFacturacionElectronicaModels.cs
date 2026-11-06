@@ -96,7 +96,11 @@ public sealed record ArcaCaeSolicitudDto(
 {
     /// <summary>Documentos que ajusta una nota. Se conserva también para conciliar una respuesta perdida.</summary>
     public IReadOnlyList<ArcaComprobanteAsociadoDto> ComprobantesAsociados { get; init; } = [];
+    /// <summary>Otros tributos (ImpTrib): por ahora impuestos internos, Id 4, como ModFacturacionElectronica.AgregarTributo.</summary>
+    public IReadOnlyList<ArcaTributoDto> Tributos { get; init; } = [];
 }
+
+public sealed record ArcaTributoDto(int Id, string Descripcion, decimal BaseImponible, decimal Alicuota, decimal Importe);
 
 public sealed record ArcaComprobanteAsociadoDto(int Tipo, int PuntoVenta, long Numero, string? Cuit = null, DateTime? Fecha = null);
 

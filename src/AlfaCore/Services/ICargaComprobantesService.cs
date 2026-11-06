@@ -6,12 +6,28 @@ public interface ICargaComprobantesService
 {
     Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarClientesDirectaAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarFacturasAsociadasAsync(string cliente, string unidad, string texto, CancellationToken ct = default);
+    /// <summary>Facturas asociables a la nota del tipo indicado (NCFP: facturas proforma; NC/ND: facturas electrónicas).</summary>
+    Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarFacturasAsociadasAsync(string tcNota, string cliente, string unidad, string texto, CancellationToken ct = default)
+        => BuscarFacturasAsociadasAsync(cliente, unidad, texto, ct);
     Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(string cliente, string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(CargaComprobantesDirecta directa, string texto, CancellationToken ct = default)
         => BuscarArticulosDirectaAsync(directa.Cliente, texto, ct);
+    /// <summary>Como el POS: artículo por código o código de barras exacto, con el precio del comprobante; null si no existe.</summary>
+    async Task<CrmCotizacionArticuloDto?> GetArticuloPorCodigoDirectaAsync(CargaComprobantesDirecta directa, string codigo, CancellationToken ct = default)
+    {
+        var resultados = await BuscarArticulosDirectaAsync(directa, codigo, ct);
+        return resultados.FirstOrDefault(x => string.Equals(x.IdArticulo, codigo.Trim(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x.Codigo, codigo.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
     /// <summary>Stock actual (V_MV_STOCK, sin anulados) por artículo; del depósito indicado o de todos.</summary>
     Task<IReadOnlyDictionary<string, decimal>> GetStockArticulosAsync(IReadOnlyList<string> articulos, string? deposito, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyDictionary<string, decimal>>(new Dictionary<string, decimal>());
+    /// <summary>Filas de la lista de precios del comprobante para los artículos indicados (ofertas, tramos y detalle de clases).</summary>
+    Task<CargaComprobantesPreciosInfo?> GetPreciosListaDirectaAsync(CargaComprobantesDirecta directa, IReadOnlyList<string> articulos, CancellationToken ct = default)
+        => Task.FromResult<CargaComprobantesPreciosInfo?>(null);
+    /// <summary>Medios de pago para la cobranza de contado (como el POS: MA_CUENTAS con MEDIODEPAGO, más utilizados primero).</summary>
+    Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> GetMediosPagoAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<CargaComprobantesOpcionFiltro>>([]);
     Task<CargaComprobantesPlanGrabacion> ValidarDirectaAsync(CargaComprobantesDirecta directa, int talonario, CancellationToken ct = default);
     Task<CargaComprobantesGrabacionResultado?> ConsultarDirectaAsync(Guid borrador, Guid operacion, CancellationToken ct = default);
     Task<CargaComprobantesGrabacionResultado> GrabarDirectaAsync(CargaComprobantesDirecta directa, int talonario,

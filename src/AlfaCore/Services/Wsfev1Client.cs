@@ -65,6 +65,17 @@ public sealed class Wsfev1Client(IHttpClientFactory httpClientFactory) : IWsfev1
                         c.Fecha is { } fecha ? new XElement(Ns + "CbteFch", fecha.ToString("yyyyMMdd")) : null))));
             }
 
+            if (solicitud.Tributos.Count > 0)
+            {
+                detalle.Add(new XElement(Ns + "Tributos",
+                    solicitud.Tributos.Select(t => new XElement(Ns + "Tributo",
+                        new XElement(Ns + "Id", t.Id),
+                        new XElement(Ns + "Desc", t.Descripcion),
+                        new XElement(Ns + "BaseImp", Formatear(t.BaseImponible)),
+                        new XElement(Ns + "Alic", Formatear(t.Alicuota)),
+                        new XElement(Ns + "Importe", Formatear(t.Importe))))));
+            }
+
             if (solicitud.Ivas.Count > 0)
             {
                 detalle.Add(new XElement(Ns + "Iva",

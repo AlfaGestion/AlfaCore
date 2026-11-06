@@ -14,6 +14,9 @@ public sealed partial class CargaComprobantesService(
     public const string MenuKey = "D60CCW";
 
     public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarFacturasAsociadasAsync(string cliente, string unidad, string texto, CancellationToken ct = default)
+        => BuscarFacturasAsociadasAsync("NC", cliente, unidad, texto, ct);
+
+    public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> BuscarFacturasAsociadasAsync(string tcNota, string cliente, string unidad, string texto, CancellationToken ct = default)
         => ExecuteAsync<IReadOnlyList<CargaComprobantesOpcionFiltro>>("FacturasAsociadas", async (cn, ctx, token) =>
         {
             if (!ctx.AdminCentral && unidad.Trim() != ctx.UnidadNegocio)
@@ -24,7 +27,7 @@ public sealed partial class CargaComprobantesService(
                 SELECT TOP(30) CONVERT(nvarchar(15),f.Id) Codigo,
                     LTRIM(RTRIM(f.Comprobante))+' · '+CONVERT(nvarchar(10),f.Fecha,103)+' · $ '+CONVERT(nvarchar(30),f.Total)
                     + CASE WHEN f.Acreditado<>0 THEN ' · saldo $ '+CONVERT(nvarchar(30),f.Total-f.Acreditado) ELSE '' END Descripcion
-                FROM ({CargaComprobantesAsociadoPreparador.SqlFactura}
+                FROM ({(tcNota == "NCFP" ? CargaComprobantesAsociadoPreparador.SqlProforma : CargaComprobantesAsociadoPreparador.SqlFactura)}
                     AND LTRIM(RTRIM(c.CUENTA))=@Cliente AND LTRIM(RTRIM(c.UNEGOCIO))=@Unidad
                     AND c.FECHA >= DATEADD(month,-18,GETDATE()) AND c.IDCOMPROBANTE LIKE @Texto) f
                 ORDER BY f.Fecha DESC, f.Id DESC;
@@ -71,12 +74,97 @@ public sealed partial class CargaComprobantesService(
         => BuscarArticulosDirectaAsync(new CargaComprobantesDirecta { Cliente = cliente }, texto, ct);
 
     public Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaAsync(CargaComprobantesDirecta directa, string texto, CancellationToken ct = default)
-        => ExecuteAsync("ArticulosDirecta", async (cn, ctx, token) =>
+        => ExecuteAsync("ArticulosDirecta", (cn, ctx, token) => BuscarArticulosDirectaCoreAsync(cn, ctx, directa, texto, token), ct);
+
+    /// <summary>Como el POS: código de artículo o cualquiera de sus códigos de barra (CODIGOBARRA..CODIGOBARRA4), exacto.
+    /// Null si no existe; regla si existe pero no se puede vender (suspendido o, en Retail, sin precio en la lista).</summary>
+    public Task<CrmCotizacionArticuloDto?> GetArticuloPorCodigoDirectaAsync(CargaComprobantesDirecta directa, string codigo, CancellationToken ct = default)
+        => ExecuteAsync<CrmCotizacionArticuloDto?>("ArticuloCodigoDirecta", async (cn, ctx, token) =>
+        {
+            var buscar = (codigo ?? "").Trim().ToUpperInvariant();
+            if (buscar.Length == 0) return null;
+            var encontrado = await cn.QueryFirstOrDefaultAsync<(string Id, bool Suspendido)>(new CommandDefinition("""
+                SELECT TOP (1) LTRIM(RTRIM(a.IDARTICULO)),
+                    CONVERT(bit,CASE WHEN ISNULL(a.Suspendido,0)=1 OR ISNULL(a.SuspendidoV,0)=1 THEN 1 ELSE 0 END)
+                FROM dbo.V_MA_ARTICULOS a
+                WHERE UPPER(LTRIM(RTRIM(a.IDARTICULO)))=@Codigo
+                   OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA,''))))=@Codigo
+                   OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1,''))))=@Codigo
+                   OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2,''))))=@Codigo
+                   OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3,''))))=@Codigo
+                   OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4,''))))=@Codigo
+                ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(a.IDARTICULO)))=@Codigo THEN 0 ELSE 1 END;
+                """, new { Codigo = buscar }, cancellationToken: token));
+            if (encontrado.Id is null) return null;
+            if (encontrado.Suspendido) throw new CargaComprobantesReglaException($"El artículo {encontrado.Id} está suspendido para la venta.");
+            var resultados = await BuscarArticulosDirectaCoreAsync(cn, ctx, directa, encontrado.Id, token);
+            return resultados.FirstOrDefault(x => string.Equals(x.IdArticulo, encontrado.Id, StringComparison.OrdinalIgnoreCase))
+                ?? throw new CargaComprobantesReglaException($"El artículo {encontrado.Id} no tiene precio de venta en la lista del cliente.");
+        }, ct);
+
+    private static async Task<IReadOnlyList<CrmCotizacionArticuloDto>> BuscarArticulosDirectaCoreAsync(SqlConnection cn, CargaComprobantesContexto ctx,
+        CargaComprobantesDirecta directa, string texto, CancellationToken token)
         {
             if (string.IsNullOrWhiteSpace(directa.Cliente)) throw new CargaComprobantesReglaException("Primero elegí el cliente para resolver sus precios.");
             var precios = new ArticuloPrecioResolverService();
-            var pricing = await new CargaComprobantesSeleccionPrecios().ResolverAsync(cn, ctx.Usuario, directa, token);
-            return await precios.SearchArticulosAsync(cn, pricing, texto, 30, token);
+            var (pricing, config) = await new CargaComprobantesSeleccionPrecios().ResolverConConfigAsync(cn, ctx.Usuario, directa, token);
+            var resultados = await precios.SearchArticulosAsync(cn, pricing, texto, config.Retail ? 60 : 30, token);
+            if (!pricing.UsaListas || resultados.Count == 0) return resultados;
+            // Precio de lista como la grabación: oferta vigente a la fecha del comprobante e internos separados del final.
+            // En Retail se ocultan los artículos sin precio de venta en la lista (el maestro solo tiene costos).
+            var filas = await CargaComprobantesPreciosLista.LeerAsync(cn, pricing.IdLista, resultados.Select(x => x.IdArticulo), token);
+            var datos = (await cn.QueryAsync<(string Articulo, decimal Internos, bool Exento)>(new CommandDefinition(
+                "SELECT LTRIM(RTRIM(IDARTICULO)),ISNULL(IMPUESTOS,0),CONVERT(bit,ISNULL(EXENTO,0)) FROM dbo.V_MA_ARTICULOS WHERE LTRIM(RTRIM(IDARTICULO)) IN @Ids;",
+                new { Ids = resultados.Select(x => x.IdArticulo).ToArray() }, cancellationToken: token)))
+                .GroupBy(x => x.Articulo, StringComparer.OrdinalIgnoreCase).ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+            var fecha = (directa.Fecha ?? DateTime.Today).Date;
+            var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
+            var lista = new List<CrmCotizacionArticuloDto>();
+            foreach (var r in resultados)
+            {
+                var fila = filas.GetValueOrDefault(r.IdArticulo);
+                if (fila is null || fila.Precio(clase) <= 0) { if (!config.Retail) lista.Add(r); continue; }
+                var dato = datos.GetValueOrDefault(r.IdArticulo);
+                var tasa = dato.Exento ? 0 : r.TasaIva == 0 ? ctx.AlicuotaGeneral : r.TasaIva;
+                var pv = CargaComprobantesPreciosLista.Calcular(fila, 0, clase, 1, fecha, config, tasa, pricing.PreciosConIva,
+                    ctx.PreciosFinales ? dato.Internos : 0);
+                r.PrecioUnitarioNeto = pv.Neto; r.PrecioUnitarioConIva = pv.Final;
+                lista.Add(r);
+            }
+            return lista.Take(30).ToList();
+        }
+
+    public Task<IReadOnlyList<CargaComprobantesOpcionFiltro>> GetMediosPagoAsync(CancellationToken ct = default)
+        => ExecuteAsync<IReadOnlyList<CargaComprobantesOpcionFiltro>>("MediosPagoDirecta", async (cn, _, token) =>
+            // Mismos medios que el POS (MEDIODEPAGO y CodigoOpcional, orden MpMasUtilizados0..9) más la cuenta de caja;
+            // sin cheques ni moneda extranjera, que esta carga todavía no admite.
+            (await cn.QueryAsync<CargaComprobantesOpcionFiltro>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(c.CODIGO)) Codigo,ISNULL(LTRIM(RTRIM(c.DESCRIPCION)),'') Descripcion
+                FROM dbo.MA_CUENTAS c
+                OUTER APPLY (SELECT MIN(CONVERT(int,RIGHT(UPPER(LTRIM(RTRIM(k.CLAVE))),1))) Orden FROM dbo.TA_CONFIGURACION k
+                    WHERE UPPER(LTRIM(RTRIM(k.CLAVE))) LIKE 'MPMASUTILIZADOS[0-9]'
+                        AND UPPER(LTRIM(RTRIM(CONVERT(nvarchar(50),k.VALOR))))=UPPER(LTRIM(RTRIM(c.CodigoOpcional)))) mu
+                WHERE ISNULL(LTRIM(RTRIM(c.MEDIODEPAGO)),'')<>'' AND UPPER(LTRIM(RTRIM(c.MEDIODEPAGO)))<>'CH'
+                    AND ISNULL(LTRIM(RTRIM(c.MONEDA)),'') IN ('','1') AND ISNULL(c.TITULO,0)=0 AND ISNULL(c.BLOQUEO,0)=0 AND ISNULL(c.Dada_De_Baja,0)=0
+                    AND (ISNULL(LTRIM(RTRIM(c.CodigoOpcional)),'')<>'' OR LTRIM(RTRIM(c.CODIGO))=
+                        (SELECT TOP (1) LTRIM(RTRIM(CONVERT(nvarchar(50),VALOR))) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE)))='CUENTA_CAJA'))
+                ORDER BY CASE WHEN mu.Orden IS NULL THEN 1 ELSE 0 END,mu.Orden,c.DESCRIPCION,c.CODIGO;
+                """, cancellationToken: token))).ToList(), ct);
+
+    public Task<CargaComprobantesPreciosInfo?> GetPreciosListaDirectaAsync(CargaComprobantesDirecta directa, IReadOnlyList<string> articulos, CancellationToken ct = default)
+        => ExecuteAsync<CargaComprobantesPreciosInfo?>("PreciosListaDirecta", async (cn, ctx, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(directa.Cliente) || CargaComprobantesTipos.EsCredito(directa.Tc)) return null;
+            var (pricing, config) = await new CargaComprobantesSeleccionPrecios().ResolverConConfigAsync(cn, ctx.Usuario, directa, token);
+            if (!pricing.UsaListas) return null;
+            return new CargaComprobantesPreciosInfo
+            {
+                Lista = pricing.IdLista.Trim(), Clase = Math.Clamp(pricing.ClasePrecio, 1, 8), Config = config,
+                ListaNombre = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                    "SELECT TOP (1) LTRIM(RTRIM(Nombre)) FROM dbo.V_MA_PRECIOSCAB WHERE LTRIM(RTRIM(IdLista))=@Lista AND LTRIM(RTRIM(TipoLista))='V';",
+                    new { Lista = pricing.IdLista.Trim() }, cancellationToken: token)) ?? "",
+                Filas = await CargaComprobantesPreciosLista.LeerAsync(cn, pricing.IdLista, articulos, token)
+            };
         }, ct);
 
     public Task<IReadOnlyDictionary<string, decimal>> GetStockArticulosAsync(IReadOnlyList<string> articulos, string? deposito, CancellationToken ct = default)
@@ -286,6 +374,8 @@ public sealed partial class CargaComprobantesService(
             if (resumen is null) return null;
             // Lista y clase que le corresponden (las mismas que usa la carga cuando queda "Del cliente").
             var pricing = await new ArticuloPrecioResolverService().ResolveContextAsync(cn, cliente.Trim(), token);
+            // Retail: clase de venta fija y lista por defecto si el cliente no tiene.
+            CargaComprobantesSeleccionPrecios.AplicarRetail(pricing, await CargaComprobantesConfigPrecios.LeerAsync(cn, token));
             resumen.ListaCodigo = pricing.IdLista?.Trim() ?? "";
             resumen.Clase = pricing.ClasePrecio;
             resumen.ListaNombre = resumen.ListaCodigo.Length == 0 ? "" : await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
@@ -344,6 +434,8 @@ public sealed partial class CargaComprobantesService(
                     FROM dbo.V_MV_CPTE c
                     WHERE c.FECHA >= @Desde AND c.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(c.IDCOMPLEMENTO,0) = 0
                       AND (@Tc = '' OR LTRIM(RTRIM(c.TC)) = @Tc)
+                      -- Solo comprobantes de Ventas: OPG, PG, PGFP y demás son de Compras (V_TA_CPTE.SISTEMA).
+                      AND LTRIM(RTRIM(c.TC)) IN (SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(SISTEMA)) = 'Ventas')
                       AND (@IncluirAnulados = 1 OR ISNULL(c.ANULADA,0) = 0)
                       AND (@AdminCentral = 1 OR LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) IN ('', @UnidadUsuario))
                       AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(c.UNEGOCIO,''))) = @Unidad)
@@ -352,7 +444,7 @@ public sealed partial class CargaComprobantesService(
                 )
                 SELECT q.*, ISNULL(LTRIM(RTRIM(t.DESCRIPCION)),'') TcDescripcion, e.CAE Cae{mailSelect}
                 FROM q
-                OUTER APPLY (SELECT TOP (1) DESCRIPCION FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) = q.Tc ORDER BY Talonario) t
+                OUTER APPLY (SELECT TOP (1) DESCRIPCION FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) = q.Tc AND LTRIM(RTRIM(SISTEMA)) = 'Ventas' ORDER BY Talonario) t
                 OUTER APPLY (SELECT TOP (1) NULLIF(LTRIM(RTRIM(CAE)),'') CAE FROM dbo.V_MV_CPTE_ELECTRONICOS
                              WHERE TC = q.Tc AND IdComprobante = q.IdComprobante AND ISNULL(Archivado,0) = 0) e
                 {mailApply}
@@ -530,7 +622,10 @@ public sealed partial class CargaComprobantesService(
         catch (Exception ex)
         {
             EnsureContext(sessionId, user, system);
-            const string message = "No se pudo completar la operación de comprobantes. Revisá el resultado y recuperá la operación antes de intentar emitir nuevamente.";
+            const string generico = "No se pudo completar la operación de comprobantes. Revisá el resultado y recuperá la operación antes de intentar emitir nuevamente.";
+            // Rechazo de la base (trigger, campo largo, dato faltante, código inexistente): decir qué campo corregir.
+            var sql = ex as Microsoft.Data.SqlClient.SqlException ?? ex.InnerException as Microsoft.Data.SqlClient.SqlException;
+            var message = sql is null ? generico : $"{CargaComprobantesErroresSql.Explicar(sql)} Si ya estabas grabando, revisá el resultado antes de reintentar.";
             var code = await events.LogErrorAsync("CargaComprobantes", action, ex, message, ct: ct);
             throw new AppUserFacingException(message, code, ex);
         }

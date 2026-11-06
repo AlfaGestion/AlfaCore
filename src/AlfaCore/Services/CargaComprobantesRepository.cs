@@ -56,7 +56,7 @@ public sealed class CargaComprobantesRepository
             SELECT LTRIM(RTRIM(CODIGO)) Tc,Talonario,LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) UnidadNegocio,
                 ISNULL(LETRAS,'') Letras,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion,
                 ISNULL(A_SUC_DEFAULT,0) PuntoA,ISNULL(B_SUC_DEFAULT,0) PuntoB,ISNULL(C_SUC_DEFAULT,0) PuntoC,ISNULL(X_SUC_DEFAULT,0) PuntoX
-            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) IN ('FC','NC','ND','FP') AND LTRIM(RTRIM(SISTEMA))='Ventas'
+            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO)) IN ('FC','NC','ND','FP','NCFP','PR','NP','RM') AND LTRIM(RTRIM(SISTEMA))='Ventas'
                 AND (@AdminCentral=1 OR LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) IN ('',@UnidadNegocio))
             ORDER BY CODIGO,Talonario;
             """, new { contexto.AdminCentral, contexto.UnidadNegocio }, transaction, cancellationToken: ct))).ToList();

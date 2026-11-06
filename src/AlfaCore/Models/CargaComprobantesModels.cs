@@ -170,6 +170,12 @@ public sealed class CargaComprobantesContexto
     public bool PuedeEditarDescuento { get; set; }
     public bool PuedeCambiarLista { get; set; }
     public bool PuedeCambiarClase { get; set; }
+    /// <summary>RETAIL=SI: se vende siempre con lista y con la clase de venta fija.</summary>
+    public bool Retail { get; set; }
+    /// <summary>Clase fija de Retail, para mostrar ("4 · VENTA").</summary>
+    public string ClaseRetail { get; set; } = string.Empty;
+    /// <summary>TA_USUARIOS.ModificaCostos: puede ver costo y margen en el detalle de precios.</summary>
+    public bool VeCostos { get; set; }
     public IReadOnlyList<CargaComprobantesOpcionFiltro> ListasPrecio { get; set; } = [];
     public IReadOnlyList<CargaComprobantesOpcionFiltro> ClasesPrecio { get; set; } = [];
     public bool EntregaParcial { get; set; }

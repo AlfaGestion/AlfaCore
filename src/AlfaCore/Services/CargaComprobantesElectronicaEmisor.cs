@@ -120,8 +120,14 @@ public sealed class CargaComprobantesElectronicaEmisor(IArcaConfigService config
     {
         var fiscal = CargaComprobantesDesgloseFiscal.Crear(liquidacion);
         var ivas = fiscal.Alicuotas.Select(x => new ArcaIvaAlicuotaDto(ArcaCodigosAfip.ResolverIdAlicuotaIva(x.Alicuota), x.Neto, x.Iva)).ToList();
+        // Impuestos internos: tributo 4 con base = neto gravado y alícuota derivada del importe
+        // (ModFacturacionElectronica.AgregarTributo, igual que el legacy).
+        var tributos = fiscal.Internos == 0 ? new List<ArcaTributoDto>()
+            : [new ArcaTributoDto(4, "IMPUESTOS INTERNOS", fiscal.NetoGravado,
+                decimal.Round(fiscal.Internos * 100 / fiscal.NetoGravado, 2, MidpointRounding.AwayFromZero), fiscal.Internos)];
         return new(emisor.Cuit, emisor.PuntoVentaElectronico, tipo, 1, documentoTipo, documentoNumero,
-            fecha.Date, numero, numero, fiscal.Total, 0, fiscal.NetoGravado, fiscal.Exento, 0, fiscal.Iva, condicion, "PES", 1, ivas);
+            fecha.Date, numero, numero, fiscal.Total, 0, fiscal.NetoGravado, fiscal.Exento, fiscal.Internos, fiscal.Iva, condicion, "PES", 1, ivas)
+        { Tributos = tributos };
     }
 
     public async Task<CargaComprobantesElectronicaPrueba> RecuperarAsync(SqlConnection cn, CargaComprobantesContexto contexto,

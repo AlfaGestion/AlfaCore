@@ -146,4 +146,6 @@ public sealed class CrmCotizacionPricingContextDto
     public int ClasePrecio { get; set; } = 1;
     public bool PreciosConIva { get; set; }
     public bool UsaListas { get; set; }
+    /// <summary>RETAIL=SI: clase de venta fija y sin precio de maestro (son costos).</summary>
+    public bool Retail { get; set; }
 }
