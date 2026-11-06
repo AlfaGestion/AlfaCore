@@ -117,3 +117,22 @@ Antes de borrar guarda una copia del asiento y de las aplicaciones en `ALFACORE_
 No se puede anular si: la orden no es de AlfaCore (usar el legacy), el asiento está contabilizado o conciliado (por ejemplo un cheque ya conciliado), el ejercicio está cerrado, o el saldo a favor (anticipo) que dejó la orden ya se aplicó a otros comprobantes. Anular dos veces es inocuo.
 El trigger legacy `FMT_NODEL` de `MV_ASIENTOS` agrega solo una baja «ELIMINACION FISICA» por línea borrada; es el mismo rastro que deja el sistema viejo.
 Los cheques propios quedan liberados (se calculan desde los asientos). Pendiente: anular órdenes legacy y deshacer la aplicación de un anticipo ya usado.
+
+## v2: retenciones — análisis del legacy (06/11/2026)
+
+Fuente: `FrmMvPagos.frm` (`CalculaRetenciones` ~6283, `CalculaBaseImponible` ~2487, `ObtieneImporte` ~6494, `UltimoNroRet` ~7277). Datos: PRUEBAS02122025.
+
+**Uso real:** de 5.757 OPG, 2.592 retienen **Ganancias**; IIBB, IVA y SUSS no se usaron nunca en esta base. `V_TA_RETENCIONES` tiene un solo régimen (id 1, mínimo no imponible 224.000, mínimo excluido 240, 2 %) y `V_TA_ESCALARETENCIONES` está vacía.
+
+**Cómo calcula Ganancias el legacy**
+1. Solo si `AGENTEDERETENCIONGAN=SI` y el proveedor tiene `RETGAN_IdRetencion` (en `Vt_Proveedores`). Si `MA_CUENTASADIC.FhVtoExento` es posterior a la fecha, está exento. PGFP nunca retiene.
+2. Base del comprobante: neto gravado de la factura (`MV_ASIENTOS.LIVA_ImpNetoGrav`; con `CALCULARETENCIONSOBREIMPINT=SI` suma exento); si el pago es parcial, importe pagado / (1 + alícuota IVA). Aparte se suma el no gravado. Proveedores con condición IVA 5 usan el total.
+3. Se descuenta de la base lo cancelado con créditos (NC/ND/anticipos) y nunca queda por debajo del pago real en medios (EF/CH/DB).
+4. **Acumulativa por mes y por CUIT**: suma las bases y retenciones ya practicadas en el mes (OPG finalizadas, PG y PGFP no anuladas con el mismo CUIT y régimen; el día de inicio es el del vencimiento de exención si cae en el mes).
+5. Retención = (acumulado − mínimo no imponible) × % (+ escala si hay) − retenido antes del mes; si es menor al mínimo excluido (240) es 0. Si es el primer pago del mes y no supera el mínimo no imponible, 0.
+6. Graba en `V_MV_CPTE`: `RETGAN_IdRetencion/BaseImponible/Importe/NRO` (nro = máximo de certificados + 1), `IMPORTE` = total cancelado (con la retención), `RetGan_Importe`; en `MV_ASIENTOS` una línea al Haber con la cuenta de retención (`TA_CUENTASIVA.PG_RETGAN`, o `V_TA_RETENCIONES.CUENTA` si está cargada; en esta base 21304) y `LIVA_Ret_Ganancias` en la línea del proveedor. Los medios suman total − retención.
+7. Alícuota: la del régimen, o la del padrón/archivo (`ARCH_RET_<id>`) si está configurado.
+
+**Plan propuesto (v2a → v2b)**
+- v2a: Ganancias completo (cálculo acumulativo, asiento, certificado nº, PDF con la retención, visor y anulación que la contemplen) con un validador que **recalcula las 2.592 OPG históricas** y compara contra lo que grabó el legacy antes de habilitarlo.
+- v2b: IIBB, IVA, SUSS y alícuotas por padrón, solo si hay una base que los use para validar.
