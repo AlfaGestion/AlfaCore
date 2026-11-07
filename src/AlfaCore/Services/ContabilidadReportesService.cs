@@ -138,14 +138,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
     private async Task<SumasSaldosResultado> LeerSumasSaldosAsync(SqlConnection cn, ContabilidadFiltro f, CancellationToken ct)
     {
         var (ejercicio, p, where) = await PrepararAsync(cn, f, ct);
-        var saldos = (await cn.QueryAsync<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)>(new CommandDefinition($"""
-            SELECT LTRIM(RTRIM(a.CUENTA)),
-                SUM(CASE WHEN a.FECHA < @Desde THEN CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END ELSE 0 END),
-                SUM(CASE WHEN a.FECHA >= @Desde AND a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END),
-                SUM(CASE WHEN a.FECHA >= @Desde AND a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END)
-            FROM dbo.MV_ASIENTOS a WHERE {where}
-            GROUP BY LTRIM(RTRIM(a.CUENTA));
-            """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
+        var (saldos, resultadoAnterior) = await SaldosConArrastreAsync(cn, p, where, ct);
         var desbalanceados = (await cn.QueryAsync<AsientoDesbalanceado>(new CommandDefinition($"""
             SELECT CONVERT(int,a.MES_OPERATIVO) MesOperativo, CONVERT(int,COALESCE(MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) <> '' THEN a.[NUMERO ASIENTO] END),MAX(a.[NUMERO ASIENTO]))) Numero, MIN(a.FECHA) Fecha, LTRIM(RTRIM(ISNULL(a.TC,''))) Tc,
                    LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) + '-' + LTRIM(RTRIM(ISNULL(a.NUMERO,''))) + ' ' + LTRIM(RTRIM(ISNULL(a.LETRA,''))) Comprobante,
@@ -158,13 +151,65 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
             ORDER BY MIN(a.FECHA), a.MES_OPERATIVO, Numero, a.TIPO_REG, a.TC, a.SUCURSAL, a.NUMERO, a.LETRA;
             """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
         var plan = await PlanAsync(cn, ct);
+        var filas = ArmarSumasSaldos(plan.Select(c => (c.Codigo, c.Descripcion, c.Titulo, c.TipoVista)).ToList(), saldos, f.AgruparTerceros, f.MostrarTitulos, f.IncluirSinMovimientos);
+        if (resultadoAnterior != 0) filas.Add(FilaResultadoAnterior(resultadoAnterior));
         return new SumasSaldosResultado
         {
             Filtro = f, Empresa = await EmpresaAsync(cn, ct), Ejercicio = ejercicio.Descripcion,
-            Filas = ArmarSumasSaldos(plan.Select(c => (c.Codigo, c.Descripcion, c.Titulo, c.TipoVista)).ToList(), saldos, f.AgruparTerceros, f.MostrarTitulos, f.IncluirSinMovimientos),
-            TotalSaldoAnterior = saldos.Sum(s => s.Anterior), TotalDebe = saldos.Sum(s => s.Debe), TotalHaber = saldos.Sum(s => s.Haber),
+            Filas = filas,
+            TotalSaldoAnterior = saldos.Sum(s => s.Anterior) + resultadoAnterior, TotalDebe = saldos.Sum(s => s.Debe), TotalHaber = saldos.Sum(s => s.Haber),
             Desbalanceados = desbalanceados
         };
+    }
+
+    // ── Saldos con arrastre de ejercicios anteriores ────────────────────────────────────────────
+
+    /// <summary>Capítulos del plan que son cuentas de resultado (ingresos y gastos), separados por coma; por defecto el 4.</summary>
+    public const string ClaveCapitulosResultado = "CONTABILIDAD-CAPITULOS-RESULTADO";
+    private const string CuentaResultadoAnterior = "~RESULTADO-EJ-ANT";
+
+    private static async Task<string[]> CapitulosResultadoAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var valor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;", new { Clave = ClaveCapitulosResultado }, cancellationToken: ct));
+        return (string.IsNullOrWhiteSpace(valor) ? "4" : valor).Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    /// <summary>Condición SQL «la cuenta es de resultado» (agrega sus parámetros).</summary>
+    private static async Task<string> EsResultadoAsync(SqlConnection cn, DynamicParameters p, CancellationToken ct)
+    {
+        var capitulos = await CapitulosResultadoAsync(cn, ct);
+        if (capitulos.Length == 0) return "(1 = 0)";
+        return "(" + string.Join(" OR ", capitulos.Select((c, i) => { p.Add($"Res{i}", c + "%"); return $"LTRIM(RTRIM(a.CUENTA)) LIKE @Res{i}"; })) + ")";
+    }
+
+    /// <summary>Filtro sin el límite del ejercicio: toda la historia hasta «hasta» (como VE_SaldosCtaFhAcum del legacy, sin asientos de resumen).</summary>
+    private static string Acumulado(string where)
+        => where.Replace("a.PERIODO = @Periodo AND ", "") + " AND ISNULL(a.ESRESUMEN, 0) = 0";
+
+    internal static SumasSaldosFila FilaResultadoAnterior(decimal importe)
+        => new() { Codigo = CuentaResultadoAnterior, Descripcion = "Resultado de ejercicios anteriores", SaldoAnterior = importe };
+
+    /// <summary>
+    /// Los ejercicios no se cierran con asiento de cierre/apertura, así que el saldo anterior de las cuentas patrimoniales es el acumulado de toda la
+    /// historia previa a «desde» (como el legacy). Las cuentas de resultado arrancan en cero cada ejercicio: su acumulado de ejercicios anteriores
+    /// se devuelve aparte para mostrarlo como «Resultado de ejercicios anteriores» y que el balance siga cerrando.
+    /// </summary>
+    private async Task<(List<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)> Saldos, decimal ResultadoAnterior)> SaldosConArrastreAsync(
+        SqlConnection cn, DynamicParameters p, string where, CancellationToken ct)
+    {
+        var esResultado = await EsResultadoAsync(cn, p, ct);
+        var acumulado = Acumulado(where);
+        var filas = (await cn.QueryAsync<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber, decimal ResultadoAnterior)>(new CommandDefinition($"""
+            SELECT LTRIM(RTRIM(a.CUENTA)),
+                SUM(CASE WHEN a.FECHA < @Desde AND (a.PERIODO = @Periodo OR NOT {esResultado}) THEN CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END ELSE 0 END),
+                SUM(CASE WHEN a.FECHA >= @Desde AND a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END),
+                SUM(CASE WHEN a.FECHA >= @Desde AND a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END),
+                SUM(CASE WHEN a.PERIODO < @Periodo AND {esResultado} THEN CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END ELSE 0 END)
+            FROM dbo.MV_ASIENTOS a WHERE {acumulado}
+            GROUP BY LTRIM(RTRIM(a.CUENTA));
+            """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
+        return (filas.Select(x => (x.Cuenta, x.Anterior, x.Debe, x.Haber)).ToList(), filas.Sum(x => x.ResultadoAnterior));
     }
 
     /// <summary>Arma el balance: cuentas imputables con saldo; clientes/proveedores (CL/PR) agrupados en su
@@ -236,7 +281,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
         p.Add("Maximo", MaximoMovimientosMayor + 1);
         var anteriores = (await cn.QueryAsync<(string Cuenta, decimal Saldo)>(new CommandDefinition($"""
             SELECT LTRIM(RTRIM(a.CUENTA)), SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END)
-            FROM dbo.MV_ASIENTOS a WHERE {where} AND a.FECHA < @Desde AND {filtroCuenta}
+            FROM dbo.MV_ASIENTOS a WHERE {Acumulado(where)} AND a.FECHA < @Desde AND (a.PERIODO = @Periodo OR NOT {await EsResultadoAsync(cn, p, ct)}) AND {filtroCuenta}
             GROUP BY LTRIM(RTRIM(a.CUENTA));
             """, p, commandTimeout: 120, cancellationToken: ct))).ToDictionary(x => x.Cuenta, x => x.Saldo, StringComparer.OrdinalIgnoreCase);
         var movimientos = (await cn.QueryAsync<MovSql>(new CommandDefinition($"""

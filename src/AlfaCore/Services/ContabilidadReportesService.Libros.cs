@@ -146,6 +146,7 @@ public sealed partial class ContabilidadReportesService
         var niveles = await NivelesAsync(cn, ct);
         var planT = plan.Select(c => (c.Codigo, c.Descripcion, c.Titulo, c.TipoVista)).ToList();
         var filas = ArmarSumasSaldos(planT, actual.Saldos, agruparTerceros: true, mostrarTitulos: true, sinMovimientos: false);
+        if (actual.ResultadoAnterior != 0) filas.Add(FilaResultadoAnterior(actual.ResultadoAnterior));
         Dictionary<string, decimal>? comparativo = null; string? ejComp = null; DateTime? hastaComp = null;
         if (f.Comparativo)
         {
@@ -156,10 +157,12 @@ public sealed partial class ContabilidadReportesService
             {
                 var fc = new ContabilidadFiltro { Periodo = pAnt, Desde = DateTime.MinValue, Hasta = f.Hasta.AddYears(-1), Unidades = f.Unidades, IncluirProformas = f.IncluirProformas };
                 var ant = await SaldosAcumuladosAsync(cn, fc, ct);
-                comparativo = ArmarSumasSaldos(planT, ant.Saldos, true, true, false).GroupBy(x => Clave(x)).ToDictionary(g => g.Key, g => g.First().Saldo);
+                var filasAnt = ArmarSumasSaldos(planT, ant.Saldos, true, true, false);
+                if (ant.ResultadoAnterior != 0) filasAnt.Add(FilaResultadoAnterior(ant.ResultadoAnterior));
+                comparativo = filasAnt.GroupBy(x => Clave(x)).ToDictionary(g => g.Key, g => g.First().Saldo);
                 ejComp = ant.Ejercicio.Descripcion; hastaComp = fc.Hasta;
                 // Las cuentas que solo tienen saldo en el ejercicio anterior también se muestran.
-                foreach (var x in ArmarSumasSaldos(planT, ant.Saldos, true, true, false).Where(x => filas.All(y => Clave(y) != Clave(x))))
+                foreach (var x in filasAnt.Where(x => filas.All(y => Clave(y) != Clave(x))))
                     filas.Add(new SumasSaldosFila { Codigo = x.Codigo, Descripcion = x.Descripcion, EsTitulo = x.EsTitulo, Nivel = x.Nivel, Agrupadas = x.Agrupadas });
                 filas = filas.OrderBy(r => r.Codigo + (r.EsTitulo ? "" : r.Agrupadas > 0 ? "~" : ""), StringComparer.Ordinal).ToList();
             }
@@ -175,13 +178,13 @@ public sealed partial class ContabilidadReportesService
         return new BalanceGeneralResultado
         {
             Filtro = f, Empresa = await EmpresaAsync(cn, ct), Ejercicio = actual.Ejercicio.Descripcion, EjercicioComparativo = ejComp, HastaComparativo = hastaComp,
-            Filas = resultado, Diferencia = actual.Saldos.Sum(s => s.Anterior + s.Debe - s.Haber)
+            Filas = resultado, Diferencia = actual.Saldos.Sum(s => s.Anterior + s.Debe - s.Haber) + actual.ResultadoAnterior
         };
     }
 
     private static string Clave(SumasSaldosFila x) => x.Codigo + (x.EsTitulo ? "T" : x.Agrupadas > 0 ? "~" : "");
 
-    private async Task<(ContabilidadEjercicio Ejercicio, List<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)> Saldos)> SaldosAcumuladosAsync(
+    private async Task<(ContabilidadEjercicio Ejercicio, List<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)> Saldos, decimal ResultadoAnterior)> SaldosAcumuladosAsync(
         SqlConnection cn, ContabilidadFiltro f, CancellationToken ct)
     {
         // Saldo al «hasta» = todo el ejercicio hasta esa fecha: se toma como período completo (desde el inicio).
@@ -189,13 +192,10 @@ public sealed partial class ContabilidadReportesService
         var (ejercicio, p, where) = await PrepararAsync(cn, copia, ct);
         if (f.Desde == default || f.Desde < ejercicio.Desde) f.Desde = ejercicio.Desde;
         f.Hasta = copia.Hasta;
-        var saldos = (await cn.QueryAsync<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)>(new CommandDefinition($"""
-            SELECT LTRIM(RTRIM(a.CUENTA)), CONVERT(money,0),
-                SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END), SUM(CASE WHEN a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END)
-            FROM dbo.MV_ASIENTOS a WHERE {where}
-            GROUP BY LTRIM(RTRIM(a.CUENTA));
-            """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
-        return (ejercicio, saldos);
+        // El saldo anterior arrastra los ejercicios previos (cuentas patrimoniales); el debe y el haber son los del ejercicio hasta «hasta».
+        p.Add("Desde", ejercicio.Desde.Date);
+        var (saldos, resultadoAnterior) = await SaldosConArrastreAsync(cn, p, where, ct);
+        return (ejercicio, saldos, resultadoAnterior);
     }
 
     // ── Exportaciones ───────────────────────────────────────────────────────────────────────────
