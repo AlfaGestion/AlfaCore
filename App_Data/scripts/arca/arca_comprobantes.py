@@ -1054,6 +1054,36 @@ def descargar_csv_oficial(page: Page, carpeta: Path, tipo: str, cuit: str, perio
     return generar_excel(encabezados, datos, carpeta, tipo, cuit, periodo, log)
 
 
+def escribir_xlsx_simple(encabezados: list[str], datos: list[list[str]], destino: Path) -> None:
+    """Escribe un .xlsx de una hoja ("Sheet1") con todo como texto, sin Excel ni librerias externas."""
+    from xml.sax.saxutils import escape
+
+    def col(n: int) -> str:
+        nombre = ""
+        while n:
+            n, r = divmod(n - 1, 26)
+            nombre = chr(65 + r) + nombre
+        return nombre
+
+    def celda(fila: int, columna: int, valor: str) -> str:
+        texto = "".join(ch for ch in str(valor) if ch.isprintable() or ch.isspace())
+        return f'<c r="{col(columna)}{fila}" t="inlineStr"><is><t xml:space="preserve">{escape(texto)}</t></is></c>'
+
+    filas = [encabezados] + list(datos)
+    hoja = "".join(
+        f'<row r="{i}">' + "".join(celda(i, j, v) for j, v in enumerate(fila, 1)) + "</row>"
+        for i, fila in enumerate(filas, 1)
+    )
+    if destino.exists():
+        destino.unlink()
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+        z.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+        z.writestr("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr("xl/worksheets/sheet1.xml", f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{hoja}</sheetData></worksheet>')
+
+
 def generar_excel(encabezados: list[str], datos: list[list[str]], carpeta: Path, tipo: str, cuit: str, periodo: str, log: Logger) -> Path:
     if not datos:
         raise BotError("No se leyeron filas de datos de la tabla.", 6)
@@ -1066,7 +1096,11 @@ def generar_excel(encabezados: list[str], datos: list[list[str]], carpeta: Path,
     try:
         excel = abrir_excel()
     except ExcelNoDisponible as exc:
-        raise BotError(f"Excel no esta disponible en este equipo y no se pudo bajar el Excel oficial de ARCA: {exc}", 6)
+        # Sin Excel (servidor sin Office) no hay .xls: se arma un .xlsx simple que AlfaCore lee igual.
+        final = carpeta / f"ARCA_{tipo}_{normalizar_cuit(cuit)}_{periodo}.xlsx"
+        escribir_xlsx_simple(encabezados, datos, final)
+        log.write(f"Excel no esta disponible en este equipo ({exc}); archivo generado sin Excel: {final}")
+        return final
     excel.Visible = False
     excel.DisplayAlerts = False
     libro = None
