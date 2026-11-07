@@ -336,8 +336,9 @@ public sealed class ReporteComprasExcelExporter
         cartera += f.SinZona ? " · Sin zona" : string.IsNullOrWhiteSpace(f.Zona) ? "" : $" · Zona del cliente: {f.Zona}";
         if(f.UnidadesNegocio.Length>0) cartera += " · Unidades: " + string.Join(", ",f.UnidadesNegocio.Select(x=>string.IsNullOrEmpty(x)?"Sin unidad":x));
         if (!string.IsNullOrWhiteSpace(f.CuentaExacta)) cartera += $" · Código exacto: {f.CuentaExacta}";
-        if (ventas && !string.IsNullOrWhiteSpace(f.Provincia)) cartera += $" · Provincia del cliente: {f.Provincia}";
-        if (ventas) cartera += f.IncluirProforma ? " · Incluye proformas (FP, NCFP, CBFP)" : " · Sin proformas (excluye FP, NCFP, CBFP)";
+        if (!string.IsNullOrWhiteSpace(f.Provincia)) cartera += $" · Provincia del {(ventas ? "cliente" : "proveedor")}: {f.Provincia}";
+        var proformas = ReporteComercialService.DescribirProformas(ventas);
+        cartera += f.IncluirProforma ? $" · Incluye proformas ({proformas})" : $" · Sin proformas (excluye {proformas})";
         return $"Período: {desde} al {hasta}{extra}{tc}{cartera}";
     }
 }

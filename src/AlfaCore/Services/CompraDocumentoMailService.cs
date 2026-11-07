@@ -14,11 +14,12 @@ namespace AlfaCore.Services;
 /// Cada envío se registra en V_MA_EMAILMOV con el mismo formato que Alfa Gestión, así se ve cuándo se mandó y se puede reenviar.
 /// </summary>
 public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUserSessionService usuarios, IPermissionService permisos,
-    IAppEventService eventos, CompraCargaService compras, IComprobanteViewerService visor, IDocumentPdfService pdf, CorreoSalienteService correo)
+    IAppEventService eventos, CompraCargaService compras, IComprobanteViewerService visor, IDocumentPdfService pdf, CorreoSalienteService correo,
+    IOrdenPagoDocumentService ordenesPago)
 {
     private static readonly CultureInfo Es = CultureInfo.GetCultureInfo("es-AR");
     private static readonly string[] TiposCompra = ["OC", "RMC"];
-    private static readonly string[] TiposPago = ["PG", "OPG"];
+    private static readonly string[] TiposPago = ["PG", "OPG", "PGFP"];
     private const string ClaveMailPrueba = "ALFACORE_MAIL_PRUEBA";
 
     // Textos configurables por documento (TA_CONFIGURACION, grupo COMPRAS); si no están cargados se usa el de abajo.
@@ -53,7 +54,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                   ISNULL(c.RETIBR_Importe,0) RetIibb, ISNULL(c.RETSUSS_Importe,0) RetSuss
                 FROM dbo.V_MV_CPTE c
                 LEFT JOIN dbo.VT_PROVEEDORES p ON LTRIM(RTRIM(p.CODIGO)) = LTRIM(RTRIM(c.CUENTA))
-                WHERE LTRIM(RTRIM(c.TC)) IN ('PG','OPG') AND ISNULL(c.ANULADA,0) = 0 AND ISNULL(c.IDCOMPLEMENTO,0) = 0
+                WHERE LTRIM(RTRIM(c.TC)) IN ('PG','OPG','PGFP') AND ISNULL(c.ANULADA,0) = 0 AND ISNULL(c.IDCOMPLEMENTO,0) = 0
                   AND c.FECHA >= @desde AND c.FECHA < @fin AND LTRIM(RTRIM(c.UNEGOCIO)) IN @unidades
                   AND (@texto = '' OR c.NOMBRE LIKE @patron OR c.CUENTA LIKE @patron OR c.IDCOMPROBANTE LIKE @patron)
                   AND (@cert = ''
@@ -73,21 +74,47 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
     // ---- PDF --------------------------------------------------------------------------------------------------------
 
     public Task<byte[]> GenerarPdfAsync(string tc, string comprobante, string certificado = "", CancellationToken ct = default)
-        => EjecutarAsync("GenerarPdf", async (cn, unidades, _) =>
+        => EjecutarAsync("GenerarPdf", async (cn, unidades, usuario) =>
         {
             var ficha = await FichaAsync(cn, unidades, tc, comprobante, certificado, ct);
-            return await ArmarPdfAsync(cn, ficha, certificado, ct);
+            var pdf = await ArmarPdfAsync(cn, ficha, certificado, ct);
+            // Trazabilidad: cada PDF de una orden de pago queda en su historial.
+            if (certificado.Length == 0 && ficha.Tc is "OPG" or "PGFP")
+                await ComprobanteAcciones.RegistrarSiPuedeAsync(cn, ficha.Tc, ficha.Comprobante, ComprobanteAcciones.Impresion, usuario, "AlfaCore · PDF de la orden de pago", ct);
+            return pdf;
         }, ct);
+
+    /// <summary>
+    /// Comprobantes cancelados (MV_APLICACION, por la orden/pago que los imprime: incluye lo cancelado con créditos) y medios de pago (asiento)
+    /// del pago. Los pagos están en V_MV_CPTE aunque su sistema sea Compras, por eso no se piden al visor de comprobantes.
+    /// </summary>
+    internal static async Task<ComprobanteViewerDto> DetallePagoAsync(SqlConnection cn, IComprobanteViewerService visor, Ficha ficha, CancellationToken ct)
+    {
+        var aplica = (await cn.QueryAsync<ComprobanteAplicacionDto>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(ap.TCO_ORIGEN)) TcRelacionado, ap.IDComprobante_Origen IdComprobanteRelacionado,
+                MIN(f.FECHA) FechaRelacionado, SUM(ap.IMPORTE) ImporteAplicado
+            FROM dbo.MV_APLICACION ap
+            LEFT JOIN dbo.C_MV_CPTE f ON f.TC = ap.TCO_ORIGEN AND f.IDCOMPROBANTE = ap.IDComprobante_Origen
+            WHERE (LTRIM(RTRIM(ap.TC_PRINT)) = @tc AND ap.IDCOMPROBANTE_PRINT = @id) OR (LTRIM(RTRIM(ap.TC)) = @tc AND ap.IDCOMPROBANTE = @id)
+            GROUP BY LTRIM(RTRIM(ap.TCO_ORIGEN)), ap.IDComprobante_Origen
+            ORDER BY MIN(f.FECHA), ap.IDComprobante_Origen;
+            """, new { tc = ficha.Tc, id = ficha.Comprobante }, cancellationToken: ct))).ToList();
+        var asientos = await visor.GetAsientosAsync(ficha.Tc, ficha.Comprobante, ct);
+        return new ComprobanteViewerDto { AplicaA = aplica, Asientos = asientos };
+    }
 
     private async Task<byte[]> ArmarPdfAsync(SqlConnection cn, Ficha ficha, string certificado, CancellationToken ct)
     {
+        // Órdenes de pago (OPG) y pagos proforma (PGFP): salen con la plantilla del Diseñador de comprobantes (logo, columnas, etc.).
+        if (certificado.Length == 0 && ficha.Tc is "OPG" or "PGFP")
+            return await ordenesPago.GeneratePdfAsync(ficha.Tc, ficha.Comprobante, ficha.Unidad.Length == 0 ? null : ficha.Unidad, ct);
         var (empresa, _, _, _, _) = await FacturaDocumentService.BuildEmpresaAsync(cn, null, ficha.Unidad.Length == 0 ? null : ficha.Unidad, ct);
         string html;
         if (certificado.Length > 0)
             html = HtmlCertificado(empresa, await LeerRetencionAsync(cn, ficha, certificado, ct));
         else if (TiposPago.Contains(ficha.Tc))
         {
-            var dto = await visor.GetAsync(ficha.Tc, ficha.Comprobante, 0, ct);
+            var dto = await DetallePagoAsync(cn, visor, ficha, ct);
             html = HtmlPago(empresa, ficha, await LeerRetencionesAsync(cn, ficha, ct), dto);
         }
         else
@@ -205,7 +232,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                 ArmarTexto(mensaje.Length > 0 ? mensaje : porDefecto.Mensaje, f.Nombre, f.Comprobante, f.Fecha, importe, certificado));
     }
 
-    private static async Task<string?> UltimoEnvioAsync(SqlConnection cn, string tc, string comprobante, CancellationToken ct)
+    internal static async Task<string?> UltimoEnvioAsync(SqlConnection cn, string tc, string comprobante, CancellationToken ct)
         => await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition("""
             IF OBJECT_ID(N'dbo.V_MA_EMAILMOV', N'U') IS NOT NULL
                 SELECT TOP (1) CONVERT(nvarchar(16), FechaHora, 103) + ' ' + CONVERT(nvarchar(5), FechaHora, 108) + ' · ' + ISNULL(Para,'') + ' · ' + ISNULL(Status,'')
@@ -432,7 +459,7 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
 
     internal static string HtmlPago(EmpresaDocumentData empresa, Ficha f, IReadOnlyList<Retencion> retenciones, ComprobanteViewerDto? dto)
     {
-        var titulo = f.Tc == "OPG" ? "ORDEN DE PAGO" : "COMPROBANTE DE PAGO";
+        var titulo = f.Tc switch { "OPG" => "ORDEN DE PAGO", "PGFP" => "PAGO PROFORMA", _ => "COMPROBANTE DE PAGO" };
         var sb = new StringBuilder(Encabezado(empresa, titulo, f.Comprobante, f.Fecha));
         sb.Append(CajaProveedor(f));
         if (dto?.AplicaA is { Count: > 0 } aplica)
@@ -460,7 +487,11 @@ public sealed class CompraDocumentoMailService(ISessionService sesiones, IAppUse
                   .Append("</td><td class=\"n\">").Append(M(r.Importe)).Append("</td></tr>");
             sb.Append("</tbody></table>");
         }
-        sb.Append("<table class=\"tot\"><tr><td>Total del pago</td><td class=\"n\">").Append(M(f.Importe)).Append("</td></tr></table>");
+        // Lo cancelado por encima de lo pagado y retenido se canceló con créditos (notas de crédito, anticipos) aplicados a esta orden.
+        var conCreditos = (dto?.AplicaA.Sum(a => a.ImporteAplicado) ?? 0m) - f.Importe - retenciones.Sum(r => r.Importe);
+        sb.Append("<table class=\"tot\">");
+        if (conCreditos > 0.005m) sb.Append("<tr><td>Cancelado con créditos y anticipos aplicados</td><td class=\"n\">").Append(M(conCreditos)).Append("</td></tr>");
+        sb.Append("<tr><td>Total del pago</td><td class=\"n\">").Append(M(f.Importe)).Append("</td></tr></table>");
         return Documento(sb.ToString());
     }
 

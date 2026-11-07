@@ -22,4 +22,19 @@ public sealed record EstudioPaqueteOpciones(IReadOnlyList<CompraCargaOpcion> Uni
 public sealed record EstudioPaqueteAvance(string Paso, int Hechos, int Total);
 
 /// <summary>Zip generado en el servidor: se baja por /api/estudio/paquete/{Token} (vence en unas horas).</summary>
-public sealed record EstudioPaqueteResultado(string Token, string Nombre, long Bytes, int Archivos, IReadOnlyList<string> Avisos);
+public sealed record EstudioPaqueteResultado(string Token, string Nombre, long Bytes, int Archivos, IReadOnlyList<string> Avisos)
+{
+    public EstudioPaqueteRevision? Revision { get; init; }
+}
+
+public sealed class EstudioPaqueteRevision
+{
+    public DateTime Fecha { get; set; } = DateTime.Now;
+    public IReadOnlyList<EstudioPaqueteControl> Controles { get; set; } = [];
+    public IReadOnlyList<EstudioPaqueteObservacion> Observaciones { get; set; } = [];
+}
+
+public sealed record EstudioPaqueteControl(bool Compras, string Cuit, string Estado, string Mensaje, string Archivo = "", DateTime? FechaArchivo = null);
+
+public sealed record EstudioPaqueteObservacion(string Libro, string Tipo, string Unidad, DateTime? Fecha, string Tc, string Letra,
+    int PuntoVenta, long Numero, string Cuenta, string Cuit, string Nombre, string Detalle, decimal? TotalSistema = null, decimal? TotalArca = null);

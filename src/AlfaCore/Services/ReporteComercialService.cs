@@ -47,9 +47,11 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
             Skip=(f.Pagina-1)*f.TamanioPagina, PageSize=f.TamanioPagina };
     }
     private static string? Normalizar(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    internal static bool EsProforma(string tc) => tc.Trim().ToUpperInvariant() is "FP" or "NCFP" or "CBFP";
+    internal static bool EsProforma(string tc) => tc.Trim().ToUpperInvariant() is "FP" or "NCFP" or "CBFP" or "FPC" or "NCCP" or "NCPC" or "FCCP" or "PGFP";
+    internal static string DescribirProformas(bool ventas) => ventas ? "FP, NCFP, CBFP" : "FPC, NCCP, NCPC, FCCP, PGFP";
     private static string FiltroProformas(bool ventas,string tc) => ventas
-        ? $"AND (@IncluirProforma=1 OR UPPER(LTRIM(RTRIM(ISNULL({tc},'')))) NOT IN ('FP','NCFP','CBFP'))" : "";
+        ? $"AND (@IncluirProforma=1 OR UPPER(LTRIM(RTRIM(ISNULL({tc},'')))) NOT IN ('FP','NCFP','CBFP'))"
+        : $"AND (@IncluirProforma=1 OR UPPER(LTRIM(RTRIM(ISNULL({tc},'')))) NOT IN ('FPC','NCCP','NCPC','FCCP','PGFP'))";
 
     // Se consulta nuevamente al generar/exportar: ocultar el checkbox no es una autorización.
     private async Task<bool> PuedeIncluirProformaAsync(SqlConnection cn,CancellationToken ct)
@@ -83,10 +85,14 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
         {
             var tipos=(await cn.QueryAsync<string>(new CommandDefinition(
                 $"SELECT DISTINCT LTRIM(RTRIM(TC)) FROM {Fuente(ventas)} WHERE ISNULL(TC,'')<>'' ORDER BY 1",cancellationToken:ct))).ToList();
-            if(!ventas) return new ReporteComprasOptionsDto { TiposComprobante=tipos,
-                UnidadesNegocio=(await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("SELECT LTRIM(RTRIM(Codigo)) Codigo, MAX(Descripcion) Nombre FROM dbo.V_TA_UnidadNegocio GROUP BY LTRIM(RTRIM(Codigo)) ORDER BY Codigo",cancellationToken:ct))).ToList() };
             var puedeProforma=await PuedeIncluirProformaAsync(cn,ct);
             if (!puedeProforma) tipos.RemoveAll(EsProforma);
+            if(!ventas) return new ReporteComprasOptionsDto { TiposComprobante=tipos,PuedeIncluirProforma=puedeProforma,
+                UnidadesNegocio=(await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("SELECT LTRIM(RTRIM(Codigo)) Codigo, MAX(Descripcion) Nombre FROM dbo.V_TA_UnidadNegocio GROUP BY LTRIM(RTRIM(Codigo)) ORDER BY Codigo",cancellationToken:ct))).ToList(),
+                Provincias=(await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("""
+                    SELECT LTRIM(RTRIM(CODIGO)) Codigo, MAX(DESCRIPCION) Nombre FROM dbo.TA_ESTADOS
+                    GROUP BY LTRIM(RTRIM(CODIGO)) ORDER BY Nombre
+                    """,cancellationToken:ct))).ToList() };
             using var r=await cn.QueryMultipleAsync(new CommandDefinition("""
                 SELECT LTRIM(RTRIM(IdVendedor)) Codigo, MAX(Nombre) Nombre FROM dbo.V_TA_VENDEDORES
                 GROUP BY LTRIM(RTRIM(IdVendedor)) ORDER BY Codigo;
@@ -115,6 +121,22 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
                 GROUP BY LTRIM(RTRIM(CTACODIGO))
                 ORDER BY CASE WHEN LTRIM(RTRIM(CTACODIGO))=@Texto THEN 0 ELSE 1 END,MAX(RAZON_SOCIAL),LTRIM(RTRIM(CTACODIGO))
                 ;
+                """,new { Texto=termino,Busqueda="%"+literal+"%" },cancellationToken:ct))).ToList();
+        },ct);
+
+    public Task<IReadOnlyList<ReporteFiltroOpcion>> BuscarProveedoresAsync(string texto,CancellationToken ct=default)
+        => EjecutarAsync<IReadOnlyList<ReporteFiltroOpcion>>(false,"BuscarProveedores",async cn=>
+        {
+            var termino=texto.Trim();
+            if (termino.Length<2) return [];
+            var literal=termino.Replace("\\","\\\\").Replace("%","\\%").Replace("_","\\_").Replace("[","\\[");
+            return (await cn.QueryAsync<ReporteFiltroOpcion>(new CommandDefinition("""
+                SELECT TOP (25) LTRIM(RTRIM(CTACODIGO)) Codigo,MAX(RAZON_SOCIAL) Nombre
+                FROM dbo.VT_PROVEEDORES
+                WHERE LTRIM(RTRIM(CTACODIGO)) LIKE @Busqueda ESCAPE '\'
+                    OR RAZON_SOCIAL LIKE @Busqueda ESCAPE '\'
+                GROUP BY LTRIM(RTRIM(CTACODIGO))
+                ORDER BY CASE WHEN LTRIM(RTRIM(CTACODIGO))=@Texto THEN 0 ELSE 1 END,MAX(RAZON_SOCIAL),LTRIM(RTRIM(CTACODIGO))
                 """,new { Texto=termino,Busqueda="%"+literal+"%" },cancellationToken:ct))).ToList();
         },ct);
 
@@ -162,7 +184,7 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
             await using var cn=new SqlConnection(sessions.GetConnectionString());await cn.OpenAsync(ct);
             if(!await TienePermisoAsync(cn,ventas,usuario,ct))
                 throw new ReglaReporteException("Tu usuario no tiene permiso para consultar este reporte.");
-            if (ventas && filtros?.IncluirProforma == true && !await PuedeIncluirProformaAsync(cn,ct))
+            if (filtros?.IncluirProforma == true && !await PuedeIncluirProformaAsync(cn,ct))
                 throw new ReglaReporteException("La configuración o tu usuario no permiten incluir proformas. Desmarcá la opción y volvé a generar el reporte.");
             var resultado=await consulta(cn);
             if(!TenantDataAccessGuard.TryGetAuthorizedSession(sessions,users,out var actual)||id!=actual||usuario!=users.GetCurrentUserName())

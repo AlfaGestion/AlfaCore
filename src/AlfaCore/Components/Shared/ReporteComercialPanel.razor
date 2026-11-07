@@ -54,9 +54,9 @@
     @if (_mostrarResultados)
     {
         <p class="gd-hint" role="status">Filtros aplicados: @ReporteComprasExcelExporter.DescribirFiltros(_aplicados,Ventas)@(EsSaldos ? $" · Incluir saldos cero: {(_aplicados.IncluirSaldosCero ? "Sí" : "No")}" : "")</p>
-        @if (Ventas && !_aplicados.IncluirProforma && (_tipoReporte == TipoReporteCompras.CuentaCorriente || EsSaldos))
+        @if (!_aplicados.IncluirProforma && (_tipoReporte == TipoReporteCompras.CuentaCorriente || EsSaldos))
         {
-            <p class="gd-hint">Los saldos excluyen los movimientos FP, NCFP y CBFP.</p>
+            <p class="gd-hint">Los saldos excluyen los movimientos @ReporteComercialService.DescribirProformas(Ventas).</p>
         }
     }
 
@@ -502,7 +502,7 @@
                         <label>Tipo (TC)</label>
                         <select value="@(_filtros.TipoComprobante ?? string.Empty)" @onchange="OnTcChanged">
                             <option value="">Todos</option>
-                            @foreach (var tc in _options.TiposComprobante.Where(x => !Ventas || _filtros.IncluirProforma || !ReporteComercialService.EsProforma(x)))
+                            @foreach (var tc in _options.TiposComprobante.Where(x => _filtros.IncluirProforma || !ReporteComercialService.EsProforma(x)))
                             {
                                 <option value="@tc">@tc</option>
                             }
@@ -520,23 +520,23 @@
                         <p class="gd-hint">@(Ventas ? "Control de crédito también incluye cuentas con límite asignado, aunque su saldo sea cero." : "Incluye proveedores sin movimientos, con saldo cero.")</p>
                     </div>
                 }
-                @if (Ventas)
-                {
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-person-badge"></i> Cartera del cliente
-                            <i class="bi bi-info-circle smart-search__info" tabindex="0" role="img" aria-label="Ayuda de Cartera del cliente"
-                               title="Provincia, vendedor y zona salen de los datos actuales de la ficha del cliente, no del comprobante. El cliente elegido se filtra por su código exacto."></i></h4>
-                        <div @onkeydown:stopPropagation>
-                            <AlfaLookup TItem="ReporteFiltroOpcion" Label="Cliente" Placeholder="Código o nombre"
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-person-badge"></i> @(Ventas ? "Cartera del cliente" : "Cartera del proveedor")
+                        <i class="bi bi-info-circle smart-search__info" tabindex="0" role="img" aria-label="Ayuda de Cartera"
+                           title="@(Ventas ? "Provincia, vendedor y zona salen de los datos actuales de la ficha del cliente, no del comprobante. El cliente elegido se filtra por su código exacto." : "La provincia sale de los datos actuales de la ficha del proveedor, no del comprobante. El proveedor elegido se filtra por su código exacto.")"></i></h4>
+                    <div @onkeydown:stopPropagation>
+                        <AlfaLookup TItem="ReporteFiltroOpcion" Label="@Tercero" Placeholder="Código o nombre"
                                 SearchText="@_clienteBusqueda" SearchTextChanged="CambiarBusquedaCliente"
                                 SelectedItem="@_clienteSeleccionado" SelectedItemChanged="SeleccionarCliente"
                                 SearchFunc="BuscarClientesAsync" ItemKey="c => c.Codigo" Disabled="_isLoading">
                                 <ItemTemplate Context="cliente">@cliente.Codigo · @cliente.Nombre</ItemTemplate>
-                            </AlfaLookup>
-                        </div>
-                        <AlfaSelect Label="Provincia del cliente" Value="@(_filtros.Provincia ?? string.Empty)" Placeholder="Todas"
-                            Options="@_options.Provincias.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
-                            ValueChanged="CambiarProvincia" />
+                        </AlfaLookup>
+                    </div>
+                    <AlfaSelect Label="@($"Provincia del {Tercero.ToLowerInvariant()}")" Value="@(_filtros.Provincia ?? string.Empty)" Placeholder="Todas"
+                        Options="@_options.Provincias.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
+                        ValueChanged="CambiarProvincia" />
+                    @if (Ventas)
+                    {
                         <AlfaSelect Label="Vendedor del cliente" Value="@(_filtros.Vendedor ?? string.Empty)" Placeholder="Todos" Disabled="_filtros.SinVendedor"
                             Options="@_options.Vendedores.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Nombre}")).ToList()"
                             ValueChanged="v => CambiarCartera(v, true)" />
@@ -545,8 +545,8 @@
                             Options="@_options.Zonas.Select(x => new AlfaSelectOption(x, x)).ToList()"
                             ValueChanged="v => CambiarCartera(v, false)" />
                         <AlfaCheckbox Value="_filtros.SinZona" ValueChanged="v => SinAsignacion(v, false)">Sin zona</AlfaCheckbox>
-                    </div>
-                }
+                    }
+                </div>
 
                 <div class="smart-search__actions">
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="_ => LimpiarAsync()">Limpiar</AlfaButton>
@@ -557,10 +557,10 @@
     </div>;
 
     private RenderFragment RenderFiltroProforma() => @<text>
-        @if (Ventas && _options.PuedeIncluirProforma)
+        @if (_options.PuedeIncluirProforma)
         {
             <AlfaCheckbox Value="_filtros.IncluirProforma" ValueChanged="CambiarProforma">Incluir proforma</AlfaCheckbox>
-            <p class="gd-hint">Incluye FP, NCFP y CBFP. Sin marcar, se excluyen de este reporte.</p>
+            <p class="gd-hint">Incluye @ReporteComercialService.DescribirProformas(Ventas). Sin marcar, se excluyen de este reporte.</p>
         }
     </text>;
 
@@ -585,7 +585,7 @@
     private async Task<IReadOnlyList<ReporteFiltroOpcion>> BuscarClientesAsync(string texto,CancellationToken ct)
     {
         using var linked=CancellationTokenSource.CreateLinkedTokenSource(ct,_contextCts.Token);
-        return await ReporteService.BuscarClientesAsync(texto,linked.Token);
+        return Ventas ? await ReporteService.BuscarClientesAsync(texto,linked.Token) : await ReporteService.BuscarProveedoresAsync(texto,linked.Token);
     }
 
     private void CambiarProvincia(string? value)
@@ -695,15 +695,15 @@
     private void AplicarOpciones(ReporteComprasOptionsDto opciones)
     {
         _options=opciones;
-        _filtros.IncluirProforma=Ventas && opciones.PuedeIncluirProforma;
+        _filtros.IncluirProforma=opciones.PuedeIncluirProforma;
     }
 
     private async Task GenerarAsync()
     {
         if (_isLoading || _disposed) return;
-        if (Ventas && _clienteSeleccionado is null && !string.IsNullOrWhiteSpace(_clienteBusqueda))
+        if (_clienteSeleccionado is null && !string.IsNullOrWhiteSpace(_clienteBusqueda))
         {
-            _error=AppUiMessage.Warning("Seleccioná un cliente", "Elegí un cliente de la búsqueda por nombre o código, o limpiá ese campo.");
+            _error=AppUiMessage.Warning($"Seleccioná un {Tercero.ToLowerInvariant()}", "Elegí un resultado de la búsqueda por nombre o código, o limpiá ese campo.");
             UpdatePageHeader();
             return;
         }
@@ -789,7 +789,7 @@
         if (_isLoading) return Task.CompletedTask;
         (_filtros.FechaDesde, _filtros.FechaHasta) = GestionRangosFecha.Calcular("mes");
         _filtros.IncluirSaldosCero=false;
-        LimpiarCliente(); _filtros.Provincia=null; _filtros.IncluirProforma=Ventas && _options.PuedeIncluirProforma;
+        LimpiarCliente(); _filtros.Provincia=null; _filtros.IncluirProforma=_options.PuedeIncluirProforma;
         _filtros.Vendedor=null; _filtros.SinVendedor=false; _filtros.Zona=null; _filtros.SinZona=false; _filtros.UnidadesNegocio=[];
         _filtros.Proveedor       = null;
         _filtros.TipoComprobante = null;
@@ -823,10 +823,10 @@
         if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
             chips.Add(new("proveedor", $"{Tercero}: {_filtros.Proveedor}"));
         if (_filtros.CuentaExacta is not null) chips.Add(new("cuenta", $"Código exacto: {_filtros.CuentaExacta}"));
+        if (_filtros.Provincia is not null) chips.Add(new("provincia", $"Provincia: {_filtros.Provincia}"));
+        if (_filtros.IncluirProforma) chips.Add(new("proforma", "Incluye proformas"));
         if (Ventas)
         {
-            if (_filtros.Provincia is not null) chips.Add(new("provincia", $"Provincia: {_filtros.Provincia}"));
-            if (_filtros.IncluirProforma) chips.Add(new("proforma", "Incluye proformas"));
             if (_filtros.Vendedor is not null) chips.Add(new("vendedor", $"Vendedor: {_filtros.Vendedor}"));
             if (_filtros.SinVendedor) chips.Add(new("vendedor", "Sin vendedor"));
             if (_filtros.Zona is not null) chips.Add(new("zona", $"Zona: {_filtros.Zona}"));

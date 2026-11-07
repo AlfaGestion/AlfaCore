@@ -69,6 +69,7 @@ internal static class ArcaTransmisionRegistro
     /// <summary>Mensaje del legacy (AUX_MV_CTROL_CPTE.MENSAJE) para una fila de la comparación; null si coincide (no se registra).</summary>
     internal static string? MensajeControl(ControlArcaEstado estado) => estado switch
     {
+        ControlArcaEstado.PosibleDuplicado => "POSIBLE COMPROBANTE DUPLICADO",
         ControlArcaEstado.FaltaEnSistema => MensajeFaltaEnSistema,
         ControlArcaEstado.FaltaEnArca => MensajeFaltaEnArca,
         ControlArcaEstado.DifiereImporte => MensajeDifiereImporte,
@@ -79,10 +80,10 @@ internal static class ArcaTransmisionRegistro
     };
 
     /// <summary>Registra una comparación (la descarga automática diaria): cabecera y una fila por cada comprobante que no coincide.</summary>
-    internal static async Task<int> RegistrarControlAsync(SqlConnection cn, string usuario, string archivo, ControlArcaResultado r, CancellationToken ct)
+    internal static async Task<int> RegistrarControlAsync(SqlConnection cn, string usuario, string archivo, ControlArcaResultado r, CancellationToken ct, bool automatico = true)
     {
         var tipo = r.Recibidos ? "Recibidos" : "Emitidos";
-        var transmision = await AbrirAsync(cn, usuario, archivo, $"Control ARCA Mis Comprobantes {tipo} (automático)", r.Desde, r.Hasta, r.ComprobantesArca, ct);
+        var transmision = await AbrirAsync(cn, usuario, archivo, $"Control ARCA Mis Comprobantes {tipo} ({(automatico ? "automático" : "manual")}) CUIT {r.CuitArchivo}", r.Desde, r.Hasta, r.ComprobantesArca, ct);
         var registros = 0;
         foreach (var f in r.Filas)
         {
@@ -93,7 +94,7 @@ internal static class ArcaTransmisionRegistro
             registros++;
         }
         var log = new StringBuilder($"ARCA {r.ComprobantesArca} · sistema {r.ComprobantesSistema} · coinciden {r.Cantidad(ControlArcaEstado.Coincide)}");
-        foreach (var e in new[] { ControlArcaEstado.FaltaEnSistema, ControlArcaEstado.FaltaEnArca, ControlArcaEstado.DifiereImporte, ControlArcaEstado.DifiereFecha, ControlArcaEstado.OtroPeriodo, ControlArcaEstado.OtraUnidad })
+        foreach (var e in new[] { ControlArcaEstado.FaltaEnSistema, ControlArcaEstado.FaltaEnArca, ControlArcaEstado.DifiereImporte, ControlArcaEstado.DifiereFecha, ControlArcaEstado.OtroPeriodo, ControlArcaEstado.OtraUnidad, ControlArcaEstado.PosibleDuplicado })
             if (r.Cantidad(e) > 0) log.Append($" · {MensajeControl(e)}: {r.Cantidad(e)}");
         await CerrarAsync(cn, transmision, 0, log.ToString(), ct);
         return transmision;

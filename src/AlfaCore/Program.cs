@@ -371,6 +371,7 @@ public class Program
         builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IFacturaDocumentService, FacturaDocumentService>();
+        builder.Services.AddScoped<IOrdenPagoDocumentService, OrdenPagoDocumentService>();
         builder.Services.AddSingleton<IArcaQrService, ArcaQrService>();
         builder.Services.AddScoped<IArcaConfigService, ArcaConfigService>();
         builder.Services.AddScoped<IWsaaClient, WsaaClient>();
@@ -458,6 +459,7 @@ public class Program
         builder.Services.AddScoped<IConciliacionIaModelo, ConciliacionIaModelo>();
         builder.Services.AddScoped<IAyudaIaService, AyudaIaService>();
         builder.Services.AddScoped<CobranzasService>();
+        builder.Services.AddScoped<OrdenPagoService>();
         builder.Services.AddScoped<CargaComprobantesRepository>();
         builder.Services.AddScoped<CargaComprobantesElectronicaVerificador>();
         builder.Services.AddScoped<CargaComprobantesElectronicaEmisor>();

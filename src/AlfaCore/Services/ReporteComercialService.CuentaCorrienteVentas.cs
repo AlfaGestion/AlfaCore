@@ -15,10 +15,10 @@ public sealed partial class ReporteComercialService
         AND ({(requiereCliente ? "" : "(@Vendedor IS NULL AND @SinVendedor=0 AND @Zona IS NULL AND @SinZona=0 AND @Provincia IS NULL) OR ")}
             EXISTS (SELECT 1 FROM {Terceros(ventas)} p
             WHERE LTRIM(RTRIM(p.CTACODIGO))=LTRIM(RTRIM({cuenta}))
+            AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)
             {(ventas ? """
               AND (@Vendedor IS NULL OR LTRIM(RTRIM(p.IdVendedor))=@Vendedor)
               AND (@SinVendedor=0 OR NULLIF(LTRIM(RTRIM(p.IdVendedor)),'') IS NULL)
-              AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)
               AND (@Zona IS NULL OR LTRIM(RTRIM(p.ZONA))=@Zona)
               AND (@SinZona=0 OR NULLIF(LTRIM(RTRIM(p.ZONA)),'') IS NULL)
               """ : "")}))

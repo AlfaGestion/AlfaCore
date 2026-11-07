@@ -16,16 +16,16 @@
 
     <section class="pe-filtros">
         <label>Mes
-            <select class="pe-input" value="@_s.Mes" @onchange="CambiarMes" disabled="@_busy">
+            <select class="pe-input" value="@_s.Mes" @onchange="CambiarMes" disabled="@(_busy || _revisando)">
                 @for (var m = 1; m <= 12; m++) { var mm = m; <option value="@mm">@Culture.DateTimeFormat.GetMonthName(mm)</option> }
             </select>
         </label>
-        <label>Año <input type="number" class="pe-input pe-anio" value="@_s.Anio" min="2000" max="2100" disabled="@_busy"
+        <label>Año <input type="number" class="pe-input pe-anio" value="@_s.Anio" min="2000" max="2100" disabled="@(_busy || _revisando)"
                           @onchange="CambiarAnio" /></label>
         @if (_op is { Unidades.Count: > 1 })
         {
             <label>Unidad
-                <select class="pe-input" value="@_s.Unidad" disabled="@_busy" @onchange="CambiarUnidad">
+                <select class="pe-input" value="@_s.Unidad" disabled="@(_busy || _revisando)" @onchange="CambiarUnidad">
                     <option value="">Todas</option>
                     @foreach (var u in _op.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
                 </select>
@@ -35,7 +35,7 @@
 
     <section class="pe-contenido">
         <strong>Qué lleva el paquete</strong>
-        <AlfaCheckbox Value="@_s.LibrosIva" ValueChanged="v => _s.LibrosIva = v ?? false" Disabled="_busy">Libros de IVA ventas y compras (PDF y Excel)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.LibrosIva" ValueChanged="v => _s.LibrosIva = v ?? false" Disabled="_busy">Libros de IVA ventas y compras por unidad y General (PDF y Excel)</AlfaCheckbox>
         <AlfaCheckbox Value="@_s.LibroIvaDigital" ValueChanged="v => _s.LibroIvaDigital = v ?? false" Disabled="_busy">Libro IVA Digital (archivos para ARCA)</AlfaCheckbox>
         <AlfaCheckbox Value="@_s.Asientos" ValueChanged="v => _s.Asientos = v ?? false" Disabled="_busy">Asientos del mes en Excel (sin tiques, proformas ni cobranzas)</AlfaCheckbox>
         <AlfaCheckbox Value="@_s.Detalles" ValueChanged="v => _s.Detalles = v ?? false" Disabled="_busy">Detalle por artículo de ventas y compras (Excel)</AlfaCheckbox>
@@ -55,6 +55,55 @@
         <AlfaCheckbox Value="@_s.ComprobantesCompra" ValueChanged="v => _s.ComprobantesCompra = v ?? false" Disabled="_busy">
             Archivos de las compras cargadas en AlfaCore@(_op is { } o3 ? $" · {o3.ComprasConArchivo:N0} archivo(s)" : "")
         </AlfaCheckbox>
+    </section>
+
+    <section class="pe-contenido" aria-label="Revisión previa del paquete">
+        <strong>Revisión previa · Mis Comprobantes de ARCA</strong>
+        <p>Se revisan compras contra Recibidos y ventas contra Emitidos del mismo mes y CUIT. Los archivos disponibles se comparan otra vez con los datos actuales.</p>
+        @if (_revisando) { <small>Revisando controles, duplicados y diferencias…</small> }
+        @if (_revision is { } revision)
+        {
+            @foreach (var control in revision.Controles)
+            {
+                <div class="pe-control">
+                    <div><b>@(control.Compras ? "Compras / Recibidos" : "Ventas / Emitidos") · CUIT @control.Cuit · @EstadoControl(control.Estado)</b><small>@control.Mensaje</small></div>
+                    @if (control.Estado is not ("VALIDADO" or "SIN_MOVIMIENTOS" or "SIN_PERMISO"))
+                    {
+                        <a href="@RutaControl(control.Compras)">@(control.Estado == "CON_DIFERENCIAS" ? "Revisar en Control ARCA" : "Validar en Control ARCA")</a>
+                    }
+                </div>
+            }
+            <div class="pe-filtros-revision">
+                <label>Mostrar <select class="pe-input" value="@_tipoRevision" @onchange="CambiarTipoRevision">
+                    <option value="revisar">Duplicados y diferencias</option><option value="todos">Todas las observaciones</option><option value="fiscal">Datos fiscales</option>
+                </select></label>
+                <span>@revision.Observaciones.Count.ToString("N0") observación(es) · revisión del @revision.Fecha.ToString("dd/MM/yyyy HH:mm")</span>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_busy || _revisando)" OnClick="_ => CargarOpcionesAsync()">Volver a revisar</AlfaButton>
+            </div>
+            var filasRevision = ObservacionesVisibles.ToList();
+            @if (filasRevision.Count > 0)
+            {
+                <div class="pe-revision-scroll"><table class="pe-revision-tabla">
+                    <thead><tr><th>Libro</th><th>Observación</th><th>U.N.</th><th>Comprobante / cuenta</th><th>Nombre / CUIT</th><th>Total sistema</th><th>Total ARCA</th><th>Detalle</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var o in filasRevision.Skip((_paginaRevision - 1) * 50).Take(50))
+                    {
+                        <tr><td>@o.Libro</td><td>@o.Tipo</td><td>@o.Unidad</td><td>@o.Tc @o.Letra @($"{o.PuntoVenta:0000}-{o.Numero:00000000}")<small>@o.Cuenta · @o.Fecha?.ToString("dd/MM/yyyy")</small></td>
+                            <td>@o.Nombre<small>@o.Cuit</small></td><td>@o.TotalSistema?.ToString("N2", Culture)</td><td>@o.TotalArca?.ToString("N2", Culture)</td><td>@o.Detalle</td>
+                            <td>@if (o.Numero > 0 && o.TotalSistema is not null) { <a href="@RutaAsientos(o)">Revisar asiento</a> }
+                                else if (o.Tipo.Contains("ARCA")) { <a href="@RutaControl(o.Libro == "Compras")">Revisar en Control ARCA</a> }</td></tr>
+                    }
+                    </tbody>
+                </table></div>
+                <div class="pe-filtros-revision">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_paginaRevision <= 1)" OnClick="_ => _paginaRevision--">Anterior</AlfaButton>
+                    <span>@filasRevision.Count.ToString("N0") filas · página @_paginaRevision de @((filasRevision.Count + 49) / 50)</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_paginaRevision * 50 >= filasRevision.Count)" OnClick="_ => _paginaRevision++">Siguiente</AlfaButton>
+                </div>
+            }
+            else { <small>No hay observaciones para el filtro elegido.</small> }
+            <small>Podés revisar los asientos y corregir desde el módulo de origen según tus permisos. Después volvé a revisar. El paquete conserva el informe completo; un control pendiente no impide descargar los libros.</small>
+        }
     </section>
 
     @if (_avance is { } av)
@@ -85,6 +134,14 @@
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private const int EstudioPaqueteMaximo = 3000;
     private readonly EstudioPaqueteSolicitud _s = new();
+    [SupplyParameterFromQuery(Name = "periodo")] public string? Periodo { get; set; }
+    [SupplyParameterFromQuery(Name = "unidad")] public string? UnidadInicial { get; set; }
+    private EstudioPaqueteRevision? _revision;
+    private bool _revisando;
+    private string _tipoRevision = "revisar";
+    private int _paginaRevision = 1;
+    private IEnumerable<EstudioPaqueteObservacion> ObservacionesVisibles => (_revision?.Observaciones ?? []).Where(o =>
+        _tipoRevision == "todos" || (_tipoRevision == "fiscal" ? o.Tipo == "Dato fiscal" : o.Tipo != "Dato fiscal"));
     private EstudioPaqueteOpciones? _op;
     private EstudioPaqueteResultado? _r;
     private EstudioPaqueteAvance? _avance;
@@ -95,9 +152,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (DateTime.TryParseExact(Periodo, "yyyy-MM", Culture, System.Globalization.DateTimeStyles.None, out var mes)) { _s.Anio = mes.Year; _s.Mes = mes.Month; }
+        _s.Unidad = UnidadInicial?.Trim() ?? "";
         UpdateHeader();
         await CargarOpcionesAsync();
     }
+
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
 
     private Task CambiarMes(ChangeEventArgs e) => CambiarPeriodo(mes: int.TryParse(e.Value?.ToString(), out var m) ? m : _s.Mes);
     private Task CambiarAnio(ChangeEventArgs e) => CambiarPeriodo(anio: int.TryParse(e.Value?.ToString(), out var a) ? a : _s.Anio);
@@ -114,14 +175,24 @@
 
     private async Task CargarOpcionesAsync()
     {
-        var o = await UiOps.RunAsync(() => Service.OpcionesAsync(_s.Anio, _s.Mes, _s.Unidad), "Paquete para el estudio");
-        if (o.Success) _op = o.Value; else _feedback = o.Feedback;
+        _revisando = true; _op = null; _revision = null; _paginaRevision = 1;
         UpdateHeader();
+        try
+        {
+            var o = await UiOps.RunAsync(() => Service.OpcionesAsync(_s.Anio, _s.Mes, _s.Unidad), "Paquete para el estudio");
+            if (o.Success) _op = o.Value; else _feedback = o.Feedback;
+            if (o.Success)
+            {
+                var revision = await UiOps.RunAsync(() => Service.RevisarAsync(_s.Anio, _s.Mes, _s.Unidad), "Revisión previa del paquete");
+                if (revision.Success) _revision = revision.Value; else _feedback = revision.Feedback;
+            }
+        }
+        finally { _revisando = false; UpdateHeader(); }
     }
 
     private async Task GenerarAsync()
     {
-        if (_busy) return;
+        if (_busy || _revisando) return;
         _busy = true; _feedback = null; _r = null; _avance = new EstudioPaqueteAvance("Preparando…", 0, 0);
         _cts = new CancellationTokenSource();
         UpdateHeader(); StateHasChanged();
@@ -141,7 +212,7 @@
                 Detalles = _s.Detalles, FacturasVenta = _s.FacturasVenta, FacturasVentaSoloA = _s.FacturasVentaSoloA, ComprobantesCompra = _s.ComprobantesCompra
             };
             var r = await UiOps.RunAsync(() => Service.GenerarAsync(solicitud, progreso, _cts.Token), "Paquete para el estudio");
-            if (r.Success) _r = r.Value;
+            if (r.Success) { _r = r.Value; _revision = r.Value?.Revision; _paginaRevision = 1; }
             else if (!_cts.IsCancellationRequested) _feedback = r.Feedback;
             else _feedback = AppUiMessage.Info("Cancelado", "Se canceló el armado del paquete.");
         }
@@ -152,6 +223,24 @@
         }
     }
 
+    private void CambiarTipoRevision(ChangeEventArgs e) { _tipoRevision = e.Value?.ToString() ?? "revisar"; _paginaRevision = 1; }
+
+    private string RutaControl(bool compras) => RutaRevision("/contabilidad/control-arca", "tipo", compras ? "recibidos" : "emitidos");
+    private string RutaAsientos(EstudioPaqueteObservacion o) => RutaRevision("/contabilidad/asientos", "buscar", $"{o.PuntoVenta:0000}-{o.Numero:00000000}", o.Fecha);
+    private string RutaRevision(string ruta, string clave, string valor, DateTime? fecha = null)
+    {
+        var url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(RouteContext.BuildRoute(ruta),
+            new Dictionary<string, string?> { ["periodo"] = fecha?.ToString("yyyy-MM", Culture) ?? $"{_s.Anio:0000}-{_s.Mes:00}", ["unidad"] = _s.Unidad, [clave] = valor });
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo", out var directo) && directo == "1")
+            url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(url, "directo", "1");
+        return url;
+    }
+    private static string EstadoControl(string estado) => estado switch
+    {
+        "VALIDADO" => "Validado con el archivo disponible", "CON_DIFERENCIAS" => "Con diferencias", "ACTUALIZAR" => "Requiere actualizar el control",
+        "SIN_MOVIMIENTOS" => "Sin movimientos", "SIN_PERMISO" => "Sin permiso", "ERROR" => "No se pudo revisar", _ => "Pendiente de validar"
+    };
+
     private void Cancelar() => _cts?.Cancel();
 
     private static string Tamano(long b) => b > 1 << 20 ? $"{b / 1048576.0:N1} MB" : $"{b / 1024.0:N0} KB";
@@ -161,10 +250,10 @@
         ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "contabilidad", Title = "Paquete para el estudio",
         Breadcrumb = ["Contabilidad", "Paquete para el estudio"],
         TopNavigationItems = ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "paquete-estudio"),
-        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        State = _busy || _revisando ? PageHeaderState.Loading : PageHeaderState.List,
         Actions =
         [
-            new() { Key = "generar", Label = "Generar paquete", Icon = "bi-file-earmark-zip", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _op is null, OnClick = GenerarAsync }
+            new() { Key = "generar", Label = "Generar paquete", Icon = "bi-file-earmark-zip", Style = PageHeaderActionStyle.Primary, Disabled = _busy || _revisando || _op is null, OnClick = GenerarAsync }
         ]
     });
 

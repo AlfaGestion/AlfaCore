@@ -12,3 +12,17 @@ La ruta común reemplaza la ruta anterior de Recepción documental cuando está 
 En Recepción documental quedan las opciones de operación de cada base. Los usuarios ya no editan ejecutables ni rutas de los lectores desde allí.
 
 Los cambios quedan auditados. Se conservan localmente en `App_Data/servidor/lectores.json`; no se modifican `appsettings.json` ni `.env`. Si existen varias instalaciones de AlfaCore en distintos servidores, se configura cada una.
+
+## Python para Mis Comprobantes de ARCA
+
+ARCA usa un entorno separado de los lectores documentales: requiere `playwright`, `pywin32`, Chromium y Excel instalado en el servidor. **Probar descarga** comprueba los módulos de Python; no ingresa a ARCA.
+
+Si aparece «No se encuentra python.exe», ejecutá el instalador incluido. Para desarrollo local, desde la raíz del repositorio:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/arca/instalar_entorno_arca.ps1 -PythonBase C:\Python314\python.exe -Destino C:\dev\AlfaCore\src\AlfaCore\App_Data\scripts\arca
+```
+
+Con el campo **Python con playwright y pywin32** vacío, AlfaCore reconoce primero `App_Data\scripts\arca\python\python.exe` (portable) y, si no existe, `App_Data\scripts\arca\venv\Scripts\python.exe` (instalador). Una ruta explícita configurada conserva prioridad. Los entornos se instalan en cada servidor; no se versionan ni se copian desde el entorno de desarrollo durante la publicación.
+
+Si instalaste en otra carpeta, copiá la ruta que muestra el instalador al campo Python de ARCA, pulsá **Guardar ARCA** y después **Probar descarga**. No cambies el Python de lectores documentales para resolver un error de ARCA.

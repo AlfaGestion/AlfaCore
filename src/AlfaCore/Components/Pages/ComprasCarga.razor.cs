@@ -272,7 +272,7 @@ public partial class ComprasCarga
     {
         if(_sesion is null)return;
         if(Sesiones.GetActiveSession()?.Id==_sesion&&TenantDataAccessGuard.IsActiveSessionAuthorized(Sesiones,Usuarios))return;
-        _vida.Cancel();_busquedaArticulos?.Cancel();_mostrarArticulos=false;_mostrarProveedores=false;_articulosEncontrados=[];_proveedoresEncontrados=[];_nuevoArticulo=null;_mostrarAltaProveedor=false;_mostrarConsulta=false;_mostrarBorradores=false;_borradores=[];_confirmarRegistro=false;_registrada=null;_contexto=null;_origen=null;_vista=null;_proveedor=null;_filas.Clear();_feedback=AppUiMessage.Warning("La sesión cambió","Volvé a abrir Preparar compra en la base activa.");_ = InvokeAsync(StateHasChanged);
+        _vida.Cancel();_busquedaArticulos?.Cancel();_mostrarArticulos=false;_mostrarProveedores=false;_articulosEncontrados=[];_proveedoresEncontrados=[];_nuevoArticulo=null;_mostrarAltaProveedor=false;_mostrarConsulta=false;_mostrarBorradores=false;_borradores=[];_confirmarRegistro=false;_registrada=null;_contexto=null;_origen=null;_vista=null;_proveedor=null;_filas.Clear();_feedback=AppUiMessage.Warning("La sesión cambió","Volvé a abrir Carga de comprobantes en la base activa.");_ = InvokeAsync(StateHasChanged);
     }
     public void Dispose(){_disposed=true;_busquedaArticulos?.Cancel();_busquedaArticulos?.Dispose();_=CerrarTeclado();Sesiones.SessionChanged-=CambioSesion;Usuarios.StateChanged-=CambioSesion;_vida.Cancel();_vida.Dispose();if(ReferenceEquals(PageHeader.Current,_header))PageHeader.Clear();}
 }

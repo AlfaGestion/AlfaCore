@@ -40,9 +40,13 @@ public sealed partial class ContabilidadReportesService
         var sub = (f.Subdiario ?? string.Empty).Trim();
         if (subdiarios && sub.Length == 0) throw new ReglaContableException("Elegí el subdiario.");
         // TIPO_REG: código del subdiario; vacío (o el resumen «ÿRS») = diario general.
-        // La marca va por renglón: un asiento es del subdiario si alguno de sus renglones lo es, y del diario
-        // general si ninguno tiene subdiario.
-        const string mismoAsiento = "s.PERIODO = a.PERIODO AND s.MES_OPERATIVO = a.MES_OPERATIVO AND s.[NUMERO ASIENTO] = a.[NUMERO ASIENTO]";
+        // El legacy reutiliza mes y número entre comprobantes: conservar la identidad del movimiento.
+        var mismoAsiento = $"""
+            s.PERIODO = a.PERIODO AND s.MES_OPERATIVO = a.MES_OPERATIVO
+            AND (({EsComprobanteContableSql}) OR s.[NUMERO ASIENTO] = a.[NUMERO ASIENTO])
+            AND s.TC = a.TC AND s.SUCURSAL = a.SUCURSAL AND s.NUMERO = a.NUMERO AND s.LETRA = a.LETRA
+            AND ISNULL(s.TIPO_REG,'') = ISNULL(a.TIPO_REG,'')
+            """;
         var filtroSub = sub.Equals("DG", StringComparison.OrdinalIgnoreCase) || (!subdiarios && f.ExcluirSubdiarios)
             ? $" AND NOT EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND ISNULL(LTRIM(RTRIM(s.TIPO_REG)),'') NOT IN ('', CHAR(255) + 'RS'))"
             : sub.Length > 0 ? $" AND EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS s WHERE {mismoAsiento} AND LTRIM(RTRIM(s.TIPO_REG)) = @Subdiario)" : "";
@@ -53,19 +57,21 @@ public sealed partial class ContabilidadReportesService
         var renglones = (await cn.QueryAsync<RenglonSql>(new CommandDefinition($"""
             SELECT TOP (@Maximo) a.FECHA Fecha, CONVERT(int,a.MES_OPERATIVO) MesOperativo, CONVERT(int,a.[NUMERO ASIENTO]) Numero,
                    LTRIM(RTRIM(ISNULL(a.TC,''))) Tc,
+                   CONVERT(bit,CASE WHEN {EsComprobanteContableSql} THEN 1 ELSE 0 END) TieneComprobante,
+                   CONVERT(bit,CASE WHEN LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) <> '' THEN 1 ELSE 0 END) EsCabecera,
                    CASE WHEN ISNULL(LTRIM(RTRIM(a.NUMERO)),'') = '' THEN '' ELSE LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) + '-' + LTRIM(RTRIM(a.NUMERO)) + ' ' + LTRIM(RTRIM(ISNULL(a.LETRA,''))) END Comprobante,
                    LTRIM(RTRIM(ISNULL(a.TIPO_REG,''))) Subdiario, LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) Unidad,
                    LTRIM(RTRIM(a.CUENTA)) Cuenta, LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(500), a.DETALLE),''))) Detalle,
                    CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END Debe, CASE WHEN a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END Haber
             FROM dbo.MV_ASIENTOS a WHERE {where} AND a.FECHA >= @Desde{filtroSub}
-            ORDER BY a.FECHA, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.SECUENCIA;
+            ORDER BY a.FECHA, a.MES_OPERATIVO, a.TIPO_REG, a.TC, a.SUCURSAL, a.NUMERO, a.LETRA, a.[NUMERO ASIENTO], a.SECUENCIA;
             """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
         var truncado = renglones.Count > MaximoRenglonesDiario;
         if (truncado) renglones = renglones.Take(MaximoRenglonesDiario).ToList();
-        var asientos = renglones.GroupBy(r => (r.MesOperativo, r.Numero))
+        var asientos = renglones.GroupBy(r => (r.MesOperativo, Numero: r.TieneComprobante ? 0 : r.Numero, r.Tc, r.Comprobante, r.Subdiario))
             .Select(g =>
             {
-                var primero = g.First();
+                var primero = g.FirstOrDefault(r => r.EsCabecera) ?? g.First();
                 return new DiarioAsiento
                 {
                     Fecha = primero.Fecha, MesOperativo = primero.MesOperativo, Numero = primero.Numero, Tc = primero.Tc,
@@ -89,6 +95,7 @@ public sealed partial class ContabilidadReportesService
 
     private sealed class RenglonSql
     {
+        public bool TieneComprobante { get; set; } public bool EsCabecera { get; set; }
         public DateTime Fecha { get; set; } public int MesOperativo { get; set; } public int Numero { get; set; }
         public string Tc { get; set; } = ""; public string Comprobante { get; set; } = ""; public string Subdiario { get; set; } = ""; public string Unidad { get; set; } = "";
         public string Cuenta { get; set; } = ""; public string Detalle { get; set; } = ""; public decimal Debe { get; set; } public decimal Haber { get; set; }
@@ -139,6 +146,7 @@ public sealed partial class ContabilidadReportesService
         var niveles = await NivelesAsync(cn, ct);
         var planT = plan.Select(c => (c.Codigo, c.Descripcion, c.Titulo, c.TipoVista)).ToList();
         var filas = ArmarSumasSaldos(planT, actual.Saldos, agruparTerceros: true, mostrarTitulos: true, sinMovimientos: false);
+        if (actual.ResultadoAnterior != 0) filas.Add(FilaResultadoAnterior(actual.ResultadoAnterior));
         Dictionary<string, decimal>? comparativo = null; string? ejComp = null; DateTime? hastaComp = null;
         if (f.Comparativo)
         {
@@ -149,10 +157,12 @@ public sealed partial class ContabilidadReportesService
             {
                 var fc = new ContabilidadFiltro { Periodo = pAnt, Desde = DateTime.MinValue, Hasta = f.Hasta.AddYears(-1), Unidades = f.Unidades, IncluirProformas = f.IncluirProformas };
                 var ant = await SaldosAcumuladosAsync(cn, fc, ct);
-                comparativo = ArmarSumasSaldos(planT, ant.Saldos, true, true, false).GroupBy(x => Clave(x)).ToDictionary(g => g.Key, g => g.First().Saldo);
+                var filasAnt = ArmarSumasSaldos(planT, ant.Saldos, true, true, false);
+                if (ant.ResultadoAnterior != 0) filasAnt.Add(FilaResultadoAnterior(ant.ResultadoAnterior));
+                comparativo = filasAnt.GroupBy(x => Clave(x)).ToDictionary(g => g.Key, g => g.First().Saldo);
                 ejComp = ant.Ejercicio.Descripcion; hastaComp = fc.Hasta;
                 // Las cuentas que solo tienen saldo en el ejercicio anterior también se muestran.
-                foreach (var x in ArmarSumasSaldos(planT, ant.Saldos, true, true, false).Where(x => filas.All(y => Clave(y) != Clave(x))))
+                foreach (var x in filasAnt.Where(x => filas.All(y => Clave(y) != Clave(x))))
                     filas.Add(new SumasSaldosFila { Codigo = x.Codigo, Descripcion = x.Descripcion, EsTitulo = x.EsTitulo, Nivel = x.Nivel, Agrupadas = x.Agrupadas });
                 filas = filas.OrderBy(r => r.Codigo + (r.EsTitulo ? "" : r.Agrupadas > 0 ? "~" : ""), StringComparer.Ordinal).ToList();
             }
@@ -168,13 +178,13 @@ public sealed partial class ContabilidadReportesService
         return new BalanceGeneralResultado
         {
             Filtro = f, Empresa = await EmpresaAsync(cn, ct), Ejercicio = actual.Ejercicio.Descripcion, EjercicioComparativo = ejComp, HastaComparativo = hastaComp,
-            Filas = resultado, Diferencia = actual.Saldos.Sum(s => s.Anterior + s.Debe - s.Haber)
+            Filas = resultado, Diferencia = actual.Saldos.Sum(s => s.Anterior + s.Debe - s.Haber) + actual.ResultadoAnterior
         };
     }
 
     private static string Clave(SumasSaldosFila x) => x.Codigo + (x.EsTitulo ? "T" : x.Agrupadas > 0 ? "~" : "");
 
-    private async Task<(ContabilidadEjercicio Ejercicio, List<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)> Saldos)> SaldosAcumuladosAsync(
+    private async Task<(ContabilidadEjercicio Ejercicio, List<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)> Saldos, decimal ResultadoAnterior)> SaldosAcumuladosAsync(
         SqlConnection cn, ContabilidadFiltro f, CancellationToken ct)
     {
         // Saldo al «hasta» = todo el ejercicio hasta esa fecha: se toma como período completo (desde el inicio).
@@ -182,13 +192,10 @@ public sealed partial class ContabilidadReportesService
         var (ejercicio, p, where) = await PrepararAsync(cn, copia, ct);
         if (f.Desde == default || f.Desde < ejercicio.Desde) f.Desde = ejercicio.Desde;
         f.Hasta = copia.Hasta;
-        var saldos = (await cn.QueryAsync<(string Cuenta, decimal Anterior, decimal Debe, decimal Haber)>(new CommandDefinition($"""
-            SELECT LTRIM(RTRIM(a.CUENTA)), CONVERT(money,0),
-                SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE 0 END), SUM(CASE WHEN a.[DEBE-HABER] <> 'D' THEN a.IMPORTE ELSE 0 END)
-            FROM dbo.MV_ASIENTOS a WHERE {where}
-            GROUP BY LTRIM(RTRIM(a.CUENTA));
-            """, p, commandTimeout: 120, cancellationToken: ct))).ToList();
-        return (ejercicio, saldos);
+        // El saldo anterior arrastra los ejercicios previos (cuentas patrimoniales); el debe y el haber son los del ejercicio hasta «hasta».
+        p.Add("Desde", ejercicio.Desde.Date);
+        var (saldos, resultadoAnterior) = await SaldosConArrastreAsync(cn, p, where, ct);
+        return (ejercicio, saldos, resultadoAnterior);
     }
 
     // ── Exportaciones ───────────────────────────────────────────────────────────────────────────

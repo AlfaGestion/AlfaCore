@@ -21,14 +21,14 @@ public sealed class ComprobanteViewerService(
     private static readonly HashSet<string> TcReciboCobros =
         new(StringComparer.OrdinalIgnoreCase) { "CB", "CBFP", "CBCT" };
     private static readonly HashSet<string> TcReciboPagos =
-        new(StringComparer.OrdinalIgnoreCase) { "PG", "OPG" };
+        new(StringComparer.OrdinalIgnoreCase) { "PG", "OPG", "PGFP" };
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public Task<ComprobanteViewerDto?> GetAsync(string tc, string idComprobante, int idComplemento = 0, CancellationToken ct = default)
+    public Task<ComprobanteViewerDto?> GetAsync(string tc, string idComprobante, int idComplemento = 0, CancellationToken ct = default, string? cuenta = null)
         => ExecuteLoggedAsync("Get", async token =>
         {
             if (string.IsNullOrWhiteSpace(tc) || string.IsNullOrWhiteSpace(idComprobante))
@@ -52,11 +52,11 @@ public sealed class ComprobanteViewerService(
                             : string.Empty;
 
             return sistema == "COMPRAS"
-                ? await GetComprasAsync(cn, tcNorm, idNorm, tipoFormato, token)
+                ? await GetComprasAsync(cn, tcNorm, idNorm, tipoFormato, token, cuenta)
                 : await GetVentasAsync(cn, tcNorm, idNorm, idComplemento, tipoFormato, token);
-        }, "No se pudo cargar el comprobante solicitado.", new { tc, idComprobante, idComplemento }, ct);
+        }, "No se pudo cargar el comprobante solicitado.", new { tc, idComprobante, idComplemento, cuenta }, ct);
 
-    public Task<IReadOnlyList<ComprobanteAsientoDto>> GetAsientosAsync(string tc, string idComprobante, CancellationToken ct = default)
+    public Task<IReadOnlyList<ComprobanteAsientoDto>> GetAsientosAsync(string tc, string idComprobante, CancellationToken ct = default, string? cuenta = null)
         => ExecuteLoggedAsync("GetAsientos", async token =>
         {
             if (string.IsNullOrWhiteSpace(tc) || string.IsNullOrWhiteSpace(idComprobante))
@@ -97,13 +97,19 @@ public sealed class ComprobanteViewerService(
                   AND a.SUCURSAL = @Sucursal
                   AND a.NUMERO = @Numero
                   AND a.LETRA = @Letra
+                  AND (@Cuenta = '' OR EXISTS (
+                      SELECT 1 FROM dbo.MV_ASIENTOS cab
+                      WHERE cab.TC = a.TC AND cab.SUCURSAL = a.SUCURSAL AND cab.NUMERO = a.NUMERO AND cab.LETRA = a.LETRA
+                        AND LTRIM(RTRIM(cab.PERIODO)) = LTRIM(RTRIM(a.PERIODO)) AND cab.MES_OPERATIVO = a.MES_OPERATIVO
+                        AND cab.[NUMERO ASIENTO] = a.[NUMERO ASIENTO] AND LTRIM(RTRIM(cab.TIPO_REG)) = LTRIM(RTRIM(a.TIPO_REG))
+                        AND (LTRIM(RTRIM(cab.CUENTA)) = @Cuenta OR LTRIM(RTRIM(ISNULL(cab.CABCUENTA,''))) = @Cuenta)))
                 ORDER BY ISNULL(a.[NUMERO ASIENTO], 0), ISNULL(a.SECUENCIA, 0)
                 """,
-                new { Tc = tc.Trim().ToUpperInvariant(), Sucursal = sucursal, Numero = numero, Letra = letra },
+                new { Tc = tc.Trim().ToUpperInvariant(), Sucursal = sucursal, Numero = numero, Letra = letra, Cuenta = (cuenta ?? "").Trim() },
                 cancellationToken: token));
 
             return (IReadOnlyList<ComprobanteAsientoDto>)rows.AsList();
-        }, "No se pudo cargar el asiento del comprobante.", new { tc, idComprobante }, ct);
+        }, "No se pudo cargar el asiento del comprobante.", new { tc, idComprobante, cuenta }, ct);
 
     // ── Ventas (V_MV_*) ──────────────────────────────────────────────────────
 
@@ -238,7 +244,8 @@ public sealed class ComprobanteViewerService(
             Tc = tc,
             IdComprobante = idComprobante,
             IdComplemento = idComplemento,
-            TipoFormato = tipoFormato
+            TipoFormato = tipoFormato,
+            Cuenta = ""
         };
 
         var definition = new CommandDefinition(sql, parameters, commandType: CommandType.Text, cancellationToken: ct);
@@ -249,7 +256,7 @@ public sealed class ComprobanteViewerService(
     // ── Compras (C_MV_*) ─────────────────────────────────────────────────────
 
     private static async Task<ComprobanteViewerDto?> GetComprasAsync(
-        SqlConnection cn, string tc, string idComprobante, string tipoFormato, CancellationToken ct)
+        SqlConnection cn, string tc, string idComprobante, string tipoFormato, CancellationToken ct, string? cuenta)
     {
         const string sql = """
             SELECT TOP (1)
@@ -303,6 +310,7 @@ public sealed class ComprobanteViewerService(
                 ON LTRIM(RTRIM(un.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))
             WHERE c.TC = @Tc
               AND c.IDCOMPROBANTE = @IdComprobante
+              AND (@Cuenta = '' OR LTRIM(RTRIM(c.CUENTA)) = @Cuenta)
             ORDER BY c.ID DESC;
 
             SELECT
@@ -322,6 +330,7 @@ public sealed class ComprobanteViewerService(
             FROM dbo.C_MV_CpteInsumos i
             WHERE i.TC = @Tc
               AND i.IDCOMPROBANTE = @IdComprobante
+              AND (@Cuenta = '' OR LTRIM(RTRIM(i.CUENTA)) = @Cuenta)
             ORDER BY ISNULL(i.ID, 0);
 
             SELECT '' AS CodigoTarea WHERE 1=0;
@@ -334,7 +343,8 @@ public sealed class ComprobanteViewerService(
         {
             Tc = tc,
             IdComprobante = idComprobante,
-            TipoFormato = tipoFormato
+            TipoFormato = tipoFormato,
+            Cuenta = (cuenta ?? "").Trim()
         };
 
         var definition = new CommandDefinition(sql, parameters, commandType: CommandType.Text, cancellationToken: ct);
@@ -359,6 +369,7 @@ public sealed class ComprobanteViewerService(
              OR (ap.TC = @Tc
                  AND ap.IDComprobante = @IdComprobante)
               )
+          AND (@Cuenta = '' OR LTRIM(RTRIM(ap.CUENTA)) = @Cuenta)
         ORDER BY ISNULL(ap.IDComprobante, '')
         """;
 
@@ -373,6 +384,7 @@ public sealed class ComprobanteViewerService(
         FROM dbo.V_MV_CpteAcciones a
         WHERE a.TC = @Tc
           AND a.IDCOMPROBANTE = @IdComprobante
+          AND (@Cuenta = '' OR LTRIM(RTRIM(a.Cuenta)) = @Cuenta)
         ORDER BY a.FECHAHORA DESC, a.ID DESC
         """;
 
@@ -385,6 +397,7 @@ public sealed class ComprobanteViewerService(
               AND a.SUCURSAL = SUBSTRING(@IdComprobante, 1, 4)
               AND a.NUMERO = SUBSTRING(@IdComprobante, 5, 8)
               AND a.LETRA = RIGHT(@IdComprobante, 1)
+              AND (@Cuenta = '' OR LTRIM(RTRIM(a.CUENTA)) = @Cuenta OR LTRIM(RTRIM(ISNULL(a.CABCUENTA,''))) = @Cuenta)
         ) THEN 1 ELSE 0 END AS bit) AS TieneAsiento
         """;
 

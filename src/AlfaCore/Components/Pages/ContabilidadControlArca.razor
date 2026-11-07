@@ -94,8 +94,8 @@
                      Descripcion="@($"ARCA {Moneda(r.TotalArca)} · sistema {Moneda(r.TotalSistema)}")" />
             <KpiCard Titulo="Faltan en el sistema" Valor="@r.Cantidad(ControlArcaEstado.FaltaEnSistema).ToString("N0")" Icono="@Icono("bi-exclamation-triangle")"
                      Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar: tildalas e importalas" : "Emitidos que no están en ventas")" />
-            <KpiCard Titulo="Con diferencias" Valor="@((r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo) + r.Cantidad(ControlArcaEstado.DifiereFecha)).ToString("N0"))"
-                     Icono="@Icono("bi-arrow-left-right")" Descripcion="@($"{r.Cantidad(ControlArcaEstado.DifiereImporte)} importe · {r.Cantidad(ControlArcaEstado.OtroPeriodo)} otro período · {r.Cantidad(ControlArcaEstado.FaltaEnArca)} no están en ARCA")" />
+            <KpiCard Titulo="Con diferencias" Valor="@((r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo) + r.Cantidad(ControlArcaEstado.DifiereFecha) + r.Cantidad(ControlArcaEstado.PosibleDuplicado)).ToString("N0"))"
+                     Icono="@Icono("bi-arrow-left-right")" Descripcion="@($"{r.Cantidad(ControlArcaEstado.PosibleDuplicado)} posibles duplicados · {r.Cantidad(ControlArcaEstado.DifiereImporte)} importe · {r.Cantidad(ControlArcaEstado.OtroPeriodo)} otro período · {r.Cantidad(ControlArcaEstado.FaltaEnArca)} no están en ARCA")" />
         </div>
 
         <div class="ca-filtros" role="group" aria-label="Filtrar por estado">
@@ -314,6 +314,9 @@
 </AlfaDialog>
 
 @code {
+    [SupplyParameterFromQuery(Name = "periodo")] public string? PeriodoPaquete { get; set; }
+    [SupplyParameterFromQuery(Name = "tipo")] public string? TipoPaquete { get; set; }
+    [SupplyParameterFromQuery(Name = "unidad")] public string? UnidadPaquete { get; set; }
     private static readonly System.Globalization.CultureInfo Culture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
     private const long MaximoArchivo = 15 * 1024 * 1024;
     private ControlArcaResultado? _r;
@@ -346,6 +349,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (DateTime.TryParseExact(PeriodoPaquete, "yyyy-MM", Culture, System.Globalization.DateTimeStyles.None, out var mes)) _periodo = mes.ToString("yyyy-MM");
+        if (TipoPaquete is "emitidos" or "recibidos") _descargaRecibidos = TipoPaquete == "recibidos";
         UpdateHeader();
         await CargarDescargaAsync();
     }
@@ -597,6 +602,16 @@
     private void UpdateHeader()
     {
         var acciones = new List<PageHeaderAction>();
+        if (PeriodoPaquete is not null)
+            acciones.Add(new() { Key = "volver-paquete", Label = "Volver al paquete", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Secondary,
+                Disabled = _busy, OnClick = () =>
+                {
+                    var url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contabilidad/paquete-estudio"),
+                        new Dictionary<string, string?> { ["periodo"] = _periodo, ["unidad"] = UnidadPaquete });
+                    if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo", out var directo) && directo == "1")
+                        url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(url, "directo", "1");
+                    Nav.NavigateTo(url); return Task.CompletedTask;
+                } });
         if (_r is { } r && PuedeImportar(r))
             acciones.Add(new() { Key = "importar", Label = _sel.Count > 0 ? $"Importar faltantes ({_sel.Count})" : "Importar faltantes", Icon = "bi-box-arrow-in-down",
                 Style = PageHeaderActionStyle.Primary, Disabled = _busy || _sel.Count == 0, OnClick = AbrirImportacionAsync });

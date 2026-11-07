@@ -582,7 +582,7 @@ public sealed class FacturaDocumentService(
         public string? Cuit { get; set; }
     }
 
-    private static DocumentPdfFooterOptions? BuildFooterOptions(DocumentTemplateDefinition definition, string empresaNombre)
+    internal static DocumentPdfFooterOptions? BuildFooterOptions(DocumentTemplateDefinition definition, string empresaNombre)
     {
         var pie = definition.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
         if (pie is null) return null;

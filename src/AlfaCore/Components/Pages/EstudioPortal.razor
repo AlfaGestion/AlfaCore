@@ -80,7 +80,7 @@
                         }
                         <td class="ep-acciones">
                             <button type="button" class="ep-btn ep-btn--primario" @onclick='() => Entrar(e, "contabilidad")'>Entrar</button>
-                            <button type="button" class="ep-btn" @onclick='() => Entrar(e, "contabilidad/paquete-estudio")'>Paquete</button>
+                            <button type="button" class="ep-btn" @onclick='() => Entrar(e, "contabilidad/paquete-estudio")'>Paquete estudio</button>
                             <button type="button" class="ep-btn" @onclick='() => Entrar(e, "contabilidad/control-arca")'>ARCA</button>
                         </td>
                     </tr>
@@ -89,7 +89,7 @@
             </table>
         </section>
         <small class="ep-nota">Ventas y compras: comprobantes del mes en el libro de IVA y si la empresa ya cerró el período (fechas de cierre).
-            Control ARCA: el último resultado de la descarga automática de Mis Comprobantes, si la empresa la activó.</small>
+            Control ARCA: el último resultado automático, si la empresa lo activó. Paquete estudio revisa los archivos y controles del mes seleccionado.</small>
     }
 </div>
 
@@ -139,7 +139,8 @@
 
     private void Entrar(EstudioEmpresa e, string ruta)
         // Recarga completa: la base nueva se activa por la ruta y el ingreso a la base es automático (usuario del estudio).
-        => Nav.NavigateTo($"/{e.IdWebEmpresa}/{e.IdBase}/{ruta}", forceLoad: true);
+        => Nav.NavigateTo($"/{e.IdWebEmpresa}/{e.IdBase}/{ruta}" +
+            (ruta is "contabilidad/paquete-estudio" or "contabilidad/control-arca" ? $"?periodo={_mes:yyyy-MM}" : ""), forceLoad: true);
 
     private async Task SalirAsync()
     {

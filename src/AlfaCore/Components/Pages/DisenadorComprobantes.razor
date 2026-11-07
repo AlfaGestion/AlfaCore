@@ -8,6 +8,7 @@
 @inject ICotizacionesService CotizSvc
 @inject ICotizacionDocumentService CotizDocumentSvc
 @inject IFacturaDocumentService FacturaDocumentSvc
+@inject IOrdenPagoDocumentService OrdenPagoDocumentSvc
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
 @inject IPageHeaderService PageHeader
@@ -47,6 +48,8 @@
                 <option value="@TiposDocumentoCore.CobranzaX">Cobranza X</option>
                 <option value="@TiposDocumentoCore.CobranzaProforma">Factura proforma (letra X)</option>
                 <option value="@TiposDocumentoCore.CobranzaContado">Cobranza contado (CBCT)</option>
+                <option value="@TiposDocumentoCore.OrdenPago">Orden de pago (OPG)</option>
+                <option value="@TiposDocumentoCore.PagoProforma">Pago proforma (PGFP)</option>
                 @foreach (var tipo in TiposDocumentoCore.Fiscales)
                 {
                     <option value="@tipo.Tipo">@TiposDocumentoCore.NombreDe(tipo.Tipo)</option>
@@ -173,7 +176,7 @@
                 }
                 @if (ClienteBlock is not null)
                 {
-                    @RenderFieldBlockSettings("Datos del cliente", ClienteBlock, TiposBloqueDocumento.Cliente)
+                    @RenderFieldBlockSettings(EsOrdenPago ? "Datos del proveedor" : "Datos del cliente", ClienteBlock, TiposBloqueDocumento.Cliente)
                 }
                 @if (ItemsBlock is not null)
                 {
@@ -198,7 +201,7 @@
                         <p class="document-designer__hint">Podés desactivarlos para que el ticket de 80 mm salga más limpio.</p>
                     </section>
                 }
-                @if (EsFactura)
+                @if (EsFactura && !EsOrdenPago)
                 {
                     <section class="document-designer__settings-group">
                         <div class="document-designer__settings-heading">Datos adicionales del ticket</div>
@@ -213,6 +216,10 @@
                             <input @bind="_draft.Definition.DatosTicket.LeyendaFinal" disabled="@(IsTemplateReadOnly || !_draft.Definition.DatosTicket.MostrarLeyendaFinal)" maxlength="120" placeholder="Gracias por su compra" />
                         </label>
                     </section>
+                }
+                @if (MediosPagoBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Medios de pago y recibí conforme", MediosPagoBlock, TiposBloqueDocumento.MediosPago)
                 }
                 @if (TotalesBlock is not null)
                 {
@@ -374,6 +381,8 @@
     private DocumentBlockDefinition? QrAfipBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.QrAfip, StringComparison.OrdinalIgnoreCase));
 
     private bool EsFactura => TiposDocumentoCore.EsFactura(_tipoDocumento);
+    private bool EsOrdenPago => TiposDocumentoCore.EsOrdenPago(_tipoDocumento);
+    private DocumentBlockDefinition? MediosPagoBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.MediosPago, StringComparison.OrdinalIgnoreCase));
     private bool EsNotaPedido => TiposDocumentoCore.EsNotaPedido(_tipoDocumento);
 
     protected override async Task OnInitializedAsync()
@@ -469,7 +478,7 @@
         _notasPedido = [];
         await LoadTemplatesAsync();
         if (TiposDocumentoCore.LetraDe(_tipoDocumento) is { } letra)
-            _facturasRecientes = await FacturaDocumentSvc.SearchRecientesAsync(_tipoDocumento);
+            _facturasRecientes = EsOrdenPago ? await OrdenPagoDocumentSvc.SearchRecientesAsync(_tipoDocumento) : await FacturaDocumentSvc.SearchRecientesAsync(_tipoDocumento);
         else if (EsNotaPedido)
             _notasPedido = await CotizDocumentSvc.SearchNotasPedidoRecientesAsync();
     }
@@ -510,7 +519,7 @@
             UNegocio = NullIfEmpty(_uNegocio),
             TipoDocumento = _tipoDocumento,
             Nombre = TiposDocumentoCore.NombrePredeterminado(_tipoDocumento),
-            Definition = letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : EsNotaPedido ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+            Definition = EsOrdenPago ? DocumentTemplateDefinition.CrearOrdenPagoEstandar() : letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : EsNotaPedido ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
             Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
         _previewHtml = null;
@@ -719,7 +728,8 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) { _error = "Elegí un comprobante real como datos de prueba."; return; }
         await BusyAsync(async () =>
         {
-            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
+            var result = EsOrdenPago ? await OrdenPagoDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate())
+                : await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             _previewHtml = result.Html;
             _message = "Vista previa generada con los cambios actuales.";
         });
@@ -730,7 +740,8 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) return;
         await BusyAsync(async () =>
         {
-            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
+            var pdf = EsOrdenPago ? await OrdenPagoDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate())
+                : await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"{_tipoDocumento.ToLowerInvariant()}-{idComprobante}.pdf");
         });
     }

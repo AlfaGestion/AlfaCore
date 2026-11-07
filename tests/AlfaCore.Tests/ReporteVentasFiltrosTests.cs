@@ -27,7 +27,9 @@ public sealed partial class CuentaCorrienteVentasTests
         Assert.Contains("Provincia del cliente: 1",texto);
         Assert.Contains("hotel",texto);Assert.Contains("Sin unidad",texto);
         Assert.Contains(incluir?"Incluye proformas (FP, NCFP, CBFP)":"Sin proformas (excluye FP, NCFP, CBFP)",texto);
-        Assert.DoesNotContain("proformas",ReporteComprasExcelExporter.DescribirFiltros(f,false));
+        var compras=ReporteComprasExcelExporter.DescribirFiltros(f,false);
+        Assert.Contains("Provincia del proveedor: 1",compras);
+        Assert.Contains(incluir?"Incluye proformas (FPC, NCCP, NCPC, FCCP, PGFP)":"Sin proformas (excluye FPC, NCCP, NCPC, FCCP, PGFP)",compras);
     }
 
     [Fact]

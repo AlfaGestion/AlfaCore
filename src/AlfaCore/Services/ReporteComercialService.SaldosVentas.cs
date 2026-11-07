@@ -11,7 +11,7 @@ public sealed partial class ReporteComercialService
             cn=>LeerSaldosVentasAsync(cn,f,controlCredito,ct),ct,f);
 
     public Task<SaldosVentasResultDto> GetSaldosComprasAsync(FiltrosReporteCompras f,CancellationToken ct=default)
-        => EjecutarAsync(false,"Saldos",cn=>LeerSaldosVentasAsync(cn,f,false,ct,ventas:false),ct);
+        => EjecutarAsync(false,"Saldos",cn=>LeerSaldosVentasAsync(cn,f,false,ct,ventas:false),ct,f);
 
     // Transacción opcional para pruebas con rollback de límites de crédito. La ruta pública
     // conserva las guardas de sesión/permisos y el registro de errores centralizado.
@@ -48,7 +48,7 @@ public sealed partial class ReporteComercialService
                     {(ventas ? "MAX(CONVERT(decimal(19,4),ISNULL(Limite_Credito,0)))" : "CONVERT(decimal(19,4),0)")} LimiteCredito
                 FROM {Terceros(ventas)} p
                 WHERE (@CuentaExacta IS NULL OR LTRIM(RTRIM(p.CTACODIGO))=@CuentaExacta)
-                    {(ventas ? "AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)" : "")}
+                    AND (@Provincia IS NULL OR LTRIM(RTRIM(p.PROVINCIA))=@Provincia)
                     AND (@Vendedor IS NULL OR LTRIM(RTRIM(p.IdVendedor))=@Vendedor)
                     AND (@SinVendedor=0 OR NULLIF(LTRIM(RTRIM(p.IdVendedor)),'') IS NULL)
                     AND (@Zona IS NULL OR LTRIM(RTRIM(p.ZONA))=@Zona)

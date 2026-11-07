@@ -8,6 +8,10 @@ public sealed class LibroIvaFiltro
     public DateTime Hasta { get; set; }
     /// <summary>Código de unidad de negocio; vacío = todas (solo para consulta: el TXT de ARCA es por CUIT).</summary>
     public string UnidadNegocio { get; set; } = string.Empty;
+    /// <summary>Selección de unidades para una presentación consolidada del mismo CUIT.</summary>
+    public IReadOnlyList<string> UnidadesNegocio { get; set; } = [];
+    public bool SoloSinUnidad { get; set; }
+    public bool General { get; set; }
 }
 
 public sealed record LibroIvaAlicuota(decimal Alicuota, decimal Neto, decimal Iva);
@@ -24,6 +28,8 @@ public sealed class LibroIvaFila
     public string Cuenta { get; set; } = string.Empty;
     public string RazonSocial { get; set; } = string.Empty;
     public string Cuit { get; set; } = string.Empty;
+    /// <summary>El cliente tiene tipo de documento «Consumidor final»: ARCA no controla el número, así que no se valida (se informa 99 / 0 si no es un DNI o CUIT).</summary>
+    public bool ConsumidorFinal { get; set; }
     public string CondicionIva { get; set; } = string.Empty;
     public string UnidadNegocio { get; set; } = string.Empty;
     public decimal NetoGravado { get; set; }
@@ -57,7 +63,7 @@ public sealed class LibroIvaResultado
     public IReadOnlyList<LibroIvaUnidadResumen> Unidades { get; set; } = [];
     /// <summary>Se pidieron todas las unidades y el libro mezcla más de una: no es el libro de un solo CUIT.</summary>
     public bool Consolidado => Filtro.UnidadNegocio.Length == 0 && Unidades.Count > 1;
-    public int CantidadCuits => Unidades.Select(u => u.Cuit.Replace("-", "")).Where(c => c.Length > 0).Distinct().Count();
+    public int CantidadCuits => Unidades.Select(u => new string(u.Cuit.Where(char.IsDigit).ToArray())).Where(c => c.Length > 0).Distinct().Count();
     public decimal NetoGravado => Filas.Sum(f => f.NetoGravado);
     public decimal NoGravado => Filas.Sum(f => f.NoGravado);
     public decimal Exento => Filas.Sum(f => f.Exento);

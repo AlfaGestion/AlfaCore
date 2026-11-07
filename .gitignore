@@ -120,3 +120,10 @@ App_Data/servidor/
 
 # Cachés de los lectores Python (sin datos funcionales)
 __pycache__/
+
+# Entornos locales de descarga ARCA (se instalan en cada servidor)
+src/AlfaCore/App_Data/scripts/arca/venv/
+src/AlfaCore/App_Data/scripts/arca/python/
+
+# Descargas reales de ARCA (datos fiscales y capturas): nunca al repositorio
+src/AlfaCore/App_Data/arca_descargas/

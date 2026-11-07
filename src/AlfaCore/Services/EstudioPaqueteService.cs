@@ -11,6 +11,7 @@ namespace AlfaCore.Services;
 
 public interface IEstudioPaqueteService
 {
+    Task<EstudioPaqueteRevision> RevisarAsync(int anio, int mes, string unidad, CancellationToken ct = default);
     Task<EstudioPaqueteOpciones> OpcionesAsync(int anio, int mes, string unidad, CancellationToken ct = default);
     Task<EstudioPaqueteResultado> GenerarAsync(EstudioPaqueteSolicitud solicitud, IProgress<EstudioPaqueteAvance>? avance = null, CancellationToken ct = default);
 }
@@ -21,9 +22,9 @@ public interface IEstudioPaqueteService
 /// y compras, más los PDF de las facturas emitidas y los archivos de las compras recibidas. El zip se arma en disco
 /// (puede pesar cientos de MB) y se baja por un enlace con token que vence.
 /// </summary>
-public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
+public sealed partial class EstudioPaqueteService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
     IAppEventService events, ILibroIvaService librosIva, IContabilidadReportesService reportes, IFacturaDocumentService facturas,
-    IInterfacesService interfaces, EstudioPaqueteDescargas descargas) : IEstudioPaqueteService
+    IInterfacesService interfaces, EstudioPaqueteDescargas descargas, ArcaServidorService? arcaServidor = null) : IEstudioPaqueteService
 {
     internal const string MenuPaquete = "D9832";
     internal static readonly string[] Menus = [MenuPaquete, "D6009", "D5004", "D957002"];
@@ -62,6 +63,8 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
         {
             var (desde, hasta) = Periodo(s.Anio, s.Mes);
             var unidad = s.Unidad.Trim();
+            avance?.Report(new EstudioPaqueteAvance("Revisando libros y controles ARCA…", 0, 0));
+            var revision = await RevisarEnConexionAsync(cn, desde, hasta, unidad, ct);
             var empresa = (await cn.ExecuteScalarAsync<string>(new CommandDefinition(
                 "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('RAZONSOCIAL','NOMBREEMPRESA','EMPRESA') AND ISNULL(VALOR,'') <> '' ORDER BY CLAVE DESC;",
                 cancellationToken: ct)) ?? "").Trim();
@@ -80,11 +83,22 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
                         using var w = e.Open(); w.Write(contenido, 0, contenido.Length);
                         archivos++;
                     }
+                    Agregar("00_Revision/Estado_controles_ARCA.txt", Encoding.UTF8.GetBytes(string.Join(Environment.NewLine,
+                        revision.Controles.Select(c => $"{(c.Compras ? "Compras / Recibidos" : "Ventas / Emitidos")} · CUIT {c.Cuit} · {c.Estado}: {c.Mensaje}"))));
+                    Agregar("00_Revision/Duplicados_diferencias_y_observaciones.csv", Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(RevisionCsv(revision))).ToArray());
+                    foreach (var control in revision.Controles.Where(c => c.Estado is not ("VALIDADO" or "SIN_MOVIMIENTOS")))
+                        avisos.Add($"Control ARCA {(control.Compras ? "compras" : "ventas")} CUIT {control.Cuit}: {control.Mensaje}");
                     async Task Paso(string titulo, Func<Task> paso)
                     {
                         avance?.Report(new EstudioPaqueteAvance(titulo, 0, 0));
                         try { await paso(); }
                         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                        catch (LibroIvaArcaValidationException ex)
+                        {
+                            avisos.Add($"{titulo}: {ex.Message}");
+                            Agregar($"02_Libro_IVA_Digital/Validacion_{archivos}_{Seguro(titulo)}.txt",
+                                Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, ex.Errores)));
+                        }
                         catch (Exception ex) when (ex is InvalidOperationException or AppUserFacingException)
                         { avisos.Add($"{titulo}: {ex.Message}"); }
                     }
@@ -94,36 +108,50 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
                         foreach (var compras in new[] { false, true })
                         {
                             var libro = compras ? "compras" : "ventas";
-                            await Paso($"Libro IVA {libro} (PDF)", async () => { var a = await librosIva.ExportarPdfAsync(filtroIva(compras), ct); Agregar($"01_Libros_IVA/{a.Nombre}", a.Contenido); });
-                            await Paso($"Libro IVA {libro} (Excel)", async () => { var a = await librosIva.ExportarExcelAsync(filtroIva(compras), ct); Agregar($"01_Libros_IVA/{a.Nombre}", a.Contenido, false); });
+                            var general = await librosIva.GetAsync(filtroIva(compras), ct);
+                            if (general.Filas.Count == 0) continue;
+                            var filtros = new List<(LibroIvaFiltro Filtro, string Carpeta)>();
+                            if (unidad.Length == 0)
+                            {
+                                var f = filtroIva(compras); f.General = true;
+                                filtros.Add((f, "General"));
+                                foreach (var u in general.Unidades)
+                                    filtros.Add((new LibroIvaFiltro { Compras = compras, Desde = desde, Hasta = hasta,
+                                        UnidadNegocio = u.Codigo, SoloSinUnidad = u.Codigo.Length == 0 },
+                                        u.Codigo.Length == 0 ? "Sin_unidad" : $"UN_{Seguro(u.Codigo)}_{Seguro(u.Nombre)}"));
+                            }
+                            else filtros.Add((filtroIva(compras), $"UN_{Seguro(unidad)}"));
+                            foreach (var (f, carpeta) in filtros)
+                            {
+                                await Paso($"Libro IVA {libro} {carpeta} (PDF)", async () => { var a = await librosIva.ExportarPdfAsync(f, ct); Agregar($"01_Libros_IVA/{carpeta}/{a.Nombre}", a.Contenido); });
+                                await Paso($"Libro IVA {libro} {carpeta} (Excel)", async () => { var a = await librosIva.ExportarExcelAsync(f, ct); Agregar($"01_Libros_IVA/{carpeta}/{a.Nombre}", a.Contenido, false); });
+                            }
                         }
 
                     if (s.LibroIvaDigital)
                         foreach (var compras in new[] { false, true })
                         {
                             var libro = compras ? "compras" : "ventas";
-                            // El Libro IVA Digital va por CUIT: si la empresa tiene uno solo sale de una vez; si tiene varios, por unidad.
+                            var datos = await librosIva.GetAsync(filtroIva(compras), ct);
+                            if (datos.Filas.Count == 0) continue;
+                            // El Libro IVA Digital va por CUIT: si la empresa tiene uno solo sale de una vez; si tiene varios, agrupa las unidades del mismo CUIT.
                             LibroIvaArchivo? unico = null;
                             if (unidad.Length > 0)
                                 await Paso($"Libro IVA Digital {libro}", async () => unico = await librosIva.ExportarTxtArcaAsync(filtroIva(compras), ct));
-                            else
-                                try { unico = await librosIva.ExportarTxtArcaAsync(filtroIva(compras), ct); }
-                                catch (AppUserFacingException ex) { avisos.Add($"Libro IVA Digital {libro}: {ex.Message}"); continue; }
-                                catch (InvalidOperationException) { /* varios CUIT: va por unidad */ }
+                            else if (datos.CantidadCuits <= 1)
+                            {
+                                await Paso($"Libro IVA Digital {libro}", async () => unico = await librosIva.ExportarTxtArcaAsync(filtroIva(compras), ct));
+                                if (unico is null) continue;
+                            }
                             if (unico is not null) { Agregar($"02_Libro_IVA_Digital/{unico.Nombre}", unico.Contenido, false); continue; }
                             if (unidad.Length > 0) continue;
-                            var nombres = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                            var compartidos = new List<string>();
-                            foreach (var u in (await librosIva.GetUnidadesAsync(compras, ct)).Select(x => x.Codigo).Distinct())
-                                await Paso($"Libro IVA Digital {libro} (unidad {u})", async () =>
+                            foreach (var grupo in datos.Unidades.GroupBy(u => LibroIvaArcaValidator.Digitos(u.Cuit)))
+                                await Paso($"Libro IVA Digital {libro} CUIT {grupo.Key}", async () =>
                                 {
-                                    var a = await librosIva.ExportarTxtArcaAsync(new LibroIvaFiltro { Compras = compras, Desde = desde, Hasta = hasta, UnidadNegocio = u }, ct);
-                                    var nombreLid = a.Nombre;
-                                    if (!nombres.Add(nombreLid)) { nombreLid = Path.GetFileNameWithoutExtension(a.Nombre) + $"_UN{u}.zip"; compartidos.Add(u); }
-                                    Agregar($"02_Libro_IVA_Digital/{nombreLid}", a.Contenido, false);
+                                    var a = await librosIva.ExportarTxtArcaAsync(new LibroIvaFiltro { Compras = compras, Desde = desde, Hasta = hasta,
+                                        UnidadesNegocio = grupo.Select(u => u.Codigo).ToArray() }, ct);
+                                    Agregar($"02_Libro_IVA_Digital/{a.Nombre}", a.Contenido, false);
                                 });
-                            if (compartidos.Count > 0)
-                                avisos.Add($"Libro IVA Digital {libro}: varias unidades comparten CUIT (unidades {string.Join(", ", compartidos)}); quedaron en archivos separados (_UN): unilos antes de importarlos en ARCA.");
                         }
 
                     if (s.Asientos)
@@ -201,8 +229,9 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
                     leeme.AppendLine($"Período: {desde:dd/MM/yyyy} al {hasta:dd/MM/yyyy}{(unidad.Length > 0 ? $" - Unidad de negocio {unidad}" : "")}");
                     leeme.AppendLine($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm} por {users.GetCurrentUserName()}");
                     leeme.AppendLine();
-                    leeme.AppendLine("01 Libros de IVA ventas y compras (PDF y Excel)");
-                    leeme.AppendLine("02 Libro IVA Digital (archivos para importar en ARCA)");
+                    leeme.AppendLine("01 Libros de IVA ventas y compras (PDF y Excel): General y por unidad con movimientos");
+                    leeme.AppendLine("02 Libro IVA Digital por CUIT. Los TXT solo se generan si pasan los controles locales; revisar los informes Validacion y los avisos.");
+                    leeme.AppendLine("ARCA: seleccionar importes expresados en Pesos Argentinos. La existencia de CUIT en padrón y la aceptación final se verifican en ARCA.");
                     leeme.AppendLine($"03 Asientos del mes, sin {string.Join(", ", TcsFueraDeAsientos)} (como el legacy). Máximo {ContabilidadReportesService.MaximoRenglonesDiario:N0} renglones.");
                     leeme.AppendLine("04 Detalle por artículo de ventas y compras");
                     leeme.AppendLine($"05 Facturas, notas de crédito y débito emitidas{(s.FacturasVentaSoloA ? " (solo A y M)" : "")}");
@@ -224,7 +253,7 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
                 """, new { Valor = FormattableString.Invariant($"{desde:yyyyMM}|{DateTime.Now:dd/MM/yyyy HH:mm}") }, cancellationToken: CancellationToken.None));
             await events.LogAuditAsync("EstudioPaquete", "Generar", "PAQUETE_ESTUDIO", $"{desde:yyyyMM}",
                 $"Generó el paquete para el estudio de {desde:MM/yyyy} ({archivos} archivos).", new { s.Anio, s.Mes, unidad, archivos, bytes, avisos }, CancellationToken.None);
-            return new EstudioPaqueteResultado(token, nombre, bytes, archivos, avisos);
+            return new EstudioPaqueteResultado(token, nombre, bytes, archivos, avisos) { Revision = revision };
         }, ct);
 
     /// <summary>«000100001234A» → «0001-00001234A».</summary>
@@ -302,14 +331,19 @@ public sealed class EstudioPaqueteService(ISessionService sessions, IAppUserSess
 
     private async Task<T> EjecutarAsync<T>(string accion, Func<SqlConnection, Task<T>> operacion, CancellationToken ct)
     {
-        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out _)) throw new ReglaException("Ingresá en la base activa.");
+        if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var sessionId)) throw new ReglaException("Ingresá en la base activa.");
         try
         {
             var permitido = false;
             foreach (var m in Menus) if (await permissions.HasAccessAsync(m, ct)) { permitido = true; break; }
             if (!permitido) throw new ReglaException("Tu usuario no tiene permiso para generar el paquete del estudio (Datos para contadores o libros de IVA).");
             await using var cn = new SqlConnection(sessions.GetConnectionString()); await cn.OpenAsync(ct);
-            return await operacion(cn);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var antes) || antes != sessionId)
+                throw new ReglaException("Cambió la base activa. Volvé a ingresar al módulo.");
+            var resultado = await operacion(cn);
+            if (!TenantDataAccessGuard.TryGetAuthorizedSession(sessions, users, out var despues) || despues != sessionId)
+                throw new ReglaException("Cambió la base activa. Volvé a revisar en la base seleccionada.");
+            return resultado;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (ReglaException) { throw; }

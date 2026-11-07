@@ -18,3 +18,15 @@
 .pe-descargar { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 16px; border-radius: 8px; text-decoration: none;
     background: var(--alfa-accent); color: var(--alfa-accent-contrast, #fff); font-size: 13px; font-weight: 600; }
 .pe-descargar:hover { filter: brightness(1.08); }
+
+.pe-control, .pe-filtros-revision { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.pe-control { border-bottom: 1px solid var(--alfa-border-default); padding: 10px 0; }
+.pe-control > div { flex: 1 1 340px; }
+.pe-control small, .pe-revision-tabla small { display: block; color: var(--alfa-text-secondary); }
+.pe-control a, .pe-revision-tabla a { color: var(--alfa-accent); }
+.pe-filtros-revision label { display: flex; align-items: center; gap: 8px; }
+.pe-revision-scroll { overflow: auto; max-height: 55vh; }
+.pe-revision-tabla { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pe-revision-tabla th, .pe-revision-tabla td { padding: 8px; border-bottom: 1px solid var(--alfa-border-default); text-align: left; vertical-align: top; }
+.pe-revision-tabla th { position: sticky; top: 0; background: var(--alfa-bg-surface); z-index: 1; }
+.pe-revision-tabla td:last-child { white-space: nowrap; }

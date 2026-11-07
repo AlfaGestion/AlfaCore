@@ -83,7 +83,7 @@
                                 <td title="@(f.CodigoArca == 0 ? "Sin código ARCA: no va al TXT del Libro IVA Digital" : $"Código ARCA {f.CodigoArca}")">
                                     @f.Tc @f.Letra @if (f.CodigoArca == 0) { <i class="bi bi-exclamation-triangle liva-aviso" aria-hidden="true"></i> }
                                 </td>
-                                <td>@f.Comprobante <ComprobanteVerAccion Tc="@f.Tc" Comprobante="@($"{f.PuntoVenta:0000}{f.Numero:00000000}{f.Letra}")" /></td>
+                                <td>@f.Comprobante <ComprobanteVerAccion Cuenta="@f.Cuenta" Tc="@f.Tc" Comprobante="@($"{f.PuntoVenta:0000}{f.Numero:00000000}{f.Letra}")" /></td>
                                 <td>@f.RazonSocial<small>@f.Cuenta</small></td>
                                 <td>@f.Cuit</td>
                                 <td>@f.CondicionIva</td>
