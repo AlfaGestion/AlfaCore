@@ -149,20 +149,30 @@ public sealed partial class OrdenPagoService(ISessionService sessions, IAppUserS
 
     // ── Consultas ────────────────────────────────────────────────────────────────────────────
 
+    private static class Sql
+    {
+        private static string Palabra(int n) => $"(CODIGO LIKE @t{n} ESCAPE '~' OR RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @t{n} ESCAPE '~')";
+        public static readonly string BuscarProveedor = $"""
+            SELECT TOP(20) LTRIM(RTRIM(CODIGO)) Codigo,LTRIM(RTRIM(RAZON_SOCIAL)) Nombre,LTRIM(RTRIM(ISNULL(NUMERO_DOCUMENTO,''))) Documento
+            FROM dbo.Vt_Proveedores WHERE ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0
+                AND (({Palabra(1)} AND {Palabra(2)} AND {Palabra(3)} AND {Palabra(4)})
+                    OR (@documento<>'' AND REPLACE(REPLACE(REPLACE(NUMERO_DOCUMENTO,'-',''),'.',''),' ','') LIKE '%'+@documento+'%'))
+            ORDER BY CASE WHEN LTRIM(RTRIM(CODIGO))=@texto THEN 0 WHEN LTRIM(RTRIM(CODIGO)) LIKE @prefijo ESCAPE '~' THEN 1
+                          WHEN RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @prefijo ESCAPE '~' THEN 2 ELSE 3 END, RAZON_SOCIAL;
+            """;
+    }
+
     public Task<IReadOnlyList<OrdenPagoProveedor>> BuscarProveedoresAsync(string texto, CancellationToken ct = default)
         => Ejecutar<IReadOnlyList<OrdenPagoProveedor>>("BuscarProveedor", async (cn, user, session, token) =>
         {
             texto = (texto ?? "").Trim();
             if (texto.Length < 2) return [];
-            var patron = "%" + texto.Replace("~", "~~").Replace("%", "~%").Replace("_", "~_").Replace("[", "~[") + "%";
+            // Cada palabra tiene que aparecer en el código, el nombre (sin distinguir tildes ni mayúsculas) o el CUIT, en cualquier orden.
+            static string Literal(string v) => v.Replace("~", "~~").Replace("%", "~%").Replace("_", "~_").Replace("[", "~[");
+            var palabras = texto.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(4).Select(Literal).ToArray();
+            string T(int i) => i < palabras.Length ? "%" + palabras[i] + "%" : "%";
             var documento = new string(texto.Where(char.IsDigit).ToArray());
-            var filas = (await cn.QueryAsync<OrdenPagoProveedor>(Cmd("""
-                SELECT TOP(20) LTRIM(RTRIM(CODIGO)) Codigo,LTRIM(RTRIM(RAZON_SOCIAL)) Nombre,LTRIM(RTRIM(ISNULL(NUMERO_DOCUMENTO,''))) Documento
-                FROM dbo.Vt_Proveedores WHERE ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0
-                    AND (CODIGO LIKE @patron ESCAPE '~' OR RAZON_SOCIAL LIKE @patron ESCAPE '~'
-                        OR (@documento<>'' AND REPLACE(REPLACE(NUMERO_DOCUMENTO,'-',''),' ','') LIKE '%'+@documento+'%'))
-                ORDER BY RAZON_SOCIAL;
-                """, new { patron, documento }, null, token))).AsList();
+            var filas = (await cn.QueryAsync<OrdenPagoProveedor>(Cmd(Sql.BuscarProveedor, new { t1 = T(0), t2 = T(1), t3 = T(2), t4 = T(3), documento, prefijo = Literal(texto) + "%", texto }, null, token))).AsList();
             VerificarSesion(session);
             return filas;
         }, ct);

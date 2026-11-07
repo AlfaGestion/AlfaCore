@@ -85,10 +85,14 @@
             }
         </section>
 
-        @if (_prep.Creditos.Count > 0)
-        {
-            <section class="op-card" aria-label="Créditos a aplicar">
-                <h2>Créditos y anticipos a aplicar <small>(notas de crédito, pagos anticipados)</small></h2>
+        <section class="op-card" aria-label="Créditos a aplicar">
+            <h2>Créditos y anticipos a aplicar <small>(notas de crédito, pagos anticipados)</small></h2>
+            @if (_prep.Creditos.Count == 0)
+            {
+                <p class="op-ayuda">El proveedor no tiene notas de crédito ni anticipos pendientes de aplicar.</p>
+            }
+            else
+            {
                 <div class="op-scroll"><table class="op-table">
                     <thead><tr><th class="op-sel"></th><th>Comprobante</th><th>Fecha</th><th class="op-num">Saldo</th><th class="op-num">Importe a aplicar</th></tr></thead>
                     <tbody>
@@ -105,11 +109,39 @@
                     }
                     </tbody>
                 </table></div>
+            }
+        </section>
+
+        @if (_prep.RetieneGanancias && !RetVigente && (_pagar.Count > 0 || Dinero > 0))
+        {
+            <p class="op-ayuda" role="status">@(_busy ? "Calculando la retención de Ganancias…" : "No se pudo calcular la retención de Ganancias.")
+                @if (!_busy) { <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-arrow-repeat" OnClick="_ => CalcularRetencionAsync()">Reintentar</AlfaButton> }</p>
+        }
+        @if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: true } r)
+        {
+            <section class="op-card" aria-label="Detalle de la retención">
+                <h2>Retención de Ganancias <small>@r.Regimen · alícuota @r.Alicuota.ToString("0.##")%</small>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-repeat" Disabled="@(_busy)" OnClick="_ => CalcularRetencionAsync()">Recalcular</AlfaButton></h2>
+                <dl class="op-retencion">
+                    <div><dt>Base de esta orden</dt><dd>@r.BaseActual.ToString("N2")</dd></div>
+                    <div><dt>Base acumulada del mes (anterior)</dt><dd>@r.BaseAnterior.ToString("N2")</dd></div>
+                    <div><dt>Mínimo no imponible</dt><dd>@r.NoImponible.ToString("N2")</dd></div>
+                    <div><dt>Base imponible</dt><dd>@r.BaseImponible.ToString("N2")</dd></div>
+                    <div><dt>Retención calculada</dt><dd>@r.Calculada.ToString("N2")</dd></div>
+                    <div><dt>Retenido antes en el mes</dt><dd>@r.RetenidoAntes.ToString("N2")</dd></div>
+                    <div><dt><strong>A retener ahora</strong></dt><dd><strong>@r.Importe.ToString("N2")</strong></dd></div>
+                    <div><dt><strong>Neto a pagar en medios</strong></dt><dd><strong>@NetoAPagar.ToString("N2")</strong></dd></div>
+                </dl>
+                @if (r.Importe == 0) { <p class="op-ayuda">No corresponde retener: no supera el mínimo no imponible o el importe queda por debajo del mínimo a retener.</p> }
             </section>
+        }
+        else if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: false } n)
+        {
+            <p class="op-ayuda">@n.Motivo</p>
         }
 
         <section class="op-card" aria-label="Medios de pago">
-            <h2>Medios de pago</h2>
+            <h2>Medios de pago @if (_pagar.Count > 0) { <small>neto a pagar @NetoAPagar.ToString("N2")@(Retencion > 0 ? " (ya descontada la retención)" : "")</small> }</h2>
             @foreach (var m in _medios)
             {
                 var medio = _prep.Medios.FirstOrDefault(x => x.Cuenta == m.Cuenta);
@@ -154,7 +186,7 @@
                     </tbody>
                 </table></div>
             }
-            <p class="op-ayuda">Efectivo, banco/transferencia, cheque propio y cheques de terceros, en pesos.@(_prep.RetieneGanancias ? " La retención de Ganancias se descuenta del pago: calculala antes de grabar." : "")</p>
+            <p class="op-ayuda">Efectivo, banco/transferencia, cheque propio y cheques de terceros, en pesos.@(_prep.RetieneGanancias ? " La retención de Ganancias ya está calculada arriba y se descuenta del pago." : "")</p>
         </section>
 
         <section class="op-resumen" aria-label="Resumen">
@@ -168,32 +200,7 @@
                 <div><dt>Medios de pago</dt><dd>@Dinero.ToString("N2")</dd></div>
                 <div class="@(Anticipo != 0 ? "is-aviso" : null)"><dt>@(Anticipo > 0 ? "Anticipo al proveedor" : Anticipo < 0 ? "Falta cubrir" : "Diferencia")</dt><dd>@Math.Abs(Anticipo).ToString("N2")</dd></div>
             </dl>
-            @if (_prep.RetieneGanancias)
-            {
-                <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-percent" Disabled="@(_busy || (_pagar.Count == 0 && Dinero == 0))" OnClick="_ => CalcularRetencionAsync()">Calcular retención</AlfaButton>
-            }
-            <AlfaButton Icon="bi bi-check2-circle" Loading="_busy" Disabled="@(_busy || !PuedeGrabar)" OnClick="_ => IntentarGrabarAsync()">Grabar orden de pago</AlfaButton>
         </section>
-        @if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: true } r)
-        {
-            <section class="op-card" aria-label="Detalle de la retención">
-                <h2>Retención de Ganancias <small>@r.Regimen · alícuota @r.Alicuota.ToString("0.##")%</small></h2>
-                <dl class="op-retencion">
-                    <div><dt>Base de esta orden</dt><dd>@r.BaseActual.ToString("N2")</dd></div>
-                    <div><dt>Base acumulada del mes (anterior)</dt><dd>@r.BaseAnterior.ToString("N2")</dd></div>
-                    <div><dt>Mínimo no imponible</dt><dd>@r.NoImponible.ToString("N2")</dd></div>
-                    <div><dt>Base imponible</dt><dd>@r.BaseImponible.ToString("N2")</dd></div>
-                    <div><dt>Retención calculada</dt><dd>@r.Calculada.ToString("N2")</dd></div>
-                    <div><dt>Retenido antes en el mes</dt><dd>@r.RetenidoAntes.ToString("N2")</dd></div>
-                    <div><dt><strong>A retener ahora</strong></dt><dd><strong>@r.Importe.ToString("N2")</strong></dd></div>
-                </dl>
-                @if (r.Importe == 0) { <p class="op-ayuda">No corresponde retener: no supera el mínimo no imponible o el importe queda por debajo del mínimo a retener.</p> }
-            </section>
-        }
-        else if (_prep.RetieneGanancias && RetVigente && _ret is { Aplica: false } n)
-        {
-            <p class="op-ayuda">@n.Motivo</p>
-        }
     }
 </div>
 
@@ -245,15 +252,34 @@
     private IEnumerable<OrdenPagoChequeCartera> ChequesElegidos => _prep?.Cartera.Where(c => _cheques.Contains(c.Clave)) ?? [];
     private decimal Dinero => _medios.Sum(m => Num(m.Importe)) + ChequesElegidos.Sum(c => c.Importe);
     private OrdenPagoRetencion? _ret;
-    private string _retFirma = "";
+    private string _retFirma = "", _retIntento = "", _estadoHeader = "";
     /// <summary>Lo que se cargó cuando se calculó la retención: si cambia algún importe, hay que recalcularla.</summary>
-    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + Dinero + "|" + string.Join(",", _cheques.OrderBy(k => k));
+    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + PagoReal + "|" + _fecha;
+    /// <summary>Base de pago para la retención: con comprobantes no depende de los medios cargados (así cambiarlos no borra el cálculo); en un anticipo, sí.</summary>
+    private decimal PagoReal => _pagar.Count == 0 || Dinero > APagar - Creditos ? Dinero : Math.Max(0, APagar - Creditos);
+    private decimal NetoAPagar => Math.Max(0, APagar - Creditos - Retencion);
     private bool RetVigente => _ret is not null && _retFirma == Firma;
     private decimal Retencion => RetVigente ? _ret!.Importe : 0m;
     /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
     private decimal Anticipo => Dinero + Creditos + Retencion - APagar;
     private decimal Diferencia => Math.Max(0, APagar - Creditos - Retencion - Dinero);
     private bool PuedeGrabar => _prep is not null && (_pagar.Count > 0 || _aplicar.Count == 0) && Dinero > 0 && Anticipo >= 0 && (!_prep.RetieneGanancias || RetVigente);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_disposed) return;
+        // La retención se calcula sola apenas hay comprobantes (o un anticipo) y cada vez que cambian los importes.
+        if (_prep is { RetieneGanancias: true } && !_busy && (_pagar.Count > 0 || Dinero > 0) && !RetVigente && _retIntento != Firma)
+        {
+            _retIntento = Firma;
+            await CalcularRetencionAsync();
+        }
+        var estado = $"{_busy}|{PuedeGrabar}|{TieneCargado || _medios.Count > 0 || _cheques.Count > 0}";
+        if (estado != _estadoHeader) { _estadoHeader = estado; UpdateHeader(); }
+    }
+
+    private void Cancelar() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _cheques.Clear(); _ret = null; _retIntento = ""; _operacion = Guid.NewGuid(); _detalle = ""; _feedback = null; }
+    private async Task VolverAsync() { try { await Js.InvokeVoidAsync("history.back"); } catch (JSException) { } catch (InvalidOperationException) { } }
 
     protected override void OnInitialized() { Sesiones.SessionChanged += CambiarSesion; Usuarios.StateChanged += CambiarSesion; UpdateHeader(); }
 
@@ -289,7 +315,7 @@
         return _proveedor is null ? Task.CompletedTask : EjecutarAsync(CargarAsync);
     }
 
-    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _cheques.Clear(); _ret = null; _operacion = Guid.NewGuid(); }
+    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _medios.Clear(); _cheques.Clear(); _ret = null; _retIntento = ""; _operacion = Guid.NewGuid(); }
 
     private void MarcarComprobante(OrdenPagoDocumento d, bool marcado)
     {
@@ -318,7 +344,7 @@
         var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
         OrdenPagoClave ClaveDe(string key, IReadOnlyList<OrdenPagoDocumento> docs) => docs.First(d => Clave(d) == key).Clave;
         // Pago real en medios: lo cargado o, si todavía no hay medios, lo que se pagaría sin la retención.
-        var pagoReal = Dinero > 0 ? Dinero : Math.Max(0, APagar - Creditos);
+        var pagoReal = PagoReal;
         var s = new OrdenPagoSolicitud
         {
             Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma,
@@ -413,7 +439,13 @@
             new() { Key = "orden", Label = "Orden de Pago", Active = true },
             new() { Key = "visor", Label = "Ver comprobantes", OnClick = () => { Nav.NavigateTo(RouteContext.BuildRoute("/compras/pagos/ordenes")); return Task.CompletedTask; } }
         ],
-        State = _busy ? PageHeaderState.Loading : PageHeaderState.List
+        State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+        Actions =
+        [
+            new() { Key = "grabar", Label = _proforma ? "Grabar pago proforma" : "Grabar orden de pago", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || !PuedeGrabar, Busy = _busy, OnClick = () => InvokeAsync(IntentarGrabarAsync) },
+            new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || !(TieneCargado || _medios.Count > 0 || _cheques.Count > 0), OnClick = () => InvokeAsync(() => { Cancelar(); StateHasChanged(); }) },
+            new() { Key = "volver", Label = "Volver", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = VolverAsync }
+        ]
     });
 
     private void CambiarSesion()
