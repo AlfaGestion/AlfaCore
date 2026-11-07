@@ -66,6 +66,21 @@ public sealed class LibroIvaArcaValidatorTests
         Assert.Contains(LibroIvaArcaValidator.Validar(r), x => x.Contains("Documento/CUIT inválido"));
     }
 
+    [Theory]
+    [InlineData("111111111", true)] [InlineData("304656383", true)] [InlineData("111111111", false)]
+    public void ConsumidorFinalNoSeObservaPorElNumeroDeDocumento(string documento, bool consumidorFinal)
+    {
+        var r = Libro(); var f = r.Filas[0]; f.Letra = "B"; f.CodigoArca = 6; f.Cuit = documento; f.ConsumidorFinal = consumidorFinal;
+        var e = LibroIvaArcaValidator.Validar(r);
+        if (consumidorFinal) Assert.DoesNotContain(e, x => x.Contains("Documento/CUIT inválido"));
+        else Assert.Contains(e, x => x.Contains("Documento/CUIT inválido"));
+        if (!consumidorFinal) return;
+        // En el TXT va como sin identificar (99 / 0), no con el número cargado.
+        var (cab, _) = LibroIvaService.ArmarTxt(r.Filas);
+        Assert.Contains("99" + new string('0', 20), cab);
+        Assert.DoesNotContain(documento, cab);
+    }
+
     [Fact]
     public void SumaCentavosPorComprobanteAntesDeTotalizar()
     {

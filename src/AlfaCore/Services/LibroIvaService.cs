@@ -93,6 +93,8 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         var compras = filtro.Compras;
         // Ventas: clientes y V_MV_CPTE. Compras: proveedores y C_MV_Cpte (el número es el del comprobante del proveedor).
         var terceros = compras ? "dbo.VT_PROVEEDORES" : "dbo.VT_CLIENTES";
+        var consumidorFinal = compras ? "CONVERT(bit,0)" : "CONVERT(bit,CASE WHEN UPPER(ISNULL(td.DESCRIPCION,'')) LIKE '%CONSUMIDOR%' THEN 1 ELSE 0 END)";
+        var joinTipoDoc = compras ? "" : "LEFT JOIN dbo.TA_TIPODOCUMENTO td ON LTRIM(RTRIM(td.CODIGO)) = LTRIM(RTRIM(cl.DOCUMENTO_TIPO))";
         var cpte = compras
             ? "SELECT TOP (1) ABS(ISNULL(x.ImporteImpuestosInternos,0)) ImporteImpuestosInternos FROM dbo.C_MV_Cpte x WHERE x.TC = a.TC AND x.SUCURSAL = a.SUCURSAL AND x.NUMERO = a.NUMERO AND x.LETRA = a.LETRA AND x.CUENTA = a.CUENTA"
             : "SELECT TOP (1) ABS(ISNULL(x.ImporteImpuestosInternos,0)) ImporteImpuestosInternos FROM dbo.V_MV_CPTE x WHERE x.TC = a.TC AND x.SUCURSAL = a.SUCURSAL AND x.NUMERO = a.NUMERO AND x.LETRA = a.LETRA AND ISNULL(x.IDCOMPLEMENTO,0) = 0";
@@ -100,7 +102,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             SELECT a.FECHA Fecha, LTRIM(RTRIM(a.TC)) Tc, LTRIM(RTRIM(ISNULL(a.LETRA,''))) Letra, LTRIM(RTRIM(ISNULL(a.SUCURSAL,''))) Sucursal,
                    LTRIM(RTRIM(ISNULL(a.NUMERO,''))) Numero, LTRIM(RTRIM(ISNULL(a.CUENTA,''))) Cuenta,
                    COALESCE(NULLIF(LTRIM(RTRIM(a.CABNOMBRE)),''), NULLIF(LTRIM(RTRIM(cl.RAZON_SOCIAL)),''), LTRIM(RTRIM(a.CUENTA))) RazonSocial,
-                   LTRIM(RTRIM(ISNULL(a.CABCUIT,''))) Cuit, ISNULL(LTRIM(RTRIM(ci.DESCRIPCION)), LTRIM(RTRIM(ISNULL(a.CABCONDIVA,'')))) CondicionIva,
+                   LTRIM(RTRIM(ISNULL(a.CABCUIT,''))) Cuit, {consumidorFinal} ConsumidorFinal, ISNULL(LTRIM(RTRIM(ci.DESCRIPCION)), LTRIM(RTRIM(ISNULL(a.CABCONDIVA,'')))) CondicionIva,
                    LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) UnidadNegocio,
                    ISNULL(a.LIVA_ImpNetoGrav,0) NetoGravado, ISNULL(a.LIVA_ImpNetoNGrav,0) NoGravado, ISNULL(a.LIVA_EXENTO,0) Exento,
                    ISNULL(a.LIVA_AlicIVA,0) A1, ISNULL(a.LIVA_ImpIVA,0) + ISNULL(a.LIVA_ImpIVARec,0) I1,
@@ -111,6 +113,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                    ISNULL(a.LIVA_TOTAL,0) Total
             FROM dbo.MV_ASIENTOS a
             LEFT JOIN {terceros} cl ON cl.CODIGO = a.CUENTA
+            {joinTipoDoc}
             LEFT JOIN dbo.TA_CONDIVA ci ON LTRIM(RTRIM(CONVERT(nvarchar(20), ci.CODIGO))) = LTRIM(RTRIM(a.CABCONDIVA))
             OUTER APPLY ({cpte}) c
             WHERE a.LIVA_TIPO = @Tipo AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta)
@@ -196,7 +199,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
     {
         var fila = new LibroIvaFila
         {
-            Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit,
+            Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit, ConsumidorFinal = s.ConsumidorFinal,
             CondicionIva = s.CondicionIva, UnidadNegocio = s.UnidadNegocio,
             PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
             NetoGravado = MonedaLibro(s.NetoGravado), NoGravado = MonedaLibro(s.NoGravado), Exento = MonedaLibro(ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total)),
@@ -294,7 +297,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         var cbte = new StringBuilder(); var alic = new StringBuilder();
         foreach (var f in filas.Where(x => x.CodigoArca > 0))
         {
-            var (codDoc, nroDoc) = Documento(f.Cuit);
+            var (codDoc, nroDoc) = Documento(f);
             var exento = Math.Abs(f.Exento); var noGravado = Math.Abs(f.NoGravado);
             var alicuotas = f.Alicuotas.Where(a => CodigoAlicuota(a.Alicuota) > 0).ToList();
             var codigoOperacion = alicuotas.Count > 0 || f.Letra == "C" ? (f.Letra == "C" ? "0" : " ") : exento != 0 ? "E" : noGravado != 0 ? "N" : " ";
@@ -342,7 +345,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         var cbte = new StringBuilder(); var alic = new StringBuilder();
         foreach (var f in filas.Where(x => x.CodigoArca > 0))
         {
-            var (codDoc, nroDoc) = Documento(f.Cuit);
+            var (codDoc, nroDoc) = Documento(f);
             var exento = Math.Abs(f.Exento); var noGravado = Math.Abs(f.NoGravado);
             var discrimina = f.Letra.Trim().ToUpperInvariant() is "A" or "M";
             var alicuotas = discrimina ? f.Alicuotas.Where(a => CodigoAlicuota(a.Alicuota) > 0).ToList() : [];
@@ -388,9 +391,11 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         return (cbte.ToString(), alic.ToString());
     }
 
-    private static (int Codigo, string Numero) Documento(string cuit)
+    private static (int Codigo, string Numero) Documento(LibroIvaFila f)
     {
-        var digitos = new string((cuit ?? string.Empty).Where(char.IsDigit).ToArray());
+        var digitos = new string((f.Cuit ?? string.Empty).Where(char.IsDigit).ToArray());
+        // Consumidor final: ARCA no controla el número; solo se informa si es un DNI (7-8 dígitos) o un CUIT válido, y si no, como sin identificar.
+        if (f.ConsumidorFinal && !(digitos.Length is 7 or 8 || digitos.Length == 11 && LibroIvaArcaValidator.CuitValido(digitos))) return (99, "0");
         // Consumidor final genérico (99999999995) o sin documento: ARCA espera 99 / 0.
         if (digitos.Length == 0 || digitos.All(c => c == '0') || digitos == "99999999995") return (99, "0");
         return digitos.Length switch
@@ -572,7 +577,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
     {
         public DateTime Fecha { get; set; }
         public string Tc { get; set; } = ""; public string Letra { get; set; } = ""; public string Sucursal { get; set; } = ""; public string Numero { get; set; } = "";
-        public string Cuenta { get; set; } = ""; public string RazonSocial { get; set; } = ""; public string Cuit { get; set; } = "";
+        public string Cuenta { get; set; } = ""; public string RazonSocial { get; set; } = ""; public string Cuit { get; set; } = ""; public bool ConsumidorFinal { get; set; }
         public string CondicionIva { get; set; } = ""; public string UnidadNegocio { get; set; } = "";
         public decimal NetoGravado { get; set; } public decimal NoGravado { get; set; } public decimal Exento { get; set; }
         public decimal A1 { get; set; } public decimal I1 { get; set; } public decimal A2 { get; set; } public decimal I2 { get; set; }

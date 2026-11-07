@@ -28,6 +28,8 @@ public sealed class LibroIvaFila
     public string Cuenta { get; set; } = string.Empty;
     public string RazonSocial { get; set; } = string.Empty;
     public string Cuit { get; set; } = string.Empty;
+    /// <summary>El cliente tiene tipo de documento «Consumidor final»: ARCA no controla el número, así que no se valida (se informa 99 / 0 si no es un DNI o CUIT).</summary>
+    public bool ConsumidorFinal { get; set; }
     public string CondicionIva { get; set; } = string.Empty;
     public string UnidadNegocio { get; set; } = string.Empty;
     public decimal NetoGravado { get; set; }

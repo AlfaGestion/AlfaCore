@@ -42,9 +42,11 @@ internal static class LibroIvaArcaValidator
             if (f.PuntoVenta is < 1 or > 9997 || f.Numero <= 0) Error("Punto de venta o número inválido.");
             if (string.IsNullOrWhiteSpace(f.RazonSocial)) Error("Falta razón social.");
             var d = Digitos(f.Cuit);
+            // Un documento corto (como el «1» que se carga en consumidor final) no es DNI: el TXT lo informa como sin identificar (99 / 0).
             var generico = d.Length == 0 || d.All(c => c == '0') || d == "99999999995";
             var requiereCuit = r.Filtro.Compras || f.Letra is "A" or "M";
-            if (requiereCuit ? !CuitValido(f.Cuit) : !generico && (d.Length == 11 ? !CuitValido(f.Cuit) : d.Length is < 7 or > 8))
+            if (f.ConsumidorFinal && !r.Filtro.Compras && !requiereCuit) { /* consumidor final: ARCA no controla el número */ }
+            else if (requiereCuit ? !CuitValido(f.Cuit) : !generico && (d.Length == 11 ? !CuitValido(f.Cuit) : d.Length > 8))
                 Error($"Documento/CUIT inválido: {f.Cuit}.");
             if (f.Cuit.Any(c => !(c is >= '0' and <= '9' or '-' or ' '))) Error("El documento contiene caracteres inválidos.");
             var clave = $"{cuits.GetValueOrDefault(f.UnidadNegocio, Digitos(r.CuitEmisor))}|{f.CodigoArca}|{f.PuntoVenta}|{f.Numero}" + (r.Filtro.Compras ? $"|{d}" : "");
