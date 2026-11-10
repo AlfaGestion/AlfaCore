@@ -3108,6 +3108,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public virtual Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
+        public virtual Task SaveInstagramConfigAsSystemAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public virtual Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

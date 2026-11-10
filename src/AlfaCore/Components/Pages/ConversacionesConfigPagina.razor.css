@@ -47,3 +47,23 @@
     align-items: center;
     gap: var(--alfa-space-8, 8px);
 }
+
+/* Sección plegable "Configuración manual (avanzado)" de Instagram y Facebook. */
+.cfg-page ::deep .cfg-manual {
+    display: grid;
+    gap: var(--alfa-space-12, 12px);
+    padding: var(--alfa-space-12, 12px) var(--alfa-space-16, 16px);
+    border: 1px dashed var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+}
+
+.cfg-page ::deep .cfg-manual > summary {
+    cursor: pointer;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-body, 13px);
+    font-weight: 600;
+}
+
+.cfg-page ::deep .cfg-manual[open] > summary {
+    margin-bottom: var(--alfa-space-4, 4px);
+}

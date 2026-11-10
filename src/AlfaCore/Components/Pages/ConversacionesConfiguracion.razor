@@ -27,6 +27,7 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
 @inject IConfiguration Configuration
 @inject AlfaCore.Services.IWebChatSiteKeyService WebChatSiteKeys
+@inject AlfaCore.Services.MetaCanalesSocialesService MetaCanales
 @inject ILogger<ConversacionesConfiguracion> Logger
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -564,7 +565,15 @@
                                               UrlCallback="GetInstagramWebhookUrlPreview"
                                               AyudaToken="@(GetWebhookTenantHelp("los mensajes de Instagram"))"
                                               Busy="@(Loading || Saving)"
-                                              OnGuardar="SaveInstagramAsync" />
+                                              OnGuardar="SaveInstagramAsync"
+                                              Conexion="_metaVistaInstagram"
+                                              MetaBusy="_metaBusy"
+                                              MetaFeedback="_metaFeedbackInstagram"
+                                              OnConectar="@(() => ConectarMetaAsync(AlfaCore.Models.MetaCanalSocial.Instagram))"
+                                              OnConfirmar="@((string? pagina) => ConfirmarMetaAsync(AlfaCore.Models.MetaCanalSocial.Instagram, pagina))"
+                                              OnCancelar="@(() => CancelarMetaAsync(AlfaCore.Models.MetaCanalSocial.Instagram))"
+                                              OnDesconectar="@(() => DesconectarMetaAsync(AlfaCore.Models.MetaCanalSocial.Instagram))"
+                                              OnCerrarFeedback="@(() => _metaFeedbackInstagram = null)" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "facebook")
@@ -574,7 +583,15 @@
                                              UrlCallback="GetFacebookWebhookUrlPreview"
                                              AyudaToken="@(GetWebhookTenantHelp("los mensajes de Facebook"))"
                                              Busy="@(Loading || Saving)"
-                                             OnGuardar="SaveFacebookAsync" />
+                                             OnGuardar="SaveFacebookAsync"
+                                             Conexion="_metaVistaFacebook"
+                                             MetaBusy="_metaBusy"
+                                             MetaFeedback="_metaFeedbackFacebook"
+                                             OnConectar="@(() => ConectarMetaAsync(AlfaCore.Models.MetaCanalSocial.Facebook))"
+                                             OnConfirmar="@((string? pagina) => ConfirmarMetaAsync(AlfaCore.Models.MetaCanalSocial.Facebook, pagina))"
+                                             OnCancelar="@(() => CancelarMetaAsync(AlfaCore.Models.MetaCanalSocial.Facebook))"
+                                             OnDesconectar="@(() => DesconectarMetaAsync(AlfaCore.Models.MetaCanalSocial.Facebook))"
+                                             OnCerrarFeedback="@(() => _metaFeedbackFacebook = null)" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "mercadolibre")
@@ -1002,6 +1019,13 @@
     private ConversacionWhatsAppConfigDto _config = new();
     private ConversacionInstagramConfigDto _instagramConfig = new();
     private ConversacionFacebookConfigDto _facebookConfig = new();
+    // Conexión guiada de Instagram / Facebook (app central de ALFA NET), cada canal por separado.
+    private AlfaCore.Models.MetaCanalConexionVista? _metaVistaInstagram;
+    private AlfaCore.Models.MetaCanalConexionVista? _metaVistaFacebook;
+    private AppUiMessage? _metaFeedbackInstagram;
+    private AppUiMessage? _metaFeedbackFacebook;
+    private string? _metaPendienteId;
+    private bool _metaBusy;
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private ConversacionWebChatConfigDto _webChatConfig = new();
     private string? _webChatSiteKey;
@@ -2913,6 +2937,8 @@
             EnsureFacebookDefaults();
             _feedback ??= facebookResult.Feedback;
         }
+
+        await LoadMetaVistasAsync();
 
         var mercadoLibreResult = await UiOps.RunAsync(
             () => ConfigSvc.GetMercadoLibreConfigAsync(CurrentExpectedBaseIdOrNull()),
@@ -5298,6 +5324,127 @@
         => _stopSessionTarget is null
             ? "Esta cuenta dejará de estar conectada a AlfaCore."
             : $"\"{GetNumeroDisplayName(_stopSessionTarget)}\" dejará de estar conectado a AlfaCore.";
+
+    private int MetaIdBase()
+        => CurrentExpectedBaseIdOrNull() ?? SessionSvc.GetActiveSession()?.BaseId ?? 0;
+
+    private string MetaUsuario() => AppUserSession.GetCurrentUserName();
+
+    private async Task LoadMetaVistasAsync()
+    {
+        if (_metaPendienteId is null)
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+            _metaPendienteId = query.TryGetValue("meta_conexion", out var pendiente) ? pendiente.ToString() : string.Empty;
+        }
+
+        var idBase = MetaIdBase();
+        var usuario = MetaUsuario();
+        var instagram = await UiOps.RunAsync(
+            () => MetaCanales.GetVistaAsync(AlfaCore.Models.MetaCanalSocial.Instagram, idBase, _metaPendienteId, usuario, _lifetimeCts.Token),
+            "No se pudo consultar la conexión de Instagram.");
+        _metaVistaInstagram = instagram.Value;
+        if (!instagram.Success)
+            _metaFeedbackInstagram = instagram.Feedback;
+
+        var facebook = await UiOps.RunAsync(
+            () => MetaCanales.GetVistaAsync(AlfaCore.Models.MetaCanalSocial.Facebook, idBase, _metaPendienteId, usuario, _lifetimeCts.Token),
+            "No se pudo consultar la conexión de Facebook.");
+        _metaVistaFacebook = facebook.Value;
+        if (!facebook.Success)
+            _metaFeedbackFacebook = facebook.Feedback;
+    }
+
+    private void SetMetaFeedback(string canal, AppUiMessage? message)
+    {
+        if (canal == AlfaCore.Models.MetaCanalSocial.Instagram)
+            _metaFeedbackInstagram = message;
+        else
+            _metaFeedbackFacebook = message;
+    }
+
+    private static string MetaNombre(string canal)
+        => canal == AlfaCore.Models.MetaCanalSocial.Instagram ? "Instagram" : "Facebook Messenger";
+
+    private Task ConectarMetaAsync(string canal)
+    {
+        SetMetaFeedback(canal, null);
+        try
+        {
+            var returnPath = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimStart('/');
+            var url = MetaCanales.IniciarConexion(canal, MetaIdBase(), MetaUsuario(), Nav.BaseUri, returnPath);
+            _metaBusy = true;
+            Nav.NavigateTo(url, forceLoad: true);
+        }
+        catch (AlfaCore.Models.MetaCanalSocialException ex)
+        {
+            SetMetaFeedback(canal, AppUiMessage.Warning("No se pudo conectar", ex.Message));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmarMetaAsync(string canal, string? paginaId)
+    {
+        if (string.IsNullOrWhiteSpace(_metaPendienteId))
+            return;
+
+        _metaBusy = true;
+        SetMetaFeedback(canal, null);
+        try
+        {
+            var conexion = await MetaCanales.ConfirmarAsync(_metaPendienteId, MetaIdBase(), MetaUsuario(), paginaId, _lifetimeCts.Token);
+            _metaPendienteId = string.Empty;
+            await LoadAsync();
+            SetMetaFeedback(canal, AppUiMessage.Success(
+                $"{MetaNombre(canal)} conectado",
+                $"Listo: los mensajes de {conexion.Titulo} ya llegan a la bandeja de Conversaciones."));
+        }
+        catch (AlfaCore.Models.MetaCanalSocialException ex)
+        {
+            SetMetaFeedback(canal, AppUiMessage.Warning("No se pudo conectar", ex.Message));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var incidente = await AppEvents.LogErrorAsync("Conversaciones", "MetaConfirmar" + canal, ex,
+                $"No se pudo conectar {MetaNombre(canal)}.", new { IdBase = MetaIdBase() }, ct: CancellationToken.None);
+            SetMetaFeedback(canal, AppUiMessage.Error("No se pudo conectar", $"Ocurrió un error inesperado al conectar {MetaNombre(canal)}.", code: incidente));
+        }
+        finally
+        {
+            _metaBusy = false;
+        }
+    }
+
+    private async Task CancelarMetaAsync(string canal)
+    {
+        MetaCanales.DescartarPendiente(_metaPendienteId);
+        _metaPendienteId = string.Empty;
+        SetMetaFeedback(canal, null);
+        await LoadMetaVistasAsync();
+    }
+
+    private async Task DesconectarMetaAsync(string canal)
+    {
+        _metaBusy = true;
+        SetMetaFeedback(canal, null);
+        try
+        {
+            await MetaCanales.DesconectarAsync(canal, MetaIdBase(), MetaUsuario(), _lifetimeCts.Token);
+            await LoadAsync();
+            SetMetaFeedback(canal, AppUiMessage.Success($"{MetaNombre(canal)} desconectado", "Los mensajes nuevos ya no llegan a AlfaCore."));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var incidente = await AppEvents.LogErrorAsync("Conversaciones", "MetaDesconectar" + canal, ex,
+                $"No se pudo desconectar {MetaNombre(canal)}.", new { IdBase = MetaIdBase() }, ct: CancellationToken.None);
+            SetMetaFeedback(canal, AppUiMessage.Error("No se pudo desconectar", $"Ocurrió un error al desconectar {MetaNombre(canal)}.", code: incidente));
+        }
+        finally
+        {
+            _metaBusy = false;
+        }
+    }
 
     private async Task SaveInstagramAsync()
     {

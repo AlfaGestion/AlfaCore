@@ -351,7 +351,17 @@ public sealed class ConversacionesConfigService(
     {
         ArgumentNullException.ThrowIfNull(config);
         await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
+        await SaveInstagramConfigCoreAsync(config, ct);
+    }
 
+    public async Task SaveInstagramConfigAsSystemAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        await SaveInstagramConfigCoreAsync(config, ct);
+    }
+
+    private async Task SaveInstagramConfigCoreAsync(ConversacionInstagramConfigDto config, CancellationToken ct)
+    {
         await ExecuteLoggedAsync("Conversaciones", "SaveInstagramConfig", async token =>
         {
             var normalized = Normalize(config);

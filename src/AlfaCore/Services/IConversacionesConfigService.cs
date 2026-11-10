@@ -13,6 +13,11 @@ public interface IConversacionesConfigService
     Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default);
     Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
+    /// <summary>
+    /// Igual que <see cref="SaveInstagramConfigAsync"/> pero sin pedir permiso de usuario. Solo para
+    /// procesos del sistema (renovación automática del token de Instagram); nunca desde una pantalla.
+    /// </summary>
+    Task SaveInstagramConfigAsSystemAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
     Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default);
     Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default);

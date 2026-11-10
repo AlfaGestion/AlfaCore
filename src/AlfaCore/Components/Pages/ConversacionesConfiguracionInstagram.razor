@@ -1,50 +1,71 @@
 @* Configuración → Canales → Instagram (AlfaDesign v1). Mismos campos y guardado que antes. *@
 
-<ConversacionesConfigPagina Titulo="Instagram" Descripcion="Mensajes directos de una cuenta profesional de Instagram vinculada a una página de Facebook.">
+<ConversacionesConfigPagina Titulo="Instagram" Descripcion="Mensajes directos de una cuenta profesional de Instagram.">
     <Estado>
-        <AlfaTag Tone="@Tono(Config.IsConfiguredForSend)">Envío: @(Config.IsConfiguredForSend ? "listo" : "pendiente")</AlfaTag>
-        <AlfaTag Tone="@Tono(Config.IsConfiguredForVerify)">Webhook: @(Config.IsConfiguredForVerify ? "listo" : "pendiente")</AlfaTag>
+        @if (Conexion?.Conexion is not null)
+        {
+            <AlfaTag Tone="AlfaTagTone.Success">Conectado</AlfaTag>
+        }
+        else
+        {
+            <AlfaTag Tone="@Tono(Config.IsConfiguredForSend)">Envío: @(Config.IsConfiguredForSend ? "listo" : "pendiente")</AlfaTag>
+            <AlfaTag Tone="@Tono(Config.IsConfiguredForVerify)">Webhook: @(Config.IsConfiguredForVerify ? "listo" : "pendiente")</AlfaTag>
+        }
     </Estado>
     <ChildContent>
-        <ConversacionesConfigTarjeta Titulo="Cuenta" Columnas="2">
-            <AlfaInput Id="ig-account-id" Label="Instagram Account ID" Placeholder="Cuenta profesional de Instagram"
-                       Value="@Config.InstagramAccountId" ValueChanged="@((string? v) => Config.InstagramAccountId = v ?? string.Empty)" />
-            <AlfaInput Id="ig-page-id" Label="Facebook Page ID" Placeholder="Página vinculada a Instagram"
-                       Value="@Config.FacebookPageId" ValueChanged="@((string? v) => Config.FacebookPageId = v ?? string.Empty)" />
-            <AlfaInput Id="ig-app-id" Label="App ID de Meta"
-                       Value="@Config.AppId" ValueChanged="@((string? v) => Config.AppId = v ?? string.Empty)" />
-            <AlfaInput Id="ig-api-version" Label="Versión Graph API" Placeholder="v22.0"
-                       Value="@Config.ApiVersion" ValueChanged="@((string? v) => Config.ApiVersion = v ?? string.Empty)" />
-        </ConversacionesConfigTarjeta>
+        <ConversacionesConfigConexionMeta Canal="@MetaCanalSocial.Instagram"
+                                          Vista="Conexion"
+                                          Busy="MetaBusy"
+                                          Feedback="MetaFeedback"
+                                          OnConectar="OnConectar"
+                                          OnConfirmar="OnConfirmar"
+                                          OnCancelar="OnCancelar"
+                                          OnDesconectar="OnDesconectar"
+                                          OnCerrarFeedback="OnCerrarFeedback" />
 
-        <ConversacionesConfigTarjeta Titulo="Credenciales" Columnas="2">
-            <ConversacionesConfigTexto Id="ig-access-token" Label="Access Token" Filas="3" Monoespaciado="true" Class="cfg-full"
-                                       Placeholder="Token de página u OAuth con permisos de Instagram Messaging"
-                                       Value="@Config.AccessToken" ValueChanged="@((string? v) => Config.AccessToken = v ?? string.Empty)" />
-            <AlfaInput Id="ig-app-secret" Label="App Secret"
-                       Value="@Config.AppSecret" ValueChanged="@((string? v) => Config.AppSecret = v ?? string.Empty)" />
-            <AlfaInput Id="ig-verify-token" Label="Verify Token" Placeholder="Texto secreto que definís vos"
-                       Value="@Config.VerifyToken" ValueChanged="@((string? v) => Config.VerifyToken = v ?? string.Empty)" />
-        </ConversacionesConfigTarjeta>
+        <details class="cfg-manual" open="@ManualAbierto">
+            <summary>Configuración manual (avanzado)</summary>
+            <p class="cfg-hint">Solo para cuentas conectadas con una app de Meta propia del cliente. Con la conexión de arriba no hace falta completar nada de esto.</p>
+            <ConversacionesConfigTarjeta Titulo="Cuenta" Columnas="2">
+                <AlfaInput Id="ig-account-id" Label="Instagram Account ID" Placeholder="Cuenta profesional de Instagram"
+                           Value="@Config.InstagramAccountId" ValueChanged="@((string? v) => Config.InstagramAccountId = v ?? string.Empty)" />
+                <AlfaInput Id="ig-page-id" Label="Facebook Page ID" Placeholder="Página vinculada a Instagram"
+                           Value="@Config.FacebookPageId" ValueChanged="@((string? v) => Config.FacebookPageId = v ?? string.Empty)" />
+                <AlfaInput Id="ig-app-id" Label="App ID de Meta"
+                           Value="@Config.AppId" ValueChanged="@((string? v) => Config.AppId = v ?? string.Empty)" />
+                <AlfaInput Id="ig-api-version" Label="Versión Graph API" Placeholder="v22.0"
+                           Value="@Config.ApiVersion" ValueChanged="@((string? v) => Config.ApiVersion = v ?? string.Empty)" />
+            </ConversacionesConfigTarjeta>
 
-        <ConversacionesConfigTarjeta Titulo="Webhook">
-            <AlfaInput Id="ig-public-url" Label="Base pública HTTPS" Placeholder="@SugerenciaBaseUrl"
-                       Value="@Config.PublicBaseUrl" ValueChanged="@((string? v) => Config.PublicBaseUrl = v ?? string.Empty)" />
-            <ConversacionesConfigSoloLectura Label="URL de callback para cargar en Meta" Valor="@UrlCallback()" HelpText="@AyudaToken" />
-            <ConversacionesConfigSoloLectura Label="Ruta interna" Valor="@Config.WebhookPath" />
-        </ConversacionesConfigTarjeta>
+            <ConversacionesConfigTarjeta Titulo="Credenciales" Columnas="2">
+                <ConversacionesConfigTexto Id="ig-access-token" Label="Access Token" Filas="3" Monoespaciado="true" Class="cfg-full"
+                                           Placeholder="Token de página u OAuth con permisos de Instagram Messaging"
+                                           Value="@Config.AccessToken" ValueChanged="@((string? v) => Config.AccessToken = v ?? string.Empty)" />
+                <AlfaInput Id="ig-app-secret" Label="App Secret"
+                           Value="@Config.AppSecret" ValueChanged="@((string? v) => Config.AppSecret = v ?? string.Empty)" />
+                <AlfaInput Id="ig-verify-token" Label="Verify Token" Placeholder="Texto secreto que definís vos"
+                           Value="@Config.VerifyToken" ValueChanged="@((string? v) => Config.VerifyToken = v ?? string.Empty)" />
+            </ConversacionesConfigTarjeta>
 
-        <ConversacionesConfigAyuda Titulo="Qué necesitás en Meta">
-            <ol>
-                <li>Una cuenta de Instagram profesional vinculada a una página de Facebook.</li>
-                <li>Una app en Meta for Developers con Instagram/Messaging.</li>
-                <li>El webhook configurado con la URL de callback y el verify token.</li>
-                <li>Los permisos de mensajería aprobados (App Review) para producción.</li>
-            </ol>
-            <p>Guía interna: <code>docs/modulos/conversaciones_instagram_meta.md</code>.</p>
-        </ConversacionesConfigAyuda>
+            <ConversacionesConfigTarjeta Titulo="Webhook">
+                <AlfaInput Id="ig-public-url" Label="Base pública HTTPS" Placeholder="@SugerenciaBaseUrl"
+                           Value="@Config.PublicBaseUrl" ValueChanged="@((string? v) => Config.PublicBaseUrl = v ?? string.Empty)" />
+                <ConversacionesConfigSoloLectura Label="URL de callback para cargar en Meta" Valor="@UrlCallback()" HelpText="@AyudaToken" />
+                <ConversacionesConfigSoloLectura Label="Ruta interna" Valor="@Config.WebhookPath" />
+            </ConversacionesConfigTarjeta>
 
-        <ConversacionesConfigBarraGuardar Etiqueta="Guardar Instagram" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+            <ConversacionesConfigAyuda Titulo="Qué necesitás en Meta">
+                <ol>
+                    <li>Una cuenta de Instagram profesional vinculada a una página de Facebook.</li>
+                    <li>Una app en Meta for Developers con Instagram/Messaging.</li>
+                    <li>El webhook configurado con la URL de callback y el verify token.</li>
+                    <li>Los permisos de mensajería aprobados (App Review) para producción.</li>
+                </ol>
+                <p>Guía interna: <code>docs/modulos/conversaciones_instagram_meta.md</code>.</p>
+            </ConversacionesConfigAyuda>
+
+            <ConversacionesConfigBarraGuardar Etiqueta="Guardar Instagram" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+        </details>
     </ChildContent>
 </ConversacionesConfigPagina>
 
@@ -55,6 +76,18 @@
     [Parameter] public string AyudaToken { get; set; } = string.Empty;
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public MetaCanalConexionVista? Conexion { get; set; }
+    [Parameter] public bool MetaBusy { get; set; }
+    [Parameter] public AppUiMessage? MetaFeedback { get; set; }
+    [Parameter] public EventCallback OnConectar { get; set; }
+    [Parameter] public EventCallback<string?> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+    [Parameter] public EventCallback OnDesconectar { get; set; }
+    [Parameter] public EventCallback OnCerrarFeedback { get; set; }
+
+    // Abierta si la conexión guiada no está disponible o si la cuenta ya funcionaba con datos cargados a mano.
+    private bool ManualAbierto => Conexion is { Disponible: false }
+                                  || (Conexion?.Conexion is null && Config.IsConfiguredForSend);
 
     private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
 }

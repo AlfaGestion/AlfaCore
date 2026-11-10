@@ -1,0 +1,176 @@
+@* Conexión guiada de Instagram o de Facebook Messenger (cada canal por separado) con la app central
+   de ALFA NET. El usuario toca "Conectar", entra con su cuenta en Meta y vuelve acá a confirmar.
+   La pantalla padre hace las llamadas al servicio; este componente solo muestra. *@
+@using AlfaCore.Models
+
+<ConversacionesConfigTarjeta Titulo="Conexión" Icono="@(EsInstagram ? "bi-instagram" : "bi-messenger")" Class="meta-conexion">
+    @if (Vista is null)
+    {
+        <p class="cfg-hint">Cargando…</p>
+    }
+    else if (!Vista.Disponible)
+    {
+        <p class="cfg-hint">@Vista.MotivoNoDisponible Mientras tanto se puede usar la configuración manual de abajo.</p>
+    }
+    else if (Vista.Pendiente is { } pendiente && pendiente.Estado == MetaConexionPendienteEstado.Error)
+    {
+        <AlfaFeedbackPanel Message="@AppUiMessage.Warning("No se pudo conectar", pendiente.Error)" Dismissible="false" />
+        <div class="meta-conexion__acciones">
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="@Icono" Loading="@Busy" Disabled="@Busy" OnClick="OnConectar">Probar de nuevo</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@Busy" OnClick="OnCancelar">Cerrar</AlfaButton>
+        </div>
+    }
+    else if (Vista.Pendiente is { Estado: MetaConexionPendienteEstado.Lista } lista)
+    {
+        @if (EsInstagram && lista.Instagram is { } cuenta)
+        {
+            <p class="meta-conexion__texto">Meta nos dio acceso a esta cuenta. Confirmá para empezar a recibir los mensajes en AlfaCore.</p>
+            <div class="meta-conexion__cuenta">
+                @Avatar(cuenta.FotoUrl)
+                <div>
+                    <strong>@(string.IsNullOrWhiteSpace(cuenta.Usuario) ? cuenta.Nombre : "@" + cuenta.Usuario)</strong>
+                    @if (!string.IsNullOrWhiteSpace(cuenta.Nombre) && !string.IsNullOrWhiteSpace(cuenta.Usuario))
+                    {
+                        <span>@cuenta.Nombre</span>
+                    }
+                </div>
+            </div>
+        }
+        else if (!EsInstagram)
+        {
+            <p class="meta-conexion__texto">
+                @(lista.PaginasFacebook.Count == 1
+                    ? "Meta nos dio acceso a esta página. Confirmá para empezar a recibir los mensajes de Messenger en AlfaCore."
+                    : "Elegí la página del negocio. Sus mensajes de Messenger van a llegar a AlfaCore.")
+            </p>
+            <div class="meta-conexion__paginas" role="radiogroup" aria-label="Páginas de Facebook">
+                @foreach (var pagina in lista.PaginasFacebook)
+                {
+                    var elegida = string.Equals(PaginaElegida, pagina.PaginaId, StringComparison.Ordinal)
+                                  || lista.PaginasFacebook.Count == 1;
+                    <button type="button" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                            class="meta-conexion__pagina @(elegida ? "is-selected" : null)"
+                            disabled="@(!pagina.PuedeMensajes || Busy)"
+                            @onclick="() => PaginaElegida = pagina.PaginaId">
+                        @Avatar(pagina.FotoUrl)
+                        <div>
+                            <strong>@pagina.Nombre</strong>
+                            @if (!pagina.PuedeMensajes)
+                            {
+                                <span>Tu usuario no puede manejar los mensajes de esta página.</span>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(pagina.Usuario))
+                            {
+                                <span>@pagina.Usuario</span>
+                            }
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+        <div class="meta-conexion__acciones">
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Loading="@Busy"
+                        Disabled="@(Busy || (!EsInstagram && lista.PaginasFacebook.Count > 1 && string.IsNullOrWhiteSpace(PaginaElegida)))"
+                        OnClick="Confirmar">Confirmar conexión</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@Busy" OnClick="OnCancelar">Cancelar</AlfaButton>
+        </div>
+    }
+    else if (Vista.Conexion is { } conexion)
+    {
+        <div class="meta-conexion__cuenta">
+            @Avatar(conexion.FotoUrl)
+            <div>
+                <strong>@conexion.Titulo</strong>
+                <span>Conectado el @conexion.FechaConexion.ToString("dd/MM/yyyy")@(string.IsNullOrWhiteSpace(conexion.ConectadoPor) ? string.Empty : $" por {conexion.ConectadoPor}")</span>
+            </div>
+            <AlfaTag Tone="@(string.IsNullOrWhiteSpace(conexion.UltimoError) ? AlfaTagTone.Success : AlfaTagTone.Warning)">
+                @(string.IsNullOrWhiteSpace(conexion.UltimoError) ? "Recibiendo mensajes" : "Revisar")
+            </AlfaTag>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(conexion.UltimoError))
+        {
+            <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Hay que volver a conectar", conexion.UltimoError)" Dismissible="false" />
+        }
+        <div class="meta-conexion__acciones">
+            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-arrow-repeat" Disabled="@Busy" OnClick="OnConectar">Volver a conectar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Danger" Icon="bi bi-plug" Disabled="@Busy" OnClick="() => _confirmarDesconexion = true">Desconectar</AlfaButton>
+        </div>
+    }
+    else
+    {
+        <p class="meta-conexion__texto">@TextoSinConexion</p>
+        <div class="meta-conexion__acciones">
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="@Icono" Loading="@Busy" Disabled="@Busy" OnClick="OnConectar">@EtiquetaConectar</AlfaButton>
+        </div>
+        <p class="cfg-hint">@Requisito</p>
+    }
+
+    @if (Feedback is not null)
+    {
+        <AlfaFeedbackPanel Message="@Feedback" OnDismiss="OnCerrarFeedback" />
+    }
+</ConversacionesConfigTarjeta>
+
+<AlfaConfirmDialog Open="@_confirmarDesconexion"
+                   Title="@($"Desconectar {Nombre}")"
+                   Message="@($"Los mensajes de {Nombre} van a dejar de llegar a AlfaCore. Las conversaciones que ya están en la bandeja no se borran.")"
+                   ConfirmLabel="Desconectar"
+                   Loading="@Busy"
+                   OnConfirm="ConfirmarDesconexion"
+                   OnCancel="() => _confirmarDesconexion = false" />
+
+@code {
+    [Parameter, EditorRequired] public string Canal { get; set; } = MetaCanalSocial.Instagram;
+    [Parameter] public MetaCanalConexionVista? Vista { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public AppUiMessage? Feedback { get; set; }
+    [Parameter] public EventCallback OnConectar { get; set; }
+    [Parameter] public EventCallback<string?> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+    [Parameter] public EventCallback OnDesconectar { get; set; }
+    [Parameter] public EventCallback OnCerrarFeedback { get; set; }
+
+    private string? PaginaElegida { get; set; }
+    private bool _confirmarDesconexion;
+
+    private bool EsInstagram => Canal == MetaCanalSocial.Instagram;
+    private string Nombre => EsInstagram ? "Instagram" : "Facebook Messenger";
+    private string Icono => EsInstagram ? "bi bi-instagram" : "bi bi-messenger";
+    private string EtiquetaConectar => EsInstagram ? "Conectar Instagram" : "Conectar Facebook";
+
+    private string TextoSinConexion => EsInstagram
+        ? "Conectá la cuenta de Instagram del negocio para recibir y contestar los mensajes directos desde la bandeja. Se abre Instagram, entrás con la cuenta y aceptás el permiso."
+        : "Conectá la página de Facebook del negocio para recibir y contestar los mensajes de Messenger desde la bandeja. Se abre Facebook, entrás con tu usuario y elegís la página.";
+
+    private string Requisito => EsInstagram
+        ? "Requisito: la cuenta tiene que ser profesional (de empresa o de creador). No hace falta tener página de Facebook."
+        : "Requisito: tu usuario de Facebook tiene que administrar la página. Instagram se conecta aparte.";
+
+    private async Task Confirmar() => await OnConfirmar.InvokeAsync(PaginaElegida);
+
+    private async Task ConfirmarDesconexion()
+    {
+        await OnDesconectar.InvokeAsync();
+        _confirmarDesconexion = false;
+    }
+
+    private static RenderFragment Avatar(string? url) => builder =>
+    {
+        if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(0, "img");
+            builder.AddAttribute(1, "class", "meta-conexion__avatar");
+            builder.AddAttribute(2, "src", url);
+            builder.AddAttribute(3, "alt", string.Empty);
+            builder.AddAttribute(4, "referrerpolicy", "no-referrer");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(5, "span");
+            builder.AddAttribute(6, "class", "meta-conexion__avatar meta-conexion__avatar--vacio");
+            builder.AddAttribute(7, "aria-hidden", "true");
+            builder.CloseElement();
+        }
+    };
+}

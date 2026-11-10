@@ -4,6 +4,57 @@
 
 Preparar AlfaCore para recibir y enviar mensajes de Instagram desde el módulo CRM / Conversaciones, compartiendo la lógica operativa de chat, tickets, leads, asignaciones y trazabilidad.
 
+## Conexión guiada con la app de ALFA NET (desde 2026-11-05)
+
+Igual que WhatsApp: el cliente **no crea ninguna app de Meta ni copia claves**. En
+`Conversaciones > Configuración > Canales > Instagram` (o `Facebook`) toca **Conectar**, entra con su
+cuenta en Meta, acepta y vuelve a AlfaCore a confirmar. **Instagram y Facebook se conectan por
+separado**: un cliente puede tener uno solo.
+
+- Instagram usa el *inicio de sesión de Instagram*: no hace falta página de Facebook, sí cuenta profesional.
+- Facebook usa el *inicio de sesión de Facebook*; si la persona administra varias páginas, elige una.
+- Los mensajes de todos los clientes llegan a un único webhook por canal; AlfaCore busca en
+  `ALFA_CENTRAL.dbo.CONV_CANALES_SOCIALES` a qué base pertenece la cuenta (`entry.id`) y lo procesa ahí.
+- El token queda en `TA_CONFIGURACION` de la base (mismas claves de siempre), así que el envío, la
+  bandeja y el bot no cambian. El de Instagram dura 60 días y se renueva solo (`MetaCanalesSocialesHostedService`).
+- La configuración manual de abajo sigue funcionando para clientes con app propia (sección plegada "avanzado").
+
+### Qué configurar una sola vez (ALFA NET)
+
+En el appsettings **del servidor** (no en el repo), sección `MetaCanalesSociales`:
+
+| Clave | Valor |
+|---|---|
+| `Enabled` | `true` para mostrar los botones |
+| `FacebookAppId` / `FacebookAppSecret` | vacío = usa los de `WhatsAppEmbeddedSignup` (misma app 1436083307772786) |
+| `InstagramAppId` / `InstagramAppSecret` | Meta → app → Instagram → *Configuración de la API con inicio de sesión de Instagram* (no es el App ID de Meta) |
+| `WebhookVerifyToken` | texto secreto que se carga igual en Meta |
+| `CallbackBaseUrl` | vacío = el host desde el que se abrió la pantalla |
+
+En el panel de la app de Meta:
+
+1. **Instagram → Configuración de la API con inicio de sesión de Instagram**
+   - *Configurar webhooks*: URL `https://<host>/api/conversaciones/meta/instagram/webhook`, el Verify Token, y suscribir `messages` y `messaging_postbacks`.
+   - *Configurar el inicio de sesión de empresa de Instagram*: URL de redireccionamiento `https://<host>/api/conversaciones/meta/oauth/instagram/callback`.
+2. **Messenger → Webhooks** (objeto *Page*): URL `https://<host>/api/conversaciones/meta/facebook/webhook`, el Verify Token, campos `messages` y `messaging_postbacks`.
+3. **Inicio de sesión con Facebook → Configuración**: URI de redireccionamiento OAuth válida `https://<host>/api/conversaciones/meta/oauth/facebook/callback`.
+
+`<host>` = cada dirección pública desde la que se usa AlfaCore (`alfacentral.ddns.net` y, para pruebas,
+`alfanetweb.ddns.net`). Meta admite una sola URL de webhook por producto: apuntarla a producción.
+
+### Permisos a pedir en la revisión de Meta (acceso avanzado)
+
+Al 05/11/2026 la app ya tiene acceso avanzado a `pages_messaging`. Falta pedir:
+
+- Instagram: `instagram_business_basic`, `instagram_business_manage_messages`.
+- Facebook: `pages_manage_metadata`, `pages_show_list`, `pages_read_engagement`, `business_management`.
+
+Mientras no estén aprobados, la conexión guiada solo funciona con cuentas que tengan un rol en la app
+(administrador, desarrollador o evaluador). Para la revisión, Meta pide un video de la conexión desde
+AlfaCore y del envío y la recepción de un mensaje.
+
+## Conexión manual (app propia del cliente)
+
 ## Requisitos en Meta
 
 1. Tener una cuenta de Instagram profesional: Business o Creator.

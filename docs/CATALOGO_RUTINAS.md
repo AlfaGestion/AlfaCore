@@ -495,6 +495,14 @@ Criterio aplicado:
 - Datos que usa: variables de entorno `OPENAI_API_KEY`, `OPENAI_MODEL` y `OPENAI_TRANSCRIBE_MODEL` (por defecto `gpt-4o-mini-transcribe`); consumo vía `IIaUsoRecorder` (funciones `BOT`, `RESUMEN`, `TRANSCRIPCION`).
 - Observaciones: reutilizar para cualquier transcripción o resumen con IA en vez de llamar a OpenAI directo. `ResponderAsync` acepta imágenes (data URI) cuando `CONV_ASISTENTE_LEE_IMAGENES` = 1; lo que ve vuelve en `ImagenDescripcion`. El bot transcribe notas de voz solo si `CONV_ASISTENTE_TRANSCRIBE_AUDIOS` = 1 (Configuración → Asistente IA → Herramientas → Escuchar audios); la transcripción queda como nota interna.
 
+### MetaCanalesSocialesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/MetaCanalesSocialesService.cs` (con `MetaCanalesSocialesClient`, `MetaCanalesSocialesStore`, `MetaCanalesSocialesWebhook` y `MetaCanalesSocialesHostedService`)
+- Propósito: conexión guiada de Instagram y de Facebook Messenger, cada uno por separado, con la app central de ALFA NET: el cliente toca "Conectar", entra con su cuenta en Meta y confirma. Reparte los avisos del webhook central a la base dueña de cada cuenta y renueva el acceso de Instagram antes de que venza (60 días).
+- Datos que usa: `ALFA_CENTRAL.dbo.CONV_CANALES_SOCIALES` (qué cuenta es de qué base; la crea `CentralCanalesSocialesSchema`), `TA_CONFIGURACION` de la base (`CONV_INSTAGRAM_ACCESS_TOKEN`, `CONV_INSTAGRAM_ACCOUNT_ID`, `CONV_FACEBOOK_ACCESS_TOKEN`, `CONV_FACEBOOK_PAGE_ID`, `CONV_FACEBOOK_PAGE_USERNAME`), sección `MetaCanalesSociales` del appsettings del servidor.
+- Observaciones: el envío y la recepción siguen en `ConversacionesService` con las mismas claves; solo cambia cómo se cargan. Una cuenta solo puede estar activa en una base. Los tokens nunca van al navegador (la conexión en curso vive en memoria 20 minutos). Ver `docs/modulos/conversaciones_instagram_meta.md`.
+
 ### ConversacionBotPedidosService
 
 - Tipo: Service

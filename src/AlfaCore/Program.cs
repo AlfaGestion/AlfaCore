@@ -516,6 +516,13 @@ public class Program
         builder.Services.AddSingleton<IIaBackendProxyService, IaBackendProxyService>();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
+        // Conexión guiada de Instagram/Facebook: sin logs porque varios pedidos llevan tokens en la URL.
+        builder.Services.AddHttpClient(MetaCanalesSocialesClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+        builder.Services.Configure<MetaCanalesSocialesOptions>(builder.Configuration.GetSection(MetaCanalesSocialesOptions.SectionName));
+        builder.Services.AddSingleton<MetaCanalesSocialesClient>();
+        builder.Services.AddSingleton<MetaCanalesSocialesStore>();
+        builder.Services.AddSingleton<MetaConexionesPendientes>();
+        builder.Services.AddScoped<MetaCanalesSocialesService>();
         // WSAA/WSFE puede tardar más de un minuto en homologación o cuando ARCA
         // está con demoras. El CAE no se reintenta automáticamente para evitar
         // duplicar una autorización; el visor de la venta ofrece el reintento.
@@ -567,6 +574,7 @@ public class Program
             builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
+            builder.Services.AddHostedService<MetaCanalesSocialesHostedService>();
             builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
             builder.Services.AddHostedService<ArcaDescargaHostedService>();
         }
@@ -3189,6 +3197,50 @@ public class Program
 
             return await HandleFacebookMessageAsync(request, configService, svc, ct);
         });
+
+        // Conexión guiada de Instagram/Facebook (app central de ALFA NET): vuelta de Meta y webhooks centrales.
+        app.MapGet("/api/conversaciones/meta/oauth/{canal}/callback", async (
+            string canal,
+            HttpRequest request,
+            MetaCanalesSocialesService metaCanales,
+            CancellationToken ct) =>
+        {
+            var destino = await metaCanales.ProcesarCallbackAsync(
+                canal,
+                request.Query["state"].ToString(),
+                request.Query["code"].ToString(),
+                request.Query["error"].ToString(),
+                request.Query["error_description"].ToString(),
+                ct);
+            return destino is null
+                ? Results.Text("La conexión venció o no es válida. Volvé a AlfaCore y tocá Conectar de nuevo.", "text/plain; charset=utf-8")
+                : Results.Redirect(destino);
+        });
+
+        app.MapGet(MetaCanalesSocialesWebhook.InstagramPath, (HttpRequest request, IOptions<MetaCanalesSocialesOptions> options)
+            => MetaCanalesSocialesWebhook.Verificar(request, options.Value));
+        app.MapGet(MetaCanalesSocialesWebhook.FacebookPath, (HttpRequest request, IOptions<MetaCanalesSocialesOptions> options)
+            => MetaCanalesSocialesWebhook.Verificar(request, options.Value));
+        app.MapPost(MetaCanalesSocialesWebhook.InstagramPath, (
+            HttpRequest request,
+            IServiceScopeFactory scopeFactory,
+            MetaCanalesSocialesStore store,
+            IOptions<MetaCanalesSocialesOptions> options,
+            IOptions<WhatsAppEmbeddedSignupOptions> whatsAppOptions,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct)
+            => MetaCanalesSocialesWebhook.RecibirAsync(MetaCanalSocial.Instagram, request, scopeFactory, store, options, whatsAppOptions,
+                loggerFactory.CreateLogger("MetaCanalesSocialesWebhook"), ct));
+        app.MapPost(MetaCanalesSocialesWebhook.FacebookPath, (
+            HttpRequest request,
+            IServiceScopeFactory scopeFactory,
+            MetaCanalesSocialesStore store,
+            IOptions<MetaCanalesSocialesOptions> options,
+            IOptions<WhatsAppEmbeddedSignupOptions> whatsAppOptions,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct)
+            => MetaCanalesSocialesWebhook.RecibirAsync(MetaCanalSocial.Facebook, request, scopeFactory, store, options, whatsAppOptions,
+                loggerFactory.CreateLogger("MetaCanalesSocialesWebhook"), ct));
 
         app.MapPost("/api/conversaciones/mercadolibre/webhook", HandleMercadoLibreMessageAsync);
         app.MapPost("/api/conversaciones/mercadolibre/webhook/{token}", async (
