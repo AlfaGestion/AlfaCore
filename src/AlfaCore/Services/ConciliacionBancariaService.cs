@@ -114,7 +114,7 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 throw new InvalidOperationException("Revisá la página y el texto de búsqueda (hasta 200 caracteres).");
             var registracion=filtros.Registracion.Trim();
             var conciliacion=filtros.Conciliacion.Trim();
-            if (registracion is not ("" or "Pendiente" or "Cobrado" or "Registrado" or "Revisado") ||
+            if (registracion is not ("" or "Pendiente" or "Cobrado" or "Pagado" or "Registrado" or "Revisado") ||
                 conciliacion is not ("" or "Pendiente" or "Conciliado"))
                 throw new InvalidOperationException("El estado de registración o conciliación seleccionado no está disponible.");
             var clienteTexto=filtros.Cliente.Trim();

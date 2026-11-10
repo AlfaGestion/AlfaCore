@@ -268,6 +268,10 @@ public sealed class PosicionIvaDto
     public decimal TotalIvaVentas { get; init; }
     public decimal TotalIvaCompras { get; init; }
     public decimal Saldo => TotalIvaVentas - TotalIvaCompras;
+    /// <summary>Percepciones de IVA sufridas en compras (crédito computable contra el saldo a pagar).</summary>
+    public decimal TotalPercepcionesIva { get; init; }
+    public IReadOnlyList<MonthlyPointDto> EvolucionPercepcionesIva { get; init; } = [];
+    public decimal SaldoConPercepciones => Saldo - TotalPercepcionesIva;
     public decimal NetoGravadoVentas { get; init; }
     public decimal NetoGravadoCompras { get; init; }
     public IReadOnlyList<PosicionIvaFilaDto> Filas { get; init; } = [];

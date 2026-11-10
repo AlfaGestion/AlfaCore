@@ -313,7 +313,7 @@
     private ConciliacionVinculoDetalle? _vinculo;
     private long? _historialMovimiento;
     private Guid _operacion=Guid.NewGuid();
-    private static bool EsGenerable(ConciliacionFilaBanco? b)=>b is not null&&!b.ConciliacionId.HasValue&&b.Importe!=0&&b.Registracion is not ("Cobrado" or "Registrado")&&b.Categoria is not ("Cobranza" or "TransferenciaInterna");
+    private static bool EsGenerable(ConciliacionFilaBanco? b)=>b is not null&&!b.ConciliacionId.HasValue&&b.Importe!=0&&b.Registracion is not ("Cobrado" or "Pagado" or "Registrado")&&b.Categoria is not ("Cobranza" or "TransferenciaInterna" or "PagoProveedor");
     private decimal TotalBanco=>_banco.Values.Sum(b=>b.Importe);
     private decimal TotalAlfa=>_alfa.Values.Sum(a=>a.Importe);
     private bool FiltrosModificados=>_aplicado is { } f && (f.Cuenta!=_cuenta||f.Desde.ToString("yyyy-MM-dd")!=_desde||f.Hasta.ToString("yyyy-MM-dd")!=_hasta||f.Estado!=_estado||f.Buscar!=_buscar||f.Desde.Date!=_fechas.FechaDesde?.Date||f.Hasta.Date!=_fechas.FechaHasta?.Date||f.Sentido!=_sentido||f.ImporteDesde!=Numero(_minimo)||f.ImporteHasta!=Numero(_maximo)||f.Categoria!=_fechas.Categoria||f.TamanoPagina!=_fechas.TamanoPagina);

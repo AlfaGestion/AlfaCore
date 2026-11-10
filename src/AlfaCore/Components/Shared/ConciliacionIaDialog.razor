@@ -32,7 +32,7 @@
                     <p><strong>@o.Banco.Fecha.ToString("dd/MM/yyyy") · @Dinero(o.Banco.Importe)</strong> · @o.Banco.Detalle</p>
                     <p>Clasificación sugerida: @o.Categoria @if(o.Cuenta.Length>0) { <span> · Cuenta sugerida: @o.Cuenta</span> }</p>
                     <p>@o.Motivo</p>
-                    @if(OnGenerarAsiento.HasDelegate&&o.Cuenta.Length>0&&o.Banco.Registracion is not ("Cobrado" or "Registrado")&&o.Banco.Categoria is not ("Cobranza" or "TransferenciaInterna")) {
+                    @if(OnGenerarAsiento.HasDelegate&&o.Cuenta.Length>0&&o.Banco.Registracion is not ("Cobrado" or "Pagado" or "Registrado")&&o.Banco.Categoria is not ("Cobranza" or "TransferenciaInterna" or "PagoProveedor")) {
                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="Busy" OnClick="()=>OnGenerarAsiento.InvokeAsync(o)">Revisar asiento sugerido</AlfaButton>
                     }
                 </section>

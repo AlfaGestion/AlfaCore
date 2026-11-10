@@ -1,12 +1,14 @@
 @page "/caja-bancos/conciliacion-bancaria"
 @page "/{idweb}/{idbase:int}/caja-bancos/conciliacion-bancaria"
 @using AlfaCore.Services
+@using AlfaCore.Models
 @using AlfaCore.ConciliacionBancaria.Domain.Enums
 @using AlfaCore.ConciliacionBancaria.Domain.Entities
 @using AlfaCore.ConciliacionBancaria.Application.DTOs
 @using AlfaCore.ConciliacionBancaria.Application.Services
 @inject ConciliacionBancariaService Servicio
 @inject CobranzasService Cobranzas
+@inject OrdenPagoService Pagos
 @inject IAppUiOperationService UiOps
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
@@ -124,9 +126,24 @@
             }
             else
             {
+                @if (_marcados.Count > 0 || _movimientos.Items.Any(PuedeGenerarAsiento))
+                {
+                    <div class="conciliacion-seleccion" role="toolbar" aria-label="Selección de movimientos">
+                        <span aria-live="polite">@(_marcados.Count == 0 ? "Marcá movimientos para generar sus asientos juntos." : $"{_marcados.Count} seleccionados · $ {Dinero(_marcados.Values.Sum(m => Math.Abs(m.Importe)))}")</span>
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Disabled="@(_busy || _marcados.Count == 0)" OnClick="AbrirAsientoLote">Generar asiento de la selección</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="MarcarTodosLosFiltrados">Marcar los @_movimientos.Total filtrados</AlfaButton>
+                        @if (_marcados.Count > 0)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>_marcados.Clear()">Limpiar selección</AlfaButton>
+                        }
+                    </div>
+                }
                 <div class="conciliacion-scroll">
                     <table class="conciliacion-tabla conciliacion-tabla--acciones">
                         <thead><tr>
+                            <th>
+                                <AlfaCheckbox AriaLabel="Marcar todos los movimientos de la página" Value="@EstadoMarcaPagina" ValueChanged="MarcarPagina" Disabled="@(_busy || !_movimientos.Items.Any(PuedeGenerarAsiento))" />
+                            </th>
                             @foreach (var columna in Columnas)
                             {
                                 <th aria-sort="@AriaOrden(columna.Key)">
@@ -140,6 +157,12 @@
                             @foreach (var item in _movimientos.Items)
                             {
                                 <tr @key="item.Id" class="@(_seleccion?.Id == item.Id ? "is-selected" : "")">
+                                    <td>
+                                        @if (PuedeGenerarAsiento(item))
+                                        {
+                                            <AlfaCheckbox AriaLabel="@($"Marcar movimiento {item.Fecha:dd/MM/yyyy} {item.Descripcion}")" Value="@_marcados.ContainsKey(item.Id)" ValueChanged="v => Marcar(item, v == true)" Disabled="@_busy" />
+                                        }
+                                    </td>
                                     <td>@item.Fecha.ToString("dd/MM/yyyy")</td><td>@item.Banco</td><td class="conciliacion-descripcion">@item.Descripcion</td><td>@item.Referencia</td>
                                     <td class="conciliacion-numero @(item.Importe >= 0 ? "conciliacion-ingreso" : "conciliacion-egreso")">@Dinero(item.Importe)</td>
                                     <td>@Separar(item.Categoria)</td><td>@item.Cliente</td><td class="conciliacion-descripcion">
@@ -155,6 +178,10 @@
                                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>_consultaCuentaRevision=item">Cuenta corriente</AlfaButton>
                                         @if(PuedeGenerarAsiento(item)) {
                                             <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirAsiento(item.Id)">Generar asiento</AlfaButton>
+                                        }
+                                        @if (PuedePagarProveedor(item,estricto:true))
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Disabled="@_busy" OnClick="()=>AbrirPago(item.Id)">Pagar proveedor</AlfaButton>
                                         }
                                         @if (item.Categoria=="Cobranza" && item.Importe>0 && item.Estado!="Cobrado")
                                         {
@@ -345,6 +372,9 @@
                         <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_seleccion.Cliente) || (_comprobanteInfo is { } elegido && (elegido.Anulada || elegido.SaldoActual is not >0)))"
                             OnClick="() => AbrirCobranza(_seleccion,_comprobanteInfo?.Clave)">Cobrar</AlfaButton>
                     }
+                    @if(PuedePagarProveedor(_seleccion,estricto:false)) {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_busy" OnClick="()=>AbrirPago(_seleccion.Id)">Pagar a proveedor</AlfaButton>
+                    }
                     @if(PuedeGenerarAsiento(_seleccion)) {
                         <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@_busy" OnClick="()=>AbrirAsiento(_seleccion.Id)">Generar asiento</AlfaButton>
                     }
@@ -354,6 +384,7 @@
         }
     }
     <ConciliacionAsientoDialog Preparacion="@_asientoPreparacion" OnClose="()=>_asientoPreparacion=null" OnSaved="AsientoGuardado" />
+    <ConciliacionAsientoLoteDialog Movimientos="@_loteAsiento" OnClose="()=>_loteAsiento=null" OnDone="AsientosLoteGenerados" />
     @if (_consultaCuentaRevision is { } consulta)
     {
         <ConciliacionCuentaCorrienteDialog @key="consulta.Id" MovimientoId="consulta.Id" Fecha="consulta.Fecha" Importe="consulta.Importe" Descripcion="@consulta.Descripcion" OnClose="()=>_consultaCuentaRevision=null" />
@@ -365,6 +396,7 @@
     }
     <CobranzaRapidaDialog Preparacion="@_cobranza" Busy="@_busy" Error="@_errorCobranza" ComprobantePreferido="@_comprobantePreferido"
         OnClose="CerrarCobranza" OnConfirm="ConfirmarCobranza" />
+    <PagoProveedorRapidoDialog Movimiento="@_pagoMovimiento" Busy="@_busy" Error="@_errorPago" OnClose="CerrarPago" OnConfirm="ConfirmarPago" />
     <AlfaConfirmDialog Open="@(_eliminar is not null)" Title="Eliminar importación"
         Message="@($"Se eliminará la importación #{_eliminar?.Id} y sus movimientos y propuestas.")"
         SecondaryMessage="No se modifican comprobantes ni asientos de Alfa." ConfirmLabel="Eliminar"
@@ -426,7 +458,7 @@
         _movimientos=await Servicio.MovimientosAsync(FiltrosMovimientos(1,todas:true),ct);
     });
     private string _clienteFiltro="", _clienteAplicado="", _registracionFiltro="", _registracionAplicada="", _conciliacionFiltro="", _conciliacionAplicada="";
-    private static readonly IReadOnlyList<AlfaSelectOption> EstadosRegistracion = [new("Pendiente","Pendiente"),new("Cobrado","Cobrado"),new("Registrado","Registrado"),new("Revisado","Revisado")];
+    private static readonly IReadOnlyList<AlfaSelectOption> EstadosRegistracion = [new("Pendiente","Pendiente"),new("Cobrado","Cobrado"),new("Pagado","Pagado"),new("Registrado","Registrado"),new("Revisado","Revisado")];
     private static readonly IReadOnlyList<AlfaSelectOption> EstadosConciliacion = [new("Pendiente","Pendiente"),new("Conciliado","Conciliado")];
     private ConciliacionMovimiento? _consultaCuentaRevision;
     private PageHeaderConfig? _header;
@@ -469,7 +501,36 @@
     private string? _errorCobranza, _comprobantePreferido;
     private ConciliacionAsientoPreparacion? _asientoPreparacion;
     private ConciliacionAsientoCatalogo? _asientoCatalogo;
-    private static bool PuedeGenerarAsiento(ConciliacionMovimiento? m)=>m is not null&&m.Importe!=0&&!m.ConciliacionId.HasValue&&m.Estado is not ("Cobrado" or "Registrado")&&m.Categoria is not ("Cobranza" or "TransferenciaInterna");
+    private static bool PuedeGenerarAsiento(ConciliacionMovimiento? m)=>m is not null&&m.Importe!=0&&!m.ConciliacionId.HasValue&&m.Estado is not ("Cobrado" or "Pagado" or "Registrado")&&m.Categoria is not ("Cobranza" or "TransferenciaInterna" or "PagoProveedor");
+    private const int MaxSeleccionAsientos=200;
+    private readonly Dictionary<long,ConciliacionMovimiento> _marcados=[];
+    private IReadOnlyList<ConciliacionMovimiento>? _loteAsiento;
+    private bool? EstadoMarcaPagina { get {
+        var elegibles=_movimientos.Items.Where(PuedeGenerarAsiento).ToList();
+        var marcados=elegibles.Count(m=>_marcados.ContainsKey(m.Id));
+        return marcados==0 ? false : marcados==elegibles.Count ? true : null; } }
+    private void Marcar(ConciliacionMovimiento m,bool marcar) {
+        if(!marcar)_marcados.Remove(m.Id);
+        else if(_marcados.Count<MaxSeleccionAsientos)_marcados[m.Id]=m;
+        else _feedback=AppUiMessage.Warning("Selección completa",$"Se pueden generar hasta {MaxSeleccionAsientos} asientos por vez.");
+    }
+    private void MarcarPagina(bool? marcar) { foreach(var m in _movimientos.Items.Where(PuedeGenerarAsiento))Marcar(m,marcar==true); }
+    private Task MarcarTodosLosFiltrados()=>Operar(async ct=>{
+        _feedback=null;
+        for(var pagina=1;_marcados.Count<MaxSeleccionAsientos;pagina++) {
+            var datos=pagina==_paginaMov ? _movimientos : await Servicio.MovimientosAsync(FiltrosMovimientos(pagina),ct);
+            foreach(var m in datos.Items.Where(PuedeGenerarAsiento).Take(MaxSeleccionAsientos-_marcados.Count))_marcados[m.Id]=m;
+            if(!datos.HasNext)return;
+        }
+        _feedback=AppUiMessage.Warning("Selección parcial",$"Se marcaron los primeros {MaxSeleccionAsientos}. Generá estos asientos y volvé a marcar el resto.");
+    });
+    private void AbrirAsientoLote()=>_loteAsiento=_marcados.Values.OrderBy(m=>m.Fecha).ThenBy(m=>m.Id).ToList();
+    private Task AsientosLoteGenerados(IReadOnlyCollection<long> resueltos)=>Operar(async ct=>{
+        foreach(var id in resueltos)_marcados.Remove(id);
+        _loteAsiento=null;
+        _feedback=AppUiMessage.Success("Asientos generados y conciliados",$"{resueltos.Count} movimientos registrados."+(_marcados.Count>0?$" Quedan {_marcados.Count} seleccionados sin generar.":""));
+        await CargarPagina(ct);
+    });
     private Task AbrirAsiento(long id)=>Operar(async ct=>{_asientoPreparacion=await Servicio.PrepararAsientoAsync(id,ct);_seleccion=null;});
     private Task AbrirAsientoIa(ConciliacionIaOrientacion orientacion)=>Operar(async ct=>{
         var prep=await Servicio.PrepararAsientoAsync(orientacion.Banco.Id,ct);
@@ -684,6 +745,29 @@
         _comprobantePreferido=preferido ?? (primera is null ? null : $"{primera.DocumentType}|{primera.EmissionCenter:D4}{primera.DocumentNumber:D8}{primera.Letter}");
         _seleccion=null; _detalle=[]; _feedback=null; _errorCobranza=null; _cobranza=preparacion;
     });
+    // Pago a proveedor: la orden de pago (OPG/PGFP) nace del egreso; el diálogo arma la solicitud y el servicio la graba.
+    private OrdenPagoMovimiento? _pagoMovimiento;
+    private string? _errorPago;
+    private static bool PuedePagarProveedor(ConciliacionMovimiento? m,bool estricto)=>m is not null&&m.Importe<0&&!m.ConciliacionId.HasValue
+        &&m.Estado is not ("Pagado" or "Cobrado" or "Registrado")&&(m.Categoria=="PagoProveedor"||(!estricto&&m.Categoria is "Gasto" or "NoIdentificado"));
+    private Task AbrirPago(long id) => Operar(async ct =>
+    {
+        var movimiento=await Pagos.PrepararConciliacionAsync(id,ct);
+        ct.ThrowIfCancellationRequested();
+        _seleccion=null; _detalle=[]; _feedback=null; _errorPago=null; _pagoMovimiento=movimiento;
+    });
+    private void CerrarPago() { if(!_busy) { _pagoMovimiento=null; _errorPago=null; } }
+    private Task ConfirmarPago(OrdenPagoSolicitud solicitud) => Operar(async ct =>
+    {
+        _errorPago=null;
+        OrdenPagoResultado result;
+        try { result=await Pagos.GrabarAsync(solicitud,ct); }
+        catch(AppUserFacingException ex) { _errorPago=ex.Message; return; }
+        ct.ThrowIfCancellationRequested();
+        _pagoMovimiento=null;
+        _feedback=AppUiMessage.Success("Pago a proveedor registrado",$"{result.Tc} {result.Comprobante[..4]}-{result.Comprobante.Substring(4,8)} · Importe {Dinero(result.Importe)}"+(result.Anticipo>0?$" · Anticipo al proveedor {Dinero(result.Anticipo)}":"")+$" · Asiento {result.NumeroAsiento}.");
+        await CargarPagina(ct);
+    });
     private void CerrarCobranza() { if(!_busy) { _cobranza=null; _errorCobranza=null; } }
     private Task ConfirmarCobranza(CobranzaSolicitud solicitud) => Operar(async ct =>
     {
@@ -836,7 +920,7 @@
         if (baseId == _baseActual && string.Equals(usuario, _usuarioActual, StringComparison.OrdinalIgnoreCase)) return;
         _baseActual = baseId; _usuarioActual = usuario;
         _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
-        _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;
+        _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;_loteAsiento=null;_marcados.Clear();
         _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
         _seleccion = null; _eliminar = null; _detalle = []; _feedback = null; _filtro = null;
         _contexto=new([],[]);_comprobanteDetalleId=0;_categoriaRevision=_motivoRevision="";

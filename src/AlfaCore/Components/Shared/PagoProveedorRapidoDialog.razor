@@ -1,0 +1,313 @@
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject OrdenPagoService Servicio
+@implements IDisposable
+
+@* Pago a proveedor desde un egreso del extracto: proveedor → comprobantes (y créditos) → orden de pago por el importe del banco.
+   Graba la misma OPG/PGFP de Compras; el egreso queda «Pagado». *@
+<AlfaDialog CloseOnBackdrop="false" Open="@(Movimiento is not null)" Title="Pago a proveedor" Eyebrow="Caja y Bancos"
+    Size="AlfaDialogSize.Xl" Loading="@(Busy || _cargando)" ErrorMessage="@(_error ?? Error)" OnClose="OnClose">
+    <ChildContent>
+        @if (Movimiento is { } mov)
+        {
+            <div class="pagoprov">
+                <section class="pagoprov__resumen" aria-label="Egreso bancario">
+                    <div>
+                        <span>Egreso del banco</span>
+                        <strong class="pagoprov__importe">$ @Dinero(mov.Importe)</strong>
+                        <small>@mov.Fecha.ToString("dd/MM/yyyy") · @mov.CuentaBancoDescripcion</small>
+                    </div>
+                    <p>@mov.Descripcion</p>
+                </section>
+
+                <div class="pagoprov__datos">
+                    <AlfaLookup TItem="OrdenPagoProveedor" Label="Proveedor" Placeholder="Escribí código, nombre o CUIT" MinimumCharacters="2"
+                        @bind-SearchText="_buscarProveedor" DebounceMilliseconds="150" SelectedItem="_proveedor" SelectedItemChanged="ProveedorCambiadoAsync"
+                        SearchFunc="BuscarProveedores" ItemKey="p => p.Codigo" Disabled="@(Busy || _cargando)">
+                        <ItemTemplate Context="p">@p.Codigo · @p.Nombre · @p.Documento</ItemTemplate>
+                    </AlfaLookup>
+                    <AlfaInput Label="Fecha de la orden" Type="date" @bind-Value="_fecha" Disabled="@(Busy || _prep is null)" />
+                    <AlfaInput Label="Detalle" @bind-Value="_detalle" MaxLength="100" Placeholder="@DetalleSugerido" Disabled="@(Busy || _prep is null)" />
+                </div>
+                @if (_prep?.PuedeProforma == true)
+                {
+                    <div class="pagoprov__proforma">
+                        <AlfaCheckbox Value="_proforma" ValueChanged="ProformaCambiadaAsync" Disabled="@(Busy || _cargando)">Proforma (PGFP)</AlfaCheckbox>
+                        <small>@(_proforma ? "Se pagan solo facturas proforma y se graba un PGFP." : "Pago normal: no se mezclan proformas.")</small>
+                    </div>
+                }
+
+                @if (_prep is null)
+                {
+                    <p class="pagoprov__ayuda">Elegí el proveedor para ver sus comprobantes pendientes de pago.</p>
+                }
+                else
+                {
+                    <p class="pagoprov__tipo">Se graba como <strong>@(_proforma ? "PGFP · Pago proforma" : "OPG · Orden de pago")</strong> · Unidad de negocio @_prep.Unidad</p>
+                    <div class="pagoprov__titulo">
+                        <h3>1. Comprobantes a pagar</h3>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-magic" Disabled="@(Busy || _cargando || _prep.Comprobantes.Count == 0)" OnClick="SugerirAsync">Sugerir selección</AlfaButton>
+                    </div>
+                    @if (_prep.Comprobantes.Count == 0)
+                    {
+                        <p class="pagoprov__ayuda">@(_proforma ? "El proveedor no tiene facturas proforma pendientes." : "El proveedor no tiene comprobantes pendientes de pago.") Lo que pagues queda como anticipo.</p>
+                    }
+                    else
+                    {
+                        <div class="pagoprov__tabla"><table>
+                            <thead><tr><th></th><th>Comprobante</th><th>Fecha</th><th>Vence</th><th class="num">Saldo</th><th class="num">Importe a pagar</th></tr></thead>
+                            <tbody>
+                            @foreach (var d in _prep.Comprobantes)
+                            {
+                                var k = Clave(d);
+                                <tr @key="k" class="@(_pagar.ContainsKey(k) ? "is-sel" : null) @(d.Seleccionable ? null : "is-bloq")" title="@d.Motivo">
+                                    <td><input type="checkbox" aria-label="@($"Pagar {d.Tc} {Formato(d)}")" checked="@_pagar.ContainsKey(k)" disabled="@(!d.Seleccionable || Busy || _cargando)" @onchange="e => MarcarComprobante(d, e.Value is true)" /></td>
+                                    <td><strong>@d.Tc</strong> @Formato(d)@if (!d.Seleccionable) {<small> · @d.Motivo</small>}</td>
+                                    <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td>@d.Vencimiento?.ToString("dd/MM/yyyy")</td>
+                                    <td class="num">@Dinero(d.Saldo)</td>
+                                    <td class="num">@if (_pagar.TryGetValue(k, out var txt)) { <input type="number" step="0.01" min="0" aria-label="Importe a pagar" value="@txt" disabled="@(Busy || _cargando)" @onchange="e => _pagar[k] = e.Value?.ToString() ?? string.Empty" /> }</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+
+                    @if (_prep.Creditos.Count > 0)
+                    {
+                        <h3>2. Créditos y anticipos a aplicar <small>(opcional)</small></h3>
+                        <div class="pagoprov__tabla"><table>
+                            <thead><tr><th></th><th>Comprobante</th><th>Fecha</th><th class="num">Saldo</th><th class="num">Importe a aplicar</th></tr></thead>
+                            <tbody>
+                            @foreach (var d in _prep.Creditos)
+                            {
+                                var k = Clave(d);
+                                <tr @key="k" class="@(_aplicar.ContainsKey(k) ? "is-sel" : null) @(d.Seleccionable ? null : "is-bloq")" title="@d.Motivo">
+                                    <td><input type="checkbox" aria-label="@($"Aplicar {d.Tc} {Formato(d)}")" checked="@_aplicar.ContainsKey(k)" disabled="@(!d.Seleccionable || Busy || _cargando)" @onchange="e => MarcarCredito(d, e.Value is true)" /></td>
+                                    <td><strong>@d.Tc</strong> @Formato(d)@if (!d.Seleccionable) {<small> · @d.Motivo</small>}</td>
+                                    <td>@d.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td class="num">@Dinero(d.Saldo)</td>
+                                    <td class="num">@if (_aplicar.TryGetValue(k, out var txt)) { <input type="number" step="0.01" min="0" aria-label="Importe a aplicar" value="@txt" disabled="@(Busy || _cargando)" @onchange="e => _aplicar[k] = e.Value?.ToString() ?? string.Empty" /> }</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table></div>
+                    }
+
+                    @if (_prep.RetieneGanancias)
+                    {
+                        <h3>Retención de Ganancias</h3>
+                        @if (RetVigente && _ret is { Aplica: true } r)
+                        {
+                            <dl class="pagoprov__ret">
+                                <div><dt>Régimen</dt><dd>@r.Regimen · @r.Alicuota.ToString("0.##")%</dd></div>
+                                <div><dt>Base de esta orden</dt><dd>@Dinero(r.BaseActual)</dd></div>
+                                <div><dt>Base acumulada del mes</dt><dd>@Dinero(r.BaseAnterior)</dd></div>
+                                <div><dt><strong>A retener ahora</strong></dt><dd><strong>@Dinero(r.Importe)</strong></dd></div>
+                            </dl>
+                            <p class="pagoprov__ayuda">El egreso del banco es el neto: la retención se suma a lo que se cancela del proveedor.</p>
+                        }
+                        else if (RetVigente && _ret is { Aplica: false } n) { <p class="pagoprov__ayuda">@n.Motivo</p> }
+                        else
+                        {
+                            <p class="pagoprov__ayuda" role="status">@(_cargando ? "Calculando la retención de Ganancias…" : "Falta calcular la retención de Ganancias.")
+                                @if (!_cargando) { <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-arrow-repeat" OnClick="() => Ejecutar(CalcularRetencionAsync)">Calcular</AlfaButton> }</p>
+                        }
+                    }
+
+                    <section class="pagoprov__resumen-num" aria-label="Resumen del pago">
+                        <dl>
+                            <div><dt>Comprobantes a pagar</dt><dd>@Dinero(APagar)</dd></div>
+                            <div><dt>Créditos aplicados</dt><dd>@Dinero(Creditos)</dd></div>
+                            @if (_prep.RetieneGanancias) { <div><dt>Retención</dt><dd>@(RetVigente ? Dinero(Retencion) : "Sin calcular")</dd></div> }
+                            <div><dt>Pagado por banco</dt><dd>@Dinero(mov.Importe)</dd></div>
+                            <div class="@(Anticipo != 0 ? "is-aviso" : null)"><dt>@(Anticipo > 0 ? "Anticipo al proveedor" : Anticipo < 0 ? "Falta cubrir" : "Diferencia")</dt><dd>@Dinero(Math.Abs(Anticipo))</dd></div>
+                        </dl>
+                        @if (Anticipo > 0)
+                        {
+                            <AlfaCheckbox Value="_confirmaAnticipo" ValueChanged="v => _confirmaAnticipo = v == true" Disabled="@(Busy || _cargando)">Confirmo que la diferencia de @Dinero(Anticipo) queda como anticipo a favor del proveedor</AlfaCheckbox>
+                        }
+                        else if (Anticipo < 0)
+                        {
+                            <p class="pagoprov__ayuda">Los comprobantes elegidos superan lo que pagó el banco más los créditos y la retención. Bajá el importe a pagar de algún comprobante.</p>
+                        }
+                    </section>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Disabled="@Busy" OnClick="() => OnClose.InvokeAsync()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(Busy || _cargando || !PuedeGrabar)" OnClick="Confirmar">@(Busy ? "Registrando…" : _proforma ? "Confirmar pago proforma" : "Confirmar orden de pago")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public OrdenPagoMovimiento? Movimiento { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<OrdenPagoSolicitud> OnConfirm { get; set; }
+
+    private readonly CancellationTokenSource _vida = new();
+    private readonly Dictionary<string, string> _pagar = [];
+    private readonly Dictionary<string, string> _aplicar = [];
+    private OrdenPagoMovimiento? _anterior;
+    private OrdenPagoProveedor? _proveedor;
+    private OrdenPagoPreparacion? _prep;
+    private OrdenPagoRetencion? _ret;
+    private Guid _operacion = Guid.NewGuid();
+    private string _buscarProveedor = "", _fecha = "", _detalle = "", _retFirma = "", _retIntento = "";
+    private string? _error;
+    private bool _proforma, _cargando, _confirmaAnticipo, _disposed;
+
+    private static string Dinero(decimal v) => v.ToString("N2", CultureInfo.GetCultureInfo("es-AR"));
+    private static decimal Num(string? t) => decimal.TryParse(t, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? decimal.Round(v, 2) : 0m;
+    private static string Texto(decimal v) => v.ToString("0.00", CultureInfo.InvariantCulture);
+    private static string Clave(OrdenPagoDocumento d) => $"{d.Tc}|{d.Comprobante}";
+    private static string Formato(OrdenPagoDocumento d) => $"{d.Sucursal}-{d.Numero}{(d.Letra.Trim().Length > 0 ? " " + d.Letra.Trim() : "")}";
+
+    private decimal Banco => Movimiento?.Importe ?? 0m;
+    private decimal APagar => _pagar.Values.Sum(Num);
+    private decimal Creditos => _aplicar.Values.Sum(Num);
+    private string DetalleSugerido => _proveedor is null ? "" : $"{(_proforma ? "Pago proforma" : "O. de Pago")}: {_proveedor.Nombre}";
+    /// <summary>Base de pago para la retención: con comprobantes no depende de otros medios; en un anticipo es el pago real.</summary>
+    private decimal PagoReal => _pagar.Count == 0 || Banco > APagar - Creditos ? Banco : Math.Max(0, APagar - Creditos);
+    private string Firma => string.Join(';', _pagar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + string.Join(';', _aplicar.OrderBy(p => p.Key).Select(p => p.Key + "=" + Num(p.Value))) + "|" + PagoReal + "|" + _fecha + "|" + _proforma;
+    private bool RetVigente => _ret is not null && _retFirma == Firma;
+    private decimal Retencion => RetVigente ? _ret!.Importe : 0m;
+    /// <summary>Positivo: sobra (anticipo). Negativo: falta cubrir.</summary>
+    private decimal Anticipo => Banco + Creditos + Retencion - APagar;
+    private bool PuedeGrabar => _prep is not null && Banco > 0 && (_pagar.Count > 0 || _aplicar.Count == 0) && Anticipo >= 0
+        && (Anticipo == 0 || _confirmaAnticipo) && (!_prep.RetieneGanancias || RetVigente) && Fecha(_fecha) is not null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(Movimiento, _anterior)) return;
+        _anterior = Movimiento;
+        _pagar.Clear(); _aplicar.Clear(); _prep = null; _ret = null; _retIntento = ""; _error = null; _confirmaAnticipo = false; _proforma = false;
+        _operacion = Guid.NewGuid(); _detalle = "";
+        if (Movimiento is null) { _proveedor = null; _buscarProveedor = ""; return; }
+        _fecha = Movimiento.Fecha.ToString("yyyy-MM-dd");
+        _proveedor = Movimiento.ProveedorSugerido;
+        _buscarProveedor = _proveedor is null ? Movimiento.BusquedaSugerida : "";
+        if (_proveedor is not null) await Ejecutar(CargarYSugerirAsync);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // La retención se calcula sola apenas hay comprobantes y cada vez que cambian los importes.
+        if (_disposed || _prep is not { RetieneGanancias: true } || _cargando || Busy || _pagar.Count == 0 || RetVigente || _retIntento == Firma) return;
+        _retIntento = Firma;
+        await Ejecutar(CalcularRetencionAsync);
+    }
+
+    private Task<IReadOnlyList<OrdenPagoProveedor>> BuscarProveedores(string texto, CancellationToken ct) => Servicio.BuscarProveedoresAsync(texto, ct);
+
+    private Task ProveedorCambiadoAsync(OrdenPagoProveedor? p)
+    {
+        _proveedor = p; _prep = null; LimpiarSeleccion();
+        return p is null ? Task.CompletedTask : Ejecutar(CargarYSugerirAsync);
+    }
+
+    private Task ProformaCambiadaAsync(bool? valor)
+    {
+        _proforma = valor == true; LimpiarSeleccion();
+        return _proveedor is null ? Task.CompletedTask : Ejecutar(CargarYSugerirAsync);
+    }
+
+    private void LimpiarSeleccion() { _pagar.Clear(); _aplicar.Clear(); _ret = null; _retIntento = ""; _confirmaAnticipo = false; _error = null; }
+
+    private async Task CargarYSugerirAsync()
+    {
+        if (_proveedor is null) return;
+        _prep = await Servicio.PrepararAsync(_proveedor.Codigo, _proforma, _vida.Token);
+        _proforma = _prep.Proforma;
+        await SugerirCoreAsync();
+    }
+
+    private Task SugerirAsync() => Ejecutar(async () => { LimpiarSeleccion(); await SugerirCoreAsync(); });
+
+    /// <summary>Elige los comprobantes que cubren el egreso; con retención itera porque el neto depende de ella (el banco paga neto).</summary>
+    private async Task SugerirCoreAsync()
+    {
+        if (_prep is null) return;
+        var retencion = 0m;
+        for (var vuelta = 0; vuelta < 4; vuelta++)
+        {
+            _pagar.Clear();
+            foreach (var s in OrdenPagoService.SugerirAplicacion(_prep.Comprobantes, Banco + retencion))
+                _pagar[$"{s.Clave.Tc}|{s.Clave.Comprobante}"] = Texto(s.Importe);
+            if (!_prep.RetieneGanancias || _pagar.Count == 0) break;
+            await CalcularRetencionAsync();
+            if (_ret!.Importe == retencion) break;
+            retencion = _ret.Importe;
+        }
+    }
+
+    private static DateTime? Fecha(string? t) => DateTime.TryParseExact(t, "yyyy-MM-dd", null, DateTimeStyles.None, out var f) ? f : null;
+
+    private OrdenPagoClave ClaveDe(string key, IReadOnlyList<OrdenPagoDocumento> docs) => docs.First(d => Clave(d) == key).Clave;
+
+    private async Task CalcularRetencionAsync()
+    {
+        if (_prep is null || _proveedor is null) return;
+        var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
+        var s = new OrdenPagoSolicitud
+        {
+            Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma,
+            Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
+            Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
+            Medios = [new() { Cuenta = "-", Importe = PagoReal }]
+        };
+        _ret = await Servicio.CalcularRetencionAsync(s, _vida.Token);
+        _retFirma = Firma;
+    }
+
+    private void MarcarComprobante(OrdenPagoDocumento d, bool marcado)
+    {
+        if (marcado) _pagar[Clave(d)] = Texto(d.Saldo); else _pagar.Remove(Clave(d));
+        _confirmaAnticipo = false;
+    }
+
+    private void MarcarCredito(OrdenPagoDocumento d, bool marcado)
+    {
+        if (marcado) _aplicar[Clave(d)] = Texto(d.Saldo); else _aplicar.Remove(Clave(d));
+        _confirmaAnticipo = false;
+    }
+
+    private async Task Confirmar()
+    {
+        if (_prep is null || _proveedor is null || Movimiento is null) return;
+        _error = null;
+        try
+        {
+            if (_prep.RetieneGanancias && !RetVigente) throw new InvalidOperationException("Calculá la retención de Ganancias antes de grabar (cambiaron los importes).");
+            var fecha = Fecha(_fecha) ?? throw new InvalidOperationException("Indicá una fecha válida.");
+            await OnConfirm.InvokeAsync(new OrdenPagoSolicitud
+            {
+                Operacion = _operacion, Proveedor = _proveedor.Codigo, Fecha = fecha.Date, Proforma = _proforma, Detalle = _detalle.Trim(),
+                ConfirmaAnticipo = Anticipo > 0 && _confirmaAnticipo, Retencion = Retencion, MovimientoId = Movimiento.Id,
+                Comprobantes = [.. _pagar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Comprobantes), Num(p.Value)))],
+                Creditos = [.. _aplicar.Select(p => new OrdenPagoImporte(ClaveDe(p.Key, _prep.Creditos), Num(p.Value)))],
+                Medios = [new OrdenPagoMedioLinea { Cuenta = Movimiento.CuentaBanco, Importe = Movimiento.Importe }]
+            });
+        }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+    }
+
+    private async Task Ejecutar(Func<Task> accion)
+    {
+        if (_cargando || _disposed || _vida.IsCancellationRequested) return;
+        _cargando = true; _error = null;
+        try { await InvokeAsync(StateHasChanged); await accion(); }
+        catch (OperationCanceledException) { }
+        catch (AppUserFacingException ex) { _error = ex.Message; }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        finally { _cargando = false; if (!_disposed) await InvokeAsync(StateHasChanged); }
+    }
+
+    public void Dispose() { _disposed = true; _vida.Cancel(); _vida.Dispose(); }
+}

@@ -111,6 +111,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                 cancellationToken: ct))).ToList(),
             Centros = await CentrosAsync(cn, null, ct), CentrosPorCuenta = await CentrosPorCuentaAsync(cn, null, u.Unidad, ct), Modelos = await ModelosAsync(cn, ct),
             PuedeGuardarModelos = await permissions.HasAccessAsync(MenuModelos, ct) || (cargar && u.Modificar),
+            PuedeVerProformas = await ContabilidadReportesService.PuedeVerProformasAsync(cn, ct, users.GetCurrentUserName()),
             UnidadUsuario = u.Unidad, PuedeCargar = cargar, PuedeModificar = cargar && u.Modificar, PuedeAnular = cargar && u.Anular
         };
     }, ct);
@@ -439,6 +440,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         if (f.Desde is { } d0 && f.Hasta is { } h0 && (h0 < d0 || (h0 - d0).TotalDays > 400)) throw new ReglaException("Elegí un rango de hasta un año.");
         var u = await UsuarioAsync(cn, null, ct);
         var manuales = (await TalonariosAsync(cn, null, u.Unidad, ct)).Select(t => t.Codigo).ToArray();
+        // Se vuelve a validar acá: ocultar el checkbox no es una autorización.
+        var conProformas = f.IncluirProformas && await ContabilidadReportesService.PuedeVerProformasAsync(cn, ct, users.GetCurrentUserName());
         var texto = (f.Texto ?? "").Trim();
         int? mes = null, numero = null;
         if (Regex.Match(texto, @"^(\d{1,2})\s*-\s*(\d{1,7})$") is { Success: true } m) { mes = int.Parse(m.Groups[1].Value); numero = int.Parse(m.Groups[2].Value); texto = ""; }
@@ -468,6 +471,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             FROM dbo.MV_ASIENTOS a
             WHERE a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(a.EsResumen,0) = 0
               AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
+              AND (@ConProformas = 1 OR LTRIM(RTRIM(ISNULL(a.TC,''))) NOT IN @Proformas)
               AND (@Mes IS NULL OR (a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero))
               {conCandidatos}
             GROUP BY a.PERIODO, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.TIPO_REG
@@ -479,7 +483,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                     OR (@Origen = 'COMPROBANTES' AND NOT (LTRIM(MAX(ISNULL(a.TIPO_REG,''))) = '' AND MAX(LTRIM(RTRIM(a.TC))) IN @Manuales AND {BloqueosSql} = 0)))
             ORDER BY MIN(a.FECHA) DESC, MAX(a.FechaHora_Grabacion) DESC, a.MES_OPERATIVO DESC, a.[NUMERO ASIENTO] DESC;
             """, new { Top = top, Desde = desde, Hasta = hasta, Unidad = (f.Unidad ?? "").Trim(), Cuenta = (f.Cuenta ?? "").Trim(), Like = like, Mes = mes, Numero = numero,
-                Origen = origen, Manuales = manuales.Length == 0 ? ["CC"] : manuales }, commandTimeout: 120, cancellationToken: ct))).ToList();
+                Origen = origen, Manuales = manuales.Length == 0 ? ["CC"] : manuales, ConProformas = conProformas, Proformas = ContabilidadReportesService.Proformas }, commandTimeout: 120, cancellationToken: ct))).ToList();
 
         List<ResumenSql> filas;
         if (f.Desde is { } desdeElegido)

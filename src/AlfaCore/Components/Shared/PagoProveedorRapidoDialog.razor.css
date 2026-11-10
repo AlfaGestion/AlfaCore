@@ -1,0 +1,28 @@
+.pagoprov { display: grid; gap: var(--alfa-space-16); }
+.pagoprov p, .pagoprov h3, .pagoprov dl { margin: 0; }
+.pagoprov h3 { font-size: var(--alfa-font-body); }
+.pagoprov h3 small, .pagoprov small { color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); font-weight: 400; }
+.pagoprov__resumen { display: grid; gap: var(--alfa-space-8); padding: var(--alfa-space-16); background: var(--alfa-bg-surface); border: 1px solid var(--alfa-border-default); border-top: 2px solid var(--alfa-accent); border-radius: var(--alfa-radius-sm); }
+.pagoprov__resumen > div { display: flex; flex-direction: column; gap: var(--alfa-space-4); }
+.pagoprov__resumen > div > span { font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); }
+.pagoprov__resumen p { overflow-wrap: anywhere; color: var(--alfa-text-secondary); font-size: var(--alfa-font-small); }
+.pagoprov__importe { font-size: 24px; font-variant-numeric: tabular-nums; color: var(--alfa-danger, var(--alfa-text-primary)); }
+.pagoprov__datos { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); gap: var(--alfa-space-12); }
+.pagoprov__proforma { display: flex; align-items: center; gap: var(--alfa-space-12); }
+.pagoprov__ayuda, .pagoprov__tipo { font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); }
+.pagoprov__titulo { display: flex; align-items: center; justify-content: space-between; gap: var(--alfa-space-8); }
+.pagoprov__tabla { max-height: 30vh; overflow: auto; min-width: 0; border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.pagoprov__tabla table { width: 100%; border-collapse: collapse; font-size: var(--alfa-font-body); color: var(--alfa-text-primary); }
+.pagoprov__tabla th, .pagoprov__tabla td { padding: var(--alfa-space-8); border-bottom: 1px solid var(--alfa-border-default); text-align: left; vertical-align: middle; }
+.pagoprov__tabla th { position: sticky; top: 0; z-index: 1; background: var(--alfa-bg-surface); }
+.pagoprov__tabla .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pagoprov__tabla tr.is-sel { background: var(--alfa-bg-hover, transparent); }
+.pagoprov__tabla tr.is-bloq { opacity: .6; }
+.pagoprov__tabla input[type="number"] { width: 9.5rem; text-align: right; font: inherit; color: inherit; background: var(--alfa-bg-surface); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); padding: var(--alfa-space-4) var(--alfa-space-8); }
+.pagoprov__ret, .pagoprov__resumen-num dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--alfa-space-8); }
+.pagoprov__ret > div, .pagoprov__resumen-num dl > div { display: flex; flex-direction: column; gap: var(--alfa-space-4); padding: var(--alfa-space-8) var(--alfa-space-12); border: 1px solid var(--alfa-border-default); border-radius: var(--alfa-radius-sm); }
+.pagoprov dt { font-size: var(--alfa-font-small); color: var(--alfa-text-secondary); }
+.pagoprov dd { margin: 0; font-variant-numeric: tabular-nums; }
+.pagoprov__resumen-num { display: grid; gap: var(--alfa-space-8); }
+.pagoprov__resumen-num dl > div.is-aviso { border-color: var(--alfa-warning, var(--alfa-accent)); }
+@media (max-width: 700px) { .pagoprov__datos { grid-template-columns: minmax(0, 1fr); } }

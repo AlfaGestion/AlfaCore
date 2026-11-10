@@ -15,10 +15,19 @@ public sealed class ConciliacionAsientoConfig
     public string TipoRegistro { get; set; }="";
     public List<ConciliacionAsientoRegla> Reglas { get; set; }=[];
 }
-public sealed record ConciliacionAsientoCuenta(string Codigo,string Descripcion);
+public sealed record ConciliacionAsientoCuenta(string Codigo,string Descripcion)
+{
+    /// <summary>Títulos del plan que contienen a la cuenta (ej. "Egresos > Gastos de administración"), para buscar dentro de un rubro.</summary>
+    public string Rubro { get; init; }="";
+}
 public sealed record ConciliacionAsientoLinea(string Cuenta,decimal Importe);
 public sealed record ConciliacionAsientoSolicitud(Guid Operacion,long MovimientoId,string Huella,DateTime Fecha,
     string Unidad,int Talonario,string Detalle,IReadOnlyList<ConciliacionAsientoLinea> Contrapartidas,Guid? ReglaId=null,bool ConfirmarNuevaRegistracion=false);
+public sealed record ConciliacionAsientoLoteItem(long MovimientoId,Guid Operacion);
+/// <summary>Imputación común a varios movimientos: un asiento CC por movimiento, con la misma contrapartida. Fecha y detalle vacíos usan los de cada movimiento.</summary>
+public sealed record ConciliacionAsientoLoteSolicitud(IReadOnlyList<ConciliacionAsientoLoteItem> Items,string Unidad,int Talonario,string Cuenta,
+    string Detalle="",DateTime? Fecha=null,Guid? ReglaId=null);
+public sealed record ConciliacionAsientoLoteResultado(long MovimientoId,bool Ok,string Mensaje,ConciliacionAsientoResultado? Asiento=null);
 public sealed class ConciliacionAsientoResultado
 {
     public Guid Operacion { get; set; }

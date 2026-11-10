@@ -11,6 +11,7 @@ public sealed class AsientosFiltro
     public string Origen { get; set; } = "MANUALES";
     public string Cuenta { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
+    public bool IncluirProformas { get; set; }
 }
 
 /// <summary>Filtros de la pantalla de Asientos para el buscador estándar (GestionSmartSearch). Por defecto, «Todo».</summary>
@@ -25,6 +26,7 @@ public sealed class AsientosBusqueda : GestionDateFilterBase
     public string Origen { get; set; } = "TODOS";
     public string Cuenta { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
+    public bool IncluirProformas { get; set; }
 }
 
 /// <summary>Clave de un asiento: PERIODO + MES_OPERATIVO + [NUMERO ASIENTO] + TIPO_REG.</summary>
@@ -197,6 +199,7 @@ public sealed class AsientosCatalogo
     public IReadOnlyList<AsientoCentroDefault> CentrosPorCuenta { get; set; } = [];
     public IReadOnlyList<string> Modelos { get; set; } = [];
     public bool PuedeGuardarModelos { get; set; }
+    public bool PuedeVerProformas { get; set; }
     public string UnidadUsuario { get; set; } = string.Empty;
     public bool PuedeCargar { get; set; }
     public bool PuedeModificar { get; set; }

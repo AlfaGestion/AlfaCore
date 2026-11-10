@@ -125,7 +125,14 @@ public sealed class OrdenPagoSolicitud
     public bool ConfirmaAnticipo { get; set; }
     /// <summary>Retención de Ganancias que vio el usuario (el servicio la recalcula al grabar y rechaza si cambió). 0 si no retiene.</summary>
     public decimal Retencion { get; set; }
+    /// <summary>Egreso del extracto bancario que origina el pago (Conciliación bancaria). Con él, el único medio es la cuenta bancaria de la importación por el importe del movimiento.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public long? MovimientoId { get; set; }
 }
+
+/// <summary>Egreso bancario listo para pagarle a un proveedor, con el proveedor que se deduce del texto del extracto (por CUIT) si es único.</summary>
+public sealed record OrdenPagoMovimiento(long Id, DateTime Fecha, decimal Importe, string CuentaBanco, string CuentaBancoDescripcion,
+    string Descripcion, string Categoria, string BusquedaSugerida, OrdenPagoProveedor? ProveedorSugerido);
 
 public sealed record OrdenPagoResultado(Guid Operacion, int Id, string Tc, string Comprobante, int NumeroAsiento, decimal Importe, decimal Anticipo);
 

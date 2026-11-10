@@ -49,7 +49,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
     private const string EsComprobanteContableSql = "LTRIM(RTRIM(ISNULL(a.TC,''))) <> '' AND LTRIM(RTRIM(ISNULL(a.NUMERO,''))) LIKE '%[^0 ]%'";
     private const int MaximoMovimientosMayor = 20000;
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
-    private static readonly string[] Proformas = ["FP", "NCFP", "NDFP", "CBFP", "FPC", "NCCP", "PGFP"];
+    internal static readonly string[] Proformas = ["FP", "NCFP", "NDFP", "CBFP", "FPC", "NCCP", "PGFP"];
     private sealed class ReglaContableException(string message) : InvalidOperationException(message);
 
     // ── Catálogos ───────────────────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ public sealed partial class ContabilidadReportesService(ISessionService sessions
                 """, new { Texto = t, Prefijo = t + "%", Like = "%" + t + "%" }, cancellationToken: ct))).ToList();
         }, ct);
 
-    private static async Task<bool> PuedeVerProformasAsync(SqlConnection cn, CancellationToken ct, string? usuario = null)
+    internal static async Task<bool> PuedeVerProformasAsync(SqlConnection cn, CancellationToken ct, string? usuario = null)
     {
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
                 "SELECT CASE WHEN COL_LENGTH('dbo.TA_USUARIOS','VerProforma') IS NULL THEN 0 ELSE 1 END", cancellationToken: ct)) == 0)

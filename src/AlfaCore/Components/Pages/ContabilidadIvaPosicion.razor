@@ -15,6 +15,10 @@
             <h2>Posición de IVA</h2>
             <p>Comparativa débito fiscal (ventas) vs. crédito fiscal (compras). Saldo a pagar o a favor según el período.</p>
         </div>
+        <label class="gd-check">
+            <input type="checkbox" checked="@_descontarPercepciones" @onchange="OnTogglePercepciones" />
+            Descontar percepciones de IVA
+        </label>
     </header>
 
     @if (_loading)
@@ -27,7 +31,7 @@
     }
     else if (_iva is not null)
     {
-        <section class="kpi-grid kpi-grid--3">
+        <section class="kpi-grid @(_descontarPercepciones ? "kpi-grid--4" : "kpi-grid--3")">
             <article class="kpi-card">
                 <div class="kpi-card__icon">D</div>
                 <div class="kpi-card__body">
@@ -46,13 +50,25 @@
                     <p class="kpi-card__description">Neto: @FmtMoney(_iva.NetoGravadoCompras)</p>
                 </div>
             </article>
-            <article class="kpi-card @(_iva.Saldo >= 0 ? "kpi-card--iva-pagar" : "kpi-card--iva-favor")">
-                <div class="kpi-card__icon">@(_iva.Saldo >= 0 ? "!" : "✓")</div>
+            @if (_descontarPercepciones)
+            {
+                <article class="kpi-card">
+                    <div class="kpi-card__icon">P</div>
+                    <div class="kpi-card__body">
+                        <p class="kpi-card__label">Percepciones de IVA</p>
+                        <h3 class="kpi-card__value">@FmtCompact(_iva.TotalPercepcionesIva)</h3>
+                        <p class="kpi-card__description">@FmtMoney(_iva.TotalPercepcionesIva)</p>
+                        <p class="kpi-card__description">Sufridas en compras</p>
+                    </div>
+                </article>
+            }
+            <article class="kpi-card @(Saldo >= 0 ? "kpi-card--iva-pagar" : "kpi-card--iva-favor")">
+                <div class="kpi-card__icon">@(Saldo >= 0 ? "!" : "✓")</div>
                 <div class="kpi-card__body">
-                    <p class="kpi-card__label">@(_iva.Saldo >= 0 ? "Saldo a pagar a AFIP" : "Saldo a favor")</p>
-                    <h3 class="kpi-card__value">@FmtCompact(Math.Abs(_iva.Saldo))</h3>
-                    <p class="kpi-card__description">@FmtMoney(Math.Abs(_iva.Saldo))</p>
-                    <p class="kpi-card__description">Débito − Crédito</p>
+                    <p class="kpi-card__label">@(Saldo >= 0 ? "Saldo a pagar a AFIP" : "Saldo a favor")</p>
+                    <h3 class="kpi-card__value">@FmtCompact(Math.Abs(Saldo))</h3>
+                    <p class="kpi-card__description">@FmtMoney(Math.Abs(Saldo))</p>
+                    <p class="kpi-card__description">@(_descontarPercepciones ? "Débito − Crédito − Percepciones" : "Débito − Crédito")</p>
                 </div>
             </article>
         </section>
@@ -64,7 +80,7 @@
                     <p class="panel-card__subtitle">Últimos 12 meses — azul: débito fiscal (ventas) · naranja: crédito fiscal (compras)</p>
                 </div>
             </div>
-            <DualBarChart Data="_iva.EvolucionIvaMensual" Label1="Débito" Label2="Crédito" />
+            <DualBarChart Data="EvolucionMensual" Label1="Débito" Label2="@(_descontarPercepciones ? "Crédito + percep." : "Crédito")" />
         </article>
 
         <section class="two-grid">
@@ -78,7 +94,7 @@
                         <p class="panel-card__subtitle">Diferencia mensual débito − crédito</p>
                     </div>
                 </div>
-                <LineChart Data="_iva.EvolucionSaldo" Titulo="Saldo IVA — últimos 12 meses" Subtitulo="Diferencia mensual débito − crédito" />
+                <LineChart Data="EvolucionSaldoMensual" Titulo="Saldo IVA — últimos 12 meses" Subtitulo="Diferencia mensual débito − crédito" />
             </article>
         </section>
 
@@ -119,6 +135,21 @@
                                 <td class="col-num"><strong>@FmtMoney(_iva.TotalIvaCompras)</strong></td>
                                 <td class="col-num @(_iva.Saldo < 0 ? "text-danger" : "")"><strong>@FmtMoney(_iva.Saldo)</strong></td>
                             </tr>
+                            @if (_descontarPercepciones)
+                            {
+                                <tr>
+                                    <td>Percepciones de IVA</td>
+                                    <td class="col-num"></td>
+                                    <td class="col-num">@FmtMoney(_iva.TotalPercepcionesIva)</td>
+                                    <td class="col-num">@FmtMoney(-_iva.TotalPercepcionesIva)</td>
+                                </tr>
+                                <tr class="row-totals">
+                                    <td><strong>SALDO CON PERCEPCIONES</strong></td>
+                                    <td class="col-num"></td>
+                                    <td class="col-num"></td>
+                                    <td class="col-num @(Saldo < 0 ? "text-danger" : "")"><strong>@FmtMoney(Saldo)</strong></td>
+                                </tr>
+                            }
                         </tfoot>
                     </table>
                 </div>
@@ -234,13 +265,56 @@
         return parts.Count == 0 ? "Sin filtros seleccionados." : string.Join(" | ", parts);
     }
 
-    private IReadOnlyList<CategoryTotalDto> Comparativa =>
-        _iva is null ? Array.Empty<CategoryTotalDto>() : new[]
+    // Con la opción activa, las percepciones de IVA se descuentan del saldo a pagar (se suman al crédito).
+    // Se recuerda por sesión de pantalla; no se recarga la consulta porque el servicio ya trae ambos datos.
+    private bool _descontarPercepciones = true;
+
+    private void OnTogglePercepciones(ChangeEventArgs e) => _descontarPercepciones = e.Value is true;
+
+    private decimal Saldo => _iva is null ? 0m : _descontarPercepciones ? _iva.SaldoConPercepciones : _iva.Saldo;
+
+    private IReadOnlyList<ComparativoMensualDto> EvolucionMensual
+    {
+        get
         {
-            new CategoryTotalDto { Categoria = "Débito fiscal (Ventas)", Total = _iva.TotalIvaVentas },
-            new CategoryTotalDto { Categoria = "Crédito fiscal (Compras)", Total = _iva.TotalIvaCompras },
-            new CategoryTotalDto { Categoria = _iva.Saldo >= 0 ? "Saldo (a pagar)" : "Saldo (a favor)", Total = Math.Abs(_iva.Saldo) },
-        };
+            if (_iva is null) return Array.Empty<ComparativoMensualDto>();
+            if (!_descontarPercepciones) return _iva.EvolucionIvaMensual;
+            var perc = _iva.EvolucionPercepcionesIva.ToDictionary(p => p.Periodo, p => p.Total);
+            return _iva.EvolucionIvaMensual
+                .Select(m => new ComparativoMensualDto { Periodo = m.Periodo, Ventas = m.Ventas, Compras = m.Compras + perc.GetValueOrDefault(m.Periodo) })
+                .ToList();
+        }
+    }
+
+    private IReadOnlyList<MonthlyPointDto> EvolucionSaldoMensual
+    {
+        get
+        {
+            if (_iva is null) return Array.Empty<MonthlyPointDto>();
+            if (!_descontarPercepciones) return _iva.EvolucionSaldo;
+            var perc = _iva.EvolucionPercepcionesIva.ToDictionary(p => p.Periodo, p => p.Total);
+            return _iva.EvolucionSaldo
+                .Select(m => new MonthlyPointDto { Periodo = m.Periodo, Total = m.Total - perc.GetValueOrDefault(m.Periodo) })
+                .ToList();
+        }
+    }
+
+    private IReadOnlyList<CategoryTotalDto> Comparativa
+    {
+        get
+        {
+            if (_iva is null) return Array.Empty<CategoryTotalDto>();
+            var lista = new List<CategoryTotalDto>
+            {
+                new() { Categoria = "Débito fiscal (Ventas)", Total = _iva.TotalIvaVentas },
+                new() { Categoria = "Crédito fiscal (Compras)", Total = _iva.TotalIvaCompras },
+            };
+            if (_descontarPercepciones)
+                lista.Add(new() { Categoria = "Percepciones de IVA", Total = _iva.TotalPercepcionesIva });
+            lista.Add(new() { Categoria = Saldo >= 0 ? "Saldo (a pagar)" : "Saldo (a favor)", Total = Math.Abs(Saldo) });
+            return lista;
+        }
+    }
 
     private static readonly System.Globalization.CultureInfo _esAr =
         System.Globalization.CultureInfo.GetCultureInfo("es-AR");

@@ -48,3 +48,5 @@
 .conciliacion-page--comparar { flex:1 1 0; height:auto; max-height:100%; min-height:0; padding-bottom:var(--alfa-space-8); overflow:hidden; contain:layout paint; display:flex; flex-direction:column; gap:var(--alfa-space-8); }
 .conciliacion-page--comparar ::deep .conciliacion-comparacion { flex:1; min-height:0; }
 .conciliacion-page--comparar ::deep .alfa-tabs { flex-shrink:0; }
+.conciliacion-seleccion { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 8px 0; }
+.conciliacion-seleccion > span { flex: 1 1 auto; }

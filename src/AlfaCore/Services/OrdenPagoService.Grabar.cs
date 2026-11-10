@@ -66,6 +66,9 @@ public sealed partial class OrdenPagoService
             return new(previo.Operacion, previo.ComprobanteId, previo.Tc.Trim(), previo.Comprobante, previo.NumeroAsiento, previo.Importe, previo.Anticipo);
         }
 
+        // Egreso bancario de origen: se bloquea y se valida antes de tocar nada.
+        var categoriaMovimiento = s.MovimientoId is long movimientoId ? await ValidarMovimientoDeOrdenAsync(cn, tx, s, movimientoId, ct) : null;
+
         // Proforma: solo si la base la usa y el usuario puede verla.
         var usaProforma = (await ConfigAsync(cn, tx, "USAFACTURAPROFORMA", ct)).Equals("SI", StringComparison.OrdinalIgnoreCase);
         if (s.Proforma && !(usaProforma && user.VerProforma)) throw new InvalidOperationException("No tenés habilitado el pago de proformas.");
@@ -305,7 +308,9 @@ public sealed partial class OrdenPagoService
             proximo = (int)numeroOrden + 1, numerarEn, Talonario = tal.Numero, UnidadTal = tal.Unidad, s.Operacion, id, tc, comprobante = comprobanteOrden, asiento,
             total = dinero, anticipo = reparto.Anticipo, hash, unidad = unidadPk, usuario = user.Nombre
         }));
-        await ComprobanteAcciones.RegistrarAsync(cn, tx, tc, comprobanteOrden, ComprobanteAcciones.Alta, user.Nombre, "AlfaCore · Orden de pago", ct,
+        if (s.MovimientoId is long movimientoVinculado)
+            await VincularMovimientoAsync(cn, tx, movimientoVinculado, categoriaMovimiento!, s.Operacion, tc, comprobanteOrden, user.Nombre, ct);
+        await ComprobanteAcciones.RegistrarAsync(cn, tx, tc, comprobanteOrden, ComprobanteAcciones.Alta, user.Nombre, s.MovimientoId is null ? "AlfaCore · Orden de pago" : "AlfaCore · Orden de pago desde Conciliación bancaria", ct,
             comentario: "Alta desde AlfaCore", asiento: asiento, periodo: periodo.ToString(), tipoReg: tipoRegTrim.PadRight(4), fecha: s.Fecha, cuenta: proveedor.Codigo);
         return new(s.Operacion, id, tc, comprobanteOrden, asiento, dinero, reparto.Anticipo);
     }

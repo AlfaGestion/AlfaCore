@@ -175,19 +175,32 @@
                         }
                     </select>
                 </div>
+                @if (_options.PuedeVerProformas)
+                {
+                    <AlfaCheckbox Value="@_filters.IncluirProformas" ValueChanged="v => _filters.IncluirProformas = v == true">Incluir proformas</AlfaCheckbox>
+                }
             </div>
         </Columnas>
     </GestionSmartSearch>;
 
     private IReadOnlyList<GestionSmartChip> SmartChips
-        => string.IsNullOrWhiteSpace(_filters.Sucursal) ? [] : [new("sucursal", $"Sucursal: {_filters.Sucursal}")];
+    {
+        get
+        {
+            var chips = new List<GestionSmartChip>();
+            if (!string.IsNullOrWhiteSpace(_filters.Sucursal)) chips.Add(new("sucursal", $"Sucursal: {_filters.Sucursal}"));
+            if (_filters.IncluirProformas) chips.Add(new("proformas", "Incluye proformas"));
+            return chips;
+        }
+    }
 
     private void RemoveSmartChip(string key)
     {
         if (key == "sucursal") _filters.Sucursal = null;
+        else if (key == "proformas") _filters.IncluirProformas = false;
     }
 
-    private void LimpiarFiltrosPropios() => _filters.Sucursal = null;
+    private void LimpiarFiltrosPropios() { _filters.Sucursal = null; _filters.IncluirProformas = false; }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -238,6 +251,7 @@
         _filters.FechaDesde = new DateTime(today.Year, today.Month, 1);
         _filters.FechaHasta = today;
         _filters.Sucursal = null;
+        _filters.IncluirProformas = false;
         await LoadAsync();
     }
 

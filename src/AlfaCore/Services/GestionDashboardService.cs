@@ -7,7 +7,8 @@ namespace AlfaCore.Services;
 public sealed partial class GestionDashboardService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IGestionDashboardService
+    IAppEventService appEvents,
+    IAppUserSessionService users) : IGestionDashboardService
 {
     private const string VentasDocumentosWhere = """
         AND (
@@ -157,6 +158,7 @@ public sealed partial class GestionDashboardService(
 
             return new ContabilidadFilterOptionsDto
             {
+                PuedeVerProformas = await ContabilidadReportesService.PuedeVerProformasAsync(cn, token, users.GetCurrentUserName()),
                 Usuarios = await QueryDistinctAsync("""
                     SELECT DISTINCT TOP (100) LTRIM(RTRIM(a.USUARIO_LOGEADO))
                     FROM dbo.MV_ASIENTOS a
@@ -1541,6 +1543,15 @@ public sealed partial class GestionDashboardService(
             if (exV != 0 || exC != 0)
                 filas.Add(new() { Concepto = "EX. / Sin condición", Ventas = exV, Compras = exC });
 
+            // Percepciones de IVA sufridas (cuenta de activo): se computan contra el IVA a pagar.
+            // La vista de compras las trae en PERC_IVA; la página decide si las descuenta.
+            decimal percepcionesIva;
+            await using (var cmd = new SqlCommand($"SELECT ISNULL(SUM(PERC_IVA), 0) FROM dbo.LibroIvaCompras_Contadores {ivaWhere}", cn))
+            {
+                BindIvaFilters(cmd, filters);
+                percepcionesIva = Convert.ToDecimal(await cmd.ExecuteScalarAsync(token) ?? 0m);
+            }
+
             const string monthlyWhere = """
                 WHERE FECHA >= DATEADD(MONTH, -11, DATEADD(day, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))
                   AND (@Sucursal IS NULL OR CONVERT(varchar(50), UNEGOCIO) = @Sucursal)
@@ -1571,9 +1582,22 @@ public sealed partial class GestionDashboardService(
                     cm2[GetStringValue(rd, 0)] = GetDecimal(rd, 1);
             }
 
-            var periods = vm.Keys.Union(cm2.Keys).OrderBy(x => x).ToList();
+            var pm = new Dictionary<string, decimal>();
+            await using (var cmd = new SqlCommand(
+                "SELECT CONVERT(char(7), FECHA, 126), ISNULL(SUM(PERC_IVA), 0) FROM dbo.LibroIvaCompras_Contadores " + monthlyWhere, cn))
+            {
+                AddNullableString(cmd, "@Sucursal", filters.Sucursal);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
+                    pm[GetStringValue(rd, 0)] = GetDecimal(rd, 1);
+            }
+
+            var periods = vm.Keys.Union(cm2.Keys).Union(pm.Keys).OrderBy(x => x).ToList();
             var evolucionSaldo = periods
                 .Select(p => new MonthlyPointDto { Periodo = p, Total = vm.GetValueOrDefault(p) - cm2.GetValueOrDefault(p) })
+                .ToList();
+            var evolucionPercepciones = periods
+                .Select(p => new MonthlyPointDto { Periodo = p, Total = pm.GetValueOrDefault(p) })
                 .ToList();
             var evolucionIvaMensual = periods
                 .Select(p => new ComparativoMensualDto { Periodo = p, Ventas = vm.GetValueOrDefault(p), Compras = cm2.GetValueOrDefault(p) })
@@ -1636,6 +1660,8 @@ public sealed partial class GestionDashboardService(
             {
                 TotalIvaVentas     = totalV,
                 TotalIvaCompras    = totalC,
+                TotalPercepcionesIva = percepcionesIva,
+                EvolucionPercepcionesIva = evolucionPercepciones,
                 NetoGravadoVentas  = v[7],
                 NetoGravadoCompras = c[7],
                 Filas              = filas,
@@ -1664,7 +1690,9 @@ public sealed partial class GestionDashboardService(
             // El SP espera fechas como NVARCHAR(10) en formato dd/MM/yyyy
             var fechaD = (filters.FechaDesde ?? new DateTime(DateTime.Today.Year, 1, 1)).ToString("dd/MM/yyyy");
             var fechaH = (filters.FechaHasta ?? DateTime.Today).ToString("dd/MM/yyyy");
-            var whereClause = BuildSaldosWhereClause(filters);
+            // Se vuelve a validar acá: ocultar el checkbox no es una autorización.
+            var verProformas = filters.IncluirProformas && await ContabilidadReportesService.PuedeVerProformasAsync(cn, token, users.GetCurrentUserName());
+            var whereClause = BuildSaldosWhereClause(filters, verProformas);
 
             var filas = new List<BalanceSaldoFilaDto>();
             await using var cmd = new SqlCommand("dbo.NW_SALDOSCUENTAS", cn);
@@ -1756,11 +1784,15 @@ public sealed partial class GestionDashboardService(
     };
 
     // Construye fragmento WHERE para el SP; UNEGOCIO es numérico, solo se acepta valor entero
-    private static string BuildSaldosWhereClause(ContabilidadDashboardFilters filters)
+    private static string BuildSaldosWhereClause(ContabilidadDashboardFilters filters, bool incluirProformas)
     {
-        if (string.IsNullOrWhiteSpace(filters.Sucursal)) return string.Empty;
-        var suc = filters.Sucursal.Trim();
-        return int.TryParse(suc, out var sucInt) ? $" AND UNEGOCIO = {sucInt}" : string.Empty;
+        // El SP agrega este texto tal cual a su WHERE: solo entran constantes propias y un entero.
+        var where = incluirProformas
+            ? string.Empty
+            : $" AND LTRIM(RTRIM(ISNULL(dbo.MV_ASIENTOS.TC,''))) NOT IN ({string.Join(",", ContabilidadReportesService.Proformas.Select(t => $"'{t}'"))})";
+        if (!string.IsNullOrWhiteSpace(filters.Sucursal) && int.TryParse(filters.Sucursal.Trim(), out var sucInt))
+            where += $" AND UNEGOCIO = {sucInt}";
+        return where;
     }
 
     private sealed class DigitosPlanCuentas

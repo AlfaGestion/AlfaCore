@@ -96,6 +96,7 @@ public sealed partial class OrdenPagoService
             DELETE dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(TC))=@tc AND SUCURSAL=@suc AND NUMERO=@num AND LETRA=@letra;
             UPDATE dbo.V_MV_CPTE SET ANULADA=1 WHERE ID=@idCab;
             """, new { tc, suc = o.Sucursal, num = o.Numero, letra = o.Letra, id = idComprobante, idCab = o.Id }));
+        await LiberarMovimientoAsync(cn, tx, tc, idComprobante, user.Nombre, ct);
         await ComprobanteAcciones.RegistrarAsync(cn, tx, tc, idComprobante, ComprobanteAcciones.Baja, user.Nombre, "AlfaCore: anulación de orden de pago. " + motivo, ct,
             comentario: "Baja desde AlfaCore", asiento: int.TryParse(Campo("NUMERO ASIENTO"), out var numeroAsiento) ? numeroAsiento : null,
             periodo: Campo("PERIODO"), tipoReg: Campo("TIPO_REG"), fecha: o.Fecha, cuenta: o.Cuenta);

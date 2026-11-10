@@ -86,10 +86,13 @@ public sealed class ContabilidadDashboardFilters : GestionDateFilterBase
     public string? Usuario { get; set; }
     public string? Sucursal { get; set; }
     public string? Tipo { get; set; }
+    /// <summary>Por defecto las proformas quedan afuera, como en Sumas y saldos; solo cuenta si el usuario puede verlas.</summary>
+    public bool IncluirProformas { get; set; }
 }
 
 public sealed class ContabilidadFilterOptionsDto
 {
+    public bool PuedeVerProformas { get; init; }
     public IReadOnlyList<string> Usuarios { get; init; } = [];
     public IReadOnlyList<string> Sucursales { get; init; } = [];
     public IReadOnlyList<string> Tipos { get; init; } = [];

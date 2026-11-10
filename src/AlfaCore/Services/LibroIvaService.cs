@@ -123,10 +123,11 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             ORDER BY a.FECHA, a.TC, a.LETRA, a.SUCURSAL, a.NUMERO;
             """, new { Desde = desde, Hasta = hasta, Unidad = unidad, filtro.SoloSinUnidad, FiltrarUnidades = filtro.UnidadesNegocio.Count > 0, Unidades = filtro.UnidadesNegocio, Tipo = compras ? "COMPRAS" : "VENTAS" }, commandTimeout: 120, cancellationToken: ct))).ToList();
 
+        var ajusteRedondeo = await AjusteRedondeoMaximoAsync(cn, ct);
         var resultado = new LibroIvaResultado
         {
             Filtro = new() { Desde = desde, Hasta = hasta, UnidadNegocio = unidad, Compras = compras, SoloSinUnidad = filtro.SoloSinUnidad, General = filtro.General, UnidadesNegocio = filtro.UnidadesNegocio.ToArray() },
-            Filas = filas.Select(f => Convertir(f, compras)).ToList(),
+            Filas = filas.Select(f => Convertir(f, compras, ajusteRedondeo)).ToList(),
             Cierre = await LeerCierreAsync(cn, ct, compras: compras),
             PuedeCerrar = await permissions.HasAccessAsync(MenuFechasCierre, ct)
         };
@@ -195,14 +196,46 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
     // Los asientos usan Currency (4 decimales); los libros y ARCA suman comprobantes en centavos.
     internal static decimal MonedaLibro(decimal valor) => Math.Round(valor, 2, MidpointRounding.AwayFromZero);
 
-    private static LibroIvaFila Convertir(FilaSql s, bool compras)
+    internal const string ClaveAjusteRedondeo = "LIBROIVA-AJUSTE-REDONDEO-MAX";
+    private const decimal AjusteRedondeoPorDefecto = 0.10m;
+
+    /// <summary>Importe máximo (en valor absoluto) de un concepto de signo opuesto al total que se trata como ajuste de redondeo.</summary>
+    private static async Task<decimal> AjusteRedondeoMaximoAsync(SqlConnection cn, CancellationToken ct)
     {
+        var valor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT TOP (1) LTRIM(RTRIM(VALOR)) FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;", new { Clave = ClaveAjusteRedondeo }, cancellationToken: ct));
+        return decimal.TryParse(valor?.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var v) && v >= 0 ? v : AjusteRedondeoPorDefecto;
+    }
+
+    /// <summary>
+    /// El legacy graba el centavo de redondeo en LIVA_ImpNetoNGrav (o LIVA_EXENTO) con signo opuesto al total. ARCA toma los importes en positivo,
+    /// así que ese ajuste chico se resta del neto gravado: el comprobante sigue cerrando contra el total y el asiento no se toca.
+    /// </summary>
+    internal static (decimal Neto, decimal NoGravado, decimal Exento) AbsorberRedondeo(decimal neto, decimal noGravado, decimal exento, decimal total, decimal maximo)
+    {
+        if (total == 0 || neto == 0 || Math.Sign(neto) != Math.Sign(total)) return (neto, noGravado, exento);
+        if (noGravado != 0 && Math.Sign(noGravado) != Math.Sign(total) && Math.Abs(noGravado) <= maximo) { neto += noGravado; noGravado = 0; }
+        if (exento != 0 && Math.Sign(exento) != Math.Sign(total) && Math.Abs(exento) <= maximo) { neto += exento; exento = 0; }
+        return (neto, noGravado, exento);
+    }
+
+    private static LibroIvaFila Convertir(FilaSql s, bool compras, decimal ajusteRedondeo = AjusteRedondeoPorDefecto)
+    {
+        var exentoSql = MonedaLibro(ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total));
+        var (netoGravado, noGravado, exento) = AbsorberRedondeo(MonedaLibro(s.NetoGravado), MonedaLibro(s.NoGravado), exentoSql, MonedaLibro(s.Total), ajusteRedondeo);
+        // En compras, las facturas B y C no discriminan IVA: el legacy guarda neto e IVA por separado, pero ARCA los informa
+        // juntos como importe que no integra el neto gravado (sin crédito fiscal). Así los componentes suman el total.
+        if (compras && s.Letra.Trim().ToUpperInvariant() is "B" or "C")
+        {
+            noGravado += netoGravado + MonedaLibro(s.I1) + MonedaLibro(s.I2) + MonedaLibro(s.I3) + MonedaLibro(s.I4);
+            netoGravado = 0;
+        }
         var fila = new LibroIvaFila
         {
             Fecha = s.Fecha, Tc = s.Tc, Letra = s.Letra, Cuenta = s.Cuenta, RazonSocial = s.RazonSocial, Cuit = s.Cuit, ConsumidorFinal = s.ConsumidorFinal,
             CondicionIva = s.CondicionIva, UnidadNegocio = s.UnidadNegocio,
             PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
-            NetoGravado = MonedaLibro(s.NetoGravado), NoGravado = MonedaLibro(s.NoGravado), Exento = MonedaLibro(ExentoCompras(s.Exento,s.ImpuestosInternos,s.NetoGravado+s.NoGravado+s.I1+s.I2+s.I3+s.I4+s.PercepcionIva+s.PercepcionIibb+s.OtrasPercepciones,s.Total)),
+            NetoGravado = netoGravado, NoGravado = noGravado, Exento = exento,
             PercepcionIva = MonedaLibro(s.PercepcionIva), PercepcionIibb = MonedaLibro(s.PercepcionIibb), OtrasPercepciones = MonedaLibro(s.OtrasPercepciones),
             ImpuestosInternos = MonedaLibro(s.ImpuestosInternos), Total = MonedaLibro(s.Total), CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra)
         };

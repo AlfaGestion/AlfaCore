@@ -53,13 +53,18 @@ public sealed partial class ConciliacionBancariaService
             FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND UPPER(LTRIM(RTRIM(SISTEMA)))='CONTABLE'
                 AND CHARINDEX('X',LETRAS)>0 AND ISNULL(Externo,0)=0;
             SELECT CONVERT(nvarchar(max),ValorAux) FROM dbo.TA_CONFIGURACION WHERE CLAVE='CONCILIACION-ASIENTOS';
+            SELECT LTRIM(RTRIM(CODIGO)) Codigo,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion FROM dbo.MA_CUENTAS
+                WHERE ISNULL(TITULO,0)=1 AND ISNULL(Dada_De_Baja,0)=0;
             """,new{admin=user.Admin,unidad=user.Unidad},tx,cancellationToken:ct));
-        var cuentas=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
+        var cuentasPlanas=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
         var bancos=(await r.ReadAsync<ConciliacionCuenta>()).AsList();
         var unidades=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
         var subdiarios=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
         var talonarios=(await r.ReadAsync<CobranzaTalonario>()).AsList();
         var json=await r.ReadSingleOrDefaultAsync<string>();
+        var titulos=(await r.ReadAsync<ConciliacionAsientoCuenta>()).OrderBy(t=>t.Codigo.Length).ToList();
+        // La jerarquía del plan es por prefijo de código: los títulos cuyo código abre el de la cuenta son sus rubros.
+        var cuentas=cuentasPlanas.Select(c=>c with{Rubro=string.Join(" > ",titulos.Where(t=>t.Codigo.Length<c.Codigo.Length&&c.Codigo.StartsWith(t.Codigo,StringComparison.Ordinal)).Select(t=>t.Descripcion))}).ToList();
         var config=string.IsNullOrWhiteSpace(json) ? new ConciliacionAsientoConfig() :
             JsonSerializer.Deserialize<ConciliacionAsientoConfig>(json) ?? throw new InvalidOperationException("La configuración de asientos no es válida.");
         return new(config,cuentas,bancos,unidades,subdiarios,talonarios,user.Unidad)
@@ -92,7 +97,7 @@ public sealed partial class ConciliacionBancariaService
         foreach(var r in c.Reglas)
             if(r.Id==Guid.Empty || r.Nombre.Trim().Length is <1 or >60 || r.Texto.Length>150 || r.Detalle.Length>200
                 || !Enum.TryParse<ConciliacionBancaria.Domain.Enums.MovementCategory>(r.Categoria,out var categoria)
-                || !Enum.IsDefined(categoria) || categoria is ConciliacionBancaria.Domain.Enums.MovementCategory.Cobranza or ConciliacionBancaria.Domain.Enums.MovementCategory.TransferenciaInterna
+                || !Enum.IsDefined(categoria) || categoria is ConciliacionBancaria.Domain.Enums.MovementCategory.Cobranza or ConciliacionBancaria.Domain.Enums.MovementCategory.TransferenciaInterna or ConciliacionBancaria.Domain.Enums.MovementCategory.PagoProveedor
                 || !catalogo.Cuentas.Any(x=>x.Codigo==r.Contrapartida.Trim())
                 || (r.CuentaBanco.Trim().Length>0&&!catalogo.Bancos.Any(b=>b.Codigo==r.CuentaBanco.Trim())))
                 throw new InvalidOperationException("Cada concepto requiere nombre, clasificación válida y contrapartida contable activa en pesos.");
@@ -121,8 +126,8 @@ public sealed partial class ConciliacionBancariaService
             OUTER APPLY(SELECT TOP(1) TipoMovimiento FROM dbo.BK_MovimientoClasificado WHERE MovimientoId=m.MovimientoId ORDER BY ClasificacionId DESC)c
             WHERE m.MovimientoId=@id;
             """,new{id},tx,cancellationToken:ct)) ?? throw new InvalidOperationException("El movimiento no está disponible.");
-        if(origen.Categoria is "Cobranza" or "TransferenciaInterna")
-            throw new InvalidOperationException("Las cobranzas y transferencias entre cuentas propias requieren su circuito específico. Revisá la clasificación del movimiento.");
+        if(origen.Categoria is "Cobranza" or "TransferenciaInterna" or "PagoProveedor")
+            throw new InvalidOperationException("Las cobranzas, los pagos a proveedores y las transferencias entre cuentas propias requieren su circuito específico. Revisá la clasificación del movimiento.");
         var criterios=await LeerCriterios(cn,tx,ct);
         var f=new ConciliacionCompararFiltro(origen.Cuenta,origen.Fecha.AddDays(-criterios.Dias),origen.Fecha.AddDays(criterios.Dias));
         var args=new DynamicParameters(ArgumentosComparacion(f));args.Add("id",id);args.Add("tolerancia",criterios.Tolerancia);
@@ -134,7 +139,7 @@ public sealed partial class ConciliacionBancariaService
             """,args,tx,cancellationToken:ct));
         var banco=await r.ReadSingleOrDefaultAsync<ConciliacionFilaBanco>();
         var posibles=(await r.ReadAsync<ConciliacionFilaAlfa>()).AsList();
-        if(banco is null||banco.Importe==0||banco.ConciliacionId.HasValue||banco.Registracion is "Cobrado" or "Registrado")
+        if(banco is null||banco.Importe==0||banco.ConciliacionId.HasValue||banco.Registracion is "Cobrado" or "Pagado" or "Registrado")
             throw new InvalidOperationException("Seleccioná un movimiento en pesos, pendiente de registración y conciliación.");
         if(await cn.ExecuteScalarAsync<bool>(new CommandDefinition("""
             SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.BK_AsientoOperacion WHERE MovimientoId=@id)
@@ -161,6 +166,37 @@ public sealed partial class ConciliacionBancariaService
             var result=await GenerarAsientoEnTransaccionAsync(cn,tx,solicitud,token);
             tx.Commit();return result;
         },ct);
+
+    /// <summary>Genera un asiento por movimiento, cada uno en su propia transacción: si uno falla, los demás siguen. Los movimientos con registraciones posibles no se generan en lote.</summary>
+    public async Task<IReadOnlyList<ConciliacionAsientoLoteResultado>> GenerarAsientosLoteAsync(ConciliacionAsientoLoteSolicitud s,CancellationToken ct=default)
+    {
+        if(s.Items.Count is <1 or >200||s.Items.Select(i=>i.MovimientoId).Distinct().Count()!=s.Items.Count)
+            throw new InvalidOperationException("Seleccioná entre 1 y 200 movimientos distintos.");
+        var resultados=new List<ConciliacionAsientoLoteResultado>(s.Items.Count);
+        foreach(var item in s.Items)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var prep=await PrepararAsientoAsync(item.MovimientoId,ct);
+                if(prep.PosiblesDuplicados.Count>0)
+                {
+                    resultados.Add(new(item.MovimientoId,false,"Tiene registraciones posibles. Generá su asiento de forma individual para revisarlas."));
+                    continue;
+                }
+                var detalle=s.Detalle.Trim();
+                if(detalle.Length==0)detalle=prep.Movimiento.Detalle.Trim();
+                if(detalle.Length>200)detalle=detalle[..200];
+                if(detalle.Length<3)detalle="Movimiento bancario";
+                var r=await GenerarAsientoAsync(new(item.Operacion,item.MovimientoId,prep.Movimiento.Huella,s.Fecha ?? prep.Movimiento.Fecha,s.Unidad,s.Talonario,detalle,
+                    [new(s.Cuenta,Math.Abs(prep.Movimiento.Importe))],s.ReglaId),ct);
+                resultados.Add(new(item.MovimientoId,true,$"CC {r.Comprobante} · Asiento {r.NumeroAsiento}",r));
+            }
+            catch(OperationCanceledException) { throw; }
+            catch(Exception ex) { resultados.Add(new(item.MovimientoId,false,ex.Message)); }
+        }
+        return resultados;
+    }
 
     internal async Task<ConciliacionAsientoResultado> GenerarAsientoEnTransaccionAsync(SqlConnection cn,SqlTransaction tx,ConciliacionAsientoSolicitud s,CancellationToken ct=default)
     {

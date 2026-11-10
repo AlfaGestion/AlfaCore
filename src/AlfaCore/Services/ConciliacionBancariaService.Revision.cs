@@ -30,6 +30,8 @@ public sealed partial class ConciliacionBancariaService
                 SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.BK_GeneracionAlfaLog WHERE MovimientoId=@movimientoId AND Accion='COBRANZA' AND Resultado='OK') THEN 1 ELSE 0 END);
                 """,new{movimientoId})))
                 throw new InvalidOperationException("El movimiento ya tiene una cobranza registrada. Su clasificación no se puede cambiar desde la revisión.");
+            if(actual.Estado=="Pagado")
+                throw new InvalidOperationException("El movimiento ya tiene un pago a proveedor registrado. Su clasificación no se puede cambiar desde la revisión.");
             if(actual.Categoria==categoria) return false;
             var usuario=users.GetCurrentUserName();
             var mensaje=$"Clasificación manual: {actual.Categoria} → {categoria}. {motivo?.Trim()}";

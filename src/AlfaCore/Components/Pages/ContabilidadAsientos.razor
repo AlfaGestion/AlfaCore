@@ -633,7 +633,8 @@
     {
         if (!string.IsNullOrWhiteSpace(BuscarComprobante))
         {
-            _texto = BuscarComprobante.Trim(); _f.Origen = "TODOS";
+            // Se llega desde un comprobante (puede ser una proforma): el servicio la oculta si el usuario no puede verlas.
+            _texto = BuscarComprobante.Trim(); _f.Origen = "TODOS"; _f.IncluirProformas = true;
             if (DateTime.TryParseExact(PeriodoRevision, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var mes))
             { _f.FechaDesde = mes; _f.FechaHasta = mes.AddMonths(1).AddDays(-1); }
         }
@@ -658,7 +659,8 @@
 
     private AsientosFiltro Filtro() => new()
     {
-        Desde = _f.FechaDesde?.Date, Hasta = _f.FechaHasta?.Date, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad
+        Desde = _f.FechaDesde?.Date, Hasta = _f.FechaHasta?.Date, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad,
+        IncluirProformas = _f.IncluirProformas
     };
 
     // Buscador estándar (como Clientes y los tableros): período, origen, unidad y cuenta en el embudo, con chips.
@@ -676,7 +678,7 @@
                     <button type="button" class="@(_f.Origen == o.Key ? "smart-option is-active" : "smart-option")" @onclick="() => Filtrar(() => _f.Origen = o.Key)">@o.Label</button>
                 }
             </div>
-            @if (_cat is { Unidades.Count: > 1 } || _cat is { Cuentas.Count: > 0 })
+            @if (_cat is { Unidades.Count: > 1 } || _cat is { Cuentas.Count: > 0 } || _cat is { PuedeVerProformas: true })
             {
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel"></i> Otros filtros</h4>
@@ -694,6 +696,10 @@
                     {
                         <div class="as-filtros__cuenta"><AsientoCuentaLookup Label="Con la cuenta" Cuenta="@_f.Cuenta" CuentaChanged="v => Filtrar(() => _f.Cuenta = v)" Cuentas="_cat.Cuentas" /></div>
                     }
+                    @if (_cat is { PuedeVerProformas: true })
+                    {
+                        <AlfaCheckbox Value="@_f.IncluirProformas" ValueChanged="v => Filtrar(() => _f.IncluirProformas = v == true)">Incluir proformas</AlfaCheckbox>
+                    }
                 </div>
             }
         </Columnas>
@@ -707,6 +713,7 @@
             if (_f.Origen != "TODOS") chips.Add(new("origen", Origenes.First(o => o.Key == _f.Origen).Label));
             if (_f.Unidad.Length > 0) chips.Add(new("unidad", $"Unidad: {_f.Unidad}"));
             if (_f.Cuenta.Length > 0) chips.Add(new("cuenta", $"Cuenta: {_f.Cuenta}"));
+            if (_f.IncluirProformas) chips.Add(new("proformas", "Incluye proformas"));
             return chips;
         }
     }
@@ -719,13 +726,14 @@
         if (key == "origen") _f.Origen = "TODOS";
         else if (key == "unidad") _f.Unidad = string.Empty;
         else if (key == "cuenta") _f.Cuenta = string.Empty;
+        else if (key == "proformas") _f.IncluirProformas = false;
     }
 
     // «Limpiar» vuelve a lo de entrada: los últimos asientos, sin período.
     private void LimpiarFiltros()
     {
         _f.FechaDesde = null; _f.FechaHasta = null;
-        _f.Origen = "TODOS"; _f.Unidad = string.Empty; _f.Cuenta = string.Empty; _texto = string.Empty;
+        _f.Origen = "TODOS"; _f.Unidad = string.Empty; _f.Cuenta = string.Empty; _f.IncluirProformas = false; _texto = string.Empty;
     }
 
     private static string Origen(AsientoResumen x) => x.Manual ? "Manual" : x.LivaTipo.ToUpperInvariant() switch

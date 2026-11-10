@@ -10,5 +10,6 @@ public enum MovementCategory
     Ajuste = 6,
     NoIdentificado = 7,
     ReintegroPromocion = 8,
-    IngresoFinanciero = 9
+    IngresoFinanciero = 9,
+    PagoProveedor = 10
 }

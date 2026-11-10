@@ -62,6 +62,16 @@ public sealed class CompraCargaAmpliacionTests
     public void ElLibroNoDuplicaLosImpuestosInternosComoExento(decimal exento,decimal internos,decimal resto,decimal total,decimal esperado)
         =>Assert.Equal(esperado,LibroIvaService.ExentoCompras(exento,internos,resto,total));
     [Theory]
+    [InlineData(129842.84, -0.02, 0, 158408.25, .10, 129842.82, 0)]   // FCC A 0011-00273780: centavo de redondeo en no gravado
+    [InlineData(129842.84, -0.50, 0, 158408.25, .10, 129842.84, -0.50)] // ajuste grande: no se absorbe, queda marcado
+    [InlineData(-1000, 0.02, 0, -1210, .10, -999.98, 0)]               // nota de crédito
+    [InlineData(100, 0.02, 0, 121, .10, 100, 0.02)]                     // mismo signo que el total: no es ajuste
+    public void ElRedondeoDeSignoOpuestoSeAbsorbeEnElNetoGravado(decimal neto,decimal noGravado,decimal exento,decimal total,decimal maximo,decimal netoEsperado,decimal noGravadoEsperado)
+    {
+        var r=LibroIvaService.AbsorberRedondeo(neto,noGravado,exento,total,maximo);
+        Assert.Equal(netoEsperado,r.Neto);Assert.Equal(noGravadoEsperado,r.NoGravado);
+    }
+    [Theory]
     [InlineData("NCC")]
     [InlineData("NDC")]
     public void LasNotasNoRequierenLaMarcaFacturaSinOcDelProveedor(string tc)

@@ -45,7 +45,7 @@
     private readonly CancellationTokenSource _cts=new();
     private IReadOnlyList<AlfaSelectOption> Bancos=>Catalogo?.Bancos.Select(b=>new AlfaSelectOption(b.Codigo,$"{b.Codigo} — {b.Descripcion}")).ToList() ?? [];
     private IReadOnlyList<AlfaSelectOption> Subdiarios=>Catalogo?.Subdiarios.Select(b=>new AlfaSelectOption(b.Codigo,$"{b.Codigo} — {b.Descripcion}")).ToList() ?? [];
-    private static readonly IReadOnlyList<AlfaSelectOption> Categorias=Enum.GetValues<MovementCategory>().Where(c=>c is not (MovementCategory.Cobranza or MovementCategory.TransferenciaInterna)).Select(c=>new AlfaSelectOption(c.ToString(),c.ToString())).ToList();
+    private static readonly IReadOnlyList<AlfaSelectOption> Categorias=Enum.GetValues<MovementCategory>().Where(c=>c is not (MovementCategory.Cobranza or MovementCategory.TransferenciaInterna or MovementCategory.PagoProveedor)).Select(c=>new AlfaSelectOption(c.ToString(),c.ToString())).ToList();
     protected override void OnParametersSet() { if(ReferenceEquals(Catalogo,_anterior))return;_anterior=Catalogo;_feedback=null;
         _config=Catalogo is null ? new() : JsonSerializer.Deserialize<ConciliacionAsientoConfig>(JsonSerializer.Serialize(
             new ConciliacionAsientoConfig { TipoRegistro=Catalogo.Config.TipoRegistro,

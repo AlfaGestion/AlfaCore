@@ -1,0 +1,10 @@
+.asiento-lote__cabecera { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--alfa-space-12); margin-block:var(--alfa-space-12); }
+.asiento-lote__nota { color:var(--alfa-text-secondary); margin-block:var(--alfa-space-8); }
+.asiento-lote__scroll { max-height:40vh; overflow:auto; }
+.asiento-lote__scroll table { width:100%; border-collapse:collapse; }
+.asiento-lote__scroll th,.asiento-lote__scroll td { text-align:left; vertical-align:top; padding:var(--alfa-space-8); border-bottom:1px solid var(--alfa-border-default); }
+.asiento-lote__scroll th { position:sticky; top:0; background:var(--alfa-bg-surface); z-index:1; }
+.asiento-lote__scroll .asiento-lote__num { text-align:right; white-space:nowrap; }
+.asiento-lote__ok { color:var(--alfa-success); }
+.asiento-lote__error { color:var(--alfa-danger); }
+@media(max-width:700px) { .asiento-lote__cabecera { grid-template-columns:minmax(0,1fr); } }

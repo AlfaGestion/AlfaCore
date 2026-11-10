@@ -1,0 +1,88 @@
+@using System.Globalization
+@using AlfaCore.Services
+@implements IDisposable
+@inject ConciliacionBancariaService Servicio
+@inject IAppUiOperationService UiOps
+<AlfaDialog CloseOnBackdrop="false" Open="@(Movimientos is not null)" Title="@($"Generar asiento de {Pendientes.Count} movimientos")" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
+    <ChildContent>
+    @if(Movimientos is not null) {
+        <AlfaFeedbackPanel Message="@_feedback" />
+        @if(_catalogo is null) {
+            <p>Cargando cuentas…</p>
+        } else {
+            <p>Se genera un asiento CC por movimiento, todos con la misma contrapartida, y cada uno queda conciliado. Los movimientos con registraciones posibles se omiten para que los revises de a uno.</p>
+            <AlfaSelect Label="Concepto" Value="@_regla" ValueChanged="ElegirRegla" Options="@Reglas" Placeholder="Imputación manual" Disabled="@_busy" />
+            <ConciliacionCuentaLookup Label="Contrapartida (cuenta contable)" Cuenta="@_cuenta" CuentaChanged="v=>_cuenta=v" Cuentas="_catalogo.Cuentas" Disabled="@_busy" />
+            <div class="asiento-lote__cabecera">
+                <AlfaSelect Label="Unidad de negocio" Value="@_unidad" ValueChanged="CambiarUnidad" Options="@Unidades" Placeholder="Seleccionar unidad" Disabled="@_busy" />
+                <AlfaSelect Label="Talonario CC" Value="@_talonario" ValueChanged="v=>_talonario=v ?? string.Empty" Options="@Talonarios" Placeholder="Seleccionar talonario CC" Disabled="@_busy" />
+            </div>
+            <AlfaInput Label="Detalle común (opcional; vacío = descripción de cada movimiento)" Value="@_detalle" ValueChanged="v=>_detalle=v ?? string.Empty" MaxLength="200" Disabled="@_busy" />
+            <p class="asiento-lote__nota">Cada asiento usa la fecha de su movimiento bancario.</p>
+            <div class="asiento-lote__scroll"><table><thead><tr><th>Fecha</th><th>Descripción</th><th class="asiento-lote__num">Importe</th><th>Resultado</th></tr></thead><tbody>
+                @foreach(var m in Movimientos) {
+                    _resultados.TryGetValue(m.Id,out var res);
+                    <tr @key="m.Id"><td>@m.Fecha.ToString("dd/MM/yyyy")</td><td>@m.Descripcion</td><td class="asiento-lote__num">@Dinero(m.Importe)</td>
+                        <td>@if(res is null) { <span>Pendiente</span> } else if(res.Ok) { <span class="asiento-lote__ok">@res.Mensaje</span> } else { <span class="asiento-lote__error" role="alert">@res.Mensaje</span> }</td></tr>
+                }
+            </tbody></table></div>
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <span>Total: <strong>@Dinero(Pendientes.Sum(m=>Math.Abs(m.Importe)))</strong></span>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Cerrar" Disabled="@_busy">@(_resultados.Count>0 ? "Cerrar" : "Cancelar")</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="Confirmar" Disabled="@(!PuedeConfirmar)">@(_resultados.Values.Any(r=>!r.Ok) ? $"Reintentar {Pendientes.Count} pendientes" : $"Generar {Pendientes.Count} asientos")</AlfaButton>
+    </Footer>
+</AlfaDialog>
+@code {
+    [Parameter] public IReadOnlyList<ConciliacionMovimiento>? Movimientos { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Se invoca al cerrar si se generó al menos un asiento, con los ids de los movimientos ya resueltos.</summary>
+    [Parameter] public EventCallback<IReadOnlyCollection<long>> OnDone { get; set; }
+    private IReadOnlyList<ConciliacionMovimiento>? _anterior;
+    private ConciliacionAsientoCatalogo? _catalogo;
+    private readonly Dictionary<long,Guid> _operaciones=[];
+    private readonly Dictionary<long,ConciliacionAsientoLoteResultado> _resultados=[];
+    private string _unidad="",_talonario="",_regla="",_cuenta="",_detalle="";
+    private bool _busy;
+    private AppUiMessage? _feedback;
+    private readonly CancellationTokenSource _cts=new();
+    private IReadOnlyList<ConciliacionMovimiento> Pendientes=>Movimientos?.Where(m=>!(_resultados.TryGetValue(m.Id,out var r)&&r.Ok)).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> Unidades=>_catalogo?.Unidades.Select(u=>new AlfaSelectOption(u.Codigo,$"{u.Codigo} — {u.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<AlfaSelectOption> Reglas=>_catalogo?.Config.Reglas.Select(r=>new AlfaSelectOption(r.Id.ToString(),r.Nombre)).ToList() ?? [];
+    private IReadOnlyList<CobranzaTalonario> TalonariosUnidad { get { var todos=_catalogo?.Talonarios ?? [];var propios=todos.Where(t=>t.Unidad==_unidad).ToList();return propios.Count>0 ? propios : todos.Where(t=>t.Unidad is "" or "0").ToList(); } }
+    private IReadOnlyList<AlfaSelectOption> Talonarios=>TalonariosUnidad.Select(t=>new AlfaSelectOption(t.Talonario.ToString(),$"CC X · Sucursal {t.Sucursal:D4} · Talonario {t.Talonario}")).ToList();
+    private bool PuedeConfirmar=>!_busy&&_catalogo is not null&&Pendientes.Count>0&&_cuenta.Length>0&&_unidad.Length>0&&_talonario.Length>0&&(_detalle.Trim().Length==0||_detalle.Trim().Length>=3);
+    protected override async Task OnParametersSetAsync() {
+        if(ReferenceEquals(_anterior,Movimientos))return;_anterior=Movimientos;
+        _catalogo=null;_feedback=null;_operaciones.Clear();_resultados.Clear();_unidad=_talonario=_regla=_cuenta=_detalle="";
+        if(Movimientos is null)return;
+        foreach(var m in Movimientos)_operaciones[m.Id]=Guid.NewGuid();
+        try {
+            _catalogo=await Servicio.AsientoCatalogoAsync(_cts.Token);
+            CambiarUnidad(_catalogo.UnidadInicial);
+        } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento bancario"); }
+    }
+    private void CambiarUnidad(string? unidad) { _unidad=unidad ?? "";var tal=TalonariosUnidad;_talonario=tal.Count==1 ? tal[0].Talonario.ToString() : ""; }
+    private void ElegirRegla(string? id) { _regla=id ?? "";var r=_catalogo?.Config.Reglas.FirstOrDefault(r=>r.Id.ToString()==_regla);if(r is null)return;
+        _cuenta=r.Contrapartida;if(r.Detalle.Trim().Length>0)_detalle=r.Detalle.Trim(); }
+    private async Task Cerrar() {
+        if(_busy)return;
+        var resueltos=_resultados.Values.Where(r=>r.Ok).Select(r=>r.MovimientoId).ToList();
+        if(resueltos.Count>0)await OnDone.InvokeAsync(resueltos);else await OnClose.InvokeAsync();
+    }
+    private async Task Confirmar() {
+        if(!PuedeConfirmar||!int.TryParse(_talonario,out var tal))return;_busy=true;_feedback=null;
+        try {
+            var items=Pendientes.Select(m=>new ConciliacionAsientoLoteItem(m.Id,_operaciones[m.Id])).ToList();
+            var resultados=await Servicio.GenerarAsientosLoteAsync(new(items,_unidad,tal,_cuenta,_detalle,null,Guid.TryParse(_regla,out var regla) ? regla : null),_cts.Token);
+            foreach(var r in resultados)_resultados[r.MovimientoId]=r;
+            var fallidos=resultados.Count(r=>!r.Ok);
+            _feedback=fallidos==0 ? AppUiMessage.Success("Asientos generados",$"{resultados.Count} asientos generados y conciliados.")
+                : AppUiMessage.Warning("Quedaron movimientos sin generar",$"Se generaron {resultados.Count-fallidos} de {resultados.Count}. Revisá el resultado de cada fila.");
+        } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento bancario"); } finally { _busy=false; }
+    }
+    private static string Dinero(decimal importe)=>importe.ToString("N2",CultureInfo.GetCultureInfo("es-AR"));
+    public void Dispose() { _cts.Cancel();_cts.Dispose(); }
+}
