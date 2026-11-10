@@ -67,3 +67,11 @@
 .cfg-page ::deep .cfg-manual[open] > summary {
     margin-bottom: var(--alfa-space-4, 4px);
 }
+
+.cfg-page ::deep .cfg-manual > .cfg-hint {
+    margin: 0;
+    max-width: 72ch;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+    line-height: 1.5;
+}

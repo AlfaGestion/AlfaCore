@@ -23,7 +23,10 @@
                                           OnDesconectar="OnDesconectar"
                                           OnCerrarFeedback="OnCerrarFeedback" />
 
-        <details class="cfg-manual" open="@ManualAbierto">
+        @* La carga manual solo se muestra donde la conexión guiada no está disponible. *@
+        @if (MostrarManual)
+        {
+        <details class="cfg-manual" open>
             <summary>Configuración manual (avanzado)</summary>
             <p class="cfg-hint">Solo para cuentas conectadas con una app de Meta propia del cliente. Con la conexión de arriba no hace falta completar nada de esto.</p>
             <ConversacionesConfigTarjeta Titulo="Cuenta" Columnas="2">
@@ -66,6 +69,7 @@
 
             <ConversacionesConfigBarraGuardar Etiqueta="Guardar Instagram" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
         </details>
+        }
     </ChildContent>
 </ConversacionesConfigPagina>
 
@@ -85,9 +89,9 @@
     [Parameter] public EventCallback OnDesconectar { get; set; }
     [Parameter] public EventCallback OnCerrarFeedback { get; set; }
 
-    // Abierta si la conexión guiada no está disponible o si la cuenta ya funcionaba con datos cargados a mano.
-    private bool ManualAbierto => Conexion is { Disponible: false }
-                                  || (Conexion?.Conexion is null && Config.IsConfiguredForSend);
+    // Solo cuando la conexión guiada no está habilitada en este servidor (instalación local o sin la
+    // app central configurada): ahí la carga manual es la única forma de conectar el canal.
+    private bool MostrarManual => Conexion is { Disponible: false };
 
     private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
 }
