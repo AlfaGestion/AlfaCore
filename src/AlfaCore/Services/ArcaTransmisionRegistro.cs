@@ -17,6 +17,7 @@ internal static class ArcaTransmisionRegistro
 {
     internal const string Tipo = "R";
     internal const string ObservacionRecibidos = "Compras ARCA Mis Comprobantes Recibidos";
+    internal const string ObservacionEmitidos = "Ventas ARCA Mis Comprobantes Emitidos";
     internal const string MensajeAlta = "CORRECTO - SE DIO DE ALTA EN EL SISTEMA";
     internal const string MensajeFaltaEnSistema = "EXISTE EN ARCHIVO NO EN SISTEMA";
     internal const string MensajeFaltaEnArca = "EXISTE EN SISTEMA Y NO EN ARCHIVO";

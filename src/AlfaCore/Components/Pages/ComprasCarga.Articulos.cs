@@ -14,7 +14,7 @@ public partial class ComprasCarga
     private DotNetObjectReference<ComprasCarga>? _referenciaJs;
     private bool _tecladoIniciando,_mostrarArticulos,_mostrarProveedores,_buscandoArticulos;
     private string _nuevoCodigo="",_nuevaCantidad="1",_nuevoCosto="",_textoArticulos="",_textoProveedores="";
-    private CompraArticulo? _nuevoArticulo;private int _articuloActivo;
+    private CompraArticulo? _nuevoArticulo;private int _articuloActivo;private decimal? _cantidadModal;
     private IReadOnlyList<CompraArticulo> _articulosEncontrados=[];
     private IReadOnlyList<CompraCargaProveedor> _proveedoresEncontrados=[];
     private CancellationTokenSource? _busquedaArticulos;
@@ -51,23 +51,38 @@ public partial class ComprasCarga
     private Task ResolverCodigoArticulo()=>Operar(async ct=>
     {
         if(_proveedor is null||_borrador.CompraOrigenId is not null)return;
-        var lista=await Servicio.BuscarArticulosAsync(_nuevoCodigo,_borrador.Unidad,_borrador.Deposito,_baseCargada,ct);
-        var exacto=lista.FirstOrDefault(a=>string.Equals(a.Codigo,_nuevoCodigo.Trim(),StringComparison.OrdinalIgnoreCase));
-        if(exacto is not null)await ElegirArticulo(exacto);
-        else{_articulosEncontrados=lista;_articuloActivo=0;_textoArticulos=_nuevoCodigo;_mostrarArticulos=true;}
+        // Como en ventas: "cantidad*código" (también con lector de código de barras) lo agrega directo.
+        var (cantidad,codigo)=SepararCantidad(_nuevoCodigo);
+        if(codigo.Length==0)return;
+        var exacto=await Servicio.ResolverCodigoArticuloAsync(codigo,_borrador.Unidad,_borrador.Deposito,_proveedor.Codigo,_baseCargada,ct);
+        if(exacto is not null)
+        {
+            await ElegirArticulo(exacto);
+            if(cantidad is {} c&&_nuevoArticulo is not null){_nuevaCantidad=NumeroTexto(c);await FocoArticulo("-costo");}
+            return;
+        }
+        var lista=await Servicio.BuscarArticulosAsync(codigo,_borrador.Unidad,_borrador.Deposito,_baseCargada,ct,_proveedor.Codigo);
+        if(lista.Count==0){_feedback=AppUiMessage.Warning("Artículo no encontrado",$"No hay artículos para \"{codigo}\" (código, código de barras ni código del proveedor). Probá con F5 para buscar por descripción.");await FocoArticulo("-codigo");return;}
+        _articulosEncontrados=lista;_articuloActivo=0;_textoArticulos=codigo;_mostrarArticulos=true;
     });
+    // "3*7791234567890" o "1,5*826": lo anterior al asterisco es la cantidad.
+    private static (decimal? Cantidad,string Codigo) SepararCantidad(string? entrada)
+    {
+        var raw=(entrada??"").Trim();var i=raw.IndexOf('*');
+        return i>0&&i<raw.Length-1&&NumeroGrilla(raw[..i]) is {} c&&c>0?(c,raw[(i+1)..].Trim()):(null,raw);
+    }
     private Task AbrirArticulos()=>Operar(async ct=>
     {
         if(_proveedor is null){_feedback=AppUiMessage.Info("Elegí el proveedor","Buscá y seleccioná el proveedor antes de cargar artículos.");return;}
         if(_borrador.CompraOrigenId is not null)return;
-        _busquedaArticulos?.Cancel();_buscandoArticulos=false;_textoArticulos="";_mostrarArticulos=true;
-        _articulosEncontrados=await Servicio.BuscarArticulosAsync("",_borrador.Unidad,_borrador.Deposito,_baseCargada,ct);_articuloActivo=0;await FocoArticulo("-buscar-articulo");
+        _busquedaArticulos?.Cancel();_buscandoArticulos=false;_textoArticulos="";_cantidadModal=null;_mostrarArticulos=true;
+        _articulosEncontrados=await Servicio.BuscarArticulosAsync("",_borrador.Unidad,_borrador.Deposito,_baseCargada,ct,_proveedor.Codigo);_articuloActivo=0;await FocoArticulo("-buscar-articulo");
     });
     private async Task BuscarArticulosInput(ChangeEventArgs e)
     {
-        _textoArticulos=e.Value?.ToString()??"";_busquedaArticulos?.Cancel();_busquedaArticulos?.Dispose();
+        _textoArticulos=e.Value?.ToString()??"";_cantidadModal=SepararCantidad(_textoArticulos).Cantidad;_busquedaArticulos?.Cancel();_busquedaArticulos?.Dispose();
         var cts=_busquedaArticulos=CancellationTokenSource.CreateLinkedTokenSource(_vida.Token);_buscandoArticulos=true;
-        try{await Task.Delay(220,cts.Token);var lista=await Servicio.BuscarArticulosAsync(_textoArticulos,_borrador.Unidad,_borrador.Deposito,_baseCargada,cts.Token);if(!cts.IsCancellationRequested){_articulosEncontrados=lista;_articuloActivo=0;}}
+        try{await Task.Delay(220,cts.Token);var lista=await Servicio.BuscarArticulosAsync(SepararCantidad(_textoArticulos).Codigo,_borrador.Unidad,_borrador.Deposito,_baseCargada,cts.Token,_proveedor?.Codigo??"");if(!cts.IsCancellationRequested){_articulosEncontrados=lista;_articuloActivo=0;}}
         catch(OperationCanceledException){}catch(Exception ex){if(!cts.IsCancellationRequested)_feedback=UiOps.BuildMessage(ex,"Buscar artículo");}
         finally{if(!cts.IsCancellationRequested)_buscandoArticulos=false;}
     }
@@ -83,8 +98,14 @@ public partial class ComprasCarga
     }
     private async Task ElegirArticulo(CompraArticulo a)
     {
+        if(_renglonBuscando is {} renglon)
+        {
+            // Búsqueda abierta desde un renglón leído por la IA sin artículo: el elegido se asigna a ese renglón, no a una línea nueva.
+            _renglonBuscando=null;_mostrarArticulos=false;_busquedaArticulos?.Cancel();
+            await Operar(ct=>AsignarYIncorporarAsync(renglon,a.Codigo,ct));return;
+        }
         if(a.Especial||a.Unidad.Length==0){_feedback=AppUiMessage.Warning("Artículo con tratamiento especial","Requiere series, lotes, equivalencias u otros impuestos. Revisalo en su circuito específico.");return;}
-        _nuevoArticulo=a;_nuevoCodigo=a.Codigo;_nuevaCantidad="1";_nuevoCosto=NumeroTexto(a.Costo);_mostrarArticulos=false;_busquedaArticulos?.Cancel();_feedback=null;
+        _nuevoArticulo=a;_nuevoCodigo=a.Codigo;_nuevaCantidad=_cantidadModal is {} cm?NumeroTexto(cm):"1";_cantidadModal=null;_nuevoCosto=NumeroTexto(a.Costo);_mostrarArticulos=false;_busquedaArticulos?.Cancel();_feedback=null;
         await FocoArticulo("-cantidad");
     }
     private Task AgregarArticulo()
@@ -103,7 +124,7 @@ public partial class ComprasCarga
         });return FocoArticulo("-codigo");
     }
     private Task AbrirProveedores()=>Operar(async ct=>{_textoProveedores="";_proveedoresEncontrados=await Servicio.BuscarProveedoresAsync("",_baseCargada,ct);_mostrarProveedores=true;await FocoArticulo("-proveedor-busqueda");});
-    private void CerrarArticulos(){_mostrarArticulos=false;_busquedaArticulos?.Cancel();_buscandoArticulos=false;}
+    private void CerrarArticulos(){_renglonBuscando=null;_mostrarArticulos=false;_busquedaArticulos?.Cancel();_buscandoArticulos=false;}
     private Task ProveedorModalKeyDown(KeyboardEventArgs e)=>e.Key=="Enter"?BuscarProveedoresModal():Task.CompletedTask;
     private Task BuscarProveedoresModal()=>Operar(async ct=>{_proveedoresEncontrados=await Servicio.BuscarProveedoresAsync(_textoProveedores,_baseCargada,ct);});
     private Task ElegirProveedorModal(CompraCargaProveedor p){_mostrarProveedores=false;return ProveedorChanged(p);}

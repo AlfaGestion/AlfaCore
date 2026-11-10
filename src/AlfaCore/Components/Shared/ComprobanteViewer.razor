@@ -383,7 +383,11 @@
         _asientos = [];
         _asientoError = null;
         _asientoModalAbierto = false;
-        if (EsCobranza(tc))
+        // Un comprobante contable (CJA, CC...) no tiene más detalle que su asiento: se muestra directo.
+        var esContable = _dto?.Cabecera?.SistemaOrigen == "CONTABLE";
+        if (esContable)
+            _asientos = _dto!.Asientos;
+        else if (EsCobranza(tc))
         {
             _asientoLoading = true;
             try
@@ -401,7 +405,7 @@
         }
         _activeTab = ResolveDefaultTab(_dto);
         _loading = false;
-        if (AbrirAsientoInicial)
+        if (AbrirAsientoInicial || esContable)
             await MostrarAsientoAsync();
     }
 

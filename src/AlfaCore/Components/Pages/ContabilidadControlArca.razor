@@ -93,7 +93,7 @@
             <KpiCard Titulo="Coinciden" Valor="@r.Cantidad(ControlArcaEstado.Coincide).ToString("N0")" Icono="@Icono("bi-check2-circle")"
                      Descripcion="@($"ARCA {Moneda(r.TotalArca)} · sistema {Moneda(r.TotalSistema)}")" />
             <KpiCard Titulo="Faltan en el sistema" Valor="@r.Cantidad(ControlArcaEstado.FaltaEnSistema).ToString("N0")" Icono="@Icono("bi-exclamation-triangle")"
-                     Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar: tildalas e importalas" : "Emitidos que no están en ventas")" />
+                     Destacado="@(r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0)" Descripcion="@(r.Recibidos ? "Facturas de proveedores sin cargar: tildalas e importalas" : "Emitidos que no están en ventas: tildalos e importalos")" />
             <KpiCard Titulo="Con diferencias" Valor="@((r.Cantidad(ControlArcaEstado.DifiereImporte) + r.Cantidad(ControlArcaEstado.OtroPeriodo) + r.Cantidad(ControlArcaEstado.DifiereFecha) + r.Cantidad(ControlArcaEstado.PosibleDuplicado)).ToString("N0"))"
                      Icono="@Icono("bi-arrow-left-right")" Descripcion="@($"{r.Cantidad(ControlArcaEstado.PosibleDuplicado)} posibles duplicados · {r.Cantidad(ControlArcaEstado.DifiereImporte)} importe · {r.Cantidad(ControlArcaEstado.OtroPeriodo)} otro período · {r.Cantidad(ControlArcaEstado.FaltaEnArca)} no están en ARCA")" />
         </div>
@@ -165,19 +165,21 @@
 </div>
 
 @* ── Importar faltantes ── *@
-<AlfaDialog Open="@(_imp is not null)" Title="Importar comprobantes recibidos" Size="AlfaDialogSize.Xl" Loading="@_impBusy"
-            Description="Se dan de alta en el libro de IVA compras como en Importar Comprobantes del Alfa Gestión: asiento (proveedor al Haber; compras, IVA y otros tributos al Debe; las NC al revés) y comprobante, con usuario IMPORTACION."
+<AlfaDialog Open="@(_imp is not null)" Title="@(_imp?.Ventas == true ? "Importar comprobantes emitidos" : "Importar comprobantes recibidos")" Size="AlfaDialogSize.Xl" Loading="@_impBusy"
+            Description="@(_imp?.Ventas == true
+                ? "Se dan de alta en ventas como en Importar Comprobantes del Alfa Gestión: asiento (cliente al Debe; ventas, IVA débito y otros tributos al Haber; las NC al revés) y comprobante, con usuario IMPORTACION. Los comprobantes sin documento van a la cuenta de consumidor final."
+                : "Se dan de alta en el libro de IVA compras como en Importar Comprobantes del Alfa Gestión: asiento (proveedor al Haber; compras, IVA y otros tributos al Debe; las NC al revés) y comprobante, con usuario IMPORTACION.")"
             ErrorMessage="@_impError" CloseOnBackdrop="false" OnClose="CerrarImportacionAsync">
     <ChildContent>
     @if (_imp is { } ctx)
     {
         <div class="ca-imp">
             <div class="ca-imp__grid">
-                <AlfaSelect Label="Cuenta de compras" Value="@_solicitud.CuentaCompras" ValueChanged="v => _solicitud.CuentaCompras = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
-                <AlfaSelect Label="IVA crédito fiscal" Value="@_solicitud.CuentaIva" ValueChanged="v => _solicitud.CuentaIva = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="@(ctx.Ventas ? "Cuenta de ventas" : "Cuenta de compras")" Value="@_solicitud.CuentaCompras" ValueChanged="v => _solicitud.CuentaCompras = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
+                <AlfaSelect Label="@(ctx.Ventas ? "IVA débito fiscal" : "IVA crédito fiscal")" Value="@_solicitud.CuentaIva" ValueChanged="v => _solicitud.CuentaIva = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
                 <AlfaSelect Label="Otros tributos (percepciones)" Value="@_solicitud.CuentaOtrosTributos" ValueChanged="v => _solicitud.CuentaOtrosTributos = v ?? string.Empty" Options="@_opcionesCuentas" Disabled="@(_impHecho || _impBusy)" />
                 <AlfaSelect Label="Unidad de negocio" Value="@_solicitud.Unidad" ValueChanged="v => _solicitud.Unidad = v ?? string.Empty" Options="@_opcionesUnidades" Disabled="@(_impHecho || _impBusy)" />
-                <AlfaSelect Label="Proveedores que no existen" Value="@_solicitud.ProveedoresNuevos.ToString()" ValueChanged="CambiarModoProveedor"
+                <AlfaSelect Label="@(ctx.Ventas ? "Clientes que no existen" : "Proveedores que no existen")" Value="@_solicitud.ProveedoresNuevos.ToString()" ValueChanged="CambiarModoProveedor"
                             Options="@OpcionesProveedor(ctx)" Disabled="@(_impHecho || _impBusy)" />
                 @if (_solicitud.ProveedoresNuevos == ControlArcaProveedorModo.Alta)
                 {
@@ -187,7 +189,7 @@
             </div>
             <div class="ca-tabla__marco"><div class="ca-tabla__scroll ca-imp__scroll">
                 <table class="ca-tabla">
-                    <thead><tr><th>Comprobante</th><th>Fecha</th><th>Emisor</th><th>Proveedor</th><th class="n">Total</th><th>@(_impHecho ? "Resultado" : "Estado")</th></tr></thead>
+                    <thead><tr><th>Comprobante</th><th>Fecha</th><th>@(ctx.Ventas ? "Receptor" : "Emisor")</th><th>@(ctx.Ventas ? "Cliente" : "Proveedor")</th><th class="n">Total</th><th>@(_impHecho ? "Resultado" : "Estado")</th></tr></thead>
                     <tbody>
                     @foreach (var f in ctx.Filas)
                     {
@@ -502,7 +504,7 @@
 
     // ── Importación de faltantes ──
 
-    private static bool PuedeImportar(ControlArcaResultado r) => r.Recibidos && r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0;
+    private static bool PuedeImportar(ControlArcaResultado r) => r.Cantidad(ControlArcaEstado.FaltaEnSistema) > 0;
     private static IEnumerable<ControlArcaFila> Importables(IEnumerable<ControlArcaFila> filas) => filas.Where(f => f.Estado == ControlArcaEstado.FaltaEnSistema && f.Arca is not null);
     private void Seleccionar(ControlArcaFila f, bool valor) { if (valor) _sel.Add(f); else _sel.Remove(f); UpdateHeader(); }
     private void SeleccionarTodos(IEnumerable<ControlArcaFila> filas, bool valor)
@@ -514,10 +516,16 @@
     private string ProveedorNuevoTexto() => _solicitud.ProveedoresNuevos switch
     {
         ControlArcaProveedorModo.Alta => "Nuevo: se da de alta con los datos de ARCA",
-        ControlArcaProveedorModo.Varios => "No existe: va a proveedores varios",
+        ControlArcaProveedorModo.Varios => _imp?.Ventas == true ? "No existe: va a consumidor final" : "No existe: va a proveedores varios",
         _ => "No existe: no se importa"
     };
-    private static IReadOnlyList<AlfaSelectOption> OpcionesProveedor(ControlArcaImportacionContexto c) =>
+    private static IReadOnlyList<AlfaSelectOption> OpcionesProveedor(ControlArcaImportacionContexto c) => c.Ventas
+    ?
+    [
+        new(nameof(ControlArcaProveedorModo.Varios), "Imputarlos a consumidor final", c.CuentaProveedoresVarios.Length == 0),
+        new(nameof(ControlArcaProveedorModo.Omitir), "No importarlos")
+    ]
+    :
     [
         new(nameof(ControlArcaProveedorModo.Alta), "Darlos de alta con los datos de ARCA", !c.PuedeCrearProveedores),
         new(nameof(ControlArcaProveedorModo.Varios), "Imputarlos a proveedores varios", c.CuentaProveedoresVarios.Length == 0),
@@ -534,7 +542,8 @@
         {
             var comprobantes = _sel.Select(f => f.Arca!).ToList();
             var cuit = _r.CuitArchivo;
-            var r = await UiOps.RunAsync(() => Importacion.ContextoAsync(comprobantes, cuit), "Importar faltantes");
+            var ventas = !_r.Recibidos;
+            var r = await UiOps.RunAsync(() => Importacion.ContextoAsync(comprobantes, cuit, ventas), "Importar faltantes");
             if (!r.Success) { _feedback = r.Feedback; return; }
             var ctx = r.Value!;
             _opcionesCuentas = ctx.Cuentas.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} · {c.Descripcion}")).ToList();
@@ -543,7 +552,7 @@
             _solicitud = new ControlArcaImportacionSolicitud
             {
                 Comprobantes = comprobantes, CuentaCompras = ctx.CuentaCompras, CuentaIva = ctx.CuentaIva, CuentaOtrosTributos = ctx.CuentaOtrosTributos,
-                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra, Archivo = _archivo ?? string.Empty, CuitArchivo = cuit,
+                Unidad = ctx.Unidad, CondicionCompra = ctx.CondicionCompra, Archivo = _archivo ?? string.Empty, CuitArchivo = cuit, Ventas = ctx.Ventas,
                 ProveedoresNuevos = ctx.PuedeCrearProveedores ? ControlArcaProveedorModo.Alta
                     : ctx.CuentaProveedoresVarios.Length > 0 ? ControlArcaProveedorModo.Varios : ControlArcaProveedorModo.Omitir
             };

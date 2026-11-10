@@ -51,10 +51,42 @@ public sealed class ComprobanteViewerService(
                             : TcReciboPagos.Contains(tcNorm) ? "ReciboPagos"
                             : string.Empty;
 
-            return sistema == "COMPRAS"
+            // Comprobantes contables (CJA, CC, TRF...) no tienen cabecera en V_/C_MV_Cpte: viven solo en MV_ASIENTOS.
+            if (sistema == "CONTABLE")
+                return await GetContableAsync(tcNorm, idNorm, token);
+
+            var dto = sistema == "COMPRAS"
                 ? await GetComprasAsync(cn, tcNorm, idNorm, tipoFormato, token, cuenta)
                 : await GetVentasAsync(cn, tcNorm, idNorm, idComplemento, tipoFormato, token);
+
+            // Respaldo: TC sin SISTEMA cargado o mal clasificado que igual tiene asiento.
+            return dto ?? (string.IsNullOrEmpty(sistema) ? await GetContableAsync(tcNorm, idNorm, token) : null);
         }, "No se pudo cargar el comprobante solicitado.", new { tc, idComprobante, idComplemento, cuenta }, ct);
+
+    private async Task<ComprobanteViewerDto?> GetContableAsync(string tc, string idComprobante, CancellationToken ct)
+    {
+        var asientos = await GetAsientosAsync(tc, idComprobante, ct);
+        if (asientos.Count == 0)
+            return null;
+
+        var primero = asientos[0];
+        return new ComprobanteViewerDto
+        {
+            Cabecera = new ComprobanteCabeceraDto
+            {
+                Tc = tc,
+                IdComprobante = idComprobante,
+                SistemaOrigen = "CONTABLE",
+                Fecha = primero.Fecha,
+                Usuario = primero.Usuario,
+                UnidadNegocio = primero.UnidadNegocio,
+                ImporteTotal = asientos.Sum(a => a.Debe),
+                Finalizada = true
+            },
+            Asientos = asientos,
+            TieneAsiento = true
+        };
+    }
 
     public Task<IReadOnlyList<ComprobanteAsientoDto>> GetAsientosAsync(string tc, string idComprobante, CancellationToken ct = default, string? cuenta = null)
         => ExecuteLoggedAsync("GetAsientos", async token =>

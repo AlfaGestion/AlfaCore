@@ -57,6 +57,26 @@ public sealed class ControlArcaImportacionTests(ITestOutputHelper output)
         Assert.NotNull(ControlArcaImportacionService.Armar(new ArcaMisComprobante { Clase = "FC", Letra = "A", Total = 10m, Iva = 21m }, "P", "C", "I", "O").Error);
     }
 
+    [Fact]
+    public void EmitidosArmanElAsientoDeVentasConElClienteAlDebeYLaBDiscriminaIva()
+    {
+        var fb = ControlArcaImportacionService.Armar(new ArcaMisComprobante
+        {
+            Clase = "FC", Letra = "B", Total = 121m, NetoGravado = 100m, Iva = 21m, Alicuotas = [new(21m, 100m, 21m)]
+        }, "P", "C", "I", "O", ventas: true);
+        Assert.Equal([new("P", "D", 121m), new("C", "H", 100m), new("I", "H", 21m)], fb.Lineas);
+
+        var nc = ControlArcaImportacionService.Armar(new ArcaMisComprobante
+        {
+            Clase = "NC", Letra = "A", Total = 121m, NetoGravado = 100m, Iva = 21m, Alicuotas = [new(21m, 100m, 21m)]
+        }, "P", "C", "I", "O", ventas: true);
+        Assert.Equal([new("P", "H", 121m), new("C", "D", 100m), new("I", "D", 21m)], nc.Lineas);
+
+        Assert.Equal("FC", ControlArcaImportacionService.Tc("FC", ventas: true));
+        Assert.Equal("NC", ControlArcaImportacionService.Tc("NC", ventas: true));
+        Assert.Equal("NCC", ControlArcaImportacionService.Tc("NC"));
+    }
+
     public class EntornoProxy : DispatchProxy
     {
         public string Raiz = "";

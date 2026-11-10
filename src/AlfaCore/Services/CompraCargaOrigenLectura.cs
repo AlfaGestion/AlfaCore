@@ -5,6 +5,17 @@ namespace AlfaCore.Services;
 internal static class CompraCargaOrigenLectura
 {
     internal static string Huella(string json)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json)));
+    /// <summary>La IA a veces devuelve una frase ("Factura A 0001-00000012 de ...") en lugar del código: se reconoce por las palabras clave.</summary>
+    internal static string? TipoPorTexto(string tipo)
+    {
+        var n=CompraArticuloTexto.SinAcentos(tipo).ToUpperInvariant();
+        if(n.Contains("NOTA DE CREDITO"))return "NCC";
+        if(n.Contains("NOTA DE DEBITO"))return "NDC";
+        if(n.Contains("FACTURA"))return "FCC";
+        if(n.Contains("ORDEN DE COMPRA"))return "OC";
+        if(n.Contains("REMITO"))return "RMC";
+        return null;
+    }
     internal static CompraCargaBorrador Convertir(InterfacesCompraIaResultadoDto ia,long documento,List<string> avisos)
     {
         if(ia.Estado is "PENDIENTE_LECTURA" or "PROCESANDO_LECTURA" or "ERROR_LECTURA" or "CANCELADO" or "ELIMINADO" or "RECHAZADO" or "APROBADO")
@@ -17,7 +28,7 @@ internal static class CompraCargaOrigenLectura
             "NCC" or "NC" or "NOTA DE CREDITO" or "NOTA DE CRÉDITO" or "3" or "003" or "13" or "013"=>"NCC",
             "NDC" or "ND" or "NOTA DE DEBITO" or "NOTA DE DÉBITO" or "2" or "002" or "12" or "012"=>"NDC",
             "OC" or "ORDEN DE COMPRA"=>"OC","RMC" or "REMITO" or "REMITO DE COMPRA"=>"RMC",
-            _=>throw new InvalidOperationException("El tipo de comprobante de la lectura no se pudo identificar. Revisalo en Recepción documental; no se convirtió en factura.")
+            _=>TipoPorTexto(tipo)??throw new InvalidOperationException("El tipo de comprobante de la lectura no se pudo identificar. Revisalo en Recepción documental; no se convirtió en factura.")
         };
         if(tc is not("FCC" or "NCC" or "NDC"))avisos.Add("Se identificó el tipo original del documento. Su circuito todavía no está implementado; no se lo convirtió en una factura ni se generará un asiento.");
         var moneda=ia.Moneda.Trim().ToUpperInvariant();

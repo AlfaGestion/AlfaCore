@@ -90,6 +90,9 @@ public sealed class ControlArcaImportacionContexto
     public string CuentaCompras { get; set; } = string.Empty;
     public string CuentaIva { get; set; } = string.Empty;
     public string CuentaOtrosTributos { get; set; } = string.Empty;
+    /// <summary>true = importa emitidos a ventas (clientes); false = recibidos a compras (proveedores).</summary>
+    public bool Ventas { get; set; }
+    /// <summary>Cuenta para los que no existen: proveedores varios, o en ventas la de consumidor final.</summary>
     public string CuentaProveedoresVarios { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
     public IReadOnlyList<CompraCargaOpcion> Cuentas { get; set; } = [];
@@ -128,6 +131,7 @@ public sealed class ControlArcaImportacionSolicitud
     public string CuentaIva { get; set; } = string.Empty;
     public string CuentaOtrosTributos { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
+    public bool Ventas { get; set; }
     public ControlArcaProveedorModo ProveedoresNuevos { get; set; } = ControlArcaProveedorModo.Alta;
     public string CondicionCompra { get; set; } = string.Empty;
     /// <summary>CUIT del archivo de ARCA: la unidad de negocio elegida tiene que ser una de ese CUIT.</summary>

@@ -79,6 +79,11 @@ public sealed class CompraCargaLinea
     public string ArticuloHuella {get;set;}="";
     public decimal? CostoUnitario {get;set;}
     public decimal Cantidad {get;set;}
+    /// <summary>Código que el proveedor le da al artículo en su factura: al registrar se aprende como alias (lista de compra del proveedor).</summary>
+    public string CodigoProveedor {get;set;}="";
+    public decimal UnidadesPorBulto {get;set;}=1;
+    /// <summary>Cómo se resolvió el renglón leído (método, puntaje, bulto); solo informativo para la pantalla.</summary>
+    public string Nota {get;set;}="";
 }
 public sealed class CompraCargaBorrador
 {
@@ -105,6 +110,8 @@ public sealed class CompraCargaBorrador
     public string AutorizacionFiscal {get;set;}="";
     public DateTime? VencimientoAutorizacion {get;set;}
     public List<CompraCentroCosto> CentrosCosto {get;set;}=[];
+    /// <summary>Compra importada de ARCA (usuario IMPORTACION) que esta carga completa: al registrar se la reemplaza si los totales coinciden con ARCA.</summary>
+    public int? ReemplazaImportadaId {get;set;}
     public int? CompraOrigenId {get;set;}
     public string CompraOrigenHuella {get;set;}="";
     /// <summary>Equivale a responder Sí a "dar por finalizada la Orden de Compra" cuando quedan artículos pendientes.</summary>
@@ -123,7 +130,7 @@ public sealed record CompraCargaVista(string IdComprobante,decimal Neto,decimal 
     public string Huella {get;init;}="";
     public decimal DiferenciaAsiento=>Asiento.Sum(x=>x.Debe-x.Haber);
 }
-public sealed record CompraCargaOrigen(InterfacesDetalleDto Documento,CompraCargaBorrador Borrador,IReadOnlyList<string> Avisos);
+public sealed record CompraCargaOrigen(InterfacesDetalleDto Documento,CompraCargaBorrador Borrador,IReadOnlyList<string> Avisos,IReadOnlyList<CompraRenglonResuelto>? Renglones=null,CompraExistente? Existente=null);
 public sealed record CompraCargaRegistroSolicitud(Guid Operacion,Guid Sesion,CompraCargaBorrador Borrador,string Huella);
 public sealed record CompraCargaRegistrada(int CompraId,string Comprobante,string Periodo,int Mes,int Asiento,string TipoRegistro,decimal Total);
 public sealed record CompraDocumentoConsulta(ComprobanteViewerDto Comprobante,IReadOnlyList<ComprobanteAsientoDto> Asientos);
@@ -148,4 +155,100 @@ public sealed class CompraArticulo
     public string Codigo{get;set;}="";public string Descripcion{get;set;}="";public string Unidad{get;set;}="";
     public decimal Costo{get;set;}public decimal Tasa{get;set;}public bool Exento{get;set;}public bool NoStock{get;set;}public bool Especial{get;set;}
     public string Cuenta{get;set;}="";public decimal Stock{get;set;}public string Huella{get;set;}="";
+    /// <summary>Código tal como está guardado en el maestro (con su alineación); solo para cruzar con el stock.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string IdCrudo{get;set;}="";
+}
+
+/// <summary>Documento de Recepción documental con lectura de IA todavía sin confirmar como compra (selector «Desde Recepción»).</summary>
+public sealed class CompraPendienteRecepcion
+{
+    public long Id {get;set;}
+    public DateTime Fecha {get;set;}
+    public string Usuario {get;set;}="";
+    public string Proveedor {get;set;}="";
+    public string Tipo {get;set;}="";
+    public string Comprobante {get;set;}="";
+    public string Archivo {get;set;}="";
+    public string Estado {get;set;}="";
+    public decimal? Total {get;set;}
+    public bool TieneLectura {get;set;}
+}
+
+/// <summary>Resultado de subir y leer con IA un archivo desde la carga de compras.</summary>
+public sealed record CompraLecturaArchivo(long Documento,string Archivos,bool Leido,string Mensaje);
+
+/// <summary>Posible artículo para un renglón leído, con su puntaje (0-200: código 100 + proveedor 20 + descripción 80 + costo 20).</summary>
+public sealed record CompraCandidato(CompraArticulo Articulo,decimal Puntaje,string Metodo);
+
+/// <summary>Renglón de la factura leído por la IA y cómo se lo emparejó con el maestro de artículos.</summary>
+public sealed class CompraRenglonResuelto
+{
+    public int Numero {get;set;}
+    public string CodigoProveedor {get;set;}="";
+    public string Descripcion {get;set;}="";
+    public decimal CantidadLeida {get;set;}
+    public decimal? Total {get;set;}
+    public decimal? IvaLeido {get;set;}
+    /// <summary>Costo unitario leído por unidad de factura (antes de dividir por el bulto).</summary>
+    public decimal CostoLeido {get;set;}
+    public CompraArticulo? Articulo {get;set;}
+    public decimal Puntaje {get;set;}
+    public string Metodo {get;set;}="";
+    public decimal UnidadesPorBulto {get;set;}=1;
+    public string OrigenBulto {get;set;}="";
+    public decimal Cantidad {get;set;}
+    public decimal Costo {get;set;}
+    public List<CompraCandidato> Candidatos {get;set;}=[];
+    /// <summary>Motivo por el que el renglón quedó sin artículo (para mostrar al operador).</summary>
+    public string Motivo {get;set;}="";
+    /// <summary>Advertencia sobre un renglón ya resuelto (por ejemplo, importes que no cierran).</summary>
+    public string Aviso {get;set;}="";
+    public bool Resuelto=>Articulo is not null;
+}
+
+/// <summary>Datos con los que se propone dar de alta un artículo nuevo desde un renglón sin coincidencia.</summary>
+public sealed class CompraAltaPropuesta
+{
+    public string Codigo {get;set;}="";
+    public string Descripcion {get;set;}="";
+    public string CodigoProveedor {get;set;}="";
+    public string CodigoBarra {get;set;}="";
+    public string Rubro {get;set;}="";
+    public string Tipo {get;set;}="";
+    public string Unidad {get;set;}="";
+    public decimal Tasa {get;set;}
+    public bool Exento {get;set;}
+    public decimal Costo {get;set;}
+    /// <summary>De dónde salieron rubro, tipo y unidad: artículos anteriores del proveedor, un artículo parecido o la configuración.</summary>
+    public string Origen {get;set;}="";
+}
+
+/// <summary>Compra ya cargada con el mismo proveedor, tipo y número (para avisar antes de duplicar o de completar una importación de ARCA).</summary>
+public sealed class CompraExistente
+{
+    public int Id {get;set;}
+    public string Tipo {get;set;}="";
+    public string Comprobante {get;set;}="";
+    public DateTime Fecha {get;set;}
+    public string Usuario {get;set;}="";
+    public decimal Total {get;set;}
+    public decimal Iva {get;set;}
+    public decimal NetoGravado {get;set;}
+    public bool Anulada {get;set;}
+    /// <summary>Diferencia máxima aceptada contra ARCA al completar la importación (COMPRAS-ARCA-TOLERANCIA).</summary>
+    public decimal Tolerancia {get;set;}
+    /// <summary>Creada por la importación de ARCA (usuario IMPORTACION) y sin cargar todavía con el comprobante físico.</summary>
+    public bool ImportadaArca=>string.Equals(Usuario.Trim(),"IMPORTACION",StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Comprobante importado de ARCA que todavía espera su comprobante físico para completarse.</summary>
+public sealed class CompraImportadaPendiente
+{
+    public int Id {get;set;}
+    public string Tipo {get;set;}="";
+    public string Comprobante {get;set;}="";
+    public string Cuenta {get;set;}="";
+    public string Proveedor {get;set;}="";
+    public DateTime Fecha {get;set;}
+    public decimal Total {get;set;}
 }

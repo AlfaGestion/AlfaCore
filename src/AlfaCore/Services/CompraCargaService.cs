@@ -6,7 +6,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 public sealed partial class CompraCargaService(ISessionService sesiones,IAppUserSessionService usuarios,IPermissionService permisos,
-    IAppEventService eventos,IInterfacesService documentos)
+    IAppEventService eventos,IInterfacesService documentos,IArticulosService? articulosMaestro=null)
 {
     public const string MenuKey="D50-CARGA-COMPRAS-WEB";
     private async Task<T> Ejecutar<T>(int? baseEsperada,string accion,Func<SqlConnection,CancellationToken,Task<T>> trabajo,CancellationToken ct,bool registrarErrores=true)
@@ -154,8 +154,17 @@ public sealed partial class CompraCargaService(ISessionService sesiones,IAppUser
         if(!await permisos.HasAccessAsync("D016004",t))throw new InvalidOperationException("No tenés permiso para consultar Recepción documental.");
         var documento=await documentos.GetByIdAsync(id,baseEsperada,t)??throw new InvalidOperationException("No se encontró el documento recibido.");
         if(documento.CompraRegistradaId is not null||documento.Eliminado||documento.EstadoCodigo is "ANULADO" or "RECHAZADO" or "REGISTRADO")throw new InvalidOperationException("El documento recibido está anulado o rechazado.");
-        var avisos=new List<string>();var borrador=CompraCargaOrigenLectura.Convertir(documento.LecturaCompra??throw new InvalidOperationException("Primero procesá la lectura del documento en Recepción documental."),id,avisos);
-        return new CompraCargaOrigen(documento,borrador,avisos);
+        var lectura=documento.LecturaCompra??throw new InvalidOperationException("Primero procesá la lectura del documento en Recepción documental.");
+        var avisos=new List<string>();var borrador=CompraCargaOrigenLectura.Convertir(lectura,id,avisos);
+        var renglones=await AplicarRenglonesLeidosAsync(c,lectura,borrador,avisos,t);
+        // Aviso siempre: si ese comprobante ya está cargado (importado de ARCA o por otra vía) se informa antes de que el operador siga.
+        var existente=await BuscarExistenteAsync(c,borrador.Proveedor,borrador.Tipo,borrador.Letra,borrador.Sucursal,borrador.Numero,t);
+        if(existente is {Anulada:false} ex)
+        {
+            if(ex.ImportadaArca){borrador.ReemplazaImportadaId=ex.Id;avisos.Insert(0,$"Este comprobante ya fue cargado por la importación de ARCA ({ex.Fecha:dd/MM/yyyy}, total {ex.Total:N2}). Al registrar se reemplaza por esta carga con su detalle; el total, el IVA y el neto gravado tienen que coincidir con ARCA.");}
+            else avisos.Insert(0,$"Este comprobante ya está registrado ({ex.Tipo} {ex.Comprobante}, {ex.Fecha:dd/MM/yyyy}, total {ex.Total:N2}, usuario {ex.Usuario}). No se puede cargar de nuevo.");
+        }
+        return new CompraCargaOrigen(documento,borrador,avisos,renglones,existente);
     },ct);
     public Task<CompraCargaVista> PrepararAsync(CompraCargaBorrador d,int? baseEsperada=null,CancellationToken ct=default,bool silencioso=false)=>Ejecutar(baseEsperada,"VistaPrevia",async(c,t)=>
     {

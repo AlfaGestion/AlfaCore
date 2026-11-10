@@ -22,7 +22,7 @@ public partial class ComprasCarga
     private string _cuentaCc="",_centroCc="",_porcentajeCc="100";
     private bool _confirmarRegistro;private Guid _operacion=Guid.NewGuid();private CompraCargaRegistrada? _registrada;
     private bool EdicionBloqueada=>_busy||_registrada is not null;
-    private bool PuedeRegistrar=>!EdicionBloqueada&&PuedeVista&&_proveedor is not null&&_filas.Count>0;
+    private bool PuedeRegistrar=>!EdicionBloqueada&&PuedeVista&&_proveedor is not null&&_filas.Count>0&&_renglonesPendientes.Count==0;
     // El total se calcula solo; pasa a manual cuando el operador lo edita para cotejarlo con el comprobante del proveedor.
     private bool _totalManual;private CancellationTokenSource? _recalculo;
     private readonly Dictionary<string,(string Letra,string Sucursal,string Numero)> _identidades=[];
@@ -30,7 +30,7 @@ public partial class ComprasCarga
     private CompraCargaBorrador _borrador=new();private CompraCargaVista? _vista;private AppUiMessage? _feedback;
     private PageHeaderConfig? _header;private string _buscarProveedor="",_percIva="0",_percIibb="0",_percGan="0",_totalDocumento="";
     private readonly List<FilaCompra> _filas=[];
-    public sealed class FilaCompra {public string Descripcion{get;set;}="";public string Cuenta{get;set;}="";public string Tratamiento{get;set;}="Gravado";public string Neto{get;set;}="";public string Tasa{get;set;}="0";public string Iva{get;set;}="";public string Articulo{get;set;}="";public string UnidadArticulo{get;set;}="";public decimal Cantidad{get;set;}public decimal? CostoUnitario{get;set;}public string ArticuloHuella{get;set;}="";public string? CantidadTexto{get;set;}public string? CostoTexto{get;set;}}
+    public sealed class FilaCompra {public string Descripcion{get;set;}="";public string Cuenta{get;set;}="";public string Tratamiento{get;set;}="Gravado";public string Neto{get;set;}="";public string Tasa{get;set;}="0";public string Iva{get;set;}="";public string Articulo{get;set;}="";public string UnidadArticulo{get;set;}="";public decimal Cantidad{get;set;}public decimal? CostoUnitario{get;set;}public string ArticuloHuella{get;set;}="";public string? CantidadTexto{get;set;}public string? CostoTexto{get;set;}public string CodigoProveedor{get;set;}="";public decimal UnidadesPorBulto{get;set;}=1;public string Nota{get;set;}="";}
     public sealed record EdicionCompra(CompraCargaBorrador Borrador,List<FilaCompra> Filas,string PercIva,string PercIibb,string PercGan,string Total,string ImpuestoInterno="0",string NotaAplicar="0");
     private bool Directo=>QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query).TryGetValue("directo",out var v)&&v=="1";
     private IEnumerable<CompraCargaTipo> TiposVisibles=>(_contexto?.Tipos??[]).Where(x=>x.Unidad.Length==0||x.Unidad==_borrador.Unidad)
@@ -57,7 +57,7 @@ public partial class ComprasCarga
         if(_contexto is not null&&_rutaCargada==ParametrosActuales){if(_directoCargado!=Directo){_directoCargado=Directo;Header();}return;}
         await Operar(async ct=>
     {
-        _contexto=null;_origen=null;_vista=null;_proveedor=null;_filas.Clear();_feedback=null;_registrada=null;_confirmarRegistro=false;_operacion=Guid.NewGuid();_borradorId=Guid.NewGuid();_borradorVersion=0;_impuestoInterno="0";_notaAplicar="0";_facturaNota=null;_buscarFacturaNota="";
+        _contexto=null;_origen=null;_renglonesPendientes=[];_candidatoElegido.Clear();_importadaArca=null;_existenteAviso=null;_importadasPendientes=[];_vista=null;_proveedor=null;_filas.Clear();_feedback=null;_registrada=null;_confirmarRegistro=false;_operacion=Guid.NewGuid();_borradorId=Guid.NewGuid();_borradorVersion=0;_impuestoInterno="0";_notaAplicar="0";_facturaNota=null;_buscarFacturaNota="";
         var tenant=await TenantGuard.ResolveAsync(idbase,idweb,ct);
         if(!tenant.IsValid)throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
         _baseCargada=idbase??Sesiones.GetActiveSession()?.BaseId;_sesion=Sesiones.GetActiveSession()?.Id;
@@ -65,27 +65,33 @@ public partial class ComprasCarga
         _borrador=new(){Unidad=_contexto.Unidad,Motivo=_contexto.Motivo};_identidades.Clear();
         _puedeAltaProveedor=await Permisos.HasAccessAsync(ProveedorAltaRapidaService.PermisoProveedor,ct);
         _percIva=_percIibb=_percGan="0";_totalDocumento="";_totalManual=false;_buscarProveedor="";
-        if(Documento is {} id)
-        {
-            _origen=await Servicio.OrigenAsync(id,_baseCargada,ct);_borrador=_origen.Borrador;_borrador.Unidad=_contexto.Unidad;_borrador.Motivo=_contexto.Motivo;
-            foreach(var l in _borrador.Lineas)_filas.Add(new(){Descripcion=l.Descripcion,Cuenta=l.Cuenta,Tratamiento=l.Tratamiento,Articulo=l.Articulo,ArticuloHuella=l.ArticuloHuella,UnidadArticulo=l.UnidadArticulo,Cantidad=l.Cantidad,CostoUnitario=l.CostoUnitario,Neto=NumeroTexto(l.Neto),Tasa=NumeroTexto(l.Tasa),Iva=l.IvaInformado is {} iva?NumeroTexto(iva):""});
-            _impuestoInterno=NumeroTexto(_borrador.ImpuestoInterno);_percIva=NumeroTexto(_borrador.PercepcionIva);_percIibb=NumeroTexto(_borrador.PercepcionIibb);_percGan=NumeroTexto(_borrador.PercepcionGanancias);_totalDocumento=_borrador.TotalDocumento is {} total?NumeroTexto(total):"";_totalManual=_totalDocumento.Length>0;
-            if(_borrador.Proveedor.Length>0)
-                try{_proveedor=await Servicio.ProveedorAsync(_borrador.Proveedor,_baseCargada,ct);_buscarProveedor=_proveedor.Nombre;if(_proveedor.Motivo.Length>0)_borrador.Motivo=_proveedor.Motivo;}
-                catch(AppUserFacingException ex){_feedback=UiOps.BuildMessage(ex,"Proveedor de la lectura");_borrador.Proveedor="";}
-        }
+        if(Documento is {} id)await CargarOrigenAsync(id,ct);
         if(_filas.Count==0&&Documento is not null)Agregar();
-        if(TipoActual is null)
-        {
-            var preferido=TiposVisibles.FirstOrDefault(t=>t.Codigo==_borrador.Tipo)??(Documento is null?TiposVisibles.FirstOrDefault(t=>t.Codigo=="FCC")??TiposVisibles.FirstOrDefault():null);
-            if(preferido is not null){_borrador.Tipo=preferido.Codigo;_borrador.Talonario=preferido.Talonario;}
-        }
-        if(TipoActual is {} tipoInicial)AplicarTipo(tipoInicial);
-        if(_borrador.Deposito.Length==0)_borrador.Deposito=_contexto.Depositos.FirstOrDefault()?.Codigo??"";
+        PrepararTipoYDeposito(Documento is not null);
         if(OrigenMercaderia is {} origenId)await AplicarBorradorAsync(await Servicio.PrepararDesdeOrigenAsync(origenId,_baseCargada,ct),ct);
         else if(CopiarCompraId is {} copiarId)await AplicarBorradorAsync(await Servicio.CopiarCompraAsync(copiarId,_baseCargada,ct),ct);
         _rutaCargada=ParametrosActuales;_directoCargado=Directo;
     });
+    }
+    /// <summary>Carga en pantalla un documento de Recepción documental ya leído por la IA (proveedor, cabecera, importes y lectura original).</summary>
+    private async Task CargarOrigenAsync(long id,CancellationToken ct)
+    {
+            _origen=await Servicio.OrigenAsync(id,_baseCargada,ct);_borrador=_origen.Borrador;_renglonesPendientes=(_origen.Renglones??[]).Where(r=>!r.Resuelto).ToList();_candidatoElegido.Clear();AplicarExistente(_origen.Existente);_borrador.Unidad=_contexto.Unidad;_borrador.Motivo=_contexto.Motivo;
+            foreach(var l in _borrador.Lineas)_filas.Add(new(){Descripcion=l.Descripcion,Cuenta=l.Cuenta,Tratamiento=l.Tratamiento,Articulo=l.Articulo,ArticuloHuella=l.ArticuloHuella,UnidadArticulo=l.UnidadArticulo,Cantidad=l.Cantidad,CostoUnitario=l.CostoUnitario,Neto=NumeroTexto(l.Neto),Tasa=NumeroTexto(l.Tasa),Iva=l.IvaInformado is {} iva?NumeroTexto(iva):"",CodigoProveedor=l.CodigoProveedor,UnidadesPorBulto=l.UnidadesPorBulto,Nota=l.Nota});
+            _impuestoInterno=NumeroTexto(_borrador.ImpuestoInterno);_percIva=NumeroTexto(_borrador.PercepcionIva);_percIibb=NumeroTexto(_borrador.PercepcionIibb);_percGan=NumeroTexto(_borrador.PercepcionGanancias);_totalDocumento=_borrador.TotalDocumento is {} total?NumeroTexto(total):"";_totalManual=_totalDocumento.Length>0;
+            if(_borrador.Proveedor.Length>0)
+                try{_proveedor=await Servicio.ProveedorAsync(_borrador.Proveedor,_baseCargada,ct);_buscarProveedor=_proveedor.Nombre;if(_proveedor.Motivo.Length>0)_borrador.Motivo=_proveedor.Motivo;}
+                catch(AppUserFacingException ex){_feedback=UiOps.BuildMessage(ex,"Proveedor de la lectura");_borrador.Proveedor="";}
+    }
+    private void PrepararTipoYDeposito(bool conDocumento)
+    {
+        if(TipoActual is null)
+        {
+            var preferido=TiposVisibles.FirstOrDefault(t=>t.Codigo==_borrador.Tipo)??(!conDocumento?TiposVisibles.FirstOrDefault(t=>t.Codigo=="FCC")??TiposVisibles.FirstOrDefault():null);
+            if(preferido is not null){_borrador.Tipo=preferido.Codigo;_borrador.Talonario=preferido.Talonario;}
+        }
+        if(TipoActual is {} tipoInicial)AplicarTipo(tipoInicial);
+        if(_borrador.Deposito.Length==0)_borrador.Deposito=_contexto.Depositos.FirstOrDefault()?.Codigo??"";
     }
     protected override void OnAfterRender(bool firstRender){if(firstRender){Header();_=IniciarTeclado();}}
     private Task<IReadOnlyList<CompraCargaProveedor>> BuscarProveedores(string texto,CancellationToken ct)=>Servicio.BuscarProveedoresAsync(texto,_baseCargada,ct);
@@ -160,7 +166,7 @@ public partial class ComprasCarga
     private void CambiarLetra(string? texto)
     {
         var letra=(texto??"").Trim().ToUpperInvariant();
-        if(letra.Length==1&&TipoActual?.Letras.Contains(letra,StringComparison.Ordinal)==true){Cambiar(()=>_borrador.Letra=letra);return;}
+        if(letra.Length==1&&TipoActual?.Letras.Contains(letra,StringComparison.Ordinal)==true){CambiarIdentificacion(()=>_borrador.Letra=letra);return;}
         _feedback=AppUiMessage.Warning("Letra no habilitada",$"Para este comprobante se admiten: {TipoActual?.Letras}.");
     }
     private void CambiarFecha(string? v,int tipo)=>Cambiar(()=>{
@@ -176,7 +182,7 @@ public partial class ComprasCarga
     {
         SincronizarTotal();
         _borrador.Lineas=_filas.Select((f,i)=>new CompraCargaLinea{Descripcion=f.Descripcion,Cuenta=f.Cuenta,Tratamiento=f.Tratamiento,Articulo=f.Articulo,ArticuloHuella=f.ArticuloHuella,
-            UnidadArticulo=f.UnidadArticulo,Cantidad=f.Articulo.Length>0?Numero(CantidadTexto(f),"cantidad del artículo"):0,CostoUnitario=f.Articulo.Length>0?Numero(CostoTexto(f),"costo unitario"):(decimal?)null,
+            UnidadArticulo=f.UnidadArticulo,CodigoProveedor=f.CodigoProveedor,UnidadesPorBulto=f.UnidadesPorBulto,Cantidad=f.Articulo.Length>0?Numero(CantidadTexto(f),"cantidad del artículo"):0,CostoUnitario=f.Articulo.Length>0?Numero(CostoTexto(f),"costo unitario"):(decimal?)null,
             Neto=f.Articulo.Length>0?CompraCargaPlanificador.Moneda(Numero(CantidadTexto(f),"cantidad")*Numero(CostoTexto(f),"costo")):Numero(f.Neto,$"neto del concepto {i+1}"),Tasa=Numero(f.Tasa,"tasa IVA"),IvaInformado=f.Iva.Length>0?Numero(f.Iva,"IVA informado"):null}).ToList();
         _borrador.PercepcionIva=Numero(_percIva,"percepción IVA");_borrador.PercepcionIibb=Numero(_percIibb,"percepción IIBB");_borrador.PercepcionGanancias=Numero(_percGan,"percepción Ganancias");
         _borrador.TotalDocumento=_totalDocumento.Length>0?Numero(_totalDocumento,"total del documento"):null;
@@ -187,6 +193,8 @@ public partial class ComprasCarga
         _recalculo?.Cancel();
         if(!PuedeVista)throw new InvalidOperationException("El circuito seleccionado todavía no admite carga en esta pantalla.");
         if(_filas.Count==0)throw new InvalidOperationException("Cargá al menos un artículo o concepto.");
+        if(_renglonesPendientes.Count>0)throw new InvalidOperationException($"Resolvé {RenglonesPendientesTexto} (elegir artículo, alta, concepto o descartar) antes de registrar.");
+        if(!await VerificarComprobanteExistenteAsync(ct))return;
         ArmarBorrador();_vista=await Servicio.PrepararAsync(_borrador,_baseCargada,ct);
         if(_vista.Errores.Count>0){_feedback=AppUiMessage.Warning("Revisá la compra antes de registrar",string.Join(" ",_vista.Errores));return;}
         _confirmarRegistro=true;
@@ -215,6 +223,8 @@ public partial class ComprasCarga
         _borrador=edicion.Borrador;_borradorId=b.Id;_borradorVersion=b.Version;_filas.Clear();_filas.AddRange(edicion.Filas);
         _percIva=edicion.PercIva;_percIibb=edicion.PercIibb;_percGan=edicion.PercGan;_totalDocumento=edicion.Total;_totalManual=edicion.Total.Length>0;_impuestoInterno=edicion.ImpuestoInterno;_notaAplicar=edicion.NotaAplicar;_facturaNota=null;_buscarFacturaNota=edicion.Borrador.NotaFacturaId is {} asociado?$"Factura asociada #{asociado}":"";
         _origen=origen;_proveedor=proveedor;_buscarProveedor=proveedor?.Nombre??"";_vista=null;_operacion=Guid.NewGuid();_identidades.Clear();
+        _renglonesPendientes=[];_candidatoElegido.Clear();_importadaArca=null;_existenteAviso=null;
+        if(_borrador.ReemplazaImportadaId is not null&&proveedor is not null)AplicarExistente(await Servicio.CompraExistenteAsync(_borrador.Proveedor,_borrador.Tipo,_borrador.Letra,_borrador.Sucursal,_borrador.Numero,_baseCargada,ct));
         _mostrarBorradores=false;_feedback=AppUiMessage.Info("Borrador recuperado","Revisá proveedor, configuración, importes y asiento antes de registrar.");
     });
     private Task CopiarCompra(CompraCargaBorrador d)=>Operar(ct=>AplicarBorradorAsync(d,ct));
@@ -222,7 +232,7 @@ public partial class ComprasCarga
     {
         var proveedor=await Servicio.ProveedorAsync(d.Proveedor,_baseCargada,ct);
         _borrador=d;_borradorId=Guid.NewGuid();_borradorVersion=0;_registrada=null;_origen=null;_proveedor=proveedor;_buscarProveedor=proveedor.Nombre;
-        _filas.Clear();_filas.AddRange(d.Lineas.Select(l=>new FilaCompra{Descripcion=l.Descripcion,Cuenta=l.Cuenta,Tratamiento=l.Tratamiento,Articulo=l.Articulo,ArticuloHuella=l.ArticuloHuella,UnidadArticulo=l.UnidadArticulo,Cantidad=l.Cantidad,CostoUnitario=l.CostoUnitario,Neto=NumeroTexto(l.Neto),Tasa=NumeroTexto(l.Tasa),Iva=l.IvaInformado is {} iva?NumeroTexto(iva):""}));
+        _filas.Clear();_filas.AddRange(d.Lineas.Select(l=>new FilaCompra{Descripcion=l.Descripcion,Cuenta=l.Cuenta,Tratamiento=l.Tratamiento,Articulo=l.Articulo,ArticuloHuella=l.ArticuloHuella,UnidadArticulo=l.UnidadArticulo,Cantidad=l.Cantidad,CostoUnitario=l.CostoUnitario,Neto=NumeroTexto(l.Neto),Tasa=NumeroTexto(l.Tasa),Iva=l.IvaInformado is {} iva?NumeroTexto(iva):"",CodigoProveedor=l.CodigoProveedor,UnidadesPorBulto=l.UnidadesPorBulto,Nota=l.Nota}));
         _percIva=NumeroTexto(d.PercepcionIva);_percIibb=NumeroTexto(d.PercepcionIibb);_percGan=NumeroTexto(d.PercepcionGanancias);_totalDocumento=d.TotalDocumento is {} total?NumeroTexto(total):"";_totalManual=d.CompraOrigenId is null&&_totalDocumento.Length>0;_impuestoInterno=NumeroTexto(d.ImpuestoInterno);_notaAplicar=NumeroTexto(d.NotaAplicar);_facturaNota=null;_buscarFacturaNota="";
         _vista=null;_operacion=Guid.NewGuid();_identidades.Clear();_mostrarConsulta=false;_feedback=d.CompraOrigenId is not null?AppUiMessage.Info("Origen preparado","Se cargaron las cantidades pendientes. Podés reducirlas o quitar artículos para facturar parcialmente y completar la identificación de la factura."):AppUiMessage.Info("Copia preparada","Ingresá la identificación del nuevo comprobante. No se modificó la compra original.");
     }
@@ -256,6 +266,7 @@ public partial class ComprasCarga
         var acciones=new List<PageHeaderAction>
         {
             new(){Key="registrar",Label="Registrar compra",Icon="bi-save",Style=PageHeaderActionStyle.Primary,Priority=PageHeaderActionPriority.Essential,Disabled=!PuedeRegistrar,OnClick=IniciarRegistro},
+            new(){Key="recepcion",Label="Desde Recepción",Icon="bi-file-earmark-arrow-up",Priority=PageHeaderActionPriority.Essential,Disabled=!PuedeRecepcion,OnClick=AbrirRecepcion},
             new(){Key="buscar-proveedor",Label="Buscar proveedor (F2)",Icon="bi-search",Priority=PageHeaderActionPriority.Overflow,Disabled=EdicionBloqueada,OnClick=AbrirProveedores},
             new(){Key="buscar-articulo",Label="Buscar artículo (F5)",Icon="bi-box",Priority=PageHeaderActionPriority.Overflow,Disabled=NuevaLineaBloqueada,OnClick=AbrirArticulos},
             new(){Key="guardar-borrador",Label="Guardar borrador",Icon="bi-save2",Priority=PageHeaderActionPriority.Overflow,Disabled=EdicionBloqueada,OnClick=GuardarBorrador},

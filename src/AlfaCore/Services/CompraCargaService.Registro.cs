@@ -27,7 +27,9 @@ public sealed partial class CompraCargaService
             if(!TenantDataAccessGuard.TryGetAuthorizedSession(sesiones,usuarios,out var actual)||actual!=copia.Sesion||
                 usuarios.GetCurrentUserName()!=actor||usuarios.CurrentUser?.SystemCode!=sistema)
                 throw new OperationCanceledException("La sesión cambió. No se confirmó la compra.");
-            t.ThrowIfCancellationRequested();tx.Commit();return resultado;
+            t.ThrowIfCancellationRequested();tx.Commit();
+            await AprenderEquivalenciasAsync(c,copia.Borrador,t);
+            return resultado;
         },ct);
     }
 
@@ -84,6 +86,8 @@ public sealed partial class CompraCargaService
         if(ejercicios.Count!=1||ejercicios[0].Cerrado)throw new InvalidOperationException("La fecha debe pertenecer a un único ejercicio abierto.");
         var periodo=ejercicios[0].Periodo.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var id=vista.IdComprobante;var suc=id[..4];var numero=id.Substring(4,8);
+        // Completar una importación de ARCA: se retira el asiento importado (con copia de auditoría) justo antes de registrar el definitivo.
+        if(d.ReemplazaImportadaId is not null)await RetirarImportadaAsync(cn,tx,d,proveedor,contexto,vista,id,equivalencia,ct);
         if(await cn.ExecuteScalarAsync<int>(Q("""
             SELECT COUNT(*) FROM dbo.C_MV_CPTE WITH(UPDLOCK,HOLDLOCK)
             WHERE LTRIM(RTRIM(CUENTA))=@cuenta AND LTRIM(RTRIM(TC))=@tcOperativo AND IDCOMPROBANTE=@id;

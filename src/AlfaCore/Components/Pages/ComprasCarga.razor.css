@@ -31,3 +31,9 @@
 .compra-nrocpte input:nth-child(1){width:5.5rem}
 .compra-nrocpte input:nth-child(2){width:9.5rem}
 .compra-nrocpte .compra-letra{width:3rem;text-transform:uppercase}
+
+.compra-nota{display:block;opacity:.75;font-size:.85em;margin-top:2px}
+.compra-acciones-renglon{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.compra-alta-grilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end}
+.compra-arca{border-left:4px solid var(--alfa-color-warning,#d9a400)}
+.compra-articulos td:nth-child(2),.compra-articulos th:nth-child(2){min-width:260px}

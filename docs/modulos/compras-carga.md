@@ -137,3 +137,48 @@ Reemplaza la impresión diferida del VB6 (FrmRp_Diferida: OPG, PG y GAN/IVA/IBR/
 - La alícuota de la retención no se guarda en el pago (queda en 0): el certificado usa la del régimen (`V_TA_RETENCIONES.PORCENTAJE`) o la deduce de lo retenido sobre la base.
 - Los PDF son un diseño propio simple (no reproducen LiqOPG.rpt ni RETIGAN de Crystal); hay que revisarlos visualmente con datos reales y ajustarlos al formato que usa la empresa.
 - Pendiente: certificados de Ingresos Brutos y SUSS no se probaron con datos reales (en ALFANET solo hay pagos con Ganancias e IVA).
+
+## Carga con IA integrada: «Desde Recepción», artículos con puntaje e importadas de ARCA (2026-11-07)
+
+Adaptación de «Personalizar» de V_mv_Cpra (legacy: `frmPlanillaDatosCompras`, `FrmPersonalizarCompra`, `modBusquedaAutomaticaArticulos`). Las reglas de
+negocio salen de esos fuentes; lo que el legacy no tiene (importadas de ARCA, subida desde la misma pantalla) está marcado como nuevo.
+
+### Botón «Desde Recepción» (barra de la pantalla)
+- Lista los documentos de compra de Recepción documental sin confirmar (leídos, leyendo o con error) y las **importaciones de ARCA pendientes de completar**.
+- **Nuevo:** se pueden elegir hasta 20 PDF/imágenes; se suben a Recepción documental y se leen con IA en el momento (`InterfacesService.DetectCompraAsync`, sin
+  esperar la cola). Un solo documento leído completa la carga solo; con varios se elige. Un archivo ya subido (mismo hash) reutiliza su documento.
+- Servicio: `CompraCargaService.Pendientes.cs` (`PendientesRecepcionAsync`, `LeerArchivosAsync`). Pantalla: `ComprasCarga.Recepcion.cs`.
+
+### Renglones → artículos (`CompraCargaService.Matching.cs`, `CompraArticuloTexto.cs`, `CompraCargaService.Renglones.cs`)
+Réplica del motor con puntaje de `BuscarArticuloAutomaticoCompra`: código del proveedor (normalizado y comparado también como número sin ceros) o código de barras
+= 100; código dentro de la descripción = 70; descripción hasta 80 (palabras presentes × 80 / palabras); costo hasta 20; proveedor válido (+ asociados
+`PROVEEDORESASOCIADOS_<cuenta>`) 20. Aceptación: por código con total ≥ mínimo; por descripción exige palabra clave, descripción ≥ 35 y total ≥ mínimo.
+Mínimo = `SCOREBUSQUEDAARTICULO` (legacy, por defecto 60). Mejoras sobre el legacy: alias aprendidos (lista de compra del proveedor), tildes/Ñ, y si dos
+renglones caen en el mismo artículo gana el de mejor evidencia. El matcher externo de IA (`matcher_articulos_ia.exe`) no se porta.
+- **Unidades por bulto:** relación importe del renglón ÷ (cantidad × neto) que informa la lectura; memoria `IA_ProveedorArticuloUdsXBl`; «N x M», «x N» o «(24)»
+  en la descripción; razón costo leído / costo del maestro (≥ 1,8 veces).
+- Los renglones sin artículo quedan en una sección propia: elegir candidato, Buscar, **Alta**, **Alta de todo lo nuevo**, pasar a concepto o descartar. No se
+  puede registrar mientras haya renglones sin resolver.
+- **Alta** (`CompraCargaService.Alta.cs`): reutiliza `ArticulosService.SaveAsync`. Rubro, tipo y unidad se proponen del artículo parecido, de lo más usado por el
+  proveedor y, si no hay, de `COMPRAS-ALTA-RUBRO/TIPO/UNIDAD` o del primer valor de cada maestro. Retail: costo + seguro, `<cta>_UTILIDAD`, `<cta>_REDONDEO`,
+  `<cta>_TODASLASLISTAS` como en `AltaEnTodasLasListasVenta`.
+- **Aprendizaje** (`CompraCargaService.Aprendizaje.cs`), después de confirmar la compra y sin afectarla si falla: código del proveedor en `V_MA_PRECIOS`
+  (lista de compra, como `altaListaCompraRapida`) y unidades por bulto en `IA_ProveedorArticuloUdsXBl`.
+
+### Comprobantes importados de ARCA (nuevo, `CompraCargaService.Importadas.cs`)
+- Al cargar un comprobante cuyo proveedor, tipo, letra, sucursal y número ya están en `C_MV_CPTE` se **avisa siempre**: registrado por otra vía (no se duplica) o
+  importado de ARCA (usuario `IMPORTACION`), que se puede **completar**.
+- Completar = reemplazar: en la misma transacción del registro se retira el asiento importado (copia en `ALFACORE_COMPRA_ANULACION`) y se registra la compra con
+  su detalle y stock. Exige mismo proveedor, tipo, número, fecha y unidad; sin bloqueo, contabilización, conciliación ni aplicaciones; y que **total, IVA y neto
+  gravado coincidan con ARCA** dentro de `COMPRAS-ARCA-TOLERANCIA` (por defecto 1,00). La pantalla muestra la comparación en vivo.
+- Las importaciones del importador viejo del legacy pueden no tener unidad de negocio (se toma la de la carga) ni la misma sucursal en la cabecera y el asiento
+  (el asiento se busca por tipo, número, letra, proveedor y fecha).
+
+### Configuración y esquema
+- Script `2026-11-07-001__compras_ia_articulos.sql`: crea `IA_ProveedorArticuloUdsXBl` si falta y agrega `COMPRAS-ALTA-RUBRO/TIPO/UNIDAD` y `COMPRAS-ARCA-TOLERANCIA`.
+- Rendimiento: pocos viajes por factura (alias en una consulta, una por renglón, una lectura de artículos); el stock se calcula en una consulta agrupada.
+
+### Verificación (base de pruebas, escrituras siempre con ROLLBACK)
+`CompraArticuloMatchingTests`, `CompraIaPuntaAPuntaSqlTests` (variable `COMPRA_IA_TEST_SQL`; se omiten si falta): 72 de 77 renglones de la factura de
+Cafés La Virginia emparejados; registro con stock, aprendizaje y reemplazo de una importación de ARCA, todo revertido.
+**Sin verificar:** la lectura de un PDF por IA (requiere `OPENAI_API_KEY`) y el aspecto de la pantalla en el navegador.

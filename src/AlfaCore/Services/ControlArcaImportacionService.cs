@@ -9,7 +9,7 @@ namespace AlfaCore.Services;
 
 public interface IControlArcaImportacionService
 {
-    Task<ControlArcaImportacionContexto> ContextoAsync(IReadOnlyList<ArcaMisComprobante> comprobantes, string cuitArchivo, CancellationToken ct = default);
+    Task<ControlArcaImportacionContexto> ContextoAsync(IReadOnlyList<ArcaMisComprobante> comprobantes, string cuitArchivo, bool ventas = false, CancellationToken ct = default);
     Task<IReadOnlyList<ControlArcaImportacionFila>> ImportarAsync(ControlArcaImportacionSolicitud solicitud, CancellationToken ct = default);
 }
 
@@ -18,6 +18,8 @@ public interface IControlArcaImportacionService
 /// «Compras ARCA Mis Comprobantes Recibidos» de EM_ImportacionComprobantes: asiento (proveedor al Haber; compras, IVA
 /// crédito y otros tributos al Debe; las NC al revés) y C_MV_CPTE, con usuario IMPORTACION. Cada comprobante va en su
 /// propia transacción; los ya cargados, de períodos cerrados o fuera de la fecha operativa no se graban.
+/// Con <c>ventas</c> hace lo mismo con los emitidos: V_MV_CPTE y asiento de ventas (cliente al Debe; ventas, IVA débito y otros
+/// tributos al Haber; las NC al revés), con el cliente por CUIT o la cuenta de consumidor final.
 /// </summary>
 public sealed class ControlArcaImportacionService(ISessionService sessions, IAppUserSessionService users, IPermissionService permissions,
     ICuentasComercialesService cuentas, IArcaPadronService padron, IAppEventService events) : IControlArcaImportacionService
@@ -27,11 +29,14 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
     private const string UsuarioImportacion = "IMPORTACION";
     private sealed class ReglaException(string message) : InvalidOperationException(message);
 
-    public Task<ControlArcaImportacionContexto> ContextoAsync(IReadOnlyList<ArcaMisComprobante> comprobantes, string cuitArchivo, CancellationToken ct = default)
+    public Task<ControlArcaImportacionContexto> ContextoAsync(IReadOnlyList<ArcaMisComprobante> comprobantes, string cuitArchivo, bool ventas = false, CancellationToken ct = default)
         => EjecutarAsync("ContextoImportacion", async cn =>
         {
             var cfg = await ConfigAsync(cn, ct);
-            var defaults = await cn.QueryFirstOrDefaultAsync<CuentasDefault>(new CommandDefinition("""
+            var defaults = await cn.QueryFirstOrDefaultAsync<CuentasDefault>(new CommandDefinition(ventas ? """
+                SELECT TOP (1) LTRIM(RTRIM(ISNULL(Servicios,''))) Compras, LTRIM(RTRIM(ISNULL(DFI_IVARI,''))) Iva, LTRIM(RTRIM(ISNULL(V_DFI_PERCIVA,''))) Otros
+                FROM dbo.V_TA_INPUT_VENTAS WHERE LTRIM(RTRIM(IdMotivoVta))='1';
+                """ : """
                 SELECT TOP (1) LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(Servicios)),''),C_CFI_CTACPRA))) Compras, LTRIM(RTRIM(ISNULL(CFI_IVARI,''))) Iva,
                        LTRIM(RTRIM(ISNULL(C_CFI_PERCIVA,''))) Otros
                 FROM dbo.V_TA_INPUT_COMPRAS WHERE LTRIM(RTRIM(IdMotivoCpra))='1' ORDER BY CASE WHEN LTRIM(RTRIM(CondIva))='1' THEN 0 ELSE 1 END;
@@ -46,7 +51,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             var unidades = (await cn.QueryAsync<(string Codigo, string Descripcion, string Cuit)>(new CommandDefinition(
                 "SELECT LTRIM(RTRIM(Codigo)), LTRIM(RTRIM(ISNULL(DESCRIPCION,''))), ISNULL(LTRIM(RTRIM(CUIT)),'') FROM dbo.V_TA_UnidadNegocio ORDER BY Codigo;",
                 cancellationToken: ct))).ToList();
-            var puedeCrear = await permissions.HasAccessAsync(ProveedorAltaRapidaService.PermisoProveedor, ct);
+            // Los clientes no se dan de alta desde acá: los que no existen van a consumidor final o se omiten.
+            var puedeCrear = !ventas && await permissions.HasAccessAsync(ProveedorAltaRapidaService.PermisoProveedor, ct);
             IReadOnlyList<CompraCargaOpcion> condiciones = [];
             if (puedeCrear)
             {
@@ -56,10 +62,10 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             var filas = new List<ControlArcaImportacionFila>();
             foreach (var a in comprobantes)
             {
-                var fila = NuevaFila(a);
-                var prov = await ProveedorPorCuitAsync(cn, a.DocContraparte, ct, null);
+                var fila = NuevaFila(a, ventas);
+                var prov = await CuentaDelComprobanteAsync(cn, a, ventas, cfg, ct, null);
                 if (prov is not null) { fila.Proveedor = prov.Codigo; fila.ProveedorNombre = prov.Nombre; }
-                fila.Bloqueo = await BloqueoAsync(cn, null, a, prov?.Codigo, cfg, ct) ?? "";
+                fila.Bloqueo = await BloqueoAsync(cn, null, a, prov?.Codigo, cfg, ventas, ct) ?? "";
                 filas.Add(fila);
             }
             var cuit = Digitos(cuitArchivo);
@@ -69,7 +75,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             return new ControlArcaImportacionContexto
             {
                 CuentaCompras = defaults.Compras, CuentaIva = defaults.Iva, CuentaOtrosTributos = defaults.Otros,
-                CuentaProveedoresVarios = cfg.ProveedoresVarios, Cuentas = cuentasImputables,
+                Ventas = ventas, CuentaProveedoresVarios = ventas ? cfg.ConsumidorFinal : cfg.ProveedoresVarios, Cuentas = cuentasImputables,
                 Unidades = unidades.Select(u => new CompraCargaOpcion { Codigo = u.Codigo, Descripcion = u.Descripcion }).ToList(),
                 Unidad = unidades.FirstOrDefault(u => cuit.Length > 0 && Digitos(u.Cuit) == cuit).Codigo ?? unidades.FirstOrDefault().Codigo ?? "",
                 CondicionesCompra = condiciones, CondicionCompra = condiciones.FirstOrDefault()?.Codigo ?? "",
@@ -93,49 +99,52 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             var todasLasUnidades = (await cn.QueryAsync<(string Codigo, string Descripcion, string Cuit)>(new CommandDefinition(
                 "SELECT LTRIM(RTRIM(Codigo)), LTRIM(RTRIM(ISNULL(DESCRIPCION,''))), ISNULL(LTRIM(RTRIM(CUIT)),'') FROM dbo.V_TA_UnidadNegocio;", cancellationToken: ct))).ToList();
             if (ValidarUnidad(s.CuitArchivo, s.Unidad, todasLasUnidades) is { } errorUnidad) throw new ReglaException(errorUnidad);
-            if (s.ProveedoresNuevos == ControlArcaProveedorModo.Varios && cfg.ProveedoresVarios.Length == 0)
-                throw new ReglaException("No está configurada la cuenta de proveedores varios (CUENTAPROVEEDORESVARIOS).");
+            var cuentaVarios = s.Ventas ? cfg.ConsumidorFinal : cfg.ProveedoresVarios;
+            if (s.ProveedoresNuevos == ControlArcaProveedorModo.Varios && cuentaVarios.Length == 0)
+                throw new ReglaException(s.Ventas ? "No está configurada la cuenta de consumidor final (CUENTACONSUMIDORFINAL)." : "No está configurada la cuenta de proveedores varios (CUENTAPROVEEDORESVARIOS).");
+            if (s.Ventas && s.ProveedoresNuevos == ControlArcaProveedorModo.Alta)
+                throw new ReglaException("Los clientes nuevos no se dan de alta desde acá: elegí «consumidor final» u «omitir».");
             if (s.ProveedoresNuevos == ControlArcaProveedorModo.Alta && !await permissions.HasAccessAsync(ProveedorAltaRapidaService.PermisoProveedor, ct))
                 throw new ReglaException("Tu usuario no tiene permiso para dar de alta proveedores: elegí «proveedores varios» u «omitir».");
             CuentaComercialLookupDataDto? catalogo = null;
             var creados = new Dictionary<string, string>();
             var resultados = new List<ControlArcaImportacionFila>();
             // Mismas tablas que el legacy: MV_Transmisiones (cabecera) y AUX_MV_CTROL_CPTE (una fila por comprobante).
-            var transmision = await ArcaTransmisionRegistro.AbrirAsync(cn, users.GetCurrentUserName(), s.Archivo, ArcaTransmisionRegistro.ObservacionRecibidos,
+            var transmision = await ArcaTransmisionRegistro.AbrirAsync(cn, users.GetCurrentUserName(), s.Archivo, s.Ventas ? ArcaTransmisionRegistro.ObservacionEmitidos : ArcaTransmisionRegistro.ObservacionRecibidos,
                 s.Comprobantes.Min(c => c.Fecha), s.Comprobantes.Max(c => c.Fecha), s.Comprobantes.Count, ct);
             foreach (var a in s.Comprobantes)
             {
                 ct.ThrowIfCancellationRequested();
-                var fila = NuevaFila(a);
+                var fila = NuevaFila(a, s.Ventas);
                 resultados.Add(fila);
                 try
                 {
-                    var prov = await ProveedorPorCuitAsync(cn, a.DocContraparte, ct, null);
+                    var prov = await CuentaDelComprobanteAsync(cn, a, s.Ventas, cfg, ct, null);
                     if (prov is null && creados.TryGetValue(Digitos(a.DocContraparte), out var codigoCreado))
-                        prov = await ProveedorPorCodigoAsync(cn, codigoCreado, ct, null);
-                    var bloqueo = await BloqueoAsync(cn, null, a, prov?.Codigo, cfg, ct);
+                        prov = await ProveedorPorCodigoAsync(cn, codigoCreado, s.Ventas, ct, null);
+                    var bloqueo = await BloqueoAsync(cn, null, a, prov?.Codigo, cfg, s.Ventas, ct);
                     if (bloqueo is not null) { fila.Resultado = bloqueo; continue; }
                     if (prov is null)
                     {
                         switch (s.ProveedoresNuevos)
                         {
                             case ControlArcaProveedorModo.Omitir:
-                                fila.Resultado = "Proveedor inexistente: no se importó."; continue;
+                                fila.Resultado = s.Ventas ? "Cliente inexistente: no se importó." : "Proveedor inexistente: no se importó."; continue;
                             case ControlArcaProveedorModo.Varios:
-                                prov = await ProveedorPorCodigoAsync(cn, cfg.ProveedoresVarios, ct, null)
-                                    ?? throw new ReglaException("La cuenta de proveedores varios no es un proveedor activo.");
+                                prov = await ProveedorPorCodigoAsync(cn, cuentaVarios, s.Ventas, ct, null)
+                                    ?? throw new ReglaException(s.Ventas ? "La cuenta de consumidor final no es un cliente activo." : "La cuenta de proveedores varios no es un proveedor activo.");
                                 break;
                             default:
                                 catalogo ??= await cuentas.GetLookupDataAsync(CuentaComercialTipo.Proveedor, ct);
                                 var codigo = await CrearProveedorAsync(a, s.CondicionCompra, catalogo, ct);
                                 creados[Digitos(a.DocContraparte)] = codigo;
                                 await ArcaTransmisionRegistro.MarcarCuentaAsync(cn, transmision, codigo, ct);
-                                prov = await ProveedorPorCodigoAsync(cn, codigo, ct, null) ?? throw new ReglaException("No se encontró el proveedor recién creado.");
+                                prov = await ProveedorPorCodigoAsync(cn, codigo, false, ct, null) ?? throw new ReglaException("No se encontró el proveedor recién creado.");
                                 fila.Resultado = $"Proveedor {codigo} creado. ";
                                 break;
                         }
                         // Con el proveedor definitivo, volver a controlar que no esté cargado.
-                        bloqueo = await BloqueoAsync(cn, null, a, prov.Codigo, cfg, ct);
+                        bloqueo = await BloqueoAsync(cn, null, a, prov.Codigo, cfg, s.Ventas, ct);
                         if (bloqueo is not null) { fila.Resultado += bloqueo; continue; }
                     }
                     fila.Proveedor = prov.Codigo; fila.ProveedorNombre = prov.Nombre;
@@ -149,7 +158,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                     if (ex is SqlException)
                     {
                         var incidente = await events.LogErrorAsync("ControlArca", "ImportarComprobante", ex,
-                            "No se pudo grabar el comprobante recibido.", new { fila.Comprobante, fila.Cuit }, ct: ct);
+                            s.Ventas ? "No se pudo grabar el comprobante emitido." : "No se pudo grabar el comprobante recibido.", new { fila.Comprobante, fila.Cuit }, ct: ct);
                         fila.Resultado += $"No se pudo grabar el comprobante. Revisá el incidente {incidente} con soporte.";
                         continue;
                     }
@@ -166,13 +175,13 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             {
                 var r = resultados[i]; var a = s.Comprobantes[i];
                 var mensaje = r.Importado ? ArcaTransmisionRegistro.MensajeAlta : r.Resultado.Trim();
-                await ArcaTransmisionRegistro.GrabarControlAsync(cn, transmision, Tc(a.Clase), a.PuntoVenta.ToString("0000", CultureInfo.InvariantCulture),
+                await ArcaTransmisionRegistro.GrabarControlAsync(cn, transmision, Tc(a.Clase, s.Ventas), a.PuntoVenta.ToString("0000", CultureInfo.InvariantCulture),
                     a.NumeroDesde.ToString("00000000", CultureInfo.InvariantCulture), a.Letra, a.Total, r.Proveedor, a.Fecha, r.ProveedorNombre.Length > 0 ? r.ProveedorNombre : a.NombreContraparte, mensaje, ct);
                 log.AppendLine($"{r.Comprobante} {a.NombreContraparte}: {mensaje}");
             }
             await ArcaTransmisionRegistro.CerrarAsync(cn, transmision, importados, log.ToString(), ct);
-            await events.LogAuditAsync("ControlArca", "ImportarFaltantes", "C_MV_CPTE", $"{importados} de {resultados.Count}",
-                $"Importó {importados} de {resultados.Count} comprobantes recibidos de ARCA al libro de IVA compras (transmisión {transmision}).",
+            await events.LogAuditAsync("ControlArca", "ImportarFaltantes", s.Ventas ? "V_MV_CPTE" : "C_MV_CPTE", $"{importados} de {resultados.Count}",
+                $"Importó {importados} de {resultados.Count} comprobantes {(s.Ventas ? "emitidos" : "recibidos")} de ARCA al libro de IVA {(s.Ventas ? "ventas" : "compras")} (transmisión {transmision}).",
                 new { Transmision = transmision, s.CuentaCompras, s.CuentaIva, s.CuentaOtrosTributos, s.Unidad, s.ProveedoresNuevos,
                       Comprobantes = resultados.Select(r => new { r.Comprobante, r.Cuit, r.Importado, r.Resultado }) }, CancellationToken.None);
             return resultados;
@@ -180,18 +189,19 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
 
     // ── Reglas ──────────────────────────────────────────────────────────────────────────────────
 
-    private static ControlArcaImportacionFila NuevaFila(ArcaMisComprobante a) => new()
+    private static ControlArcaImportacionFila NuevaFila(ArcaMisComprobante a, bool ventas = false) => new()
     {
-        Clave = Clave(a), Comprobante = $"{Tc(a.Clase)} {a.PuntoVenta:00000}-{a.NumeroDesde:00000000} {a.Letra}".Trim(),
+        Clave = Clave(a), Comprobante = $"{Tc(a.Clase, ventas)} {a.PuntoVenta:00000}-{a.NumeroDesde:00000000} {a.Letra}".Trim(),
         Cuit = a.DocContraparte, Nombre = a.NombreContraparte, Fecha = a.Fecha, Total = a.Total
     };
 
     internal static string Clave(ArcaMisComprobante a) => $"{a.CodigoTipo}|{a.PuntoVenta}|{a.NumeroDesde}|{Digitos(a.DocContraparte)}";
 
-    internal static string Tc(string clase) => clase switch { "NC" => "NCC", "ND" => "NDC", _ => "FCC" };
+    internal static string Tc(string clase, bool ventas = false)
+        => ventas ? clase switch { "NC" => "NC", "ND" => "ND", _ => "FC" } : clase switch { "NC" => "NCC", "ND" => "NDC", _ => "FCC" };
 
     /// <summary>Por qué no se puede importar (null = se puede). Sin proveedor solo controla lo que no depende de él.</summary>
-    private static async Task<string?> BloqueoAsync(SqlConnection cn, SqlTransaction? tx, ArcaMisComprobante a, string? proveedor, Config cfg, CancellationToken ct)
+    private static async Task<string?> BloqueoAsync(SqlConnection cn, SqlTransaction? tx, ArcaMisComprobante a, string? proveedor, Config cfg, bool ventas, CancellationToken ct)
     {
         if (a.Clase is not ("FC" or "NC" or "ND")) return "Los recibos no se importan: solo facturas y notas de crédito o débito.";
         if (a.Letra is not ("A" or "B" or "C" or "M")) return $"Letra {a.Letra} no admitida.";
@@ -199,14 +209,20 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         if (a.PuntoVenta is < 1 or > 9999 || a.NumeroDesde is < 1 or > 99999999) return "Punto de venta o número fuera de rango.";
         if (a.Moneda is not ("$" or "PES" or "")) return $"Está en moneda extranjera ({a.Moneda}): cargalo a mano.";
         if (a.Total <= 0) return "Total en cero.";
-        if (a.DocContraparte.Length != 11) return "El emisor no tiene CUIT.";
-        if (cfg.Cierre is { } cierre && a.Fecha.Date <= cierre.Date) return $"El período está cerrado para compras (cierre {cierre:dd/MM/yyyy}).";
+        if (!ventas && a.DocContraparte.Length != 11) return "El emisor no tiene CUIT.";
+        if ((ventas ? cfg.CierreVentas : cfg.Cierre) is { } cierre && a.Fecha.Date <= cierre.Date)
+            return $"El período está cerrado para {(ventas ? "ventas" : "compras")} (cierre {cierre:dd/MM/yyyy}).";
         if (cfg.OperativaDesde is { } d && a.Fecha.Date < d.Date || cfg.OperativaHasta is { } h && a.Fecha.Date > h.Date)
             return "La fecha está fuera de la fecha operativa.";
         if (await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
             SELECT COUNT(*) FROM dbo.MV_EJERCICIOS WHERE ISNULL(CERRADO,0)=0 AND @f BETWEEN [FECHA DESDE] AND [FECHA HASTA];
             """, new { f = a.Fecha.Date }, tx, cancellationToken: ct)) != 1) return "No hay un ejercicio contable abierto para esa fecha.";
-        if (Armar(a, "P", "C", "I", "O").Error is { } error) return error;
+        if (Armar(a, "P", "C", "I", "O", ventas).Error is { } error) return error;
+        if (ventas)
+        {
+            var cargado = await ComprobanteVentasExistenteAsync(cn, tx, a, ct);
+            return cargado is null ? null : $"Ya está cargado ese número en ventas ({cargado}). No se vuelve a importar.";
+        }
         var existente = await CuentaExistenteAsync(cn, tx, a, proveedor, cfg.Equivalencia(Tc(a.Clase)), ct);
         return existente is null ? null : $"Ya está cargado ese comprobante en la cuenta {existente}. Se verificó por CUIT o cuenta; no se vuelve a importar.";
     }
@@ -240,13 +256,29 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                 num = a.NumeroDesde.ToString("00000000"), letra = a.Letra.Trim(), proveedor = proveedor?.Trim() ?? "", cuit = Digitos(a.DocContraparte) },
                 tx, cancellationToken: ct));
 
+    /// <summary>En ventas el número es de la empresa: alcanza con tipo, punto de venta, número y letra, también si está anulado.</summary>
+    internal static Task<string?> ComprobanteVentasExistenteAsync(SqlConnection cn, SqlTransaction? tx, ArcaMisComprobante a, CancellationToken ct)
+        => cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition("""
+            SELECT TOP (1) e.Ref FROM (
+                SELECT 0 Orden, LTRIM(RTRIM(c.TC)) + ' ' + LTRIM(RTRIM(c.IDCOMPROBANTE)) Ref
+                FROM dbo.V_MV_CPTE c WITH(UPDLOCK,HOLDLOCK)
+                WHERE LTRIM(RTRIM(c.TC))=@tc AND LTRIM(RTRIM(c.SUCURSAL))=@suc AND LTRIM(RTRIM(c.NUMERO))=@num AND LTRIM(RTRIM(c.LETRA))=@letra AND ISNULL(c.IDCOMPLEMENTO,0)=0
+                UNION ALL
+                SELECT 1, LTRIM(RTRIM(a.TC)) + ' ' + LTRIM(RTRIM(a.SUCURSAL)) + LTRIM(RTRIM(a.NUMERO)) + LTRIM(RTRIM(a.LETRA))
+                FROM dbo.MV_ASIENTOS a WITH(UPDLOCK,HOLDLOCK)
+                WHERE LTRIM(RTRIM(a.TC))=@tc AND LTRIM(RTRIM(a.SUCURSAL))=@suc AND LTRIM(RTRIM(a.NUMERO))=@num AND LTRIM(RTRIM(a.LETRA))=@letra
+                  AND UPPER(LTRIM(RTRIM(ISNULL(a.LIVA_TIPO,'')))) IN ('','VENTAS')
+            ) e ORDER BY e.Orden;
+            """, new { tc = Tc(a.Clase, true), suc = a.PuntoVenta.ToString("0000"), num = a.NumeroDesde.ToString("00000000"), letra = a.Letra.Trim() }, tx, cancellationToken: ct));
+
     internal sealed record Armado(IReadOnlyList<ControlArcaAsientoLinea> Lineas, decimal Imputacion, decimal Iva, decimal NetoGravado, decimal NoGravado,
         decimal Exento, decimal Otros, IReadOnlyList<ArcaAlicuota> Alicuotas, string? Error);
 
     /// <summary>Arma el asiento como el legacy: las A y M discriminan IVA; en B y C todo (menos otros tributos) va a la cuenta de compras.</summary>
-    internal static Armado Armar(ArcaMisComprobante a, string proveedor, string compras, string iva, string otros)
+    internal static Armado Armar(ArcaMisComprobante a, string proveedor, string compras, string iva, string otros, bool ventas = false)
     {
-        var discrimina = a.Letra is "A" or "M";
+        // En ventas la empresa es la que emite: el libro de IVA ventas discrimina también las B (ARCA informa neto e IVA de cada una).
+        var discrimina = ventas ? a.Letra != "C" : a.Letra is "A" or "M";
         var alicuotas = discrimina ? a.Alicuotas.Where(x => x.Iva != 0 || x.Neto != 0).ToList() : [];
         var ivaTotal = !discrimina ? 0 : alicuotas.Count > 0 ? alicuotas.Sum(x => x.Iva) : a.Iva;
         if (discrimina && alicuotas.Count == 0 && a.Iva != 0) alicuotas.Add(new ArcaAlicuota(21m, a.NetoGravado, a.Iva));
@@ -256,7 +288,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         if (imputacion < 0 || otrosTributos < 0 || ivaTotal < 0) error = "Los importes de ARCA no cierran (IVA u otros tributos mayores al total).";
         if (alicuotas.Count(x => x.Iva != 0) > 4) error = "Tiene más de cuatro alícuotas de IVA: cargalo a mano.";
         if (a.Total == 0) error = "ARCA lo informa con importe 0: no hay nada que registrar.";
-        var proveedorDh = a.Clase == "NC" ? "D" : "H"; var otroDh = proveedorDh == "H" ? "D" : "H";
+        // Compras: proveedor al Haber (NC al Debe). Ventas, al revés: cliente al Debe (NC al Haber).
+        var proveedorDh = (a.Clase == "NC") != ventas ? "D" : "H"; var otroDh = proveedorDh == "H" ? "D" : "H";
         var lineas = new List<ControlArcaAsientoLinea> { new(proveedor, proveedorDh, a.Total) };
         if (imputacion != 0) lineas.Add(new(compras, otroDh, imputacion));
         if (ivaTotal != 0) lineas.Add(new(iva, otroDh, ivaTotal));
@@ -277,9 +310,9 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         if (await cn.ExecuteScalarAsync<int>(Q("""
             DECLARE @r int; EXEC @r=sys.sp_getapplock @Resource=N'ALFACORE_COMPRAS_REGISTRO',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000; SELECT @r;
             """)) < 0) throw new ReglaException("Hay otra compra guardándose. Reintentá en unos segundos.");
-        if (await BloqueoAsync(cn, tx, a, prov.Codigo, cfg, ct) is { } bloqueo) throw new ReglaException(bloqueo);
-        var armado = Armar(a, prov.Codigo, s.CuentaCompras.Trim(), s.CuentaIva.Trim(), s.CuentaOtrosTributos.Trim());
-        var tc = Tc(a.Clase); var tcAsiento = cfg.Equivalencia(tc);
+        if (await BloqueoAsync(cn, tx, a, prov.Codigo, cfg, s.Ventas, ct) is { } bloqueo) throw new ReglaException(bloqueo);
+        var armado = Armar(a, prov.Codigo, s.CuentaCompras.Trim(), s.CuentaIva.Trim(), s.CuentaOtrosTributos.Trim(), s.Ventas);
+        var tc = Tc(a.Clase, s.Ventas); var tcAsiento = s.Ventas ? tc : cfg.Equivalencia(tc);
         var suc = a.PuntoVenta.ToString("0000"); var num = a.NumeroDesde.ToString("00000000"); var id = suc + num + a.Letra;
         var periodo = (await cn.QuerySingleAsync<int>(Q("""
             SELECT PERIODO FROM dbo.MV_EJERCICIOS WHERE ISNULL(CERRADO,0)=0 AND @f BETWEEN [FECHA DESDE] AND [FECHA HASTA];
@@ -294,7 +327,7 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         var signo = a.Clase == "NC" ? -1 : 1;
         var al = armado.Alicuotas;
         decimal Tasa(int i) => i < al.Count ? al[i].Tasa : 0; decimal Iva(int i) => i < al.Count ? al[i].Iva * signo : 0;
-        var liva = a.Letra == "C" && prov.CondicionIva == "5" && !string.Equals(cfg.MonotributoAlIva, "SI", StringComparison.OrdinalIgnoreCase) ? "" : "Compras";
+        var liva = s.Ventas ? "Ventas" : a.Letra == "C" && prov.CondicionIva == "5" && !string.Equals(cfg.MonotributoAlIva, "SI", StringComparison.OrdinalIgnoreCase) ? "" : "Compras";
         var condIva = prov.CondicionIva.Length > 0 ? prov.CondicionIva : a.Letra == "C" ? "5" : "1";
         var p = new DynamicParameters(new
         {
@@ -302,11 +335,23 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             cuit = Digitos(a.DocContraparte), fecha = a.Fecha.Date, total = a.Total, periodo, mes = a.Fecha.Month, asiento, tipo = tipoReg,
             unidad = CodigoPk.Format(s.Unidad, 4), motivo = CodigoPk.Format(prov.Motivo.Length > 0 ? prov.Motivo : "1", 4), ivaCond = CodigoPk.Format(condIva, 4),
             provincia = CodigoPk.Format(prov.Provincia, 4), usuario = UsuarioImportacion, liva,
+            domicilio = prov.Domicilio.Length > 0 ? Corto(prov.Domicilio, 50) : ".", localidad = prov.Localidad.Length > 0 ? Corto(prov.Localidad, 50) : ".",
+            vendedor = prov.Vendedor.Length > 0 ? CodigoPk.Format(prov.Vendedor, 4) : null,
             livaTotal = a.Total * signo, gravado = armado.NetoGravado * signo, noGravado = armado.NoGravado * signo, exento = armado.Exento * signo,
             perc = armado.Otros * signo, tasa1 = Tasa(0), iva1 = Iva(0), tasa2 = Tasa(1), iva2 = Iva(1), tasa3 = Tasa(2), iva3 = Iva(2), tasa4 = Tasa(3), iva4 = Iva(3),
             ivaTotal = armado.Iva, netoCpte = armado.NetoGravado, noGravCpte = armado.NoGravado,
             cae = a.Cae.Length is > 0 and <= 14 ? a.Cae : null, codigoDgi = CodigoPk.Format(a.CodigoTipo.ToString(CultureInfo.InvariantCulture), 4)
         });
+        if (s.Ventas)
+            await cn.ExecuteAsync(Q("""
+                INSERT dbo.V_MV_CPTE(TC,IDCOMPROBANTE,IDCOMPLEMENTO,CUENTA,FECHA,FECHAESTINICIO,FECHAESTFIN,NOMBRE,DOMICILIO,LOCALIDAD,DOCUMENTOTIPO,DOCUMENTONUMERO,
+                  CONDICIONIVA,IMPORTE,Importe_S_IVA,ImporteIva,NetoGravado,NetoNoGravado,AlicIva,ImporteIva2,AlicIva2,IDMOTIVOCPRAVTA,IdVendedor,
+                  SUCURSAL,NUMERO,LETRA,UNEGOCIO,MONEDA,COTIZACION,USUARIO,FechaHora_Grabacion,Transmision,COMENTARIOS)
+                VALUES(@tc,@id,0,@cuenta,@fecha,@fecha,@fecha,@nombre,@domicilio,@localidad,'   1',@cuit,@ivaCond,@total,@netoCpte,@ivaTotal,@netoCpte,@noGravCpte,
+                  @tasa1,ABS(@iva2),@tasa2,@motivo,@vendedor,@suc,@num,@letra,@unidad,'   1',1,@usuario,GETDATE(),@transmision,
+                  N'Importado desde ARCA (Mis Comprobantes Emitidos) por AlfaCore');
+                """, p));
+        else
         await cn.ExecuteAsync(Q("""
             INSERT dbo.C_MV_CPTE(TC,IDCOMPROBANTE,CUENTA,FECHA,VENCIMIENTO,FechaSubdiario,NOMBRE,DOMICILIO,LOCALIDAD,IDPROVINCIA,DOCUMENTOTIPO,DOCUMENTONUMERO,
               CONDICIONIVA,IMPORTE,ImporteIva,NetoGravado,NetoNoGravado,AlicIva,ImporteIva2,AlicIva2,SUCURSAL,NUMERO,LETRA,UNEGOCIO,MONEDA,COTIZACION,
@@ -458,6 +503,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
     {
         public string Codigo { get; set; } = ""; public string Nombre { get; set; } = ""; public string CondicionIva { get; set; } = "";
         public string Motivo { get; set; } = ""; public string Provincia { get; set; } = "";
+        /// <summary>Solo clientes (ventas).</summary>
+        public string Domicilio { get; set; } = ""; public string Localidad { get; set; } = ""; public string Vendedor { get; set; } = "";
     }
 
     private const string ProveedorSql = """
@@ -465,6 +512,27 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
                LTRIM(RTRIM(ISNULL(IdMotivoCpra,''))) Motivo, LTRIM(RTRIM(ISNULL(PROVINCIA,''))) Provincia
         FROM dbo.VT_PROVEEDORES WHERE ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0
         """;
+
+    private const string ClienteSql = """
+        SELECT TOP (1) LTRIM(RTRIM(CODIGO)) Codigo, LTRIM(RTRIM(ISNULL(RAZON_SOCIAL,''))) Nombre, LTRIM(RTRIM(ISNULL(IVA,''))) CondicionIva,
+               LTRIM(RTRIM(ISNULL(CALLE,''))) Domicilio, LTRIM(RTRIM(ISNULL(LOCALIDAD,''))) Localidad, LTRIM(RTRIM(ISNULL(IdVendedor,''))) Vendedor
+        FROM dbo.VT_CLIENTES WHERE ISNULL(Dada_De_Baja,0)=0
+        """;
+
+    /// <summary>
+    /// La cuenta con la que se carga el comprobante. Compras: el proveedor por CUIT. Ventas: el cliente por documento y, si el comprobante
+    /// no trae documento (consumidor final), la cuenta CUENTACONSUMIDORFINAL. Null = no existe.
+    /// </summary>
+    private static async Task<Proveedor?> CuentaDelComprobanteAsync(SqlConnection cn, ArcaMisComprobante a, bool ventas, Config cfg, CancellationToken ct, SqlTransaction? tx)
+    {
+        if (!ventas) return await ProveedorPorCuitAsync(cn, a.DocContraparte, ct, tx);
+        var d = Digitos(a.DocContraparte);
+        if (d.TrimStart('0').Length == 0)
+            return cfg.ConsumidorFinal.Length == 0 ? null : await ProveedorPorCodigoAsync(cn, cfg.ConsumidorFinal, true, ct, tx);
+        return await cn.QueryFirstOrDefaultAsync<Proveedor>(new CommandDefinition(ClienteSql + """
+             AND LTRIM(RTRIM(NUMERO_DOCUMENTO)) IN (@d, @g) ORDER BY ISNULL(BLOQUEO,0), CODIGO;
+            """, new { d, g = d.Length == 11 ? $"{d[..2]}-{d[2..10]}-{d[10]}" : d }, tx, cancellationToken: ct));
+    }
 
     private static async Task<Proveedor?> ProveedorPorCuitAsync(SqlConnection cn, string cuit, CancellationToken ct, SqlTransaction? tx)
     {
@@ -476,8 +544,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
             """, new { d, g = $"{d[..2]}-{d[2..10]}-{d[10]}" }, tx, cancellationToken: ct));
     }
 
-    private static Task<Proveedor?> ProveedorPorCodigoAsync(SqlConnection cn, string codigo, CancellationToken ct, SqlTransaction? tx)
-        => cn.QueryFirstOrDefaultAsync<Proveedor>(new CommandDefinition(ProveedorSql + " AND LTRIM(RTRIM(CODIGO))=@c;", new { c = codigo.Trim() }, tx, cancellationToken: ct));
+    private static Task<Proveedor?> ProveedorPorCodigoAsync(SqlConnection cn, string codigo, bool ventas, CancellationToken ct, SqlTransaction? tx)
+        => cn.QueryFirstOrDefaultAsync<Proveedor>(new CommandDefinition((ventas ? ClienteSql : ProveedorSql) + " AND LTRIM(RTRIM(CODIGO))=@c;", new { c = codigo.Trim() }, tx, cancellationToken: ct));
 
     private sealed class Config
     {
@@ -485,6 +553,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         public DateTime? OperativaDesde { get; init; }
         public DateTime? OperativaHasta { get; init; }
         public string ProveedoresVarios { get; init; } = "";
+        public DateTime? CierreVentas { get; init; }
+        public string ConsumidorFinal { get; init; } = "";
         public string MonotributoAlIva { get; init; } = "";
         public Dictionary<string, string> Valores { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>EQU_FCC / EQU_NCC / EQU_NDC: TC con que va el asiento.</summary>
@@ -495,13 +565,14 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
     {
         var valores = (await cn.QueryAsync<(string Clave, string Valor)>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))), LTRIM(RTRIM(ISNULL(VALOR,''))) FROM dbo.TA_CONFIGURACION
-            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('CIERRECOMPRAS','FECHAOPERDESDE','FECHAOPERHASTA','CUENTAPROVEEDORESVARIOS','MONOTRIBUTOALIVA','EQU_FCC','EQU_NCC','EQU_NDC');
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('CIERRECOMPRAS','CIERREVENTAS','CUENTACONSUMIDORFINAL','FECHAOPERDESDE','FECHAOPERHASTA','CUENTAPROVEEDORESVARIOS','MONOTRIBUTOALIVA','EQU_FCC','EQU_NCC','EQU_NDC');
             """, cancellationToken: ct))).GroupBy(x => x.Clave).ToDictionary(g => g.Key, g => g.First().Valor, StringComparer.OrdinalIgnoreCase);
         DateTime? Fecha(string k) => DateTime.TryParseExact(valores.GetValueOrDefault(k, ""), ["d/M/yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "yyyyMMdd"],
             CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f : null;
         return new Config
         {
-            Cierre = Fecha("CIERRECOMPRAS"), OperativaDesde = Fecha("FECHAOPERDESDE"), OperativaHasta = Fecha("FECHAOPERHASTA"),
+            Cierre = Fecha("CIERRECOMPRAS"), CierreVentas = Fecha("CIERREVENTAS"), ConsumidorFinal = valores.GetValueOrDefault("CUENTACONSUMIDORFINAL", ""),
+            OperativaDesde = Fecha("FECHAOPERDESDE"), OperativaHasta = Fecha("FECHAOPERHASTA"),
             ProveedoresVarios = valores.GetValueOrDefault("CUENTAPROVEEDORESVARIOS", ""), MonotributoAlIva = valores.GetValueOrDefault("MONOTRIBUTOALIVA", ""),
             Valores = valores
         };
