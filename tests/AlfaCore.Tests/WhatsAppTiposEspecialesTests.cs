@@ -17,7 +17,7 @@ public sealed class WhatsAppTiposEspecialesTests
     private static JsonElement Mensaje(string json) => JsonDocument.Parse(json).RootElement;
 
     [Fact]
-    public void NoSoportado_ConPayloadReal_DiceQueSoloSeVeEnElCelular()
+    public void NoSoportado_ConPayloadReal_NoPresuponeVisualizacionUnica()
     {
         var message = Mensaje("""
             {"from":"5491135183783","id":"wamid.X","timestamp":"1790795874",
@@ -26,11 +26,16 @@ public sealed class WhatsAppTiposEspecialesTests
              "type":"unsupported","unsupported":{"type":"unknown","raw_type":"unknown"}}
             """);
 
-        Assert.Equal(WhatsAppMessageClassifier.SoloEnCelularText, ConversacionesService.ExtractIncomingText(message, "unsupported"));
+        var texto = ConversacionesService.ExtractIncomingText(message, "unsupported");
+        Assert.Equal(WhatsAppMessageClassifier.SoloEnCelularText, texto);
+        Assert.DoesNotContain("visualización única", texto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("solo se puede ver", texto, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("foto", texto, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reenvíen", texto, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void ErroresDelHistorial_DiceQueSoloSeVeEnElCelular()
+    public void ErroresDelHistorial_UsaAvisoNeutralSinInferirElFormato()
     {
         var message = Mensaje("""{"id":"wamid.X","type":"errors","errors":[{"code":131051}]}""");
 

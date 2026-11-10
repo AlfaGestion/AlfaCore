@@ -79,11 +79,11 @@ public static class WhatsAppMessageClassifier
     }
 
     /// <summary>
-    /// Texto para lo que WhatsApp no deja ver fuera del celular. Meta lo manda como type "unsupported"
-    /// (o "errors" en el historial) con el error 131051 y sin decir qué era (raw_type "unknown" en todos
-    /// los payloads reales revisados): típicamente fotos/videos de visualización única.
+    /// Aviso para contenido que AlfaCore no puede mostrar. Los tipos unsupported/errors y el código
+    /// 131051 no prueban que sea una foto o un video de visualización única: no permiten inferir
+    /// el formato original. El detalle técnico del evento se conserva para el diagnóstico.
     /// </summary>
-    public const string SoloEnCelularText = "Este mensaje solo se puede ver desde WhatsApp en el celular (por ejemplo, una foto o un video de visualización única).";
+    public const string SoloEnCelularText = "No se pudo mostrar este mensaje en AlfaCore. Revisalo en WhatsApp o pedí que lo reenvíen.";
 
     public const string MensajeEliminadoText = "Se eliminó un mensaje.";
 

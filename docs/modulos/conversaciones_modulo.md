@@ -180,6 +180,12 @@ La referencia principal queda simplificada:
 
 #### Integración WhatsApp
 
+Los tipos `unsupported`, `errors` y `media_placeholder` no permiten deducir que el original era
+una foto o un video de visualización única. El aviso de contenido no disponible debe ser neutral;
+el tipo y motivo de Meta se conservan en el diagnóstico. Para investigar un texto normal que
+aparece con ese aviso es necesario revisar el payload del mensaje concreto, antes de atribuir
+la causa a Meta, a la convivencia con la app o al parser de AlfaCore.
+
 Los mensajes citados se resuelven en una consulta adicional por página, limitada a los identificadores
 referenciados y al mismo `IdConversacion`. `ConversacionMensajeDto.MensajeCitado` lleva el original
 aunque haya quedado fuera de la página cargada, sin agregarlo al timeline ni modificar sus cursores.
