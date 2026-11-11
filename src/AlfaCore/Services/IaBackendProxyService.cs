@@ -105,9 +105,10 @@ public sealed class IaBackendProxyService(
             if (!root.TryGetProperty("input", out var inputElement) || inputElement.ValueKind != JsonValueKind.Array)
                 return IaBackendProcessOutcome.Error(400, "input_required");
 
-            var attachmentError = ValidateAttachments(inputElement);
+            var opcionAdjuntos = (GetString(root, "opcion") ?? GetString(root, "task") ?? "FACTURAS").Trim().ToUpperInvariant();
+            var attachmentError = ValidateAttachments(inputElement, GetMaxAttachments(opcionAdjuntos), GetMaxTotalAttachmentBytes());
             if (attachmentError is not null)
-                return IaBackendProcessOutcome.Error(400, attachmentError);
+                return attachmentError;
 
             var maxOutputTokens = root.TryGetProperty("max_output_tokens", out var tokensEl) && tokensEl.ValueKind == JsonValueKind.Number
                 ? tokensEl.GetInt32()
@@ -320,9 +321,37 @@ public sealed class IaBackendProxyService(
         }
     }
 
-    private static string? ValidateAttachments(JsonElement input)
+    // Cantidad maxima de adjuntos por pedido. El lector de facturas (--auto) corta cada imagen en
+    // franjas y manda todas en un solo pedido, asi que 1 no alcanza. Default 10 (como el backend
+    // Python original). Se puede ajustar en appsettings:
+    //   IaBackend:MaxAttachments            -> valor general
+    //   IaBackend:MaxAttachmentsPorTarea:X  -> valor para la tarea/opcion X (ej. FACTURAS)
+    private const int DefaultMaxAttachments = 10;
+    private const int DefaultMaxTotalAttachmentMb = 30;
+
+    private int GetMaxAttachments(string opcion)
+    {
+        var porTarea = opcion.Length > 0 ? configuration[$"IaBackend:MaxAttachmentsPorTarea:{opcion}"] : null;
+        if (int.TryParse(porTarea, out var maxTarea) && maxTarea > 0)
+            return maxTarea;
+        return int.TryParse(configuration["IaBackend:MaxAttachments"], out var max) && max > 0
+            ? max
+            : DefaultMaxAttachments;
+    }
+
+    // Tope por tamano total de los adjuntos decodificados (IaBackend:MaxTotalAttachmentMB).
+    private long GetMaxTotalAttachmentBytes()
+    {
+        var mb = int.TryParse(configuration["IaBackend:MaxTotalAttachmentMB"], out var v) && v > 0
+            ? v
+            : DefaultMaxTotalAttachmentMb;
+        return mb * 1024L * 1024L;
+    }
+
+    public static IaBackendProcessOutcome? ValidateAttachments(JsonElement input, int maxAttachments, long maxTotalBytes)
     {
         var attachmentCount = 0;
+        long totalBytes = 0;
         foreach (var message in input.EnumerateArray())
         {
             if (message.ValueKind != JsonValueKind.Object)
@@ -344,19 +373,23 @@ public sealed class IaBackendProxyService(
                     continue;
 
                 attachmentCount++;
-                if (attachmentCount > 1)
-                    return "only_one_attachment_allowed";
-                if (!TryValidateDataUri(dataUri, out var error))
-                    return error;
+                if (attachmentCount > maxAttachments)
+                    return IaBackendProcessOutcome.Error(400, new { ok = false, error = "too_many_attachments", max = maxAttachments });
+                if (!TryValidateDataUri(dataUri, out var error, out var decodedBytes))
+                    return IaBackendProcessOutcome.Error(400, error);
+                totalBytes += decodedBytes;
+                if (totalBytes > maxTotalBytes)
+                    return IaBackendProcessOutcome.Error(400, new { ok = false, error = "attachments_too_large", max_mb = maxTotalBytes / (1024 * 1024) });
             }
         }
 
         return null;
     }
 
-    private static bool TryValidateDataUri(string value, out string error)
+    private static bool TryValidateDataUri(string value, out string error, out long decodedBytes)
     {
         error = string.Empty;
+        decodedBytes = 0;
         if (!value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             error = "attachment_must_be_data_uri";
@@ -394,6 +427,7 @@ public sealed class IaBackendProxyService(
                 error = decoded.Length == 0 ? "empty_attachment" : "attachment_too_large";
                 return false;
             }
+            decodedBytes = decoded.Length;
         }
         catch (FormatException)
         {

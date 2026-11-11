@@ -32,6 +32,9 @@ public sealed record IaBackendProcessOutcome(int StatusCode, object Body)
     public static IaBackendProcessOutcome Error(int statusCode, string error)
         => new(statusCode, new { ok = false, error });
 
+    public static IaBackendProcessOutcome Error(int statusCode, object body)
+        => new(statusCode, body);
+
     public static IaBackendProcessOutcome Success(string model, string outputText)
         => new(200, new { ok = true, model, output_text = outputText });
 }
