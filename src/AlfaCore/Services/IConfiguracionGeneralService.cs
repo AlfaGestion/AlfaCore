@@ -23,6 +23,13 @@ public interface IConfiguracionGeneralService
     /// <summary>Bytes del logo actual (TA_LOGOS.IMAGEN), o null si no hay logo cargado.</summary>
     Task<byte[]?> GetLogoBytesAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Logo actual como data URL, leído con la conexión de la sesión activa (la misma con la que se guarda).
+    /// Las pantallas lo usan en lugar de /api/configuracion-general/logo, que se pide por HTTP fuera del circuito
+    /// y puede resolver otra base. Null si no hay logo.
+    /// </summary>
+    Task<string?> GetLogoDataUrlAsync(CancellationToken ct = default);
+
     Task SaveLogoAsync(byte[] contenido, CancellationToken ct = default);
 
     Task DeleteLogoAsync(CancellationToken ct = default);

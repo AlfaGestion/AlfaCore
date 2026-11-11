@@ -169,6 +169,19 @@ public sealed class ConfiguracionGeneralService(
             return reader.GetFieldValue<byte[]>(0);
         }, "No se pudo cargar el logo.", ct);
 
+    public async Task<string?> GetLogoDataUrlAsync(CancellationToken ct = default)
+    {
+        var bytes = await GetLogoBytesAsync(ct);
+        if (bytes is null || bytes.Length == 0)
+            return null;
+
+        var mime = bytes.Length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 ? "image/png"
+            : bytes.Length >= 3 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F' ? "image/gif"
+            : bytes.Length >= 12 && bytes[0] == 'R' && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P' ? "image/webp"
+            : "image/jpeg";
+        return $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+    }
+
     public Task SaveLogoAsync(byte[] contenido, CancellationToken ct = default)
         => ExecuteLoggedAsync("SaveLogo", async token =>
         {

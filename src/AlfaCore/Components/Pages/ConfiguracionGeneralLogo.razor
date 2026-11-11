@@ -104,7 +104,11 @@
             _logo = result.Value;
             _tieneLogo = _logo.TieneLogo;
             if (_tieneLogo)
-                _previewUrl = $"/api/configuracion-general/logo?v={Guid.NewGuid():N}";
+            {
+                var dataUrl = await UiOps.RunAsync(() => ConfigSvc.GetLogoDataUrlAsync(), "No se pudo cargar el logo.");
+                if (dataUrl.Success && !string.IsNullOrEmpty(dataUrl.Value))
+                    _previewUrl = dataUrl.Value;
+            }
         }
     }
 
@@ -194,7 +198,7 @@
         {
             _logo = result.Value;
             _tieneLogo = _logo.TieneLogo;
-            _previewUrl = _tieneLogo ? $"/api/configuracion-general/logo?v={Guid.NewGuid():N}" : null;
+            _previewUrl = _tieneLogo ? (await UiOps.RunAsync(() => ConfigSvc.GetLogoDataUrlAsync(), "No se pudo cargar el logo.")).Value : null;
         }
 
         _feedback = result.Success

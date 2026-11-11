@@ -103,7 +103,11 @@
         {
             _tieneLogo = logo.Value.TieneLogo;
             if (_tieneLogo)
-                _previewUrl = $"/api/configuracion-general/logo?v={Guid.NewGuid():N}";
+            {
+                var dataUrl = await UiOps.RunAsync(() => ConfigSvc.GetLogoDataUrlAsync(), "No se pudo cargar el logo.");
+                if (dataUrl.Success && !string.IsNullOrEmpty(dataUrl.Value))
+                    _previewUrl = dataUrl.Value;
+            }
         }
     }
 
