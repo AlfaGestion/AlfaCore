@@ -38,6 +38,7 @@
     <EmbeddedResource Include="Docs\manual_conciliacion_bancaria.md" />
     <EmbeddedResource Include="Docs\manual_conciliacion_tarjetas.md" />
     <EmbeddedResource Include="Docs\manual_cobranzas.md" />
+    <EmbeddedResource Include="Docs\manual_stock_movimientos.md" />
   </ItemGroup>
 
   <ItemGroup>

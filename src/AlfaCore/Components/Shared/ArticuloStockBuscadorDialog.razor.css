@@ -1,0 +1,16 @@
+.buscador { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
+.buscador__ayuda { margin: 0; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
+.buscador__error { margin: 0; color: var(--alfa-danger, #e5484d); }
+.buscador__input { width: 100%; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-sm); background: var(--alfa-bg-input, #1d2027); color: var(--alfa-text-primary, #f5f5f7); font: inherit; font-size: 14px; }
+.buscador__input:focus { outline: 2px solid var(--alfa-accent, #4f9efa); outline-offset: -1px; }
+.buscador__lista { max-height: 55vh; overflow-y: auto; }
+.buscador__tabla { width: 100%; border-collapse: collapse; }
+.buscador__tabla th, .buscador__tabla td { padding: 6px 8px; border-bottom: 1px solid var(--alfa-border-default); text-align: left; }
+.buscador__tabla th { position: sticky; top: 0; background: var(--alfa-bg-surface); color: var(--alfa-text-secondary, #a6abb5);
+    font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+.buscador__tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.buscador__tabla tbody tr { cursor: pointer; }
+.buscador__tabla tbody tr.is-active td { background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 22%, transparent); }
+.buscador__tabla tbody tr.is-restringido td { color: var(--alfa-text-secondary, #a6abb5); }
+.buscador__restriccion { display: block; color: var(--alfa-warning, #f5a524); font-size: 11px; }

@@ -529,6 +529,38 @@ Criterio aplicado:
 - Datos que usa: `IGestionDashboardService`
 - Observaciones: usa `V_MV_STOCK` como fuente principal de movimientos, coherente con la regla documental del proyecto.
 
+### StockMovimientos
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/StockMovimientos.razor`
+- Propósito: carga, modificación y anulación de movimientos de stock IR, VS, TR, AJP y SI (port de V_MV_STOCK.exe) con grilla código → cantidad/bultos, F5 y borrador local.
+- Datos que usa: `IStockMovimientosService`, `ArticuloStockBuscadorDialog`, `wwwroot/js/carga-directa.js` (F5 y foco).
+- Observaciones: menú web `D80-MOVSTOCK`; `?tipo=TR` preselecciona el tipo. En AJP/SI muestra saldo a la fecha y diferencia mientras se carga. Manual: `src/AlfaCore/Docs/manual_stock_movimientos.md`.
+
+### StockMovimientosService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/StockMovimientosService.cs`
+- Propósito: valida, calcula y graba movimientos de stock en `V_MV_STOCK` como el legacy (sin cabecera), numera con `V_TA_CPTE` (SISTEMA='Stock') y deja `V_MV_CPTEACCIONES`/`V_MV_CTROL_CPTE`.
+- Datos que usa: `V_MV_STOCK`, `V_TA_CPTE`, `V_TA_DEPOSITO`, `V_TA_MotivoStock`, `V_MA_ARTICULOS`, `V_MA_INSUMOS`, `S_TA_EQUIV` (vía `CargaComprobantesUnidades`), `TA_CONFIGURACION`, `ALFACORE_STOCK_MOV_OPERACION`.
+- Observaciones: AJP/SI graban la diferencia contra el saldo a la fecha (hasta ese día inclusive, sin el propio comprobante) y rechazan si el saldo cambió desde el cálculo; TR graba salida y entrada en el mismo comprobante; anular marca `Anulado=1`. Rechaza lotes/series/talle, insumos en IR/VS/TR, asientos de stock y depósitos de otra empresa (quedan en Alfa Gestión).
+
+### StockMovimientosCalculo
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/StockMovimientosCalculo.cs`
+- Propósito: reglas puras de signo, diferencia de ajuste, validación de cantidades, letra/número de comprobante y armado de filas (TR en dos pasadas).
+- Datos que usa: ninguno (sin acceso a datos).
+- Observaciones: probado en `tests/AlfaCore.Tests/StockMovimientosTests.cs`.
+
+### ArticuloStockBuscadorDialog
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/ArticuloStockBuscadorDialog.razor`
+- Propósito: búsqueda F5 de artículos sin precios, con stock del depósito y marca de los que no se pueden mover.
+- Datos que usa: función de búsqueda del llamador (`SearchFunc`), `StockMovimientoArticulo`.
+- Observaciones: reutilizable en compras/producción; la de ventas sigue embebida en `VentasCargaDirecta.razor` porque muestra precios.
+
 ### CajaBancos
 
 - Tipo: Page

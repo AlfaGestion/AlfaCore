@@ -22,7 +22,8 @@ public static class AyudaManuales
         new AyudaTema("consultas","Consultas","AlfaCore.Docs.manual_consultas.md"),
         new AyudaTema("conciliacion","Conciliación","AlfaCore.Docs.manual_conciliacion_bancaria.md"),
         new AyudaTema("tarjetas","Conciliación de tarjetas asistida con IA","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
-        new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md") });
+        new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md"),
+        new AyudaTema("stock","Stock: movimientos","AlfaCore.Docs.manual_stock_movimientos.md") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     public static AyudaManual Obtener(string tema)=>Manuales.Value.TryGetValue(tema,out var manual)
@@ -50,7 +51,8 @@ public static class AyudaManuales
         ("/ventas/reportes","reportes","Buscar y generar"),
         ("/compras/reportes","reportes","Buscar y generar"),
         ("/compras/actividad","reportes","Actividad de compras"),
-        ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas") });
+        ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas"),
+        ("/stock/movimientos","stock","Cargar un movimiento") });
 
     public static string TemaParaRuta(string ruta)=>Ubicar(ruta).Tema;
     /// <summary>Id del artículo de la pantalla (para abrir la ayuda directo ahí), o null.</summary>
