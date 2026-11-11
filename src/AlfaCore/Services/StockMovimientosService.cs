@@ -19,8 +19,12 @@ public interface IStockMovimientosService
     /// <summary>Calcula lo que se va a grabar (en AJP/SI, el saldo a la fecha y la diferencia). No graba nada.</summary>
     Task<StockMovimientoPlan> CalcularAsync(StockMovimientoBorrador borrador, CancellationToken ct = default);
     Task<StockMovimientoResultado> GrabarAsync(StockMovimientoBorrador borrador, Guid operacion, CancellationToken ct = default);
-    Task<IReadOnlyList<StockMovimientoResumen>> BuscarComprobantesAsync(string tc, string texto, CancellationToken ct = default);
+    /// <summary>Lista paginada de comprobantes de stock (la vista inicial de la pantalla).</summary>
+    Task<StockMovimientoPagina> ListarComprobantesAsync(StockMovimientoFiltro filtro, CancellationToken ct = default);
+    /// <summary>Comprobante para modificar; falla si no se puede modificar desde la web.</summary>
     Task<StockMovimientoCargado> GetComprobanteAsync(string tc, string comprobante, CancellationToken ct = default);
+    /// <summary>Comprobante para ver (incluso anulado o no modificable); Editable/MotivoNoEditable dicen si se puede tocar.</summary>
+    Task<StockMovimientoCargado> VerComprobanteAsync(string tc, string comprobante, CancellationToken ct = default);
     Task<StockMovimientoResultado> AnularAsync(string tc, string comprobante, Guid operacion, CancellationToken ct = default);
 }
 
@@ -85,6 +89,8 @@ public sealed class StockMovimientosService(
         const string columnas = """
             LTRIM(RTRIM(a.IDARTICULO)) Codigo, ISNULL(a.DESCRIPCION,'') Descripcion, LTRIM(RTRIM(ISNULL(a.IDUNIDAD,''))) Unidad,
             CONVERT(decimal(18,4),ISNULL(a.COSTO,0)) Costo,
+            CONVERT(bit,CASE WHEN ISNULL(a.Perecedero,0)=1 AND ISNULL(a.PideMedidas,0)=0 THEN 1 ELSE 0 END) Perecedero,
+            CASE WHEN ISNULL(a.PideMedidas,0)=1 THEN 0 ELSE CONVERT(int,ROUND(ISNULL(a.Largo,0),0)) END DiasVencimiento,
             CASE WHEN LTRIM(RTRIM(ISNULL(a.IDUNIDAD,'')))='' THEN 'no tiene unidad de medida'
                  WHEN ISNULL(a.USASERIE,0)=1 THEN 'usa números de serie'
                  WHEN ISNULL(a.USALOTE,0)=1 THEN 'usa lotes'
@@ -143,6 +149,7 @@ public sealed class StockMovimientosService(
         return filas.Select(f => new StockMovimientoArticulo
         {
             Codigo = f.Codigo, Descripcion = f.Descripcion.Trim(), Unidad = f.Unidad, Costo = f.Costo, Restriccion = f.Restriccion,
+            Perecedero = ctx.Publico.UsaPerecederos && f.Perecedero, DiasVencimiento = f.DiasVencimiento,
             Stock = stock.GetValueOrDefault(f.Codigo.Trim())
         }).ToList();
     }
@@ -201,9 +208,9 @@ public sealed class StockMovimientosService(
                 INSERT INTO dbo.V_MV_STOCK
                     (TC,IDCOMPROBANTE,IDCOMPLEMENTO,SECUENCIA,FECHA,IDArticulo,Descripcion,IDUnidad,IdUnidadBase,Cantidad,CantidadUD,EQUIV_UDBASE,
                      Costo,PrecioVenta,IMPORTE_S_IVA,IVARI,IVARNI,IMPUESTOS,IdDeposito,IDDEPOSITO_DESTINO,IdMotivoStock,ControladoPor,UNEGOCIO,
-                     CANT_BL,CANT_KG,CANT_M3)
+                     CANT_BL,CANT_KG,CANT_M3,NroLote)
                 VALUES (@Tc,@Comprobante,0,@Secuencia,@Fecha,@Articulo,@Descripcion,@Unidad,@Unidad,@Cantidad,@Cantidad,1,
-                     @Costo,0,0,0,0,0,@Deposito,@Destino,@Motivo,@Observaciones,@UnidadNegocio,@Bultos,@Kilos,@Metros);
+                     @Costo,0,0,0,0,0,@Deposito,@Destino,@Motivo,@Observaciones,@UnidadNegocio,@Bultos,@Kilos,@Metros,@Lote);
                 """, filas.Select(f => new
                 {
                     preparado.Tc, Comprobante = comprobante, f.Secuencia, Fecha = preparado.Fecha,
@@ -213,7 +220,9 @@ public sealed class StockMovimientosService(
                     Motivo = preparado.Motivo.Length == 0 ? null : CodigoPk.Format(preparado.Motivo, 4),
                     Observaciones = preparado.Observaciones.Length == 0 ? null : preparado.Observaciones,
                     UnidadNegocio = CodigoPk.Format(preparado.UnidadNegocio, 4),
-                    Bultos = f.Bultos, Kilos = f.Kilos, Metros = f.MetrosCubicos
+                    Bultos = f.Bultos, Kilos = f.Kilos, Metros = f.MetrosCubicos,
+                    // Como Utl.FmtLeerCodigo(...,25) del legacy: la fecha (numérica) va alineada a la derecha.
+                    Lote = f.Lote is null ? null : CodigoPk.Format(f.Lote, 25)
                 }).ToList(), tx, token));
 
             var accion = modificacion ? "M" : "A";
@@ -300,15 +309,24 @@ public sealed class StockMovimientosService(
             if (controlarSaldo && !ajuste && movimiento < 0 && ctx.Publico.ValidaStockSalidas && saldo + movimiento < 0)
                 throw new CargaComprobantesReglaException($"Sin stock suficiente de {codigo} en el depósito {deposito} (hay {saldo.ToString("0.####", Inv)}).");
 
+            // Perecederos: el ingreso lleva vencimiento (propuesto = fecha + días del artículo), grabado en NroLote como yyyymmdd.
+            DateTime? vencimiento = null;
+            if (a.Perecedero && StockMovimientosCalculo.LlevaVencimiento(tc, movimiento))
+            {
+                vencimiento = (l.Vencimiento ?? StockMovimientosCalculo.VencimientoPropuesto(fecha, a.DiasVencimiento)).Date;
+                if (vencimiento.Value.Year < 1990 || vencimiento.Value.Year > 2200)
+                    throw new CargaComprobantesReglaException($"{codigo}: revisá la fecha de vencimiento.");
+            }
             // Bultos/kilos/m³ del movimiento: en ajustes, los de la diferencia.
             var equivalentes = movimiento == 0 ? new CargaComprobantesUnidades.Cantidades(0, 0, 0, 0)
                 : Math.Abs(movimiento) == cantidades.Unidades ? cantidades
                 : unidades.Resolver(codigo, a.Unidad, Math.Abs(movimiento), null);
-            resueltas.Add(new(codigo, a.Descripcion, a.Unidad, a.Costo, movimiento, equivalentes.Bultos, equivalentes.Kilos, equivalentes.MetrosCubicos));
+            resueltas.Add(new(codigo, a.Descripcion, a.Unidad, a.Costo, movimiento, equivalentes.Bultos, equivalentes.Kilos, equivalentes.MetrosCubicos,
+                vencimiento is { } v ? StockMovimientosCalculo.LoteVencimiento(v) : null));
             plan.Lineas.Add(new()
             {
                 Articulo = codigo, Descripcion = a.Descripcion, Unidad = a.Unidad, Cantidad = cantidades.Unidades, Bultos = cantidades.Bultos,
-                Saldo = saldo, Movimiento = movimiento
+                Saldo = saldo, Movimiento = movimiento, Vencimiento = vencimiento
             });
         }
         if (!ajuste && plan.Lineas.Any(x => x.Movimiento < 0 && x.Saldo + x.Movimiento < 0))
@@ -395,35 +413,74 @@ public sealed class StockMovimientosService(
 
     // ---------------------------------------------------------------- Modificar / anular
 
-    public Task<IReadOnlyList<StockMovimientoResumen>> BuscarComprobantesAsync(string tc, string texto, CancellationToken ct = default)
-        => ExecuteAsync<IReadOnlyList<StockMovimientoResumen>>("BuscarComprobantes", async (cn, ctx, token) =>
+    public Task<StockMovimientoPagina> ListarComprobantesAsync(StockMovimientoFiltro filtro, CancellationToken ct = default)
+        => ExecuteAsync("ListarComprobantes", async (cn, ctx, token) =>
         {
-            tc = (tc ?? "").Trim().ToUpperInvariant();
-            if (!StockMovimientosCalculo.Tipos.Contains(tc)) return [];
-            texto = (texto ?? "").Trim();
+            filtro ??= new();
+            var tc = (filtro.Tc ?? "").Trim().ToUpperInvariant();
+            string[] tipos = tc.Length == 0 ? [.. StockMovimientosCalculo.Tipos] : StockMovimientosCalculo.Tipos.Contains(tc) ? [tc] : [];
+            var tamano = Math.Clamp(filtro.TamanoPagina, 10, 200);
+            var pagina = Math.Max(1, filtro.Pagina);
+            var resultado = new StockMovimientoPagina { Pagina = pagina, TamanoPagina = tamano };
+            if (tipos.Length == 0) return resultado;
+            ValidarDepositoLectura(ctx, filtro.Deposito);
+            var texto = (filtro.Texto ?? "").Trim();
+            if (texto.Length > 50) texto = texto[..50];
             var digitos = new string(texto.Where(char.IsAsciiDigit).ToArray());
-            return (await cn.QueryAsync<StockMovimientoResumen>(Cmd("""
-                SELECT TOP(50) LTRIM(RTRIM(s.TC)) Tc, s.IDCOMPROBANTE Comprobante, MIN(s.FECHA) Fecha,
-                    LTRIM(RTRIM(MIN(CASE WHEN s.TC<>'TR' OR s.Cantidad<0 THEN s.IdDeposito END))) Deposito,
-                    ISNULL(LTRIM(RTRIM(MIN(CASE WHEN s.Cantidad<0 THEN s.IDDEPOSITO_DESTINO END))),'') DepositoDestino,
-                    ISNULL(LTRIM(RTRIM(MIN(s.UNEGOCIO))),'') UnidadNegocio,
-                    COUNT(DISTINCT s.IDArticulo) Items, ISNULL(LTRIM(RTRIM(MIN(s.ControladoPor))),'') Observaciones
-                FROM dbo.V_MV_STOCK s
-                WHERE s.TC=@Tc AND s.IDCOMPLEMENTO=0 AND ISNULL(s.Anulado,0)=0
-                  AND (@AdminCentral=1 OR LTRIM(RTRIM(s.UNEGOCIO))=@Unidad)
-                  AND (@Digitos='' OR s.IDCOMPROBANTE LIKE '%'+@Digitos+'%')
-                GROUP BY s.TC, s.IDCOMPROBANTE
-                ORDER BY MIN(s.FECHA) DESC, s.IDCOMPROBANTE DESC;
-                """, new { Tc = tc, ctx.AdminCentral, Unidad = ctx.UnidadNegocio, Digitos = digitos }, null, token))).ToList();
+            var like = "%" + texto.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[") + "%";
+            const string cte = """
+                WITH c AS (
+                    SELECT LTRIM(RTRIM(s.TC)) Tc, s.IDCOMPROBANTE Comprobante, MIN(s.FECHA) Fecha,
+                        LTRIM(RTRIM(MIN(CASE WHEN s.TC<>'TR' OR s.Cantidad<0 THEN s.IdDeposito END))) Deposito,
+                        ISNULL(LTRIM(RTRIM(MIN(CASE WHEN s.Cantidad<0 THEN s.IDDEPOSITO_DESTINO END))),'') DepositoDestino,
+                        ISNULL(LTRIM(RTRIM(MIN(s.UNEGOCIO))),'') UnidadNegocio,
+                        ISNULL(LTRIM(RTRIM(MIN(s.IdMotivoStock))),'') Motivo,
+                        COUNT(DISTINCT s.IDArticulo) Items,
+                        CONVERT(decimal(18,4),SUM(CASE WHEN s.TC='TR' THEN CASE WHEN s.CantidadUD>0 THEN s.CantidadUD ELSE 0 END ELSE ISNULL(s.CantidadUD,0) END)) Cantidad,
+                        ISNULL(LTRIM(RTRIM(MIN(s.ControladoPor))),'') Observaciones,
+                        CONVERT(bit,MAX(CONVERT(int,ISNULL(s.Anulado,0)))) Anulado
+                    FROM dbo.V_MV_STOCK s
+                    WHERE s.TC IN @Tipos AND s.IDCOMPLEMENTO=0
+                      AND (@AdminCentral=1 OR LTRIM(RTRIM(s.UNEGOCIO))=@Unidad)
+                      AND (@Anulados=1 OR ISNULL(s.Anulado,0)=0)
+                      AND (@Desde IS NULL OR s.FECHA>=@Desde) AND (@HastaExcl IS NULL OR s.FECHA<@HastaExcl)
+                      AND (@Texto='' OR (@Digitos<>'' AND s.IDCOMPROBANTE LIKE '%'+@Digitos+'%')
+                           OR EXISTS (SELECT 1 FROM dbo.V_MV_STOCK x WHERE x.TC=s.TC AND x.IDCOMPROBANTE=s.IDCOMPROBANTE AND x.IDCOMPLEMENTO=0
+                                      AND (LTRIM(RTRIM(x.IDArticulo))=@Texto OR x.ControladoPor LIKE @Like ESCAPE '\')))
+                    GROUP BY s.TC, s.IDCOMPROBANTE
+                    HAVING (@Deposito='' OR MAX(CASE WHEN LTRIM(RTRIM(s.IdDeposito))=@Deposito THEN 1 ELSE 0 END)=1))
+                """;
+            var sql = cte + """
+                SELECT Tc, Comprobante, Fecha, Deposito, DepositoDestino, UnidadNegocio, Motivo, Items, Cantidad, Observaciones, Anulado
+                FROM (SELECT c.*, ROW_NUMBER() OVER (ORDER BY c.Fecha DESC, c.Comprobante DESC, c.Tc) rn FROM c) x
+                WHERE rn > @Saltar AND rn <= @Saltar + @Tamano ORDER BY rn;
+                """ + cte + "SELECT COUNT(*) FROM c;";
+            using var multi = await cn.QueryMultipleAsync(Cmd(sql, new
+            {
+                Tipos = tipos, ctx.AdminCentral, Unidad = ctx.UnidadNegocio, Anulados = filtro.IncluirAnulados,
+                Desde = filtro.Desde?.Date, HastaExcl = filtro.Hasta?.Date.AddDays(1),
+                Texto = texto, Digitos = digitos, Like = like, Deposito = (filtro.Deposito ?? "").Trim(),
+                Saltar = (pagina - 1) * tamano, Tamano = tamano
+            }, null, token));
+            resultado.Filas = (await multi.ReadAsync<StockMovimientoResumen>()).ToList();
+            resultado.Total = await multi.ReadSingleAsync<int>();
+            return resultado;
         }, ct);
 
     public Task<StockMovimientoCargado> GetComprobanteAsync(string tc, string comprobante, CancellationToken ct = default)
-        => ExecuteAsync("Comprobante", async (cn, ctx, token) =>
+        => ExecuteAsync("Comprobante", (cn, ctx, token) => LeerComprobanteAsync(cn, ctx, tc, comprobante, soloVer: false, token), ct);
+
+    public Task<StockMovimientoCargado> VerComprobanteAsync(string tc, string comprobante, CancellationToken ct = default)
+        => ExecuteAsync("VerComprobante", (cn, ctx, token) => LeerComprobanteAsync(cn, ctx, tc, comprobante, soloVer: true, token), ct);
+
+    private static async Task<StockMovimientoCargado> LeerComprobanteAsync(SqlConnection cn, Contexto ctx, string tc, string comprobante, bool soloVer, CancellationToken token)
         {
             tc = (tc ?? "").Trim().ToUpperInvariant();
             comprobante = (comprobante ?? "").Trim();
             var filas = await LeerFilasAsync(cn, ctx, tc, comprobante, null, bloquear: false, token);
-            await ValidarEditableAsync(cn, ctx, tc, comprobante, filas, null, token);
+            var motivoNoEditable = "";
+            try { await ValidarEditableAsync(cn, ctx, tc, comprobante, filas, null, token); }
+            catch (CargaComprobantesReglaException ex) when (soloVer) { motivoNoEditable = ex.Message; }
             var transferencia = StockMovimientosCalculo.EsTransferencia(tc);
             var origen = transferencia ? filas.Where(f => f.Cantidad < 0).ToList() : filas;
             var primera = origen[0];
@@ -434,7 +491,8 @@ public sealed class StockMovimientosService(
                 Motivo = primera.Motivo, Observaciones = primera.Observaciones
             };
             var porArticulo = origen.GroupBy(f => f.Articulo, StringComparer.OrdinalIgnoreCase)
-                .Select(g => (Articulo: g.Key, Cantidad: g.Sum(x => x.CantidadUD), Crudo: g.First().ArticuloCrudo)).ToList();
+                .Select(g => (Articulo: g.Key, Cantidad: g.Sum(x => x.CantidadUD), Crudo: g.First().ArticuloCrudo,
+                    Vencimiento: StockMovimientosCalculo.Vencimiento(g.First().Lote))).ToList();
             Dictionary<string, decimal> saldos = new(StringComparer.OrdinalIgnoreCase);
             if (StockMovimientosCalculo.EsAjuste(tc))
                 saldos = await SaldosAsync(cn, porArticulo.Select(x => x.Crudo).ToArray(), borrador.Deposito, borrador.Fecha, tc, comprobante, null, token);
@@ -442,13 +500,14 @@ public sealed class StockMovimientosService(
             {
                 // En AJP/SI se grabó la diferencia: lo contado es el saldo a esa fecha sin este comprobante más la diferencia.
                 var cantidad = StockMovimientosCalculo.EsAjuste(tc) ? saldos.GetValueOrDefault(x.Articulo) + x.Cantidad : Math.Abs(x.Cantidad);
-                borrador.Lineas.Add(new() { Articulo = x.Articulo, Cantidad = decimal.Round(cantidad, 4) });
+                borrador.Lineas.Add(new() { Articulo = x.Articulo, Cantidad = decimal.Round(cantidad, 4), Vencimiento = x.Vencimiento });
             }
             var articulos = await LeerArticulosAsync(cn, ctx, tc, borrador.Deposito, null, null, porArticulo.Select(x => x.Articulo).ToArray(), null, token);
-            var resultado = new StockMovimientoCargado { Borrador = borrador };
+            var resultado = new StockMovimientoCargado { Borrador = borrador, Editable = motivoNoEditable.Length == 0,
+                Anulado = filas.Any(f => f.Anulado), MotivoNoEditable = motivoNoEditable };
             foreach (var a in articulos) resultado.Articulos[a.Codigo] = a;
             return resultado;
-        }, ct);
+        }
 
     public Task<StockMovimientoResultado> AnularAsync(string tc, string comprobante, Guid operacion, CancellationToken ct = default)
         => ExecuteAsync("Anular", async (cn, ctx, token) =>
@@ -499,8 +558,10 @@ public sealed class StockMovimientosService(
         if (!ctx.AdminCentral && unidad != ctx.UnidadNegocio)
             throw new CargaComprobantesReglaException($"El comprobante {Cpte()} es de otra unidad de negocio.");
         ValidarFecha(ctx, filas[0].Fecha.Date, "El comprobante tiene fecha");
-        if (filas.Any(f => f.Lote.Length > 0 || f.Serie.Length > 0))
+        if (filas.Any(f => f.Serie.Length > 0 || f.Lote.Length > 0 && StockMovimientosCalculo.Vencimiento(f.Lote) is null))
             throw new CargaComprobantesReglaException($"El comprobante {Cpte()} tiene lotes o series: modificalo desde Alfa Gestión.");
+        if (filas.GroupBy(f => (f.Articulo.ToUpperInvariant(), f.Cantidad < 0)).Any(g => g.Select(x => x.Lote).Distinct().Count() > 1))
+            throw new CargaComprobantesReglaException($"El comprobante {Cpte()} tiene un artículo con varios vencimientos: modificalo desde Alfa Gestión.");
         if (filas.Any(f => f.TcOrigen.Length > 0))
             throw new CargaComprobantesReglaException($"El comprobante {Cpte()} se generó desde otro comprobante ({filas.First(f => f.TcOrigen.Length > 0).TcOrigen}): modificalo desde Alfa Gestión.");
         if (StockMovimientosCalculo.EsTransferencia(tc))
@@ -591,7 +652,7 @@ public sealed class StockMovimientosService(
             SELECT UPPER(LTRIM(RTRIM(CLAVE))), COALESCE(NULLIF(LTRIM(RTRIM(VALOR)),''),CONVERT(nvarchar(max),ValorAux),'')
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('MOTIVOSTOCKDEFAULT','NOFACTURASINSTOCK','CIERRESTOCK','FECHAOPERDESDE','FECHAOPERHASTA',
-                'ASIENTOSXSTOCK','DESCARGAINSUMOSPRODUCCION');
+                'ASIENTOSXSTOCK','DESCARGAINSUMOSPRODUCCION','USAPERECEDEROS');
             """, null, null, ct))).GroupBy(x => x.Clave).ToDictionary(g => g.Key, g => g.First().Valor.Trim(), StringComparer.OrdinalIgnoreCase);
         static DateTime? Fecha(Dictionary<string, string> c, string k)
             => DateTime.TryParseExact(c.GetValueOrDefault(k, ""), ["dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd"], Inv, DateTimeStyles.None, out var f) ? f.Date : null;
@@ -602,7 +663,8 @@ public sealed class StockMovimientosService(
         {
             Usuario = u.Usuario, UnidadNegocio = u.Unidad, AdminCentral = u.Admin,
             MotivoDefault = cfg.GetValueOrDefault("MOTIVOSTOCKDEFAULT", ""), ValidaStockSalidas = Si(cfg, "NOFACTURASINSTOCK"),
-            CierreStock = Fecha(cfg, "CIERRESTOCK"), OperativaDesde = Fecha(cfg, "FECHAOPERDESDE"), OperativaHasta = Fecha(cfg, "FECHAOPERHASTA")
+            CierreStock = Fecha(cfg, "CIERRESTOCK"), OperativaDesde = Fecha(cfg, "FECHAOPERDESDE"), OperativaHasta = Fecha(cfg, "FECHAOPERHASTA"),
+            UsaPerecederos = Si(cfg, "USAPERECEDEROS")
         };
         publico.Tipos = (await cn.QueryAsync<StockMovimientoTipo>(Cmd($"""
             SELECT LTRIM(RTRIM(CODIGO)) Tc, LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion, ISNULL(LTRIM(RTRIM(UNEGOCIO)),'') UnidadNegocio,
@@ -742,6 +804,8 @@ public sealed class StockMovimientosService(
         public string Descripcion { get; set; } = "";
         public string Unidad { get; set; } = "";
         public decimal Costo { get; set; }
+        public bool Perecedero { get; set; }
+        public int DiasVencimiento { get; set; }
         public string Restriccion { get; set; } = "";
         public string IdCrudo { get; set; } = "";
     }

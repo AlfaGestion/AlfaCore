@@ -23,7 +23,7 @@ public static class AyudaManuales
         new AyudaTema("conciliacion","Conciliación","AlfaCore.Docs.manual_conciliacion_bancaria.md"),
         new AyudaTema("tarjetas","Conciliación de tarjetas asistida con IA","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
         new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md"),
-        new AyudaTema("stock","Stock: movimientos","AlfaCore.Docs.manual_stock_movimientos.md") });
+        new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     public static AyudaManual Obtener(string tema)=>Manuales.Value.TryGetValue(tema,out var manual)
@@ -52,6 +52,7 @@ public static class AyudaManuales
         ("/compras/reportes","reportes","Buscar y generar"),
         ("/compras/actividad","reportes","Actividad de compras"),
         ("/seguridad/autorizacion-tareas","seguridad","Autorización de tareas"),
+        ("/stock/reportes","stock","Reportes de stock"),
         ("/stock/movimientos","stock","Cargar un movimiento") });
 
     public static string TemaParaRuta(string ruta)=>Ubicar(ruta).Tema;

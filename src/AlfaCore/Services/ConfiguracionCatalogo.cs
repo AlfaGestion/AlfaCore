@@ -70,7 +70,7 @@ public static class ConfiguracionCatalogo
         new("puntos-venta", "Puntos de venta", "Puntos de venta, cajas y comprobantes habilitados.", AreaComercial,
             "/ventas/puntos-venta", "bi-shop", ["ventas"], "pos mostrador caja arca afip"),
         new("articulos", "Artículos", "Parámetros de artículos y stock.", AreaComercial,
-            "/configuracion-general/articulos", "bi-box-seam", ["articulos", "stock"], "productos stock codigos", Principal: true),
+            "/configuracion-general/articulos", "bi-box-seam", ["articulos", "stock"], "productos stock codigos perecederos vencimiento", Principal: true),
         new("cotizaciones", "Cotizaciones", "Formato, textos y condiciones de las cotizaciones.", AreaComercial,
             "/cotizaciones/configuracion", "bi-file-earmark-ruled", ["cotizaciones", "crm"], "presupuesto cotizacion", Principal: true),
         new("catalogo", "Catálogo", "Catálogos públicos, links y visibilidad de precios.", AreaComercial,

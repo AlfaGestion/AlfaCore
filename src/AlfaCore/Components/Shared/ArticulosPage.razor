@@ -370,6 +370,31 @@
                             <i class="bi bi-speedometer2"></i> Producto para balanza (pesable)
                         </AlfaCheckbox>
                     </div>
+                    @if (_lookups.UsaPerecederos)
+                    {
+                        @* Como Ma_art.frm: Perecedero + días de vencimiento (se guardan en Largo); no convive con Pide medidas ni con lotes. *@
+                        <div class="articulos-form-grid__span2 articulos-perecedero">
+                            @if (_form is ArticuloDetailDto { PideMedidas: true })
+                            {
+                                <small class="articulos-field__help">Este artículo pide medidas al cargar: no puede ser perecedero (comparten el dato Largo).</small>
+                            }
+                            else
+                            {
+                                <AlfaCheckbox Value="@_form.Perecedero" ValueChanged="v => { _form.Perecedero = v == true; if (_form.Perecedero && _form.DiasVencimiento <= 0) _form.DiasVencimiento = 30; }">
+                                    <i class="bi bi-hourglass-split"></i> Producto perecedero
+                                </AlfaCheckbox>
+                                @if (_form.Perecedero)
+                                {
+                                    <div class="articulos-field">
+                                        <label class="articulos-field__label">Días de vencimiento</label>
+                                        <input class="articulos-field__control" type="number" min="1" max="3650" value="@_form.DiasVencimiento"
+                                               @onchange="e => _form.DiasVencimiento = int.TryParse(e.Value?.ToString(), out var d) ? d : 0" />
+                                        <small class="articulos-field__help">En cada ingreso se propone el vencimiento: fecha del comprobante + estos días.@(_form is ArticuloDetailDto { UsaLote: true } ? " Al grabar deja de usar lotes." : "")</small>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
                 </div>
                     }
                     else if (_activeTab == ArticuloTab.Precios)

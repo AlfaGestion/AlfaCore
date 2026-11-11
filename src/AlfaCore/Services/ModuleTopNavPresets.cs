@@ -79,7 +79,8 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("resumen", "Resumen", "/stock"),
-            ("movimientos", "Movimientos", "/stock/movimientos")
+            ("movimientos", "Movimientos", "/stock/movimientos"),
+            ("reportes", "Reportes", "/stock/reportes")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildCotizaciones(IRouteContextService routeContext, NavigationManager nav, string activeKey)

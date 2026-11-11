@@ -93,4 +93,6 @@ public sealed class ConfiguracionArticulosDto
     public string PlantillaCodigoBarraPesable { get; set; } = string.Empty;
     public bool CodigoBarraAutomatico { get; set; }
     public string RutaImagenes { get; set; } = string.Empty;
+    /// <summary>UsaPerecederos (grupo STOCK): muestra Perecedero/días en el maestro y pide vencimiento en los ingresos de stock.</summary>
+    public bool UsaPerecederos { get; set; }
 }

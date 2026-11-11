@@ -12,15 +12,17 @@ Los tipos salen de la tabla de comprobantes, los que tienen sistema **Stock**. S
 - **AJP · Ajuste de stock:** cargás lo que contaste y el sistema graba la diferencia, para que el saldo del depósito a la fecha del ajuste quede igual a lo contado.
 - **SI · Saldo inicial:** funciona igual que el ajuste.
 
-Para entrar con un tipo ya elegido podés usar `?tipo=TR` (o IR, VS, AJP, SI) en la dirección.
+La pantalla abre en la **lista de comprobantes de stock** del mes. Arriba, en la barra de búsqueda, escribís el número, un código de artículo o parte de las observaciones; con el embudo elegís el período, el tipo, el depósito y si se ven los anulados. El paginador también está arriba. Tocá un comprobante para verlo.
+
+Para entrar directo a cargar un tipo podés usar `?tipo=TR` (o IR, VS, AJP, SI) en la dirección.
 
 ## Cargar un movimiento
 
-1. Elegí el tipo, la unidad de negocio, la fecha y el depósito (en una transferencia, también el depósito de destino). El motivo de stock viene completado con el que está configurado por defecto.
+1. Tocá **Nuevo movimiento** (arriba). Elegí el tipo, la unidad de negocio, la fecha y el depósito (en una transferencia, también el depósito de destino). El motivo de stock viene completado con el que está configurado por defecto.
 2. Escribí el código o el código de barras del artículo y apretá Enter. Con `3*código` se agrega directo con cantidad 3.
 3. Escribí la cantidad y apretá Enter: la línea se agrega y el cursor vuelve al código.
 4. Si el artículo se maneja por bultos, cargá los **Bultos** en la línea y el sistema calcula las unidades con la equivalencia del artículo.
-5. Tocá **Grabar**. El sistema vuelve a calcular todo, muestra un resumen y graba cuando confirmás.
+5. Tocá **Grabar** (arriba). El sistema vuelve a calcular todo, muestra un resumen y graba cuando confirmás; después vuelve a la lista. **Cancelar** descarta la carga (pide confirmación si cargaste artículos).
 
 Si cargás el mismo artículo dos veces, se suman las cantidades. En un conteo eso sirve para lo que contaste en dos lugares.
 
@@ -53,7 +55,7 @@ Los depósitos de otra empresa (otra base) no aparecen: esas transferencias se s
 
 ## Modificar o anular
 
-Tocá **Modificar / anular**, elegí el comprobante en la lista (se puede filtrar por número) y se carga en la grilla. Cambiá lo que haga falta y tocá **Grabar cambios**, o tocá **Anular**. Anular no borra el comprobante: lo marca como anulado y deja de contar en el stock, igual que en Alfa Gestión.
+Buscalo en la lista y tocalo: se abre en modo consulta. Tocá **Modificar**, cambiá lo que haga falta y tocá **Grabar cambios** (o **Cancelar** para volver sin cambios). **Anular** está en el menú … de la barra de arriba. Anular no borra el comprobante: lo marca como anulado y deja de contar en el stock, igual que en Alfa Gestión.
 
 No se pueden modificar ni anular desde acá los comprobantes que:
 
@@ -69,3 +71,23 @@ No se pueden modificar ni anular desde acá los comprobantes que:
 - El depósito tiene que ser de la unidad de negocio o estar marcado como compartido.
 - Si la base tiene activo **NoFacturaSinStock**, no se graban salidas que dejen el depósito en negativo.
 - Si la base genera asientos de stock (**AsientosXStock**) y el motivo elegido tiene cuenta contable, el movimiento todavía se carga desde Alfa Gestión.
+
+## Productos perecederos
+
+Se activa en **Configuración general → Artículos → Trabajar con productos perecederos** (clave `UsaPerecederos`). Si está apagada, no se ve nada de esto.
+
+- En el maestro de artículos, solapa Datos generales, se marca **Producto perecedero** y se cargan los **días de vencimiento**. Es el mismo dato que usa Alfa Gestión (campo Largo), así que se ve igual en los dos sistemas.
+- Un artículo que pide medidas al cargar no puede ser perecedero, porque las medidas usan ese mismo dato. Si el artículo usaba lotes, al marcarlo perecedero deja de usarlos, igual que en Alfa Gestión.
+- En **Movimientos de stock**, los ingresos de un perecedero (IR, SI y AJP cuando la diferencia suma) muestran la columna **Vence**. Propone la fecha del movimiento más los días del artículo y se puede cambiar. Se graba como en Alfa Gestión, en el número de lote con formato año-mes-día.
+- Las salidas (VS) y las transferencias (TR) no registran vencimiento: el reporte supone que sale primero lo más viejo.
+
+## Reportes de stock
+
+Pantalla **Stock → Reportes de stock** (`/stock/reportes`). Reemplaza en la web a la Consulta de Stock de Alfa Gestión (ficha de stock). Cada solapa se genera sola al entrar. Los filtros están en la barra de búsqueda de arriba (texto del artículo y, con el embudo, fecha o período, depósito, rubro, familia y opciones) y el paginador también está arriba. Con **Excel** bajás la solapa completa.
+
+- **Saldos:** saldo de cada artículo por depósito a la fecha elegida (**Saldo al**), con los movimientos hasta ese día inclusive. Si la base tiene configurada la unidad de bultos, muestra también los **Bultos**, calculados con la equivalencia del artículo. Con **Depósitos en columnas** sale un renglón por artículo y una columna por depósito.
+- **Movimientos del período:** saldo inicial, entradas, salidas y saldo final de cada artículo entre dos fechas.
+- **Ficha de stock:** todos los movimientos de un artículo en el período, con el saldo inicial y el saldo acumulado renglón por renglón. Abajo muestra el saldo por depósito a la fecha final. Escribí el código en la barra de búsqueda y Enter, o buscalo por descripción con **F5**. Desde cualquier otra solapa, el doble clic en un renglón abre su ficha.
+- **Perecederos:** el stock de los productos perecederos repartido por fecha de vencimiento, con su estado: **vencido**, **por vencer** (dentro de los días que elijas) o **vigente**. Si un ingreso no tiene el vencimiento registrado, se estima con la fecha de ingreso más los días del artículo y se marca como estimado.
+
+El reporte no cuenta los comprobantes anulados ni los artículos suspendidos o que no controlan stock.

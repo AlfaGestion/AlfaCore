@@ -91,6 +91,8 @@ public sealed class StockMovimientosCalculoTests
 /// el saldo igual a lo contado, lo modifica, lo anula, y hace una TR con salida y entrada. Borra lo que grabó y repone el contador.
 /// Usuario: STOCK_MOV_TEST_USER (por defecto Administrador), con unidad de negocio y depósitos de esa unidad.
 /// </summary>
+// Mismo artículo y depósito en la base de prueba: los tests SQL de stock no corren en paralelo.
+[Collection("StockSql")]
 public sealed class StockMovimientosSqlTests
 {
     [StockMovimientosSqlFact]
@@ -156,6 +158,21 @@ public sealed class StockMovimientosSqlTests
             Assert.Equal("B", anulado.Accion);
             Assert.Equal(saldo, await Saldo(connection, articulo.Codigo, deposito, fecha)); // el segundo AJP tenía diferencia 0
             await Assert.ThrowsAnyAsync<InvalidOperationException>(() => service.GetComprobanteAsync("AJP", ajuste.Comprobante));
+
+            // Lista (Browse): sin anulados no aparece; con anulados sí, marcado. La consulta lo muestra pero no deja tocarlo.
+            var filtroLista = new StockMovimientoFiltro { Tc = "AJP", Desde = fecha, Hasta = fecha, Deposito = deposito, Texto = ajuste.Comprobante[4..12] };
+            Assert.DoesNotContain((await service.ListarComprobantesAsync(filtroLista)).Filas, x => x.Comprobante == ajuste.Comprobante);
+            filtroLista.IncluirAnulados = true;
+            var listado = await service.ListarComprobantesAsync(filtroLista);
+            var fila = Assert.Single(listado.Filas, x => x.Comprobante == ajuste.Comprobante);
+            Assert.True(fila.Anulado);
+            Assert.True(listado.Total >= 1);
+            Assert.Contains((await service.ListarComprobantesAsync(new StockMovimientoFiltro { Desde = fecha, Hasta = fecha, Texto = articulo.Codigo, IncluirAnulados = true })).Filas,
+                x => x.Tc == "AJP" && x.Comprobante == ajuste.Comprobante);
+            var visto = await service.VerComprobanteAsync("AJP", ajuste.Comprobante);
+            Assert.True(visto.Anulado);
+            Assert.False(visto.Editable);
+            Assert.NotEmpty(visto.MotivoNoEditable);
 
             // TR: salida del origen y entrada al destino, mismo comprobante.
             if (depositos.Count > 1 && ctx.Tipos.Any(t => t.Tc == "TR"))

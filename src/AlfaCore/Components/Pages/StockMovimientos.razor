@@ -16,18 +16,70 @@
 <PageTitle>Movimientos de stock | AlfaCore</PageTitle>
 <div class="gd-page gd stockmov-page">
     <AlfaNotification Message="@_feedback" />
-    @if (_contexto is not null)
+    @if (_contexto is null)
     {
-        @if (Editando)
+        @if (_busy) { <AlfaEmptyState Loading="true" Title="Cargando movimientos de stock…" /> }
+    }
+    else if (_modo == Modo.Lista)
+    {
+        @* Browse: comprobantes de stock. Filtros en el Smart Search del header, paginador en el Context Toolbar. *@
+        @if (_lista is null) { <AlfaEmptyState Loading="true" Title="Buscando comprobantes…" /> }
+        else if (_lista.Filas.Count == 0)
         {
-            <AlfaNotification Message="@AppUiMessage.Info($"Modificando {_draft.Tc} {_draft.Comprobante}", "Cambiá lo que haga falta y grabá. También podés anularlo desde la barra de acciones.")" />
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay comprobantes de stock con esos filtros"
+                Message="Cambiá el período o los filtros, o cargá uno nuevo con «Nuevo movimiento»." />
+        }
+        else
+        {
+            <div class="table-wrap stockmov-lista">
+                <table class="data-table" data-sticky-list-header>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th><th>Comprobante</th><th>Tipo</th><th>Depósito</th><th>Motivo</th>
+                            <th class="num">Ítems</th><th class="num">Cantidad</th><th>Observaciones</th><th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _lista.Filas)
+                        {
+                            <tr class="is-clickable @(c.Anulado ? "is-anulado" : null)" tabindex="0" title="Ver el comprobante"
+                                @onclick="() => VerAsync(c.Tc, c.Comprobante)" @onkeydown="e => FilaKeyDown(e, c)">
+                                <td>@c.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td class="stockmov-nro">@c.Tc @c.Comprobante</td>
+                                <td>@TipoNombre(c.Tc, c.UnidadNegocio)</td>
+                                <td>@NombreDeposito(c.Deposito)@if (c.DepositoDestino.Length > 0) { <span class="stockmov-muted"> → @NombreDeposito(c.DepositoDestino)</span> }</td>
+                                <td>@NombreMotivo(c.Motivo)</td>
+                                <td class="num">@c.Items</td>
+                                <td class="num">@Num(c.Cantidad)</td>
+                                <td class="stockmov-obs" title="@c.Observaciones">@c.Observaciones</td>
+                                <td>@if (c.Anulado) { <span class="stockmov-tag stockmov-tag--anulado">Anulado</span> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="stockmov-lista-pie">@_lista.Total comprobantes · página @_lista.Pagina de @_lista.TotalPaginas</div>
+        }
+    }
+    else
+    {
+        @if (_modo == Modo.Ver && _cargado is { } vc)
+        {
+            @if (vc.Anulado)
+            {
+                <AlfaNotification Message="@AppUiMessage.Warning("Comprobante anulado", "No cuenta en el stock. Se muestra solo para consulta.")" />
+            }
+            else if (!vc.Editable)
+            {
+                <AlfaNotification Message="@AppUiMessage.Info("Solo consulta", vc.MotivoNoEditable)" />
+            }
         }
         <section class="stockmov-fields" aria-label="Datos del movimiento">
             <AlfaSelect Label="Tipo de movimiento" Value="@_draft.Tc" ValueChanged="TipoChanged" Disabled="@(Bloqueado || Editando)" Options="@TiposOpciones" Placeholder="Elegí el tipo" />
             <AlfaSelect Label="Unidad de negocio" Value="@_draft.UnidadNegocio" ValueChanged="UnidadChanged" Disabled="@(Bloqueado || Editando)"
                 Options="@_contexto.UnidadesNegocio.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Descripcion}")).ToList()" Placeholder="Elegí una unidad" />
             <AlfaInput Type="date" Label="Fecha" Value="@_draft.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" ValueChanged="FechaChanged" Disabled="@Bloqueado"
-                HelpText="@(EsAjuste ? "Lo contado queda como saldo del depósito al terminar ese día." : null)" />
+                HelpText="@(EsAjuste && _modo == Modo.Edicion ? "Lo contado queda como saldo del depósito al terminar ese día." : null)" />
             <AlfaSelect Label="@(EsTransferencia ? "Depósito de origen" : "Depósito")" Value="@_draft.Deposito" ValueChanged="DepositoChanged" Disabled="@Bloqueado"
                 Options="@Depositos(null)" Placeholder="Elegí un depósito" />
             @if (EsTransferencia)
@@ -46,7 +98,9 @@
                     <tr>
                         <th class="col-n">#</th><th class="col-cod">Código</th><th>Descripción</th><th class="col-ud">Unidad</th>
                         <th class="num col-cant">@(EsAjuste ? "Contado" : "Cantidad")</th><th class="num col-cant">Bultos</th>
-                        <th class="num col-cant">@ColumnaSaldo</th><th class="num col-cant">@(EsAjuste ? "Diferencia" : "Queda")</th><th class="col-acc"></th>
+                        <th class="num col-cant">@ColumnaSaldo</th><th class="num col-cant">@(EsAjuste ? "Diferencia" : "Queda")</th>
+                        @if (MuestraVencimiento) { <th class="col-vto">Vence</th> }
+                        @if (_modo == Modo.Edicion) { <th class="col-acc"></th> }
                     </tr>
                 </thead>
                 <tbody>
@@ -67,27 +121,46 @@
                                 @onchange="e => BultosChanged(item, e.Value?.ToString())" disabled="@Bloqueado" /></td>
                             <td class="num">@SaldoTexto(item.Articulo, art, pl)</td>
                             <td class="num @ClaseMovimiento(pl)">@MovimientoTexto(pl)</td>
-                            <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar línea" Disabled="@Bloqueado" OnClick="() => Cambiar(() => _draft.Lineas.Remove(item))" /></td>
+                            @if (MuestraVencimiento)
+                            {
+                                <td class="col-vto">
+                                    @if (art?.Perecedero == true && PideVencimiento(pl))
+                                    {
+                                        <input class="stockmov-cell" type="date" aria-label="@($"Vencimiento {item.Articulo}")" disabled="@Bloqueado"
+                                               value="@VencimientoLinea(item, art, pl).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                                               @onchange="e => VencimientoChanged(item, e.Value?.ToString())" />
+                                    }
+                                    else if (art?.Perecedero == true) { <span class="stockmov-muted" title="Las salidas no registran vencimiento">—</span> }
+                                </td>
+                            }
+                            @if (_modo == Modo.Edicion)
+                            {
+                                <td class="col-acc"><AlfaIconButton Icon="bi-trash" Label="Quitar línea" Disabled="@Bloqueado" OnClick="() => Cambiar(() => _draft.Lineas.Remove(item))" /></td>
+                            }
                         </tr>
                     }
-                    <tr class="stockmov-nueva">
-                        <td class="col-n">@(_draft.Lineas.Count + 1)</td>
-                        <td class="col-cod"><input id="sm-codigo" class="stockmov-cell" placeholder="Código" autocomplete="off" aria-label="Código del artículo"
-                            value="@_nuevoCodigo" @oninput="e => { _nuevoCodigo = e.Value?.ToString() ?? string.Empty; _nuevoArticulo = null; }"
-                            @onkeydown="CodigoKeyDown" disabled="@NuevaLineaBloqueada" /></td>
-                        <td>
-                            @if (_nuevoArticulo is { } na) { @na.Descripcion }
-                            else if (NuevaLineaBloqueada && !Bloqueado) { <span class="stockmov-muted">@FaltaParaCargar</span> }
-                            else { <span class="stockmov-muted">Código o código de barras y Enter · cantidad*código lo agrega directo · F5 busca por descripción</span> }
-                        </td>
-                        <td class="col-ud">@_nuevoArticulo?.Unidad</td>
-                        <td class="num"><input id="sm-cantidad" class="stockmov-cell" inputmode="decimal" aria-label="Cantidad" value="@_nuevoCantidad"
-                            @oninput="e => _nuevoCantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="CantidadKeyDown" disabled="@(NuevaLineaBloqueada || _nuevoArticulo is null)" /></td>
-                        <td></td>
-                        <td class="num">@(_nuevoArticulo is { } ns && !EsAjuste ? Num(ns.Stock) : "")</td>
-                        <td></td>
-                        <td class="col-acc"><AlfaIconButton Icon="bi-search" Label="Buscar artículo (F5)" Disabled="@NuevaLineaBloqueada" OnClick="AbrirBuscadorAsync" /></td>
-                    </tr>
+                    @if (_modo == Modo.Edicion)
+                    {
+                        <tr class="stockmov-nueva">
+                            <td class="col-n">@(_draft.Lineas.Count + 1)</td>
+                            <td class="col-cod"><input id="sm-codigo" class="stockmov-cell" placeholder="Código" autocomplete="off" aria-label="Código del artículo"
+                                value="@_nuevoCodigo" @oninput="e => { _nuevoCodigo = e.Value?.ToString() ?? string.Empty; _nuevoArticulo = null; }"
+                                @onkeydown="CodigoKeyDown" disabled="@NuevaLineaBloqueada" /></td>
+                            <td>
+                                @if (_nuevoArticulo is { } na) { @na.Descripcion }
+                                else if (NuevaLineaBloqueada && !Bloqueado) { <span class="stockmov-muted">@FaltaParaCargar</span> }
+                                else { <span class="stockmov-muted">Código o código de barras y Enter · cantidad*código lo agrega directo · F5 busca por descripción</span> }
+                            </td>
+                            <td class="col-ud">@_nuevoArticulo?.Unidad</td>
+                            <td class="num"><input id="sm-cantidad" class="stockmov-cell" inputmode="decimal" aria-label="Cantidad" value="@_nuevoCantidad"
+                                @oninput="e => _nuevoCantidad = e.Value?.ToString() ?? string.Empty" @onkeydown="CantidadKeyDown" disabled="@(NuevaLineaBloqueada || _nuevoArticulo is null)" /></td>
+                            <td></td>
+                            <td class="num">@(_nuevoArticulo is { } ns && !EsAjuste ? Num(ns.Stock) : "")</td>
+                            <td></td>
+                            @if (MuestraVencimiento) { <td class="col-vto">@(_nuevoArticulo is { Perecedero: true } np && !EsTransferencia ? $"{np.DiasVencimiento} días" : "")</td> }
+                            <td class="col-acc"><AlfaIconButton Icon="bi-search" Label="Buscar artículo (F5)" Disabled="@NuevaLineaBloqueada" OnClick="AbrirBuscadorAsync" /></td>
+                        </tr>
+                    }
                 </tbody>
             </table>
         </div>
@@ -100,7 +173,7 @@
                 @if (EsAjuste) { <span>Diferencia neta: <strong>@Num(p.Lineas.Sum(x => x.Movimiento))</strong></span> }
                 @foreach (var aviso in p.Avisos) { <span class="stockmov-aviso">@aviso</span> }
             }
-            else if (_planError is { Length: > 0 } pe) { <span class="stockmov-aviso">@pe</span> }
+            else if (_planError is { Length: > 0 } pe && _modo == Modo.Edicion) { <span class="stockmov-aviso">@pe</span> }
             <span class="stockmov-pie__ayuda">@DescripcionTipo</span>
         </section>
         <AlfaInput Label="Observaciones" Value="@_draft.Observaciones" ValueChanged="v => Cambiar(() => _draft.Observaciones = v ?? string.Empty)" MaxLength="50" Disabled="@Bloqueado" />
@@ -111,31 +184,6 @@
     SearchFunc="BuscarArticulos" StockLabel="@($"Stock dep. {_draft.Deposito}")" InputId="sm-buscar"
     OnElegir="ElegirArticuloAsync" OnClose="CerrarBuscadorAsync" />
 
-@if (_cptesAbierto)
-{
-    <AlfaDialog Open="true" Title="@($"Buscar {(_draft.Tc.Length == 0 ? "comprobante" : _draft.Tc)} para modificar o anular")" Size="AlfaDialogSize.Lg" OnClose="() => _cptesAbierto = false">
-        <div class="stockmov-cptes">
-            <AlfaInput Label="Número" Value="@_cptesTexto" ValueChanged="CptesTextoChanged" Placeholder="Parte del número, ej. 31" />
-            @if (_cptes.Count == 0) { <p class="stockmov-muted">No hay comprobantes vigentes de este tipo.</p> }
-            else
-            {
-                <table class="stockmov-table stockmov-table--cptes">
-                    <thead><tr><th>Comprobante</th><th>Fecha</th><th>Depósito</th>@if (EsTransferencia) { <th>Destino</th> }<th class="num">Ítems</th><th>Observaciones</th></tr></thead>
-                    <tbody>
-                        @foreach (var c in _cptes)
-                        {
-                            <tr class="is-clickable" @onclick="() => AbrirComprobanteAsync(c)">
-                                <td>@c.Tc @c.Comprobante</td><td>@c.Fecha.ToString("dd/MM/yyyy")</td><td>@c.Deposito</td>
-                                @if (EsTransferencia) { <td>@c.DepositoDestino</td> }
-                                <td class="num">@c.Items</td><td>@c.Observaciones</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        </div>
-    </AlfaDialog>
-}
 @if (_confirmarGrabar && _plan is { } cp)
 {
     <AlfaConfirmDialog Open="true" Title="@(Editando ? $"Grabar cambios en {_draft.Tc} {_draft.Comprobante}" : $"Grabar {TipoDescripcion}")"
@@ -148,10 +196,20 @@
         Message="El comprobante queda anulado y deja de contar en el stock." SecondaryMessage="No se borra: se marca como anulado, igual que en Alfa Gestión."
         ConfirmLabel="Anular" OnConfirm="AnularAsync" OnCancel="() => _confirmarAnular = false" />
 }
+@if (_confirmarCancelar)
+{
+    <AlfaConfirmDialog Open="true" Title="Descartar los cambios"
+        Message="@(Editando ? $"Se pierden los cambios sin grabar de {_draft.Tc} {_draft.Comprobante}." : "Se pierde la carga sin grabar.")"
+        ConfirmLabel="Descartar" OnConfirm="DescartarAsync" OnCancel="() => { _confirmarCancelar = false; }" />
+}
 
 @code {
     private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
     [SupplyParameterFromQuery(Name = "tipo")] public string? TipoInicial { get; set; }
+
+    // Lista (Browse) → Ver (ficha de solo lectura) → Edición (nuevo o modificar), como el resto de AlfaDesign.
+    private enum Modo { Lista, Ver, Edicion }
+    private Modo _modo = Modo.Lista;
 
     private StockMovimientosContexto? _contexto;
     private StockMovimientoBorrador _draft = new();
@@ -160,29 +218,44 @@
     private string? _planError;
     private AppUiMessage? _feedback;
     private Guid _operacion = Guid.NewGuid();
-    private bool _busy, _disposed, _jsListo, _borradorRevisado, _confirmarGrabar, _confirmarAnular;
+    private bool _busy, _disposed, _jsListo, _borradorRevisado, _confirmarGrabar, _confirmarAnular, _confirmarCancelar, _sucio;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _calculoCts;
     private DotNetObjectReference<StockMovimientos>? _dotNetRef;
     private int? _baseInicial;
     private string _usuarioInicial = "";
 
+    // Lista y filtros (Smart Search del header).
+    private StockMovimientoFiltro _filtro = FiltroInicial();
+    private StockMovimientoFiltro _filtroAplicado = FiltroInicial();
+    private StockMovimientoPagina? _lista;
+    private bool _filtrosAbiertos;
+    private StockMovimientoCargado? _cargado;
+
     // Línea nueva al pie de la grilla.
     private string _nuevoCodigo = "", _nuevoCantidad = "1";
     private StockMovimientoArticulo? _nuevoArticulo;
 
-    // Buscador F5 y buscador de comprobantes.
-    private bool _buscadorAbierto, _cptesAbierto;
-    private string _buscadorTexto = "", _cptesTexto = "";
+    // Buscador F5.
+    private bool _buscadorAbierto;
+    private string _buscadorTexto = "";
     private IReadOnlyList<StockMovimientoArticulo>? _buscadorIniciales;
-    private IReadOnlyList<StockMovimientoResumen> _cptes = [];
 
-    private bool Bloqueado => _busy;
+    private bool Bloqueado => _busy || _modo != Modo.Edicion;
     private bool Editando => _draft.Comprobante.Length > 0;
     private bool EsAjuste => StockMovimientosCalculo.EsAjuste(_draft.Tc);
     private bool EsTransferencia => StockMovimientosCalculo.EsTransferencia(_draft.Tc);
     private bool NuevaLineaBloqueada => Bloqueado || _contexto is null || _draft.Tc.Length == 0 || _draft.Deposito.Length == 0;
     private string FaltaParaCargar => _draft.Tc.Length == 0 ? "Elegí el tipo de movimiento para cargar artículos." : "Elegí el depósito para cargar artículos.";
+    // Perecederos (UsaPerecederos=SI): los ingresos llevan vencimiento; las salidas y transferencias no.
+    private bool MuestraVencimiento => _contexto?.UsaPerecederos == true && !EsTransferencia && _draft.Tc.Length > 0
+        && _draft.Lineas.Any(l => _articulos.GetValueOrDefault(l.Articulo)?.Perecedero == true);
+    private bool PideVencimiento(StockMovimientoPlanLinea? pl)
+        => _draft.Tc is "IR" or "SI" or "AJP" && (!EsAjuste || pl is null || pl.Movimiento > 0);
+    private DateTime VencimientoLinea(StockMovimientoLinea item, StockMovimientoArticulo art, StockMovimientoPlanLinea? pl)
+        => item.Vencimiento ?? pl?.Vencimiento ?? StockMovimientosCalculo.VencimientoPropuesto(_draft.Fecha, art.DiasVencimiento);
+    private void VencimientoChanged(StockMovimientoLinea item, string? value)
+        => Cambiar(() => item.Vencimiento = DateTime.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f.Date : null);
     private string ColumnaSaldo => EsAjuste ? $"Saldo al {_draft.Fecha:dd/MM}" : EsTransferencia ? "Stock origen" : "Stock actual";
 
     private IEnumerable<StockMovimientoTipo> TiposUnidad => (_contexto?.Tipos ?? [])
@@ -190,7 +263,15 @@
     private IReadOnlyList<AlfaSelectOption> TiposOpciones => StockMovimientosCalculo.Tipos
         .Select(tc => TiposUnidad.Where(t => t.Tc == tc).OrderBy(t => t.UnidadNegocio == _draft.UnidadNegocio ? 0 : 1).FirstOrDefault())
         .Where(t => t is not null).Select(t => new AlfaSelectOption(t!.Tc, $"{t.Tc} · {t.Descripcion}")).ToList();
+    // Tipos del filtro de la lista: los cinco de stock con la descripción de la tabla de comprobantes.
+    private IReadOnlyList<AlfaSelectOption> TiposFiltro => StockMovimientosCalculo.Tipos
+        .Select(tc => new AlfaSelectOption(tc, (_contexto?.Tipos ?? []).FirstOrDefault(t => t.Tc == tc)?.Descripcion is { Length: > 0 } d ? $"{tc} · {d}" : tc)).ToList();
     private string TipoDescripcion => TiposUnidad.FirstOrDefault(t => t.Tc == _draft.Tc)?.Descripcion is { Length: > 0 } d ? $"{_draft.Tc} · {d}" : _draft.Tc;
+    private string TipoNombre(string tc, string unidad) => (_contexto?.Tipos ?? []).Where(t => t.Tc == tc)
+        .OrderBy(t => t.UnidadNegocio == unidad ? 0 : 1).FirstOrDefault()?.Descripcion ?? tc;
+    private string NombreDeposito(string codigo) => (_contexto?.Depositos ?? []).FirstOrDefault(d => string.Equals(d.Codigo, codigo, StringComparison.OrdinalIgnoreCase)) is { } d
+        ? $"{d.Codigo} · {d.Descripcion}" : codigo;
+    private string NombreMotivo(string codigo) => codigo.Length == 0 ? "" : (_contexto?.Motivos ?? []).FirstOrDefault(m => string.Equals(m.Codigo, codigo, StringComparison.OrdinalIgnoreCase))?.Descripcion ?? codigo;
     private string DescripcionTipo => _draft.Tc switch
     {
         "IR" => "Ingreso: suma la cantidad al depósito.",
@@ -210,7 +291,7 @@
     private StockMovimientoPlanLinea? LineaPlan(string articulo)
         => _plan?.Lineas.FirstOrDefault(x => string.Equals(x.Articulo, articulo, StringComparison.OrdinalIgnoreCase));
     private string SaldoTexto(string articulo, StockMovimientoArticulo? art, StockMovimientoPlanLinea? pl)
-        => pl is not null ? Num(pl.Saldo) : !EsAjuste && art is not null ? Num(art.Stock) : "—";
+        => pl is not null ? Num(pl.Saldo) : !EsAjuste && art is not null && _modo == Modo.Edicion ? Num(art.Stock) : "—";
     private string MovimientoTexto(StockMovimientoPlanLinea? pl)
         => pl is null ? "—" : EsAjuste ? (pl.Movimiento > 0 ? "+" : "") + Num(pl.Movimiento) : Num(pl.Saldo + pl.Movimiento);
     private string? ClaseMovimiento(StockMovimientoPlanLinea? pl)
@@ -247,13 +328,196 @@
         var contexto = await Service.GetContextoAsync(_lifetime.Token);
         if (_disposed) return;
         _contexto = contexto;
-        _draft = new() { UnidadNegocio = contexto.UnidadNegocio.Length > 0 ? contexto.UnidadNegocio : contexto.UnidadesNegocio.FirstOrDefault()?.Codigo ?? "",
-            Motivo = contexto.MotivoDefault };
-        var tipo = (TipoInicial ?? "").Trim().ToUpperInvariant();
-        if (TiposOpciones.Any(t => t.Value == tipo)) AplicarTipo(tipo);
         if (contexto.Tipos.Count == 0)
             _feedback = AppUiMessage.Warning("Sin comprobantes de stock", "No hay comprobantes IR, VS, TR, AJP ni SI con sistema Stock en la tabla de comprobantes.");
+        var tipo = (TipoInicial ?? "").Trim().ToUpperInvariant();
+        if (StockMovimientosCalculo.Tipos.Contains(tipo)) { EmpezarNuevo(tipo); return; }
+        await CargarListaAsync();
     });
+
+    private static StockMovimientoFiltro FiltroInicial()
+    {
+        var (desde, hasta) = GestionRangosFecha.Calcular("mes");
+        return new() { Desde = desde, Hasta = hasta };
+    }
+    private static StockMovimientoFiltro Copiar(StockMovimientoFiltro f) => new()
+    {
+        Tc = f.Tc, Desde = f.Desde, Hasta = f.Hasta, Deposito = f.Deposito, Texto = f.Texto,
+        IncluirAnulados = f.IncluirAnulados, Pagina = f.Pagina, TamanoPagina = f.TamanoPagina
+    };
+
+    // ---------------------------------------------------------------- Lista
+
+    private async Task CargarListaAsync()
+    {
+        _filtroAplicado = Copiar(_filtro);
+        _lista = await Service.ListarComprobantesAsync(Copiar(_filtro), _lifetime.Token);
+    }
+    private Task BuscarAsync()
+    {
+        _filtrosAbiertos = false; _filtro.Pagina = 1;
+        return RunAsync(CargarListaAsync);
+    }
+    private Task PaginarAsync(int delta)
+    {
+        if (_lista is null) return Task.CompletedTask;
+        _filtro = Copiar(_filtroAplicado);
+        _filtro.Pagina = Math.Clamp(_lista.Pagina + delta, 1, _lista.TotalPaginas);
+        return RunAsync(CargarListaAsync);
+    }
+    private Task LimpiarFiltrosAsync()
+    {
+        _filtro = FiltroInicial();
+        return BuscarAsync();
+    }
+    private Task QuitarFiltroAsync(string key)
+    {
+        _filtro = Copiar(_filtroAplicado);
+        switch (key)
+        {
+            case "periodo": (_filtro.Desde, _filtro.Hasta) = GestionRangosFecha.Calcular("mes"); break;
+            case "tipo": _filtro.Tc = ""; break;
+            case "deposito": _filtro.Deposito = ""; break;
+            case "anulados": _filtro.IncluirAnulados = false; break;
+            case "texto": _filtro.Texto = ""; break;
+        }
+        return BuscarAsync();
+    }
+    private List<(string Key, string Label)> FiltrosActivos()
+    {
+        var f = _filtroAplicado;
+        var chips = new List<(string, string)> { ("periodo", GestionRangosFecha.Etiqueta(f.Desde, f.Hasta)) };
+        if (f.Tc.Length > 0) chips.Add(("tipo", $"Tipo: {f.Tc}"));
+        if (f.Deposito.Length > 0) chips.Add(("deposito", $"Depósito: {f.Deposito}"));
+        if (f.IncluirAnulados) chips.Add(("anulados", "Con anulados"));
+        return chips;
+    }
+    private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdateHeader(); }
+    private void CerrarFiltros() { _filtrosAbiertos = false; UpdateHeader(); }
+    private void CambiarFiltro(Action cambio) { cambio(); UpdateHeader(); }
+    private Task TeclaBusquedaAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") return BuscarAsync();
+        if (args.Key == "Escape") CerrarFiltros();
+        return Task.CompletedTask;
+    }
+    private Task FilaKeyDown(KeyboardEventArgs e, StockMovimientoResumen c)
+        => e.Key == "Enter" ? VerAsync(c.Tc, c.Comprobante) : Task.CompletedTask;
+
+    private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var chips = FiltrosActivos(); }
+        <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > 1 ? "is-active" : string.Empty)"
+                aria-label="Abrir filtros" title="Abrir filtros" aria-expanded="@_filtrosAbiertos" disabled="@_busy" @onclick="AlternarFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in chips.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" disabled="@_busy" aria-label="@($"Quitar filtro {chip.Label}")"
+                        title="@chip.Label" @onclick="() => QuitarFiltroAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
+            </div>
+            <input type="search" aria-label="Buscar comprobante" placeholder="Número, artículo u observaciones..." maxlength="50"
+                value="@_filtro.Texto" disabled="@_busy" @oninput="e => _filtro.Texto = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaBusquedaAsync" />
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
+                disabled="@_busy" @onclick="AlternarFiltros"><i class="bi @(_filtrosAbiertos ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+        </div>
+        @if (_filtrosAbiertos && _contexto is not null)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="TeclaBusquedaAsync" @onkeydown:stopPropagation>
+                <FiltroPeriodo Desde="@_filtro.Desde" Hasta="@_filtro.Hasta" IncluirTodo="true" Disabled="@_busy"
+                               PeriodoChanged="p => CambiarFiltro(() => (_filtro.Desde, _filtro.Hasta) = p)" />
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-box-seam"></i> Comprobante</h4>
+                    <AlfaSelect Label="Tipo" Value="@_filtro.Tc" ValueChanged="v => CambiarFiltro(() => _filtro.Tc = v ?? string.Empty)" Options="@TiposFiltro" Placeholder="Todos" Disabled="@_busy" />
+                    <AlfaSelect Label="Depósito" Value="@_filtro.Deposito" ValueChanged="v => CambiarFiltro(() => _filtro.Deposito = v ?? string.Empty)"
+                        Options="@_contexto.Depositos.Select(d => new AlfaSelectOption(d.Codigo, $"{d.Codigo} · {d.Descripcion}")).ToList()" Placeholder="Todos" Disabled="@_busy" />
+                    <AlfaCheckbox Value="@_filtro.IncluirAnulados" ValueChanged="v => CambiarFiltro(() => _filtro.IncluirAnulados = v == true)">Incluir anulados</AlfaCheckbox>
+                </div>
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_busy" OnClick="_ => LimpiarFiltrosAsync()">Limpiar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_busy" OnClick="_ => BuscarAsync()">Aplicar</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
+
+    // ---------------------------------------------------------------- Ver / nuevo / modificar / cancelar
+
+    private Task VerAsync(string tc, string comprobante) => RunAsync(async () =>
+    {
+        var cargado = await Service.VerComprobanteAsync(tc, comprobante, _lifetime.Token);
+        _cargado = cargado;
+        _draft = cargado.Borrador;
+        _articulos = new(cargado.Articulos, StringComparer.OrdinalIgnoreCase);
+        _plan = null; _planError = null; _sucio = false;
+        _modo = Modo.Ver;
+        if (cargado.Editable) _ = RecalcularAsync();
+    });
+
+    private void EmpezarNuevo(string? tipo = null)
+    {
+        var c = _contexto!;
+        // Repite unidad, fecha, depósitos y motivo de la última carga: agiliza cargar varios seguidos.
+        var anterior = _modo == Modo.Edicion || _draft.Tc.Length > 0 ? _draft : null;
+        _draft = new()
+        {
+            UnidadNegocio = anterior?.UnidadNegocio is { Length: > 0 } u ? u : c.UnidadNegocio.Length > 0 ? c.UnidadNegocio : c.UnidadesNegocio.FirstOrDefault()?.Codigo ?? "",
+            Motivo = anterior?.Motivo ?? c.MotivoDefault
+        };
+        if (anterior is not null && anterior.Comprobante.Length == 0) { _draft.Fecha = anterior.Fecha; _draft.Deposito = anterior.Deposito; _draft.DepositoDestino = anterior.DepositoDestino; }
+        _articulos.Clear(); _plan = null; _planError = null; _cargado = null; _sucio = false; _operacion = Guid.NewGuid();
+        _nuevoArticulo = null; _nuevoCodigo = ""; _nuevoCantidad = "1";
+        _modo = Modo.Edicion;
+        var tc = (tipo ?? anterior?.Tc ?? "").Trim().ToUpperInvariant();
+        if (TiposOpciones.Any(t => t.Value == tc)) AplicarTipo(tc);
+        UpdateHeader();
+    }
+    private Task NuevoAsync()
+    {
+        if (_busy || _contexto is null) return Task.CompletedTask;
+        _feedback = null;
+        EmpezarNuevo();
+        _ = FocoAsync("sm-codigo");
+        return Task.CompletedTask;
+    }
+    private Task ModificarAsync()
+    {
+        if (_busy || _cargado is not { Editable: true }) return Task.CompletedTask;
+        _modo = Modo.Edicion; _sucio = false; _operacion = Guid.NewGuid(); _feedback = null;
+        _nuevoArticulo = null; _nuevoCodigo = ""; _nuevoCantidad = "1";
+        UpdateHeader();
+        _ = RecalcularAsync();
+        _ = FocoAsync("sm-codigo");
+        return Task.CompletedTask;
+    }
+    private Task CancelarAsync()
+    {
+        if (_busy) return Task.CompletedTask;
+        if (_sucio && _draft.Lineas.Count > 0) { _confirmarCancelar = true; StateHasChanged(); return Task.CompletedTask; }
+        return DescartarAsync();
+    }
+    // Cancelar: una modificación vuelve a la ficha del comprobante; una carga nueva, a la lista.
+    private async Task DescartarAsync()
+    {
+        _confirmarCancelar = false; _calculoCts?.Cancel();
+        await BorrarBorradorAsync();
+        if (Editando) { await VerAsync(_draft.Tc, _draft.Comprobante); return; }
+        await VolverAListaAsync();
+    }
+    private Task VolverAListaAsync()
+    {
+        _modo = Modo.Lista; _cargado = null; _plan = null; _planError = null; _sucio = false;
+        _draft = new(); _articulos.Clear();
+        return RunAsync(CargarListaAsync);
+    }
 
     private void AplicarTipo(string tc)
     {
@@ -270,7 +534,7 @@
     private void Cambiar(Action change)
     {
         if (Bloqueado) return;
-        change(); _plan = null; _planError = null; _feedback = null; UpdateHeader();
+        change(); _plan = null; _planError = null; _feedback = null; _sucio = true; UpdateHeader();
         _ = GuardarBorradorAsync();
         _ = RecalcularAsync();
     }
@@ -316,7 +580,7 @@
     private async Task RecalcularAsync()
     {
         _calculoCts?.Cancel();
-        if (_contexto is null || _disposed || _draft.Lineas.Count == 0 || _draft.Tc.Length == 0 || _draft.Deposito.Length == 0
+        if (_contexto is null || _disposed || _modo == Modo.Lista || _draft.Lineas.Count == 0 || _draft.Tc.Length == 0 || _draft.Deposito.Length == 0
             || EsTransferencia && _draft.DepositoDestino.Length == 0) return;
         var cts = _calculoCts = new CancellationTokenSource();
         try
@@ -420,9 +684,10 @@
     public Task AbrirBusquedaDesdeTeclado() => InvokeAsync(AbrirBuscadorAsync);
     private Task AbrirBuscadorAsync()
     {
-        if (NuevaLineaBloqueada || _buscadorAbierto || _cptesAbierto)
+        if (_modo != Modo.Edicion) return Task.CompletedTask;
+        if (NuevaLineaBloqueada || _buscadorAbierto)
         {
-            if (!_buscadorAbierto && !_cptesAbierto && _contexto is not null && !Bloqueado) _feedback = AppUiMessage.Info("Faltan datos", FaltaParaCargar);
+            if (!_buscadorAbierto && _contexto is not null && !_busy) _feedback = AppUiMessage.Info("Faltan datos", FaltaParaCargar);
             StateHasChanged();
             return Task.CompletedTask;
         }
@@ -447,7 +712,7 @@
         await FocoAsync(_nuevoArticulo is null ? "sm-codigo" : "sm-cantidad");
     }
 
-    // ---------------------------------------------------------------- Grabar
+    // ---------------------------------------------------------------- Grabar / anular
 
     private Task CalcularParaGrabarAsync() => RunAsync(async () =>
     {
@@ -465,81 +730,48 @@
     private Task GrabarAsync()
     {
         _confirmarGrabar = false;
+        StockMovimientoResultado? resultado = null;
         return RunAsync(async () =>
         {
             var plan = _plan ?? throw new InvalidOperationException("Volvé a calcular antes de grabar.");
             var envio = Copia(_draft);
             // En ajustes se manda el saldo que se mostró: si cambió mientras tanto, el servidor pide recalcular.
             if (EsAjuste) foreach (var l in envio.Lineas) l.SaldoEsperado = plan.Lineas.FirstOrDefault(x => string.Equals(x.Articulo, l.Articulo, StringComparison.OrdinalIgnoreCase))?.Saldo;
-            var resultado = await Service.GrabarAsync(envio, _operacion, _lifetime.Token);
-            Terminado(AppUiMessage.Success(resultado.Accion == "M" ? "Cambios grabados" : "Movimiento grabado",
-                $"{resultado.Tc} {resultado.Comprobante} · {resultado.Lineas} artículos."));
-        });
+            resultado = await Service.GrabarAsync(envio, _operacion, _lifetime.Token);
+            await BorrarBorradorAsync();
+            await TerminadoAsync();
+        }, () => resultado is { } r ? AppUiMessage.Success(r.Accion == "M" ? "Cambios grabados" : "Movimiento grabado",
+            $"{r.Tc} {r.Comprobante} · {r.Lineas} artículos.") : null);
     }
     private Task AnularAsync()
     {
         _confirmarAnular = false;
+        StockMovimientoResultado? resultado = null;
         return RunAsync(async () =>
         {
-            var resultado = await Service.AnularAsync(_draft.Tc, _draft.Comprobante, _operacion, _lifetime.Token);
-            Terminado(AppUiMessage.Success("Comprobante anulado", $"{resultado.Tc} {resultado.Comprobante} ya no cuenta en el stock."));
-        });
+            resultado = await Service.AnularAsync(_draft.Tc, _draft.Comprobante, _operacion, _lifetime.Token);
+            await BorrarBorradorAsync();
+            await TerminadoAsync();
+        }, () => resultado is { } r ? AppUiMessage.Success("Comprobante anulado", $"{r.Tc} {r.Comprobante} ya no cuenta en el stock.") : null);
     }
-    // Después de grabar o anular: queda lista otra carga con el mismo tipo, unidad, depósitos, fecha y motivo.
-    private void Terminado(AppUiMessage mensaje)
+    // Después de grabar o anular se vuelve a la lista actualizada (el comprobante queda arriba de todo).
+    private async Task TerminadoAsync()
     {
-        _draft = new() { Tc = _draft.Tc, UnidadNegocio = _draft.UnidadNegocio, Fecha = _draft.Fecha, Deposito = _draft.Deposito,
-            DepositoDestino = _draft.DepositoDestino, Motivo = _draft.Motivo };
-        _articulos.Clear(); _plan = null; _planError = null; _operacion = Guid.NewGuid();
+        _modo = Modo.Lista; _cargado = null; _plan = null; _planError = null; _sucio = false; _operacion = Guid.NewGuid();
         _nuevoArticulo = null; _nuevoCodigo = ""; _nuevoCantidad = "1";
-        _ = BorrarBorradorAsync();
-        _feedback = mensaje;
-        _ = FocoAsync("sm-codigo");
+        await CargarListaAsync();
     }
-    private Task NuevoAsync()
-    {
-        if (Bloqueado) return Task.CompletedTask;
-        Terminado(AppUiMessage.Info("Carga nueva", "Se descartó la carga anterior."));
-        UpdateHeader();
-        return InvokeAsync(StateHasChanged);
-    }
-
-    // ---------------------------------------------------------------- Modificar / anular
-
-    private Task AbrirComprobantesAsync() => RunAsync(async () =>
-    {
-        if (_draft.Tc.Length == 0) throw new InvalidOperationException("Elegí el tipo de movimiento para buscar sus comprobantes.");
-        _cptesTexto = "";
-        _cptes = await Service.BuscarComprobantesAsync(_draft.Tc, "", _lifetime.Token);
-        _cptesAbierto = true;
-    });
-    private async Task CptesTextoChanged(string? value)
-    {
-        _cptesTexto = value ?? "";
-        try { _cptes = await Service.BuscarComprobantesAsync(_draft.Tc, _cptesTexto, _lifetime.Token); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { _feedback = AppUiMessage.Error("No se pudo buscar", Mensaje(ex)); }
-    }
-    private Task AbrirComprobanteAsync(StockMovimientoResumen resumen) => RunAsync(async () =>
-    {
-        var cargado = await Service.GetComprobanteAsync(resumen.Tc, resumen.Comprobante, _lifetime.Token);
-        _cptesAbierto = false;
-        _draft = cargado.Borrador;
-        _articulos = new(cargado.Articulos, StringComparer.OrdinalIgnoreCase);
-        _plan = null; _planError = null; _operacion = Guid.NewGuid();
-        _ = GuardarBorradorAsync();
-        _ = RecalcularAsync();
-    });
 
     // ---------------------------------------------------------------- Infraestructura
 
-    private async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action, Func<AppUiMessage?>? exito = null)
     {
         if (_busy || _disposed) return;
         _busy = true; _feedback = null; UpdateHeader(); await InvokeAsync(StateHasChanged);
         try
         {
             var result = await UiOps.RunAsync(action, "Movimientos de stock", _lifetime.Token);
-            if (!_disposed && !result.Success) _feedback = result.Feedback;
+            if (!_disposed) _feedback = result.Success ? exito?.Invoke() : result.Feedback;
         }
         finally { _busy = false; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
     }
@@ -553,8 +785,8 @@
         _baseInicial = baseActual; _usuarioInicial = usuarioActual;
         _ = InvokeAsync(() =>
         {
-            _contexto = null; _draft = new(); _articulos.Clear(); _plan = null; _buscadorAbierto = false; _cptesAbierto = false;
-            _confirmarGrabar = false; _confirmarAnular = false;
+            _contexto = null; _draft = new(); _articulos.Clear(); _plan = null; _lista = null; _cargado = null; _modo = Modo.Lista;
+            _buscadorAbierto = false; _confirmarGrabar = false; _confirmarAnular = false; _confirmarCancelar = false;
             _feedback = AppUiMessage.Warning("Cambió la sesión", "Volvé a cargar el módulo.");
             UpdateHeader(); StateHasChanged();
         });
@@ -569,7 +801,7 @@
     private string BorradorKey => $"alfacore.stockMovimientos.{_baseInicial}.{_usuarioInicial}".ToLowerInvariant();
     private async Task GuardarBorradorAsync()
     {
-        if (!_jsListo || _disposed || _contexto is null) return;
+        if (!_jsListo || _disposed || _contexto is null || _modo != Modo.Edicion) return;
         if (_draft.Lineas.Count == 0) { await BorrarBorradorAsync(); return; }
         try { await Js.InvokeVoidAsync("localStorage.setItem", BorradorKey, JsonSerializer.Serialize(new Borrador { Draft = _draft, Articulos = _articulos })); } catch { }
     }
@@ -585,12 +817,13 @@
             var json = await Js.InvokeAsync<string?>("localStorage.getItem", BorradorKey);
             if (string.IsNullOrWhiteSpace(json)) return;
             var b = JsonSerializer.Deserialize<Borrador>(json);
-            if (b is null || b.Draft.Lineas.Count == 0) return;
+            if (b is null || b.Draft.Lineas.Count == 0 || _draft.Lineas.Count > 0) return;
             _draft = b.Draft;
             _articulos = new(b.Articulos, StringComparer.OrdinalIgnoreCase);
+            _modo = Modo.Edicion; _sucio = true; _cargado = null; _operacion = Guid.NewGuid();
             _feedback = AppUiMessage.Info("Carga recuperada", b.Draft.Comprobante.Length > 0
-                ? $"Recuperamos la modificación de {b.Draft.Tc} {b.Draft.Comprobante} que tenías sin grabar."
-                : "Recuperamos la carga que tenías sin grabar.");
+                ? $"Recuperamos la modificación de {b.Draft.Tc} {b.Draft.Comprobante} que tenías sin grabar. Grabala o tocá Cancelar para descartarla."
+                : "Recuperamos la carga que tenías sin grabar. Grabala o tocá Cancelar para descartarla.");
             UpdateHeader(); StateHasChanged();
             _ = RecalcularAsync();
         }
@@ -616,15 +849,37 @@
     }
     private static string Num(decimal x) => x.ToString("0.####", Ar);
 
+    // ---------------------------------------------------------------- Header (Context Toolbar)
+
     private void UpdateHeader()
     {
         if (_disposed) return;
+        var lista = _modo == Modo.Lista;
         PageHeader.Set(new PageHeaderConfig
         {
-            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "stock", Title = "Movimientos de stock",
-            Breadcrumb = ["Stock", "Movimientos de stock"], ShowHistoryNavigation = false,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "stock",
+            Title = _modo switch
+            {
+                Modo.Lista => "Movimientos de stock",
+                Modo.Ver => $"{_draft.Tc} {_draft.Comprobante}",
+                _ => Editando ? $"Modificar {_draft.Tc} {_draft.Comprobante}" : "Nuevo movimiento de stock"
+            },
+            Breadcrumb = ["Stock", "Movimientos"], ShowHistoryNavigation = false,
             TopNavigationItems = ModuleTopNavPresets.BuildStock(RouteContext, Nav, "movimientos"),
-            State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
+            State = _busy ? PageHeaderState.Loading : _modo switch
+            {
+                Modo.Lista => PageHeaderState.List,
+                Modo.Ver => PageHeaderState.Detail,
+                _ => Editando ? PageHeaderState.Editing : PageHeaderState.Creating
+            },
+            Search = lista && _contexto is not null ? new() : null,
+            SearchContent = lista && _contexto is not null ? RenderBusqueda() : null,
+            Pagination = lista && _lista is { } p ? new()
+            {
+                PageLabel = $"{p.Pagina} / {p.TotalPaginas}", Label = $"{p.Total} comprobantes",
+                HasPrevious = p.Pagina > 1, HasNext = p.Pagina < p.TotalPaginas, Disabled = _busy,
+                OnPrevious = () => PaginarAsync(-1), OnNext = () => PaginarAsync(1)
+            } : null,
             Actions = Acciones()
         });
     }
@@ -636,13 +891,35 @@
             acciones.Add(new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Disabled = _busy, OnClick = InicializarAsync });
             return acciones;
         }
-        acciones.Add(new() { Key = "nuevo", Label = Editando ? "Cancelar modificación" : "Nueva carga", Icon = "bi-plus-lg", Disabled = Bloqueado || (!Editando && _draft.Lineas.Count == 0), OnClick = NuevoAsync });
-        acciones.Add(new() { Key = "buscar-cpte", Label = "Modificar / anular", Icon = "bi-search", Disabled = Bloqueado || _draft.Tc.Length == 0, OnClick = AbrirComprobantesAsync });
-        if (Editando)
-            acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-x-circle", Disabled = Bloqueado, OnClick = () => { _confirmarAnular = true; return InvokeAsync(StateHasChanged); } });
-        acciones.Add(new() { Key = "grabar", Label = Editando ? "Grabar cambios" : "Grabar", Icon = "bi-save", Style = PageHeaderActionStyle.Primary,
-            Disabled = Bloqueado || _draft.Lineas.Count == 0 || _draft.Deposito.Length == 0 || EsTransferencia && _draft.DepositoDestino.Length == 0, OnClick = CalcularParaGrabarAsync });
-        acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBuscadorAsync });
+        switch (_modo)
+        {
+            case Modo.Lista:
+                acciones.Add(new() { Key = "nuevo", Label = "Nuevo movimiento", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential, Disabled = _busy || _contexto.Tipos.Count == 0, OnClick = NuevoAsync });
+                acciones.Add(new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _busy, OnClick = () => RunAsync(CargarListaAsync) });
+                break;
+            case Modo.Ver:
+                var editable = _cargado is { Editable: true };
+                acciones.Add(new() { Key = "modificar", Label = "Modificar", Icon = "bi-pencil", Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential, Disabled = _busy || !editable, Title = _cargado?.MotivoNoEditable ?? "", OnClick = ModificarAsync });
+                acciones.Add(new() { Key = "volver", Label = "Volver", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = VolverAListaAsync });
+                acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _busy || !editable, Title = _cargado?.MotivoNoEditable ?? "", OnClick = () => { _confirmarAnular = true; return InvokeAsync(StateHasChanged); } });
+                break;
+            default:
+                acciones.Add(new() { Key = "grabar", Label = _busy ? "Grabando..." : Editando ? "Grabar cambios" : "Grabar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential, Busy = _busy,
+                    Disabled = _busy || _draft.Lineas.Count == 0 || _draft.Deposito.Length == 0 || EsTransferencia && _draft.DepositoDestino.Length == 0, OnClick = CalcularParaGrabarAsync });
+                acciones.Add(new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = CancelarAsync });
+                acciones.Add(new() { Key = "buscar-articulo", Label = "Buscar artículo (F5)", Icon = "bi-box-seam", Priority = PageHeaderActionPriority.Overflow, Disabled = NuevaLineaBloqueada, OnClick = AbrirBuscadorAsync });
+                if (Editando)
+                    acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow,
+                        Disabled = _busy, OnClick = () => { _confirmarAnular = true; return InvokeAsync(StateHasChanged); } });
+                break;
+        }
         return acciones;
     }
 

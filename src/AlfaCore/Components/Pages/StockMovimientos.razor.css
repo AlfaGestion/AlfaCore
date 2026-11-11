@@ -12,6 +12,7 @@
 .stockmov-table .col-ud { width: 70px; }
 .stockmov-table .col-cant { width: 110px; }
 .stockmov-table .col-acc { width: 48px; text-align: right; }
+.stockmov-table .col-vto { width: 150px; }
 .stockmov-table td.is-positivo { color: var(--alfa-success, #30a46c); }
 .stockmov-table td.is-negativo { color: var(--alfa-danger, #e5484d); }
 
@@ -30,10 +31,18 @@
 .stockmov-pie__ayuda { margin-left: auto; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
 .stockmov-aviso { color: var(--alfa-warning, #f5a524); }
 
-.stockmov-cptes { display: flex; flex-direction: column; gap: 12px; min-height: 300px; }
-.stockmov-table--cptes { min-width: 0; }
-.stockmov-table--cptes tr.is-clickable { cursor: pointer; }
-.stockmov-table--cptes tr.is-clickable:hover td { background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 12%, transparent); }
+/* Lista (Browse) */
+.stockmov-lista tr.is-clickable { cursor: pointer; }
+.stockmov-lista tr.is-clickable:hover td, .stockmov-lista tr.is-clickable:focus-visible td { background: color-mix(in srgb, var(--alfa-accent, #4f9efa) 12%, transparent); }
+.stockmov-lista tr.is-clickable:focus-visible { outline: none; }
+.stockmov-lista tr.is-anulado td { color: var(--alfa-text-secondary, #a6abb5); }
+.stockmov-lista tr.is-anulado .stockmov-nro { text-decoration: line-through; }
+.stockmov-lista .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stockmov-nro { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stockmov-obs { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stockmov-tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.stockmov-tag--anulado { color: var(--alfa-danger, #e5484d); background: color-mix(in srgb, var(--alfa-danger, #e5484d) 12%, transparent); }
+.stockmov-lista-pie { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
 
 @media(max-width: 1200px) { .stockmov-fields { grid-template-columns: repeat(3, 1fr); } }
 @media(max-width: 650px) { .stockmov-fields { grid-template-columns: 1fr; } .stockmov-pie__ayuda { margin-left: 0; } }

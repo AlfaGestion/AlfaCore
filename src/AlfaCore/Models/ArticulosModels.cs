@@ -66,6 +66,10 @@ public class ArticuloSaveRequest
     public string CuentaProveedor { get; set; } = string.Empty;
     public string CodigoArtProveedor { get; set; } = string.Empty;
     public bool Pesable { get; set; }
+    /// <summary>Perecedero (V_MA_ARTICULOS.Perecedero). Solo se graba con UsaPerecederos=SI.</summary>
+    public bool Perecedero { get; set; }
+    /// <summary>Días hasta el vencimiento desde el ingreso. Como Ma_art.frm (TxtDiasCaducidad) se guarda en V_MA_ARTICULOS.Largo.</summary>
+    public int DiasVencimiento { get; set; }
     public decimal Costo { get; set; }
     public decimal Precio { get; set; }
     public decimal? PrecioOferta { get; set; }
@@ -99,6 +103,11 @@ public sealed class ArticuloDetailDto : ArticuloSaveRequest
     /// <summary>Razón social del proveedor (vt_proveedores.RAZON_SOCIAL) resuelta solo para mostrar en
     /// el combo de búsqueda del editor -- no se persiste, se recalcula siempre en el servidor.</summary>
     public string CuentaProveedorNombre { get; set; } = string.Empty;
+
+    /// <summary>PideMedidas: Largo es la medida, no los días de vencimiento (Ma_art.frm oculta Perecedero). Solo lectura.</summary>
+    public bool PideMedidas { get; set; }
+    /// <summary>USALOTE: el trigger FMT_V_MA_ARTICULOS lo apaga si se marca Perecedero. Solo lectura.</summary>
+    public bool UsaLote { get; set; }
 }
 
 public sealed class ArticuloLookupOptionDto
@@ -125,6 +134,8 @@ public sealed class ArticuloLookupDataDto
     public int ClasePrecioOferta { get; set; }
     /// <summary>OFERTAPORDESCUENTO=SI: los precios por cantidad de las listas (PRECIO9/10) son % de descuento.</summary>
     public bool OfertaPorDescuento { get; set; }
+    /// <summary>UsaPerecederos=SI (grupo STOCK): se ven y se graban Perecedero y los días de vencimiento.</summary>
+    public bool UsaPerecederos { get; set; }
 }
 
 public sealed class ArticuloViewSettingsDto

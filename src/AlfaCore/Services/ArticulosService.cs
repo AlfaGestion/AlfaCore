@@ -163,6 +163,10 @@ public sealed partial class ArticulosService(
                     ISNULL(LTRIM(RTRIM(p.RAZON_SOCIAL)), '') AS CuentaProveedorNombre,
                     ISNULL(LTRIM(RTRIM(a.CodigoArtProveedor)), '') AS CodigoArtProveedor,
                     ISNULL(a.Pesable, 0) AS Pesable,
+                    ISNULL(a.Perecedero, 0) AS Perecedero,
+                    CASE WHEN ISNULL(a.PideMedidas, 0) = 1 THEN 0 ELSE CONVERT(int, ROUND(ISNULL(a.Largo, 0), 0)) END AS DiasVencimiento,
+                    ISNULL(a.PideMedidas, 0) AS PideMedidas,
+                    ISNULL(a.USALOTE, 0) AS UsaLote,
                     ISNULL(a.COSTO, 0) AS Costo,
                     ISNULL(a.{precioColumn}, 0) AS Precio,
                     -- Todas las clases: el UPDATE graba PRECIO1..8; sin leerlas, editar dejaba en 0 las no tocadas.
@@ -223,7 +227,7 @@ public sealed partial class ArticulosService(
                 "SELECT LTRIM(RTRIM(IdUnidad)) AS Codigo, ISNULL(Descripcion, '') AS Descripcion FROM dbo.v_ta_unidad ORDER BY Descripcion;",
                 cancellationToken: token));
 
-            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta", "CLASEPRECIOOFERTA", "OFERTAPORDESCUENTO" };
+            var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta", "CLASEPRECIOOFERTA", "OFERTAPORDESCUENTO", "UsaPerecederos" };
             claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
             var cfg = await ReadConfigMapAsync(cn, claves, token);
             var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 1;
@@ -246,7 +250,8 @@ public sealed partial class ArticulosService(
                 NombresPrecios = nombresPrecios,
                 Politicas = politicas,
                 ClasePrecioOferta = int.TryParse(Get(cfg, "CLASEPRECIOOFERTA"), out var claseOferta) && claseOferta is >= 1 and <= 8 ? claseOferta : 0,
-                OfertaPorDescuento = ParseBool(Get(cfg, "OFERTAPORDESCUENTO"))
+                OfertaPorDescuento = ParseBool(Get(cfg, "OFERTAPORDESCUENTO")),
+                UsaPerecederos = ParseBool(Get(cfg, "UsaPerecederos"))
             };
         }, "No se pudieron cargar las referencias de artículos.", ct);
 
@@ -398,8 +403,16 @@ public sealed partial class ArticulosService(
                     throw new InvalidOperationException($"La política de precios '{politica.Trim()}' no existe.");
             }
 
+            // Perecedero y días (Largo) solo con UsaPerecederos=SI; si no, no se tocan (VB6 los sigue manejando).
+            var usaPerecederos = ParseBool(await ReadSingleConfigValueAsync(cn, "UsaPerecederos", token));
+            if (usaPerecederos && request.Perecedero && request.DiasVencimiento is < 1 or > 3650)
+                throw new InvalidOperationException("Ingresá los días de vencimiento del producto perecedero (entre 1 y 3650).");
+
             var parameters = new
             {
+                UsaPerecederos = usaPerecederos,
+                Perecedero = usaPerecederos && request.Perecedero,
+                DiasVencimiento = (double)request.DiasVencimiento,
                 Codigo = codigo,
                 CodigoWhere = codigoCrudo,
                 CodigoBarra = codigoBarra,
@@ -434,11 +447,11 @@ public sealed partial class ArticulosService(
                     INSERT INTO dbo.V_MA_ARTICULOS
                         (IDARTICULO, CODIGOBARRA, DESCRIPCION, IDRUBRO, IDTIPO, IDUNIDAD, CUENTAPROVEEDOR,
                         CodigoArtProveedor, Pesable, COSTO, PRECIO1, PRECIO2, PRECIO3, PRECIO4, PRECIO5, PRECIO6, PRECIO7, PRECIO8, UTILIDAD, TasaIVA, EXENTO, SUSPENDIDO, FHALTA,
-                        POLITICAPRECIOS, DesdeTrigger)
+                        POLITICAPRECIOS, DesdeTrigger, Perecedero, Largo)
                     VALUES
                         (@Codigo, @CodigoBarra, @Descripcion, @RubroCodigo, @MarcaCodigo, @UnidadCodigo, @CuentaProveedor,
                          @CodigoArtProveedor, @Pesable, @Costo, @Precio1, @Precio2, @Precio3, @Precio4, @Precio5, @Precio6, @Precio7, @Precio8, @Utilidad, @TasaIva, @Exento, 0, GETDATE(),
-                         @Politica, 0);
+                         @Politica, 0, @Perecedero, CASE WHEN @Perecedero = 1 THEN @DiasVencimiento ELSE NULL END);
                     """;
                 await cn.ExecuteAsync(new CommandDefinition(insertSql, parameters, tx, cancellationToken: token));
             }
@@ -472,6 +485,9 @@ public sealed partial class ArticulosService(
                         TasaIVA = @TasaIva,
                         EXENTO = @Exento,
                         POLITICAPRECIOS = @Politica,
+                        -- Perecedero comparte Largo con las medidas: con PideMedidas no se toca (Ma_art.frm oculta el check).
+                        Perecedero = CASE WHEN @UsaPerecederos = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @Perecedero ELSE Perecedero END,
+                        Largo = CASE WHEN @UsaPerecederos = 1 AND @Perecedero = 1 AND ISNULL(PideMedidas, 0) = 0 THEN @DiasVencimiento ELSE Largo END,
                         -- Como Ma_art.frm al grabar: el trigger FMT_V_MA_ARTICULOS aplica la política y pasa los precios a las listas.
                         DesdeTrigger = 0
                     WHERE LTRIM(RTRIM(IDARTICULO)) = @CodigoWhere;

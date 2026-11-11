@@ -535,7 +535,7 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Components/Pages/StockMovimientos.razor`
 - Propósito: carga, modificación y anulación de movimientos de stock IR, VS, TR, AJP y SI (port de V_MV_STOCK.exe) con grilla código → cantidad/bultos, F5 y borrador local.
 - Datos que usa: `IStockMovimientosService`, `ArticuloStockBuscadorDialog`, `wwwroot/js/carga-directa.js` (F5 y foco).
-- Observaciones: menú web `D80-MOVSTOCK`; `?tipo=TR` preselecciona el tipo. En AJP/SI muestra saldo a la fecha y diferencia mientras se carga. Manual: `src/AlfaCore/Docs/manual_stock_movimientos.md`.
+- Observaciones: menú web `D80-MOVSTOCK`. Esquema AlfaDesign Lista → Ver → Edición: la lista (`ListarComprobantesAsync`) tiene filtros en el Smart Search del header y paginador en el Context Toolbar; la ficha (`VerComprobanteAsync`) muestra también anulados y no modificables; Grabar/Cancelar fijos en el header. `?tipo=TR` abre directo una carga nueva de ese tipo. En AJP/SI muestra saldo a la fecha y diferencia mientras se carga. Manual: `src/AlfaCore/Docs/manual_stock_movimientos.md`.
 
 ### StockMovimientosService
 
@@ -551,7 +551,31 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/StockMovimientosCalculo.cs`
 - Propósito: reglas puras de signo, diferencia de ajuste, validación de cantidades, letra/número de comprobante y armado de filas (TR en dos pasadas).
 - Datos que usa: ninguno (sin acceso a datos).
-- Observaciones: probado en `tests/AlfaCore.Tests/StockMovimientosTests.cs`.
+- Observaciones: probado en `tests/AlfaCore.Tests/StockMovimientosTests.cs`. Perecederos: vencimiento propuesto = fecha + días (`Largo`, 2 si no tiene), grabado en `NroLote` como yyyymmdd solo en ingresos.
+
+### StockReportes
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/StockReportes.razor`
+- Propósito: reportes de stock (port de V_Cons_Ficha_Stock): saldos a una fecha en unidades y bultos (o con depósitos en columnas), movimientos del período, ficha con saldo inicial y acumulado, y perecederos por vencimiento.
+- Datos que usa: `IStockReportesService`, `ArticuloStockBuscadorDialog` (F5 en la ficha). Filtros en el Smart Search del header y paginador en el Context Toolbar.
+- Observaciones: menú web `D80-RPTSTOCK`; `?tipo=`, `?articulo=` y `?deposito=` abren directo; doble clic en un renglón abre la ficha. Excel por solapa completa.
+
+### StockReportesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/StockReportesService.cs`
+- Propósito: consultas de solo lectura de saldos, período, ficha y perecederos, y exportación a Excel (ClosedXML).
+- Datos que usa: `V_MV_STOCK` (no anulado, `SUM(CantidadUD)`), `V_MA_ARTICULOS`, `V_TA_RUBROS`, `V_TA_FAMILIAS`, `V_TA_DEPOSITO`, `V_TA_MotivoStock`, `V_MV_CPTE`, `MA_CUENTAS`, `S_TA_EQUIV`, `TA_CONFIGURACION` (`UNIDADDEMEDIDA_BL`, `UsaPerecederos`).
+- Observaciones: saldo a fecha = movimientos hasta ese día inclusive; bultos por equivalencia del artículo y, sin equivalencia, suma de `CANT_BL`. Perecederos: vencimiento del `NroLote` yyyymmdd o fecha de ingreso + `Largo` (estimado).
+
+### StockReportesCalculo
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/StockReportesCalculo.cs`
+- Propósito: reparto del stock de un perecedero entre sus ingresos más nuevos, estado del vencimiento y saldo acumulado de la ficha.
+- Datos que usa: ninguno (sin acceso a datos).
+- Observaciones: probado en `tests/AlfaCore.Tests/StockReportesTests.cs`.
 
 ### ArticuloStockBuscadorDialog
 

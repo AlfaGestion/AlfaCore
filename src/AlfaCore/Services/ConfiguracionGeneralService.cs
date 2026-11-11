@@ -297,7 +297,8 @@ public sealed class ConfiguracionGeneralService(
                 ModoRetail = ParseBool(Get(valores, "RETAIL")),
                 PlantillaCodigoBarraPesable = Get(valores, "TIPOEAN"),
                 CodigoBarraAutomatico = ParseBool(Get(valores, "CODIGOBARRAAUTOMATICO")),
-                RutaImagenes = Get(valores, "RUTAIMAGENES")
+                RutaImagenes = Get(valores, "RUTAIMAGENES"),
+                UsaPerecederos = ParseBool(Get(valores, "USAPERECEDEROS"))
             };
         }, "No se pudo cargar la configuración de artículos.", ct);
 
@@ -315,12 +316,14 @@ public sealed class ConfiguracionGeneralService(
             await SetConfigAsync(cn, "TIPOEAN", dto.PlantillaCodigoBarraPesable, token);
             await SetConfigAsync(cn, "CODIGOBARRAAUTOMATICO", dto.CodigoBarraAutomatico ? "SI" : "NO", token);
             await SetConfigAsync(cn, "RUTAIMAGENES", dto.RutaImagenes, token);
+            // La crea el update 2026-11-11-004 en el grupo STOCK; acá solo se actualiza el valor.
+            await SetConfigAsync(cn, "UsaPerecederos", dto.UsaPerecederos ? "SI" : "NO", token);
         }, "No se pudo guardar la configuración de artículos.", ct);
 
     private static readonly string[] ArticulosClaves =
     [
         "PIVA", "CLASEPRECIOVENTA", "MAESTROARTICULOCONIVA", "CLASE2CONIVA", "RETAIL",
-        "TIPOEAN", "CODIGOBARRAAUTOMATICO", "RUTAIMAGENES"
+        "TIPOEAN", "CODIGOBARRAAUTOMATICO", "RUTAIMAGENES", "USAPERECEDEROS"
     ];
 
     private static decimal ParseDecimalInvariant(string? value)

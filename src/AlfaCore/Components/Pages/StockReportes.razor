@@ -1,0 +1,526 @@
+@page "/stock/reportes"
+@page "/{idweb}/{idbase:int}/stock/reportes"
+@using System.Globalization
+@using AlfaCore.Services
+@inject IStockReportesService Service
+@inject IPageHeaderService PageHeader
+@inject IAppUiOperationService UiOps
+@inject ISessionService Sessions
+@inject IAppUserSessionService Users
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IDisposable
+
+<PageTitle>Reportes de stock | AlfaCore</PageTitle>
+<div class="gd-page gd stockrpt-page">
+    <AlfaNotification Message="@_feedback" />
+    <AlfaTabs Items="Solapas" ActiveKey="@_tipo.ToString()" ActiveKeyChanged="TipoChanged" />
+
+    @if (_cargando) { <AlfaEmptyState Loading="true" Title="Generando el reporte…" /> }
+    else if (!_generado)
+    {
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="@(_tipo == StockReporteTipo.Ficha ? "Elegí el artículo" : "Elegí los filtros")"
+            Message="@(_tipo == StockReporteTipo.Ficha ? "Escribí el código en el buscador de arriba y Enter, o F5 para buscarlo por descripción." : AyudaTipo)" />
+    }
+    else
+    {
+        @foreach (var aviso in Avisos) { <p class="stockrpt-aviso">@aviso</p> }
+        @switch (_tipo)
+        {
+            case StockReporteTipo.Saldos when _saldos is { } s:
+                @if (s.Filas.Count == 0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay saldos con esos filtros" /> }
+                else
+                {
+                    <div class="stockrpt-scroll">
+                        <table class="stockrpt-table">
+                            <thead>
+                                <tr>
+                                    <th>Código</th><th>Descripción</th><th>UD</th><th>Rubro</th>
+                                    @if (_filtro.DepositosEnColumnas) { @foreach (var d in s.Depositos) { <th class="num">@NombreDeposito(d)</th> } <th class="num">Total</th> }
+                                    else { <th>Depósito</th><th class="num">Saldo</th> }
+                                    @if (Bultos) { <th class="num">Bultos</th> }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var x in s.Filas)
+                                {
+                                    <tr class="is-clickable" title="Doble clic: ver la ficha" @ondblclick="() => AbrirFichaAsync(x.Articulo, _filtro.DepositosEnColumnas ? _filtro.Deposito : x.Deposito)">
+                                        <td>@x.Articulo</td><td>@x.Descripcion</td><td>@x.Unidad</td><td>@x.Rubro</td>
+                                        @if (_filtro.DepositosEnColumnas) { @foreach (var d in s.Depositos) { <td class="num @Neg(x.PorDeposito.GetValueOrDefault(d))">@(x.PorDeposito.TryGetValue(d, out var v) ? Num(v) : "")</td> } }
+                                        else { <td>@x.Deposito</td> }
+                                        <td class="num @Neg(x.Saldo)"><strong>@Num(x.Saldo)</strong></td>
+                                        @if (Bultos) { <td class="num">@(x.Bultos is { } b ? Num(b) : "")</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stockrpt-pie">@s.Total renglones · Unidades: <strong>@Num(s.TotalUnidades)</strong>@(Bultos ? $" · Bultos (página): {Num(s.TotalBultos)}" : "")</div>
+                }
+                break;
+            case StockReporteTipo.Periodo when _periodo is { } pr:
+                @if (pr.Filas.Count == 0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay movimientos con esos filtros" /> }
+                else
+                {
+                    <div class="stockrpt-scroll">
+                        <table class="stockrpt-table">
+                            <thead><tr><th>Código</th><th>Descripción</th><th>UD</th><th>Depósito</th><th class="num">Saldo inicial</th><th class="num">Entradas</th><th class="num">Salidas</th><th class="num">Saldo final</th>@if (Bultos) { <th class="num">Bultos</th> }</tr></thead>
+                            <tbody>
+                                @foreach (var x in pr.Filas)
+                                {
+                                    <tr class="is-clickable" title="Doble clic: ver la ficha" @ondblclick="() => AbrirFichaAsync(x.Articulo, x.Deposito)">
+                                        <td>@x.Articulo</td><td>@x.Descripcion</td><td>@x.Unidad</td><td>@x.Deposito</td>
+                                        <td class="num">@Num(x.SaldoInicial)</td><td class="num is-positivo">@Num(x.Entradas)</td><td class="num is-negativo">@Num(x.Salidas)</td>
+                                        <td class="num @Neg(x.SaldoFinal)"><strong>@Num(x.SaldoFinal)</strong></td>
+                                        @if (Bultos) { <td class="num">@(x.BultosFinal is { } b ? Num(b) : "")</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stockrpt-pie">@pr.Total renglones · Saldo final: <strong>@Num(pr.TotalUnidades)</strong></div>
+                }
+                break;
+            case StockReporteTipo.Ficha when _ficha is { } fi:
+                <section class="stockrpt-ficha-cab">
+                    <strong>@fi.Articulo · @fi.Descripcion</strong> <span class="stockrpt-muted">(@fi.Unidad)</span>
+                    <span>Del @fi.Desde.ToString("dd/MM/yyyy") al @fi.Hasta.ToString("dd/MM/yyyy")@(_filtro.Deposito.Length > 0 ? $" · Depósito {_filtro.Deposito}" : " · Todos los depósitos")</span>
+                    <span>Saldo inicial <strong>@Num(fi.SaldoInicial)</strong></span><span>Entradas <strong class="is-positivo">@Num(fi.Entradas)</strong></span>
+                    <span>Salidas <strong class="is-negativo">@Num(fi.Salidas)</strong></span><span>Saldo final <strong>@Num(fi.SaldoFinal)</strong></span>
+                </section>
+                @if (fi.Truncada) { <p class="stockrpt-aviso">El período tiene muchos movimientos: se muestran los primeros 10.000. Achicá el período para ver el resto.</p> }
+                <div class="stockrpt-scroll">
+                    <table class="stockrpt-table">
+                        <thead><tr><th>Fecha</th><th>Comprobante</th><th>Dep.</th><th>Org./Dest.</th><th>Motivo</th><th>Cuenta</th><th class="num">Entrada</th><th class="num">Salida</th><th class="num">Saldo</th>@if (Bultos) { <th class="num">Bultos</th> }<th>Lote / vence</th></tr></thead>
+                        <tbody>
+                            <tr class="stockrpt-inicial"><td>@fi.Desde.ToString("dd/MM/yyyy")</td><td colspan="7">Saldo inicial</td><td class="num"><strong>@Num(fi.SaldoInicial)</strong></td>@if (Bultos) { <td></td> }<td></td></tr>
+                            @foreach (var m in fi.Movimientos.Skip((_fichaPagina - 1) * FichaTamano).Take(FichaTamano))
+                            {
+                                <tr>
+                                    <td>@m.Fecha.ToString("dd/MM/yyyy")</td><td>@m.Tc @m.Comprobante</td><td>@m.Deposito</td><td>@m.OrigenDestino</td><td>@m.Motivo</td>
+                                    <td title="@m.Nombre">@(m.Cuenta.Length == 0 ? "" : $"{m.Cuenta} · {m.Nombre}")</td>
+                                    <td class="num is-positivo">@(m.Entrada == 0 ? "" : Num(m.Entrada))</td><td class="num is-negativo">@(m.Salida == 0 ? "" : Num(m.Salida))</td>
+                                    <td class="num @Neg(m.Saldo)"><strong>@Num(m.Saldo)</strong></td>
+                                    @if (Bultos) { <td class="num">@(m.Bultos == 0 ? "" : Num(m.Bultos))</td> }
+                                    <td>@(m.Vencimiento is { } v ? $"Vence {v:dd/MM/yyyy}" : m.Lote)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="stockrpt-pie">@fi.Movimientos.Count movimientos@(fi.Movimientos.Count > FichaTamano ? $" · se muestran de a {FichaTamano}" : "")</div>
+                @if (fi.SaldosDeposito.Count > 0)
+                {
+                    <h3 class="stockrpt-subtitulo">Saldo por depósito al @fi.Hasta.ToString("dd/MM/yyyy")</h3>
+                    <table class="stockrpt-table stockrpt-table--chica">
+                        <thead><tr><th>Depósito</th><th class="num">Saldo</th>@if (Bultos) { <th class="num">Bultos</th> }</tr></thead>
+                        <tbody>@foreach (var d in fi.SaldosDeposito) { <tr><td>@NombreDeposito(d.Deposito)</td><td class="num @Neg(d.Saldo)">@Num(d.Saldo)</td>@if (Bultos) { <td class="num">@(d.Bultos is { } b ? Num(b) : "")</td> }</tr> }</tbody>
+                    </table>
+                }
+                break;
+            case StockReporteTipo.Perecederos when _perecederos is { } pe:
+                @if (pe.Filas.Count == 0) { <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No hay productos perecederos con stock para esos filtros" /> }
+                else
+                {
+                    <div class="stockrpt-scroll">
+                        <table class="stockrpt-table">
+                            <thead><tr><th>Código</th><th>Descripción</th><th>UD</th><th>Depósito</th><th>Ingreso</th><th>Vence</th><th class="num">Días</th><th>Estado</th><th class="num">Cantidad</th>@if (Bultos) { <th class="num">Bultos</th> }</tr></thead>
+                            <tbody>
+                                @foreach (var x in pe.Filas)
+                                {
+                                    <tr class="is-clickable" title="Doble clic: ver la ficha" @ondblclick="() => AbrirFichaAsync(x.Articulo, x.Deposito)">
+                                        <td>@x.Articulo</td><td>@x.Descripcion</td><td>@x.Unidad</td><td>@x.Deposito</td><td>@x.Ingreso?.ToString("dd/MM/yyyy")</td>
+                                        <td>@x.Vencimiento?.ToString("dd/MM/yyyy")@if (x.Estimado) { <small class="stockrpt-muted" title="Fecha de ingreso + días del artículo"> (estimado)</small> }</td>
+                                        <td class="num">@x.DiasRestantes</td>
+                                        <td><span class="stockrpt-estado stockrpt-estado--@x.Estado.ToLowerInvariant()">@StockReportesCalculo.EstadoTexto(x.Estado)</span></td>
+                                        <td class="num"><strong>@Num(x.Cantidad)</strong></td>
+                                        @if (Bultos) { <td class="num">@(x.Bultos is { } b ? Num(b) : "")</td> }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stockrpt-pie">@pe.Total renglones · Unidades: <strong>@Num(pe.TotalUnidades)</strong></div>
+                }
+                break;
+        }
+    }
+</div>
+
+<ArticuloStockBuscadorDialog Open="_buscadorAbierto" TextoInicial="@_filtro.Articulo" SearchFunc="BuscarArticulos"
+    StockLabel="@(_filtro.Deposito.Length > 0 ? $"Stock dep. {_filtro.Deposito}" : "Stock")" InputId="sr-buscar"
+    OnElegir="ElegirArticuloAsync" OnClose="() => _buscadorAbierto = false" />
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private const int FichaTamano = 200;
+    [SupplyParameterFromQuery(Name = "tipo")] public string? TipoInicial { get; set; }
+    [SupplyParameterFromQuery(Name = "articulo")] public string? ArticuloInicial { get; set; }
+    [SupplyParameterFromQuery(Name = "deposito")] public string? DepositoInicial { get; set; }
+
+    private StockReporteOpciones? _opciones;
+    private StockReporteTipo _tipo = StockReporteTipo.Saldos;
+    private StockReporteFiltro _filtro = new();
+    private StockReportePagina<StockSaldoFila>? _saldos;
+    private StockReportePagina<StockPeriodoFila>? _periodo;
+    private StockReportePagina<StockPerecederoFila>? _perecederos;
+    private StockFicha? _ficha;
+    private int _fichaPagina = 1;
+    private bool _cargando, _generado, _busy, _disposed, _jsListo, _buscadorAbierto, _filtrosAbiertos;
+    // Filtros con los que se generó lo que se ve (chips del Smart Search).
+    private StockReporteFiltro _aplicado = new();
+    private AppUiMessage? _feedback;
+    private readonly CancellationTokenSource _lifetime = new();
+    private DotNetObjectReference<StockReportes>? _dotNetRef;
+    private int? _baseInicial;
+
+    private bool Bultos => _opciones?.UnidadBultos.Length > 0;
+    private IReadOnlyList<AlfaTabItem> Solapas =>
+    [
+        new(nameof(StockReporteTipo.Saldos), "Saldos"),
+        new(nameof(StockReporteTipo.Periodo), "Movimientos del período"),
+        new(nameof(StockReporteTipo.Ficha), "Ficha de stock"),
+        new(nameof(StockReporteTipo.Perecederos), "Perecederos")
+    ];
+    private static readonly IReadOnlyList<AlfaSelectOption> Estados =
+    [
+        new("VENCIDO", "Vencidos"), new("PORVENCER", "Por vencer"), new("VIGENTE", "Vigentes"), new("SINVTO", "Sin vencimiento")
+    ];
+    private IEnumerable<string> Avisos => _tipo switch
+    {
+        StockReporteTipo.Saldos => _saldos?.Avisos ?? [],
+        StockReporteTipo.Perecederos => (_perecederos?.Avisos ?? []).Concat(_opciones?.UsaPerecederos == false ? ["La base no tiene activado UsaPerecederos: se muestran igual los artículos marcados como perecederos."] : []),
+        _ => []
+    };
+    private string AyudaTipo => _tipo switch
+    {
+        StockReporteTipo.Saldos => "Saldo por artículo y depósito a la fecha elegida, en unidades y bultos. Doble clic en un renglón abre su ficha.",
+        StockReporteTipo.Periodo => "Saldo inicial, entradas, salidas y saldo final de cada artículo en el período.",
+        StockReporteTipo.Ficha => "Movimientos de un artículo con saldo inicial y saldo acumulado. F5 busca el artículo.",
+        _ => "Stock de los productos perecederos por fecha de vencimiento: vencidos, por vencer y vigentes."
+    };
+
+    protected override void OnInitialized()
+    {
+        _baseInicial = Sessions.GetActiveSession()?.BaseId;
+        Sessions.SessionChanged += ContextChanged;
+        _filtro.Desde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        _filtro.Hasta = DateTime.Today;
+        if (Enum.TryParse<StockReporteTipo>(TipoInicial, true, out var t)) _tipo = t;
+        if (!string.IsNullOrWhiteSpace(ArticuloInicial)) { _tipo = StockReporteTipo.Ficha; _filtro.Articulo = ArticuloInicial.Trim(); }
+        if (!string.IsNullOrWhiteSpace(DepositoInicial)) _filtro.Deposito = DepositoInicial.Trim();
+        UpdateHeader();
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await UiOps.RunAsync(() => Service.GetOpcionesAsync(_lifetime.Token), "Reportes de stock", _lifetime.Token);
+        if (r.Success) _opciones = r.Value; else _feedback = r.Feedback;
+        UpdateHeader();
+        if (_opciones is not null && PuedeGenerar) await GenerarAsync();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _disposed) return;
+        UpdateHeader();
+        _dotNetRef = DotNetObjectReference.Create(this);
+        try { await Js.InvokeVoidAsync("cargaDirecta.init", _dotNetRef); _jsListo = true; } catch (JSDisconnectedException) { }
+    }
+
+    // La ficha necesita el artículo; los otros reportes se generan solos al entrar a la solapa.
+    private bool PuedeGenerar => _tipo != StockReporteTipo.Ficha || _filtro.Articulo.Trim().Length > 0;
+
+    private async Task TipoChanged(string? key)
+    {
+        if (!Enum.TryParse<StockReporteTipo>(key, out var t) || t == _tipo) return;
+        _tipo = t; _generado = false; _feedback = null; _filtrosAbiertos = false; _filtro.Pagina = 1;
+        UpdateHeader();
+        if (_opciones is not null && PuedeGenerar) await GenerarAsync();
+    }
+
+    private Task GenerarAsync() { _filtrosAbiertos = false; _filtro.Pagina = 1; _fichaPagina = 1; return CargarAsync(); }
+    private Task IrAPaginaAsync(int pagina) { _filtro = Copiar(_aplicado); _filtro.Pagina = pagina; return CargarAsync(); }
+
+    private async Task CargarAsync()
+    {
+        if (_busy || _disposed) return;
+        _busy = _cargando = true; _feedback = null; UpdateHeader(); StateHasChanged();
+        var tipo = _tipo;
+        var r = await UiOps.RunAsync(async () =>
+        {
+            switch (tipo)
+            {
+                case StockReporteTipo.Saldos: _saldos = await Service.GetSaldosAsync(_filtro, _lifetime.Token); break;
+                case StockReporteTipo.Periodo: _periodo = await Service.GetPeriodoAsync(_filtro, _lifetime.Token); break;
+                case StockReporteTipo.Ficha: _ficha = await Service.GetFichaAsync(_filtro, _lifetime.Token); break;
+                default: _perecederos = await Service.GetPerecederosAsync(_filtro, _lifetime.Token); break;
+            }
+        }, "Reportes de stock", _lifetime.Token);
+        _busy = _cargando = false;
+        _generado = r.Success;
+        if (r.Success) _aplicado = Copiar(_filtro);
+        if (!r.Success) _feedback = r.Feedback;
+        UpdateHeader(); StateHasChanged();
+    }
+
+    private async Task ExportarAsync()
+    {
+        if (_busy) return;
+        _busy = true; UpdateHeader();
+        var tipo = _tipo;
+        var r = await UiOps.RunAsync(() => Service.ExportarAsync(tipo, Copiar(_aplicado), _lifetime.Token), "Reportes de stock", _lifetime.Token);
+        _busy = false; UpdateHeader();
+        if (!r.Success || r.Value is null) { _feedback = r.Feedback; return; }
+        var nombre = $"stock-{tipo.ToString().ToLowerInvariant()}-{DateTime.Now:yyyyMMdd-HHmm}.xlsx";
+        try { await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(r.Value), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nombre); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private Task AbrirFichaAsync(string articulo, string deposito)
+    {
+        _tipo = StockReporteTipo.Ficha; _filtro.Articulo = articulo; _filtro.Deposito = deposito ?? "";
+        return GenerarAsync();
+    }
+
+    // ---- F5 (solo en la ficha) ----
+    [JSInvokable]
+    public Task AbrirBusquedaDesdeTeclado() => InvokeAsync(() => { if (_tipo == StockReporteTipo.Ficha) AbrirBuscador(); });
+    private void AbrirBuscador() { _buscadorAbierto = true; StateHasChanged(); }
+    private Task<IReadOnlyList<StockMovimientoArticulo>> BuscarArticulos(string texto, CancellationToken ct) => Service.BuscarArticulosAsync(texto, _filtro.Deposito, ct);
+    private Task ElegirArticuloAsync(StockMovimientoArticulo a) { _buscadorAbierto = false; _filtro.Articulo = a.Codigo; return GenerarAsync(); }
+    private void AbrirBuscadorDesdeFiltro() { _filtrosAbiertos = false; UpdateHeader(); AbrirBuscador(); }
+
+    private void ContextChanged()
+    {
+        if (_disposed || Sessions.GetActiveSession()?.BaseId == _baseInicial) return;
+        _baseInicial = Sessions.GetActiveSession()?.BaseId;
+        _ = InvokeAsync(() => { _opciones = null; _generado = false; _feedback = AppUiMessage.Warning("Cambió la sesión", "Volvé a cargar el módulo."); UpdateHeader(); StateHasChanged(); });
+    }
+
+    private string NombreDeposito(string codigo) => _opciones?.Depositos.FirstOrDefault(d => string.Equals(d.Codigo, codigo, StringComparison.OrdinalIgnoreCase)) is { } d
+        ? $"{d.Codigo} · {d.Descripcion}" : codigo;
+    private static string Num(decimal x) => x.ToString("#,##0.####", Ar);
+    private static string? Neg(decimal x) => x < 0 ? "is-negativo" : null;
+    private static string Fecha(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    private static DateTime? ParseFecha(string? v) => DateTime.TryParseExact(v, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f) ? f.Date : null;
+
+    private static StockReporteFiltro Copiar(StockReporteFiltro f) => new()
+    {
+        Deposito = f.Deposito, Rubro = f.Rubro, Familia = f.Familia, Texto = f.Texto, Articulo = f.Articulo, Desde = f.Desde, Hasta = f.Hasta,
+        SoloConStock = f.SoloConStock, DepositosEnColumnas = f.DepositosEnColumnas, Estado = f.Estado, DiasPorVencer = f.DiasPorVencer,
+        Pagina = f.Pagina, TamanoPagina = f.TamanoPagina
+    };
+
+    // ---- Smart Search del header: texto (artículo) + panel de filtros según la solapa ----
+    private void AlternarFiltros() { _filtrosAbiertos = !_filtrosAbiertos; UpdateHeader(); }
+    private void CerrarFiltros() { _filtrosAbiertos = false; UpdateHeader(); }
+    private void CambiarFiltro(Action cambio) { cambio(); UpdateHeader(); }
+    private Task TeclaBusquedaAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") return PuedeGenerar ? GenerarAsync() : Task.CompletedTask;
+        if (args.Key == "Escape") CerrarFiltros();
+        return Task.CompletedTask;
+    }
+    private Task LimpiarFiltrosAsync()
+    {
+        var articulo = _filtro.Articulo;
+        _filtro = new() { Desde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1), Hasta = DateTime.Today, Articulo = articulo };
+        return PuedeGenerar ? GenerarAsync() : Task.CompletedTask;
+    }
+    private Task QuitarFiltroAsync(string key)
+    {
+        _filtro = Copiar(_aplicado);
+        switch (key)
+        {
+            case "fecha": _filtro.Hasta = DateTime.Today; break;
+            case "periodo": _filtro.Desde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1); _filtro.Hasta = DateTime.Today; break;
+            case "deposito": _filtro.Deposito = ""; break;
+            case "rubro": _filtro.Rubro = ""; break;
+            case "familia": _filtro.Familia = ""; break;
+            case "columnas": _filtro.DepositosEnColumnas = false; break;
+            case "ceros": _filtro.SoloConStock = true; break;
+            case "estado": _filtro.Estado = ""; break;
+        }
+        return GenerarAsync();
+    }
+    private List<(string Key, string Label)> FiltrosActivos()
+    {
+        var f = _aplicado;
+        var chips = new List<(string, string)>();
+        var hasta = (f.Hasta ?? DateTime.Today).Date;
+        switch (_tipo)
+        {
+            case StockReporteTipo.Saldos: chips.Add(("fecha", $"Saldo al {hasta:dd/MM/yyyy}")); break;
+            case StockReporteTipo.Periodo or StockReporteTipo.Ficha:
+                chips.Add(("periodo", $"{(f.Desde ?? hasta.AddMonths(-3)):dd/MM/yyyy} al {hasta:dd/MM/yyyy}")); break;
+            default:
+                if (f.Estado.Length > 0) chips.Add(("estado", Estados.FirstOrDefault(e => e.Value == f.Estado)?.Label ?? f.Estado));
+                break;
+        }
+        if (f.Deposito.Length > 0) chips.Add(("deposito", $"Depósito: {f.Deposito}"));
+        if (_tipo != StockReporteTipo.Ficha)
+        {
+            if (f.Rubro.Length > 0) chips.Add(("rubro", $"Rubro: {Descripcion(_opciones?.Rubros, f.Rubro)}"));
+            if (f.Familia.Length > 0) chips.Add(("familia", $"Familia: {Descripcion(_opciones?.Familias, f.Familia)}"));
+        }
+        if (_tipo == StockReporteTipo.Saldos && f.DepositosEnColumnas) chips.Add(("columnas", "Depósitos en columnas"));
+        if (_tipo == StockReporteTipo.Saldos && !f.SoloConStock) chips.Add(("ceros", "Con saldos en cero"));
+        return chips;
+    }
+    private static string Descripcion(IEnumerable<CargaComprobantesOpcionFiltro>? opciones, string codigo)
+        => opciones?.FirstOrDefault(o => string.Equals(o.Codigo, codigo, StringComparison.OrdinalIgnoreCase))?.Descripcion is { Length: > 0 } d ? d : codigo;
+
+    private RenderFragment RenderBusqueda() => @<div class="smart-search" @onclick:stopPropagation>
+        @{ var chips = FiltrosActivos(); var esFicha = _tipo == StockReporteTipo.Ficha; }
+        <div class="smart-search__bar @(_filtrosAbiertos ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button" class="smart-search__filter-button @(_filtrosAbiertos || chips.Count > 1 ? "is-active" : string.Empty)"
+                aria-label="Abrir filtros" title="Abrir filtros" aria-expanded="@_filtrosAbiertos" disabled="@_busy" @onclick="AlternarFiltros">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in chips.Take(2))
+                {
+                    <button type="button" class="smart-search__active-filter" disabled="@_busy" aria-label="@($"Quitar filtro {chip.Label}")"
+                        title="@chip.Label" @onclick="() => QuitarFiltroAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (chips.Count > 2) { <span class="smart-search__more-filters" title="@string.Join(", ", chips.Skip(2).Select(x => x.Label))">+@(chips.Count - 2)</span> }
+            </div>
+            @if (esFicha)
+            {
+                <input type="search" aria-label="Código del artículo" placeholder="Código del artículo y Enter · F5 busca..." maxlength="50" autocomplete="off"
+                    value="@_filtro.Articulo" disabled="@_busy" @oninput="e => _filtro.Articulo = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaBusquedaAsync" />
+            }
+            else
+            {
+                <input type="search" aria-label="Buscar artículo" placeholder="Código, descripción o código de barras..." maxlength="50"
+                    value="@_filtro.Texto" disabled="@_busy" @oninput="e => _filtro.Texto = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaBusquedaAsync" />
+            }
+            <button type="button" class="smart-search__toggle" aria-label="Mostrar filtros" aria-expanded="@_filtrosAbiertos"
+                disabled="@_busy" @onclick="AlternarFiltros"><i class="bi @(_filtrosAbiertos ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
+        </div>
+        @if (_filtrosAbiertos && _opciones is { } op)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CerrarFiltros"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="TeclaBusquedaAsync" @onkeydown:stopPropagation>
+                @if (_tipo == StockReporteTipo.Saldos)
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-calendar-event"></i> Fecha</h4>
+                        <AlfaInput Type="date" Label="Saldo al" Value="@Fecha(_filtro.Hasta ?? DateTime.Today)" ValueChanged="v => CambiarFiltro(() => _filtro.Hasta = ParseFecha(v))" Disabled="@_busy" />
+                        <span class="smart-search__hint">Incluye todos los movimientos de ese día.</span>
+                    </div>
+                }
+                else if (_tipo is StockReporteTipo.Periodo or StockReporteTipo.Ficha)
+                {
+                    <FiltroPeriodo Desde="@_filtro.Desde" Hasta="@_filtro.Hasta" Disabled="@_busy"
+                                   PeriodoChanged="p => CambiarFiltro(() => (_filtro.Desde, _filtro.Hasta) = p)" />
+                }
+                else
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-hourglass-split"></i> Vencimiento</h4>
+                        <AlfaSelect Label="Estado" Value="@_filtro.Estado" ValueChanged="v => CambiarFiltro(() => _filtro.Estado = v ?? string.Empty)" Options="@Estados" Placeholder="Todos" Disabled="@_busy" />
+                        <AlfaInput Type="number" Label="Por vencer en (días)" Value="@_filtro.DiasPorVencer.ToString(CultureInfo.InvariantCulture)"
+                            ValueChanged="v => CambiarFiltro(() => _filtro.DiasPorVencer = int.TryParse(v, out var d) ? d : 30)" Disabled="@_busy" />
+                    </div>
+                }
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-box-seam"></i> Artículos</h4>
+                    <AlfaSelect Label="Depósito" Value="@_filtro.Deposito" ValueChanged="v => CambiarFiltro(() => _filtro.Deposito = v ?? string.Empty)"
+                        Options="@op.Depositos.Select(x => new AlfaSelectOption(x.Codigo, $"{x.Codigo} · {x.Descripcion}")).ToList()" Placeholder="Todos" Disabled="@_busy" />
+                    @if (esFicha)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_busy" OnClick="_ => AbrirBuscadorDesdeFiltro()">Buscar artículo (F5)</AlfaButton>
+                    }
+                    else
+                    {
+                        <AlfaSelect Label="Rubro" Value="@_filtro.Rubro" ValueChanged="v => CambiarFiltro(() => _filtro.Rubro = v ?? string.Empty)"
+                            Options="@op.Rubros.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Todos" Disabled="@_busy" />
+                        <AlfaSelect Label="Familia" Value="@_filtro.Familia" ValueChanged="v => CambiarFiltro(() => _filtro.Familia = v ?? string.Empty)"
+                            Options="@op.Familias.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()" Placeholder="Todas" Disabled="@_busy" />
+                    }
+                </div>
+                @if (_tipo is StockReporteTipo.Saldos or StockReporteTipo.Periodo)
+                {
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-sliders"></i> Opciones</h4>
+                        @if (_tipo == StockReporteTipo.Saldos)
+                        {
+                            <AlfaCheckbox Value="@_filtro.SoloConStock" ValueChanged="v => CambiarFiltro(() => _filtro.SoloConStock = v == true)">Ocultar saldos en cero</AlfaCheckbox>
+                            <AlfaCheckbox Value="@_filtro.DepositosEnColumnas" ValueChanged="v => CambiarFiltro(() => _filtro.DepositosEnColumnas = v == true)">Depósitos en columnas</AlfaCheckbox>
+                        }
+                        else
+                        {
+                            <AlfaCheckbox Value="@_filtro.SoloConStock" ValueChanged="v => CambiarFiltro(() => _filtro.SoloConStock = v == true)">Solo artículos con movimientos</AlfaCheckbox>
+                        }
+                    </div>
+                }
+                <div class="smart-search__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_busy" OnClick="_ => LimpiarFiltrosAsync()">Limpiar</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@(_busy || !PuedeGenerar)" OnClick="_ => GenerarAsync()">Aplicar</AlfaButton>
+                </div>
+            </div>
+        }
+    </div>;
+
+    // Paginador del Context Toolbar: Saldos, Período y Perecederos paginan en el servidor; la ficha, en memoria.
+    private PageHeaderPaginationConfig? Paginador()
+    {
+        if (!_generado) return null;
+        int pagina, total; string label; Func<int, Task> ir = IrAPaginaAsync;
+        switch (_tipo)
+        {
+            case StockReporteTipo.Saldos when _saldos is { } s: pagina = s.Pagina; total = Paginas(s.Total, s.TamanoPagina); label = $"{s.Total} renglones"; break;
+            case StockReporteTipo.Periodo when _periodo is { } pr: pagina = pr.Pagina; total = Paginas(pr.Total, pr.TamanoPagina); label = $"{pr.Total} renglones"; break;
+            case StockReporteTipo.Perecederos when _perecederos is { } pe: pagina = pe.Pagina; total = Paginas(pe.Total, pe.TamanoPagina); label = $"{pe.Total} renglones"; break;
+            case StockReporteTipo.Ficha when _ficha is { } fi:
+                pagina = _fichaPagina; total = Paginas(fi.Movimientos.Count, FichaTamano); label = $"{fi.Movimientos.Count} movimientos";
+                ir = n => { _fichaPagina = n; UpdateHeader(); StateHasChanged(); return Task.CompletedTask; };
+                break;
+            default: return null;
+        }
+        return new()
+        {
+            PageLabel = $"{pagina} / {total}", Label = label, Disabled = _busy,
+            HasPrevious = pagina > 1, HasNext = pagina < total,
+            OnPrevious = () => ir(pagina - 1), OnNext = () => ir(pagina + 1)
+        };
+    }
+    private static int Paginas(int total, int tamano) => Math.Max(1, (total + Math.Max(1, tamano) - 1) / Math.Max(1, tamano));
+
+    private void UpdateHeader()
+    {
+        if (_disposed) return;
+        PageHeader.Set(new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot, ModuleKey = "stock", Title = "Reportes de stock",
+            Breadcrumb = ["Stock", "Reportes"], ShowHistoryNavigation = false,
+            TopNavigationItems = ModuleTopNavPresets.BuildStock(RouteContext, Nav, "reportes"),
+            State = _busy ? PageHeaderState.Loading : PageHeaderState.List,
+            Search = _opciones is not null ? new() : null,
+            SearchContent = _opciones is not null ? RenderBusqueda() : null,
+            Pagination = Paginador(),
+            Actions =
+            [
+                new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _busy || !_generado, OnClick = ExportarAsync },
+                new() { Key = "imprimir", Label = "Imprimir", Icon = "bi-printer", Disabled = _busy || !_generado,
+                    OnClick = async () => { try { await Js.InvokeVoidAsync("dashboardExport.printCurrentPage", "Reporte de stock"); } catch { } } },
+                new() { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _busy || _opciones is null || !PuedeGenerar, OnClick = () => { if (_generado) _filtro = Copiar(_aplicado); return CargarAsync(); } }
+            ]
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true; Sessions.SessionChanged -= ContextChanged;
+        _lifetime.Cancel(); _lifetime.Dispose(); PageHeader.Clear();
+        if (_jsListo) { try { _ = Js.InvokeVoidAsync("cargaDirecta.dispose"); } catch { } }
+        _dotNetRef?.Dispose();
+    }
+}

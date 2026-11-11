@@ -58,12 +58,32 @@ public static class StockMovimientosCalculo
     public static int ProximoNumero(int? ultimoTalonario, int? ultimoUsado)
         => Math.Max(Math.Max(ultimoTalonario ?? 1, 1), (ultimoUsado ?? 0) + 1);
 
+    /// <summary>
+    /// Perecederos, como Mvstock.frm/V_mv_Cpra.frm: el vencimiento propuesto es la fecha del comprobante más los días del
+    /// artículo (Largo); sin días, 2 ("POR DEFAULT LE DOY 2 DIAS").
+    /// </summary>
+    public static DateTime VencimientoPropuesto(DateTime fecha, int dias) => fecha.Date.AddDays(dias <= 0 ? 2 : dias);
+
+    /// <summary>El legacy guarda el vencimiento en V_MV_STOCK.NroLote como yyyymmdd.</summary>
+    public static string LoteVencimiento(DateTime vencimiento) => vencimiento.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Lee un NroLote con formato yyyymmdd; null si no es una fecha (lote común o vacío).</summary>
+    public static DateTime? Vencimiento(string? lote)
+    {
+        var t = (lote ?? "").Trim();
+        return t.Length == 8 && DateTime.TryParseExact(t, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var f) ? f : null;
+    }
+
+    /// <summary>Solo los ingresos registran vencimiento; las salidas y las transferencias no (FIFO en el reporte).</summary>
+    public static bool LlevaVencimiento(string tc, decimal movimiento) => !EsTransferencia(tc) && movimiento > 0;
+
     /// <summary>Línea ya resuelta (cantidades en la unidad del artículo) lista para armar las filas de V_MV_STOCK.</summary>
     public sealed record LineaResuelta(string Articulo, string Descripcion, string Unidad, decimal Costo,
-        decimal Movimiento, decimal Bultos, decimal Kilos, decimal MetrosCubicos);
+        decimal Movimiento, decimal Bultos, decimal Kilos, decimal MetrosCubicos, string? Lote = null);
 
     public sealed record Fila(int Secuencia, string Articulo, string Descripcion, string Unidad, decimal Costo,
-        decimal Cantidad, decimal Bultos, decimal Kilos, decimal MetrosCubicos, string Deposito, string? DepositoDestino);
+        decimal Cantidad, decimal Bultos, decimal Kilos, decimal MetrosCubicos, string Deposito, string? DepositoDestino, string? Lote = null);
 
     /// <summary>
     /// Filas de V_MV_STOCK. Bultos/kilos/m³ llevan el signo del movimiento. En TR, primero todas las salidas del
@@ -78,7 +98,7 @@ public static class StockMovimientosCalculo
             var signo = Math.Sign(l.Movimiento);
             filas.Add(new(++secuencia, l.Articulo, l.Descripcion, l.Unidad, l.Costo, l.Movimiento,
                 signo * Math.Abs(l.Bultos), signo * Math.Abs(l.Kilos), signo * Math.Abs(l.MetrosCubicos),
-                deposito, EsTransferencia(tc) ? destino : null));
+                deposito, EsTransferencia(tc) ? destino : null, LlevaVencimiento(tc, l.Movimiento) ? l.Lote : null));
         }
         if (!EsTransferencia(tc)) return filas;
         foreach (var l in lineas)
