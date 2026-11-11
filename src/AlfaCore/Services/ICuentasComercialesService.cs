@@ -47,4 +47,12 @@ public interface ICuentasComercialesService
     Task<FacturacionAutomaticaAumentoResultadoDto> AumentarFacturacionAutomaticaAsync(FacturacionAutomaticaAumentoPedido pedido, bool aplicar,
         CancellationToken ct = default)
         => throw new NotSupportedException();
+
+    /// <summary>Zonas ya cargadas en los clientes (la zona es texto libre, como en V_MA_Clientes.frm).</summary>
+    Task<IReadOnlyList<string>> GetZonasClientesAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>Accion por lote sobre los clientes seleccionados: asignar vendedor, zona, lista de precios o condicion de pago.</summary>
+    Task<CuentaComercialLoteResultadoDto> AplicarLoteClientesAsync(CuentaComercialLoteRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }

@@ -401,3 +401,34 @@ public sealed class FacturacionAutomaticaAumentoResultadoDto
     /// <summary>Primeros renglones, para mostrar cómo queda.</summary>
     public IReadOnlyList<FacturacionAutomaticaAumentoFilaDto> Muestra { get; set; } = [];
 }
+
+/// <summary>Acciones por lote del listado de clientes.</summary>
+public static class CuentaComercialLoteAcciones
+{
+    public const string Vendedor = "vendedor";
+    public const string Zona = "zona";
+    public const string Lista = "lista";
+    public const string Condicion = "condicion";
+    public const string Clase = "clase";
+    public const string Clasificacion = "clasificacion";
+    public const string LimiteCredito = "limite";
+    public const string Bloqueo = "bloqueo";
+}
+
+public sealed class CuentaComercialLoteRequest
+{
+    public List<string> Codigos { get; set; } = [];
+    public string Accion { get; set; } = string.Empty;
+    /// <summary>Vendedor, lista, condicion o clasificacion a asignar (vacio = quitar, salvo condicion), la zona (texto),
+    /// la clase (0 a 8) o el bloqueo ("1" bloquear, "0" desbloquear).</summary>
+    public string Valor { get; set; } = string.Empty;
+    /// <summary>Limite de credito: monto a asignar, o porcentaje si EsPorcentaje.</summary>
+    public decimal Numero { get; set; }
+    public bool EsPorcentaje { get; set; }
+}
+
+public sealed class CuentaComercialLoteResultadoDto
+{
+    public int Actualizados { get; set; }
+    public List<string> Observaciones { get; set; } = [];
+}

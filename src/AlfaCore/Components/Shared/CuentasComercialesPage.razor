@@ -343,6 +343,78 @@
             </Footer>
         </AlfaDialog>
 
+        @* Acción por lote de clientes: vendedor, zona, lista de precios, condición de pago. *@
+        <AlfaDialog Open="@_loteAbierto"
+                    Title="Acción por lote"
+                    Eyebrow="@($"Clientes · {_selectedCodes.Count} seleccionado(s)")"
+                    Description="Elegí qué dato asignar a todos los clientes seleccionados."
+                    Size="AlfaDialogSize.Md"
+                    Loading="@_loteProcesando"
+                    ErrorMessage="@_loteError"
+                    OnClose="CerrarLoteClientes">
+            <ChildContent>
+                <div class="cuentas-fa-lote">
+                    <AlfaSelect Label="Acción" Value="@_loteAccion" ValueChanged="v => { _loteAccion = v ?? string.Empty; _loteValor = string.Empty; _loteNumero = null; _loteError = null; }"
+                                Options="@LoteClientesAccionOptions" Placeholder="Elegí una acción..." Disabled="@_loteProcesando" />
+                    @switch (_loteAccion)
+                    {
+                        case CuentaComercialLoteAcciones.Vendedor:
+                            <AlfaSelect Label="Vendedor" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@LoteClientesValorOptions(_lookups.Vendedores, "(sin vendedor)")" Disabled="@_loteProcesando" />
+                            break;
+                        case CuentaComercialLoteAcciones.Lista:
+                            <AlfaSelect Label="Lista de precios" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@LoteClientesValorOptions(_lookups.ListasPrecio, "(sin lista)")" Disabled="@_loteProcesando" />
+                            @if (!_lookups.UsaListasDePrecio)
+                            {
+                                <p class="cuentas-fa-lote__nota">Esta base no tiene activado el uso de listas de precios: la lista queda asignada pero no se usa al vender hasta activarlo.</p>
+                            }
+                            break;
+                        case CuentaComercialLoteAcciones.Condicion:
+                            <AlfaSelect Label="Condición de pago" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@ToClienteOptions(_lookups.CondicionesComerciales, withCode: true)" Placeholder="Elegí una condición..." Disabled="@_loteProcesando" />
+                            break;
+                        case CuentaComercialLoteAcciones.Clase:
+                            <AlfaSelect Label="Clase de precio" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@LoteClaseOptions" Placeholder="Elegí una clase..." Disabled="@_loteProcesando" />
+                            break;
+                        case CuentaComercialLoteAcciones.Clasificacion:
+                            <AlfaSelect Label="Clasificación" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@LoteClientesValorOptions(_lookups.Clasificaciones, "(sin clasificación)")" Disabled="@_loteProcesando" />
+                            break;
+                        case CuentaComercialLoteAcciones.LimiteCredito:
+                            <div class="cuentas-fa-lote__fila">
+                                <AlfaSelect Label="Cambio" Value="@(_loteLimitePorc ? "porc" : "fijo")" ValueChanged='v => _loteLimitePorc = v == "porc"'
+                                            Options="@LoteLimiteModoOptions" Disabled="@_loteProcesando" />
+                                <AlfaInput Label="@(_loteLimitePorc ? "Porcentaje" : "Límite de crédito")" Type="number" Step="0.01"
+                                           Placeholder="@(_loteLimitePorc ? "Ej.: 20 para subir o -10 para bajar" : "Ej.: 500000")"
+                                           Value="@_loteNumero" ValueChanged="v => _loteNumero = v" Disabled="@_loteProcesando" />
+                            </div>
+                            <p class="cuentas-fa-lote__nota">@(_loteLimitePorc ? "Solo cambia a los clientes que ya tienen límite; los que están en 0 siguen igual." : "Con 0 queda sin límite de crédito.")</p>
+                            break;
+                        case CuentaComercialLoteAcciones.Bloqueo:
+                            <AlfaSelect Label="Bloqueo" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                        Options="@LoteBloqueoOptions" Placeholder="Elegí..." Disabled="@_loteProcesando" />
+                            break;
+                        case CuentaComercialLoteAcciones.Zona:
+                            <AlfaInput Label="Zona" MaxLength="30" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                       Placeholder="Escribí una zona nueva o elegí una existente" HelpText="Vacío quita la zona." Disabled="@_loteProcesando" />
+                            @if (LoteZonaOptions.Count > 0)
+                            {
+                                <AlfaSelect Label="Zonas existentes" Value="@_loteValor" ValueChanged="v => _loteValor = v ?? string.Empty"
+                                            Options="@LoteZonaOptions" Placeholder="Elegir..." Disabled="@_loteProcesando" />
+                            }
+                            break;
+                    }
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loteProcesando" OnClick="_ => CerrarLoteClientes()">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-lightning-charge" Loading="@_loteProcesando" Disabled="@(_loteProcesando || string.IsNullOrEmpty(_loteAccion))"
+                            OnClick="_ => AplicarLoteClientesAsync()">Aplicar a @_selectedCodes.Count cliente(s)</AlfaButton>
+            </Footer>
+        </AlfaDialog>
+
         <AlfaDialog Open="@_aumAbierto"
                     Title="Aumentar o redondear importes"
                     Eyebrow="Facturación automática"
@@ -2107,6 +2179,8 @@ else
         else if (_selectedCodes.Count > 0)
         {
             actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            if (Tipo == CuentaComercialTipo.Cliente)
+                actions.Add(new PageHeaderAction { Key = "accion-lote", Label = "Acción por lote", Icon = "bi-lightning-charge", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _loteProcesando, OnClick = AbrirLoteClientesAsync });
             actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = OpenBulkDeactivateFromHeaderAsync });
             actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
         }
@@ -2381,6 +2455,134 @@ else
 
     private static readonly IReadOnlyList<AlfaSelectOption> FaTipoImporteOptions =
         [new("fijo", "Importe fijo"), new("porc", "Porcentaje del abono")];
+
+    // ---- Acción por lote de clientes (vendedor, zona, lista de precios, condición de pago) ----
+    private bool _loteAbierto;
+    private bool _loteProcesando;
+    private string? _loteError;
+    private string _loteAccion = string.Empty;
+    private string _loteValor = string.Empty;
+    private IReadOnlyList<string>? _loteZonas;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteClientesAccionOptions =
+    [
+        new(CuentaComercialLoteAcciones.Vendedor, "Asignar vendedor"),
+        new(CuentaComercialLoteAcciones.Zona, "Asignar zona"),
+        new(CuentaComercialLoteAcciones.Lista, "Asignar lista de precios"),
+        new(CuentaComercialLoteAcciones.Condicion, "Asignar condición de pago"),
+        new(CuentaComercialLoteAcciones.Clase, "Asignar clase de precio"),
+        new(CuentaComercialLoteAcciones.Clasificacion, "Asignar clasificación"),
+        new(CuentaComercialLoteAcciones.LimiteCredito, "Límite de crédito"),
+        new(CuentaComercialLoteAcciones.Bloqueo, "Bloquear / desbloquear")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteClaseOptions =
+        Enumerable.Range(0, 9).Select(i => new AlfaSelectOption(i.ToString(System.Globalization.CultureInfo.InvariantCulture), $"Clase {i}")).ToList();
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteBloqueoOptions =
+        [new("1", "Bloquear"), new("0", "Desbloquear")];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteLimiteModoOptions =
+        [new("fijo", "Asignar un monto"), new("porc", "Aumentar / reducir %")];
+
+    private bool _loteLimitePorc;
+    private string? _loteNumero;
+
+    // Vendedor, zona y lista se pueden quitar (opción vacía); la condición de pago no.
+    private IReadOnlyList<AlfaSelectOption> LoteClientesValorOptions(IEnumerable<CuentaComercialLookupOptionDto> items, string textoQuitar)
+        => new[] { new AlfaSelectOption(string.Empty, textoQuitar) }
+            .Concat(ToClienteOptions(items, withCode: true))
+            .ToList();
+
+    private IReadOnlyList<AlfaSelectOption> LoteZonaOptions
+        => (_loteZonas ?? []).Select(z => new AlfaSelectOption(z, z)).ToList();
+
+    private async Task AbrirLoteClientesAsync()
+    {
+        if (_selectedCodes.Count == 0)
+            return;
+        _loteAccion = string.Empty;
+        _loteValor = string.Empty;
+        _loteNumero = null;
+        _loteLimitePorc = false;
+        _loteError = null;
+        _loteAbierto = true;
+        // Se abre desde el topbar (otro componente): sin este render el diálogo no se ve.
+        await InvokeAsync(StateHasChanged);
+        if (_loteZonas is null)
+        {
+            var zonas = await UiOps.RunAsync(() => CuentasSvc.GetZonasClientesAsync(), "No se pudieron cargar las zonas.");
+            _loteZonas = zonas.Success && zonas.Value is not null ? zonas.Value : [];
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CerrarLoteClientes()
+    {
+        if (!_loteProcesando)
+            _loteAbierto = false;
+    }
+
+    private async Task AplicarLoteClientesAsync()
+    {
+        _loteError = null;
+        if (string.IsNullOrEmpty(_loteAccion))
+        {
+            _loteError = "Elegí la acción.";
+            return;
+        }
+        if (_loteAccion == CuentaComercialLoteAcciones.Condicion && string.IsNullOrWhiteSpace(_loteValor))
+        {
+            _loteError = "Elegí la condición de pago.";
+            return;
+        }
+        if (_loteAccion is CuentaComercialLoteAcciones.Clase or CuentaComercialLoteAcciones.Bloqueo && string.IsNullOrWhiteSpace(_loteValor))
+        {
+            _loteError = _loteAccion == CuentaComercialLoteAcciones.Clase ? "Elegí la clase de precio." : "Elegí bloquear o desbloquear.";
+            return;
+        }
+
+        _loteProcesando = true;
+        UpdatePageHeader();
+        try
+        {
+            var request = new CuentaComercialLoteRequest { Codigos = _selectedCodes.ToList(), Accion = _loteAccion, Valor = _loteValor };
+            if (_loteAccion == CuentaComercialLoteAcciones.LimiteCredito)
+            {
+                if (!decimal.TryParse((_loteNumero ?? string.Empty).Trim().Replace(",", "."), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var numero))
+                {
+                    _loteError = _loteLimitePorc ? "Ingresá el porcentaje." : "Ingresá el límite de crédito.";
+                    return;
+                }
+                request.Numero = numero;
+                request.EsPorcentaje = _loteLimitePorc;
+            }
+            var result = await UiOps.RunAsync(() => CuentasSvc.AplicarLoteClientesAsync(request), "No se pudo aplicar la acción a los clientes seleccionados.");
+            if (!result.Success || result.Value is null)
+            {
+                _loteError = result.Feedback?.Message ?? "No se pudo aplicar la acción.";
+                return;
+            }
+
+            var r = result.Value;
+            var detalle = r.Observaciones.Count == 0
+                ? $"Se actualizaron {r.Actualizados} cliente(s)."
+                : $"Se actualizaron {r.Actualizados} cliente(s). {string.Join(" ", r.Observaciones.Take(5))}{(r.Observaciones.Count > 5 ? $" (y {r.Observaciones.Count - 5} más)" : string.Empty)}";
+            SetFeedback(r.Observaciones.Count == 0
+                ? AppUiMessage.Success("Acción aplicada", detalle)
+                : AppUiMessage.Warning("Acción aplicada con observaciones", detalle));
+            if (_loteAccion == CuentaComercialLoteAcciones.Zona)
+                _loteZonas = null; // puede haber una zona nueva
+            _loteAbierto = false;
+            _selectedCodes.Clear();
+            await BuscarAsync();
+        }
+        finally
+        {
+            _loteProcesando = false;
+            UpdatePageHeader();
+        }
+    }
 
     private Task AbrirAgregarConceptoAsync()
     {
