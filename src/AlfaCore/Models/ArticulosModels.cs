@@ -117,7 +117,7 @@ public sealed class ArticuloLookupDataDto
     public decimal TasaIvaDefault { get; set; }
     public bool PrecioIncluyeIva { get; set; }
     public bool ModoRetail { get; set; }
-    public int ClasePrecioVenta { get; set; } = 4;
+    public int ClasePrecioVenta { get; set; } = 1;
     public List<string> NombresPrecios { get; set; } = [];
     /// <summary>Políticas de precios para el combo de la solapa Precios.</summary>
     public List<PoliticaPrecioDto> Politicas { get; set; } = [];
@@ -132,6 +132,47 @@ public sealed class ArticuloViewSettingsDto
     public string AgruparPor { get; set; } = ArticuloViewGroupKeys.None;
     public string Vista { get; set; } = ArticuloViewModeKeys.Listado;
     public List<ArticuloViewColumnDto> Columnas { get; set; } = [];
+}
+
+/// <summary>Acciones por lote del listado de articulos.</summary>
+public static class ArticuloLoteAcciones
+{
+    public const string Aumento = "aumento";
+    public const string Rubro = "rubro";
+    public const string Marca = "marca";
+    public const string Familia = "familia";
+    public const string Utilidad = "utilidad";
+}
+
+/// <summary>Sobre que se aplica el aumento por porcentaje.</summary>
+public static class ArticuloLoteAumentoDestino
+{
+    public const string CostoYPrecios = "ambos";
+    public const string Precios = "precios";
+    public const string Costo = "costo";
+}
+
+public sealed class ArticuloLoteRequest
+{
+    public List<string> Codigos { get; set; } = [];
+    public string Accion { get; set; } = string.Empty;
+    /// <summary>Aumento: porcentaje (negativo para bajar).</summary>
+    public decimal Porcentaje { get; set; }
+    /// <summary>Aumento: ver ArticuloLoteAumentoDestino.</summary>
+    public string AplicarA { get; set; } = ArticuloLoteAumentoDestino.CostoYPrecios;
+    /// <summary>Aumento/utilidad: redondear los precios a este paso (0 = sin redondeo, 2 decimales).</summary>
+    public decimal Redondeo { get; set; }
+    /// <summary>Rubro, marca o familia a asignar.</summary>
+    public string Codigo { get; set; } = string.Empty;
+    /// <summary>Utilidad % a asignar.</summary>
+    public decimal Utilidad { get; set; }
+}
+
+public sealed class ArticuloLoteResultado
+{
+    public int Actualizados { get; set; }
+    /// <summary>Articulos que no se pudieron cambiar del todo (ej. utilidad sin costo), con el motivo.</summary>
+    public List<string> Observaciones { get; set; } = [];
 }
 
 public static class ArticuloViewModeKeys

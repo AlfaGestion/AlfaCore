@@ -651,3 +651,27 @@
 .articulos-politica__error {
     color: #d9534f;
 }
+
+/* Accion por lote */
+.articulos-lote {
+    display: grid;
+    gap: 12px;
+}
+
+.articulos-lote__fila {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.articulos-lote__nota {
+    margin: 0;
+    font-size: 12px;
+    color: var(--alfa-text-secondary);
+}
+
+@media (max-width: 600px) {
+    .articulos-lote__fila {
+        grid-template-columns: 1fr;
+    }
+}

@@ -14,7 +14,7 @@ namespace AlfaCore.Services;
 // precio de venta), calcado del formulario legacy FrmArtAlta.frm pero sin la sección "Precios de referencia" (web
 // service externo) ni la replicación multi-empresa (ActualizaGEmpresas), que el usuario confirmó que
 // ya no se usa.
-public sealed class ArticulosService(
+public sealed partial class ArticulosService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
@@ -226,7 +226,7 @@ public sealed class ArticulosService(
             var claves = new List<string> { "PIVA", "MAESTROARTICULOCONIVA", "RETAIL", "ClasePrecioVenta", "CLASEPRECIOOFERTA", "OFERTAPORDESCUENTO" };
             claves.AddRange(Enumerable.Range(1, 8).Select(i => $"NOM_PCLASE{i}"));
             var cfg = await ReadConfigMapAsync(cn, claves, token);
-            var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 4;
+            var clasePrecioVenta = int.TryParse(Get(cfg, "ClasePrecioVenta"), out var clase) && clase is >= 1 and <= 8 ? clase : 1;
             var politicas = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
                 "SELECT CASE WHEN OBJECT_ID(N'dbo.V_TA_POLITICAPRECIOS', N'U') IS NULL THEN 0 ELSE 1 END;", cancellationToken: token)) == 1
                 ? await PoliticasPreciosService.LeerAsync(cn, null, null, token) : [];

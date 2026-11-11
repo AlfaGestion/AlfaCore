@@ -65,6 +65,66 @@
                        OnConfirm="ConfirmDeactivateAsync"
                        OnCancel="CloseDeactivateConfirm" />
 
+    @* Acción por lote sobre los artículos seleccionados (aumento %, rubro, marca, familia, utilidad). *@
+    <AlfaDialog Open="@_loteAbierto"
+                Title="Acción por lote"
+                Eyebrow="@($"Artículos · {_selectedCodes.Count} seleccionado(s)")"
+                Description="Elegí qué cambiar en todos los artículos seleccionados. Se graba artículo por artículo, igual que desde el editor (política de precios y listas incluidas)."
+                Size="AlfaDialogSize.Md"
+                Loading="@_loteProcesando"
+                ErrorMessage="@_loteError"
+                OnClose="CerrarLote">
+        <ChildContent>
+            <div class="articulos-lote">
+                <AlfaSelect Label="Acción" Value="@_loteAccion" ValueChanged="v => { _loteAccion = v ?? string.Empty; _loteError = null; }"
+                            Options="@LoteAccionOptions" Placeholder="Elegí una acción..." Disabled="@_loteProcesando" />
+                @if (_lookups.ModoRetail)
+                {
+                    <p class="articulos-lote__nota"><i class="bi bi-info-circle"></i> La base está en modo Retail: los precios de venta salen de las listas de precios, por eso no se puede aumentar por porcentaje desde acá. Usá Listas de precios.</p>
+                }
+                @switch (_loteAccion)
+                {
+                    case ArticuloLoteAcciones.Aumento:
+                        <div class="articulos-lote__fila">
+                            <AlfaInput Label="Porcentaje" Type="number" Step="0.01" Placeholder="Ej.: 10 para subir o -5 para bajar"
+                                       Value="@_lotePorcentaje" ValueChanged="v => _lotePorcentaje = v" Disabled="@_loteProcesando" />
+                            <AlfaSelect Label="Aplicar a" Value="@_loteAplicarA" ValueChanged="v => _loteAplicarA = v ?? ArticuloLoteAumentoDestino.CostoYPrecios"
+                                        Options="@LoteAplicarAOptions" Disabled="@_loteProcesando" />
+                        </div>
+                        <AlfaSelect Label="Redondear precios a" Value="@_loteRedondeo" ValueChanged='v => _loteRedondeo = v ?? "0"'
+                                    Options="@LoteRedondeoOptions" Disabled="@(_loteProcesando || _loteAplicarA == ArticuloLoteAumentoDestino.Costo)" />
+                        <p class="articulos-lote__nota">Las clases de precio en 0 no se tocan. Si el artículo tiene política de precios, la base recalcula los precios desde el costo al grabar.</p>
+                        break;
+                    case ArticuloLoteAcciones.Rubro:
+                        <AlfaSelect Label="Rubro" Value="@_loteCodigo" ValueChanged="v => _loteCodigo = v ?? string.Empty"
+                                    Options="@ToLoteOptions(_lookups.Rubros)" Placeholder="Elegí un rubro..." Disabled="@_loteProcesando" />
+                        break;
+                    case ArticuloLoteAcciones.Marca:
+                        <AlfaSelect Label="Marca" Value="@_loteCodigo" ValueChanged="v => _loteCodigo = v ?? string.Empty"
+                                    Options="@ToLoteOptions(_lookups.Marcas)" Placeholder="Elegí una marca..." Disabled="@_loteProcesando" />
+                        break;
+                    case ArticuloLoteAcciones.Familia:
+                        <AlfaSelect Label="Familia" Value="@_loteCodigo" ValueChanged="v => _loteCodigo = v ?? string.Empty"
+                                    Options="@LoteFamiliaOptions" Placeholder="@(_loteFamilias is null ? "Cargando familias..." : "Elegí una familia...")" Disabled="@(_loteProcesando || _loteFamilias is null)" />
+                        break;
+                    case ArticuloLoteAcciones.Utilidad:
+                        <div class="articulos-lote__fila">
+                            <AlfaInput Label="Utilidad %" Type="number" Step="0.01" Value="@_loteUtilidad" ValueChanged="v => _loteUtilidad = v" Disabled="@_loteProcesando" />
+                            <AlfaSelect Label="Redondear precio a" Value="@_loteRedondeo" ValueChanged='v => _loteRedondeo = v ?? "0"'
+                                        Options="@LoteRedondeoOptions" Disabled="@_loteProcesando" />
+                        </div>
+                        <p class="articulos-lote__nota">Recalcula el precio de venta (@GetPrecioLabel(_lookups.ClasePrecioVenta)) desde el costo, como en el editor@(_lookups.PrecioIncluyeIva ? ", con IVA incluido" : string.Empty). Los artículos sin costo guardan la utilidad pero no cambian el precio.</p>
+                        break;
+                }
+            </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loteProcesando" OnClick="_ => CerrarLote()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-lightning-charge" Loading="@_loteProcesando" Disabled="@(_loteProcesando || string.IsNullOrEmpty(_loteAccion))"
+                        OnClick="_ => AplicarLoteAsync()">Aplicar a @_selectedCodes.Count artículo(s)</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
     <AlfaConfirmDialog Open="@_showBorrarImagenConfirm"
                        Title="Borrar imagen del artículo"
                        Message="¿Querés borrar la imagen actual de este artículo?"
@@ -745,6 +805,7 @@
         if (_selectedCodes.Count > 0)
         {
             actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "accion-lote", Label = "Acción por lote", Icon = "bi-lightning-charge", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList || _loteProcesando, OnClick = AbrirLoteAsync });
             actions.Add(new PageHeaderAction { Key = "buscar-imagenes-masivo", Label = "Buscar imágenes", Icon = "bi-search", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = AbrirBusquedaImagenBulkAsync });
             actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = () => { OpenDeactivateConfirm(_selectedCodes.ToList()); return Task.CompletedTask; } });
             actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { _selectedCodes.Clear(); UpdatePageHeader(); return Task.CompletedTask; } });
@@ -1539,6 +1600,150 @@
         finally
         {
             _saving = false;
+            UpdatePageHeader();
+        }
+    }
+
+    // ---- Acción por lote (aumento %, rubro, marca, familia, utilidad) ----
+    private bool _loteAbierto;
+    private bool _loteProcesando;
+    private string? _loteError;
+    private string _loteAccion = string.Empty;
+    private string? _lotePorcentaje;
+    private string _loteAplicarA = ArticuloLoteAumentoDestino.CostoYPrecios;
+    private string _loteRedondeo = "0";
+    private string _loteCodigo = string.Empty;
+    private string? _loteUtilidad;
+    private IReadOnlyList<ArticuloLookupOptionDto>? _loteFamilias;
+
+    private IReadOnlyList<AlfaSelectOption> LoteAccionOptions =>
+    [
+        new(ArticuloLoteAcciones.Aumento, _lookups.ModoRetail ? "Aumentar precios % (no disponible en Retail)" : "Aumentar precios %", _lookups.ModoRetail),
+        new(ArticuloLoteAcciones.Rubro, "Asignar rubro"),
+        new(ArticuloLoteAcciones.Marca, "Asignar marca"),
+        new(ArticuloLoteAcciones.Familia, "Asignar familia"),
+        new(ArticuloLoteAcciones.Utilidad, "Asignar utilidad")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteAplicarAOptions =
+    [
+        new(ArticuloLoteAumentoDestino.CostoYPrecios, "Costo y precios"),
+        new(ArticuloLoteAumentoDestino.Precios, "Solo precios de venta"),
+        new(ArticuloLoteAumentoDestino.Costo, "Solo costo")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> LoteRedondeoOptions =
+        [new("0", "Sin redondeo (centavos)"), new("1", "$ 1"), new("10", "$ 10"), new("100", "$ 100")];
+
+    private static IReadOnlyList<AlfaSelectOption> ToLoteOptions(IEnumerable<ArticuloLookupOptionDto> items)
+        => items.Where(i => !string.IsNullOrWhiteSpace(i.Codigo))
+            .Select(i => new AlfaSelectOption(i.Codigo, string.IsNullOrWhiteSpace(i.Descripcion) ? i.Codigo : $"{i.Descripcion} ({i.Codigo})"))
+            .ToList();
+
+    // Familias jerárquicas: el nivel sale del largo del código (2 caracteres por nivel).
+    private IReadOnlyList<AlfaSelectOption> LoteFamiliaOptions
+        => (_loteFamilias ?? [])
+            .Select(f => new AlfaSelectOption(f.Codigo,
+                new string(' ', Math.Max(0, f.Codigo.Length / 2 - 1) * 3) + $"{f.Codigo} · {f.Descripcion}"))
+            .ToList();
+
+    private async Task AbrirLoteAsync()
+    {
+        if (_selectedCodes.Count == 0)
+            return;
+        _loteAccion = string.Empty;
+        _lotePorcentaje = null;
+        _loteAplicarA = ArticuloLoteAumentoDestino.CostoYPrecios;
+        _loteRedondeo = "0";
+        _loteCodigo = string.Empty;
+        _loteUtilidad = null;
+        _loteError = null;
+        _loteAbierto = true;
+        // Se abre desde el topbar (otro componente): sin este render el diálogo no se ve.
+        await InvokeAsync(StateHasChanged);
+        if (_loteFamilias is null)
+        {
+            var familias = await UiOps.RunAsync(() => ArticulosSvc.GetFamiliasAsync(), "No se pudieron cargar las familias.");
+            _loteFamilias = familias.Success && familias.Value is not null ? familias.Value : [];
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CerrarLote()
+    {
+        if (_loteProcesando)
+            return;
+        _loteAbierto = false;
+    }
+
+    private async Task AplicarLoteAsync()
+    {
+        _loteError = null;
+        var request = new ArticuloLoteRequest
+        {
+            Codigos = _selectedCodes.ToList(),
+            Accion = _loteAccion,
+            AplicarA = _loteAplicarA,
+            Redondeo = ParseDecimal(_loteRedondeo),
+            Codigo = _loteCodigo
+        };
+        switch (_loteAccion)
+        {
+            case ArticuloLoteAcciones.Aumento:
+                if (_lookups.ModoRetail)
+                {
+                    _loteError = "En modo Retail no se aumenta por porcentaje: los precios de venta salen de las listas de precios.";
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(_lotePorcentaje) || ParseDecimal(_lotePorcentaje) == 0)
+                {
+                    _loteError = "Ingresá el porcentaje de aumento.";
+                    return;
+                }
+                request.Porcentaje = ParseDecimal(_lotePorcentaje);
+                break;
+            case ArticuloLoteAcciones.Utilidad:
+                if (string.IsNullOrWhiteSpace(_loteUtilidad))
+                {
+                    _loteError = "Ingresá la utilidad.";
+                    return;
+                }
+                request.Utilidad = ParseDecimal(_loteUtilidad);
+                break;
+            case ArticuloLoteAcciones.Rubro or ArticuloLoteAcciones.Marca or ArticuloLoteAcciones.Familia:
+                if (string.IsNullOrWhiteSpace(_loteCodigo))
+                {
+                    _loteError = "Elegí el valor a asignar.";
+                    return;
+                }
+                break;
+        }
+
+        _loteProcesando = true;
+        UpdatePageHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => ArticulosSvc.AplicarLoteAsync(request), "No se pudo aplicar la acción a los artículos seleccionados.");
+            if (!result.Success || result.Value is null)
+            {
+                _loteError = result.Feedback?.Message ?? "No se pudo aplicar la acción.";
+                return;
+            }
+
+            var r = result.Value;
+            var detalle = r.Observaciones.Count == 0
+                ? $"Se actualizaron {r.Actualizados} artículo(s)."
+                : $"Se actualizaron {r.Actualizados} artículo(s). Observaciones: {string.Join(" ", r.Observaciones.Take(5))}{(r.Observaciones.Count > 5 ? $" (y {r.Observaciones.Count - 5} más)" : string.Empty)}";
+            SetFeedback(r.Observaciones.Count == 0
+                ? AppUiMessage.Success("Acción aplicada", detalle)
+                : AppUiMessage.Warning("Acción aplicada con observaciones", detalle));
+            _loteAbierto = false;
+            _selectedCodes.Clear();
+            await BuscarAsync();
+        }
+        finally
+        {
+            _loteProcesando = false;
             UpdatePageHeader();
         }
     }

@@ -55,4 +55,13 @@ public interface IArticulosService
     /// (sin resize) como imagen de tamaño completo y como thumbnail, y se marca
     /// V_MA_ARTICULOS.ModificoImagen='S' para que el catálogo invalide su caché.</summary>
     Task UploadImagenAsync(string codigo, byte[] contenido, string extension, CancellationToken ct = default);
+
+    /// <summary>Familias (V_TA_FAMILIAS) para la accion por lote "Asignar familia".</summary>
+    Task<IReadOnlyList<ArticuloLookupOptionDto>> GetFamiliasAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ArticuloLookupOptionDto>>([]);
+
+    /// <summary>Accion por lote sobre los articulos seleccionados: aumento %, rubro, marca, familia o
+    /// utilidad. El aumento % no se permite en modo Retail (los precios de venta salen de las listas).</summary>
+    Task<ArticuloLoteResultado> AplicarLoteAsync(ArticuloLoteRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }
