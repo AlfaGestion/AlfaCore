@@ -1873,6 +1873,19 @@ public sealed class PuntoVentaService(
 
     private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct)
     {
+        // sp_web_CpteInsumos no valida que el artículo exista: con un código inexistente el INSERT
+        // falla por DESCRIPCION NULL y su CATCH hace ROLLBACK dos veces, tapando la causa real con
+        // el error 3903. Se valida antes para dar un mensaje accionable.
+        await using (var existe = new SqlCommand(
+            "SELECT TOP 1 1 FROM dbo.V_MA_ARTICULOS WHERE LTRIM(IDARTICULO) = LTRIM(dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@Codigo)), 25))",
+            cn) { CommandTimeout = SaleCommandTimeoutSeconds })
+        {
+            existe.Parameters.AddWithValue("@Codigo", item.IdArticulo ?? string.Empty);
+            if (await existe.ExecuteScalarAsync(ct) is null)
+                throw new InvalidOperationException(
+                    $"El artículo {item.IdArticulo} no existe en la base activa. Quitalo del carrito y volvé a cobrar.");
+        }
+
         await using var cmd = new SqlCommand("dbo.sp_web_CpteInsumos", cn)
         {
             CommandType = System.Data.CommandType.StoredProcedure,
