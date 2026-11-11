@@ -34,6 +34,18 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
             throw new ArgumentException("La base y el usuario iniciador son obligatorios.", nameof(request));
         _options.EnsureOnboardingGraphConfiguration();
 
+        if (request.ReconnectNumeroId.HasValue)
+        {
+            if (request.ReconnectNumeroId <= 0 || request.OnboardingMode != WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence
+                || string.IsNullOrWhiteSpace(request.ReconnectPhoneNumberId) || string.IsNullOrWhiteSpace(request.ReconnectWabaId))
+                throw new ArgumentException("La reconexión requiere identificar el mismo número de Coexistence.");
+            var owner = await ownershipStore.GetPhoneOwnershipAsync(request.ReconnectPhoneNumberId.Trim(), ct);
+            if (owner is null || owner.IdBase != request.IdBase || owner.WabaId != request.ReconnectWabaId.Trim())
+                throw new UnauthorizedAccessException("El número a recuperar no pertenece a esta base y cuenta de WhatsApp.");
+        }
+        else if (!string.IsNullOrWhiteSpace(request.ReconnectPhoneNumberId) || !string.IsNullOrWhiteSpace(request.ReconnectWabaId))
+            throw new ArgumentException("La identidad de reconexión está incompleta.");
+
         var now = DateTime.UtcNow;
         var latest = await store.GetLatestForBaseAsync(request.IdBase, ct);
         if (latest is not null)
@@ -60,6 +72,9 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                 ? Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
                 : request.CorrelationId.Trim(),
             StateHash = hash,
+            ReconnectNumeroId = request.ReconnectNumeroId,
+            ReconnectPhoneNumberId = request.ReconnectPhoneNumberId.Trim(),
+            ReconnectWabaId = request.ReconnectWabaId.Trim(),
             OnboardingMode = request.OnboardingMode,
             Status = WhatsAppEmbeddedOnboardingStatus.Started,
             CurrentStep = "STARTED",
@@ -94,6 +109,14 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         var consumed = await store.ConsumeStateAsync(onboarding.StateHash, callback.IdBase, callback.Usuario.Trim(), DateTime.UtcNow, ct);
         if (consumed is null || consumed.IdOnboarding != callback.IdOnboarding)
             throw new UnauthorizedAccessException("La autorización venció o ya fue utilizada.");
+
+        if (onboarding.ReconnectNumeroId.HasValue
+            && (callback.PhoneNumberId.Trim() != onboarding.ReconnectPhoneNumberId || callback.WabaId.Trim() != onboarding.ReconnectWabaId))
+        {
+            await store.MarkFinalFailureAsync(onboarding.IdOnboarding, "RECONNECT_ACCOUNT_MISMATCH",
+                "Elegí el mismo WhatsApp que querés recuperar. No se modificaron el número ni sus conversaciones.", "", "RECONNECT_IDENTITY_CHECK", ct);
+            throw new InvalidOperationException("Meta devolvió otra cuenta o una identidad incompleta. No se modificó el WhatsApp original.");
+        }
 
         var context = new WhatsAppVaultSecretContext(
             callback.IdBase, callback.IdOnboarding, string.Empty, callback.WabaId.Trim(), callback.PhoneNumberId.Trim(),
@@ -428,6 +451,12 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
             result.AddRange(phones.Select(phone => new AuthorizedWhatsAppAsset(
                 hint.MetaBusinessId, hint.WabaId, phone.PhoneNumberId, phone.DisplayPhoneNumber, phone.VerifiedName,
                 phone.RegistrationStatus, phone.QualityRating, item.OnboardingMode)));
+        }
+        if (item.ReconnectNumeroId.HasValue)
+        {
+            result = result.Where(x => x.PhoneNumberId == item.ReconnectPhoneNumberId && x.WabaId == item.ReconnectWabaId).ToList();
+            if (result.Count == 0)
+                throw new MetaWhatsAppManagementException("RECONNECT_ACCOUNT_MISMATCH", false, false, "Meta no autorizó el mismo WhatsApp que se intenta recuperar.");
         }
         return result.GroupBy(x => x.PhoneNumberId, StringComparer.Ordinal).Select(x => x.First()).ToArray();
     }

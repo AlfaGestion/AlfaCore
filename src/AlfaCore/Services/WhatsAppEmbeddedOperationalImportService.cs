@@ -28,6 +28,8 @@ public sealed record WhatsAppEmbeddedRecoveryCandidate(
     string DisplayPhoneNumber,
     bool IsOperational);
 
+public sealed record WhatsAppCoexistenceRecoveryResult(bool Recovered, bool WaitingForMeta, string Message);
+
 public sealed class WhatsAppEmbeddedOperationalImportService(
     IWhatsAppEmbeddedSignupStore store,
     IWhatsAppCredentialVault credentialVault,
@@ -37,10 +39,55 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
     ISessionService sessionService,
     IWhatsAppCoexistenceSyncTrigger coexistenceSyncTrigger,
     IOptions<WhatsAppEmbeddedSignupOptions> options,
-    ILogger<WhatsAppEmbeddedOperationalImportService> logger) : IWhatsAppEmbeddedOperationalImportService
+    ILogger<WhatsAppEmbeddedOperationalImportService> logger,
+    IWhatsAppCoexistenceConnectionStore? connectionStore = null,
+    IAppEventService? appEvents = null) : IWhatsAppEmbeddedOperationalImportService
 {
     private readonly WhatsAppEmbeddedSignupOptions _options = options.Value;
     private readonly Dictionary<Guid, PendingConnectionMetadata> _pendingConnectionMetadata = [];
+
+    public async Task<WhatsAppCoexistenceRecoveryResult> TryRecoverCoexistenceAsync(int idNumero, CancellationToken ct = default)
+    {
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (!_options.Enabled || idBase <= 0) throw new InvalidOperationException("No hay una base activa para recuperar WhatsApp.");
+        var numero = await conversacionesConfig.GetWhatsAppNumeroAsync(idNumero, idBase, ct)
+            ?? throw new InvalidOperationException("El WhatsApp original ya no está disponible.");
+        var owner = await ownershipStore.GetPhoneOwnershipAsync(numero.PhoneNumberId, ct);
+        if (owner is null || owner.IdBase != idBase || owner.WabaId != numero.WabaId)
+            throw new UnauthorizedAccessException("El WhatsApp a recuperar no pertenece a esta base y cuenta.");
+        var connection = connectionStore is null ? null : await connectionStore.GetAsync(idBase, owner.WabaId, ct);
+        var recuperando = connection?.State == "RECOVERING";
+        // Siempre se le pregunta a Meta, también en RECOVERING/DISCONNECTED: si la cuenta ya se recuperó
+        // y Meta nunca mandó ACCOUNT_RECONNECTED, el número no puede quedar bloqueado para siempre.
+        var reference = await credentialVault.FindActiveCredentialAsync(idBase, owner.WabaId, numero.PhoneNumberId, ct);
+        if (reference is null) return new(false, false, "Es necesario renovar la autorización con Meta.");
+        try
+        {
+            var phones = await managementClient.DiscoverPhoneNumbersAsync(owner.WabaId, reference, ct);
+            var samePhone = phones.SingleOrDefault(p => p.PhoneNumberId == numero.PhoneNumberId && p.WabaId == owner.WabaId);
+            if (samePhone is null || !samePhone.IsOnBizApp || samePhone.RegistrationStatus != MetaPhoneRegistrationStatus.Registered)
+                return recuperando
+                    ? new(false, true, connection!.Message + " Si después de abrir WhatsApp Business sigue igual, usá Renovar autorización con Meta.")
+                    : new(false, false, "Meta requiere volver a autorizar este WhatsApp Business.");
+            if (_options.WebhookRoutingEnabled)
+                await managementClient.EnsureWabaSubscriptionAsync(owner.WabaId, idBase, reference, ct);
+            // Meta confirmó el mismo número operativo: se desbloquea el envío aunque no haya llegado el aviso.
+            if (connectionStore is not null && connection is { BlocksSending: true })
+                await connectionStore.ApplyAsync(idBase,
+                    new(owner.WabaId, "ACCOUNT_RECONNECTED", "VERIFIED_BY_META", TruncateToSecond(DateTime.UtcNow)), ct);
+            return new(true, false, "Meta confirmó el mismo WhatsApp Business. Se conservan el número, sus usuarios y sus conversaciones.");
+        }
+        catch (MetaWhatsAppManagementException ex) when (ex.RequiresReauthorization || ex.ErrorCode is "190" or "10" or "200" or "100")
+        {
+            if (appEvents is not null)
+                await appEvents.LogErrorAsync("Conversaciones", "RecoverCoexistenceAuthorization", ex,
+                    "La autorización existente de Coexistence no permite recuperar el número.", new { idBase, idNumero }, ct: CancellationToken.None);
+            return new(false, false, "La autorización de Meta debe renovarse para recuperar este WhatsApp.");
+        }
+    }
+
+    private static DateTime TruncateToSecond(DateTime value)
+        => new(value.Ticks - value.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
 
     public WhatsAppEmbeddedOperationalImportService(
         IWhatsAppEmbeddedSignupStore store,
@@ -81,7 +128,15 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
         if (context.IdBase != activeBaseId || context.IdOnboarding != idOnboarding)
             throw new InvalidOperationException("El contexto seguro no coincide con el onboarding.");
 
+        if (onboarding.ReconnectNumeroId.HasValue)
+        {
+            if (onboarding.OnboardingMode != WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence
+                || context.PhoneNumberId != onboarding.ReconnectPhoneNumberId || context.WabaId != onboarding.ReconnectWabaId)
+                throw new InvalidOperationException("La autorización no corresponde al WhatsApp que se intenta recuperar.");
+        }
         var phones = await DiscoverAuthorizedPhonesAsync(context, tokenReference, ct);
+        if (onboarding.ReconnectNumeroId.HasValue)
+            phones = phones.Where(phone => phone.PhoneNumberId == onboarding.ReconnectPhoneNumberId && phone.WabaId == onboarding.ReconnectWabaId).ToArray();
         if (phones.Count == 0)
             throw new InvalidOperationException("Meta no devolvió números de WhatsApp autorizados.");
         if (phones.Any(phone => phone.RegistrationStatus != MetaPhoneRegistrationStatus.Registered))
@@ -103,6 +158,7 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
 
             var saved = await conversacionesConfig.UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(activeBaseId, new ConversacionWhatsAppNumeroDto
             {
+                IdNumero = onboarding.ReconnectNumeroId ?? 0,
                 PhoneNumberId = phone.PhoneNumberId,
                 Nombre = phone.VerifiedName,
                 Activo = true,
@@ -124,13 +180,18 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 await conversacionesConfig.SetPortfolioNameAsync(activeBaseId, phone.MetaBusinessId, phone.BusinessName, ct);
         }
 
+        if (onboarding.ReconnectNumeroId.HasValue && connectionStore is not null)
+            await connectionStore.ApplyAsync(activeBaseId,
+                new(onboarding.ReconnectWabaId, "ACCOUNT_RECONNECTED", "REAUTHORIZED",
+                    new DateTime(onboarding.StartedAtUtc.Ticks - onboarding.StartedAtUtc.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc)), ct);
+
         await store.MarkReadyAsync(idOnboarding, ct);
 
         // Disparo automático de los sync iniciales de Coexistence (contactos + historial). Nunca debe
         // poder revertir ni retrasar el READY que ya se confirmó arriba -- cualquier excepción acá
         // (incluida una que escape TriggerInitialSyncsAsync pese a su propio try/catch interno) queda
         // contenida y sólo se loguea.
-        if (onboarding.OnboardingMode == WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence)
+        if (onboarding.OnboardingMode == WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence && !onboarding.ReconnectNumeroId.HasValue)
         {
             try
             {

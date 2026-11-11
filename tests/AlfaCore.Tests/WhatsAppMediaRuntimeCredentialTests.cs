@@ -14,7 +14,7 @@ public sealed class WhatsAppMediaRuntimeCredentialTests
     public void UploadAttachment_ResolvesRuntimeCredentialBeforeSendConfigurationAndGraph()
     {
         var method = MethodOffset("UploadAttachmentAsync");
-        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
+        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync", method, StringComparison.Ordinal);
         var configured = ServiceSource.IndexOf("initialState = whatsAppConfig.IsConfiguredForSend", method, StringComparison.Ordinal);
         var graphSend = ServiceSource.IndexOf("SendAttachmentToWhatsAppAsync(", configured, StringComparison.Ordinal);
 
@@ -27,7 +27,7 @@ public sealed class WhatsAppMediaRuntimeCredentialTests
     public void UploadAttachment_AppliesRuntimeCredentialToTheMediaConfig()
     {
         var method = MethodOffset("UploadAttachmentAsync");
-        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
+        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync", method, StringComparison.Ordinal);
         var configured = ServiceSource.IndexOf("initialState = whatsAppConfig.IsConfiguredForSend", method, StringComparison.Ordinal);
         var block = ServiceSource[resolver..configured];
 
@@ -41,7 +41,7 @@ public sealed class WhatsAppMediaRuntimeCredentialTests
     public void UploadAttachment_UsesSelectedPhoneAndLegacyConfigAsResolverInput()
     {
         var method = MethodOffset("UploadAttachmentAsync");
-        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
+        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync", method, StringComparison.Ordinal);
         var configured = ServiceSource.IndexOf("initialState = whatsAppConfig.IsConfiguredForSend", method, StringComparison.Ordinal);
         var block = ServiceSource[resolver..configured];
 
@@ -74,7 +74,7 @@ public sealed class WhatsAppMediaRuntimeCredentialTests
     public void ResolverFailureHappensBeforeAnyMediaGraphCall()
     {
         var method = MethodOffset("UploadAttachmentAsync");
-        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
+        var resolver = ServiceSource.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync", method, StringComparison.Ordinal);
         var graphSend = ServiceSource.IndexOf("SendAttachmentToWhatsAppAsync(", resolver, StringComparison.Ordinal);
 
         Assert.True(resolver > method);

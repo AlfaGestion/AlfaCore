@@ -185,7 +185,7 @@ public sealed class WhatsAppTemplateSelectionTests
         var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
         var send = service.IndexOf("SendTemplateMessageAsync(ConversacionPlantillaSendRequest request", StringComparison.Ordinal);
         var remoteLookup = service.IndexOf("x.IdPlantilla == request.IdPlantilla", send, StringComparison.Ordinal);
-        var runtime = service.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync", remoteLookup, StringComparison.Ordinal);
+        var runtime = service.IndexOf("var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync", remoteLookup, StringComparison.Ordinal);
         var guard = service.IndexOf("EnsureTemplateMatchesRuntime(template, runtimeCredential);", runtime, StringComparison.Ordinal);
         var post = service.IndexOf("SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token)", guard, StringComparison.Ordinal);
 

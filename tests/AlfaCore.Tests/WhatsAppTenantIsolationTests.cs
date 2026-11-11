@@ -14,6 +14,30 @@ namespace AlfaCore.Tests;
 
 public sealed class WhatsAppTenantIsolationTests
 {
+    [Fact]
+    public async Task CoexistenceDisconnectionPausesSendingButAllowsHistoricalCredentialResolution()
+    {
+        var statusStore = new ConnectionStatusStore(new(1, "9101", "DISCONNECTED", "PRIMARY_INACTIVITY", DateTime.UtcNow));
+        var resolver = new WhatsAppRuntimeCredentialResolver(new OwnershipStore(new("9201", "9101", 1, DateTime.UtcNow)),
+            new Vault(new("vault-ref"), "vault-token"), OptionsFor(1), statusStore);
+        var readable = await resolver.ResolveAsync(1, 7, "9201", Legacy());
+        Assert.Equal("vault-token", readable.AccessToken);
+        var paused = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveForSendAsync(1, 7, "9201", Legacy()));
+        Assert.Contains("inactividad", paused.Message);
+        statusStore.Status = statusStore.Status with { State = "CONNECTED" };
+        var recovered = await resolver.ResolveForSendAsync(1, 7, "9201", Legacy());
+        Assert.Equal(readable, recovered);
+    }
+
+    private sealed class ConnectionStatusStore(WhatsAppCoexistenceConnectionStatus status) : IWhatsAppCoexistenceConnectionStore
+    {
+        public WhatsAppCoexistenceConnectionStatus Status { get; set; } = status;
+        public Task<WhatsAppCoexistenceConnectionStatus?> GetAsync(int idBase, string wabaId, CancellationToken ct = default)
+            => Task.FromResult<WhatsAppCoexistenceConnectionStatus?>(Status);
+        public Task ApplyAsync(int idBase, WhatsAppCoexistenceAccountEvent accountEvent, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
     [Fact]

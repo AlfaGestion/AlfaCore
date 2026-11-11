@@ -9,6 +9,92 @@ namespace AlfaCore.Tests;
 
 public sealed class WhatsAppEmbeddedOperationalImportServiceTests
 {
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task RecoverExistingAuthorization_OnlyAcceptsSameRegisteredBusinessAppPhone(bool samePhone, bool expectedRecovery)
+    {
+        var c = CreateContext(Guid.NewGuid(), 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        c.Config.Numeros.Add(new() { IdNumero = 25, PhoneNumberId = "phone-1", WabaId = "waba-1", Nombre = "Ventas", Usuarios = ["eve"] });
+        await c.Ownership.ReservePhoneAsync("phone-1", "waba-1", 84);
+        c.Management.PhonesByWaba["waba-1"] = [Phone(samePhone ? "phone-1" : "phone-2", "waba-1", "+54 11 1", "Meta name", true)];
+
+        var result = await c.Service.TryRecoverCoexistenceAsync(25);
+
+        Assert.Equal(expectedRecovery, result.Recovered);
+        Assert.False(result.WaitingForMeta);
+        Assert.Equal("Ventas", Assert.Single(c.Config.Numeros).Nombre);
+        Assert.False(c.Store.MarkedReady);
+        Assert.Empty(c.CoexistenceTrigger.Calls);
+    }
+
+    [Theory]
+    [InlineData(true, true, false)]   // Meta ya ve el número operativo: se desbloquea aunque no haya llegado ACCOUNT_RECONNECTED.
+    [InlineData(false, false, true)]  // Meta todavía no: sigue esperando, pero ya consultó a Meta.
+    public async Task RecoverWhileRecovering_AsksMetaAndUnblocksWhenSamePhoneIsBack(bool phoneBack, bool expectedRecovered, bool expectedWaiting)
+    {
+        var connections = new MemoryCoexistenceConnectionStore();
+        await connections.ApplyAsync(84, new("waba-1", "ACCOUNT_OFFBOARDED", "PRIMARY_INACTIVITY", DateTime.UtcNow.AddHours(-2)));
+        var c = CreateContext(Guid.NewGuid(), 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, connectionStore: connections);
+        c.Config.Numeros.Add(new() { IdNumero = 25, PhoneNumberId = "phone-1", WabaId = "waba-1", Nombre = "Ventas", Usuarios = ["eve"] });
+        await c.Ownership.ReservePhoneAsync("phone-1", "waba-1", 84);
+        c.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Meta name", isOnBizApp: phoneBack)];
+
+        var result = await c.Service.TryRecoverCoexistenceAsync(25);
+
+        Assert.Equal(expectedRecovered, result.Recovered);
+        Assert.Equal(expectedWaiting, result.WaitingForMeta);
+        var state = await connections.GetAsync(84, "waba-1");
+        Assert.Equal(phoneBack ? "CONNECTED" : "RECOVERING", state!.State);
+        Assert.Equal("Ventas", Assert.Single(c.Config.Numeros).Nombre);
+    }
+
+    [Fact]
+    public async Task Reconnect_ImportsOnlyOriginalPhone_PreservesIdentityUsersAndName_WithoutInitialSync()
+    {
+        var id = Guid.NewGuid();
+        var c = CreateContext(id, 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        var onboarding = (await c.Store.GetAsync(id))!;
+        onboarding.ReconnectNumeroId = 25;
+        onboarding.ReconnectPhoneNumberId = "phone-1";
+        onboarding.ReconnectWabaId = "waba-1";
+        c.Vault.Context = new(84, id, "business-1", "waba-1", "phone-1", "TEST", null);
+        c.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Meta name", true), Phone("phone-2", "waba-1", "+54 11 2", "Other", true)];
+        c.Config.Numeros.Add(new() { IdNumero = 25, PhoneNumberId = "phone-1", WabaId = "waba-1", Nombre = "Ventas propias", Activo = true, Usuarios = ["eve"] });
+
+        var result = await c.Service.CompleteAsync(id);
+
+        Assert.Equal(25, Assert.Single(result.Numbers).IdNumero);
+        var saved = Assert.Single(c.Config.Numeros);
+        Assert.Equal("Ventas propias", saved.Nombre);
+        Assert.Equal(["eve"], saved.Usuarios);
+        Assert.Single(c.Ownership.ReservedPhones);
+        Assert.Empty(c.CoexistenceTrigger.Calls);
+        Assert.True(c.Store.MarkedReady);
+    }
+
+    [Theory]
+    [InlineData("other-phone", "waba-1")]
+    [InlineData("phone-1", "other-waba")]
+    public async Task Reconnect_RejectsDifferentVaultIdentityBeforeOperationalWrites(string phone, string waba)
+    {
+        var id = Guid.NewGuid();
+        var c = CreateContext(id, 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        var onboarding = (await c.Store.GetAsync(id))!;
+        onboarding.ReconnectNumeroId = 25;
+        onboarding.ReconnectPhoneNumberId = "phone-1";
+        onboarding.ReconnectWabaId = "waba-1";
+        c.Vault.Context = new(84, id, "business-1", waba, phone, "TEST", null);
+        c.Management.PhonesByWaba[waba] = [Phone(phone, waba, "+54 11 1", "Other")];
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => c.Service.CompleteAsync(id));
+
+        Assert.Empty(c.Config.Numeros);
+        Assert.Empty(c.Ownership.ReservedPhones);
+        Assert.Empty(c.Ownership.ReservedWabas);
+        Assert.False(c.Store.MarkedReady);
+    }
+
     [Fact]
     public async Task Complete_ImportsAllRegisteredPhonesAcrossAuthorizedWabas()
     {
@@ -247,7 +333,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         int activeBaseId,
         WhatsAppEmbeddedOnboardingMode mode = WhatsAppEmbeddedOnboardingMode.Standard,
         WhatsAppEmbeddedOnboardingStatus status = WhatsAppEmbeddedOnboardingStatus.Importing,
-        string currentStep = "READY_FOR_OPERATIONAL_UPSERT")
+        string currentStep = "READY_FOR_OPERATIONAL_UPSERT",
+        IWhatsAppCoexistenceConnectionStore? connectionStore = null)
     {
         var store = new MemoryOnboardingStore(idOnboarding, activeBaseId, mode, status, currentStep);
         var vault = new MemoryCredentialVault(new WhatsAppVaultSecretContext(
@@ -272,7 +359,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             session,
             coexistenceTrigger,
             Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }),
-            NullLogger<WhatsAppEmbeddedOperationalImportService>.Instance);
+            NullLogger<WhatsAppEmbeddedOperationalImportService>.Instance,
+            connectionStore: connectionStore);
 
         return new(service, store, vault, management, ownership, config, session, coexistenceTrigger);
     }
@@ -289,6 +377,23 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         MemoryConversacionesConfigService Config,
         MemorySessionService Session,
         RecordingCoexistenceSyncTrigger CoexistenceTrigger);
+
+    /// <summary>Misma regla que el MERGE de SQL: gana el evento más nuevo; a igual fecha, el más grave.</summary>
+    private sealed class MemoryCoexistenceConnectionStore : IWhatsAppCoexistenceConnectionStore
+    {
+        private readonly Dictionary<(int, string), WhatsAppCoexistenceConnectionStatus> _items = [];
+
+        public Task ApplyAsync(int idBase, WhatsAppCoexistenceAccountEvent accountEvent, CancellationToken ct = default)
+        {
+            var nuevo = new WhatsAppCoexistenceConnectionStatus(idBase, accountEvent.WabaId, accountEvent.State, accountEvent.Reason, accountEvent.TimestampUtc!.Value);
+            if (!_items.TryGetValue((idBase, accountEvent.WabaId), out var actual) || nuevo.EventTimestampUtc > actual.EventTimestampUtc)
+                _items[(idBase, accountEvent.WabaId)] = nuevo;
+            return Task.CompletedTask;
+        }
+
+        public Task<WhatsAppCoexistenceConnectionStatus?> GetAsync(int idBase, string wabaId, CancellationToken ct = default)
+            => Task.FromResult(_items.GetValueOrDefault((idBase, wabaId)));
+    }
 
     private sealed class RecordingCoexistenceSyncTrigger : IWhatsAppCoexistenceSyncTrigger
     {
@@ -344,6 +449,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
 
     private sealed class MemoryCredentialVault(WhatsAppVaultSecretContext context) : IWhatsAppCredentialVault
     {
+        public Task<WhatsAppCredentialReference?> FindActiveCredentialAsync(int idBase, string wabaId, string phoneNumberId, CancellationToken ct = default)
+            => Task.FromResult<WhatsAppCredentialReference?>(new("token-ref"));
         public WhatsAppVaultSecretContext Context { get; set; } = context;
         public Task<WhatsAppCredentialReference> StoreAsync(WhatsAppVaultSecretContext vaultContext, ReadOnlyMemory<char> secret, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ReadOnlyMemory<char>> GetAsync(WhatsAppCredentialReference reference, CancellationToken ct = default) => Task.FromResult<ReadOnlyMemory<char>>("token".AsMemory());
@@ -457,6 +564,12 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             ConversacionWhatsAppNumeroDto numero,
             CancellationToken ct = default)
         {
+            if (numero.IdNumero > 0)
+            {
+                var original = Numeros.Single(item => item.IdNumero == numero.IdNumero
+                    && item.PhoneNumberId == numero.PhoneNumberId && item.WabaId == numero.WabaId);
+                return original;
+            }
             await SaveWhatsAppNumeroAsync(numero, ct);
             var saved = Numeros.Single(item => string.Equals(item.PhoneNumberId, numero.PhoneNumberId, StringComparison.Ordinal));
             saved.MetaBusinessId = numero.MetaBusinessId;
@@ -576,8 +689,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, int? expectedBaseId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default) => Task.FromResult(Numeros.SingleOrDefault(n => n.IdNumero == idNumero));
+        public Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, int? expectedBaseId, CancellationToken ct = default) => GetWhatsAppNumeroAsync(idNumero, ct);
         public Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroByInstanceNameAsync(string instanceName, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default) => throw new NotSupportedException();

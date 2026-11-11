@@ -19,6 +19,7 @@
 @inject AlfaCore.Services.IWhatsAppUsoMetaService UsoMetaSvc
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupErrorLogger EmbeddedSignupErrorLogger
 @inject AlfaCore.Services.IWhatsAppCoexistenceSyncStore CoexistenceSyncStore
+@inject AlfaCore.Services.IWhatsAppCoexistenceConnectionStore CoexistenceConnectionStore
 @inject AlfaCore.Services.IAppEventService AppEvents
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
@@ -394,6 +395,10 @@
                     @if (_selectedNumeroBlockedFeedback is not null)
                     {
                         <AlfaFeedbackPanel Message="@_selectedNumeroBlockedFeedback" Dismissible="false" />
+                    }
+                    @if (GetCoexistenceConnection(selectedNumero) is { BlocksSending: true } connection)
+                    {
+                        <AlfaFeedbackPanel Message="@AppUiMessage.Warning("WhatsApp necesita reconexión", connection.Message)" Dismissible="false" />
                     }
                     <div class="wa-business-block">
                         <h3>Identificación</h3>
@@ -1906,7 +1911,8 @@
 
     private async Task StartEmbeddedSignupAsync(
         AlfaCore.Models.WhatsAppConnectionChoice choice,
-        AlfaCore.Models.WhatsAppEmbeddedOnboardingMode expectedMode)
+        AlfaCore.Models.WhatsAppEmbeddedOnboardingMode expectedMode,
+        ConversacionWhatsAppNumeroDto? reconnectNumero = null)
     {
         if (HostEnvironment.IsDevelopment())
             await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "click-handler-entry");
@@ -1921,7 +1927,8 @@
         var correlationId = Guid.NewGuid().ToString("N");
         try
         {
-            var start = await EmbeddedSignup.StartAsync(new(idBase, idBase.ToString(), usuario, expectedMode, correlationId));
+            var start = await EmbeddedSignup.StartAsync(new(idBase, idBase.ToString(), usuario, expectedMode, correlationId,
+                reconnectNumero?.IdNumero, reconnectNumero?.PhoneNumberId ?? "", reconnectNumero?.WabaId ?? ""));
             if (HostEnvironment.IsDevelopment())
                 await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "after-start-async");
             if (start.OnboardingMode != expectedMode)
@@ -2480,6 +2487,33 @@
                     {
                         if (SelectedApiNumero is not null)
                         {
+                            if (CanReconnectCoexistence(SelectedApiNumero))
+                            {
+                                listActions.Add(new PageHeaderAction
+                                {
+                                    Key = "reconectar-coexistence",
+                                    Label = "Reconectar con Meta",
+                                    Icon = "bi-arrow-repeat",
+                                    Style = PageHeaderActionStyle.Primary,
+                                    Priority = PageHeaderActionPriority.Essential,
+                                    Disabled = Loading || Saving || _embeddedSignupBusy || HasEmbeddedSignupInProgress,
+                                    OnClick = ReconnectSelectedCoexistenceAsync
+                                });
+                                if (_coexistenceConnections.GetValueOrDefault(SelectedApiNumero.WabaId)?.State == "RECOVERING")
+                                {
+                                    // Visible (no en "más opciones"): es la salida si Meta no avisa la reconexión.
+                                    listActions.Add(new PageHeaderAction
+                                    {
+                                        Key = "reautorizar-coexistence",
+                                        Label = "Renovar autorización con Meta",
+                                        Icon = "bi-key",
+                                        Style = PageHeaderActionStyle.Ghost,
+                                        Priority = PageHeaderActionPriority.Essential,
+                                        Disabled = Loading || Saving || _embeddedSignupBusy || HasEmbeddedSignupInProgress,
+                                        OnClick = RenewSelectedCoexistenceAuthorizationAsync
+                                    });
+                                }
+                            }
                             listActions.Add(new PageHeaderAction
                             {
                                 Key = "editar-numero-api",
@@ -3552,6 +3586,8 @@
 
     private async Task LoadEmbeddedSignupStateAsync(int activeBaseId)
     {
+        _coexistenceConnections.Clear();
+        _coexistencePhoneNumberIds = [];
         _embeddedSignupStatus = null;
         _embeddedRecoveryCandidate = null;
         _embeddedPendingConnections = [];
@@ -3583,6 +3619,12 @@
         try
         {
             _coexistenceSyncStatuses = await CoexistenceSyncStore.GetForBaseAsync(activeBaseId, _lifetimeCts.Token);
+            _coexistencePhoneNumberIds = await CoexistenceConnectionStore.GetCoexistencePhoneNumberIdsAsync(activeBaseId, _lifetimeCts.Token);
+            foreach (var wabaId in WhatsAppApiNumeros.Select(n => n.WabaId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal))
+            {
+                var connection = await CoexistenceConnectionStore.GetAsync(activeBaseId, wabaId, _lifetimeCts.Token);
+                if (connection is not null) _coexistenceConnections[wabaId] = connection;
+            }
         }
         catch (Exception ex)
         {
@@ -3597,6 +3639,56 @@
 
         SyncEmbeddedSignupPolling();
     }
+
+    private readonly Dictionary<string, AlfaCore.Services.WhatsAppCoexistenceConnectionStatus> _coexistenceConnections = new(StringComparer.Ordinal);
+
+    private AlfaCore.Services.WhatsAppCoexistenceConnectionStatus? GetCoexistenceConnection(ConversacionWhatsAppNumeroDto numero)
+        => _coexistenceConnections.GetValueOrDefault(numero.WabaId);
+
+    // Números conectados con Coexistence según el onboarding que dejó su credencial (incluye los
+    // conectados antes de que existiera la importación inicial del historial).
+    private IReadOnlyCollection<string> _coexistencePhoneNumberIds = [];
+
+    private bool CanReconnectCoexistence(ConversacionWhatsAppNumeroDto numero)
+        => CanStartEmbeddedSignupForActiveBase && !string.IsNullOrWhiteSpace(numero.WabaId)
+            && (_coexistencePhoneNumberIds.Contains(numero.PhoneNumberId?.Trim() ?? string.Empty)
+                || GetCoexistenceSyncStatus(numero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is not null
+                || GetCoexistenceSyncStatus(numero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState) is not null);
+
+    private async Task ReconnectSelectedCoexistenceAsync()
+    {
+        if (SelectedApiNumero is not { } numero || !CanReconnectCoexistence(numero)) return;
+        await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
+        _embeddedSignupBusy = true;
+        UpdatePageHeader();
+        var result = await UiOps.RunAsync(() => EmbeddedOperationalImport.TryRecoverCoexistenceAsync(numero.IdNumero, _lifetimeCts.Token),
+            "No se pudo comprobar la conexión de WhatsApp. Tus conversaciones se conservaron.");
+        _embeddedSignupBusy = false;
+        if (!result.Success || result.Value is null)
+        {
+            _embeddedSignupFeedback = result.Feedback;
+            UpdatePageHeader();
+            return;
+        }
+        if (result.Value.Recovered || result.Value.WaitingForMeta)
+        {
+            _embeddedSignupFeedback = result.Value.Recovered
+                ? AppUiMessage.Success("Conexión comprobada", result.Value.Message)
+                : AppUiMessage.Warning("Esperando a Meta", result.Value.Message);
+            await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+            UpdatePageHeader();
+            return;
+        }
+        // Solo renueva autorización cuando la sesión vigente no permite recuperar el mismo número.
+        await StartEmbeddedSignupAsync(AlfaCore.Models.WhatsAppConnectionChoice.ExistingWhatsAppBusiness,
+            AlfaCore.Models.WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, numero);
+    }
+
+    private Task RenewSelectedCoexistenceAuthorizationAsync()
+        => SelectedApiNumero is { } numero && CanReconnectCoexistence(numero)
+            ? StartEmbeddedSignupAsync(AlfaCore.Models.WhatsAppConnectionChoice.ExistingWhatsAppBusiness,
+                AlfaCore.Models.WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, numero)
+            : Task.CompletedTask;
 
     private async Task RefreshWhatsAppConnectionsAsync(int activeBaseId)
     {
@@ -3639,7 +3731,7 @@
 
     private void SyncEmbeddedSignupPolling()
     {
-        if (HasEmbeddedSignupInProgress)
+        if (HasEmbeddedSignupInProgress || _coexistenceConnections.Values.Any(connection => connection.State == "RECOVERING"))
         {
             if (_embeddedSignupPollingCts is null)
             {
@@ -6054,7 +6146,9 @@
     /// -- nunca se pregunta por bloqueo número a número en cada render.
     /// </summary>
     private AlfaCore.Models.WhatsAppConnectionCardStatus GetNumeroCardStatus(ConversacionWhatsAppNumeroDto numero)
-        => AlfaCore.Models.WhatsAppConnectionCardStatusExtensions.ForNumero(_blockedNumeroIds.Contains(numero.IdNumero), numero.Usuarios.Count);
+        => !_blockedNumeroIds.Contains(numero.IdNumero) && _coexistenceConnections.GetValueOrDefault(numero.WabaId) is { BlocksSending: true }
+            ? AlfaCore.Models.WhatsAppConnectionCardStatus.ActionRequired
+            : AlfaCore.Models.WhatsAppConnectionCardStatusExtensions.ForNumero(_blockedNumeroIds.Contains(numero.IdNumero), numero.Usuarios.Count);
 
     private static AlfaCore.Models.WhatsAppConnectionCardStatus GetPendingConnectionCardStatus(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
         => AlfaCore.Models.WhatsAppConnectionCardStatusExtensions.ForPending(pending.Status);

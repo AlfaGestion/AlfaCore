@@ -314,6 +314,8 @@ public interface IWhatsAppWebhookTenantGuard
 public interface IWhatsAppRuntimeCredentialResolver
 {
     Task<WhatsAppRuntimeCredential> ResolveAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default);
+    Task<WhatsAppRuntimeCredential> ResolveForSendAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
+        => ResolveAsync(idBase, idNumero, phoneNumberId, legacyConfig, ct);
 }
 
 public enum WhatsAppRuntimeCredentialOrigin { Legacy, EmbeddedSignup }

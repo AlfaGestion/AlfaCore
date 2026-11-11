@@ -9,6 +9,38 @@ namespace AlfaCore.Tests;
 
 public sealed class WhatsAppEmbeddedSignupAuthorizationTests
 {
+    [Theory]
+    [InlineData("other-phone", "original-waba")]
+    [InlineData("original-phone", "other-waba")]
+    [InlineData("", "")]
+    public async Task ReconnectCallbackRejectsDifferentOrMissingAccountBeforeTokenExchange(string phone, string waba)
+    {
+        var c = CreateWithOnboarding();
+        c.Item!.ReconnectNumeroId = 25;
+        c.Item.ReconnectPhoneNumberId = "original-phone";
+        c.Item.ReconnectWabaId = "original-waba";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => c.Orchestrator.HandleAuthorizationCallbackAsync(
+            new(c.Item.IdOnboarding, 106, c.State!, "code", "Eve", waba, phone)));
+
+        Assert.Equal(0, c.Meta.Calls);
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.FailedFinal, c.Item.Status);
+        Assert.Equal("RECONNECT_ACCOUNT_MISMATCH", c.Item.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ReconnectCallbackForOriginalAccountRenewsAuthorization()
+    {
+        var c = CreateWithOnboarding();
+        c.Item!.ReconnectNumeroId = 25;
+        c.Item.ReconnectPhoneNumberId = "original-phone";
+        c.Item.ReconnectWabaId = "original-waba";
+        await c.Orchestrator.HandleAuthorizationCallbackAsync(
+            new(c.Item.IdOnboarding, 106, c.State!, "code", "Eve", "original-waba", "original-phone"));
+        Assert.Equal(1, c.Meta.Calls);
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, c.Item.Status);
+    }
+
     [Fact] public async Task DisabledFeature_RejectsStart() => await Assert.ThrowsAsync<InvalidOperationException>(() => Create(enabled: false).Orchestrator.StartAsync(new(106, "TEST", "Eve", WhatsAppEmbeddedOnboardingMode.Standard)));
     [Fact] public async Task BaseOutsideAllowlist_RejectsStartBeforeCreatingOnboarding()
     {
@@ -222,6 +254,6 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
         }
         public Task MarkAuthorizedAsync(Guid id, string reference, string business, CancellationToken ct = default) { if (FailAuthorization) throw new InvalidOperationException("store failure"); Item!.Status = WhatsAppEmbeddedOnboardingStatus.Authorized; Item.TokenReference = reference; return Task.CompletedTask; }
         public Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus expected, WhatsAppEmbeddedOnboardingStatus next, string step, CancellationToken ct = default) { if (Item?.Status != expected) throw new InvalidOperationException(); Item.Status = next; Item.CurrentStep = step; return Task.CompletedTask; }
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incident, string errorCode = "", CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkRetryableFailureAsync(Guid id, string code, string summary, string incident, DateTime next, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkFinalFailureAsync(Guid id, string code, string summary, string incident, string? failedStep = null, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException(); public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string worker, DateTime now, DateTime expires, CancellationToken ct = default) => throw new NotSupportedException(); public Task ReleaseClaimAsync(Guid id, string worker, DateTime? next, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incident, string errorCode = "", CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkRetryableFailureAsync(Guid id, string code, string summary, string incident, DateTime next, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkFinalFailureAsync(Guid id, string code, string summary, string incident, string? failedStep = null, CancellationToken ct = default) { Item!.Status = WhatsAppEmbeddedOnboardingStatus.FailedFinal; Item.ErrorCode = code; return Task.CompletedTask; } public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException(); public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string worker, DateTime now, DateTime expires, CancellationToken ct = default) => throw new NotSupportedException(); public Task ReleaseClaimAsync(Guid id, string worker, DateTime? next, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

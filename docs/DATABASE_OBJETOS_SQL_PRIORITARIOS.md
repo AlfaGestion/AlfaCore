@@ -298,3 +298,8 @@ La actualización 2026-10-20-003 agrega ImporteBanco y Observacion a BK_CobroExi
 ## Cantidades pendientes de compras (03/11/2026)
 
 `VT_C_MV_INSUMOS_APLICACION` (VIEW, verificada en ALFANET/SERVER-ALFAVB6) es la lectura legacy de cantidades aplicadas por cuenta, tipo/origen y artículo para RMC. `CO_AplicacionOC` (VIEW) ofrece `Aplicado` para OC. Sus definiciones suman los artículos de cada destino unido por MV_APLICACION: no distinguen líneas de varios orígenes reunidos en una factura. La carga web admite aplicaciones parciales de un único origen y bloquea destinos con otros orígenes, artículos repetidos o saldos ambiguos; no modifica estas vistas. Ver [compras](modulos/compras-carga.md).
+
+
+## Estado central de Coexistence y reconexión (2026-11-11)
+
+`WhatsAppCoexistenceConnection` es una tabla de la central de Embedded Signup para el estado de conexión por `IdBase + WabaId`, independiente de facturación. El script central `2026-11-11-001__alfa_central_whatsapp_coexistence_reconexion.sql` también agrega la identidad esperada de reconexión a `WhatsAppEmbeddedOnboarding`. No reemplaza `CONV_WHATSAPP_NUMEROS`, sus usuarios ni `CONV_CONVERSACIONES.IdNumeroWhatsApp`. Contrato y despliegue en [Embedded Signup](modulos/integraciones/whatsapp_embedded_signup.md#reconexión-de-coexistence-conservando-conversaciones-2026-11-11).

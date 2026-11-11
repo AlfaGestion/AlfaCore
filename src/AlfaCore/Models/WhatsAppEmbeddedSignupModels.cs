@@ -220,9 +220,14 @@ public sealed class WhatsAppEmbeddedOnboardingDto
     public string ClaimedBy { get; set; } = string.Empty;
     public DateTime? ClaimExpiresAtUtc { get; set; }
     public byte[] RowVersion { get; set; } = [];
+    // Identidad a recuperar; se persiste para sobrevivir a reinicios, callbacks y workers.
+    public int? ReconnectNumeroId { get; set; }
+    public string ReconnectPhoneNumberId { get; set; } = string.Empty;
+    public string ReconnectWabaId { get; set; } = string.Empty;
 }
 
-public sealed record WhatsAppEmbeddedStartRequest(int IdBase, string IdCliente, string UsuarioIniciador, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId = "");
+public sealed record WhatsAppEmbeddedStartRequest(int IdBase, string IdCliente, string UsuarioIniciador, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId = "",
+    int? ReconnectNumeroId = null, string ReconnectPhoneNumberId = "", string ReconnectWabaId = "");
 public sealed record WhatsAppEmbeddedStartResult(Guid IdOnboarding, string State, DateTime ExpiresAtUtc, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId);
 public sealed record WhatsAppEmbeddedAuthorizationCallback(Guid IdOnboarding, int IdBase, string State, string AuthorizationCode, string Usuario, string WabaId = "", string PhoneNumberId = "");
 public sealed record WhatsAppEmbeddedRetryRequest(Guid IdOnboarding, int IdBase, string Usuario);

@@ -148,3 +148,51 @@ Como alternativa técnica excluyente, `WhatsAppEmbeddedSignup__CentralConnection
 Los integration tests permanecen separados: leen exclusivamente `ALFACORE_ES_SQL_TEST_CONNECTION`, cuyo catálogo debe ser `ALFA_CENTRAL_TEST`, y usan los fixtures artificiales reservados `1900000001` y `1900000002`.
 
 La configuración versionada conserva `Enabled=false` y no contiene App Secret. Si Meta Login exige origen seguro en una prueba manual, usar el perfil HTTPS normal de desarrollo, no un launcher ES dedicado.
+
+
+## Reconexión de Coexistence conservando conversaciones (2026-11-11)
+
+La acción **Reconectar con Meta** sobre un número de Coexistence primero comprueba el número y la autorización existentes, **también cuando figura en recuperación o desconectado**: si Meta ya ve el mismo número registrado y en la app Business, se desbloquea el envío aunque `ACCOUNT_RECONNECTED` no haya llegado. Si Meta todavía no lo recuperó, sigue esperando y la acción **Renovar autorización con Meta** (visible, no en "más opciones") permite reautorizar expresamente. El botón aparece en todo número conectado con Coexistence según el onboarding que dejó su credencial, también en los conectados antes de la importación inicial del historial. Si la autorización anterior no sirve o Meta confirmó la desvinculación, se reutiliza Embedded Signup en modo Coexistence.
+
+La identidad esperada (`ReconnectNumeroId`, `ReconnectPhoneNumberId`, `ReconnectWabaId`) se persiste en el onboarding. El callback debe devolver el mismo teléfono y WABA; el discovery, ownership y alta operativa quedan limitados a ese teléfono. Si Meta cambia cualquiera de esos identificadores, se detiene la recuperación: no se crea otro número ni se reasignan conversaciones automáticamente. El UPDATE operativo comprueba también el ID interno bajo bloqueo y conserva nombre, estado activo y usuarios. No hay DELETE de conversaciones, mensajes, archivos, ownership ni credenciales anteriores. Tampoco se vuelven a iniciar los sync iniciales de contactos e historial.
+
+Los eventos `ACCOUNT_OFFBOARDED`, `ACCOUNT_RECONNECTED`, `PARTNER_REMOVED` y `PARTNER_APP_UNINSTALLED` se reciben por `account_update`. **Por el mismo campo Meta manda muchos otros eventos** (`PARTNER_APP_INSTALLED` en cada alta, `VERIFIED_ACCOUNT`, cambios de tier de precios, etc.): todos se reconocen para rutear y verificar la firma, se contestan 200 y se ignoran. Si una WABA todavía no tiene ownership en esta base (p. ej. un alta en curso), se verifica la firma con el secreto de la app central y se contesta 200 sin procesar. Contestar error haría que Meta reintente y, con muchas fallas, podría frenar la entrega de avisos de toda la app. Cuando no incluyen teléfono se valida ownership central de `entry.id` (WABA) tanto al seleccionar el secreto como antes de persistir. El body solo se procesa después de verificar la firma HMAC. Los sobres mixtos siguen requiriendo el control de ownership del teléfono. Es necesario habilitar **account_update** en la suscripción de webhooks de la aplicación Meta; suscribir la aplicación a una WABA no reemplaza esa configuración del campo.
+
+`WhatsAppCoexistenceConnection` registra estado por base y WABA, separado de los problemas de facturación. `ACCOUNT_OFFBOARDED` pausa envíos mientras Meta recupera la cuenta; `PARTNER_REMOVED`/`PARTNER_APP_UNINSTALLED` requieren autorización. La razón `PRIMARY_INACTIVITY` se muestra como inactividad del celular. Un evento posterior de reconexión habilita los envíos sin renovar credenciales ni mover datos. La fecha de Meta ordena eventos; duplicados y eventos anteriores no revierten un estado posterior. A igual fecha prevalece la desconexión. La reautorización se ancla al inicio del onboarding para no limpiar una desconexión ocurrida durante el proceso.
+
+Las consultas y descargas del historial siguen disponibles durante la pausa. El fallback hacia WhatsApp Web por defecto respeta los vínculos existentes con números Meta aunque están desconectados. La recuperación de mensajes emitidos durante la desconexión depende de Meta y no está garantizada por este cambio; no se reenvían mensajes fallidos automáticamente.
+
+### Despliegue y comprobación
+
+1. Ejecutar en la **central configurada para Embedded Signup**, nunca en bases cliente, `docs/base-datos/sql-referencia/2026-11-11-001__alfa_central_whatsapp_coexistence_reconexion.sql`. Es idempotente y solo agrega columnas y estado de conexión. No es un módulo nuevo ni agrega menús.
+2. Habilitar el campo `account_update` en Meta y conservar el callback por base y la validación HMAC existentes.
+3. Desplegar la aplicación. Antes del script, las lecturas del nuevo estado son compatibles y las altas normales siguen funcionando; una reconexión nueva exige la actualización.
+4. Con un número de prueba, registrar ID interno, Phone Number ID, WABA, usuarios y una conversación existente. Comprobar desconexión, pausa de envíos, recuperación automática y reautorización conservando esos valores. Probar también elección de otro WhatsApp: debe rechazarse sin cambios. Verificar recepción y envío reales después de recuperar.
+
+La implementación y sus tests no ejecutan el script ni modifican la configuración de Meta en producción.
+
+### Archivos del cambio
+
+| Archivo | Cambio |
+|---|---|
+| `src/AlfaCore/Services/WhatsAppCoexistenceConnectionStore.cs` (nuevo) | Parser, estado de conexión y persistencia ordenada de eventos. |
+| `docs/base-datos/sql-referencia/2026-11-11-001__alfa_central_whatsapp_coexistence_reconexion.sql` (nuevo) | Actualización central idempotente. |
+| `src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor` | Reconectar, comprobar autorización, avisos y actualización del estado. |
+| `src/AlfaCore/Models/WhatsAppEmbeddedSignupModels.cs` | Identidad esperada de reconexión. |
+| `src/AlfaCore/Services/WhatsAppEmbeddedSignupStore.cs` | Persistencia y lectura de la identidad esperada. |
+| `src/AlfaCore/Services/WhatsAppEmbeddedSignupOrchestrator.cs` | Validación de identidad antes del intercambio OAuth y filtrado de activos. |
+| `src/AlfaCore/Services/WhatsAppEmbeddedOperationalImportService.cs` | Recuperación con credencial existente, importación del mismo número y conservación de sync. |
+| `src/AlfaCore/Services/ConversacionesConfigService.cs` | Actualización bajo bloqueo sin reemplazar ID, nombre, usuarios ni identidad de negocio existente. |
+| `src/AlfaCore/Services/ConversacionesService.cs` | Eventos de cuenta, pausa de envíos y conservación del vínculo frente al fallback Web. |
+| `src/AlfaCore/Services/WhatsAppRuntimeCredentialResolver.cs` | Resolución para envío separada de las consultas históricas. |
+| `src/AlfaCore/Services/WhatsAppEmbeddedSignupContracts.cs` | Contrato de resolución para envío. |
+| `src/AlfaCore/Program.cs` | Registro del store y selección segura del secreto por ownership de WABA. |
+| `tests/AlfaCore.Tests/WhatsAppCoexistenceReconnectTests.cs` (nuevo) | Sobres, eventos, secreto y aislamiento. |
+| `tests/AlfaCore.Tests/WhatsAppCoexistenceConnectionSqlTests.cs` (nuevo) | Migración repetible, eventos duplicados/desordenados y fallback real sobre tablas temporales en `ALFA_CENTRAL_TEST`. |
+| `tests/AlfaCore.Tests/WhatsAppEmbeddedOperationalImportServiceTests.cs` | Recuperación del mismo número y conservación de datos/sync. |
+| `tests/AlfaCore.Tests/WhatsAppEmbeddedSignupAuthorizationTests.cs` | Rechazo de otra identidad antes del intercambio OAuth. |
+| `tests/AlfaCore.Tests/WhatsAppTenantIsolationTests.cs` | Pausa del envío conservando acceso al historial. |
+| `tests/AlfaCore.Tests/WhatsAppMediaRuntimeCredentialTests.cs` | Verificación del nuevo resolver para envío de adjuntos. |
+| `tests/AlfaCore.Tests/WhatsAppTemplateSelectionTests.cs` | Verificación del nuevo resolver para envío de plantillas. |
+| `docs/DATABASE_OBJETOS_SQL_PRIORITARIOS.md` | Referencia al nuevo estado central y al contrato. |
+| `docs/modulos/integraciones/whatsapp_embedded_signup.md` | Contrato, despliegue, límites y listado de archivos. |

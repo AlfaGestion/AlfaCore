@@ -11,18 +11,24 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
 
     public async Task CreateAsync(WhatsAppEmbeddedOnboardingDto item, CancellationToken ct = default)
     {
-        const string sql = """
+        var reconnectColumns = item.ReconnectNumeroId.HasValue ? ", ReconnectNumeroId, ReconnectPhoneNumberId, ReconnectWabaId" : "";
+        var reconnectValues = item.ReconnectNumeroId.HasValue ? ", @ReconnectNumeroId, @ReconnectPhoneNumberId, @ReconnectWabaId" : "";
+        var sql = $"""
             INSERT INTO dbo.WhatsAppEmbeddedOnboarding
             (IdOnboarding, IdBase, IdCliente, UsuarioIniciador, CorrelationId, StateHash, ModoOnboarding, Estado, PasoActual,
-             FechaInicioUtc, FechaExpiracionUtc, FechaModificacionUtc, NextAttemptUtc)
+             FechaInicioUtc, FechaExpiracionUtc, FechaModificacionUtc, NextAttemptUtc{reconnectColumns})
             VALUES
             (@IdOnboarding, @IdBase, @IdCliente, @UsuarioIniciador, @CorrelationId, @StateHash, @ModoOnboarding, @Estado, @PasoActual,
-             @StartedAtUtc, @ExpiresAtUtc, @ModifiedAtUtc, @NextAttemptUtc);
+             @StartedAtUtc, @ExpiresAtUtc, @ModifiedAtUtc, @NextAttemptUtc{reconnectValues});
             """;
         await using var cn = new SqlConnection(ConnectionString);
+        if (item.ReconnectNumeroId.HasValue && !await cn.QuerySingleAsync<bool>(new CommandDefinition(
+            "SELECT CAST(CASE WHEN COL_LENGTH('dbo.WhatsAppEmbeddedOnboarding', 'ReconnectWabaId') IS NOT NULL THEN 1 ELSE 0 END AS bit)", cancellationToken: ct)))
+            throw new InvalidOperationException("La reconexión de Coexistence requiere ejecutar la actualización central 2026-11-11-001.");
         await cn.ExecuteAsync(new CommandDefinition(sql, new
         {
             item.IdOnboarding, item.IdBase, item.IdCliente, item.UsuarioIniciador, item.CorrelationId, item.StateHash,
+            item.ReconnectNumeroId, item.ReconnectPhoneNumberId, item.ReconnectWabaId,
             ModoOnboarding = ToDb(item.OnboardingMode), Estado = ToDb(item.Status), PasoActual = item.CurrentStep, item.StartedAtUtc, item.ExpiresAtUtc, item.ModifiedAtUtc, item.NextAttemptUtc
         }, cancellationToken: ct));
     }
@@ -325,6 +331,9 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
 
     private sealed class OnboardingRow
     {
+        public int? ReconnectNumeroId { get; set; }
+        public string ReconnectPhoneNumberId { get; set; } = "";
+        public string ReconnectWabaId { get; set; } = "";
         public Guid IdOnboarding { get; set; } public int IdBase { get; set; } public string IdCliente { get; set; } = ""; public string UsuarioIniciador { get; set; } = "";
         public string CorrelationId { get; set; } = ""; public string StateHash { get; set; } = ""; public DateTime? StateConsumedAtUtc { get; set; }
         public string ModoOnboarding { get; set; } = "STANDARD"; public string Estado { get; set; } = ""; public string PasoActual { get; set; } = ""; public string MetaBusinessId { get; set; } = "";
@@ -335,6 +344,7 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         public WhatsAppEmbeddedOnboardingDto ToDto() => new()
         {
             IdOnboarding=IdOnboarding, IdBase=IdBase, IdCliente=IdCliente, UsuarioIniciador=UsuarioIniciador, CorrelationId=CorrelationId, StateHash=StateHash,
+            ReconnectNumeroId=ReconnectNumeroId, ReconnectPhoneNumberId=ReconnectPhoneNumberId, ReconnectWabaId=ReconnectWabaId,
             StateConsumedAtUtc=StateConsumedAtUtc, OnboardingMode=Enum.Parse<WhatsAppEmbeddedOnboardingMode>(ModoOnboarding.Replace("_", ""), true), Status=Enum.Parse<WhatsAppEmbeddedOnboardingStatus>(Estado.Replace("_", ""), true), CurrentStep=PasoActual,
             MetaBusinessId=MetaBusinessId, StartedAtUtc=FechaInicioUtc, ExpiresAtUtc=FechaExpiracionUtc, ModifiedAtUtc=FechaModificacionUtc, RetryCount=RetryCount,
             NextAttemptUtc=NextAttemptUtc, ErrorCode=ErrorCode, ErrorSummary=ErrorSummary, IncidentId=IncidentId, TokenReference=TokenReference,

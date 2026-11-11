@@ -81,7 +81,8 @@ public sealed class WhatsAppEmbeddedVaultUnavailableException(string message, Ex
     : InvalidOperationException(message, innerException);
 
 public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipStore ownershipStore, IWhatsAppCredentialVault credentialVault,
-    IOptions<WhatsAppEmbeddedSignupOptions> options) : IWhatsAppRuntimeCredentialResolver
+    IOptions<WhatsAppEmbeddedSignupOptions> options,
+    IWhatsAppCoexistenceConnectionStore? connectionStore = null) : IWhatsAppRuntimeCredentialResolver
 {
     private readonly WhatsAppEmbeddedSignupOptions _options = options.Value;
 
@@ -132,6 +133,15 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
 
         if (secret.IsEmpty) throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura del número Embedded Signup está vacía.");
         return new(ownership.WabaId, normalizedPhoneId, _options.GraphApiVersion, secret.ToString(), WhatsAppRuntimeCredentialOrigin.EmbeddedSignup, reference);
+    }
+
+    public async Task<WhatsAppRuntimeCredential> ResolveForSendAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
+    {
+        var runtime = await ResolveAsync(idBase, idNumero, phoneNumberId, legacyConfig, ct);
+        if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup && connectionStore is not null
+            && await connectionStore.GetAsync(idBase, runtime.WabaId, ct) is { BlocksSending: true } connection)
+            throw new InvalidOperationException(connection.Message);
+        return runtime;
     }
 
     // Data Protection envuelve el motivo real ("Keyset does not exist", ...) en dos o tres niveles.

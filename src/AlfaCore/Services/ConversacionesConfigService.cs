@@ -1912,16 +1912,31 @@ public sealed class ConversacionesConfigService(
 
         if (idNumero > 0)
         {
+            if (numero.IdNumero > 0 && numero.IdNumero != idNumero)
+                throw new InvalidOperationException("El identificador del número cambió durante la reconexión. No se modificaron sus vínculos.");
+            if (numero.IdNumero > 0)
+            {
+                if (!hasWabaId)
+                    throw new InvalidOperationException("La reconexión requiere la identidad WABA del número existente.");
+                var identitySql = "SELECT WabaId FROM dbo.CONV_WHATSAPP_NUMEROS WITH (UPDLOCK, HOLDLOCK) WHERE IdNumero=@IdNumero"
+                    + (hasMetaBusinessId ? " AND (@ExpectedBusinessId=N'' OR LTRIM(RTRIM(ISNULL(MetaBusinessId,N'')))=N'' OR LTRIM(RTRIM(MetaBusinessId))=@ExpectedBusinessId)" : "");
+                await using var identity = new SqlCommand(identitySql, cn, (SqlTransaction)tx);
+                identity.Parameters.AddWithValue("@IdNumero", idNumero);
+                if (hasMetaBusinessId) identity.Parameters.AddWithValue("@ExpectedBusinessId", metaBusinessId);
+                if (!string.Equals(Convert.ToString(await identity.ExecuteScalarAsync(ct))?.Trim(), wabaId, StringComparison.Ordinal))
+                    throw new InvalidOperationException("La cuenta WABA no coincide con el WhatsApp original. No se modificaron sus vínculos.");
+            }
             var updateSql = $"""
                 UPDATE dbo.CONV_WHATSAPP_NUMEROS
-                SET Nombre = @Nombre,
-                    Activo = @Activo,
-                    {(hasMetaBusinessId ? "MetaBusinessId = @MetaBusinessId," : "")}
+                SET Nombre = CASE WHEN @Reconnect = 1 THEN Nombre ELSE @Nombre END,
+                    Activo = CASE WHEN @Reconnect = 1 THEN Activo ELSE @Activo END,
+                    {(hasMetaBusinessId ? "MetaBusinessId = CASE WHEN @Reconnect = 1 AND LTRIM(RTRIM(ISNULL(MetaBusinessId,N''))) <> N'' THEN MetaBusinessId ELSE @MetaBusinessId END," : "")}
                     {(hasWabaId ? "WabaId = @WabaId," : "")}
                     FechaHora_Modificacion = GETDATE()
                 WHERE IdNumero = @IdNumero;
                 """;
             await using var update = new SqlCommand(updateSql, cn, (SqlTransaction)tx);
+            update.Parameters.AddWithValue("@Reconnect", numero.IdNumero > 0);
             update.Parameters.AddWithValue("@Nombre", nombre);
             update.Parameters.AddWithValue("@Activo", numero.Activo);
             update.Parameters.AddWithValue("@IdNumero", idNumero);
@@ -1931,6 +1946,8 @@ public sealed class ConversacionesConfigService(
         }
         else
         {
+            if (numero.IdNumero > 0)
+                throw new InvalidOperationException("No se encontró el mismo WhatsApp para reconectar. No se creará otro número ni se moverán conversaciones.");
             var insertColumns = "PhoneNumberId, Nombre, Activo" + (hasMetaBusinessId ? ", MetaBusinessId" : "") + (hasWabaId ? ", WabaId" : "");
             var insertValues = "@PhoneNumberId, @Nombre, @Activo" + (hasMetaBusinessId ? ", @MetaBusinessId" : "") + (hasWabaId ? ", @WabaId" : "");
             var insertSql = $"""

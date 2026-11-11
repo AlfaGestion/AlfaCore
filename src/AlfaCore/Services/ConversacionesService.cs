@@ -38,7 +38,8 @@ public sealed partial class ConversacionesService(
     IConversacionAsistenteConocimientoService? asistenteConocimiento = null,
     IIaConsumoService? iaConsumo = null,
     IServiceProvider? serviceProvider = null,
-    IConversacionBotPedidosService? botPedidosService = null) : IConversacionesService
+    IConversacionBotPedidosService? botPedidosService = null,
+    IWhatsAppCoexistenceConnectionStore? coexistenceConnectionStore = null) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -2665,7 +2666,7 @@ public sealed partial class ConversacionesService(
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
                 var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync(
                     activeBaseId, numeroWeb?.IdNumero ?? conversation.IdNumeroWhatsApp,
                     whatsAppConfig.PhoneNumberId, whatsAppConfig, token);
                 whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
@@ -2970,6 +2971,9 @@ public sealed partial class ConversacionesService(
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
             EnsureWhatsAppMetaProvider(config, "enviar reacciones");
+            var reactionRuntime = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync(
+                sessionService.GetActiveSession()?.BaseId ?? 0, conversation.IdNumeroWhatsApp, config.PhoneNumberId, config, token);
+            config = CloneWhatsAppConfigWithRuntimeCredential(config, reactionRuntime);
             var now = BusinessNow();
             var text = emoji;
 
@@ -3694,7 +3698,7 @@ public sealed partial class ConversacionesService(
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
-            var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+            var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync(
                 sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp,
                 config.PhoneNumberId,
@@ -4439,14 +4443,25 @@ public sealed partial class ConversacionesService(
             var echoes = ParseIncomingMessageEchoes(request.Payload.RootElement);
             var currentBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
             var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement);
+            // Solo los 4 eventos de conexión cambian estado; el resto de los account_update se aceptan
+            // (200) y se ignoran. El ownership se exige para TODOS.
+            var accountEvents = WhatsAppCoexistenceAccountEvents.Parse(request.Payload.RootElement);
+            foreach (var wabaId in WhatsAppCoexistenceAccountEvents.ExtractAccountUpdateWabaIds(request.Payload.RootElement))
+            {
+                var owner = await whatsAppAssetOwnershipStore.GetWabaOwnershipAsync(wabaId, token);
+                if (owner is null || owner.IdBase != currentBaseId)
+                    throw new UnauthorizedAccessException("La cuenta de WhatsApp del evento no pertenece a la base del webhook.");
+            }
             if (phoneNumberIds.Count > 0)
                 request.TraceStage?.Invoke("PHONE_NUMBER_ID_FOUND");
-            await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, phoneNumberIds, token);
+            if (phoneNumberIds.Count > 0 || !WhatsAppCoexistenceAccountEvents.IsAccountOnly(request.Payload.RootElement))
+                await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, phoneNumberIds, token);
             request.TraceStage?.Invoke("OWNERSHIP_RESOLVED");
             request.TraceStage?.Invoke("TENANT_GUARD_PASSED");
             request.TraceStage?.Invoke("TENANT_CONNECTION_RESOLVED");
             request.TraceStage?.Invoke("BEFORE_WEBHOOK_LOG");
             var eventTypes = new List<string>();
+            if (accountEvents.Count > 0) eventTypes.Add("account_update");
             if (historySync is not null) eventTypes.Add("history");
             if (stateSync is not null) eventTypes.Add("smb_app_state_sync");
             if (echoes.Count > 0) eventTypes.Add("smb_message_echoes");
@@ -4477,6 +4492,14 @@ public sealed partial class ConversacionesService(
             var embeddedSignupWithoutVault = embeddedSignupOptions.Value.Enabled
                 && !embeddedSignupOptions.Value.HasDataProtectionKeyRingConfiguration();
             var processed = 0;
+
+            foreach (var accountEvent in accountEvents)
+            {
+                if (coexistenceConnectionStore is null || !embeddedSignupOptions.Value.Enabled)
+                    throw new InvalidOperationException("El procesamiento de eventos de cuenta de WhatsApp no está habilitado.");
+                await coexistenceConnectionStore.ApplyAsync(currentBaseId, accountEvent, token);
+                processed++;
+            }
 
             foreach (var status in parsedStatuses)
             {
@@ -5927,7 +5950,7 @@ public sealed partial class ConversacionesService(
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
                 var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync(
                     activeBaseId, numero?.IdNumero ?? conversation.IdNumeroWhatsApp,
                     whatsAppConfig.PhoneNumberId, whatsAppConfig, token);
                 whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
@@ -12240,7 +12263,7 @@ public sealed partial class ConversacionesService(
 
         var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct).ConfigureAwait(false);
         config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, ct).ConfigureAwait(false);
-        var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+        var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveForSendAsync(
             sessionService.GetActiveSession()?.BaseId ?? 0,
             conversation.IdNumeroWhatsApp,
             config.PhoneNumberId,
@@ -14373,8 +14396,14 @@ public sealed partial class ConversacionesService(
                         SELECT 1
                         FROM dbo.CONV_WHATSAPP_NUMEROS n
                         WHERE n.IdNumero = c.IdNumeroWhatsApp
-                          AND LTRIM(RTRIM(ISNULL(n.WebInstanceName, N''))) <> N''
-                          AND UPPER(LTRIM(RTRIM(ISNULL(n.WebSessionStatus, N'')))) = N'CONNECTED'
+                          AND (
+                              (LTRIM(RTRIM(ISNULL(n.WebInstanceName, N''))) <> N''
+                               AND UPPER(LTRIM(RTRIM(ISNULL(n.WebSessionStatus, N'')))) = N'CONNECTED')
+                              -- Un número Meta sigue siendo dueño de sus conversaciones aunque
+                              -- pierda temporalmente autorización. Nunca migrarlas al Web por defecto.
+                              OR (LTRIM(RTRIM(ISNULL(n.PhoneNumberId, N''))) <> N''
+                                  AND LTRIM(RTRIM(n.PhoneNumberId)) NOT LIKE N'%[^0-9]%')
+                          )
                     )
               );
             """;

@@ -327,6 +327,7 @@ public class Program
         builder.Services.AddScoped<IWhatsAppWebhookTenantGuard, WhatsAppWebhookTenantGuard>();
         builder.Services.AddScoped<IWhatsAppRuntimeCredentialResolver, WhatsAppRuntimeCredentialResolver>();
         builder.Services.AddScoped<IWhatsAppWabaRoutingProvider, WhatsAppWabaRoutingProvider>();
+        builder.Services.AddScoped<IWhatsAppCoexistenceConnectionStore, WhatsAppCoexistenceConnectionStore>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupOrchestrator, WhatsAppEmbeddedSignupOrchestrator>();
         builder.Services.AddScoped<IMetaOAuthClient, MetaOAuthClient>();
         builder.Services.AddScoped<IMetaWhatsAppManagementClient, MetaWhatsAppManagementClient>();
@@ -4842,6 +4843,40 @@ public class Program
         // Selector read-only del secreto: el ownership central del phone_number_id decide ES vs
         // legacy (NO AllowedBaseIds, NO el payload como autoridad). Sin escrituras, antes del HMAC.
         var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(rawPayload);
+        var accountWabaIds = WhatsAppCoexistenceAccountEvents.ExtractWabaIds(rawPayload);
+        var wabaOwnerships = new List<WhatsAppWabaOwnership>();
+        var accountWabaSinDuenio = false;
+        foreach (var wabaId in accountWabaIds)
+        {
+            var owner = await ownershipStore.GetWabaOwnershipAsync(wabaId, ct);
+            if (owner is null || owner.IdBase != webhookBaseId)
+            {
+                accountWabaSinDuenio = true;
+                continue;
+            }
+            wabaOwnerships.Add(owner);
+        }
+
+        // account_update de una WABA que esta base no tiene (p. ej. PARTNER_APP_INSTALLED de un alta que
+        // todavía no registró ownership): se verifica la firma con el secreto de la app central y se
+        // contesta 200 SIN procesarlo. Un 404/500 haría que Meta reintente y, si se acumulan fallas,
+        // que frene la entrega de avisos de toda la app. Nunca se procesa en otra base.
+        if (accountWabaSinDuenio)
+        {
+            // Sin parsear el payload en el handler antes del HMAC: el selector trabaja sobre el texto crudo
+            // (igual que ExtractWhatsAppPhoneNumberIds) y solo decide qué secreto verificar.
+            if (phoneNumberIds.Count == 0
+                && WhatsAppCoexistenceAccountEvents.IsAccountOnly(rawPayload)
+                && embeddedSignupOptions.Value.Enabled
+                && !string.IsNullOrWhiteSpace(embeddedSignupOptions.Value.AppSecret))
+            {
+                if (!IsValidMetaSignature(rawPayload, embeddedSignupOptions.Value.AppSecret.Trim(), request.Headers["X-Hub-Signature-256"].ToString()))
+                    return Results.Unauthorized();
+                traceStage?.Invoke("ACCOUNT_UPDATE_IGNORED_NOT_OWNED");
+                return Results.Ok(new { ignorado = "account_update de una cuenta que no pertenece a esta base" });
+            }
+            return Results.NotFound();
+        }
         var phoneOwnerships = new List<WhatsAppPhoneOwnership>();
         foreach (var phoneNumberId in phoneNumberIds)
         {
@@ -4859,7 +4894,8 @@ public class Program
             phoneOwnerships,
             phoneNumberIds.Count > 0,
             baseHasEsFootprint,
-            options.AppSecret);
+            options.AppSecret,
+            wabaOwnerships);
         traceStage?.Invoke("OPTIONS_RESOLVED");
 
         switch (secretResolution.Outcome)
@@ -5002,17 +5038,18 @@ public class Program
         IReadOnlyCollection<WhatsAppPhoneOwnership> phoneOwnerships,
         bool anyPhoneNumberIdInPayload,
         bool baseHasEmbeddedSignupFootprint,
-        string? legacyAppSecret)
+        string? legacyAppSecret,
+        IReadOnlyCollection<WhatsAppWabaOwnership>? wabaOwnerships = null)
     {
         ArgumentNullException.ThrowIfNull(embeddedSignupOptions);
         ArgumentNullException.ThrowIfNull(phoneOwnerships);
 
         // owned por otra base => cross-tenant, rechazar (no elegir secreto).
-        if (phoneOwnerships.Any(o => o.IdBase != resolvedBaseId))
+        if (phoneOwnerships.Any(o => o.IdBase != resolvedBaseId) || (wabaOwnerships?.Any(o => o.IdBase != resolvedBaseId) ?? false))
             return new(WhatsAppWebhookSecretOutcome.RejectCrossTenant, string.Empty);
 
         // owned por la base resuelta => asset ES.
-        if (phoneOwnerships.Any(o => o.IdBase == resolvedBaseId))
+        if (phoneOwnerships.Any(o => o.IdBase == resolvedBaseId) || (wabaOwnerships?.Any(o => o.IdBase == resolvedBaseId) ?? false))
             return embeddedSignupOptions.Enabled
                 ? new(WhatsAppWebhookSecretOutcome.EmbeddedSignup, embeddedSignupOptions.AppSecret.Trim())
                 : new(WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled, string.Empty);
