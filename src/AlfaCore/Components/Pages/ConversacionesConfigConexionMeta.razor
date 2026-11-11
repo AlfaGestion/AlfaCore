@@ -1,9 +1,9 @@
-@* Conexión guiada de Instagram o de Facebook Messenger (cada canal por separado) con la app central
-   de ALFA NET. El usuario toca "Conectar", entra con su cuenta en Meta y vuelve acá a confirmar.
+@* Conexión guiada de Instagram, Facebook Messenger o Mercado Libre (cada canal por separado) con la
+   app central de ALFA NET. El usuario toca "Conectar", entra con su cuenta en Meta y vuelve acá a confirmar.
    La pantalla padre hace las llamadas al servicio; este componente solo muestra. *@
 @using AlfaCore.Models
 
-<ConversacionesConfigTarjeta Titulo="Conexión" Icono="@(EsInstagram ? "bi-instagram" : "bi-messenger")" Class="meta-conexion">
+<ConversacionesConfigTarjeta Titulo="Conexión" Icono="@IconoTarjeta" Class="meta-conexion">
     @if (Vista is null)
     {
         <p class="cfg-hint">Cargando…</p>
@@ -22,7 +22,21 @@
     }
     else if (Vista.Pendiente is { Estado: MetaConexionPendienteEstado.Lista } lista)
     {
-        @if (EsInstagram && lista.Instagram is { } cuenta)
+        @if (EsMercadoLibre && lista.MercadoLibre is { } vendedor)
+        {
+            <p class="meta-conexion__texto">Mercado Libre nos dio acceso a esta cuenta vendedora. Confirmá para empezar a recibir las preguntas y los mensajes de las ventas en AlfaCore.</p>
+            <div class="meta-conexion__cuenta">
+                @Avatar(vendedor.FotoUrl)
+                <div>
+                    <strong>@(string.IsNullOrWhiteSpace(vendedor.Nickname) ? vendedor.SellerId : vendedor.Nickname)</strong>
+                    @if (!string.IsNullOrWhiteSpace(vendedor.Nombre))
+                    {
+                        <span>@vendedor.Nombre</span>
+                    }
+                </div>
+            </div>
+        }
+        else if (EsInstagram && lista.Instagram is { } cuenta)
         {
             <p class="meta-conexion__texto">Meta nos dio acceso a esta cuenta. Confirmá para empezar a recibir los mensajes en AlfaCore.</p>
             <div class="meta-conexion__cuenta">
@@ -36,7 +50,7 @@
                 </div>
             </div>
         }
-        else if (!EsInstagram)
+        else if (EsFacebook)
         {
             <p class="meta-conexion__texto">
                 @(lista.PaginasFacebook.Count == 1
@@ -70,7 +84,7 @@
         }
         <div class="meta-conexion__acciones">
             <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Loading="@Busy"
-                        Disabled="@(Busy || (!EsInstagram && lista.PaginasFacebook.Count > 1 && string.IsNullOrWhiteSpace(PaginaElegida)))"
+                        Disabled="@(Busy || (EsFacebook && lista.PaginasFacebook.Count > 1 && string.IsNullOrWhiteSpace(PaginaElegida)))"
                         OnClick="Confirmar">Confirmar conexión</AlfaButton>
             <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@Busy" OnClick="OnCancelar">Cancelar</AlfaButton>
         </div>
@@ -113,7 +127,7 @@
 
 <AlfaConfirmDialog Open="@_confirmarDesconexion"
                    Title="@($"Desconectar {Nombre}")"
-                   Message="@($"Los mensajes de {Nombre} van a dejar de llegar a AlfaCore. Las conversaciones que ya están en la bandeja no se borran.")"
+                   Message="@($"{(EsMercadoLibre ? "Las preguntas y los mensajes" : "Los mensajes")} de {Nombre} van a dejar de llegar a AlfaCore. Las conversaciones que ya están en la bandeja no se borran.")"
                    ConfirmLabel="Desconectar"
                    Loading="@Busy"
                    OnConfirm="ConfirmarDesconexion"
@@ -134,17 +148,45 @@
     private bool _confirmarDesconexion;
 
     private bool EsInstagram => Canal == MetaCanalSocial.Instagram;
-    private string Nombre => EsInstagram ? "Instagram" : "Facebook Messenger";
-    private string Icono => EsInstagram ? "bi bi-instagram" : "bi bi-messenger";
-    private string EtiquetaConectar => EsInstagram ? "Conectar Instagram" : "Conectar Facebook";
+    private bool EsMercadoLibre => Canal == MetaCanalSocial.MercadoLibre;
+    private bool EsFacebook => Canal == MetaCanalSocial.Facebook;
 
-    private string TextoSinConexion => EsInstagram
-        ? "Conectá la cuenta de Instagram del negocio para recibir y contestar los mensajes directos desde la bandeja. Se abre Instagram, entrás con la cuenta y aceptás el permiso."
-        : "Conectá la página de Facebook del negocio para recibir y contestar los mensajes de Messenger desde la bandeja. Se abre Facebook, entrás con tu usuario y elegís la página.";
+    private string Nombre => Canal switch
+    {
+        MetaCanalSocial.Instagram => "Instagram",
+        MetaCanalSocial.MercadoLibre => "Mercado Libre",
+        _ => "Facebook Messenger"
+    };
 
-    private string Requisito => EsInstagram
-        ? "Requisito: la cuenta tiene que ser profesional (de empresa o de creador). No hace falta tener página de Facebook."
-        : "Requisito: tu usuario de Facebook tiene que administrar la página. Instagram se conecta aparte.";
+    private string Icono => "bi " + IconoTarjeta;
+
+    private string IconoTarjeta => Canal switch
+    {
+        MetaCanalSocial.Instagram => "bi-instagram",
+        MetaCanalSocial.MercadoLibre => "bi-bag",
+        _ => "bi-messenger"
+    };
+
+    private string EtiquetaConectar => Canal switch
+    {
+        MetaCanalSocial.Instagram => "Conectar Instagram",
+        MetaCanalSocial.MercadoLibre => "Conectar Mercado Libre",
+        _ => "Conectar Facebook"
+    };
+
+    private string TextoSinConexion => Canal switch
+    {
+        MetaCanalSocial.Instagram => "Conectá la cuenta de Instagram del negocio para recibir y contestar los mensajes directos desde la bandeja. Se abre Instagram, entrás con la cuenta y aceptás el permiso.",
+        MetaCanalSocial.MercadoLibre => "Conectá la cuenta vendedora de Mercado Libre para recibir y contestar desde la bandeja las preguntas de las publicaciones y los mensajes de las ventas. Se abre Mercado Libre, entrás con tu cuenta y aceptás el permiso.",
+        _ => "Conectá la página de Facebook del negocio para recibir y contestar los mensajes de Messenger desde la bandeja. Se abre Facebook, entrás con tu usuario y elegís la página."
+    };
+
+    private string Requisito => Canal switch
+    {
+        MetaCanalSocial.Instagram => "Requisito: la cuenta tiene que ser profesional (de empresa o de creador). No hace falta tener página de Facebook.",
+        MetaCanalSocial.MercadoLibre => "Entrá con la cuenta de Mercado Libre del negocio (la que vende), no con una personal.",
+        _ => "Requisito: tu usuario de Facebook tiene que administrar la página. Instagram se conecta aparte."
+    };
 
     private async Task Confirmar() => await OnConfirmar.InvokeAsync(PaginaElegida);
 

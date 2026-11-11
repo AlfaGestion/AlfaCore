@@ -19,7 +19,8 @@ public sealed class ConversacionesConfigService(
     IHttpClientFactory httpClientFactory,
     IAppUserSessionService appUserSession,
     IConversacionesAuthorizationService conversacionesAuthorizationService,
-    ICentralBasesService centralBasesService) : IConversacionesConfigService
+    ICentralBasesService centralBasesService,
+    IOptions<AlfaCore.Configuration.MercadoLibreCentralOptions>? mercadoLibreCentralOptions = null) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultUrgenciaPalabras =
@@ -570,6 +571,7 @@ public sealed class ConversacionesConfigService(
             if (string.IsNullOrWhiteSpace(config.OAuthCallbackPath))
                 config.OAuthCallbackPath = DefaultMercadoLibreOAuthCallbackPath;
 
+            AplicarCredencialesCentralesMercadoLibre(config, mercadoLibreCentralOptions?.Value);
             return config;
         }, "No se pudo cargar la configuración de Mercado Libre.", ct);
 
@@ -581,6 +583,9 @@ public sealed class ConversacionesConfigService(
         await ExecuteLoggedAsync("Conversaciones", "SaveMercadoLibreConfig", async token =>
         {
             var normalized = Normalize(config);
+            // Con la app central, el secreto es de ALFA NET y vive solo en el servidor.
+            if (config.CredencialesCentrales)
+                normalized.ClientSecret = string.Empty;
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -635,6 +640,25 @@ public sealed class ConversacionesConfigService(
 
             return true;
         }, "No se pudo guardar la configuración de Mercado Libre.", ct);
+    }
+
+    /// <summary>
+    /// Si la base se conectó con la app central (CONV_MELI_CLIENT_ID = el de ALFA NET y sin secreto propio),
+    /// completa en memoria el Client Secret del servidor. Nunca se graba en la base del cliente.
+    /// </summary>
+    internal static void AplicarCredencialesCentralesMercadoLibre(
+        ConversacionMercadoLibreConfigDto config,
+        AlfaCore.Configuration.MercadoLibreCentralOptions? central)
+    {
+        if (central is not { Listo: true }
+            || !string.IsNullOrWhiteSpace(config.ClientSecret)
+            || !string.Equals(config.ClientId?.Trim(), central.ClientId.Trim(), StringComparison.Ordinal))
+            return;
+
+        config.ClientSecret = central.ClientSecret.Trim();
+        config.CredencialesCentrales = true;
+        if (string.IsNullOrWhiteSpace(config.ApiBaseUrl))
+            config.ApiBaseUrl = central.ApiBase;
     }
 
     public Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default)

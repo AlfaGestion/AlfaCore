@@ -99,15 +99,22 @@ public sealed class MetaCanalesSocialesStore(IConfiguration configuration)
     }
 
     /// <summary>Conexiones de Instagram cuyo token vence antes de <paramref name="limiteUtc"/> (para renovarlas).</summary>
-    public async Task<IReadOnlyList<MetaCanalConexionDto>> GetInstagramPorVencerAsync(DateTime limiteUtc, CancellationToken ct)
+    public Task<IReadOnlyList<MetaCanalConexionDto>> GetInstagramPorVencerAsync(DateTime limiteUtc, CancellationToken ct)
+        => GetPorVencerAsync(MetaCanalSocial.Instagram, limiteUtc, TimeSpan.FromHours(20), ct);
+
+    /// <summary>
+    /// Conexiones activas del canal cuyo token vence antes de <paramref name="limiteUtc"/>, salteando las que
+    /// se intentaron renovar hace menos de <paramref name="esperaEntreIntentos"/> (así un error no se repite en cada vuelta).
+    /// </summary>
+    public async Task<IReadOnlyList<MetaCanalConexionDto>> GetPorVencerAsync(string canal, DateTime limiteUtc, TimeSpan esperaEntreIntentos, CancellationToken ct)
     {
         await using var cn = await AbrirAsync(ct);
         var rows = await cn.QueryAsync<MetaCanalConexionDto>(new CommandDefinition(
             SelectConexion + """
-             WHERE Canal = 'INSTAGRAM' AND Estado = 'ACTIVA'
+             WHERE Canal = @Canal AND Estado = 'ACTIVA'
                AND TokenVenceUtc IS NOT NULL AND TokenVenceUtc < @Limite
-               AND (FechaRenovacionUtc IS NULL OR FechaRenovacionUtc < DATEADD(HOUR, -20, SYSUTCDATETIME()));
-            """, new { Limite = limiteUtc }, cancellationToken: ct));
+               AND (FechaRenovacionUtc IS NULL OR FechaRenovacionUtc < DATEADD(MINUTE, -@EsperaMinutos, SYSUTCDATETIME()));
+            """, new { Canal = canal, Limite = limiteUtc, EsperaMinutos = (int)Math.Max(1, esperaEntreIntentos.TotalMinutes) }, cancellationToken: ct));
         return rows.ToList();
     }
 

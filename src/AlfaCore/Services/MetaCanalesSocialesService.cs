@@ -272,7 +272,9 @@ public sealed class MetaCanalesSocialesService(
         => $"{pendiente.ReturnPath}?seccion=canales&subseccion={pendiente.Canal.ToLowerInvariant()}&meta_conexion={Uri.EscapeDataString(pendiente.Id)}";
 
     private static string RequireCanal(string canal)
-        => MetaCanalSocial.Normalizar(canal) ?? throw new MetaCanalSocialException("Canal no soportado para la conexión guiada.");
+        => MetaCanalSocial.Normalizar(canal) is { } normalizado && normalizado != MetaCanalSocial.MercadoLibre
+            ? normalizado
+            : throw new MetaCanalSocialException("Canal no soportado para la conexión guiada de Meta.");
 
     private static bool MismoUsuario(string a, string b) => string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
 

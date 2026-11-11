@@ -1,12 +1,32 @@
 @* Configuración → Canales → Mercado Libre (AlfaDesign v1). Mismos campos, OAuth y guardado que antes. *@
 
-<ConversacionesConfigPagina Titulo="Mercado Libre" Descripcion="Preguntas de tus publicaciones dentro de Conversaciones.">
+<ConversacionesConfigPagina Titulo="Mercado Libre" Descripcion="Preguntas de tus publicaciones y mensajes de tus ventas dentro de Conversaciones.">
     <Estado>
+        @if (Conexion?.Conexion is not null)
+        {
+            <AlfaTag Tone="AlfaTagTone.Success">Conectado</AlfaTag>
+        }
+        else
+        {
         <AlfaTag Tone="@Tono(Config.IsConfiguredForAuth)">Autorización: @(Config.IsConfiguredForAuth ? "lista" : "pendiente")</AlfaTag>
         <AlfaTag Tone="@Tono(Config.IsConfiguredForApi)">Preguntas: @(Config.IsConfiguredForApi ? "listas" : "pendientes")</AlfaTag>
         <AlfaTag Tone="@Tono(Config.IsReadyForWebhook)">Notificaciones: @(Config.IsReadyForWebhook ? "listas" : "pendientes")</AlfaTag>
+        }
     </Estado>
     <ChildContent>
+        <ConversacionesConfigConexionMeta Canal="@MetaCanalSocial.MercadoLibre"
+                                          Vista="Conexion"
+                                          Busy="MetaBusy"
+                                          Feedback="MetaFeedback"
+                                          OnConectar="OnConectar"
+                                          OnConfirmar="OnConfirmar"
+                                          OnCancelar="OnCancelar"
+                                          OnDesconectar="OnDesconectar"
+                                          OnCerrarFeedback="OnCerrarFeedback" />
+
+        @* La carga manual solo se muestra donde la conexión guiada no está disponible. *@
+        @if (MostrarManual)
+        {
         <ConversacionesConfigTarjeta Titulo="Aplicación y cuenta vendedora" Columnas="2">
             <AlfaInput Id="meli-client-id" Label="Client ID" Placeholder="App ID de Mercado Libre"
                        Value="@Config.ClientId" ValueChanged="@((string? v) => Config.ClientId = v ?? string.Empty)" />
@@ -65,6 +85,7 @@
         </ConversacionesConfigAyuda>
 
         <ConversacionesConfigBarraGuardar Etiqueta="Guardar Mercado Libre" MostrarEstado="false" Busy="@Busy" OnGuardar="OnGuardar" />
+        }
     </ChildContent>
 </ConversacionesConfigPagina>
 
@@ -77,6 +98,17 @@
     [Parameter] public string AyudaToken { get; set; } = string.Empty;
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnGuardar { get; set; }
+    [Parameter] public MetaCanalConexionVista? Conexion { get; set; }
+    [Parameter] public bool MetaBusy { get; set; }
+    [Parameter] public AppUiMessage? MetaFeedback { get; set; }
+    [Parameter] public EventCallback OnConectar { get; set; }
+    [Parameter] public EventCallback<string?> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+    [Parameter] public EventCallback OnDesconectar { get; set; }
+    [Parameter] public EventCallback OnCerrarFeedback { get; set; }
+
+    // Solo cuando la conexión guiada no está habilitada en este servidor: ahí la carga manual es la única forma.
+    private bool MostrarManual => Conexion is { Disponible: false };
 
     private static AlfaTagTone Tono(bool listo) => listo ? AlfaTagTone.Success : AlfaTagTone.Warning;
 }

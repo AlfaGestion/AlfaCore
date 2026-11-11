@@ -1,16 +1,19 @@
 namespace AlfaCore.Models;
 
-/// <summary>Canales con conexión guiada por la app central de ALFA NET. Cada uno se conecta por separado.</summary>
+/// <summary>Canales con conexión guiada por una app central de ALFA NET. Cada uno se conecta por separado.</summary>
 public static class MetaCanalSocial
 {
     public const string Instagram = "INSTAGRAM";
     public const string Facebook = "FACEBOOK";
+    /// <summary>No es de Meta, pero usa la misma tabla central, el mismo flujo y la misma tarjeta de conexión.</summary>
+    public const string MercadoLibre = "MERCADOLIBRE";
 
     public static string? Normalizar(string? canal)
         => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "INSTAGRAM" => Instagram,
             "FACEBOOK" => Facebook,
+            "MERCADOLIBRE" => MercadoLibre,
             _ => null
         };
 }
@@ -36,7 +39,7 @@ public sealed class MetaCanalConexionDto
     /// <summary>Nombre para mostrar: @usuario si hay, si no el nombre.</summary>
     public string Titulo
         => !string.IsNullOrWhiteSpace(CuentaUsuario)
-            ? (Canal == MetaCanalSocial.Instagram ? "@" + CuentaUsuario.Trim() : CuentaNombre ?? CuentaUsuario.Trim())
+            ? (Canal == MetaCanalSocial.Facebook ? CuentaNombre ?? CuentaUsuario.Trim() : (Canal == MetaCanalSocial.Instagram ? "@" : string.Empty) + CuentaUsuario.Trim())
             : CuentaNombre ?? CuentaId;
 }
 
@@ -66,6 +69,19 @@ public sealed class MetaFacebookPaginaAutorizada
     public bool PuedeMensajes { get; init; } = true;
 }
 
+/// <summary>Cuenta vendedora de Mercado Libre que autorizó la app (todavía no grabada).</summary>
+public sealed class MercadoLibreCuentaAutorizada
+{
+    public string SellerId { get; init; } = string.Empty;
+    public string Nickname { get; init; } = string.Empty;
+    public string Nombre { get; init; } = string.Empty;
+    public string SiteId { get; init; } = string.Empty;
+    public string FotoUrl { get; init; } = string.Empty;
+    public string AccessToken { get; init; } = string.Empty;
+    public string RefreshToken { get; init; } = string.Empty;
+    public DateTime? TokenVenceUtc { get; init; }
+}
+
 public enum MetaConexionPendienteEstado { EsperandoMeta, Lista, Error }
 
 /// <summary>
@@ -85,6 +101,7 @@ public sealed class MetaConexionPendiente
     public string Error { get; set; } = string.Empty;
     public MetaInstagramCuentaAutorizada? Instagram { get; set; }
     public IReadOnlyList<MetaFacebookPaginaAutorizada> PaginasFacebook { get; set; } = [];
+    public MercadoLibreCuentaAutorizada? MercadoLibre { get; set; }
 }
 
 /// <summary>Lo que necesita la pantalla de cada canal para mostrar la conexión guiada.</summary>

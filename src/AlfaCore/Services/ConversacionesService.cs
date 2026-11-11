@@ -2847,11 +2847,18 @@ public sealed partial class ConversacionesService(
             {
                 try
                 {
-                    var sendResult = await SendToMercadoLibreQuestionAsync(
-                        mercadoLibreConfig,
-                        conversation.IdentificadorExternoConversacion,
-                        request.Texto.Trim(),
-                        token);
+                    var sendResult = IsMercadoLibrePackConversation(conversation.IdentificadorExternoConversacion)
+                        ? await SendToMercadoLibrePackAsync(
+                            mercadoLibreConfig,
+                            conversation.IdentificadorExternoConversacion,
+                            conversation.IdentificadorExternoContacto,
+                            request.Texto.Trim(),
+                            token)
+                        : await SendToMercadoLibreQuestionAsync(
+                            mercadoLibreConfig,
+                            conversation.IdentificadorExternoConversacion,
+                            request.Texto.Trim(),
+                            token);
                     externalMessageId = sendResult.WhatsAppMessageId;
                     finalState = sendResult.EstadoEnvio;
                     payload = sendResult.PayloadJson;
@@ -2861,7 +2868,9 @@ public sealed partial class ConversacionesService(
                     await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo responder la pregunta en Mercado Libre. Quedó marcada con error en la conversación.", ex);
+                    throw new InvalidOperationException(IsMercadoLibrePackConversation(conversation.IdentificadorExternoConversacion)
+                        ? "No se pudo enviar el mensaje de la venta en Mercado Libre. Quedó marcado con error en la conversación."
+                        : "No se pudo responder la pregunta en Mercado Libre. Quedó marcada con error en la conversación.", ex);
                 }
             }
             if (isInstagram || isFacebook || isMercadoLibre)
@@ -2873,7 +2882,9 @@ public sealed partial class ConversacionesService(
                         ? AddWhatsAppPhoneNumberIdToPayload(payload, whatsAppConfig.PhoneNumberId)
                         : payload, token);
             await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
-            if (isMercadoLibre && string.Equals(finalState, "ENVIADO_MELI", StringComparison.OrdinalIgnoreCase))
+            // Una pregunta respondida se cierra; el chat de una venta sigue abierto.
+            if (isMercadoLibre && string.Equals(finalState, "ENVIADO_MELI", StringComparison.OrdinalIgnoreCase)
+                && !IsMercadoLibrePackConversation(conversation.IdentificadorExternoConversacion))
                 await MarkMercadoLibreQuestionAnsweredAsync(request.IdConversacion, conversation.IdentificadorExternoConversacion, token);
 
             await _appEvents.LogAuditAsync(
@@ -5529,6 +5540,13 @@ public sealed partial class ConversacionesService(
 
                 foreach (var notification in notifications)
                 {
+                    if (string.Equals(notification.Topic, "messages", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (await ProcesarMensajeMercadoLibreAsync(config, notification, token))
+                            processed++;
+                        continue;
+                    }
+
                     if (!string.Equals(notification.Topic, "questions", StringComparison.OrdinalIgnoreCase))
                         continue;
 
@@ -8621,6 +8639,7 @@ public sealed partial class ConversacionesService(
                 FechaHora_Modificacion = GETDATE()
             FROM dbo.CONV_CONVERSACIONES c
             WHERE c.Canal = N'MERCADOLIBRE'
+              AND ISNULL(c.IdentificadorExternoConversacion, N'') NOT LIKE N'pack-%'
               AND {MercadoLibreAnsweredExistsSql};
 
             UPDATE m
@@ -13952,8 +13971,6 @@ public sealed partial class ConversacionesService(
             ? "https://api.mercadolibre.com"
             : config.ApiBaseUrl.Trim().TrimEnd('/');
         var url = $"{baseUrl}/answers";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         object questionIdValue = long.TryParse(questionId.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
             ? id
@@ -13964,14 +13981,14 @@ public sealed partial class ConversacionesService(
             text
         };
 
-        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var client = httpClientFactory.CreateClient();
-        client.Timeout = MetaSendTimeout;
-        using var response = await client.SendAsync(request, ct);
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var json = JsonSerializer.Serialize(payload);
+        var (status, responseBody) = await SendMercadoLibreApiAsync(config, () => new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        }, ct);
 
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode}: {responseBody}");
+        if (!IsSuccess(status))
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)status}: {responseBody}");
 
         var messageId = $"meli-answer-{questionId.Trim()}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
 
@@ -15637,15 +15654,12 @@ public sealed partial class ConversacionesService(
             ? "https://api.mercadolibre.com"
             : config.ApiBaseUrl.Trim().TrimEnd('/');
         var url = $"{baseUrl}/questions/{Uri.EscapeDataString(notification.QuestionId)}";
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         try
         {
-            var client = httpClientFactory.CreateClient();
-            using var response = await client.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode)
+            // Renueva el acceso si venció (Mercado Libre lo da por 6 horas) y reintenta una vez.
+            var (status, body) = await SendMercadoLibreApiAsync(config, () => new HttpRequestMessage(HttpMethod.Get, url), ct);
+            if (!IsSuccess(status))
                 return MercadoLibreQuestion.FromNotification(notification);
 
             using var doc = JsonDocument.Parse(body);

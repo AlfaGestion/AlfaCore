@@ -523,6 +523,11 @@ public class Program
         builder.Services.AddSingleton<MetaCanalesSocialesStore>();
         builder.Services.AddSingleton<MetaConexionesPendientes>();
         builder.Services.AddScoped<MetaCanalesSocialesService>();
+        // Conexión guiada de Mercado Libre (app central de ALFA NET).
+        builder.Services.AddHttpClient(MercadoLibreCentralClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
+        builder.Services.Configure<MercadoLibreCentralOptions>(builder.Configuration.GetSection(MercadoLibreCentralOptions.SectionName));
+        builder.Services.AddSingleton<MercadoLibreCentralClient>();
+        builder.Services.AddScoped<MercadoLibreConexionService>();
         // WSAA/WSFE puede tardar más de un minuto en homologación o cuando ARCA
         // está con demoras. El CAE no se reintenta automáticamente para evitar
         // duplicar una autorización; el visor de la venta ofrece el reintento.
@@ -575,6 +580,7 @@ public class Program
             builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
             builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
             builder.Services.AddHostedService<MetaCanalesSocialesHostedService>();
+            builder.Services.AddHostedService<MercadoLibreCentralHostedService>();
             builder.Services.AddHostedService<MonitorClientesAvisosHostedService>();
             builder.Services.AddHostedService<ArcaDescargaHostedService>();
         }
@@ -3241,6 +3247,32 @@ public class Program
             CancellationToken ct)
             => MetaCanalesSocialesWebhook.RecibirAsync(MetaCanalSocial.Facebook, request, scopeFactory, store, options, whatsAppOptions,
                 loggerFactory.CreateLogger("MetaCanalesSocialesWebhook"), ct));
+
+        // Conexión guiada de Mercado Libre (app central de ALFA NET): vuelta de la autorización y avisos.
+        app.MapGet(MercadoLibreConexionService.CallbackPath, async (
+            HttpRequest request,
+            MercadoLibreConexionService mercadoLibre,
+            CancellationToken ct) =>
+        {
+            var destino = await mercadoLibre.ProcesarCallbackAsync(
+                request.Query["state"].ToString(),
+                request.Query["code"].ToString(),
+                request.Query["error"].ToString(),
+                request.Query["error_description"].ToString(),
+                ct);
+            return destino is null
+                ? Results.Text("La conexión venció o no es válida. Volvé a AlfaCore y tocá Conectar de nuevo.", "text/plain; charset=utf-8")
+                : Results.Redirect(destino);
+        });
+        app.MapPost(MercadoLibreCentralWebhook.Path, (
+            HttpRequest request,
+            IServiceScopeFactory scopeFactory,
+            MetaCanalesSocialesStore store,
+            IOptions<MercadoLibreCentralOptions> options,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct)
+            => MercadoLibreCentralWebhook.RecibirAsync(request, scopeFactory, store, options,
+                loggerFactory.CreateLogger("MercadoLibreCentralWebhook"), ct));
 
         app.MapPost("/api/conversaciones/mercadolibre/webhook", HandleMercadoLibreMessageAsync);
         app.MapPost("/api/conversaciones/mercadolibre/webhook/{token}", async (

@@ -28,6 +28,7 @@
 @inject IConfiguration Configuration
 @inject AlfaCore.Services.IWebChatSiteKeyService WebChatSiteKeys
 @inject AlfaCore.Services.MetaCanalesSocialesService MetaCanales
+@inject AlfaCore.Services.MercadoLibreConexionService MercadoLibreConexion
 @inject ILogger<ConversacionesConfiguracion> Logger
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -603,7 +604,15 @@
                                                  UrlAutorizacion="GetMercadoLibreAuthorizationUrl"
                                                  AyudaToken="@(GetWebhookTenantHelp("las notificaciones de Mercado Libre"))"
                                                  Busy="@(Loading || Saving)"
-                                                 OnGuardar="SaveMercadoLibreAsync" />
+                                                 OnGuardar="SaveMercadoLibreAsync"
+                                                 Conexion="_metaVistaMercadoLibre"
+                                                 MetaBusy="_metaBusy"
+                                                 MetaFeedback="_metaFeedbackMercadoLibre"
+                                                 OnConectar="@(() => ConectarMetaAsync(AlfaCore.Models.MetaCanalSocial.MercadoLibre))"
+                                                 OnConfirmar="@((string? pagina) => ConfirmarMetaAsync(AlfaCore.Models.MetaCanalSocial.MercadoLibre, pagina))"
+                                                 OnCancelar="@(() => CancelarMetaAsync(AlfaCore.Models.MetaCanalSocial.MercadoLibre))"
+                                                 OnDesconectar="@(() => DesconectarMetaAsync(AlfaCore.Models.MetaCanalSocial.MercadoLibre))"
+                                                 OnCerrarFeedback="@(() => _metaFeedbackMercadoLibre = null)" />
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "webchat")
@@ -1024,6 +1033,8 @@
     private AlfaCore.Models.MetaCanalConexionVista? _metaVistaFacebook;
     private AppUiMessage? _metaFeedbackInstagram;
     private AppUiMessage? _metaFeedbackFacebook;
+    private AlfaCore.Models.MetaCanalConexionVista? _metaVistaMercadoLibre;
+    private AppUiMessage? _metaFeedbackMercadoLibre;
     private string? _metaPendienteId;
     private bool _metaBusy;
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
@@ -5353,18 +5364,31 @@
         _metaVistaFacebook = facebook.Value;
         if (!facebook.Success)
             _metaFeedbackFacebook = facebook.Feedback;
+
+        var mercadoLibre = await UiOps.RunAsync(
+            () => MercadoLibreConexion.GetVistaAsync(idBase, _metaPendienteId, usuario, _lifetimeCts.Token),
+            "No se pudo consultar la conexión de Mercado Libre.");
+        _metaVistaMercadoLibre = mercadoLibre.Value;
+        if (!mercadoLibre.Success)
+            _metaFeedbackMercadoLibre = mercadoLibre.Feedback;
     }
 
     private void SetMetaFeedback(string canal, AppUiMessage? message)
     {
         if (canal == AlfaCore.Models.MetaCanalSocial.Instagram)
             _metaFeedbackInstagram = message;
+        else if (canal == AlfaCore.Models.MetaCanalSocial.MercadoLibre)
+            _metaFeedbackMercadoLibre = message;
         else
             _metaFeedbackFacebook = message;
     }
 
-    private static string MetaNombre(string canal)
-        => canal == AlfaCore.Models.MetaCanalSocial.Instagram ? "Instagram" : "Facebook Messenger";
+    private static string MetaNombre(string canal) => canal switch
+    {
+        AlfaCore.Models.MetaCanalSocial.Instagram => "Instagram",
+        AlfaCore.Models.MetaCanalSocial.MercadoLibre => "Mercado Libre",
+        _ => "Facebook Messenger"
+    };
 
     private Task ConectarMetaAsync(string canal)
     {
@@ -5372,7 +5396,9 @@
         try
         {
             var returnPath = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimStart('/');
-            var url = MetaCanales.IniciarConexion(canal, MetaIdBase(), MetaUsuario(), Nav.BaseUri, returnPath);
+            var url = canal == AlfaCore.Models.MetaCanalSocial.MercadoLibre
+                ? MercadoLibreConexion.IniciarConexion(MetaIdBase(), MetaUsuario(), Nav.BaseUri, returnPath)
+                : MetaCanales.IniciarConexion(canal, MetaIdBase(), MetaUsuario(), Nav.BaseUri, returnPath);
             _metaBusy = true;
             Nav.NavigateTo(url, forceLoad: true);
         }
@@ -5393,12 +5419,16 @@
         SetMetaFeedback(canal, null);
         try
         {
-            var conexion = await MetaCanales.ConfirmarAsync(_metaPendienteId, MetaIdBase(), MetaUsuario(), paginaId, _lifetimeCts.Token);
+            var conexion = canal == AlfaCore.Models.MetaCanalSocial.MercadoLibre
+                ? await MercadoLibreConexion.ConfirmarAsync(_metaPendienteId, MetaIdBase(), MetaUsuario(), _lifetimeCts.Token)
+                : await MetaCanales.ConfirmarAsync(_metaPendienteId, MetaIdBase(), MetaUsuario(), paginaId, _lifetimeCts.Token);
             _metaPendienteId = string.Empty;
             await LoadAsync();
             SetMetaFeedback(canal, AppUiMessage.Success(
                 $"{MetaNombre(canal)} conectado",
-                $"Listo: los mensajes de {conexion.Titulo} ya llegan a la bandeja de Conversaciones."));
+                canal == AlfaCore.Models.MetaCanalSocial.MercadoLibre
+                    ? $"Listo: las preguntas y los mensajes de las ventas de {conexion.Titulo} ya llegan a la bandeja de Conversaciones."
+                    : $"Listo: los mensajes de {conexion.Titulo} ya llegan a la bandeja de Conversaciones."));
         }
         catch (AlfaCore.Models.MetaCanalSocialException ex)
         {
@@ -5419,6 +5449,7 @@
     private async Task CancelarMetaAsync(string canal)
     {
         MetaCanales.DescartarPendiente(_metaPendienteId);
+        MercadoLibreConexion.DescartarPendiente(_metaPendienteId);
         _metaPendienteId = string.Empty;
         SetMetaFeedback(canal, null);
         await LoadMetaVistasAsync();
@@ -5430,7 +5461,10 @@
         SetMetaFeedback(canal, null);
         try
         {
-            await MetaCanales.DesconectarAsync(canal, MetaIdBase(), MetaUsuario(), _lifetimeCts.Token);
+            if (canal == AlfaCore.Models.MetaCanalSocial.MercadoLibre)
+                await MercadoLibreConexion.DesconectarAsync(MetaIdBase(), MetaUsuario(), _lifetimeCts.Token);
+            else
+                await MetaCanales.DesconectarAsync(canal, MetaIdBase(), MetaUsuario(), _lifetimeCts.Token);
             await LoadAsync();
             SetMetaFeedback(canal, AppUiMessage.Success($"{MetaNombre(canal)} desconectado", "Los mensajes nuevos ya no llegan a AlfaCore."));
         }

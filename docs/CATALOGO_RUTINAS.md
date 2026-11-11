@@ -503,6 +503,14 @@ Criterio aplicado:
 - Datos que usa: `ALFA_CENTRAL.dbo.CONV_CANALES_SOCIALES` (qué cuenta es de qué base; la crea `CentralCanalesSocialesSchema`), `TA_CONFIGURACION` de la base (`CONV_INSTAGRAM_ACCESS_TOKEN`, `CONV_INSTAGRAM_ACCOUNT_ID`, `CONV_FACEBOOK_ACCESS_TOKEN`, `CONV_FACEBOOK_PAGE_ID`, `CONV_FACEBOOK_PAGE_USERNAME`), sección `MetaCanalesSociales` del appsettings del servidor.
 - Observaciones: el envío y la recepción siguen en `ConversacionesService` con las mismas claves; solo cambia cómo se cargan. Una cuenta solo puede estar activa en una base. Los tokens nunca van al navegador (la conexión en curso vive en memoria 20 minutos). Ver `docs/modulos/conversaciones_instagram_meta.md`.
 
+### MercadoLibreConexionService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/MercadoLibreConexionService.cs` (con `MercadoLibreCentralClient`, `MercadoLibreCentralWebhook` + `MercadoLibreCentralHostedService` y `ConversacionesService.MercadoLibreMensajes.cs`)
+- Propósito: conexión guiada de Mercado Libre con la app central de ALFA NET (cada cliente autoriza su cuenta vendedora), reparto de avisos a la base dueña, renovación del acceso (6 horas) y mensajes de postventa.
+- Datos que usa: `ALFA_CENTRAL.dbo.CONV_CANALES_SOCIALES` (canal `MERCADOLIBRE`), `TA_CONFIGURACION` (`CONV_MELI_*`; el Client Secret central no se graba), sección `MercadoLibreCentral` del appsettings del servidor, `CONV_CONVERSACIONES`/`CONV_MENSAJES`.
+- Observaciones: reutiliza el flujo, la tabla central y la tarjeta de conexión de `MetaCanalesSocialesService`. `SendMercadoLibreApiAsync` renueva y reintenta ante 401: usarlo para toda llamada nueva a la API de Mercado Libre. Ver `docs/modulos/conversaciones_mercadolibre.md`.
+
 ### ConversacionBotPedidosService
 
 - Tipo: Service

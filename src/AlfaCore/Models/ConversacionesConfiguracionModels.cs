@@ -189,6 +189,12 @@ public sealed class ConversacionMercadoLibreConfigDto
     public string ApiBaseUrl { get; set; } = "https://api.mercadolibre.com";
     public string ConfigSource { get; set; } = string.Empty;
 
+    /// <summary>
+    /// La base está conectada con la app central de ALFA NET: el Client Secret viene del servidor
+    /// (MercadoLibreCentral) y nunca se graba en TA_CONFIGURACION.
+    /// </summary>
+    public bool CredencialesCentrales { get; set; }
+
     public bool IsConfiguredForAuth =>
         !string.IsNullOrWhiteSpace(ClientId) &&
         !string.IsNullOrWhiteSpace(ClientSecret);
