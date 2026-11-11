@@ -865,6 +865,7 @@
         _viewMode = normalizado;
         _viewSettings.Vista = normalizado;
         UpdatePageHeader();
+        PrecalentarMiniaturasEnSegundoPlano();
 
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(currentUser))
@@ -1121,12 +1122,40 @@
             _totalPages = Math.Max(1, result.Value.TotalPages);
             _hasPrev = result.Value.HasPrev;
             _hasNext = result.Value.HasNext;
+            PrecalentarMiniaturasEnSegundoPlano();
         }
         finally
         {
             _loadingList = false;
             UpdatePageHeader();
         }
+    }
+
+    /// <summary>En Kanban baja a disco las miniaturas de la página en segundo plano (sin bloquear la
+    /// pantalla), así cuando el browser pide cada &lt;img&gt; ya están cacheadas o en curso -- el servicio
+    /// comparte la descarga entre ambos pedidos. Best-effort: nunca debe romper el listado.</summary>
+    private void PrecalentarMiniaturasEnSegundoPlano()
+    {
+        if (_viewMode != ArticuloViewModeKeys.Kanban || string.IsNullOrWhiteSpace(_ftpCodigoCta) || _items.Count == 0)
+            return;
+
+        var cta = _ftpCodigoCta;
+        var idBase = SessionSvc.GetActiveSession()?.BaseId;
+        var codigos = _items.Select(i => i.Codigo).ToArray();
+        var forzados = _items.Where(i => i.ImagenModificada).Select(i => i.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                await ArticuloImagenFtpSvc.PrecalentarAsync(cta, idBase, codigos, thumbnail: true, forzados, cts.Token);
+            }
+            catch
+            {
+                // Lo que no se precalentó se resuelve cuando el browser pida esa imagen puntual.
+            }
+        });
     }
 
     private async Task AplicarFiltrosAsync()

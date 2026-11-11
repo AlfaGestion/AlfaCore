@@ -1052,7 +1052,15 @@ public class Program
             // localmente, por si thumbs4 todavía no se regeneró con la versión nueva.
             var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idbase, idArticulo, thumb == true, forzar == true, ct);
             if (imagen is null || !File.Exists(imagen.RutaCompleta))
+            {
+                // Los artículos sin imagen son habituales: el browser no debe volver a pedirlos en
+                // cada visita. Plazo corto porque, al subir una imagen, el artículo queda con
+                // ModificoImagen (URL con forzar=true, otra clave de caché) y se corrige solo.
+                httpContext.Response.Headers.CacheControl = forzar == true
+                    ? "no-store, no-cache, must-revalidate, max-age=0"
+                    : "public, max-age=120";
                 return Results.NotFound();
+            }
 
             if (forzar == true && idbase is > 0)
             {

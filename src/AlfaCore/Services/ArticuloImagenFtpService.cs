@@ -60,7 +60,33 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
     private static readonly TimeSpan DirectoryListingTtl = TimeSpan.FromMinutes(10);
     private static readonly ConcurrentDictionary<string, (DateTime CachedAt, HashSet<string> Archivos)> DirectoryListingCache = new(StringComparer.OrdinalIgnoreCase);
 
+    // Pedidos simultáneos por la misma imagen (el <img> del browser + el precalentado de la pantalla)
+    // y por el listado de la misma carpeta FTP comparten una sola operación en curso, en vez de abrir
+    // una conexión FTP por pedido: una ráfaga de decenas de conexiones hace que el FTP rechace
+    // algunas, y esos fallos transitorios no se cachean (hay que recargar para que se resuelvan).
+    private static readonly ConcurrentDictionary<string, Task<ArticuloImagenArchivoDto?>> DescargasEnCurso = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, Task<HashSet<string>?>> ListadosEnCurso = new(StringComparer.OrdinalIgnoreCase);
+
+    private static Task<T> Compartir<T>(ConcurrentDictionary<string, Task<T>> enCurso, string clave, Func<Task<T>> crear)
+    {
+        var tarea = enCurso.GetOrAdd(clave, _ => Task.Run(crear));
+        _ = tarea.ContinueWith(
+            t => enCurso.TryRemove(new KeyValuePair<string, Task<T>>(clave, t)),
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        return tarea;
+    }
+
     public async Task<ArticuloImagenArchivoDto?> ObtenerImagenAsync(string idCliente, int? idBase, string idArticulo, bool thumbnail = false, bool forzarRecarga = false, CancellationToken ct = default)
+    {
+        var clave = $"{idCliente}|{idBase}|{idArticulo}|{thumbnail}|{forzarRecarga}";
+        // El trabajo compartido no depende del token del primer llamador (si ese se cancela, los
+        // demás igual lo necesitan); cada llamador solo deja de esperar cuando se cancela el suyo.
+        var tarea = Compartir(DescargasEnCurso, clave,
+            () => ObtenerImagenInternoAsync(idCliente, idBase, idArticulo, thumbnail, forzarRecarga, CancellationToken.None));
+        return await tarea.WaitAsync(ct);
+    }
+
+    private async Task<ArticuloImagenArchivoDto?> ObtenerImagenInternoAsync(string idCliente, int? idBase, string idArticulo, bool thumbnail, bool forzarRecarga, CancellationToken ct)
     {
         var cliente = NormalizeSegment(idCliente);
         var articulo = NormalizeSegment(idArticulo);
@@ -441,6 +467,12 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         if (DirectoryListingCache.TryGetValue(remoteDir, out var cached) && DateTime.UtcNow - cached.CachedAt < DirectoryListingTtl)
             return cached.Archivos;
 
+        return await Compartir(ListadosEnCurso, remoteDir, () => ListarDirectorioAsync(remoteDir, CancellationToken.None))
+            .WaitAsync(ct);
+    }
+
+    private async Task<HashSet<string>?> ListarDirectorioAsync(string remoteDir, CancellationToken ct)
+    {
         try
         {
             var uri = new Uri($"ftp://{FtpHost}/Clientes/{remoteDir}/");

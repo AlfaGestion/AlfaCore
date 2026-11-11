@@ -54,7 +54,7 @@
                             <i class="bi bi-box-seam" aria-hidden="true"></i>
                             @if (!string.IsNullOrWhiteSpace(imagenUrl))
                             {
-                                <img src="@imagenUrl" alt="@item.Descripcion" onerror="this.style.display='none'" />
+                                <img src="@imagenUrl" alt="@item.Descripcion" loading="lazy" decoding="async" onerror="this.style.display='none'" />
                             }
                         </div>
 
