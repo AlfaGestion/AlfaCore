@@ -12,6 +12,10 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
     public const string MenuVentas = "D60RPTWEB";
     public const string MenuCompras = "D5005";
     private static string Fuente(bool ventas) => ventas ? "dbo.Libro_VentasConFP" : "dbo.Libro_ComprasConFP";
+    // Libro_ComprasConFP ya trae DESC_MOTIVO; Libro_VentasConFP solo trae IDMOTIVO, se resuelve acá.
+    private static string DescMotivo(bool ventas) => ventas
+        ? "ISNULL((SELECT TOP 1 m.Descripcion FROM dbo.V_TA_MotivoVta m WHERE LTRIM(RTRIM(m.IdMotivoVta))=LTRIM(RTRIM(l.IDMOTIVO))),'')"
+        : "l.DESC_MOTIVO";
     private static string Terceros(bool ventas) => ventas ? "dbo.VT_CLIENTES" : "dbo.VT_PROVEEDORES";
     private const string Filtro = """
         WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
@@ -23,7 +27,7 @@ public sealed partial class ReporteComercialService(ISessionService sessions, IA
         WITH Libro AS (
             SELECT l.FECHA,LTRIM(RTRIM(l.TC)) TC,l.IdComprobante,LTRIM(RTRIM(l.CUENTA)) Cuenta,
                 COALESCE(NULLIF(LTRIM(RTRIM(l.CABNOMBRE)),''),LTRIM(RTRIM(l.CUENTA))) RazonSocial,
-                l.DESC_MOTIVO,l.USUARIO_LOGEADO,l.IMPORTE,
+                {DescMotivo(ventas)} DESC_MOTIVO,l.USUARIO_LOGEADO,l.IMPORTE,
                 CASE WHEN LTRIM(RTRIM(l.TC)) IN ('FP','NCFP','FPC','NCCP')
                     THEN COALESCE(l.IMPORTE_SINIVA,ISNULL(l.LIVA_ImpNetoGrav,0)+ISNULL(l.LIVA_ImpNetoNGrav,0)+ISNULL(l.LIVA_EXENTO,0))
                     ELSE ISNULL(l.LIVA_ImpNetoGrav,0)+ISNULL(l.LIVA_ImpNetoNGrav,0)+ISNULL(l.LIVA_EXENTO,0) END NetoSignado,
