@@ -19,7 +19,9 @@ IF OBJECT_ID(N'dbo.V_TA_Cpte',N'U') IS NOT NULL
         0,0,0,1,0,0,0,1,
         1,1,99999999,1,N'X',GETDATE(),GETDATE(),
         0,0,0,1,0,0,
-        0,0,0,1,0,0,N' 039');
+        0,0,0,1,0,0,
+        -- CpteDGIX es nvarchar(2) en el legacy: ' 039' solo entra si ya fue ampliada (ver 2026-11-12-001)
+        CASE WHEN COL_LENGTH('dbo.V_TA_Cpte','CpteDGIX')>=8 AND COL_LENGTH('dbo.TA_COMPROBANTES','CpteDGIX')>=8 THEN N' 039' END);
 
 IF NOT EXISTS(SELECT 1 FROM dbo.TA_CONFIGURACION WHERE CLAVE='CONCILIACION-GASTOS-COMPROBANTE')
     INSERT dbo.TA_CONFIGURACION(GRUPO,CLAVE,VALOR,DESCRIPCION)
