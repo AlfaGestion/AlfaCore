@@ -1600,9 +1600,13 @@
 
     private async Task OnHeaderSearchInputAsync(ChangeEventArgs args)
     {
+        var habiaTexto = !string.IsNullOrWhiteSpace(_filters.Texto);
         _filters.Texto = args.Value?.ToString() ?? string.Empty;
         UpdatePageHeader();
-        await Task.CompletedTask;
+        // Al vaciar el buscador (borrar o la cruz del campo) se actualiza sin esperar Enter, igual que al quitar
+        // el chip "Buscar"; mientras se escribe sigue buscando con Enter.
+        if (habiaTexto && string.IsNullOrWhiteSpace(_filters.Texto))
+            await SearchAsync();
     }
 
     private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
