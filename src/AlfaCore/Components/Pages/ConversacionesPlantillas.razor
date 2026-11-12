@@ -1622,6 +1622,23 @@
 
         if (TryGetMetaError(ex, out var metaError))
         {
+            // Cuenta de WhatsApp (WABA) que ya no existe o sobre la que AlfaCore perdió el permiso (número dado
+            // de baja o pasado a otra cuenta de Meta): se abre el selector para elegir otra en el momento.
+            if (IsWhatsAppAccountUnavailable(metaError))
+            {
+                var numero = TemplateWhatsAppNumeros.FirstOrDefault(x => x.IdNumero == _filters.IdNumeroWhatsApp);
+                var cuenta = numero is null ? "elegida" : $"\"{GetWhatsAppNumeroLabel(numero)}\"";
+                _feedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Error,
+                    Title = "Elegí otra cuenta de WhatsApp",
+                    Message = $"La cuenta de WhatsApp {cuenta} ya no está disponible en Meta (se dio de baja o se pasó a otra cuenta). Elegí la cuenta correcta en el filtro WhatsApp y volvé a intentar.",
+                    Suggestion = BuildMetaErrorDetail(metaError, internalCode)
+                };
+                _showTemplatesSearchPanel = true;
+                return;
+            }
+
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Error,
@@ -1694,6 +1711,10 @@
 
         return string.Join(Environment.NewLine, lines);
     }
+
+    // Meta: "Unsupported post request. Object with ID '...' does not exist, cannot be loaded due to missing permissions".
+    private static bool IsWhatsAppAccountUnavailable(MetaApiError error)
+        => error.Code == 100 && error.Subcode == 33;
 
     private static string GetMetaErrorMeaning(MetaApiError error)
     {

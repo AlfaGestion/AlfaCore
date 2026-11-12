@@ -167,6 +167,13 @@ Tamaño máximo por archivo: **25 MB**.
 | GET | `/api/conversaciones/whatsapp/webhook` | verificación del webhook (Meta) |
 | POST | `/api/conversaciones/whatsapp/webhook` | recepción de mensajes entrantes |
 
+**Estados que llegan antes que el mensaje (coexistencia).** La copia de un mensaje escrito en la app del celular
+(`smb_message_echoes`) y su estado (enviado, entregado, leído) llegan en webhooks separados. Si el estado se
+procesa primero, queda en `CONV_MENSAJES_ESTADO_PENDIENTE` y se aplica cuando se graba el mensaje con ese
+`WhatsAppMessageId`: la copia de la app o el `wamid` de un envío propio. Lo que no encuentra mensaje en 7 días se borra
+solo. Script `2026-11-12-050__conversaciones_estados_whatsapp_pendientes.sql`. Meta no manda estado para todos los
+mensajes escritos en la app: los que nunca reciben uno quedan en "Enviado".
+
 ## Puesta en marcha en una base nueva
 
 Ejecutar antes de usar el módulo:

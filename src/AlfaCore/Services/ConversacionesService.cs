@@ -4741,6 +4741,7 @@ public sealed partial class ConversacionesService(
                         ReplyToMessageId = incoming.WhatsAppReplyToMessageId,
                         Origen = "WHATSAPP_BUSINESS_APP"
                     }, token);
+                    await ApplyPendingWhatsAppStatusAsync(incoming.WhatsAppMessageId, token);
                     await TryStoreWebhookAttachmentsAsync(
                         "echo",
                         currentBaseId,
@@ -13437,6 +13438,7 @@ public sealed partial class ConversacionesService(
         cmd.Parameters.AddWithValue("@WhatsAppMessageId", DbNullable(whatsAppMessageId));
         cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(payloadJson));
         await cmd.ExecuteNonQueryAsync(ct);
+        await ApplyPendingWhatsAppStatusAsync(whatsAppMessageId, ct);
     }
 
     private async Task UpdateInstagramMessageDeliveryAsync(
@@ -13487,7 +13489,30 @@ public sealed partial class ConversacionesService(
                     ELSE @PayloadJson
                 END,
                 FechaHora_Modificacion = GETDATE()
-            WHERE WhatsAppMessageId = @WhatsAppMessageId
+            WHERE WhatsAppMessageId = @WhatsAppMessageId;
+
+            -- Con coexistencia el estado puede llegar antes que la copia del mensaje escrito en la app
+            -- (smb_message_echoes viene en otro webhook): queda pendiente y se aplica al grabar el mensaje
+            -- (ApplyPendingWhatsAppStatusAsync).
+            IF @@ROWCOUNT = 0 AND OBJECT_ID(N'dbo.CONV_MENSAJES_ESTADO_PENDIENTE', N'U') IS NOT NULL
+            BEGIN
+                DELETE FROM dbo.CONV_MENSAJES_ESTADO_PENDIENTE WHERE FechaHora_Grabacion < DATEADD(day, -7, GETDATE());
+
+                UPDATE dbo.CONV_MENSAJES_ESTADO_PENDIENTE
+                SET
+                    EstadoEnvio = CASE
+                        WHEN EstadoEnvio = N'LEIDO' THEN EstadoEnvio
+                        WHEN EstadoEnvio = N'ENTREGADO' AND @EstadoEnvio IN (N'ENVIADO_META') THEN EstadoEnvio
+                        ELSE @EstadoEnvio
+                    END,
+                    PayloadJson = @PayloadJson
+                WHERE WhatsAppMessageId = @WhatsAppMessageId;
+
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.CONV_MENSAJES_ESTADO_PENDIENTE (WhatsAppMessageId, EstadoEnvio, PayloadJson)
+                    SELECT @WhatsAppMessageId, @EstadoEnvio, @PayloadJson
+                    WHERE NOT EXISTS (SELECT 1 FROM dbo.CONV_MENSAJES_ESTADO_PENDIENTE WHERE WhatsAppMessageId = @WhatsAppMessageId);
+            END;
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
@@ -13496,6 +13521,43 @@ public sealed partial class ConversacionesService(
         cmd.Parameters.AddWithValue("@WhatsAppMessageId", status.WhatsAppMessageId);
         cmd.Parameters.AddWithValue("@EstadoEnvio", status.EstadoEnvio);
         cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(AddWhatsAppPhoneNumberIdToPayload(status.RawJson, status.PhoneNumberId)));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Aplica el estado que llegó antes que el mensaje (ver UpdateWhatsAppMessageStatusAsync). Se llama al
+    /// grabar la copia de un mensaje escrito en la app y al anotar el WhatsAppMessageId de un envío propio.
+    /// No toca PayloadJson: el del mensaje tiene el contenido, el del estado no.
+    /// </summary>
+    private async Task ApplyPendingWhatsAppStatusAsync(string? whatsAppMessageId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(whatsAppMessageId))
+            return;
+
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_MENSAJES_ESTADO_PENDIENTE', N'U') IS NOT NULL
+            BEGIN
+                UPDATE m
+                SET
+                    EstadoEnvio = CASE
+                        WHEN m.EstadoEnvio = N'LEIDO' THEN m.EstadoEnvio
+                        WHEN m.EstadoEnvio = N'ENTREGADO' AND p.EstadoEnvio IN (N'ENVIADO_META') THEN m.EstadoEnvio
+                        ELSE p.EstadoEnvio
+                    END,
+                    FechaHora_Modificacion = GETDATE()
+                FROM dbo.CONV_MENSAJES m
+                JOIN dbo.CONV_MENSAJES_ESTADO_PENDIENTE p ON p.WhatsAppMessageId = m.WhatsAppMessageId
+                WHERE m.WhatsAppMessageId = @WhatsAppMessageId;
+
+                IF @@ROWCOUNT > 0
+                    DELETE FROM dbo.CONV_MENSAJES_ESTADO_PENDIENTE WHERE WhatsAppMessageId = @WhatsAppMessageId;
+            END;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", whatsAppMessageId.Trim());
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
