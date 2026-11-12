@@ -902,6 +902,17 @@
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
             <div class="smart-search__panel crm-smart-panel" @onclick:stopPropagation>
+                @* Columna Período compartida con el resto del sistema; por defecto sin límite ("Todo"). *@
+                <FiltroPeriodo Desde="@_filters.FechaDesde" Hasta="@_filters.FechaHasta" IncluirTodo="true"
+                               PeriodoChanged="OnPeriodFilterChangedAsync">
+                    <div class="smart-search__inline">
+                        <label>Fecha de</label>
+                        <select value="@_filters.FechaCampo" @onchange="OnDateFieldChangedAsync">
+                            <option value="@CrmFechaCampos.Alta">Alta</option>
+                            <option value="@CrmFechaCampos.CierreEstimado">Cierre estimado</option>
+                        </select>
+                    </div>
+                </FiltroPeriodo>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel"></i> Filtros</h4>
                     <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
@@ -1651,6 +1662,8 @@
             chips.Add(new("cerradas", "Incluye ganadas/perdidas"));
         if (_filters.Archivadas)
             chips.Add(new("archivadas", "Archivadas"));
+        if (_filters.FechaDesde is not null || _filters.FechaHasta is not null)
+            chips.Add(new("periodo", $"{CrmFechaCampos.Nombre(_filters.FechaCampo)}: {GestionRangosFecha.Etiqueta(_filters.FechaDesde, _filters.FechaHasta)}"));
         return chips;
     }
 
@@ -1682,6 +1695,10 @@
             case "archivadas":
                 _filters.Archivadas = false;
                 break;
+            case "periodo":
+                _filters.FechaDesde = null;
+                _filters.FechaHasta = null;
+                break;
         }
         UpdatePageHeader();
         await SearchAsync();
@@ -1712,6 +1729,19 @@
     {
         _filters.IdEtiqueta = int.TryParse(args.Value?.ToString(), out var value) ? value : null;
         await SearchAsync();
+    }
+
+    private async Task OnPeriodFilterChangedAsync((DateTime? Desde, DateTime? Hasta) periodo)
+    {
+        (_filters.FechaDesde, _filters.FechaHasta) = periodo;
+        await SearchAsync();
+    }
+
+    private async Task OnDateFieldChangedAsync(ChangeEventArgs args)
+    {
+        _filters.FechaCampo = args.Value?.ToString() == CrmFechaCampos.CierreEstimado ? CrmFechaCampos.CierreEstimado : CrmFechaCampos.Alta;
+        if (_filters.FechaDesde is not null || _filters.FechaHasta is not null)
+            await SearchAsync();
     }
 
     private async Task OnOriginFilterChangedAsync(ChangeEventArgs args)

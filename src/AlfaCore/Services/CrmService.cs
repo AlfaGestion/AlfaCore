@@ -1101,6 +1101,8 @@ public sealed class CrmService(
                 OR (@CanalOrigen = @CanalOrigenManual AND LTRIM(RTRIM(ISNULL(o.CanalOrigen, ''))) = '')
                 OR LTRIM(RTRIM(ISNULL(o.CanalOrigen, ''))) = @CanalOrigen
           )
+          AND (@FechaDesde IS NULL OR (CASE WHEN @FechaCampo = 'cierre' THEN CAST(o.FechaCierreEstimada AS datetime) ELSE o.FechaHoraAlta END) >= @FechaDesde)
+          AND (@FechaHastaExclusiva IS NULL OR (CASE WHEN @FechaCampo = 'cierre' THEN CAST(o.FechaCierreEstimada AS datetime) ELSE o.FechaHoraAlta END) < @FechaHastaExclusiva)
           AND (
                 @Texto IS NULL
                 OR ISNULL(o.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
@@ -1128,6 +1130,10 @@ public sealed class CrmService(
         p.Add("CanalOrigenManual", CrmCanalesOrigen.Manual);
         p.Add("IncluirCerradas", filters.IncluirCerradas);
         p.Add("Archivadas", filters.Archivadas);
+        // Hasta inclusive por día: se compara contra el día siguiente (las altas tienen hora).
+        p.Add("FechaDesde", filters.FechaDesde?.Date, DbType.DateTime);
+        p.Add("FechaHastaExclusiva", filters.FechaHasta?.Date.AddDays(1), DbType.DateTime);
+        p.Add("FechaCampo", filters.FechaCampo == CrmFechaCampos.CierreEstimado ? CrmFechaCampos.CierreEstimado : CrmFechaCampos.Alta);
         return p;
     }
 

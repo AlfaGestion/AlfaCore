@@ -13,10 +13,24 @@ public sealed class CrmFilters
     public bool IncluirCerradas { get; set; }
     /// <summary>true muestra solo las archivadas (Baja = 1) en lugar de las activas.</summary>
     public bool Archivadas { get; set; }
+    /// <summary>Período (inclusive, por día) sobre la fecha elegida en <see cref="FechaCampo"/>. Null = sin límite.</summary>
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
+    /// <summary><see cref="CrmFechaCampos"/>: fecha de alta (por defecto) o cierre estimado.</summary>
+    public string FechaCampo { get; set; } = CrmFechaCampos.Alta;
     public string OrdenarPor { get; set; } = CrmViewColumnKeys.Fecha;
     public bool OrdenDescendente { get; set; } = true;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
+}
+
+/// <summary>Sobre qué fecha filtra el período del Smart Search del CRM.</summary>
+public static class CrmFechaCampos
+{
+    public const string Alta = "alta";
+    public const string CierreEstimado = "cierre";
+
+    public static string Nombre(string? campo) => campo == CierreEstimado ? "Cierre estimado" : "Alta";
 }
 
 public class CrmOpportunityDto
