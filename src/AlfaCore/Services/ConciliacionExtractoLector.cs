@@ -14,7 +14,7 @@ public sealed class ConciliacionExtractoLector(IWebHostEnvironment? environment=
 
     public static string SugerirCuenta(BankSource banco, IReadOnlyList<ConciliacionCuenta> cuentas)
     {
-        var nombre = banco switch { BankSource.Provincia => "banco provincia", BankSource.Santander => "banco santander", BankSource.Nacion => "banco nacion", BankSource.Hipotecario => "banco hipotecario", _ => "mercado pago" };
+        var nombre = banco switch { BankSource.Provincia => "banco provincia", BankSource.Santander => "banco santander", BankSource.Nacion => "banco nacion", BankSource.Hipotecario => "banco hipotecario", BankSource.Patagonia => "banco patagonia", BankSource.Galicia => "banco galicia", _ => "mercado pago" };
         var principales=cuentas.Where(c=>Normalizar(c.Descripcion).Contains(nombre,StringComparison.Ordinal)).ToList();
         if (principales.Count==1) return principales[0].Codigo;
         if (principales.Count>1) return "";
@@ -62,7 +62,7 @@ public sealed class ConciliacionExtractoLector(IWebHostEnvironment? environment=
                 BankSource.Provincia => new ProvinciaExcelStatementParser(),
                 BankSource.Santander => new SantanderExcelStatementParser(),
                 BankSource.MercadoPago => new MercadoPagoExcelStatementParser(fechaReferencia),
-                _ => throw new InvalidOperationException("Para Nación e Hipotecario seleccioná el resumen PDF; ese banco no tiene lector Excel o CSV disponible.")
+                _ => throw new InvalidOperationException("Para Nación, Hipotecario, Patagonia y Galicia seleccioná el resumen PDF; ese banco no tiene lector Excel o CSV disponible.")
             };
             if(extension==".xlsx") await File.WriteAllBytesAsync(temp,archivo.Contenido,ct);
             else { ct.ThrowIfCancellationRequested();wb.SaveAs(temp); }

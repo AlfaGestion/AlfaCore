@@ -233,8 +233,8 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
                 var baseKey=Huella(cuenta,banco,m);
                 occurrences.TryGetValue(baseKey,out var ordinal);
                 occurrences[baseKey]=++ordinal;
-                // En Nación/Hipotecario el comprobante se reutiliza para gastos e impuestos: no es un ID único de operación.
-                var huella=string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario ? Hash(baseKey+"|"+ordinal) : baseKey;
+                // En Nación/Hipotecario/Patagonia/Galicia el comprobante se reutiliza para gastos e impuestos: no es un ID único de operación.
+                var huella=string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario or BankSource.Patagonia or BankSource.Galicia ? Hash(baseKey+"|"+ordinal) : baseKey;
                 var exists=await cn.ExecuteScalarAsync<bool>(Cmd("""
                     SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.BK_ExtractoMovimiento WITH(UPDLOCK,HOLDLOCK) WHERE HuellaWeb=@huella)
                     THEN 1 ELSE 0 END);
@@ -269,7 +269,7 @@ public sealed partial class ConciliacionBancariaService(ISessionService sessions
     public static string Huella(string cuenta,BankSource banco,AlfaCore.ConciliacionBancaria.Application.DTOs.NormalizedMovementDto m)
         => Hash(string.Join("|",cuenta.Trim(),banco,m.MovementDate.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),
             m.Amount.ToString("0.00",CultureInfo.InvariantCulture),m.ExternalReference.Trim(),
-            string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario?m.Description.Trim():""));
+            string.IsNullOrWhiteSpace(m.ExternalReference)||banco is BankSource.Nacion or BankSource.Hipotecario or BankSource.Patagonia or BankSource.Galicia?m.Description.Trim():""));
     private static string Hash(string s)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s)));
 
     public Task<bool> EliminarAsync(long id, CancellationToken ct=default)

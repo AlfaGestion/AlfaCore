@@ -1,0 +1,9 @@
+.gastos__conceptos { display:grid; gap:var(--alfa-space-12); margin-block:var(--alfa-space-12); }
+.gastos__concepto { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:var(--alfa-space-12); align-items:end; padding-bottom:var(--alfa-space-8); border-bottom:1px solid var(--alfa-border-default); }
+.gastos__titulo { display:grid; gap:var(--alfa-space-8); }
+.gastos__titulo span { color:var(--alfa-text-secondary); }
+.gastos__totales { display:grid; gap:var(--alfa-space-8); margin-block:var(--alfa-space-12); }
+.gastos__cabecera { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--alfa-space-12); margin-block:var(--alfa-space-12); }
+.gastos__aviso { color:var(--alfa-text-secondary); margin-block:var(--alfa-space-8); }
+.gastos__error { color:var(--alfa-danger); margin-block:var(--alfa-space-8); }
+@media(max-width:700px) { .gastos__concepto,.gastos__cabecera { grid-template-columns:minmax(0,1fr); } }

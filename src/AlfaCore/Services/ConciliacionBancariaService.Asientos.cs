@@ -32,30 +32,30 @@ public sealed partial class ConciliacionBancariaService
     public Task<ConciliacionAsientoCatalogo> AsientoCatalogoAsync(CancellationToken ct=default)
         => Ejecutar("CatalogoAsientos",(cn,token)=>AsientoCatalogoEnConexionAsync(cn,null,token),ct);
 
-    internal async Task<ConciliacionAsientoCatalogo> AsientoCatalogoEnConexionAsync(SqlConnection cn,SqlTransaction? tx,CancellationToken ct)
+    internal async Task<ConciliacionAsientoCatalogo> AsientoCatalogoEnConexionAsync(SqlConnection cn,SqlTransaction? tx,CancellationToken ct,string tc="CC")
     {
         var user=await AsientoUsuarioAsync(cn,tx,ct);
         using var r=await cn.QueryMultipleAsync(new CommandDefinition("""
             SELECT LTRIM(RTRIM(c.CODIGO)) Codigo,c.DESCRIPCION Descripcion FROM dbo.MA_CUENTAS c
-            WHERE ISNULL(c.TITULO,0)=0 AND ISNULL(c.Dada_De_Baja,0)=0 AND LTRIM(RTRIM(c.Moneda))='1'
+            WHERE ISNULL(c.TITULO,0)=0 AND ISNULL(c.Dada_De_Baja,0)=0 AND ISNULL(NULLIF(LTRIM(RTRIM(c.Moneda)),'0'),'1')='1'
                 AND ISNULL(LTRIM(RTRIM(c.MedioDePago)),'') IN ('','RI','RB','RG','RO')
                 AND NOT EXISTS(SELECT 1 FROM dbo.VT_CLIENTES x WHERE x.CODIGO=c.CODIGO)
                 AND NOT EXISTS(SELECT 1 FROM dbo.VT_PROVEEDORES x WHERE x.CODIGO=c.CODIGO)
             ORDER BY c.DESCRIPCION,c.CODIGO;
             SELECT LTRIM(RTRIM(CODIGO)) Codigo,DESCRIPCION Descripcion,'1' Moneda FROM dbo.MA_CUENTAS
-                WHERE ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 AND LTRIM(RTRIM(Moneda))='1'
+                WHERE ISNULL(TITULO,0)=0 AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(NULLIF(LTRIM(RTRIM(Moneda)),'0'),'1')='1'
                     AND LTRIM(RTRIM(MedioDePago))='DB' ORDER BY DESCRIPCION,CODIGO;
             SELECT LTRIM(RTRIM(Codigo)) Codigo,Descripcion FROM dbo.V_TA_UnidadNegocio
                 WHERE @admin=1 OR LTRIM(RTRIM(Codigo))=@unidad ORDER BY Codigo;
             SELECT LTRIM(RTRIM(CODIGO)) Codigo,DESCRIPCION Descripcion FROM dbo.MA_SUBDIARIOS ORDER BY CODIGO;
             SELECT Talonario,LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) Unidad,X_SUC_DEFAULT Sucursal,
                 X_ULTIMO_NRO Proximo,X_NRO_DESDE Desde,X_NRO_HASTA Hasta,VenceX Vence
-            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND UPPER(LTRIM(RTRIM(SISTEMA)))='CONTABLE'
+            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))=@tc AND UPPER(LTRIM(RTRIM(SISTEMA)))='CONTABLE'
                 AND CHARINDEX('X',LETRAS)>0 AND ISNULL(Externo,0)=0;
             SELECT CONVERT(nvarchar(max),ValorAux) FROM dbo.TA_CONFIGURACION WHERE CLAVE='CONCILIACION-ASIENTOS';
             SELECT LTRIM(RTRIM(CODIGO)) Codigo,LTRIM(RTRIM(ISNULL(DESCRIPCION,''))) Descripcion FROM dbo.MA_CUENTAS
                 WHERE ISNULL(TITULO,0)=1 AND ISNULL(Dada_De_Baja,0)=0;
-            """,new{admin=user.Admin,unidad=user.Unidad},tx,cancellationToken:ct));
+            """,new{admin=user.Admin,unidad=user.Unidad,tc},tx,cancellationToken:ct));
         var cuentasPlanas=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
         var bancos=(await r.ReadAsync<ConciliacionCuenta>()).AsList();
         var unidades=(await r.ReadAsync<ConciliacionAsientoCuenta>()).AsList();
@@ -105,9 +105,16 @@ public sealed partial class ConciliacionBancariaService
 
     internal static Guid? SugerirReglaAsiento(ConciliacionAsientoConfig config,string categoria,string banco,string descripcion)
     {
-        var reglas=config.Reglas.Where(r=>r.Categoria==categoria&&(r.CuentaBanco.Trim().Length==0||r.CuentaBanco.Trim()==banco)
+        // Las categorías específicas de impuestos y gastos heredan los conceptos guardados en "Impuesto" y "Gasto".
+        var general=categoria switch
+        {
+            "ImpuestoDebCred" or "RetencionIibb" or "IvaBancario" or "PagoImpuestos" => "Impuesto",
+            "Sueldos" or "DebitoAutomatico" => "Gasto",
+            _ => categoria
+        };
+        var reglas=config.Reglas.Where(r=>(r.Categoria==categoria||r.Categoria==general)&&(r.CuentaBanco.Trim().Length==0||r.CuentaBanco.Trim()==banco)
             &&(r.Texto.Trim().Length==0||descripcion.Contains(r.Texto.Trim(),StringComparison.OrdinalIgnoreCase)))
-            .Select(r=>new{r.Id,Puntos=(r.CuentaBanco.Trim().Length>0 ? 2 : 0)+(r.Texto.Trim().Length>0 ? 1 : 0)}).ToList();
+            .Select(r=>new{r.Id,Puntos=(r.Categoria==categoria ? 4 : 0)+(r.CuentaBanco.Trim().Length>0 ? 2 : 0)+(r.Texto.Trim().Length>0 ? 1 : 0)}).ToList();
         if(reglas.Count==0)return null;
         var mejores=reglas.Where(r=>r.Puntos==reglas.Max(x=>x.Puntos)).ToList();
         return mejores.Count==1 ? mejores[0].Id : null;
@@ -226,26 +233,10 @@ public sealed partial class ConciliacionBancariaService
         if(s.Contrapartidas.Any(l=>!catalogo.Cuentas.Any(c=>c.Codigo==l.Cuenta.Trim())))throw new InvalidOperationException("Una contrapartida no está activa, no es contable o no corresponde a pesos.");
         var cfg=catalogo.Config;
         if(cfg.TipoRegistro.Trim().Length>0&&!catalogo.Subdiarios.Any(t=>t.Codigo==cfg.TipoRegistro.Trim()))throw new InvalidOperationException("El subdiario configurado ya no existe.");
-        var periodo=await cn.QuerySingleOrDefaultAsync<int?>(Q("SELECT PERIODO FROM dbo.MV_EJERCICIOS WITH(UPDLOCK,HOLDLOCK) WHERE @fecha BETWEEN [FECHA DESDE] AND [FECHA HASTA] AND ISNULL(CERRADO,0)=0;",new{fecha=s.Fecha.Date}))
-            ?? throw new InvalidOperationException("La fecha no pertenece a un ejercicio abierto.");
+        var periodo=await PeriodoAbiertoAsync(cn,tx,s.Fecha,ct);
         if(Math.Abs((s.Fecha.Date-prep.Movimiento.Fecha.Date).TotalDays)>366)
             throw new InvalidOperationException("La fecha del asiento debe estar dentro de los 366 días del movimiento bancario.");
-        var disponibles=catalogo.Talonarios.Where(t=>t.Unidad==s.Unidad.Trim()).ToList();
-        if(disponibles.Count==0)disponibles=catalogo.Talonarios.Where(t=>t.Unidad is "" or "0").ToList();
-        // Bloqueo del contador y relectura: comparte el contador CC con Alfa Gestión.
-        await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.V_TA_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(CODIGO))='CC';"));
-        var tal=disponibles.SingleOrDefault(t=>t.Talonario==s.Talonario) ?? throw new InvalidOperationException("Elegí un talonario CC válido para la unidad.");
-        var talUnidad=tal.Unidad;
-        tal=await cn.QuerySingleAsync<CobranzaTalonario>(Q("""
-            SELECT Talonario,X_SUC_DEFAULT Sucursal,X_ULTIMO_NRO Proximo,X_NRO_DESDE Desde,X_NRO_HASTA Hasta,VenceX Vence
-            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))='CC' AND Talonario=@Talonario AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@talUnidad;
-            """,new{s.Talonario,talUnidad}));
-        if(tal.Sucursal is <1 or >9999||tal.Vence?.Date<s.Fecha.Date)throw new InvalidOperationException("El talonario CC está vencido o tiene una sucursal inválida.");
-        var suc=tal.Sucursal.ToString("D4");
-        var max=await cn.ExecuteScalarAsync<int>(Q("SELECT ISNULL(MAX(CONVERT(int,CASE WHEN LTRIM(RTRIM(NUMERO)) NOT LIKE '%[^0-9]%' THEN NULLIF(LTRIM(RTRIM(NUMERO)),'') ELSE '0' END)),0) FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE TC='CC' AND SUCURSAL=@suc AND LETRA='X';",new{suc}));
-        var numero=Math.Max(Math.Max(tal.Proximo,Math.Max(tal.Desde,1)),checked(max+1));
-        if(numero>tal.Hasta||numero>99999999)throw new InvalidOperationException("El talonario CC agotó su numeración.");
-        var asiento=await NumeracionAsiento.SiguienteAsync(cn,tx,periodo.ToString()!,s.Fecha.Month,cfg.TipoRegistro,ct);
+        var (suc,numero,asiento,talUnidad)=await ReservarNumeracionCcAsync(cn,tx,s.Fecha,s.Unidad,s.Talonario,catalogo,periodo,cfg.TipoRegistro,ct);
         var args=new DynamicParameters(new{periodo=periodo.ToString(),mes=s.Fecha.Month,asiento,tipo=CodigoPk.Format(cfg.TipoRegistro,4),
             fecha=s.Fecha.Date,detalle=s.Detalle.Trim(),suc,numero=numero.ToString("D8"),total,moneda=CodigoPk.Format("1",4),
             unidad=CodigoPk.Format(s.Unidad,4),caja=CodigoPk.Format(string.IsNullOrWhiteSpace(user.Caja)?"1":user.Caja,4),usuario=users.GetCurrentUserName(),
@@ -287,5 +278,34 @@ public sealed partial class ConciliacionBancariaService
                 tipo=CodigoPk.Format(cfg.TipoRegistro,4),comprobante,unidad=s.Unidad.Trim(),vinculo,usuario=users.GetCurrentUserName(),mensaje=$"CC {comprobante}; asiento {asiento}; conciliación {vinculo}"}));
         VerificarSesion(session);ct.ThrowIfCancellationRequested();
         return new(){Operacion=s.Operacion,Comprobante=comprobante,Periodo=periodo.ToString()!,Mes=checked((byte)s.Fecha.Month),NumeroAsiento=asiento,TipoRegistro=CodigoPk.Format(cfg.TipoRegistro,4),ConciliacionId=vinculo};
+    }
+
+    private static async Task<int> PeriodoAbiertoAsync(SqlConnection cn,SqlTransaction tx,DateTime fecha,CancellationToken ct)
+        => await cn.QuerySingleOrDefaultAsync<int?>(new CommandDefinition("SELECT PERIODO FROM dbo.MV_EJERCICIOS WITH(UPDLOCK,HOLDLOCK) WHERE @fecha BETWEEN [FECHA DESDE] AND [FECHA HASTA] AND ISNULL(CERRADO,0)=0;",
+            new{fecha=fecha.Date},tx,commandTimeout:120,cancellationToken:ct))
+            ?? throw new InvalidOperationException("La fecha no pertenece a un ejercicio abierto.");
+
+    /// <summary>Reserva sucursal, número de comprobante CC y número de asiento en el contador que comparte con Alfa Gestión. Debe llamarse dentro de la transacción que graba el asiento.</summary>
+    private static async Task<(string Suc,int Numero,int Asiento,string TalUnidad)> ReservarNumeracionCcAsync(SqlConnection cn,SqlTransaction tx,DateTime fecha,string unidad,
+        int talonario,ConciliacionAsientoCatalogo catalogo,int periodo,string tipoRegistro,CancellationToken ct,string tc="CC")
+    {
+        CommandDefinition Q(string sql,object? args=null)=>new(sql,args,tx,commandTimeout:120,cancellationToken:ct);
+        var disponibles=catalogo.Talonarios.Where(t=>t.Unidad==unidad.Trim()).ToList();
+        if(disponibles.Count==0)disponibles=catalogo.Talonarios.Where(t=>t.Unidad is "" or "0").ToList();
+        // Bloqueo del contador y relectura: comparte el contador CC con Alfa Gestión.
+        await cn.ExecuteScalarAsync<int>(Q("SELECT COUNT(*) FROM dbo.V_TA_CPTE WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(CODIGO))=@tc;",new{tc}));
+        var tal=disponibles.SingleOrDefault(t=>t.Talonario==talonario) ?? throw new InvalidOperationException($"Elegí un talonario {tc} válido para la unidad.");
+        var talUnidad=tal.Unidad;
+        tal=await cn.QuerySingleAsync<CobranzaTalonario>(Q("""
+            SELECT Talonario,X_SUC_DEFAULT Sucursal,X_ULTIMO_NRO Proximo,X_NRO_DESDE Desde,X_NRO_HASTA Hasta,VenceX Vence
+            FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(CODIGO))=@tc AND Talonario=@Talonario AND LTRIM(RTRIM(ISNULL(UNEGOCIO,'')))=@talUnidad;
+            """,new{Talonario=talonario,talUnidad,tc}));
+        if(tal.Sucursal is <1 or >9999||tal.Vence?.Date<fecha.Date)throw new InvalidOperationException($"El talonario {tc} está vencido o tiene una sucursal inválida.");
+        var suc=tal.Sucursal.ToString("D4");
+        var max=await cn.ExecuteScalarAsync<int>(Q("SELECT ISNULL(MAX(CONVERT(int,CASE WHEN LTRIM(RTRIM(NUMERO)) NOT LIKE '%[^0-9]%' THEN NULLIF(LTRIM(RTRIM(NUMERO)),'') ELSE '0' END)),0) FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE TC=@tc AND SUCURSAL=@suc AND LETRA='X';",new{suc,tc}));
+        var numero=Math.Max(Math.Max(tal.Proximo,Math.Max(tal.Desde,1)),checked(max+1));
+        if(numero>tal.Hasta||numero>99999999)throw new InvalidOperationException($"El talonario {tc} agotó su numeración.");
+        var asiento=await NumeracionAsiento.SiguienteAsync(cn,tx,periodo.ToString(),fecha.Month,tipoRegistro,ct);
+        return (suc,numero,asiento,talUnidad);
     }
 }

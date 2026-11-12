@@ -66,14 +66,13 @@
         }
         else
         {
+            var columnas = r.ColumnasImportes;
             <section class="liva-tabla" aria-label="@Titulo">
                 <div class="liva-tabla__scroll">
                     <table>
                         <thead><tr>
                             <th>Fecha</th><th>Cpte.</th><th>Número</th><th>@(Compras ? "Proveedor" : "Cliente")</th><th>CUIT</th><th>Cond. IVA</th>
-                            <th class="n">Neto gravado</th><th class="n">No gravado</th><th class="n">Exento</th>
-                            <th class="n">IVA 21%</th><th class="n">IVA 10,5%</th><th class="n">IVA otras</th>
-                            <th class="n">Percep.</th><th class="n">Imp. int.</th><th class="n">Total</th>
+                            @foreach (var col in columnas) { <th class="n">@col.Titulo</th> }
                         </tr></thead>
                         <tbody>
                         @foreach (var f in r.Filas)
@@ -87,19 +86,13 @@
                                 <td>@f.RazonSocial<small>@f.Cuenta</small></td>
                                 <td>@f.Cuit</td>
                                 <td>@f.CondicionIva</td>
-                                <td class="n">@M(f.NetoGravado)</td><td class="n">@M(f.NoGravado)</td><td class="n">@M(f.Exento)</td>
-                                <td class="n">@M(f.IvaDe(21))</td><td class="n">@M(f.IvaDe(10.5m))</td><td class="n">@M(f.Iva - f.IvaDe(21) - f.IvaDe(10.5m))</td>
-                                <td class="n">@M(f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones)</td><td class="n">@M(f.ImpuestosInternos)</td>
-                                <td class="n"><strong>@M(f.Total)</strong></td>
+                                @foreach (var col in columnas) { <td class="n">@if (col.Titulo == "Total") { <strong>@M(col.Valor(f))</strong> } else { @M(col.Valor(f)) }</td> }
                             </tr>
                         }
                         </tbody>
                         <tfoot><tr>
                             <td colspan="6">Totales · @r.Filas.Count comprobantes</td>
-                            <td class="n">@M(r.NetoGravado)</td><td class="n">@M(r.NoGravado)</td><td class="n">@M(r.Exento)</td>
-                            <td class="n">@M(r.Filas.Sum(f => f.IvaDe(21)))</td><td class="n">@M(r.Filas.Sum(f => f.IvaDe(10.5m)))</td>
-                            <td class="n">@M(r.Iva - r.Filas.Sum(f => f.IvaDe(21)) - r.Filas.Sum(f => f.IvaDe(10.5m)))</td>
-                            <td class="n">@M(r.Percepciones)</td><td class="n">@M(r.ImpuestosInternos)</td><td class="n">@M(r.Total)</td>
+                            @foreach (var col in columnas) { <td class="n">@M(r.Filas.Sum(col.Valor))</td> }
                         </tr></tfoot>
                     </table>
                 </div>

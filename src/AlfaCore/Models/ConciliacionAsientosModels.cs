@@ -32,6 +32,8 @@ public sealed class ConciliacionAsientoResultado
 {
     public Guid Operacion { get; set; }
     public string Comprobante { get; set; }="";
+    /// <summary>Tipo de comprobante contable del asiento (CC en el asiento individual; GB en el de gastos bancarios).</summary>
+    public string Tc { get; set; }="CC";
     public string Periodo { get; set; }="";
     public byte Mes { get; set; }
     public int NumeroAsiento { get; set; }

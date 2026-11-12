@@ -11,5 +11,11 @@ public enum MovementCategory
     NoIdentificado = 7,
     ReintegroPromocion = 8,
     IngresoFinanciero = 9,
-    PagoProveedor = 10
+    PagoProveedor = 10,
+    ImpuestoDebCred = 11,
+    RetencionIibb = 12,
+    IvaBancario = 13,
+    PagoImpuestos = 14,
+    Sueldos = 15,
+    DebitoAutomatico = 16
 }

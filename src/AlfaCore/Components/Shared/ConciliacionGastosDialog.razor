@@ -1,0 +1,93 @@
+@using System.Globalization
+@using AlfaCore.Services
+@implements IDisposable
+@inject ConciliacionBancariaService Servicio
+@inject IAppUiOperationService UiOps
+<AlfaDialog CloseOnBackdrop="false" Open="@(ImportacionId.HasValue)" Title="Asiento de gastos e impuestos bancarios" Size="AlfaDialogSize.Lg" Loading="@_busy" OnClose="Cerrar">
+    <ChildContent>
+    @if(ImportacionId.HasValue) {
+        <AlfaFeedbackPanel Message="@_feedback" />
+        @if(_prep is null) {
+            @if(_feedback is null) { <p>Calculando gastos e impuestos del extracto…</p> }
+        } else {
+            var calculo=_prep.Calculo;
+            var libro=ConciliacionGastosBancarios.ArmarLibroIva(calculo,_prep.Config);
+            <p>Cuenta <strong>@_prep.CuentaBanco · @_prep.CuentaBancoNombre</strong> · extracto del @_prep.Desde.ToString("dd/MM/yyyy") al @_prep.Hasta.ToString("dd/MM/yyyy").
+                Se genera un asiento @_prep.Tc con los gastos, el IVA, las retenciones y el impuesto a los débitos y créditos del extracto. El Libro de IVA Compras se completa en el renglón del banco
+                y los @calculo.Movimientos.Count movimientos quedan conciliados.</p>
+            @foreach(var error in calculo.Errores) { <p class="gastos__error" role="alert">@error</p> }
+            @foreach(var aviso in calculo.Avisos) { <p class="gastos__aviso">@aviso</p> }
+            @if(_prep.ConfigDesdeModelo) { <p class="gastos__aviso">Las cuentas se tomaron del asiento modelo de Alfa Gestión. Al generar el asiento quedan guardadas en la configuración propia de AlfaCore.</p> }
+            <div class="gastos__conceptos">
+                @foreach(var concepto in calculo.Conceptos.Where(c=>c.Importe>0||c.Clave!=ConciliacionGastosBancarios.Ganancias)) {
+                    <div class="gastos__concepto" @key="concepto.Clave">
+                        <div class="gastos__titulo"><strong>@concepto.Titulo</strong><span>@concepto.Cantidad movimientos · @Dinero(concepto.Importe)</span></div>
+                        <ConciliacionCuentaLookup Label="Cuenta contable (Debe)" Cuenta="@Cuenta(concepto.Clave)" CuentaChanged="v=>_cuentas[concepto.Clave]=v ?? string.Empty"
+                            Cuentas="_prep.Catalogo.Cuentas" Disabled="@(_busy||concepto.Importe<=0)" />
+                    </div>
+                }
+            </div>
+            <div class="gastos__totales">
+                <span>Banco (Haber): <strong>@Dinero(calculo.Total)</strong></span>
+                <span>Libro de IVA Compras: neto gravado @Dinero(libro.NetoGravado) · IVA @Dinero(libro.Iva) · no gravado @Dinero(libro.NetoNoGravado) · percepción IVA @Dinero(libro.PercepcionIva) · Ing. Brutos @Dinero(libro.PercepcionIibb)@(libro.PercepcionGanancias>0 ? $" · Ganancias {Dinero(libro.PercepcionGanancias)}" : "")</span>
+            </div>
+            <div class="gastos__cabecera">
+                <AlfaInput Label="Fecha del asiento" Type="date" Value="@_fecha" ValueChanged="v=>_fecha=v ?? string.Empty" Disabled="@_busy" />
+                <AlfaSelect Label="Unidad de negocio" Value="@_unidad" ValueChanged="CambiarUnidad" Options="@Unidades" Placeholder="Seleccionar unidad" Disabled="@_busy" />
+                <AlfaSelect Label="@($"Talonario {_prep?.Tc}")" Value="@_talonario" ValueChanged="v=>_talonario=v ?? string.Empty" Options="@Talonarios" Placeholder="Seleccionar talonario" Disabled="@_busy" />
+            </div>
+            <AlfaInput Label="Detalle" Value="@_detalle" ValueChanged="v=>_detalle=v ?? string.Empty" MaxLength="200" Disabled="@_busy" />
+        }
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" OnClick="Cerrar" Disabled="@_busy">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" OnClick="Confirmar" Disabled="@(!PuedeConfirmar)">Generar asiento</AlfaButton>
+    </Footer>
+</AlfaDialog>
+@code {
+    [Parameter] public long? ImportacionId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<ConciliacionAsientoResultado> OnSaved { get; set; }
+    private long? _anterior;
+    private ConciliacionGastosPreparacion? _prep;
+    private readonly Dictionary<string,string> _cuentas=[];
+    private string _fecha="",_unidad="",_talonario="",_detalle="";
+    private Guid _operacion=Guid.NewGuid();
+    private bool _busy;
+    private AppUiMessage? _feedback;
+    private readonly CancellationTokenSource _cts=new();
+    private string Cuenta(string clave)=>_cuentas.TryGetValue(clave,out var c) ? c : "";
+    private IReadOnlyList<AlfaSelectOption> Unidades=>_prep?.Catalogo.Unidades.Select(u=>new AlfaSelectOption(u.Codigo,$"{u.Codigo} — {u.Descripcion}")).ToList() ?? [];
+    private IReadOnlyList<CobranzaTalonario> TalonariosUnidad { get { var todos=_prep?.Catalogo.Talonarios ?? [];var propios=todos.Where(t=>t.Unidad==_unidad).ToList();return propios.Count>0 ? propios : todos.Where(t=>t.Unidad is "" or "0").ToList(); } }
+    private IReadOnlyList<AlfaSelectOption> Talonarios=>TalonariosUnidad.Select(t=>new AlfaSelectOption(t.Talonario.ToString(),$"{_prep?.Tc} X · Sucursal {t.Sucursal:D4} · Talonario {t.Talonario}")).ToList();
+    private bool PuedeConfirmar=>!_busy&&_prep is not null&&_prep.Calculo.Errores.Count==0&&_prep.Calculo.Total>0&&_unidad.Length>0&&_talonario.Length>0
+        &&DateTime.TryParse(_fecha,CultureInfo.InvariantCulture,DateTimeStyles.None,out _)&&_detalle.Trim().Length>=3
+        &&_prep.Calculo.Conceptos.Where(c=>c.Importe>0).All(c=>Cuenta(c.Clave).Length>0);
+    protected override async Task OnParametersSetAsync() {
+        if(_anterior==ImportacionId)return;_anterior=ImportacionId;
+        _prep=null;_feedback=null;_cuentas.Clear();_operacion=Guid.NewGuid();_fecha=_unidad=_talonario=_detalle="";
+        if(ImportacionId is not { } id)return;
+        _busy=true;
+        try {
+            var prep=await Servicio.PrepararGastosAsync(id,_cts.Token);
+            foreach(var (clave,cuenta) in prep.Config.Cuentas)_cuentas[clave]=cuenta;
+            _fecha=prep.FechaSugerida.ToString("yyyy-MM-dd");
+            _detalle=$"{prep.Config.Detalle} {prep.FechaSugerida:dd-MM-yyyy} {prep.CuentaBancoNombre}".Trim();
+            if(_detalle.Length>200)_detalle=_detalle[..200];
+            _prep=prep;CambiarUnidad(prep.Catalogo.UnidadInicial);
+        } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento de gastos bancarios"); } finally { _busy=false; }
+    }
+    private void CambiarUnidad(string? unidad) { _unidad=unidad ?? "";var tal=TalonariosUnidad;_talonario=tal.Count==1 ? tal[0].Talonario.ToString() : ""; }
+    private async Task Cerrar() { if(!_busy)await OnClose.InvokeAsync(); }
+    private async Task Confirmar() {
+        if(!PuedeConfirmar||_prep is null||ImportacionId is not { } id||!int.TryParse(_talonario,out var tal)||!DateTime.TryParse(_fecha,CultureInfo.InvariantCulture,DateTimeStyles.None,out var fecha))return;
+        _busy=true;_feedback=null;
+        try {
+            var resultado=await Servicio.GenerarGastosAsync(new(_operacion,id,_prep.Calculo.Huella,fecha,_unidad,tal,_detalle.Trim(),new Dictionary<string,string>(_cuentas)),_cts.Token);
+            await OnSaved.InvokeAsync(resultado);
+        } catch(OperationCanceledException) { } catch(Exception ex) { _feedback=UiOps.BuildMessage(ex,"Asiento de gastos bancarios"); } finally { _busy=false; }
+    }
+    private static string Dinero(decimal importe)=>importe.ToString("N2",CultureInfo.GetCultureInfo("es-AR"));
+    public void Dispose() { _cts.Cancel();_cts.Dispose(); }
+}

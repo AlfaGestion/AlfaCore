@@ -6,5 +6,7 @@ public enum BankSource
     Santander = 2,
     MercadoPago = 3,
     Nacion = 4,
-    Hipotecario = 5
+    Hipotecario = 5,
+    Patagonia = 6,
+    Galicia = 7
 }

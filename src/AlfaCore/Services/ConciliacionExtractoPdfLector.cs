@@ -17,7 +17,7 @@ public sealed class ConciliacionExtractoPdfLector(IWebHostEnvironment environmen
         options.Converters.Add(new JsonStringEnumConverter());
         var result=JsonSerializer.Deserialize<Resultado>(output,options)
             ??throw new InvalidOperationException("El lector no devolvió un extracto válido.");
-        if(result.Banco is not (BankSource.Nacion or BankSource.Hipotecario)||result.Movimientos.Count is 0 or >10000||
+        if(result.Banco is not (BankSource.Nacion or BankSource.Hipotecario or BankSource.Patagonia or BankSource.Galicia)||result.Movimientos.Count is 0 or >10000||
             result.Movimientos.Any(m=>m.Source!=result.Banco||m.Amount==0||m.Description.Length==0||m.MovementDate.Year<1900)||
             result.SaldoInicial+result.Movimientos.Sum(m=>m.Amount)!=result.SaldoFinal)
             throw new InvalidOperationException("El detalle del PDF no coincide con los saldos del extracto. No se importó el archivo.");

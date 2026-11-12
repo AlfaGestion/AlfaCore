@@ -15,7 +15,7 @@ public sealed partial class ConciliacionBancariaService
         IF NOT EXISTS(SELECT 1 FROM dbo.TA_USUARIOS WHERE UPPER(LTRIM(RTRIM(NOMBRE)))=UPPER(@usuario))
             THROW 50001,'El usuario no está definido en la base activa.',1;
         IF NOT EXISTS(SELECT 1 FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(CODIGO))=@cuenta
-            AND LTRIM(RTRIM(MEDIODEPAGO))='DB' AND LTRIM(RTRIM(MONEDA))='1'
+            AND LTRIM(RTRIM(MEDIODEPAGO))='DB' AND ISNULL(NULLIF(LTRIM(RTRIM(MONEDA)),'0'),'1')='1'
             AND ISNULL(Dada_De_Baja,0)=0 AND ISNULL(TITULO,0)=0)
             THROW 50001,'Seleccioná una cuenta bancaria activa en pesos.',1;
         SELECT m.MovimientoId Id,m.FechaMovimiento Fecha,m.DescripcionOriginal Detalle,
@@ -167,10 +167,10 @@ public sealed partial class ConciliacionBancariaService
     }
 
     internal async Task<long> ConciliarEnTransaccionAsync(SqlConnection cn,SqlTransaction tx,
-        ConciliacionVincularSolicitud solicitud,CancellationToken token=default)
+        ConciliacionVincularSolicitud solicitud,CancellationToken token=default,int maximoBanco=100,bool permitirContrarios=false)
         {
             ValidarComparacion(solicitud.Filtro);
-            if(solicitud.Operacion==Guid.Empty || solicitud.Banco.Count is <1 or >100 || solicitud.Alfa.Count is <1 or >100
+            if(solicitud.Operacion==Guid.Empty || solicitud.Banco.Count<1 || solicitud.Banco.Count>maximoBanco || solicitud.Alfa.Count is <1 or >100
                 || solicitud.Banco.Select(b=>b.Id).Distinct().Count()!=solicitud.Banco.Count
                 || solicitud.Alfa.Select(a=>a.Clave).Distinct().Count()!=solicitud.Alfa.Count)
                 throw new InvalidOperationException("Seleccioná de 1 a 100 movimientos distintos de cada lado.");
@@ -191,12 +191,13 @@ public sealed partial class ConciliacionBancariaService
                 await ValidarVinculoUsuario(cn,tx,(long)anterior.Id,token);
                 VerificarSesion(session);token.ThrowIfCancellationRequested();return (long)anterior.Id;
             }
-            var args=new DynamicParameters(ArgumentosComparacion(solicitud.Filtro));args.Add("ids",solicitud.Banco.Select(b=>b.Id).ToArray());
+            var args=new DynamicParameters(ArgumentosComparacion(solicitud.Filtro));// Los ids viajan como XML: un extracto con miles de retenciones superaría el límite de parámetros de SQL Server.
+            args.Add("ids",new XElement("Ids",solicitud.Banco.Select(b=>new XElement("B",new XAttribute("Id",b.Id)))).ToString(SaveOptions.DisableFormatting));
             args.Add("seleccion",new XElement("Seleccion",solicitud.Alfa.Select(a=>new XElement("Asiento",
                 new XAttribute("Periodo",a.Clave.Periodo),new XAttribute("Mes",a.Clave.Mes),new XAttribute("Asiento",a.Clave.Asiento),
                 new XAttribute("TipoRegistro",a.Clave.TipoRegistro),new XAttribute("Secuencia",a.Clave.Secuencia)))).ToString(SaveOptions.DisableFormatting));
             using var r=await cn.QueryMultipleAsync(Q(CompararBaseSql+"""
-                SELECT * FROM #Banco WHERE Id IN @ids;
+                SELECT b.* FROM #Banco b WHERE b.Id IN(SELECT n.value('@Id','bigint') FROM (SELECT CONVERT(xml,@ids) x) t CROSS APPLY t.x.nodes('/Ids/B') s(n));
                 DECLARE @xml xml=CONVERT(xml,@seleccion);
                 SELECT a.* FROM #Alfa a JOIN @xml.nodes('/Seleccion/Asiento') s(n)
                     ON a.Periodo=s.n.value('@Periodo','nvarchar(6)') AND a.Mes=s.n.value('@Mes','tinyint')
@@ -211,7 +212,7 @@ public sealed partial class ConciliacionBancariaService
             var total=banco.Sum(b=>b.Importe);
             var diferencia=total-alfa.Sum(a=>a.Importe);
             var criterios=await LeerCriterios(cn,tx,token);
-            if(total==0||Math.Abs(diferencia)>criterios.Tolerancia||banco.Any(b=>Math.Sign(b.Importe)!=Math.Sign(total))||alfa.Any(a=>Math.Sign(a.Importe)!=Math.Sign(total)))
+            if(total==0||Math.Abs(diferencia)>criterios.Tolerancia||(!permitirContrarios&&banco.Any(b=>Math.Sign(b.Importe)!=Math.Sign(total)))||alfa.Any(a=>Math.Sign(a.Importe)!=Math.Sign(total)))
                 throw new InvalidOperationException("La diferencia supera la tolerancia o los movimientos tienen distinto sentido. Revisá la selección.");
             if(diferencia!=0&&(!solicitud.AceptarDiferencia||motivo.Length is <3 or >300))
                 throw new InvalidOperationException("Aceptá expresamente la diferencia e ingresá un motivo de 3 a 300 caracteres.");

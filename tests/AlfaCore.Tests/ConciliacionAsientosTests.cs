@@ -23,7 +23,7 @@ public sealed class ConciliacionAsientosTests
         var proxy=DispatchProxy.Create<T,CargaComprobantesUiTests.EventOnlyProxy>();
         ((CargaComprobantesUiTests.EventOnlyProxy)(object)proxy).Handler=handler;return proxy;
     }
-    private static ConciliacionBancariaService Service(string connection,CargaComprobantesArcaRuntime runtime)
+    internal static ConciliacionBancariaService Service(string connection,CargaComprobantesArcaRuntime runtime)
     {
         var session=new SessionDto();
         return new(Proxy<ISessionService>((m,_)=>m.Name switch{"GetConnectionString"=>connection,"GetActiveSession"=>session,_=>null}),

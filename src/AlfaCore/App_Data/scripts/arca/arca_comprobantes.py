@@ -1054,6 +1054,77 @@ def descargar_csv_oficial(page: Page, carpeta: Path, tipo: str, cuit: str, perio
     return generar_excel(encabezados, datos, carpeta, tipo, cuit, periodo, log)
 
 
+def _columna_xlsx(indice: int) -> str:
+    letras = ""
+    indice += 1
+    while indice:
+        indice, resto = divmod(indice - 1, 26)
+        letras = chr(65 + resto) + letras
+    return letras
+
+
+def escribir_xlsx_simple(encabezados: list[str], datos: list[list[str]], destino: Path, log: Logger) -> Path:
+    """Escribe un .xlsx minimo (hoja "Sheet1", celdas de texto) solo con la biblioteca estandar."""
+    from xml.sax.saxutils import escape
+
+    sin_control = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+    cant_columnas = max(len(encabezados), max((len(fila) for fila in datos), default=0))
+
+    def fila_xml(numero: int, valores: list[str]) -> str:
+        celdas = "".join(
+            f'<c r="{_columna_xlsx(i)}{numero}" t="inlineStr"><is><t xml:space="preserve">{escape(sin_control.sub("", v))}</t></is></c>'
+            for i, v in enumerate(valores)
+            if v != ""
+        )
+        return f'<row r="{numero}">{celdas}</row>'
+
+    filas = [fila_xml(1, list(encabezados))] + [fila_xml(n, list(f)) for n, f in enumerate(datos, start=2)]
+    hoja = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<dimension ref="A1:{_columna_xlsx(max(cant_columnas, 1) - 1)}{len(filas)}"/>'
+        f'<sheetData>{"".join(filas)}</sheetData></worksheet>'
+    )
+    partes = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            "</Types>"
+        ),
+        "_rels/.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/workbook.xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>'
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/worksheets/sheet1.xml": hoja,
+    }
+    if destino.exists():
+        destino.unlink()
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as zf:
+        for nombre, contenido in partes.items():
+            zf.writestr(nombre, contenido)
+
+    log.write(f"Archivo generado desde la tabla (.xlsx sin Excel): {destino}")
+    return destino
+
+
 def generar_excel(encabezados: list[str], datos: list[list[str]], carpeta: Path, tipo: str, cuit: str, periodo: str, log: Logger) -> Path:
     if not datos:
         raise BotError("No se leyeron filas de datos de la tabla.", 6)
@@ -1066,7 +1137,9 @@ def generar_excel(encabezados: list[str], datos: list[list[str]], carpeta: Path,
     try:
         excel = abrir_excel()
     except ExcelNoDisponible as exc:
-        raise BotError(f"Excel no esta disponible en este equipo y no se pudo bajar el Excel oficial de ARCA: {exc}", 6)
+        # Servidor sin Office: AlfaCore lee .xlsx igual que el .xls del importador VB6.
+        log.write(f"Excel no esta disponible en este equipo ({exc}); se arma el .xlsx sin Excel.")
+        return escribir_xlsx_simple(encabezados, datos, destino.with_suffix(".xlsx"), log)
     excel.Visible = False
     excel.DisplayAlerts = False
     libro = None

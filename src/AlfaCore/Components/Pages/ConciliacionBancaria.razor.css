@@ -50,3 +50,7 @@
 .conciliacion-page--comparar ::deep .alfa-tabs { flex-shrink:0; }
 .conciliacion-seleccion { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 8px 0; }
 .conciliacion-seleccion > span { flex: 1 1 auto; }
+.conciliacion-cargando { display:flex; align-items:center; gap:var(--alfa-space-12); padding:var(--alfa-space-8) var(--alfa-space-12); color:var(--alfa-text-secondary); border:1px solid var(--alfa-border-default); border-radius:var(--alfa-radius-md,8px); }
+.conciliacion-cargando__barra { position:relative; flex:0 0 120px; height:4px; border-radius:2px; overflow:hidden; background:var(--alfa-border-default); }
+.conciliacion-cargando__barra::after { content:""; position:absolute; inset:0 auto 0 0; width:40%; border-radius:2px; background:var(--alfa-primary,#3b82f6); animation:conciliacion-cargando 1.1s ease-in-out infinite; }
+@keyframes conciliacion-cargando { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }

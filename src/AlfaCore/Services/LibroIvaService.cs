@@ -110,7 +110,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                    ISNULL(a.LIVA_AlicIVA4,0) A4, ISNULL(a.LIVA_ImpIVA4,0) I4,
                    ISNULL(a.LIVA_Ret_Perc,0) PercepcionIva, ISNULL(a.LIVA_Ret_IBtos,0) PercepcionIibb, ISNULL(a.LIVA_Ret_Ganancias,0) OtrasPercepciones,
                    ISNULL(c.ImporteImpuestosInternos,0) * CASE WHEN ISNULL(a.LIVA_TOTAL,0) < 0 THEN -1 ELSE 1 END ImpuestosInternos,
-                   ISNULL(a.LIVA_TOTAL,0) Total
+                   ISNULL(a.LIVA_TOTAL,0) Total, a.CodCpteDGI CodigoArcaAsientoTexto
             FROM dbo.MV_ASIENTOS a
             LEFT JOIN {terceros} cl ON cl.CODIGO = a.CUENTA
             {joinTipoDoc}
@@ -124,10 +124,12 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             """, new { Desde = desde, Hasta = hasta, Unidad = unidad, filtro.SoloSinUnidad, FiltrarUnidades = filtro.UnidadesNegocio.Count > 0, Unidades = filtro.UnidadesNegocio, Tipo = compras ? "COMPRAS" : "VENTAS" }, commandTimeout: 120, cancellationToken: ct))).ToList();
 
         var ajusteRedondeo = await AjusteRedondeoMaximoAsync(cn, ct);
+        var filasLibro = filas.Select(f => Convertir(f, compras, ajusteRedondeo)).ToList();
+        await CompletarCodigosArcaAsync(cn, filasLibro, ct);
         var resultado = new LibroIvaResultado
         {
             Filtro = new() { Desde = desde, Hasta = hasta, UnidadNegocio = unidad, Compras = compras, SoloSinUnidad = filtro.SoloSinUnidad, General = filtro.General, UnidadesNegocio = filtro.UnidadesNegocio.ToArray() },
-            Filas = filas.Select(f => Convertir(f, compras, ajusteRedondeo)).ToList(),
+            Filas = filasLibro,
             Cierre = await LeerCierreAsync(cn, ct, compras: compras),
             PuedeCerrar = await permissions.HasAccessAsync(MenuFechasCierre, ct)
         };
@@ -137,6 +139,36 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         (resultado.Emisor, resultado.CuitEmisor, resultado.CondicionIvaEmisor) = await EmisorAsync(cn, unidad, ct);
         resultado.Unidades = await ResumirUnidadesAsync(cn, resultado, ct);
         return resultado;
+    }
+
+    /// <summary>Comprobantes que no están en la tabla fija de ARCA (por ejemplo CC X, el comprobante contable): el código se toma de la
+    /// tabla de comprobantes de Alfa Gestión (V_TA_CPTE, columna CpteDGI + letra). Si tampoco está ahí, la fila queda sin código y se avisa.</summary>
+    private static async Task CompletarCodigosArcaAsync(SqlConnection cn, IReadOnlyList<LibroIvaFila> filas, CancellationToken ct)
+    {
+        foreach (var grupo in filas.Where(f => f.CodigoArca == 0).GroupBy(f => (Tc: f.Tc.Trim().ToUpperInvariant(), Letra: f.Letra.Trim().ToUpperInvariant())))
+        {
+            // Primero el código que grabó el propio asiento (MV_ASIENTOS.CodCpteDGI); si no lo tiene, el de la tabla de comprobantes.
+            foreach (var fila in grupo.Where(f => f.CodigoArcaAsiento > 0)) fila.CodigoArca = fila.CodigoArcaAsiento;
+            if (grupo.All(f => f.CodigoArca > 0)) continue;
+            if (await CodigoArcaDeTablaAsync(cn, null, grupo.Key.Tc, grupo.Key.Letra, ct) is not { } codigo) continue;
+            foreach (var fila in grupo.Where(f => f.CodigoArca == 0)) fila.CodigoArca = codigo;
+        }
+    }
+
+    /// <summary>Código de comprobante de ARCA que la tabla de comprobantes de Alfa Gestión guarda para el tipo y la letra (V_TA_CPTE.CpteDGI + letra).</summary>
+    internal static async Task<int?> CodigoArcaDeTablaAsync(SqlConnection cn, SqlTransaction? tx, string tc, string letra, CancellationToken ct)
+    {
+        tc = tc.Trim().ToUpperInvariant(); letra = letra.Trim().ToUpperInvariant();
+        // El nombre de la columna sale de esta lista cerrada; nunca de datos del usuario.
+        if (tc.Length == 0 || letra is not ("A" or "B" or "C" or "E" or "M" or "R" or "X")) return null;
+        try
+        {
+            var valor = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                $"SELECT TOP (1) CONVERT(varchar(10), CpteDGI{letra}) FROM dbo.V_TA_CPTE WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Tc AND CpteDGI{letra} IS NOT NULL ORDER BY Talonario;",
+                new { Tc = tc }, tx, cancellationToken: ct));
+            return int.TryParse(valor?.Trim(), out var codigo) && codigo > 0 ? codigo : null;
+        }
+        catch (SqlException) { return null; /* la base no tiene esa columna: la fila queda sin código y se avisa */ }
     }
 
     /// <summary>Agrupa las filas por unidad de negocio con su razón social y CUIT (sin unidad: los de la empresa).</summary>
@@ -237,7 +269,8 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             PuntoVenta = int.TryParse(s.Sucursal, out var pv) ? pv : 0, Numero = long.TryParse(s.Numero, out var n) ? n : 0,
             NetoGravado = netoGravado, NoGravado = noGravado, Exento = exento,
             PercepcionIva = MonedaLibro(s.PercepcionIva), PercepcionIibb = MonedaLibro(s.PercepcionIibb), OtrasPercepciones = MonedaLibro(s.OtrasPercepciones),
-            ImpuestosInternos = MonedaLibro(s.ImpuestosInternos), Total = MonedaLibro(s.Total), CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra)
+            ImpuestosInternos = MonedaLibro(s.ImpuestosInternos), Total = MonedaLibro(s.Total), CodigoArca = compras ? CodigoArcaCompras(s.Tc, s.Letra) : CodigoArca(s.Tc, s.Letra),
+            CodigoArcaAsiento = int.TryParse(s.CodigoArcaAsientoTexto?.Trim(), out var cod) && cod > 0 ? cod : 0
         };
         // En compras, las facturas B y C no discriminan IVA: no hay crédito fiscal ni alícuotas.
         fila.Alicuotas = compras && s.Letra.Trim().ToUpperInvariant() is "B" or "C" ? []
@@ -461,8 +494,9 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             ws.Cell(2, 1).Value = r.Consolidado
                 ? $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · " + string.Join(" | ", r.Unidades.Select(u => $"U.N. {(u.Codigo.Length > 0 ? u.Codigo : "-")} {u.Nombre} CUIT {u.Cuit}"))
                 : $"Período {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · {r.CondicionIvaEmisor}";
-            string[] titulos = ["Fecha", "Comprobante", "Número", r.Filtro.Compras ? "Proveedor" : "Cliente", "CUIT", "Cond. IVA", "Neto gravado", "No gravado", "Exento",
-                "IVA 21%", "IVA 10,5%", "IVA 27%", "IVA otras", "Percepciones", "Imp. internos", "Total", .. (r.Consolidado ? new[] { "Unidad negocio", "CUIT unidad" } : [])];
+            var columnas = r.ColumnasImportes;
+            var ultimaColumna = 6 + columnas.Count;
+            string[] titulos = ["Fecha", "Comprobante", "Número", r.Filtro.Compras ? "Proveedor" : "Cliente", "CUIT", "Cond. IVA", .. columnas.Select(x => x.Titulo), .. (r.Consolidado ? new[] { "Unidad negocio", "CUIT unidad" } : [])];
             var cuitUnidad = r.Unidades.ToDictionary(u => u.Codigo, u => u.Cuit, StringComparer.OrdinalIgnoreCase);
             for (var c = 0; c < titulos.Length; c++) ws.Cell(4, c + 1).Value = titulos[c];
             ws.Range(4, 1, 4, titulos.Length).Style.Font.Bold = true;
@@ -473,15 +507,13 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
                 ws.Cell(fila, 1).Value = f.Fecha; ws.Cell(fila, 1).Style.DateFormat.Format = "dd/MM/yyyy";
                 ws.Cell(fila, 2).Value = $"{f.Tc} {f.Letra}"; ws.Cell(fila, 3).Value = f.Comprobante;
                 ws.Cell(fila, 4).Value = f.RazonSocial; ws.Cell(fila, 5).Value = f.Cuit; ws.Cell(fila, 6).Value = f.CondicionIva;
-                decimal[] valores = [f.NetoGravado, f.NoGravado, f.Exento, f.IvaDe(21), f.IvaDe(10.5m), f.IvaDe(27),
-                    f.Iva - f.IvaDe(21) - f.IvaDe(10.5m) - f.IvaDe(27), f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones, f.ImpuestosInternos, f.Total];
-                for (var c = 0; c < valores.Length; c++) ws.Cell(fila, 7 + c).Value = valores[c];
-                if (r.Consolidado) { ws.Cell(fila, 17).Value = f.UnidadNegocio; ws.Cell(fila, 18).Value = cuitUnidad.GetValueOrDefault(f.UnidadNegocio, ""); }
+                for (var c = 0; c < columnas.Count; c++) ws.Cell(fila, 7 + c).Value = columnas[c].Valor(f);
+                if (r.Consolidado) { ws.Cell(fila, ultimaColumna + 1).Value = f.UnidadNegocio; ws.Cell(fila, ultimaColumna + 2).Value = cuitUnidad.GetValueOrDefault(f.UnidadNegocio, ""); }
                 fila++;
             }
             ws.Cell(fila, 4).Value = "Totales"; ws.Row(fila).Style.Font.Bold = true;
-            for (var c = 7; c <= 16; c++) ws.Cell(fila, c).FormulaA1 = $"SUM({ws.Cell(5, c).Address}:{ws.Cell(fila - 1, c).Address})";
-            ws.Range(5, 7, fila, 16).Style.NumberFormat.Format = "#,##0.00";
+            for (var c = 7; c <= ultimaColumna; c++) ws.Cell(fila, c).FormulaA1 = $"SUM({ws.Cell(5, c).Address}:{ws.Cell(fila - 1, c).Address})";
+            ws.Range(5, 7, fila, ultimaColumna).Style.NumberFormat.Format = "#,##0.00";
             fila += 2;
             ws.Cell(fila++, 1).Value = "Totales por alícuota"; ws.Cell(fila - 1, 1).Style.Font.Bold = true;
             foreach (var a in r.TotalesPorAlicuota)
@@ -558,16 +590,14 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         }
         else
             sb.Append($"<h1>{Nombre(r.Filtro.Compras)}</h1><div class=\"sub\">{E(r.Emisor)} · CUIT {E(r.CuitEmisor)} · {E(r.CondicionIvaEmisor)} · {periodo}</div>");
-        sb.Append($"<table class=\"det\"><thead><tr>{(cons ? "<th>U.N.</th>" : "")}<th>Fecha</th><th>Cpte.</th><th>Número</th><th>{(r.Filtro.Compras ? "Proveedor" : "Cliente")}</th><th>CUIT</th><th>Cond. IVA</th><th class=\"n\">Neto grav.</th><th class=\"n\">No grav.</th><th class=\"n\">Exento</th><th class=\"n\">IVA 21%</th><th class=\"n\">IVA 10,5%</th><th class=\"n\">IVA otras</th><th class=\"n\">Percep.</th><th class=\"n\">Imp. int.</th><th class=\"n\">Total</th></tr></thead><tbody>");
+        var columnas = r.ColumnasImportes;
+        sb.Append($"<table class=\"det\"><thead><tr>{(cons ? "<th>U.N.</th>" : "")}<th>Fecha</th><th>Cpte.</th><th>Número</th><th>{(r.Filtro.Compras ? "Proveedor" : "Cliente")}</th><th>CUIT</th><th>Cond. IVA</th>{string.Concat(columnas.Select(x => $"<th class=\"n\">{E(x.Titulo)}</th>"))}</tr></thead><tbody>");
         foreach (var f in r.Filas)
         {
-            var otras = f.Iva - f.IvaDe(21) - f.IvaDe(10.5m);
             sb.Append($"<tr>{(cons ? $"<td>{E(f.UnidadNegocio)}</td>" : "")}<td>{f.Fecha:dd/MM/yy}</td><td>{E(f.Tc)} {E(f.Letra)}</td><td>{f.Comprobante}</td><td>{E(f.RazonSocial)}</td><td>{E(f.Cuit)}</td><td>{E(f.CondicionIva)}</td>")
-              .Append($"<td class=\"n\">{M(f.NetoGravado)}</td><td class=\"n\">{M(f.NoGravado)}</td><td class=\"n\">{M(f.Exento)}</td><td class=\"n\">{M(f.IvaDe(21))}</td><td class=\"n\">{M(f.IvaDe(10.5m))}</td><td class=\"n\">{M(otras)}</td>")
-              .Append($"<td class=\"n\">{M(f.PercepcionIva + f.PercepcionIibb + f.OtrasPercepciones)}</td><td class=\"n\">{M(f.ImpuestosInternos)}</td><td class=\"n\">{M(f.Total)}</td></tr>");
+              .Append(string.Concat(columnas.Select(x => $"<td class=\"n\">{M(x.Valor(f))}</td>"))).Append("</tr>");
         }
-        var o = r.Iva - r.Filas.Sum(f => f.IvaDe(21)) - r.Filas.Sum(f => f.IvaDe(10.5m));
-        sb.Append($"</tbody><tfoot><tr><td colspan=\"{6 + k}\">Totales</td><td class=\"n\">{M(r.NetoGravado)}</td><td class=\"n\">{M(r.NoGravado)}</td><td class=\"n\">{M(r.Exento)}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(21)))}</td><td class=\"n\">{M(r.Filas.Sum(f => f.IvaDe(10.5m)))}</td><td class=\"n\">{M(o)}</td><td class=\"n\">{M(r.Percepciones)}</td><td class=\"n\">{M(r.ImpuestosInternos)}</td><td class=\"n\">{M(r.Total)}</td></tr></tfoot></table>");
+        sb.Append($"</tbody><tfoot><tr><td colspan=\"{6 + k}\">Totales</td>{string.Concat(columnas.Select(x => $"<td class=\"n\">{M(r.Filas.Sum(x.Valor))}</td>"))}</tr></tfoot></table>");
         if (r.TotalesPorAlicuota.Count > 0)
         {
             sb.Append("<table class=\"alic\"><thead><tr><th>Alícuota</th><th class=\"n\">Neto gravado</th><th class=\"n\">IVA</th></tr></thead><tbody>");
@@ -616,6 +646,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         public decimal A1 { get; set; } public decimal I1 { get; set; } public decimal A2 { get; set; } public decimal I2 { get; set; }
         public decimal A3 { get; set; } public decimal I3 { get; set; } public decimal A4 { get; set; } public decimal I4 { get; set; }
         public decimal PercepcionIva { get; set; } public decimal PercepcionIibb { get; set; } public decimal OtrasPercepciones { get; set; }
+        public string? CodigoArcaAsientoTexto { get; set; }
         public decimal ImpuestosInternos { get; set; } public decimal Total { get; set; }
     }
 }

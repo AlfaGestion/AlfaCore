@@ -38,6 +38,33 @@ public sealed class ConciliacionExtractoPdfTests
     [ExtractoPdfFact("HIPOTECARIO")]
     public async Task PdfHipotecarioRealPasaPorElMismoLectorDeLaImportacion()
         =>await Verificar("HIPOTECARIO",BankSource.Hipotecario,14,15368.38m,3392.52m);
+    [ExtractoPdfFact("PATAGONIA")]
+    public async Task PdfPatagoniaRealPasaPorElMismoLectorDeLaImportacion()
+        =>await Verificar("PATAGONIA",BankSource.Patagonia,201,11422248.38m,6335868.84m);
+    [ExtractoPdfFact("GALICIA")]
+    public async Task PdfGaliciaRealPasaPorElMismoLectorDeLaImportacion()
+        =>await Verificar("GALICIA",BankSource.Galicia,5258,16616032.83m,3870973.08m);
+    [ExtractoPdfFact("PATAGONIA")]
+    public async Task GastosBancariosDeOctubreDePatagoniaCoincidenConElResumenDelBanco()
+        =>await VerificarGastos("PATAGONIA",88402.98m,18564.63m,2645.79m,334113.10m,519587.91m,108);
+    [ExtractoPdfFact("GALICIA")]
+    public async Task GastosBancariosDeGaliciaSeCalculanDelExtractoCompleto()
+        =>await VerificarGastos("GALICIA",95000.00m,19950.00m,2850.00m,2168897.99m,745370.84m,2666);
+    private static async Task VerificarGastos(string formato,decimal gastos,decimal iva,decimal percepcion,decimal iibb,decimal idc,int movimientos)
+    {
+        var path=Environment.GetEnvironmentVariable("EXTRACTO_TEST_PDF_"+formato)!;
+        var lectura=await Lector().LeerAsync(new(Path.GetFileName(path),await File.ReadAllBytesAsync(path)),ct:default,python:Environment.GetEnvironmentVariable("TARJETAS_TEST_PYTHON")!);
+        var filas=lectura.Movimientos.Select((m,i)=>new ConciliacionFilaBanco{Id=i+1,Fecha=m.MovementDate,Detalle=m.Description,Importe=m.Amount,Huella="H"+i}).ToList();
+        var c=ConciliacionGastosBancarios.Calcular(filas,new(),1m);
+        Assert.Empty(c.Errores);
+        Assert.Equal(gastos,c.Importe(ConciliacionGastosBancarios.Gastos));
+        Assert.Equal(iva,c.Importe(ConciliacionGastosBancarios.IvaCredito));
+        Assert.Equal(percepcion,c.Importe(ConciliacionGastosBancarios.IvaPercepcion));
+        Assert.Equal(iibb,c.Importe(ConciliacionGastosBancarios.Iibb));
+        Assert.Equal(idc,c.Importe(ConciliacionGastosBancarios.Idc));
+        Assert.Equal(gastos+iva+percepcion+iibb+idc,c.Total);
+        Assert.Equal(movimientos,c.Movimientos.Count);
+    }
     private static async Task Verificar(string formato,BankSource banco,int cantidad,decimal inicial,decimal final)
     {
         var path=Environment.GetEnvironmentVariable("EXTRACTO_TEST_PDF_"+formato)!;

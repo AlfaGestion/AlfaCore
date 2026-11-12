@@ -24,6 +24,13 @@
 <div class="gd-page gd conciliacion-page @(_tab=="conciliar" ? "conciliacion-page--comparar" : null)">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
     <AlfaTabs Items="@Tabs" ActiveKey="@_tab" ActiveKeyChanged="CambiarTab" AriaLabel="Conciliación bancaria" />
+    @if (_busy)
+    {
+        <div class="conciliacion-cargando" role="status" aria-live="polite">
+            <span class="conciliacion-cargando__barra" aria-hidden="true"></span>
+            <span>Procesando… puede demorar unos segundos con extractos grandes.</span>
+        </div>
+    }
 
     @if (_tab == "importar")
     {
@@ -33,7 +40,7 @@
             <label class="conciliacion-archivo">
                 <span>Archivo Excel, CSV o PDF (.xlsx, .xls, .csv, .pdf, hasta 20 MB)</span>
                 <InputFile OnChange="SeleccionarArchivo" accept=".xlsx,.xls,.csv,.pdf" disabled="@_busy" />
-                <small>PDF de texto: resúmenes de cuenta en pesos de Nación e Hipotecario. Se conserva el original.</small>
+                <small>PDF de texto: resúmenes de cuenta corriente en pesos de Nación, Hipotecario, Patagonia y Galicia. Se conserva el original.</small>
             </label>
             @if (_archivo is not null)
             {
@@ -385,6 +392,7 @@
     }
     <ConciliacionAsientoDialog Preparacion="@_asientoPreparacion" OnClose="()=>_asientoPreparacion=null" OnSaved="AsientoGuardado" />
     <ConciliacionAsientoLoteDialog Movimientos="@_loteAsiento" OnClose="()=>_loteAsiento=null" OnDone="AsientosLoteGenerados" />
+    <ConciliacionGastosDialog ImportacionId="@_gastosImportacion" OnClose="()=>_gastosImportacion=null" OnSaved="GastosGenerados" />
     @if (_consultaCuentaRevision is { } consulta)
     {
         <ConciliacionCuentaCorrienteDialog @key="consulta.Id" MovimientoId="consulta.Id" Fecha="consulta.Fecha" Importe="consulta.Importe" Descripcion="@consulta.Descripcion" OnClose="()=>_consultaCuentaRevision=null" />
@@ -539,6 +547,13 @@
         var regla=new ConciliacionAsientoRegla{Nombre="Sugerencia IA · revisar cuenta",Categoria=prep.Categoria,Contrapartida=orientacion.Cuenta};
         var config=new ConciliacionAsientoConfig{TipoRegistro=prep.Catalogo.Config.TipoRegistro,Reglas=[..prep.Catalogo.Config.Reglas,regla]};
         _asientoPreparacion=prep with{Catalogo=prep.Catalogo with{Config=config},ReglaSugerida=regla.Id};_seleccion=null;
+    });
+    private long? _gastosImportacion;
+    private Task AbrirGastos()=>Operar(ct=>{_gastosImportacion=_filtro;return Task.CompletedTask;});
+    private Task GastosGenerados(ConciliacionAsientoResultado resultado)=>Operar(async ct=>{
+        _gastosImportacion=null;
+        _feedback=AppUiMessage.Success("Asiento de gastos bancarios generado",$"{resultado.Tc} {resultado.Comprobante} · Asiento {resultado.NumeroAsiento} · Conciliación #{resultado.ConciliacionId}. Los gastos del extracto quedaron conciliados.");
+        await CargarPagina(ct);
     });
     private Task ConfigurarAsientos()=>Operar(async ct=>{_asientoCatalogo=await Servicio.AsientoCatalogoAsync(ct);});
     private Task ConfiguracionAsientoGuardada() { _asientoCatalogo=null;_feedback=AppUiMessage.Success("Cuentas guardadas","Los conceptos se usarán en las próximas propuestas de asiento.");return Task.CompletedTask; }
@@ -894,6 +909,8 @@
                 new() { Key = "importar",Label = "Importar extracto",Icon = "bi-upload",Style = PageHeaderActionStyle.Primary,
                     Disabled = _tab!="importar" || _busy || !_listo || string.IsNullOrWhiteSpace(_cuenta),Busy = _busy,OnClick = Importar },
                 new() { Key = "actualizar",Label = "Actualizar",Icon = "bi-arrow-clockwise",Disabled = _busy,OnClick = () => Operar(CargarPagina) },
+                new() { Key="gastos-bancarios",Label="Asiento de gastos bancarios",Icon="bi-bank",Disabled=_busy||_tab!="revisar"||!_filtro.HasValue,
+                    Title="Genera el asiento mensual de comisiones, IVA, retenciones e impuesto a los débitos y créditos. Elegí antes un extracto en Importación.",OnClick=AbrirGastos },
                 new() { Key="cuentas-asientos",Label="Cuentas para asientos",Icon="bi-journal-text",Disabled=_busy,OnClick=ConfigurarAsientos }
             ],
             Pagination = _tab=="conciliar" ? null : new() { Label = $"{total} registros",PageLabel = $"{pagina} / {Math.Max(1,(int)Math.Ceiling(total/50d))}",
@@ -920,7 +937,7 @@
         if (baseId == _baseActual && string.Equals(usuario, _usuarioActual, StringComparison.OrdinalIgnoreCase)) return;
         _baseActual = baseId; _usuarioActual = usuario;
         _lifetime.Cancel(); _lifetime.Dispose(); _lifetime = new();
-        _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;_loteAsiento=null;_marcados.Clear();
+        _tab="importar"; _comparacion=null;_asientoPreparacion=null;_asientoCatalogo=null;_loteAsiento=null;_gastosImportacion=null;_marcados.Clear();
         _busy = false; _archivo = null; _listo = false; _cuentas = []; _importaciones = new(); _movimientos = new();
         _seleccion = null; _eliminar = null; _detalle = []; _feedback = null; _filtro = null;
         _contexto=new([],[]);_comprobanteDetalleId=0;_categoriaRevision=_motivoRevision="";
