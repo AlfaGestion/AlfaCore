@@ -56,7 +56,9 @@ public sealed class SaaSTenantIsolationTests
 
         Assert.True(resolve > legacy && read > resolve);
         Assert.Contains("alfacore_catalogo_carrito_{NormalizeRouteSegment(idweb)}_{(_effectiveIdBase ?? 0)", source, StringComparison.Ordinal);
-        Assert.Contains("GetPublicCartAsync(IdInsert, idweb, CatalogoClienteSession.CurrentClient?.CodigoCliente, _effectiveIdBase)", source, StringComparison.Ordinal);
+        // El carrito se lee con el cliente de la sesión del catálogo y la base efectiva de la ruta.
+        Assert.Contains("var codigoCliente = CatalogoClienteSession.CurrentClient?.CodigoCliente;", source, StringComparison.Ordinal);
+        Assert.Contains("GetPublicCartAsync(IdInsert, idweb, codigoCliente, _effectiveIdBase)", source, StringComparison.Ordinal);
     }
 
     [Fact]
