@@ -263,6 +263,17 @@ public sealed class AsientosTests
     }
 
     [Fact]
+    public void ClaveDelAsientoIncluyeElComprobante()
+    {
+        // El N° de asiento 10-3407 se repite entre FC 0014-40144, FC 0015-38888 y FCC 2100-18895.
+        var k = new AsientoClave("16", 10, 3407, "", "FC", "0014", "00040144", "B");
+        Assert.True(k.ConComprobante);
+        Assert.Equal(k, AsientoClave.Parse(k.Id));
+        Assert.NotEqual(k, k with { Sucursal = "0015", NumeroCpte = "00038888" });
+        Assert.False(AsientoClave.Parse("16|10|3407|")!.ConComprobante);
+    }
+
+    [Fact]
     public void CruceConMisComprobantes()
     {
         var arca = new ArcaMisComprobantesArchivo { Recibidos = true };

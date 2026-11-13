@@ -366,7 +366,8 @@ public sealed class ControlArcaImportacionService(ISessionService sessions, IApp
         }
         var balance = await cn.ExecuteScalarAsync<decimal>(Q("""
             SELECT SUM(CASE WHEN [DEBE-HABER]='D' THEN IMPORTE ELSE -IMPORTE END) FROM dbo.MV_ASIENTOS
-            WHERE LTRIM(RTRIM(PERIODO))=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND LTRIM(RTRIM(TIPO_REG))=LTRIM(RTRIM(@tipo));
+            WHERE LTRIM(RTRIM(PERIODO))=@periodo AND MES_OPERATIVO=@mes AND [NUMERO ASIENTO]=@asiento AND LTRIM(RTRIM(TIPO_REG))=LTRIM(RTRIM(@tipo))
+              AND LTRIM(RTRIM(TC))=LTRIM(RTRIM(@tc)) AND LTRIM(RTRIM(SUCURSAL))=LTRIM(RTRIM(@suc)) AND LTRIM(RTRIM(NUMERO))=LTRIM(RTRIM(@num)) AND LTRIM(RTRIM(LETRA))=LTRIM(RTRIM(@letra));
             """, p));
         if (balance != 0) throw new ReglaException("El asiento no quedó balanceado. No se grabó.");
         await cn.ExecuteAsync(Q("""

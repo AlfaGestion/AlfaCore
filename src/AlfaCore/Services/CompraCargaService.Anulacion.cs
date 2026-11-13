@@ -63,18 +63,22 @@ public sealed partial class CompraCargaService
         if(await c.ExecuteScalarAsync<int>(Q("""
             SELECT COUNT(*) FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes
               AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro
+              AND LTRIM(RTRIM(TC))=@TipoContable AND SUCURSAL+NUMERO+LETRA=@Comprobante
               AND (ISNULL(CONTABILIZADO,0)=1 OR ISNULL(Conciliado,0)=1 OR LTRIM(RTRIM(UNEGOCIO))<>@Unidad);
             """,f))>0)throw new InvalidOperationException("El asiento está contabilizado, conciliado o incluye otra unidad. No puede anularse aquí.");
-        var asientos=(await c.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro ORDER BY SECUENCIA;",f))).ToList();
-        var centros=(await c.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro ORDER BY SECUENCIA;",f))).ToList();
+        var asientos=(await c.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro AND LTRIM(RTRIM(TC))=@TipoContable AND SUCURSAL+NUMERO+LETRA=@Comprobante ORDER BY SECUENCIA;",f))).ToList();
+        var centros=(await c.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro AND EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO))=@Periodo AND x.MES_OPERATIVO=@Mes AND x.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(x.TIPO_REG))=@TipoRegistro AND x.CUENTA=c.CUENTA AND x.SECUENCIA=c.SECUENCIA AND LTRIM(RTRIM(x.TC))=@TipoContable AND x.SUCURSAL+x.NUMERO+x.LETRA=@Comprobante) ORDER BY SECUENCIA;",f))).ToList();
         await c.ExecuteAsync(Q("""
             INSERT dbo.ALFACORE_COMPRA_ANULACION(CompraId,Usuario,Motivo,AsientoJson,CentrosJson) VALUES(@compra,@usuario,@motivo,@asientos,@centros);
             """,new{compra,usuario=usuarios.GetCurrentUserName(),motivo=motivo.Trim(),asientos=JsonSerializer.Serialize(asientos),centros=JsonSerializer.Serialize(centros)}));
         // Igual que el legacy de compras: retirar asiento/libro en una única transacción. La cabecera, sus conceptos,
         // el documento recibido y los snapshots de auditoría se conservan para consultar el original anulado.
         await c.ExecuteAsync(Q("""
-            DELETE dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro;
-            DELETE dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro;
+            -- El número de asiento se repite entre comprobantes: se borra solo el de esta compra (TC + sucursal + número + letra).
+            DELETE c FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(c.PERIODO))=@Periodo AND c.MES_OPERATIVO=@Mes AND c.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(c.Tipo_Reg))=@TipoRegistro
+              AND EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO))=@Periodo AND x.MES_OPERATIVO=@Mes AND x.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(x.TIPO_REG))=@TipoRegistro AND x.CUENTA=c.CUENTA AND x.SECUENCIA=c.SECUENCIA AND LTRIM(RTRIM(x.TC))=@TipoContable AND x.SUCURSAL+x.NUMERO+x.LETRA=@Comprobante);
+            DELETE dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro
+              AND LTRIM(RTRIM(TC))=@TipoContable AND SUCURSAL+NUMERO+LETRA=@Comprobante;
             UPDATE dbo.C_MV_CPTE SET ANULADA=1 WHERE ID=@Id;
             """,f));
         await c.ExecuteAsync(Q("""

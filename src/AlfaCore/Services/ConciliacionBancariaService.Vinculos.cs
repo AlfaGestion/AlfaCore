@@ -45,6 +45,7 @@ public sealed partial class ConciliacionBancariaService
         INTO #AlfaBase FROM dbo.MV_ASIENTOS a
         LEFT JOIN dbo.BK_ConciliacionAlfa r ON r.Cuenta=@cuenta AND r.Periodo=a.PERIODO AND r.Mes=a.MES_OPERATIVO
             AND r.Asiento=a.[NUMERO ASIENTO] AND r.TipoRegistro=a.TIPO_REG AND r.Secuencia=a.SECUENCIA AND r.Activa=1
+            AND r.Comprobante=CONCAT(LTRIM(RTRIM(a.TC)),' ',a.SUCURSAL,'-',a.NUMERO,' ',a.LETRA)
         WHERE LTRIM(RTRIM(a.CUENTA))=@cuenta AND a.EsResumen=0 AND a.ES_SALDO_APERTURA=0 AND ISNULL(a.EsCierre,0)=0
             AND a.FECHA>=@desde AND a.FECHA<DATEADD(day,1,@hasta) AND a.[DEBE-HABER] IN ('D','H')
             AND EXISTS(SELECT 1 FROM dbo.TA_USUARIOS u WHERE UPPER(LTRIM(RTRIM(u.NOMBRE)))=UPPER(@usuario)
@@ -234,7 +235,9 @@ public sealed partial class ConciliacionBancariaService
                     INSERT dbo.BK_ConciliacionAlfa(ConciliacionId,Cuenta,Periodo,Mes,Asiento,TipoRegistro,Secuencia,Fecha,Importe,Detalle,Comprobante,Unidad,Huella)
                     VALUES(@id,@cuenta,@Periodo,@Mes,@Asiento,@TipoRegistro,@Secuencia,@Fecha,@Importe,@Detalle,@Comprobante,@Unidad,@Huella);
                     UPDATE dbo.MV_ASIENTOS SET Conciliado=1 WHERE LTRIM(RTRIM(CUENTA))=@cuenta AND PERIODO=@Periodo
-                        AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND TIPO_REG=@TipoRegistro AND SECUENCIA=@Secuencia;
+                        AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND TIPO_REG=@TipoRegistro AND SECUENCIA=@Secuencia
+                        -- El número de asiento se repite entre comprobantes: se marca solo el renglón del comprobante elegido.
+                        AND CONCAT(LTRIM(RTRIM(TC)),' ',SUCURSAL,'-',NUMERO,' ',LETRA)=@Comprobante;
                     """,p));
             }
             VerificarSesion(session);token.ThrowIfCancellationRequested();return id;
@@ -316,7 +319,7 @@ public sealed partial class ConciliacionBancariaService
             var args=new DynamicParameters(ArgumentosComparacion(f));args.Add("id",id);
             var conflicto=await cn.ExecuteScalarAsync<bool>(new CommandDefinition(CompararBaseSql+"""
                 SELECT CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM dbo.BK_ConciliacionAlfa r LEFT JOIN #Alfa a
-                    ON a.Periodo=r.Periodo AND a.Mes=r.Mes AND a.Asiento=r.Asiento AND a.TipoRegistro=r.TipoRegistro AND a.Secuencia=r.Secuencia
+                    ON a.Periodo=r.Periodo AND a.Mes=r.Mes AND a.Asiento=r.Asiento AND a.TipoRegistro=r.TipoRegistro AND a.Secuencia=r.Secuencia AND a.Comprobante=r.Comprobante
                     WHERE r.ConciliacionId=@id AND (a.Asiento IS NULL OR a.Alterado=1))
                     OR EXISTS(SELECT 1 FROM dbo.BK_ConciliacionAlfa r JOIN dbo.MV_CONCILIACION l ON LTRIM(RTRIM(l.Cuenta))=r.Cuenta
                         AND l.Periodo=r.Periodo AND l.Mes_Operativo=r.Mes AND l.[Numero Asiento]=r.Asiento AND l.Tipo_Reg=r.TipoRegistro AND l.Secuencia=r.Secuencia
@@ -327,6 +330,7 @@ public sealed partial class ConciliacionBancariaService
             await cn.ExecuteAsync(new CommandDefinition("""
                 UPDATE a SET Conciliado=0 FROM dbo.MV_ASIENTOS a JOIN dbo.BK_ConciliacionAlfa r ON LTRIM(RTRIM(a.CUENTA))=r.Cuenta
                     AND a.PERIODO=r.Periodo AND a.MES_OPERATIVO=r.Mes AND a.[NUMERO ASIENTO]=r.Asiento AND a.TIPO_REG=r.TipoRegistro AND a.SECUENCIA=r.Secuencia
+                    AND CONCAT(LTRIM(RTRIM(a.TC)),' ',a.SUCURSAL,'-',a.NUMERO,' ',a.LETRA)=r.Comprobante
                     WHERE r.ConciliacionId=@id;
                 UPDATE dbo.BK_ConciliacionBanco SET Activa=0 WHERE ConciliacionId=@id;
                 UPDATE dbo.BK_ConciliacionAlfa SET Activa=0 WHERE ConciliacionId=@id;

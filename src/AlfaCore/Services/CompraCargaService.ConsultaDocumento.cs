@@ -53,7 +53,8 @@ public sealed partial class CompraCargaService
               c.IMPORTE ImporteTotal,c.IMPORTE_S_IVA ImporteSinIva,c.ImporteOtrosConceptos,c.NetoGravado,c.NetoNoGravado,
               c.ANULADA Anulada,c.Bloqueado Bloqueada,c.Cerrada Cerrada,c.COMENTARIOS Comentarios,
               ISNULL((SELECT SUM(ISNULL(a.LIVA_ImpIVA,0)+ISNULL(a.LIVA_ImpIVA2,0)+ISNULL(a.LIVA_ImpIVA3,0)+ISNULL(a.LIVA_ImpIVA4,0))
-                FROM dbo.MV_ASIENTOS a WHERE LTRIM(RTRIM(a.PERIODO))=@Periodo AND a.MES_OPERATIVO=@Mes AND a.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(a.TIPO_REG))=@Tipo),0) Iva
+                FROM dbo.MV_ASIENTOS a WHERE LTRIM(RTRIM(a.PERIODO))=@Periodo AND a.MES_OPERATIVO=@Mes AND a.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(a.TIPO_REG))=@Tipo
+                  AND a.SUCURSAL+a.NUMERO+a.LETRA=@Comprobante),0) Iva
             FROM dbo.C_MV_CPTE c LEFT JOIN dbo.V_TA_Cpra_Vta cv ON cv.IDCond_Cpra_Vta=c.IDCOND_CPRA_VTA
             LEFT JOIN dbo.V_TA_UNIDADNEGOCIO un ON un.CODIGO=c.UNEGOCIO WHERE c.ID=@CompraId;
             """,compra));
@@ -66,7 +67,7 @@ public sealed partial class CompraCargaService
               LTRIM(RTRIM(a.UNEGOCIO)) UnidadNegocio,ISNULL(a.USUARIO_LOGEADO,'') Usuario
             FROM dbo.MV_ASIENTOS a LEFT JOIN dbo.MA_CUENTAS c ON c.CODIGO=a.CUENTA
             WHERE LTRIM(RTRIM(a.PERIODO))=@Periodo AND a.MES_OPERATIVO=@Mes AND a.[NUMERO ASIENTO]=@Asiento
-              AND LTRIM(RTRIM(a.TIPO_REG))=@Tipo ORDER BY a.SECUENCIA,a.CUENTA;
+              AND LTRIM(RTRIM(a.TIPO_REG))=@Tipo AND a.SUCURSAL+a.NUMERO+a.LETRA=@Comprobante ORDER BY a.SECUENCIA,a.CUENTA;
             """,compra))).AsList();
         if(filas.Any(f=>f.UnidadNegocio!=compra.Unidad))throw new InvalidOperationException("El asiento incluye otras unidades. Revisá la registración original antes de consultarlo aquí.");
         var conceptos=(await cn.QueryAsync<ComprobanteObservacionDto>(Q("""

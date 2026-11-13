@@ -51,11 +51,13 @@ public sealed partial class CompraCargaService
         var filas=await c.QueryAsync(Cmd("""
             SELECT *
             FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes
-              AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro ORDER BY SECUENCIA,CUENTA;
+              AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro
+              AND SUCURSAL+NUMERO+LETRA=@Comprobante ORDER BY SECUENCIA,CUENTA;
             """,registro,ct,tx));
         var centros=await c.QueryAsync(Cmd("""
-            SELECT * FROM dbo.MV_ASIENTOSCCOSTO WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes
-              AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro ORDER BY SECUENCIA,CUENTA,CCOSTO;
+            SELECT * FROM dbo.MV_ASIENTOSCCOSTO c WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes
+              AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro
+              AND EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO))=@Periodo AND x.MES_OPERATIVO=@Mes AND x.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(x.TIPO_REG))=@TipoRegistro AND x.CUENTA=c.CUENTA AND x.SECUENCIA=c.SECUENCIA AND x.SUCURSAL+x.NUMERO+x.LETRA=@Comprobante) ORDER BY SECUENCIA,CUENTA,CCOSTO;
             """,registro,ct,tx));
         return HashCompra(JsonSerializer.Serialize(new{Asientos=filas.Select(row=>(IDictionary<string,object>)row),Centros=centros.Select(row=>(IDictionary<string,object>)row)}));
     }

@@ -29,17 +29,23 @@ public sealed class AsientosBusqueda : GestionDateFilterBase
     public bool IncluirProformas { get; set; }
 }
 
-/// <summary>Clave de un asiento: PERIODO + MES_OPERATIVO + [NUMERO ASIENTO] + TIPO_REG.</summary>
-public sealed record AsientoClave(string Periodo, int Mes, int Numero, string TipoReg)
+/// <summary>
+/// Clave de un asiento: PERIODO + MES_OPERATIVO + [NUMERO ASIENTO] + TIPO_REG + el comprobante (TC, SUCURSAL, NUMERO, LETRA).
+/// El número de asiento puede repetirse entre comprobantes distintos (compras, ventas, cobranzas), por eso el comprobante es parte de la clave.
+/// Con el comprobante vacío (links viejos) se toma todo lo que comparta el número de asiento.
+/// </summary>
+public sealed record AsientoClave(string Periodo, int Mes, int Numero, string TipoReg, string Tc = "", string Sucursal = "", string NumeroCpte = "", string Letra = "")
 {
     /// <summary>Como lo muestra el legacy: MM-0000000.</summary>
     public string Texto => $"{Mes:00}-{Numero:0000000}";
-    public string Id => $"{Periodo.Trim()}|{Mes}|{Numero}|{TipoReg.Trim()}";
+    public bool ConComprobante => Tc.Trim().Length > 0;
+    public string Id => $"{Periodo.Trim()}|{Mes}|{Numero}|{TipoReg.Trim()}|{Tc.Trim()}|{Sucursal.Trim()}|{NumeroCpte.Trim()}|{Letra.Trim()}";
 
     public static AsientoClave? Parse(string? id)
     {
         var p = (id ?? "").Split('|');
-        return p.Length == 4 && int.TryParse(p[1], out var m) && int.TryParse(p[2], out var n) && p[0].Trim().Length > 0 ? new(p[0].Trim(), m, n, p[3]) : null;
+        if ((p.Length != 4 && p.Length != 8) || !int.TryParse(p[1], out var m) || !int.TryParse(p[2], out var n) || p[0].Trim().Length == 0) return null;
+        return p.Length == 4 ? new(p[0].Trim(), m, n, p[3]) : new(p[0].Trim(), m, n, p[3], p[4], p[5], p[6], p[7]);
     }
 }
 
@@ -52,6 +58,9 @@ public sealed class AsientoResumen
     public DateTime Fecha { get; set; }
     public string Tc { get; set; } = string.Empty;
     public string Comprobante { get; set; } = string.Empty;
+    public string Sucursal { get; set; } = string.Empty;
+    public string NumeroCpte { get; set; } = string.Empty;
+    public string Letra { get; set; } = string.Empty;
     public string Detalle { get; set; } = string.Empty;
     public decimal Total { get; set; }
     public int Renglones { get; set; }
@@ -59,7 +68,7 @@ public sealed class AsientoResumen
     public string Unidad { get; set; } = string.Empty;
     public string LivaTipo { get; set; } = string.Empty;
     public bool Manual { get; set; }
-    public AsientoClave Clave => new(Periodo, Mes, Numero, TipoReg);
+    public AsientoClave Clave => new(Periodo, Mes, Numero, TipoReg, Tc, Sucursal, NumeroCpte, Letra);
 }
 
 public sealed class AsientoRenglon

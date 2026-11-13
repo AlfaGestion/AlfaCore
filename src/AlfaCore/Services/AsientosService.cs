@@ -299,14 +299,15 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     /// <summary>Un asiento por el que entró un cheque que después salió (entregado, depositado) no se modifica ni se anula.</summary>
     private static async Task ValidarChequesSinSalidaAsync(SqlConnection cn, SqlTransaction tx, AsientoClave k, CancellationToken ct)
     {
-        var salida = await cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition("""
+        var salida = await cn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition($"""
             SELECT TOP (1) LTRIM(RTRIM(e.NroComprobanteBancario)) + ' (salió con ' + LTRIM(RTRIM(s.TC)) + ' ' + LTRIM(RTRIM(s.SUCURSAL)) + '-' + LTRIM(RTRIM(s.NUMERO)) + ')'
             FROM dbo.MV_ASIENTOS e
             JOIN dbo.MV_ASIENTOS s ON s.[DEBE-HABER] = 'H' AND s.CUENTA = e.CUENTA AND s.NroComprobanteBancario = e.NroComprobanteBancario AND s.IdBanco = e.IdBanco
                 AND s.IMPORTE = e.IMPORTE AND NOT (s.PERIODO = e.PERIODO AND s.MES_OPERATIVO = e.MES_OPERATIVO AND s.[NUMERO ASIENTO] = e.[NUMERO ASIENTO])
             WHERE e.[DEBE-HABER] = 'D' AND ISNULL(e.IdBanco,'') <> '' AND ISNULL(e.NroComprobanteBancario,'') <> ''
-              AND LTRIM(RTRIM(e.PERIODO)) = @P AND e.MES_OPERATIVO = @M AND e.[NUMERO ASIENTO] = @N AND ISNULL(LTRIM(RTRIM(e.TIPO_REG)),'') = @T;
-            """, new { P = k.Periodo.Trim(), M = k.Mes, N = k.Numero, T = k.TipoReg.Trim() }, tx, cancellationToken: ct));
+              AND LTRIM(RTRIM(e.PERIODO)) = @Periodo AND e.MES_OPERATIVO = @Mes AND e.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(e.TIPO_REG)),'') = @TipoReg
+              {FiltroCpte("e")};
+            """, Parametros(k), tx, cancellationToken: ct));
         if (salida is not null) throw new ReglaException($"El cheque {salida} ya no está en cartera: el asiento por el que entró no se puede modificar ni anular.");
     }
 
@@ -416,9 +417,27 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     {
         public string Periodo { get; set; } = ""; public int Mes { get; set; } public int Numero { get; set; } public string TipoReg { get; set; } = "";
         public DateTime Fecha { get; set; } public string Tc { get; set; } = ""; public string Comprobante { get; set; } = ""; public string Detalle { get; set; } = "";
+        public string Sucursal { get; set; } = ""; public string NumeroCpte { get; set; } = ""; public string Letra { get; set; } = "";
         public decimal Total { get; set; } public int Renglones { get; set; } public string Usuario { get; set; } = ""; public string Unidad { get; set; } = "";
         public string LivaTipo { get; set; } = ""; public int Bloqueos { get; set; }
     }
+
+    /// <summary>
+    /// El número de asiento se repite entre comprobantes (compras, ventas, cobranzas): el asiento es el del comprobante.
+    /// Parámetros para los filtros de abajo; sin comprobante en la clave (links viejos) no se filtra.
+    /// </summary>
+    private static object Parametros(AsientoClave k) => new
+    {
+        Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim(),
+        ConCpte = k.ConComprobante, Tc = k.Tc.Trim(), Suc = k.Sucursal.Trim(), Nro = k.NumeroCpte.Trim(), Letra = k.Letra.Trim()
+    };
+
+    private static string FiltroCpte(string alias) =>
+        $"AND (@ConCpte = 0 OR (LTRIM(RTRIM({alias}.TC)) = @Tc AND LTRIM(RTRIM({alias}.SUCURSAL)) = @Suc AND LTRIM(RTRIM({alias}.NUMERO)) = @Nro AND LTRIM(RTRIM({alias}.LETRA)) = @Letra))";
+
+    /// <summary>MV_ASIENTOSCCOSTO no guarda el comprobante: se limita a los renglones (cuenta + secuencia) del comprobante de la clave.</summary>
+    private static readonly string FiltroCentros =
+        $"AND (@ConCpte = 0 OR EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO)) = @Periodo AND x.MES_OPERATIVO = @Mes AND x.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(x.TIPO_REG)),'') = @TipoReg AND x.CUENTA = c.CUENTA AND x.SECUENCIA = c.SECUENCIA {FiltroCpte("x")}))";
 
     /// <summary>Marcas de un asiento que lo hacen de solo lectura acá (se calculan por asiento, sobre todos sus renglones).</summary>
     private const string BloqueosSql = """
@@ -459,8 +478,9 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             ? "AND EXISTS (SELECT 1 FROM k WHERE k.PERIODO = a.PERIODO AND k.MES_OPERATIVO = a.MES_OPERATIVO AND k.NUM = a.[NUMERO ASIENTO])" : "";
         async Task<List<ResumenSql>> ConsultarAsync(DateTime desde, int top) => (await cn.QueryAsync<ResumenSql>(new CommandDefinition($"""
             {candidatos}SELECT TOP (@Top) LTRIM(RTRIM(a.PERIODO)) Periodo, CONVERT(int, a.MES_OPERATIVO) Mes, CONVERT(int, a.[NUMERO ASIENTO]) Numero, ISNULL(a.TIPO_REG,'') TipoReg,
-                   MIN(a.FECHA) Fecha, MAX(LTRIM(RTRIM(a.TC))) Tc,
-                   MAX(LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO)) + ' ' + LTRIM(RTRIM(a.LETRA))) Comprobante,
+                   MIN(a.FECHA) Fecha, LTRIM(RTRIM(a.TC)) Tc,
+                   LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO)) + ' ' + LTRIM(RTRIM(a.LETRA)) Comprobante,
+                   LTRIM(RTRIM(a.SUCURSAL)) Sucursal, LTRIM(RTRIM(a.NUMERO)) NumeroCpte, LTRIM(RTRIM(a.LETRA)) Letra,
                    -- El detalle del asiento (los conceptos de renglón terminan en «.»; si todos los tienen, el primero).
                    ISNULL(MAX(CASE WHEN RIGHT(RTRIM(CONVERT(nvarchar(200), a.DETALLE)), 1) <> '.' THEN LEFT(LTRIM(RTRIM(CONVERT(nvarchar(200), a.DETALLE))), 120) END),
                           MAX(LEFT(LTRIM(RTRIM(ISNULL(CONVERT(nvarchar(200), a.DETALLE),''))), 120))) Detalle,
@@ -474,7 +494,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
               AND (@ConProformas = 1 OR LTRIM(RTRIM(ISNULL(a.TC,''))) NOT IN @Proformas)
               AND (@Mes IS NULL OR (a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero))
               {conCandidatos}
-            GROUP BY a.PERIODO, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.TIPO_REG
+            -- El comprobante forma parte de la clave: el número de asiento se repite entre comprobantes distintos.
+            GROUP BY a.PERIODO, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.TIPO_REG, LTRIM(RTRIM(a.TC)), LTRIM(RTRIM(a.SUCURSAL)), LTRIM(RTRIM(a.NUMERO)), LTRIM(RTRIM(a.LETRA))
             HAVING (@Cuenta = '' OR MAX(CASE WHEN LTRIM(RTRIM(a.CUENTA)) = @Cuenta THEN 1 ELSE 0 END) = 1)
                AND (@Like = '' OR MAX(CASE WHEN CONVERT(nvarchar(200), a.DETALLE) LIKE @Like OR a.CUENTA LIKE @Like OR a.USUARIO_LOGEADO LIKE @Like
                         OR LTRIM(RTRIM(a.TC)) + ' ' + LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO)) LIKE @Like OR a.NUMERO LIKE @Like THEN 1 ELSE 0 END) = 1)
@@ -505,7 +526,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         }
         return (IReadOnlyList<AsientoResumen>)filas.Select(x => new AsientoResumen
         {
-            Periodo = x.Periodo, Mes = x.Mes, Numero = x.Numero, TipoReg = x.TipoReg.Trim(), Fecha = x.Fecha, Tc = x.Tc, Comprobante = x.Comprobante,
+            Periodo = x.Periodo, Mes = x.Mes, Numero = x.Numero, TipoReg = x.TipoReg.Trim(), Fecha = x.Fecha, Tc = x.Tc, Comprobante = x.Comprobante, Sucursal = x.Sucursal, NumeroCpte = x.NumeroCpte, Letra = x.Letra,
             Detalle = x.Detalle.TrimEnd('.'), Total = x.Total, Renglones = x.Renglones, Usuario = x.Usuario, Unidad = x.Unidad, LivaTipo = x.LivaTipo,
             Manual = x.Bloqueos == 0 && x.TipoReg.Trim().Length == 0 && manuales.Contains(x.Tc, StringComparer.OrdinalIgnoreCase)
         }).ToList();
@@ -546,8 +567,9 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             LEFT JOIN dbo.V_TA_Bancos b ON b.IdBanco = a.IdBanco
             WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero
               AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+              {FiltroCpte("a")}
             ORDER BY a.SECUENCIA;
-            """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, tx, commandTimeout: 60, cancellationToken: ct))).ToList();
+            """, Parametros(k), tx, commandTimeout: 60, cancellationToken: ct))).ToList();
 
     /// <summary>Por qué un asiento no se modifica desde acá; vacío = es un asiento manual.</summary>
     internal static string MotivoSoloLectura(IReadOnlyList<(string Tc, string TipoReg, string LivaTipo, bool Conciliado, string Observaciones, string TcOrigen,
@@ -589,15 +611,16 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     private static async Task CargarCentrosAsync(SqlConnection cn, AsientoDetalle d, CancellationToken ct)
     {
         if (d.Clave is not { } k) return;
-        var filas = await cn.QueryAsync<(int Secuencia, string Cuenta, string CCosto, string Descripcion, decimal Porcentaje, decimal Importe)>(new CommandDefinition("""
+        var filas = await cn.QueryAsync<(int Secuencia, string Cuenta, string CCosto, string Descripcion, decimal Porcentaje, decimal Importe)>(new CommandDefinition($"""
             IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NULL SELECT TOP 0 0, N'', N'', N'', CONVERT(decimal(9,4),0), CONVERT(decimal(18,2),0)
             ELSE SELECT CONVERT(int, c.SECUENCIA), LTRIM(RTRIM(c.CUENTA)), LTRIM(RTRIM(c.CCOSTO)), LTRIM(RTRIM(ISNULL(t.DESCRIPCION,''))),
                         CONVERT(decimal(9,4), ISNULL(c.PORCENTAJE,0)), CONVERT(decimal(18,2), ISNULL(c.Importe,0))
                  FROM dbo.MV_ASIENTOSCCOSTO c LEFT JOIN dbo.TA_CCOSTO t ON t.CODIGO = c.CCOSTO
                  WHERE LTRIM(RTRIM(c.PERIODO)) = @Periodo AND c.MES_OPERATIVO = @Mes AND c.[NUMERO ASIENTO] = @Numero
                    AND ISNULL(LTRIM(RTRIM(c.Tipo_Reg)),'') = @TipoReg
+                   {FiltroCentros}
                  ORDER BY c.SECUENCIA, c.PORCENTAJE DESC;
-            """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, cancellationToken: ct));
+            """, Parametros(k), cancellationToken: ct));
         // El renglón se reconoce por su orden (SECUENCIA) y cuenta; si se grabó con huecos, por la cuenta.
         foreach (var g in filas.GroupBy(f => (f.Secuencia, f.Cuenta)))
         {
@@ -819,12 +842,15 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             await ValidarChequesAsync(cn, tx, a.Renglones, cuentas, k, ct);
             var p = previo[0];
             (tc, suc, nro, letra, unidad, caja, usuarioGrabo, grabado, apertura) = (p.Tc, p.Sucursal, p.Numero, p.Letra, p.Unidad, p.Caja, p.Usuario, p.Grabado, p.Apertura);
-            clave = k;
-            await cn.ExecuteAsync(new CommandDefinition("""
-                DELETE FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
+            // Un asiento anterior a esta clave (sin comprobante) toma el del primer renglón, para no tocar otros comprobantes con el mismo número.
+            clave = k.ConComprobante ? k : k with { Tc = p.Tc, Sucursal = p.Sucursal, NumeroCpte = p.Numero, Letra = p.Letra };
+            await cn.ExecuteAsync(new CommandDefinition($"""
                 IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NOT NULL
-                    DELETE FROM dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
-                """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, tx, cancellationToken: ct));
+                    DELETE c FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(c.PERIODO)) = @Periodo AND c.MES_OPERATIVO = @Mes AND c.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(c.TIPO_REG)),'') = @TipoReg
+                        {FiltroCentros};
+                DELETE a FROM dbo.MV_ASIENTOS a WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+                    {FiltroCpte("a")};
+                """, Parametros(clave), tx, cancellationToken: ct));
         }
         else
         {
@@ -853,7 +879,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                 UPDATE dbo.V_TA_CPTE SET X_ULTIMO_NRO = @Proximo WHERE LTRIM(RTRIM(CODIGO)) = @Codigo AND LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) = @Unidad;
                 """, new { Proximo = checked(numero + 1), tal.Codigo, tal.Unidad }, tx, cancellationToken: ct));
             await ValidarChequesAsync(cn, tx, a.Renglones, cuentas, null, ct);
-            clave = new AsientoClave(periodo, a.Fecha.Month, await NumeracionAsiento.SiguienteAsync(cn, tx, periodo, a.Fecha.Month, "", ct), "");
+            clave = new AsientoClave(periodo, a.Fecha.Month, await NumeracionAsiento.SiguienteAsync(cn, tx, periodo, a.Fecha.Month, "", ct), "", tc, suc, nro, letra);
         }
 
         for (var i = 0; i < a.Renglones.Count; i++)
@@ -891,10 +917,11 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
                     c.Importe, Fecha = a.Fecha.Date, Unidad = CodigoPk.Format(unidad, 4)
                 }, tx, cancellationToken: ct));
         }
-        var control = await cn.QuerySingleAsync<(int Renglones, decimal Saldo)>(new CommandDefinition("""
-            SELECT COUNT(*), ISNULL(SUM(CASE WHEN [DEBE-HABER] = 'D' THEN IMPORTE ELSE -IMPORTE END),0) FROM dbo.MV_ASIENTOS
-            WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
-            """, new { Periodo = clave.Periodo, clave.Mes, clave.Numero, TipoReg = clave.TipoReg.Trim() }, tx, cancellationToken: ct));
+        var control = await cn.QuerySingleAsync<(int Renglones, decimal Saldo)>(new CommandDefinition($"""
+            SELECT COUNT(*), ISNULL(SUM(CASE WHEN a.[DEBE-HABER] = 'D' THEN a.IMPORTE ELSE -a.IMPORTE END),0) FROM dbo.MV_ASIENTOS a
+            WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+              {FiltroCpte("a")};
+            """, Parametros(clave), tx, cancellationToken: ct));
         if (control.Renglones != a.Renglones.Count || control.Saldo != 0) throw new ReglaException("El asiento no quedó completo y balanceado. No se grabó.");
         await AccionAsync(cn, tx, accion, tc, suc + nro + letra, clave, a.Fecha, a.Renglones[0].Cuenta.Trim(), usuario, ct);
         await tx.CommitAsync(ct);
@@ -936,11 +963,13 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         try
         {
             // Como el legacy: se borra físicamente (no hay contra-asiento). Centros de costo con el mismo subdiario.
-            await cn.ExecuteAsync(new CommandDefinition("""
-                DELETE FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
+            await cn.ExecuteAsync(new CommandDefinition($"""
                 IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NOT NULL
-                    DELETE FROM dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO)) = @Periodo AND MES_OPERATIVO = @Mes AND [NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(TIPO_REG)),'') = @TipoReg;
-                """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim() }, tx, cancellationToken: ct));
+                    DELETE c FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(c.PERIODO)) = @Periodo AND c.MES_OPERATIVO = @Mes AND c.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(c.TIPO_REG)),'') = @TipoReg
+                        {FiltroCentros};
+                DELETE a FROM dbo.MV_ASIENTOS a WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+                    {FiltroCpte("a")};
+                """, Parametros(k), tx, cancellationToken: ct));
         }
         catch (SqlException ex) when (ex.Number is 50000 or 3609)
         {

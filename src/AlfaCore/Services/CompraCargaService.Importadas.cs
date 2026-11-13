@@ -22,7 +22,7 @@ public sealed partial class CompraCargaService
     }
     private sealed class AsientoImportado
     {
-        public string Periodo{get;set;}="";public int Mes{get;set;}public int Asiento{get;set;}public string TipoRegistro{get;set;}="";public bool Contabilizado{get;set;}public bool Conciliado{get;set;}public string Unidad{get;set;}="";
+        public string Periodo{get;set;}="";public int Mes{get;set;}public int Asiento{get;set;}public string TipoRegistro{get;set;}="";public bool Contabilizado{get;set;}public bool Conciliado{get;set;}public string Unidad{get;set;}="";public string Tc{get;set;}="";public string Numero{get;set;}="";public string Letra{get;set;}="";
     }
 
     /// <summary>Id de comprobante con el formato del sistema: sucursal de 4, número de 8 y letra.</summary>
@@ -121,7 +121,7 @@ public sealed partial class CompraCargaService
             throw new InvalidOperationException("Los importes no coinciden con lo informado por ARCA ("+string.Join("; ",diferencias)+"). Corregí los renglones hasta que cierren (tolerancia "+tolerancia.ToString("N2",CultureInfo.GetCultureInfo("es-AR"))+").");
         var asientos=(await cn.QueryAsync<AsientoImportado>(Q("""
             SELECT LTRIM(RTRIM(PERIODO)) Periodo,MES_OPERATIVO Mes,[NUMERO ASIENTO] Asiento,LTRIM(RTRIM(TIPO_REG)) TipoRegistro,CONVERT(bit,ISNULL(CONTABILIZADO,0)) Contabilizado,
-              CONVERT(bit,ISNULL(Conciliado,0)) Conciliado,LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) Unidad
+              CONVERT(bit,ISNULL(Conciliado,0)) Conciliado,LTRIM(RTRIM(ISNULL(UNEGOCIO,''))) Unidad,LTRIM(RTRIM(TC)) Tc,NUMERO Numero,LETRA Letra
             FROM dbo.MV_ASIENTOS WITH(UPDLOCK,HOLDLOCK) WHERE LTRIM(RTRIM(TC)) IN (@tc,@equivalencia) AND NUMERO=@numero AND LETRA=@letra AND FECHA=@fecha
               AND LTRIM(RTRIM(ISNULL(CABCUENTA,'')))=@cuenta AND SECUENCIA=1;
             """,new{tc=d.Tipo.Trim(),equivalencia=equivalencia.Trim(),numero=idComprobante.Substring(4,8),letra=idComprobante[12..],fecha=imp.Fecha.Date,cuenta=proveedor.Codigo.Trim()}))).AsList();
@@ -136,15 +136,18 @@ public sealed partial class CompraCargaService
                (LTRIM(RTRIM(TCO_ORIGEN)) IN (@tc,@equivalencia) AND (LTRIM(RTRIM(IDComprobante_Origen))=@id OR SUCURSAL_ORIGEN+NUMERO_ORIGEN+LETRA_ORIGEN=@id)));
             """,new{cuenta=proveedor.Codigo.Trim(),tc=d.Tipo.Trim(),equivalencia=equivalencia.Trim(),id=idComprobante}))>0)
             throw new InvalidOperationException("La compra importada tiene aplicaciones, pagos o documentos asociados. Primero deben resolverse en su circuito.");
-        var filasAsiento=(await cn.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro ORDER BY SECUENCIA;",a))).ToList();
-        var centros=(await cn.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro ORDER BY SECUENCIA;",a))).ToList();
+        var filasAsiento=(await cn.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro AND LTRIM(RTRIM(TC))=@Tc AND NUMERO=@Numero AND LETRA=@Letra ORDER BY SECUENCIA;",a))).ToList();
+        var centros=(await cn.QueryAsync(Q("SELECT * FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro AND EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO))=@Periodo AND x.MES_OPERATIVO=@Mes AND x.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(x.TIPO_REG))=@TipoRegistro AND x.CUENTA=c.CUENTA AND x.SECUENCIA=c.SECUENCIA AND LTRIM(RTRIM(x.TC))=@Tc AND x.NUMERO=@Numero AND x.LETRA=@Letra) ORDER BY SECUENCIA;",a))).ToList();
         await cn.ExecuteAsync(Q("""
             IF EXISTS(SELECT 1 FROM dbo.ALFACORE_COMPRA_ANULACION WHERE CompraId=@compra) DELETE dbo.ALFACORE_COMPRA_ANULACION WHERE CompraId=@compra;
             INSERT dbo.ALFACORE_COMPRA_ANULACION(CompraId,Usuario,Motivo,AsientoJson,CentrosJson) VALUES(@compra,@usuario,@motivo,@asientos,@centros);
             """,new{compra=imp.Id,usuario=usuarios.GetCurrentUserName(),motivo="Importación de ARCA reemplazada por la carga del comprobante con su detalle.",asientos=JsonSerializer.Serialize(filasAsiento),centros=JsonSerializer.Serialize(centros)}));
         await cn.ExecuteAsync(Q("""
-            DELETE dbo.MV_ASIENTOSCCOSTO WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(Tipo_Reg))=@TipoRegistro;
-            DELETE dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro;
+            -- El número de asiento se repite entre comprobantes: se borra solo el de esta importación (TC + número + letra).
+            DELETE c FROM dbo.MV_ASIENTOSCCOSTO c WHERE LTRIM(RTRIM(c.PERIODO))=@Periodo AND c.MES_OPERATIVO=@Mes AND c.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(c.Tipo_Reg))=@TipoRegistro
+              AND EXISTS(SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO))=@Periodo AND x.MES_OPERATIVO=@Mes AND x.[NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(x.TIPO_REG))=@TipoRegistro AND x.CUENTA=c.CUENTA AND x.SECUENCIA=c.SECUENCIA AND LTRIM(RTRIM(x.TC))=@Tc AND x.NUMERO=@Numero AND x.LETRA=@Letra);
+            DELETE dbo.MV_ASIENTOS WHERE LTRIM(RTRIM(PERIODO))=@Periodo AND MES_OPERATIVO=@Mes AND [NUMERO ASIENTO]=@Asiento AND LTRIM(RTRIM(TIPO_REG))=@TipoRegistro
+              AND LTRIM(RTRIM(TC))=@Tc AND NUMERO=@Numero AND LETRA=@Letra;
             """,a));
         await cn.ExecuteAsync(Q("DELETE dbo.C_MV_CPTE WHERE ID=@id AND LTRIM(RTRIM(ISNULL(USUARIO,'')))=@usuario;",new{id=imp.Id,usuario=UsuarioImportacionArca}));
     }

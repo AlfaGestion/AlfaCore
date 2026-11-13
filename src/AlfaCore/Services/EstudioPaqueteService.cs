@@ -279,6 +279,8 @@ public sealed partial class EstudioPaqueteService(ISessionService sessions, IApp
             SELECT DISTINCT adj.IdAdjunto, LTRIM(RTRIM(o.Comprobante)) Comprobante, LTRIM(RTRIM(ISNULL(NULLIF(a.CABNOMBRE,''), a.CUENTA))) Proveedor
             FROM dbo.ALFACORE_COMPRA_OPERACION o
             JOIN dbo.MV_ASIENTOS a ON a.PERIODO = o.Periodo AND a.MES_OPERATIVO = o.Mes AND a.[NUMERO ASIENTO] = o.Asiento AND a.TIPO_REG = o.TipoRegistro AND a.SECUENCIA = 1
+              -- El número de asiento se repite entre comprobantes: se completa con sucursal + número + letra.
+              AND LTRIM(RTRIM(a.SUCURSAL)) + LTRIM(RTRIM(a.NUMERO)) + LTRIM(RTRIM(a.LETRA)) = LTRIM(RTRIM(o.Comprobante))
             JOIN dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO adj ON adj.IdComprobanteRecibido = o.DocumentoId AND ISNULL(adj.Eliminado,0) = 0
             WHERE o.DocumentoId IS NOT NULL AND a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta)
               AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad);
