@@ -318,6 +318,13 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         var (t, l) => CodigoArca(t, l)
     };
 
+    /// <summary>Códigos ARCA de comprobantes clase A (discriminan IVA y dan crédito fiscal), p. ej. 39 = otros comprobantes A (liquidación bancaria).</summary>
+    private static readonly HashSet<int> CodigosArcaDiscriminanIva = [1, 2, 3, 4, 5, 34, 39, 51, 52, 53, 54, 60, 63, 201, 202, 203];
+
+    /// <summary>En compras discrimina IVA la letra A/M o un tipo de comprobante ARCA clase A, aunque la letra sea otra (X, etc.).</summary>
+    internal static bool DiscriminaIvaCompras(string letra, int codigoArca) =>
+        letra.Trim().ToUpperInvariant() is "A" or "M" || CodigosArcaDiscriminanIva.Contains(codigoArca);
+
     internal static int CodigoAlicuota(decimal alicuota) => alicuota switch
     {
         0m => 3, 10.5m => 4, 21m => 5, 27m => 6, 5m => 8, 2.5m => 9, _ => 0
@@ -413,7 +420,7 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
         {
             var (codDoc, nroDoc) = Documento(f);
             var exento = Math.Abs(f.Exento); var noGravado = Math.Abs(f.NoGravado);
-            var discrimina = f.Letra.Trim().ToUpperInvariant() is "A" or "M";
+            var discrimina = DiscriminaIvaCompras(f.Letra, f.CodigoArca);
             var alicuotas = discrimina ? f.Alicuotas.Where(a => CodigoAlicuota(a.Alicuota) > 0).ToList() : [];
             if (discrimina && alicuotas.Count == 0) alicuotas = [new LibroIvaAlicuota(0, 0, 0)];
             var codigoOperacion = discrimina && alicuotas.Any(a => a.Iva != 0) ? " " : exento != 0 ? "E" : noGravado != 0 ? "N" : "0";

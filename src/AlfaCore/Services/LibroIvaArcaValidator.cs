@@ -46,7 +46,8 @@ internal static class LibroIvaArcaValidator
             var generico = d.Length == 0 || d.All(c => c == '0') || d == "99999999995";
             var requiereCuit = r.Filtro.Compras || f.Letra is "A" or "M";
             if (f.ConsumidorFinal && !r.Filtro.Compras && !requiereCuit) { /* consumidor final: ARCA no controla el número */ }
-            else if (requiereCuit ? !CuitValido(f.Cuit) : !generico && (d.Length == 11 ? !CuitValido(f.Cuit) : d.Length > 8))
+            // Como en el legacy (UT_SIAP_CITI): en ventas B/C/etc. un documento que no es CUIT válido (DNI, 999999999, etc.) no bloquea; el TXT lo informa como 99 / 0.
+            else if (requiereCuit ? !CuitValido(f.Cuit) : !generico && d.Length == 11 && !CuitValido(f.Cuit))
                 Error($"Documento/CUIT inválido: {f.Cuit}.");
             if (f.Cuit.Any(c => !(c is >= '0' and <= '9' or '-' or ' '))) Error("El documento contiene caracteres inválidos.");
             var clave = $"{cuits.GetValueOrDefault(f.UnidadNegocio, Digitos(r.CuitEmisor))}|{f.CodigoArca}|{f.PuntoVenta}|{f.Numero}" + (r.Filtro.Compras ? $"|{d}" : "");
@@ -56,7 +57,7 @@ internal static class LibroIvaArcaValidator
             if (componentes.Append(f.Total).Concat(f.Alicuotas.SelectMany(a => new[] { a.Neto, a.Iva })).Any(v => Math.Abs(v) >= 10000000000000m))
                 Error("Importe excede los 13 enteros y 2 decimales admitidos.");
             if (componentes.Any(v => v != 0 && Math.Sign(v) != Math.Sign(f.Total))) Error("Hay conceptos con signo opuesto al total; requieren revisión antes de exportar en positivo.");
-            var discrimina = r.Filtro.Compras ? f.Letra is "A" or "M" : f.Letra != "C";
+            var discrimina = r.Filtro.Compras ? LibroIvaService.DiscriminaIvaCompras(f.Letra, f.CodigoArca) : f.Letra != "C";
             if (discrimina && Math.Abs(f.Alicuotas.Sum(a => a.Neto) - f.NetoGravado) > .02m) Error("El neto no coincide con la suma de bases por alícuota.");
             if (!discrimina && f.Alicuotas.Count != 0) Error("El comprobante no debe discriminar IVA.");
             if (f.Alicuotas.Count > 9) Error("Cantidad de alícuotas fuera de formato.");
