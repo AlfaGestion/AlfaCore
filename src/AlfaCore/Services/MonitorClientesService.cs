@@ -13,6 +13,7 @@ public sealed class MonitorClientesService(
     ILogger<MonitorClientesService> logger) : IMonitorClientesService
 {
     internal const string TipoReporte = "REPORTE";
+    internal const string TipoBackupNube = "BACKUP_NUBE";
     private const int MaxItemsPorReporte = 500;
 
     // El esquema se verifica una sola vez por proceso.
@@ -221,6 +222,9 @@ public sealed class MonitorClientesService(
         var estados = (await multi.ReadAsync<EstadoFila>().ConfigureAwait(false)).ToList();
         var seguimientos = (await multi.ReadAsync<SeguimientoFila>().ConfigureAwait(false)).ToList();
 
+        if (tipos.Any(t => t.Activo && string.Equals(t.Codigo, TipoBackupNube, StringComparison.OrdinalIgnoreCase)))
+            estados.AddRange(await EstadosBackupNubeAsync(origenes, ct).ConfigureAwait(false));
+
         var ahora = DateTime.Now;
         var filas = Evaluar(ahora, tipos, limites, origenes, estados);
         AplicarSeguimiento(filas, seguimientos, ahora);
@@ -230,6 +234,87 @@ public sealed class MonitorClientesService(
             Tipos = tipos.OrderBy(t => t.Orden).ToList(),
             Filas = filas
         };
+    }
+
+    /// <summary>
+    /// BACKUP_NUBE: el control BACKUP mira msdb (el backup SQL se hizo), pero no si se subió. EM_Backup informa
+    /// el resultado de la subida a ALFA_CENTRAL.ALFACORE_BACKUPS_CONTROL (OK / ADVERTENCIA = backup local
+    /// correcto pero falló la subida / ERROR). Se toma el último informe y el último OK de cada base.
+    /// Solo aparecen las bases que informaron algo en los últimos 60 días.
+    /// </summary>
+    private async Task<List<EstadoFila>> EstadosBackupNubeAsync(IReadOnlyList<OrigenFila> origenes, CancellationToken ct)
+    {
+        var central = configuration.GetConnectionString("AlfaCentral");
+        if (string.IsNullOrWhiteSpace(central) || origenes.Count == 0)
+            return [];
+
+        try
+        {
+            await using var cn = new SqlConnection(central);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            var informes = await cn.QueryAsync<InformeBackupNube>(new CommandDefinition(
+                """
+                WITH b AS (
+                    SELECT LTRIM(RTRIM(IdCliente)) AS IdCliente, LTRIM(RTRIM(DbServidor)) AS DbServidor,
+                           LTRIM(RTRIM(DbNombre)) AS DbNombre, Resultado, Mensaje, FechaHoraRecepcion,
+                           ROW_NUMBER() OVER (PARTITION BY IdCliente, DbServidor, DbNombre ORDER BY FechaHoraRecepcion DESC, IdControl DESC) AS Nro,
+                           MAX(CASE WHEN Resultado = N'OK' THEN FechaHoraRecepcion END)
+                               OVER (PARTITION BY IdCliente, DbServidor, DbNombre) AS UltimoOk
+                    FROM dbo.ALFACORE_BACKUPS_CONTROL
+                    WHERE FechaHoraRecepcion >= DATEADD(DAY, -60, GETDATE())
+                )
+                SELECT IdCliente, DbServidor, DbNombre, Resultado, Mensaje,
+                       FechaHoraRecepcion AS UltimoIntento, UltimoOk
+                FROM b
+                WHERE Nro = 1;
+                """, commandTimeout: 30, cancellationToken: ct)).ConfigureAwait(false);
+
+            return CruzarBackupNube(origenes, informes.ToList());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Monitor de Clientes: no se pudo leer ALFACORE_BACKUPS_CONTROL de ALFA_CENTRAL.");
+            return [];
+        }
+    }
+
+    internal sealed class InformeBackupNube
+    {
+        public string IdCliente { get; init; } = string.Empty;
+        public string DbServidor { get; init; } = string.Empty;
+        public string DbNombre { get; init; } = string.Empty;
+        public string? Resultado { get; init; }
+        public string? Mensaje { get; init; }
+        public DateTime? UltimoIntento { get; init; }
+        public DateTime? UltimoOk { get; init; }
+    }
+
+    internal static List<EstadoFila> CruzarBackupNube(IReadOnlyList<OrigenFila> origenes, IReadOnlyList<InformeBackupNube> informes)
+    {
+        static string Clave(string cliente, string servidor, string nombre)
+            => $"{cliente.Trim()}|{servidor.Trim()}|{nombre.Trim()}".ToUpperInvariant();
+
+        var porClave = informes
+            .GroupBy(i => Clave(i.IdCliente, i.DbServidor, i.DbNombre))
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.UltimoIntento).First());
+
+        var estados = new List<EstadoFila>();
+        foreach (var o in origenes)
+        {
+            if (!porClave.TryGetValue(Clave(o.ClienteCodigo, o.DbServidor, o.DbNombre), out var i))
+                continue;
+            estados.Add(new EstadoFila
+            {
+                IdOrigen = o.IdOrigen,
+                TipoCodigo = TipoBackupNube,
+                Destino = string.Empty,
+                UltimoOk = i.UltimoOk,
+                UltimoIntento = i.UltimoIntento,
+                Resultado = i.Resultado?.Trim().ToUpperInvariant(),
+                Mensaje = Recortar(i.Mensaje, 500)
+            });
+        }
+        return estados;
     }
 
     internal const string ClientesSinReporteSql = """
@@ -771,7 +856,8 @@ public sealed class MonitorClientesService(
                         motivo = estado == MonitorEstado.Ok
                             ? $"Último OK hace {Duracion(edad)}"
                             : $"Sin OK hace {Duracion(edad)}{TextoLimite(estado, aviso, critico)}";
-                        if (estado == MonitorEstado.Ok && EsError(e.Resultado))
+                        if (estado == MonitorEstado.Ok && (EsError(e.Resultado)
+                            || string.Equals(e.Resultado, "ADVERTENCIA", StringComparison.OrdinalIgnoreCase)))
                         {
                             estado = MonitorEstado.Aviso;
                             motivo = $"El último intento falló (último OK hace {Duracion(edad)})";

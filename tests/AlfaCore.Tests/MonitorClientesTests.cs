@@ -85,6 +85,46 @@ public sealed class MonitorClientesTests
     }
 
     [Fact]
+    public void BackupNube_SeCruzaPorClienteServidorYBase_SinDistinguirMayusculas()
+    {
+        var origenes = new[] { Origen(1, "112010832", "1", Ahora), Origen(2, "112010001", "1", Ahora) };
+        var informes = new List<MonitorClientesService.InformeBackupNube>
+        {
+            new() { IdCliente = " 112010832 ", DbServidor = "server", DbNombre = "base", Resultado = "advertencia",
+                    Mensaje = "Backup SQL correcto, pero fallo la subida", UltimoIntento = Ahora.AddHours(-5), UltimoOk = null },
+            new() { IdCliente = "112010999", DbServidor = "SERVER", DbNombre = "BASE", Resultado = "OK", UltimoIntento = Ahora, UltimoOk = Ahora }
+        };
+
+        var estados = MonitorClientesService.CruzarBackupNube(origenes, informes);
+
+        var e = Assert.Single(estados);
+        Assert.Equal(1, e.IdOrigen);
+        Assert.Equal("BACKUP_NUBE", e.TipoCodigo);
+        Assert.Equal("ADVERTENCIA", e.Resultado);
+        Assert.Null(e.UltimoOk);
+    }
+
+    [Fact]
+    public void BackupNube_SubidaQueNuncaAndoEsCritico_YAdvertenciaConOkRecienteEsAviso()
+    {
+        var tipos = Tipos.Append(new MonitorTipoControlDto
+        {
+            Codigo = "BACKUP_NUBE", Nombre = "Backup en la nube", Medida = "EDAD", AvisoMinutos = 1560, CriticoMinutos = 2160, Orden = 45, Activo = true
+        }).ToList();
+        var origen = new[] { Origen(1, "112010832", "1", Ahora.AddMinutes(-5)) };
+
+        var nunca = MonitorClientesService.Evaluar(Ahora, tipos, [], origen,
+            [Estado("BACKUP_NUBE", "", null, "ADVERTENCIA", Ahora.AddHours(-5))]);
+        Assert.Equal(MonitorEstado.Critico, nunca.Single(f => f.TipoCodigo == "BACKUP_NUBE").Estado);
+
+        var reciente = MonitorClientesService.Evaluar(Ahora, tipos, [], origen,
+            [Estado("BACKUP_NUBE", "", Ahora.AddHours(-10), "ADVERTENCIA", Ahora.AddHours(-2))]);
+        var fila = reciente.Single(f => f.TipoCodigo == "BACKUP_NUBE");
+        Assert.Equal(MonitorEstado.Aviso, fila.Estado);
+        Assert.Contains("falló", fila.Motivo);
+    }
+
+    [Fact]
     public void NuncaTuvoOk_EsCritico()
     {
         var filas = Evaluar(estados: [Estado("BACKUP", "", null, "ERROR")]);

@@ -61,6 +61,7 @@ FROM (VALUES
     (N'ENVIO_PDV', N'Envío a punto de venta', N'Último envío correcto de artículos y precios a cada punto de venta (NETCPV).', N'EDAD', 120, 180, 20),
     (N'RECEPCION_PDV', N'Recepción de punto de venta', N'Última recepción correcta de movimientos de cada punto de venta (NETCPV).', N'EDAD', 60, 120, 30),
     (N'BACKUP', N'Backup diario', N'Último backup correcto de la base.', N'EDAD', 1560, 2160, 40),
+    (N'BACKUP_NUBE', N'Backup en la nube', N'Última subida correcta del backup a AlfaArchivos, según lo que informa EM_Backup a AlfaCore (ALFA_CENTRAL.ALFACORE_BACKUPS_CONTROL).', N'EDAD', 1560, 2160, 45),
     (N'TAREA', N'Tarea automática', N'Resultado de la última ejecución de cada tarea automática del Timer (ERROR = crítico, ADVERTENCIA = aviso).', N'RESULTADO', NULL, NULL, 50),
     (N'CERT_ARCA', N'Certificado ARCA', N'Vencimiento del certificado de factura electrónica de cada CUIT (aviso 30 días antes, crítico 7 días antes o vencido).', N'VENCE', 43200, 10080, 60),
     (N'ACTUALIZACION', N'Actualización del sistema', N'Versión de AlfaActualizacion_Monitor instalada y resultado de la última actualización automática (ERROR = crítico).', N'RESULTADO', NULL, NULL, 70)
@@ -206,6 +207,7 @@ COMMIT TRANSACTION;
                          AND OBJECT_ID(N'dbo.MON_CONFIG', N'U') IS NOT NULL
                          AND OBJECT_ID(N'dbo.MON_ACTUALIZACION', N'U') IS NOT NULL
                          AND EXISTS (SELECT 1 FROM dbo.MON_CONTROL_TIPO WHERE Codigo = N'ACTUALIZACION')
+                         AND EXISTS (SELECT 1 FROM dbo.MON_CONTROL_TIPO WHERE Codigo = N'BACKUP_NUBE')
                         THEN 1 ELSE 0 END;
         """;
 }
