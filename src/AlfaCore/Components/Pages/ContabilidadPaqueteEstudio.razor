@@ -6,6 +6,7 @@
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Paquete para el estudio | Alfa Gestión</PageTitle>
@@ -35,24 +36,24 @@
 
     <section class="pe-contenido">
         <strong>Qué lleva el paquete</strong>
-        <AlfaCheckbox Value="@_s.LibrosIva" ValueChanged="v => _s.LibrosIva = v ?? false" Disabled="_busy">Libros de IVA ventas y compras por unidad y General (PDF y Excel)</AlfaCheckbox>
-        <AlfaCheckbox Value="@_s.LibroIvaDigital" ValueChanged="v => _s.LibroIvaDigital = v ?? false" Disabled="_busy">Libro IVA Digital (archivos para ARCA)</AlfaCheckbox>
-        <AlfaCheckbox Value="@_s.Asientos" ValueChanged="v => _s.Asientos = v ?? false" Disabled="_busy">Asientos del mes en Excel (sin tiques, proformas ni cobranzas)</AlfaCheckbox>
-        <AlfaCheckbox Value="@_s.Detalles" ValueChanged="v => _s.Detalles = v ?? false" Disabled="_busy">Detalle por artículo de ventas y compras (Excel)</AlfaCheckbox>
-        <AlfaCheckbox Value="@_s.FacturasVenta" ValueChanged="v => _s.FacturasVenta = v ?? false" Disabled="_busy">
+        <AlfaCheckbox Value="@_s.LibrosIva" ValueChanged="v => Marcar(() => _s.LibrosIva = v ?? false)" Disabled="_busy">Libros de IVA ventas y compras por unidad y General (PDF y Excel)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.LibroIvaDigital" ValueChanged="v => Marcar(() => _s.LibroIvaDigital = v ?? false)" Disabled="_busy">Libro IVA Digital (archivos para ARCA)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.Asientos" ValueChanged="v => Marcar(() => _s.Asientos = v ?? false)" Disabled="_busy">Asientos del mes en Excel (sin tiques, proformas ni cobranzas)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.Detalles" ValueChanged="v => Marcar(() => _s.Detalles = v ?? false)" Disabled="_busy">Detalle por artículo de ventas y compras (Excel)</AlfaCheckbox>
+        <AlfaCheckbox Value="@_s.FacturasVenta" ValueChanged="v => Marcar(() => _s.FacturasVenta = v ?? false)" Disabled="_busy">
             Facturas, notas de crédito y débito emitidas (PDF)@(_op is { } o1 ? $" · {(_s.FacturasVentaSoloA ? o1.VentasA : o1.VentasTotal):N0} comprobantes" : "")
         </AlfaCheckbox>
         @if (_s.FacturasVenta)
         {
             <div class="pe-sub">
-                <AlfaCheckbox Value="@_s.FacturasVentaSoloA" ValueChanged="v => _s.FacturasVentaSoloA = v ?? true" Disabled="_busy">Solo A y M (las que suele pedir el estudio)</AlfaCheckbox>
+                <AlfaCheckbox Value="@_s.FacturasVentaSoloA" ValueChanged="v => Marcar(() => _s.FacturasVentaSoloA = v ?? true)" Disabled="_busy">Solo A y M (las que suele pedir el estudio)</AlfaCheckbox>
                 @if (_op is { } o2 && (_s.FacturasVentaSoloA ? o2.VentasA : o2.VentasTotal) > 500)
                 {
                     <small>Son muchas: cada PDF tarda un instante, así que el paquete puede demorar varios minutos.@((_s.FacturasVentaSoloA ? o2.VentasA : o2.VentasTotal) > EstudioPaqueteMaximo ? $" Se incluyen las primeras {EstudioPaqueteMaximo:N0}." : "")</small>
                 }
             </div>
         }
-        <AlfaCheckbox Value="@_s.ComprobantesCompra" ValueChanged="v => _s.ComprobantesCompra = v ?? false" Disabled="_busy">
+        <AlfaCheckbox Value="@_s.ComprobantesCompra" ValueChanged="v => Marcar(() => _s.ComprobantesCompra = v ?? false)" Disabled="_busy">
             Archivos de las compras cargadas en AlfaCore@(_op is { } o3 ? $" · {o3.ComprasConArchivo:N0} archivo(s)" : "")
         </AlfaCheckbox>
     </section>
@@ -158,7 +159,45 @@
         await CargarOpcionesAsync();
     }
 
-    protected override void OnAfterRender(bool firstRender) { if (firstRender) UpdateHeader(); }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        UpdateHeader();
+        await RestaurarOpcionesAsync();
+    }
+
+    // Lo último tildado/destildado se recuerda en este navegador y se vuelve a aplicar al entrar.
+    private const string ClaveOpciones = "alfacore_paquete_estudio_opciones";
+    private sealed record OpcionesGuardadas(bool LibrosIva, bool LibroIvaDigital, bool Asientos, bool Detalles, bool FacturasVenta, bool FacturasVentaSoloA, bool ComprobantesCompra);
+
+    private async Task RestaurarOpcionesAsync()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("localStorage.getItem", ClaveOpciones);
+            if (string.IsNullOrWhiteSpace(json) || System.Text.Json.JsonSerializer.Deserialize<OpcionesGuardadas>(json) is not { } o) return;
+            (_s.LibrosIva, _s.LibroIvaDigital, _s.Asientos, _s.Detalles, _s.FacturasVenta, _s.FacturasVentaSoloA, _s.ComprobantesCompra) =
+                (o.LibrosIva, o.LibroIvaDigital, o.Asientos, o.Detalles, o.FacturasVenta, o.FacturasVentaSoloA, o.ComprobantesCompra);
+            StateHasChanged();
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { }
+    }
+
+    private void Marcar(Action cambio)
+    {
+        cambio();
+        _ = GuardarOpcionesAsync();
+    }
+
+    private async Task GuardarOpcionesAsync()
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(new OpcionesGuardadas(_s.LibrosIva, _s.LibroIvaDigital, _s.Asientos, _s.Detalles, _s.FacturasVenta, _s.FacturasVentaSoloA, _s.ComprobantesCompra));
+            await JS.InvokeVoidAsync("localStorage.setItem", ClaveOpciones, json);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { }
+    }
 
     private Task CambiarMes(ChangeEventArgs e) => CambiarPeriodo(mes: int.TryParse(e.Value?.ToString(), out var m) ? m : _s.Mes);
     private Task CambiarAnio(ChangeEventArgs e) => CambiarPeriodo(anio: int.TryParse(e.Value?.ToString(), out var a) ? a : _s.Anio);
