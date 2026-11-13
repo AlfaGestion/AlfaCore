@@ -106,6 +106,36 @@ public sealed class ActualizacionesService(
             };
         }, "No se pudo cargar el panel de actualizaciones.", ct);
 
+    public Task<int> IgnorarSalteadosAsync(string? usuario, string? pc, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Actualizaciones", "IgnorarSalteados", async token =>
+        {
+            var source = ResolveSource(await GetSettingsAsync(token), validateAvailability: false);
+            var scripts = GetScripts(source, requireAvailability: false);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await EnsureHistoryTableAsync(cn, token);
+
+            var fechaUpdate = await GetConfigValueAsync(cn, detailColumn, FechaUpdateKey, token);
+            var currentVersion = ParseVersionToken(fechaUpdate);
+            var (aplicadosOk, primeraVersion) = await GetAplicadosOkAsync(cn, token);
+            var salteados = CalcularSalteados(
+                scripts,
+                currentVersion is { } cv ? $"{cv.Date:yyyy-MM-dd}-{cv.Sequence:000}" : null,
+                aplicadosOk,
+                primeraVersion);
+
+            var actor = NormalizeActor(usuario, Environment.UserName, 50);
+            var equipo = NormalizeActor(pc, Environment.MachineName, 100);
+            var version = NormalizeVersionText(currentVersion);
+            foreach (var script in salteados)
+                await InsertHistoryAsync(cn, script, version, version, source.RutaOrigenActiva, "IGNORADO",
+                    "Script salteado marcado como ignorado: no se ejecutó en esta base.", actor, equipo, null, token);
+
+            return salteados.Count;
+        }, "No se pudieron ignorar los scripts salteados.", ct);
+
     public Task<ActualizacionesRunResultDto> ExecutePendingAsync(ActualizacionesRunRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Actualizaciones", "ExecutePending", async token =>
         {
@@ -364,7 +394,7 @@ public sealed class ActualizacionesService(
     private static async Task<(IReadOnlyCollection<string> Aplicados, string? PrimeraVersion)> GetAplicadosOkAsync(SqlConnection cn, CancellationToken ct)
     {
         var aplicados = new List<string>();
-        await using (var cmd = new SqlCommand("SELECT DISTINCT ISNULL(ScriptArchivo, '') FROM dbo.AUX_ACTUALIZACION_HIST WHERE Resultado = 'OK';", cn))
+        await using (var cmd = new SqlCommand("SELECT DISTINCT ISNULL(ScriptArchivo, '') FROM dbo.AUX_ACTUALIZACION_HIST WHERE Resultado IN ('OK', 'IGNORADO');", cn))
         await using (var rd = await cmd.ExecuteReaderAsync(ct))
             while (await rd.ReadAsync(ct))
                 aplicados.Add(rd.GetString(0));

@@ -63,6 +63,9 @@
                             pasa cuando se reusa un número de versión o se sube un script con fecha atrasada. Revisá cada uno y,
                             si corresponde, aplicalo a mano en esta base (los scripts son idempotentes).
                         </p>
+                        <button type="button" class="btn btn--secondary" @onclick="IgnorarSalteadosAsync" disabled="@_busy">
+                            <i class="bi bi-eye-slash"></i> Ignorar salteados
+                        </button>
                         <ul>
                             @foreach (var s in _dashboard.Salteados)
                             {
@@ -399,6 +402,28 @@
         {
             _busy = false;
         }
+    }
+
+    private async Task IgnorarSalteadosAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => ActualizacionesSvc.IgnorarSalteadosAsync(AppUserSession.GetCurrentUserName(Environment.UserName), Environment.MachineName),
+                "No se pudieron ignorar los scripts salteados.");
+            if (!result.Success)
+            {
+                SetMessage(BuildFeedbackText(result.Feedback ?? AppUiMessage.Error("No se pudo completar", "Reintentá.")), true);
+                return;
+            }
+            SetMessage($"{result.Value} script(s) salteado(s) marcados como ignorados.", false);
+        }
+        finally
+        {
+            _busy = false;
+        }
+        await RecargarAsync();
     }
 
     private async Task EjecutarPendientesAsync()
