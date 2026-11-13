@@ -100,6 +100,8 @@ public interface IConversacionesService
     /// <summary>Momento en que se cierra la ventana de 24 h de WhatsApp (último entrante + 24 h); null si no hay entrante.</summary>
     Task<DateTime?> GetVentanaCierreWhatsAppAsync(long idConversacion, CancellationToken ct = default);
     Task<int> ProcesarMensajesProgramadosAsync(CancellationToken ct = default);
+    /// <summary>Una pasada (un lote) de la compactación de adjuntos repetidos de la base activa.</summary>
+    Task<ConversacionAdjuntosCompactacionResultDto> CompactarAdjuntosAsync(CancellationToken ct = default);
     Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default);
     Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);

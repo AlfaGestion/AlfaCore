@@ -15,6 +15,11 @@ internal static partial class ConversacionesAdjuntosAlmacen
     internal const string CarpetaContenido = "_contenido";
 
     internal static async Task<string> GuardarAsync(string raizBase, byte[] contenido, string nombreOExtension, CancellationToken ct)
+        => (await GuardarConDetalleAsync(raizBase, contenido, nombreOExtension, ct)).Ruta;
+
+    /// <summary>Igual que <see cref="GuardarAsync"/>; <c>YaExistia</c> indica que no hizo falta escribir nada.</summary>
+    internal static async Task<(string Ruta, bool YaExistia)> GuardarConDetalleAsync(
+        string raizBase, byte[] contenido, string nombreOExtension, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(raizBase);
         ArgumentNullException.ThrowIfNull(contenido);
@@ -24,7 +29,7 @@ internal static partial class ConversacionesAdjuntosAlmacen
         Directory.CreateDirectory(carpeta);
         var ruta = Path.Combine(carpeta, hash + Extension(nombreOExtension));
         if (ExisteCompleto(ruta, contenido.LongLength))
-            return ruta;
+            return (ruta, true);
 
         // Se escribe en un temporal y se renombra: un lector (o un segundo envío del mismo archivo en paralelo)
         // nunca ve un archivo a medio escribir.
@@ -44,7 +49,7 @@ internal static partial class ConversacionesAdjuntosAlmacen
                 File.Delete(temporal);
         }
 
-        return ruta;
+        return (ruta, false);
     }
 
     private static bool ExisteCompleto(string ruta, long largo)

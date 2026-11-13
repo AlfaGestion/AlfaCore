@@ -5313,11 +5313,11 @@ public sealed partial class ConversacionesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var conContenido = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            var contenidoSql = await AttachmentContentSqlAsync(cn, "a", token);
             // Solo adjuntos de una conversación WEBCHAT de este visitante, de mensajes que él ve.
             var sql = $"""
                 SELECT TOP (1) ISNULL(a.RutaLocal, N''),
-                       {(conContenido ? "a.ArchivoContenido" : "CAST(NULL AS varbinary(max))")}
+                       {contenidoSql}
                 FROM dbo.CONV_ADJUNTOS a
                 INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
                 INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
@@ -6130,7 +6130,7 @@ public sealed partial class ConversacionesService(
                         ISNULL(a.PayloadJson, ''),
                         ISNULL(m.PayloadJson, ''),
                         m.FechaHora,
-                        CASE WHEN a.ArchivoContenido IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END,
+                        CASE WHEN a.ArchivoContenido IS NOT NULL OR a.AlmacenamientoEstado = N'{{SharedSqlContentState}}' THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END,
                         ISNULL(a.AlmacenamientoEstado, '')
                     FROM dbo.CONV_ADJUNTOS a
                     INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
@@ -6346,8 +6346,9 @@ public sealed partial class ConversacionesService(
             await cn.OpenAsync(token);
             await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, token);
             var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            var contenidoSql = await AttachmentContentSqlAsync(cn, "a", token);
             var sql = supportsDurableContent
-                ? """
+                ? $"""
                     SELECT
                         a.IdAdjunto,
                         a.IdMensaje,
@@ -6360,7 +6361,7 @@ public sealed partial class ConversacionesService(
                         ISNULL(a.PayloadJson, ''),
                         ISNULL(m.PayloadJson, ''),
                         m.FechaHora,
-                        a.ArchivoContenido,
+                        {contenidoSql},
                         a.FechaHora_Archivo
                     FROM dbo.CONV_ADJUNTOS a
                     INNER JOIN dbo.CONV_MENSAJES m
@@ -6895,7 +6896,7 @@ public sealed partial class ConversacionesService(
               AND UPPER(ISNULL(m.Direction, '')) IN (N'ENTRANTE', N'SALIENTE')
               AND UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'AUDIO', N'STICKER', N'DOCUMENT', N'VIDEO')
               AND a.ArchivoContenido IS NULL
-              AND UPPER(ISNULL(a.AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL', N'NO_DISPONIBLE_META', N'RECUPERACION_FALLIDA')
+              AND UPPER(ISNULL(a.AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL', N'SQL_COMPARTIDO', N'NO_DISPONIBLE_META', N'RECUPERACION_FALLIDA')
               AND (
                     ISNULL(a.PayloadJson, N'') LIKE N'%MediaId%'
                  OR ISNULL(a.PayloadJson, N'') LIKE N'%media_id%'
@@ -7226,8 +7227,11 @@ public sealed partial class ConversacionesService(
                     TamanoBytes = @TamanoBytes,
                     ArchivoContenido = COALESCE(@ArchivoContenido, ArchivoContenido),
                     ArchivoHashSha256 = COALESCE(@ArchivoHashSha256, ArchivoHashSha256),
-                    AlmacenamientoEstado = CASE WHEN @ArchivoContenido IS NULL THEN ISNULL(AlmacenamientoEstado, N'RUTA_LOCAL') ELSE N'SQL_Y_RUTA' END,
-                    FechaHora_Archivo = CASE WHEN @ArchivoContenido IS NULL THEN FechaHora_Archivo ELSE GETDATE() END
+                    AlmacenamientoEstado = CASE
+                        WHEN @Compartido = 1 THEN N'SQL_COMPARTIDO'
+                        WHEN @ArchivoContenido IS NULL THEN ISNULL(AlmacenamientoEstado, N'RUTA_LOCAL')
+                        ELSE N'SQL_Y_RUTA' END,
+                    FechaHora_Archivo = CASE WHEN @ArchivoContenido IS NULL AND @Compartido = 0 THEN FechaHora_Archivo ELSE GETDATE() END
                 WHERE IdAdjunto = @IdAdjunto
                 """
             : """
@@ -7247,11 +7251,15 @@ public sealed partial class ConversacionesService(
         if (supportsDurableContent)
         {
             var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
+            var hash = content is null ? null : ContentHash(content);
+            // Si otra fila ya guarda este mismo archivo, esta no lo repite (SQL_COMPARTIDO).
+            var shared = hash is not null && await IsSqlContentAlreadyStoredAsync(cn, hash, idAdjunto, ct);
             // Tipo explícito: con AddWithValue(DBNull) el parámetro sale nvarchar y SQL rechaza guardarlo en
             // varbinary(max) ("conversión implícita nvarchar a varbinary"): el adjunto quedaba sin archivo
             // cada vez que el contenido no se guarda en la base (2026-10-22).
-            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null ? DBNull.Value : content;
-            cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
+            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null || shared ? DBNull.Value : content;
+            cmd.Parameters.AddWithValue("@ArchivoHashSha256", hash is null ? DBNull.Value : hash);
+            cmd.Parameters.AddWithValue("@Compartido", shared);
         }
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -7272,7 +7280,7 @@ public sealed partial class ConversacionesService(
                 FechaHora_Archivo = COALESCE(FechaHora_Archivo, GETDATE())
             WHERE IdAdjunto = @IdAdjunto
               AND ArchivoContenido IS NULL
-              AND UPPER(ISNULL(AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL')
+              AND UPPER(ISNULL(AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL', N'SQL_COMPARTIDO')
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
@@ -7298,6 +7306,42 @@ public sealed partial class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
         cmd.Parameters.AddWithValue("@PayloadJson", payloadJson);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // Contenido compartido (2026-11-13): una fila en SQL_COMPARTIDO no guarda el archivo en ArchivoContenido; lo
+    // guarda otra fila con el mismo ArchivoHashSha256. Así un catálogo enviado 455 veces no ocupa 455 copias en la
+    // base. Toda lectura del contenido pasa por AttachmentContentSqlAsync.
+    internal const string SharedSqlContentState = "SQL_COMPARTIDO";
+
+    private static async Task<string> AttachmentContentSqlAsync(SqlConnection cn, string alias, CancellationToken ct)
+    {
+        if (!await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct))
+            return "CAST(NULL AS varbinary(max))";
+        if (!await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoHashSha256", ct))
+            return $"{alias}.ArchivoContenido";
+
+        return $"""
+            COALESCE({alias}.ArchivoContenido, (SELECT TOP (1) cc.ArchivoContenido FROM dbo.CONV_ADJUNTOS cc
+                WHERE {alias}.ArchivoHashSha256 IS NOT NULL AND cc.ArchivoHashSha256 = {alias}.ArchivoHashSha256
+                  AND cc.ArchivoContenido IS NOT NULL ORDER BY cc.IdAdjunto))
+            """;
+    }
+
+    private static string ContentHash(byte[] content)
+        => Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+
+    private static async Task<bool> IsSqlContentAlreadyStoredAsync(SqlConnection cn, string hash, long excludeIdAdjunto, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS(
+                SELECT 1 FROM dbo.CONV_ADJUNTOS
+                WHERE ArchivoHashSha256 = @Hash AND ArchivoContenido IS NOT NULL AND IdAdjunto <> @Excluir)
+            THEN 1 ELSE 0 END;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.Add("@Hash", System.Data.SqlDbType.NVarChar, 64).Value = hash;
+        cmd.Parameters.AddWithValue("@Excluir", excludeIdAdjunto);
+        return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 1;
     }
 
     private static async Task EnsureConversationAttachmentsDurableColumnsAsync(SqlConnection cn, CancellationToken ct)
@@ -7333,6 +7377,13 @@ public sealed partial class ConversacionesService(
                 WHERE AlmacenamientoEstado IS NULL
                   AND NULLIF(LTRIM(RTRIM(ISNULL(RutaLocal, N''))), N'') IS NOT NULL;
             END
+            """,
+            // Para encontrar rápido la fila que guarda un contenido compartido (AttachmentContentSqlAsync).
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'ArchivoHashSha256') IS NOT NULL
+               AND NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.CONV_ADJUNTOS') AND name = N'IX_CONV_ADJUNTOS_ArchivoHash')
+                CREATE INDEX IX_CONV_ADJUNTOS_ArchivoHash ON dbo.CONV_ADJUNTOS (ArchivoHashSha256);
             """
         ];
 
@@ -9347,10 +9398,10 @@ public sealed partial class ConversacionesService(
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
-        var conContenido = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct).ConfigureAwait(false);
+        var contenidoSql = await AttachmentContentSqlAsync(cn, "a", ct).ConfigureAwait(false);
         var sql = $"""
             SELECT TOP (1) ISNULL(a.NombreArchivo, N''), ISNULL(a.MimeType, N''), ISNULL(a.RutaLocal, N''),
-                   {(conContenido ? "a.ArchivoContenido" : "CAST(NULL AS varbinary(max))")}
+                   {contenidoSql}
             FROM dbo.CONV_ADJUNTOS a
             WHERE a.IdMensaje = (SELECT MAX(m.IdMensaje) FROM dbo.CONV_MENSAJES m
                                  WHERE m.IdConversacion = @Id AND m.Direction = N'ENTRANTE')
@@ -13178,12 +13229,17 @@ public sealed partial class ConversacionesService(
         if (supportsDurableContent)
         {
             var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
+            var hash = content is null ? null : ContentHash(content);
+            // Si otra fila ya guarda este mismo archivo, esta no lo repite (SQL_COMPARTIDO).
+            var shared = hash is not null && await IsSqlContentAlreadyStoredAsync(cn, hash, 0, ct);
             // Tipo explícito: con AddWithValue(DBNull) el parámetro sale nvarchar y SQL rechaza guardarlo en
             // varbinary(max) ("conversión implícita nvarchar a varbinary"): el adjunto quedaba sin archivo
             // cada vez que el contenido no se guarda en la base (2026-10-22).
-            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null ? DBNull.Value : content;
-            cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
-            cmd.Parameters.AddWithValue("@AlmacenamientoEstado", string.IsNullOrWhiteSpace(almacenamientoEstado) ? (content is null ? "RUTA_LOCAL" : "SQL_Y_RUTA") : almacenamientoEstado.Trim().ToUpperInvariant());
+            cmd.Parameters.Add("@ArchivoContenido", System.Data.SqlDbType.VarBinary, -1).Value = content is null || shared ? DBNull.Value : content;
+            cmd.Parameters.AddWithValue("@ArchivoHashSha256", hash is null ? DBNull.Value : hash);
+            cmd.Parameters.AddWithValue("@AlmacenamientoEstado", !string.IsNullOrWhiteSpace(almacenamientoEstado)
+                ? almacenamientoEstado.Trim().ToUpperInvariant()
+                : content is null ? "RUTA_LOCAL" : shared ? SharedSqlContentState : "SQL_Y_RUTA");
         }
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);

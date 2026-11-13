@@ -67,6 +67,34 @@ public sealed class ConversacionesAdjuntosAlmacenTests : IDisposable
         Assert.Equal(contenido, await File.ReadAllBytesAsync(ruta));
     }
 
+    [Fact]
+    public async Task InformaSiElArchivoYaEstaba()
+    {
+        var primero = await ConversacionesAdjuntosAlmacen.GuardarConDetalleAsync(_raiz, [4, 5, 6], "a.pdf", CancellationToken.None);
+        var segundo = await ConversacionesAdjuntosAlmacen.GuardarConDetalleAsync(_raiz, [4, 5, 6], "otro-nombre.pdf", CancellationToken.None);
+
+        Assert.False(primero.YaExistia);
+        Assert.True(segundo.YaExistia);
+        Assert.Equal(primero.Ruta, segundo.Ruta);
+    }
+
+    [Fact]
+    public void Toda_lectura_del_contenido_en_SQL_contempla_el_contenido_compartido()
+    {
+        // Una fila SQL_COMPARTIDO no tiene ArchivoContenido propio: leer a.ArchivoContenido directo devuelve
+        // vacío y el adjunto se vería como perdido (y dispararía la recuperación desde Meta).
+        var dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "AlfaCore.sln")))
+            dir = Directory.GetParent(dir)!.FullName;
+        var fuentes = Directory.GetFiles(Path.Combine(dir, "src", "AlfaCore", "Services"), "ConversacionesService*.cs")
+            .Select(File.ReadAllText)
+            .ToList();
+
+        Assert.DoesNotContain(fuentes, s => s.Contains("? \"a.ArchivoContenido\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(fuentes, s => s.Contains("                        a.ArchivoContenido,", StringComparison.Ordinal));
+        Assert.Contains(fuentes, s => s.Contains("AttachmentContentSqlAsync(cn, \"a\"", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("factura.PDF", ".pdf")]
     [InlineData("sin-extension", "")]

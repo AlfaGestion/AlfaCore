@@ -525,7 +525,15 @@ Criterio aplicado:
 - Ubicación: `src/AlfaCore/Services/ConversacionesAdjuntosAlmacen.cs`
 - Propósito: graba los archivos de Conversaciones por contenido (SHA-256) en `App_Data/uploads/conversaciones/<base>/_contenido/ab/<hash>.<ext>`: el mismo archivo enviado o recibido N veces ocupa disco una sola vez.
 - Datos que usa: solo disco; cada adjunto sigue con su fila en `CONV_ADJUNTOS` (`RutaLocal` apunta al archivo compartido).
-- Observaciones: usarlo para todo archivo nuevo de Conversaciones (entrantes, recuperados, envío manual, encabezado de plantilla). Como varias filas pueden apuntar al mismo archivo, ningún flujo de un mensaje debe borrarlo. Escribe en temporal y renombra, así que dos envíos en paralelo del mismo archivo no se pisan.
+- Observaciones: usarlo para todo archivo nuevo de Conversaciones (entrantes, recuperados, envío manual, encabezado de plantilla). Como varias filas pueden apuntar al mismo archivo, ningún flujo de un mensaje debe borrarlo. Escribe en temporal y renombra, así que dos envíos en paralelo del mismo archivo no se pisan. En SQL, el contenido también queda una vez por hash (`SQL_COMPARTIDO`): leerlo siempre con `AttachmentContentSqlAsync` de `ConversacionesService`, nunca `a.ArchivoContenido` directo.
+
+### ConversacionesAdjuntosCompactacionHostedService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionesAdjuntosCompactacionHostedService.cs` (lógica en `ConversacionesService.AdjuntosCompactacion.cs`, `CompactarAdjuntosAsync`)
+- Propósito: compacta los adjuntos grabados antes del almacén por contenido: hash faltante, una sola copia de `ArchivoContenido` por hash, archivos de disco movidos a `_contenido` y revisión de huérfanos.
+- Datos que usa: `CONV_ADJUNTOS`, `CONV_MENSAJES`, `TA_CONFIGURACION` (`CONVERSACIONES-ADJUNTOS-*`), disco de `App_Data/uploads/conversaciones/<base>`.
+- Observaciones: un lote por base por pasada (cada minuto mientras haya trabajo, cada hora después). Nunca borra un archivo sin haber actualizado antes la fila; los huérfanos se borran solo con `CONVERSACIONES-ADJUNTOS-BORRAR-HUERFANOS = SI`.
 
 ## Gestión operativa y financiera
 

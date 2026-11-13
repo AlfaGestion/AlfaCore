@@ -26,6 +26,10 @@ La actualización `2026-10-27-002` registra en CAJA `TARJETAS-PYTHON` (ejecutabl
 
 La detección de cuenta al seleccionar un PDF reutiliza `TARJETAS-IA-DIAS` para consultar las fechas de operación con margen, y `TARJETAS-TOLERANCIA` para la evidencia orientativa de bruto diario de lotes. No agrega claves ni usa IA en esa detección; los pares individuales se comparan por importe exacto. Las asociaciones recordadas se validan contra las cuentas TJ activas en pesos. La elección automática es una sugerencia revisable, no confirma conciliaciones.
 
+## Adjuntos de Conversaciones
+
+Los archivos nuevos de Conversaciones se guardan una sola vez por contenido (SHA-256) en `App_Data/uploads/conversaciones/<base>/_contenido/`, y en `CONV_ADJUNTOS.ArchivoContenido` queda una sola copia por hash (las demás filas quedan `SQL_COMPARTIDO` y leen la de la fila más antigua). El job `ConversacionesAdjuntosCompactacionHostedService` compacta lo grabado antes, de a lotes. Claves (grupo `CONVERSACIONES`, agregadas por `2026-11-13-001` sin reemplazar valores): `CONVERSACIONES-ADJUNTOS-COMPACTAR` (SI inicial; NO lo apaga en esa base), `CONVERSACIONES-ADJUNTOS-COMPACTAR-LOTE` (50; 1..500 adjuntos por pasada) y `CONVERSACIONES-ADJUNTOS-BORRAR-HUERFANOS` (NO inicial). Los archivos de las carpetas de conversación que ninguna fila usa (huérfanos, de más de 2 días) primero solo se informan en la auditoría (`CompactarAdjuntosHuerfanos`, con cantidad y bytes); se borran recién con esa clave en SI. Liberar `ArchivoContenido` no achica el archivo de la base: el espacio queda libre adentro para lo nuevo, y achicarlo es una tarea del DBA. Respeta `ProcesosSegundoPlano:Deshabilitados`.
+
 ## Base de demostración reiniciable
 
 `DEMO-BASE-REINICIABLE` (CAJA) identifica únicamente `ALFANET_DEMO` en `SERVER-ALFAVB6`. Su valor debe ser `ALFANET_DEMO`. La herramienta de restablecimiento exige esta marca además de validar servidor, nombre interno del respaldo y archivos físicos antes de cerrar conexiones o restaurar. No habilita un reinicio en otras bases ni se distribuye por el actualizador general. Ver [operación y respaldo de la demo](../tools/conciliacion_demo/README.md).
