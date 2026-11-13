@@ -883,6 +883,15 @@
     {
         if (string.Equals(t.Medida, "RESULTADO", StringComparison.OrdinalIgnoreCase))
             return "error = crítico, advertencia = aviso";
+        if (string.Equals(t.Medida, "ESPACIO", StringComparison.OrdinalIgnoreCase))
+        {
+            var libres = new List<string>();
+            if (t.AvisoMinutos is > 0)
+                libres.Add($"aviso con menos de {t.AvisoMinutos.Value} GB o 10% libre");
+            if (t.CriticoMinutos is > 0)
+                libres.Add($"crítico con menos de {t.CriticoMinutos.Value} GB o 5%");
+            return libres.Count == 0 ? "aviso con menos de 10% libre, crítico con menos de 5%" : string.Join(", ", libres);
+        }
         if (string.Equals(t.Medida, "VENCE", StringComparison.OrdinalIgnoreCase))
         {
             var antes = new List<string>();

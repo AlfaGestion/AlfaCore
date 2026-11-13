@@ -14,6 +14,7 @@ public sealed class MonitorClientesService(
 {
     internal const string TipoReporte = "REPORTE";
     internal const string TipoBackupNube = "BACKUP_NUBE";
+    internal const string TipoDisco = "DISCO";
     private const int MaxItemsPorReporte = 500;
 
     // El esquema se verifica una sola vez por proceso.
@@ -222,7 +223,8 @@ public sealed class MonitorClientesService(
         var estados = (await multi.ReadAsync<EstadoFila>().ConfigureAwait(false)).ToList();
         var seguimientos = (await multi.ReadAsync<SeguimientoFila>().ConfigureAwait(false)).ToList();
 
-        if (tipos.Any(t => t.Activo && string.Equals(t.Codigo, TipoBackupNube, StringComparison.OrdinalIgnoreCase)))
+        if (tipos.Any(t => t.Activo && (string.Equals(t.Codigo, TipoBackupNube, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals(t.Codigo, TipoDisco, StringComparison.OrdinalIgnoreCase))))
             estados.AddRange(await EstadosBackupNubeAsync(origenes, ct).ConfigureAwait(false));
 
         var ahora = DateTime.Now;
@@ -241,6 +243,7 @@ public sealed class MonitorClientesService(
     /// el resultado de la subida a ALFA_CENTRAL.ALFACORE_BACKUPS_CONTROL (OK / ADVERTENCIA = backup local
     /// correcto pero falló la subida / ERROR). Se toma el último informe y el último OK de cada base.
     /// Solo aparecen las bases que informaron algo en los últimos 60 días.
+    /// DISCO: del mismo último informe sale el espacio libre de C: y del disco del backup.
     /// </summary>
     private async Task<List<EstadoFila>> EstadosBackupNubeAsync(IReadOnlyList<OrigenFila> origenes, CancellationToken ct)
     {
@@ -257,6 +260,7 @@ public sealed class MonitorClientesService(
                 WITH b AS (
                     SELECT LTRIM(RTRIM(IdCliente)) AS IdCliente, LTRIM(RTRIM(DbServidor)) AS DbServidor,
                            LTRIM(RTRIM(DbNombre)) AS DbNombre, Resultado, Mensaje, FechaHoraRecepcion,
+                           EspacioLibreDiscoGB, EspacioTotalDiscoGB, EspacioLibreDiscoBckGB, EspacioTotalDiscoBckGB,
                            ROW_NUMBER() OVER (PARTITION BY IdCliente, DbServidor, DbNombre ORDER BY FechaHoraRecepcion DESC, IdControl DESC) AS Nro,
                            MAX(CASE WHEN Resultado = N'OK' THEN FechaHoraRecepcion END)
                                OVER (PARTITION BY IdCliente, DbServidor, DbNombre) AS UltimoOk
@@ -264,7 +268,8 @@ public sealed class MonitorClientesService(
                     WHERE FechaHoraRecepcion >= DATEADD(DAY, -60, GETDATE())
                 )
                 SELECT IdCliente, DbServidor, DbNombre, Resultado, Mensaje,
-                       FechaHoraRecepcion AS UltimoIntento, UltimoOk
+                       FechaHoraRecepcion AS UltimoIntento, UltimoOk,
+                       EspacioLibreDiscoGB, EspacioTotalDiscoGB, EspacioLibreDiscoBckGB, EspacioTotalDiscoBckGB
                 FROM b
                 WHERE Nro = 1;
                 """, commandTimeout: 30, cancellationToken: ct)).ConfigureAwait(false);
@@ -287,6 +292,10 @@ public sealed class MonitorClientesService(
         public string? Mensaje { get; init; }
         public DateTime? UltimoIntento { get; init; }
         public DateTime? UltimoOk { get; init; }
+        public decimal? EspacioLibreDiscoGB { get; init; }
+        public decimal? EspacioTotalDiscoGB { get; init; }
+        public decimal? EspacioLibreDiscoBckGB { get; init; }
+        public decimal? EspacioTotalDiscoBckGB { get; init; }
     }
 
     internal static List<EstadoFila> CruzarBackupNube(IReadOnlyList<OrigenFila> origenes, IReadOnlyList<InformeBackupNube> informes)
@@ -313,8 +322,26 @@ public sealed class MonitorClientesService(
                 Resultado = i.Resultado?.Trim().ToUpperInvariant(),
                 Mensaje = Recortar(i.Mensaje, 500)
             });
+
+            // Espacio en disco: C: y el disco del backup (si es el mismo disco, una sola fila)
+            if (i.EspacioTotalDiscoGB is > 0)
+                estados.Add(Disco(o.IdOrigen, "C:", i.EspacioLibreDiscoGB, i.EspacioTotalDiscoGB, i.UltimoIntento));
+            var mismoDisco = i.EspacioLibreDiscoBckGB == i.EspacioLibreDiscoGB && i.EspacioTotalDiscoBckGB == i.EspacioTotalDiscoGB;
+            if (i.EspacioTotalDiscoBckGB is > 0 && !mismoDisco)
+                estados.Add(Disco(o.IdOrigen, "Disco del backup", i.EspacioLibreDiscoBckGB, i.EspacioTotalDiscoBckGB, i.UltimoIntento));
         }
         return estados;
+
+        static EstadoFila Disco(int idOrigen, string destino, decimal? libre, decimal? total, DateTime? fecha) => new()
+        {
+            IdOrigen = idOrigen,
+            TipoCodigo = TipoDisco,
+            Destino = destino,
+            UltimoOk = fecha,
+            UltimoIntento = fecha,
+            LibreGB = libre,
+            TotalGB = total
+        };
     }
 
     internal const string ClientesSinReporteSql = """
@@ -787,6 +814,9 @@ public sealed class MonitorClientesService(
         public DateTime? UltimoIntento { get; init; }
         public string? Resultado { get; init; }
         public string? Mensaje { get; init; }
+        /// <summary>Solo DISCO: espacio libre y total en GB.</summary>
+        public decimal? LibreGB { get; init; }
+        public decimal? TotalGB { get; init; }
     }
 
     internal static IReadOnlyList<MonitorFilaDto> Evaluar(
@@ -835,6 +865,11 @@ public sealed class MonitorClientesService(
                 else if (string.Equals(tipo.Medida, "RESULTADO", StringComparison.OrdinalIgnoreCase))
                 {
                     (estado, motivo) = PorResultado(e.Resultado, e.UltimoIntento, ahora);
+                }
+                else if (string.Equals(tipo.Medida, "ESPACIO", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (aviso, critico) = Limites(limitesPorClave, origen.ClienteCodigo, tipo);
+                    (estado, motivo) = PorEspacio(e.LibreGB, e.TotalGB, e.UltimoIntento, aviso, critico);
                 }
                 else if (string.Equals(tipo.Medida, "VENCE", StringComparison.OrdinalIgnoreCase))
                 {
@@ -924,6 +959,27 @@ public sealed class MonitorClientesService(
         if (avisoMinutos is > 0 && edad.TotalMinutes >= avisoMinutos.Value)
             return MonitorEstado.Aviso;
         return MonitorEstado.Ok;
+    }
+
+    /// <summary>
+    /// Espacio en disco: límites en GB libres (aviso / crítico del tipo o del cliente) y además
+    /// 10% / 5% del total del disco.
+    /// </summary>
+    internal static (MonitorEstado, string) PorEspacio(decimal? libreGB, decimal? totalGB, DateTime? fecha, int? avisoGB, int? criticoGB)
+    {
+        if (libreGB is null || totalGB is not > 0)
+            return (MonitorEstado.Aviso, "No se pudo leer el espacio del disco");
+
+        var libre = libreGB.Value;
+        var porcentaje = libre * 100m / totalGB.Value;
+        var estado = (criticoGB is > 0 && libre < criticoGB.Value) || porcentaje < 5m ? MonitorEstado.Critico
+            : (avisoGB is > 0 && libre < avisoGB.Value) || porcentaje < 10m ? MonitorEstado.Aviso
+            : MonitorEstado.Ok;
+        var es = CultureInfo.GetCultureInfo("es-AR");
+        var texto = $"Libre {libre.ToString("0.#", es)} GB de {totalGB.Value.ToString("0", es)} GB ({porcentaje.ToString("0", es)}%)";
+        if (fecha is { } f)
+            texto += $", informado el {f.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)}";
+        return (estado, texto);
     }
 
     private static (MonitorEstado, string) PorResultado(string? resultado, DateTime? ultimoIntento, DateTime ahora)

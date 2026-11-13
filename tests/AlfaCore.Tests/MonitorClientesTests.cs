@@ -124,6 +124,42 @@ public sealed class MonitorClientesTests
         Assert.Contains("falló", fila.Motivo);
     }
 
+    [Theory]
+    [InlineData(3.22, 126.34, MonitorEstado.Critico)]   // ALFAEXPRESS C:
+    [InlineData(9.51, 159.33, MonitorEstado.Aviso)]     // menos de 10 GB
+    [InlineData(18.10, 111.16, MonitorEstado.Ok)]
+    [InlineData(40, 1000, MonitorEstado.Critico)]       // 4% de un disco grande
+    [InlineData(80, 1000, MonitorEstado.Aviso)]         // 8%
+    public void Disco_SeEvaluaPorGbYPorcentajeLibre(double libre, double total, MonitorEstado esperado)
+    {
+        var (estado, motivo) = MonitorClientesService.PorEspacio((decimal)libre, (decimal)total, Ahora, 10, 5);
+
+        Assert.Equal(esperado, estado);
+        Assert.StartsWith("Libre ", motivo);
+    }
+
+    [Fact]
+    public void Disco_SaleDelUltimoInforme_UnaFilaPorDiscoSiSonDistintos()
+    {
+        var origenes = new[] { Origen(1, "112010832", "1", Ahora) };
+        var informes = new List<MonitorClientesService.InformeBackupNube>
+        {
+            new() { IdCliente = "112010832", DbServidor = "SERVER", DbNombre = "BASE", Resultado = "OK", UltimoIntento = Ahora, UltimoOk = Ahora,
+                    EspacioLibreDiscoGB = 3.22m, EspacioTotalDiscoGB = 126.34m, EspacioLibreDiscoBckGB = 8m, EspacioTotalDiscoBckGB = 53m }
+        };
+
+        var discos = MonitorClientesService.CruzarBackupNube(origenes, informes).Where(e => e.TipoCodigo == "DISCO").ToList();
+
+        Assert.Equal(["C:", "Disco del backup"], discos.Select(d => d.Destino));
+
+        var mismo = new List<MonitorClientesService.InformeBackupNube>
+        {
+            new() { IdCliente = "112010832", DbServidor = "SERVER", DbNombre = "BASE", Resultado = "OK", UltimoIntento = Ahora,
+                    EspacioLibreDiscoGB = 9.51m, EspacioTotalDiscoGB = 159.33m, EspacioLibreDiscoBckGB = 9.51m, EspacioTotalDiscoBckGB = 159.33m }
+        };
+        Assert.Single(MonitorClientesService.CruzarBackupNube(origenes, mismo), e => e.TipoCodigo == "DISCO");
+    }
+
     [Fact]
     public void NuncaTuvoOk_EsCritico()
     {
