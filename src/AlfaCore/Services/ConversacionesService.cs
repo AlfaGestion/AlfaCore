@@ -1031,7 +1031,7 @@ public sealed partial class ConversacionesService(
                 OUTER APPLY (
                     SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion, ISNULL(cls.Color, 0) AS Color
                     FROM dbo.TA_CLASIFICACIONES cls
-                    WHERE UPPER(LTRIM(RTRIM(cls.Codigo))) = UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo)))
+                    WHERE UPPER(LTRIM(RTRIM(cls.Codigo))) COLLATE DATABASE_DEFAULT = UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo))) COLLATE DATABASE_DEFAULT
                 ) clasificacionCliente
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
@@ -1771,7 +1771,7 @@ public sealed partial class ConversacionesService(
                 OUTER APPLY (
                     SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion
                     FROM dbo.VT_CLIENTES cliCls
-                    LEFT JOIN dbo.TA_CLASIFICACIONES cls ON cls.Codigo = cliCls.Clasificacion
+                    LEFT JOIN dbo.TA_CLASIFICACIONES cls ON cls.Codigo COLLATE DATABASE_DEFAULT = cliCls.Clasificacion COLLATE DATABASE_DEFAULT
                     WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
                       AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                 ) clienteClasificacion

@@ -123,7 +123,7 @@ public sealed class ConversacionesInformesService(
         LEFT JOIN MsgAgg ma ON ma.GKey = k.GKey
         LEFT JOIN PartesAgg pa ON pa.GKey = k.GKey
         LEFT JOIN dbo.VT_CLIENTES cli ON k.ClienteCodigo <> N'' AND UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(k.ClienteCodigo)
-        LEFT JOIN dbo.TA_CLASIFICACIONES clsd ON clsd.Codigo = cli.Clasificacion
+        LEFT JOIN dbo.TA_CLASIFICACIONES clsd ON clsd.Codigo COLLATE DATABASE_DEFAULT = cli.Clasificacion COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.v_ta_categoria catd ON catd.IdCategoria = cli.IDCategoria
         LEFT JOIN dbo.MA_CONTACTOS con ON con.id = k.IdContacto
         OUTER APPLY (
