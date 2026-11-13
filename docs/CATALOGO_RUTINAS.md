@@ -519,6 +519,14 @@ Criterio aplicado:
 - Datos que usa: `CONV_BOT_PEDIDOS` (script `2026-10-27-005__conversaciones_bot_pedidos.sql`), `IInterfacesCatalogosService.GetCatalogoPublicoAsync` y `ConfirmarPedidoCarritoAsync` (mismo circuito y validaciones que el carrito web).
 - Observaciones: solo Cliente identificado y no ambiguo; la IA nunca confirma: `ConversacionesService` confirma/cancela con la respuesta literal del cliente (`EsConfirmacion`/`EsCancelacion`) contra el borrador vigente (12 h). Se activa con `CONV_ASISTENTE_HERRAMIENTA_TOMAR_PEDIDOS`.
 
+### ConversacionesAdjuntosAlmacen
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/ConversacionesAdjuntosAlmacen.cs`
+- Propósito: graba los archivos de Conversaciones por contenido (SHA-256) en `App_Data/uploads/conversaciones/<base>/_contenido/ab/<hash>.<ext>`: el mismo archivo enviado o recibido N veces ocupa disco una sola vez.
+- Datos que usa: solo disco; cada adjunto sigue con su fila en `CONV_ADJUNTOS` (`RutaLocal` apunta al archivo compartido).
+- Observaciones: usarlo para todo archivo nuevo de Conversaciones (entrantes, recuperados, envío manual, encabezado de plantilla). Como varias filas pueden apuntar al mismo archivo, ningún flujo de un mensaje debe borrarlo. Escribe en temporal y renombra, así que dos envíos en paralelo del mismo archivo no se pisan.
+
 ## Gestión operativa y financiera
 
 ### Stock

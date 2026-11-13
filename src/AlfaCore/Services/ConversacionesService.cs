@@ -3761,10 +3761,7 @@ public sealed partial class ConversacionesService(
                 mimeDocumento = NormalizeOutgoingMime(documento.MimeType, documento.NombreArchivo, tipoArchivo);
                 if (tipoArchivo == "IMAGE" && mimeDocumento is not ("image/jpeg" or "image/png"))
                     throw new InvalidOperationException("La imagen del encabezado tiene que ser JPG o PNG.");
-                var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
-                Directory.CreateDirectory(folder);
-                rutaDocumento = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(documento.NombreArchivo).ToLowerInvariant()}");
-                await File.WriteAllBytesAsync(rutaDocumento, documento.Contenido, token);
+                rutaDocumento = await ConversacionesAdjuntosAlmacen.GuardarAsync(UploadsBasePath, documento.Contenido, documento.NombreArchivo, token);
             }
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
@@ -5968,51 +5965,41 @@ public sealed partial class ConversacionesService(
                 initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
 
-            var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
-            Directory.CreateDirectory(folder);
-
-            var ext = Path.GetExtension(nombreArchivo).ToLowerInvariant();
-            var safeFileName = $"{Guid.NewGuid():N}{ext}";
-            var rutaLocal = Path.Combine(folder, safeFileName);
-
-            await using (var fs = File.Create(rutaLocal))
-                await request.Contenido.CopyToAsync(fs, token);
+            // Se valida y convierte en memoria y se graba una sola vez en el almacén por contenido: el archivo
+            // puede estar compartido con otros mensajes, así que este flujo nunca lo borra.
+            byte[] archivoContenido;
+            using (var buffer = new MemoryStream())
+            {
+                await request.Contenido.CopyToAsync(buffer, token);
+                archivoContenido = buffer.ToArray();
+            }
 
             if (isWebChat)
             {
                 // el tipo se decide por el contenido, como con los archivos del visitante
-                var bytesWeb = await File.ReadAllBytesAsync(rutaLocal, token);
                 string mimeWeb, extWeb;
-                if (bytesWeb.Length <= WebChatImagenes.MaxBytes && WebChatImagenes.TryDetectar(bytesWeb, out mimeWeb, out extWeb))
+                if (archivoContenido.Length <= WebChatImagenes.MaxBytes && WebChatImagenes.TryDetectar(archivoContenido, out mimeWeb, out extWeb))
                     messageType = "IMAGE";
-                else if (bytesWeb.Length <= WebChatAudios.MaxBytes && WebChatAudios.TryDetectar(bytesWeb, out mimeWeb, out extWeb))
+                else if (archivoContenido.Length <= WebChatAudios.MaxBytes && WebChatAudios.TryDetectar(archivoContenido, out mimeWeb, out extWeb))
                     messageType = "AUDIO";
                 else
-                {
-                    TryDeleteFile(rutaLocal);
                     throw new InvalidOperationException(
                         "En el chat del sitio web solo se pueden enviar imágenes (JPG, PNG, GIF o WEBP) o audios, de hasta 5 MB.");
-                }
 
                 mimeType = mimeWeb;
                 nombreArchivo = Path.ChangeExtension(nombreArchivo, extWeb);
             }
 
-            if (isWhatsApp && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))
+            if (isWhatsApp && ShouldConvertWebmOpusForWhatsApp(archivoContenido, mimeType, nombreArchivo))
             {
-                var oggBytes = ConvertWebmOpusFileToOgg(rutaLocal);
-                var oggPath = Path.ChangeExtension(rutaLocal, ".ogg");
-                await File.WriteAllBytesAsync(oggPath, oggBytes, token);
-                TryDeleteFile(rutaLocal);
-
-                rutaLocal = oggPath;
+                archivoContenido = ConvertWebmOpusToOgg(archivoContenido);
                 nombreArchivo = Path.ChangeExtension(nombreArchivo, ".ogg");
                 mimeType = "audio/ogg";
                 messageType = "AUDIO";
             }
 
-            var tamanoBytes = new FileInfo(rutaLocal).Length;
-            var archivoContenido = await File.ReadAllBytesAsync(rutaLocal, token);
+            var rutaLocal = await ConversacionesAdjuntosAlmacen.GuardarAsync(UploadsBasePath, archivoContenido, nombreArchivo, token);
+            var tamanoBytes = archivoContenido.LongLength;
 
             string whatsAppMessageId = string.Empty;
             string finalState = initialState;
@@ -17300,15 +17287,10 @@ public sealed partial class ConversacionesService(
     private static string JoinText(string label, string detail)
         => string.IsNullOrWhiteSpace(detail) ? $"{label}." : $"{label}: {detail}";
 
+    // conversationId queda por compatibilidad de firma: el archivo ya no va a la carpeta de la conversación sino
+    // al almacén por contenido de la base (un archivo por hash, ver ConversacionesAdjuntosAlmacen).
     private async Task<string> SaveIncomingAttachmentAsync(long conversationId, string fileName, byte[] bytes, CancellationToken ct)
-    {
-        var folder = Path.Combine(UploadsBasePath, conversationId.ToString(CultureInfo.InvariantCulture));
-        Directory.CreateDirectory(folder);
-
-        var rutaLocal = Path.Combine(folder, $"{Guid.NewGuid():N}{Path.GetExtension(fileName)}");
-        await File.WriteAllBytesAsync(rutaLocal, bytes, ct);
-        return rutaLocal;
-    }
+        => await ConversacionesAdjuntosAlmacen.GuardarAsync(UploadsBasePath, bytes, fileName, ct);
 
     private static string BuildIncomingFileName(IncomingWhatsAppAttachment attachment, string mimeType)
     {
@@ -17448,25 +17430,20 @@ public sealed partial class ConversacionesService(
             FechaHora = BusinessNow()
         });
 
-    private static bool ShouldConvertWebmOpusForWhatsApp(string path, string mimeType, string nombreArchivo)
-        => LooksLikeWebm(path)
+    private static bool ShouldConvertWebmOpusForWhatsApp(byte[] contenido, string mimeType, string nombreArchivo)
+        => LooksLikeWebm(contenido)
            || mimeType.StartsWith("audio/webm", StringComparison.OrdinalIgnoreCase)
            || Path.GetExtension(nombreArchivo).Equals(".webm", StringComparison.OrdinalIgnoreCase);
 
-    private static bool LooksLikeWebm(string path)
-    {
-        Span<byte> header = stackalloc byte[4];
-        using var fs = File.OpenRead(path);
-        return fs.Read(header) == 4
-               && header[0] == 0x1A
-               && header[1] == 0x45
-               && header[2] == 0xDF
-               && header[3] == 0xA3;
-    }
+    private static bool LooksLikeWebm(byte[] contenido)
+        => contenido.Length >= 4
+           && contenido[0] == 0x1A
+           && contenido[1] == 0x45
+           && contenido[2] == 0xDF
+           && contenido[3] == 0xA3;
 
-    private static byte[] ConvertWebmOpusFileToOgg(string path)
+    private static byte[] ConvertWebmOpusToOgg(byte[] webm)
     {
-        var webm = File.ReadAllBytes(path);
         var packets = ExtractWebmOpusPackets(webm);
         if (packets.Count == 0)
             throw new InvalidOperationException("No se pudo convertir el audio WebM a OGG para WhatsApp.");
@@ -17696,18 +17673,6 @@ public sealed partial class ConversacionesService(
         }
 
         return crc;
-    }
-
-    private static void TryDeleteFile(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-        catch
-        {
-        }
     }
 
     private const long MaxUnixSeconds = 253402300799; // 31/12/9999, tope de DateTimeOffset.
