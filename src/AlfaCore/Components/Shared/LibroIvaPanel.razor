@@ -16,6 +16,40 @@
 <div class="gd-page gd liva-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
+    @if (_obs is { Count: > 0 } obs)
+    {
+        <section class="liva-obs" role="alert" aria-label="Observaciones del TXT de ARCA">
+            <header>
+                <div>
+                    <strong><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @(_obsForzado ? "TXT de ARCA generado con observaciones" : "No se generó el TXT de ARCA"): @obs.Count observación(es)</strong>
+                    <span>@_obsPeriodo · quedan acá hasta que cierres este aviso o cambies de período.@(_obsForzado ? " ARCA puede rechazar esos comprobantes al importar." : "")</span>
+                </div>
+                <div class="liva-obs__acciones">
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-download" Disabled="@(_exportando is not null)" OnClick="_ => DescargarObservacionesAsync()">Descargar observaciones</AlfaButton>
+                    @if (!_obsForzado)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-file-earmark-zip" Disabled="@(_exportando is not null)" OnClick="_ => ExportarTxtAsync(true)">Generar el TXT igual</AlfaButton>
+                    }
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-x-lg" OnClick="_ => _obs = null">Cerrar</AlfaButton>
+                </div>
+            </header>
+            <div class="liva-obs__tabla"><table>
+                <thead><tr><th>Comprobante</th><th>Fecha</th><th>Observación</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var o in obs)
+                {
+                    <tr>
+                        <td class="mono">@o.Comprobante@(o.Unidad.Trim().Length > 0 ? $" · U.N. {o.Unidad.Trim()}" : "")</td>
+                        <td>@(o.Fecha?.ToString("dd/MM/yyyy"))</td>
+                        <td>@o.Texto</td>
+                        <td>@if (o.Numero > 0) { <a href="@RutaAsiento(o)">Ver asiento</a> }</td>
+                    </tr>
+                }
+                </tbody>
+            </table></div>
+        </section>
+    }
+
     @if (_r is { } r)
     {
         <div class="kpi-grid liva-kpis">
@@ -183,7 +217,7 @@
     private async Task GenerarAsync()
     {
         if (_busy || _disposed) return;
-        _busy = true; _feedback = null; UpdateHeader();
+        _busy = true; _feedback = null; _obs = null; UpdateHeader();
         await InvokeAsync(StateHasChanged);
         try
         {
@@ -222,8 +256,51 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    // Observaciones del control previo al TXT: quedan en pantalla (no es un aviso que desaparece) y se pueden bajar a un .txt.
+    private IReadOnlyList<LibroIvaObservacion>? _obs;
+    private bool _obsForzado;
+    private string _obsPeriodo = string.Empty;
+
+    private string RutaAsiento(LibroIvaObservacion o)
+        => Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contabilidad/asientos"),
+            new Dictionary<string, string?> { ["periodo"] = (o.Fecha ?? _mes).ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture), ["buscar"] = $"{o.PuntoVenta:0000}-{o.Numero:00000000}" });
+
+    private async Task DescargarObservacionesAsync()
+    {
+        if (_obs is not { Count: > 0 } obs) return;
+        var texto = new System.Text.StringBuilder()
+            .AppendLine($"Observaciones del {Titulo} · {_obsPeriodo}")
+            .AppendLine("Corregí estos comprobantes en AlfaCore y volvé a generar el TXT de ARCA.")
+            .AppendLine();
+        foreach (var o in obs)
+            texto.AppendLine($"U.N. {o.Unidad.Trim()} · {o.Comprobante}{(o.Fecha is { } f ? $" · {f:dd/MM/yyyy}" : "")} · {o.Texto}");
+        var bytes = new System.Text.UTF8Encoding(true).GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(texto.ToString())).ToArray();
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(bytes), "text/plain", $"Observaciones_{(Compras ? "Compras" : "Ventas")}_{_mes:yyyyMM}.txt");
+    }
+
+    private async Task ExportarTxtAsync(bool aunqueTengaObservaciones)
+    {
+        if (_exportando is not null) return;
+        _exportando = "txt"; UpdateHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => Service.ExportarTxtArcaConObservacionesAsync(Filtro, aunqueTengaObservaciones), Titulo);
+            if (!result.Success) { _feedback = result.Feedback; return; }
+            var t = result.Value!;
+            if (t.Archivo is { } a) await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(a.Contenido), a.ContentType, a.Nombre);
+            if (t.ConObservaciones)
+            {
+                _obs = t.Observaciones; _obsForzado = t.Archivo is not null; _obsPeriodo = ResumenFiltros;
+                if (t.Archivo is not null) _feedback = AppUiMessage.Info("TXT generado con observaciones", $"Se descargó el TXT. {t.Observaciones.Count} observación(es) quedan detalladas abajo y dentro del zip.");
+            }
+            else _obs = null;
+        }
+        finally { _exportando = null; if (!_disposed) { UpdateHeader(); await InvokeAsync(StateHasChanged); } }
+    }
+
     private async Task ExportarAsync(string tipo)
     {
+        if (tipo == "txt") { await ExportarTxtAsync(false); return; }
         if (_exportando is not null) return;
         _exportando = tipo; UpdateHeader();
         try
@@ -231,8 +308,7 @@
             var result = await UiOps.RunAsync(() => tipo switch
             {
                 "pdf" => Service.ExportarPdfAsync(Filtro),
-                "excel" => Service.ExportarExcelAsync(Filtro),
-                _ => Service.ExportarTxtArcaAsync(Filtro)
+                _ => Service.ExportarExcelAsync(Filtro)
             }, Titulo);
             if (result.Success && result.Value is { } a)
             {

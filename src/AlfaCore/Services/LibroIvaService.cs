@@ -17,6 +17,8 @@ public interface ILibroIvaService
     /// El trigger de MV_ASIENTOS rechaza desde ahí asientos de ese libro con fecha igual o anterior.</summary>
     Task<DateTime> CerrarAsync(bool compras, DateTime hasta, CancellationToken ct = default);
     Task<LibroIvaArchivo> ExportarTxtArcaAsync(LibroIvaFiltro filtro, CancellationToken ct = default);
+    /// <summary>Como ExportarTxtArcaAsync, pero ante observaciones las devuelve (no lanza) y, si se pide, genera el TXT igual con un OBSERVACIONES.txt dentro.</summary>
+    Task<LibroIvaTxtResultado> ExportarTxtArcaConObservacionesAsync(LibroIvaFiltro filtro, bool aunqueTengaObservaciones, CancellationToken ct = default);
     Task<LibroIvaArchivo> ExportarExcelAsync(LibroIvaFiltro filtro, CancellationToken ct = default);
     Task<LibroIvaArchivo> ExportarPdfAsync(LibroIvaFiltro filtro, CancellationToken ct = default);
 }
@@ -351,19 +353,62 @@ public sealed class LibroIvaService(ISessionService sessions, IAppUserSessionSer
             }
             var (cbte, alic) = r.Filtro.Compras ? ArmarTxtCompras(r.Filas) : ArmarTxt(r.Filas);
             LibroIvaArcaValidator.ValidarFormato(r, cbte, alic);
-            var libro = r.Filtro.Compras ? "COMPRAS" : "VENTAS";
-            using var ms = new MemoryStream();
-            using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
-            {
-                foreach (var (nombre, texto) in new[] { ($"LIBRO_IVA_DIGITAL_{libro}_CBTE.txt", cbte), ($"LIBRO_IVA_DIGITAL_{libro}_ALICUOTAS.txt", alic) })
-                {
-                    await using var s = zip.CreateEntry(nombre).Open();
-                    var bytes = Encoding.Latin1.GetBytes(texto);
-                    await s.WriteAsync(bytes, ct);
-                }
-            }
-            return new LibroIvaArchivo($"LibroIvaDigital_{(r.Filtro.Compras ? "Compras" : "Ventas")}_{LibroIvaArcaValidator.Digitos(r.CuitEmisor)}_{r.Filtro.Desde:yyyyMM}.zip", "application/zip", ms.ToArray());
+            return await ArmarZipAsync(r, cbte, alic, null, ct);
         }, ct);
+
+    public Task<LibroIvaTxtResultado> ExportarTxtArcaConObservacionesAsync(LibroIvaFiltro filtro, bool aunqueTengaObservaciones, CancellationToken ct = default)
+        => EjecutarAsync(filtro.Compras, "ExportarTxt", async cn =>
+        {
+            var r = await LeerAsync(cn, filtro, ct);
+            if (r.CantidadCuits > 1)
+                throw new ReglaLibroException("El Libro IVA Digital se presenta por CUIT: elegí una unidad de negocio.");
+            if (r.Unidades.Count > 0) r.CuitEmisor = r.Unidades[0].Cuit;
+            var observaciones = new List<LibroIvaObservacion>();
+            var errores = LibroIvaArcaValidator.Validar(r, (f, texto) => observaciones.Add(f is null
+                ? new LibroIvaObservacion("", "", "", 0, 0, null, texto)
+                : new LibroIvaObservacion(f.UnidadNegocio, f.Tc, f.Letra, f.PuntoVenta, f.Numero, f.Fecha, texto)));
+            if (errores.Count == 0)
+            {
+                var (cbte, alic) = r.Filtro.Compras ? ArmarTxtCompras(r.Filas) : ArmarTxt(r.Filas);
+                LibroIvaArcaValidator.ValidarFormato(r, cbte, alic);
+                return new LibroIvaTxtResultado(await ArmarZipAsync(r, cbte, alic, null, ct), [], false);
+            }
+            // Cada rechazo queda en AUX_ERR con su código de incidente, como antes.
+            var mensaje = $"No se generó el TXT ARCA: {errores.Count} observación(es). " + string.Join("; ", errores.Take(8));
+            await events.LogErrorAsync(filtro.Compras ? "LibroIvaCompras" : "LibroIvaVentas", "ValidarArca",
+                new InvalidOperationException(string.Join(Environment.NewLine, errores)), mensaje, ct: ct);
+            if (!aunqueTengaObservaciones) return new LibroIvaTxtResultado(null, observaciones, true);
+
+            // Generar igual (como el legacy): los comprobantes sin código ARCA no entran al TXT y quedan detallados en OBSERVACIONES.txt.
+            var filas = r.Filas.Where(f => f.CodigoArca > 0).ToList();
+            var (cb, al) = r.Filtro.Compras ? ArmarTxtCompras(filas) : ArmarTxt(filas);
+            var aviso = new List<string>();
+            try { r.Filas = filas; LibroIvaArcaValidator.ValidarFormato(r, cb, al); }
+            catch (InvalidOperationException ex) { aviso.Add("El diseño del TXT no se pudo verificar: " + ex.Message); }
+            var texto = new StringBuilder()
+                .AppendLine($"Observaciones del Libro IVA Digital {(r.Filtro.Compras ? "Compras" : "Ventas")} · {r.Filtro.Desde:dd/MM/yyyy} al {r.Filtro.Hasta:dd/MM/yyyy} · CUIT {r.CuitEmisor}")
+                .AppendLine("El TXT se generó igual: ARCA puede rechazar estos comprobantes al importarlo. Corregilos en AlfaCore y volvé a generarlo.")
+                .AppendLine();
+            foreach (var o in observaciones) texto.AppendLine($"U.N. {o.Unidad} · {o.Comprobante}{(o.Fecha is { } fd ? $" · {fd:dd/MM/yyyy}" : "")} · {o.Texto}");
+            foreach (var a in aviso) texto.AppendLine(a);
+            return new LibroIvaTxtResultado(await ArmarZipAsync(r, cb, al, texto.ToString(), ct), observaciones, true);
+        }, ct);
+
+    internal static async Task<LibroIvaArchivo> ArmarZipAsync(LibroIvaResultado r, string cbte, string alic, string? observaciones, CancellationToken ct)
+    {
+        var libro = r.Filtro.Compras ? "COMPRAS" : "VENTAS";
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            foreach (var (nombre, texto, codificacion) in new[] { ($"LIBRO_IVA_DIGITAL_{libro}_CBTE.txt", cbte, Encoding.Latin1), ($"LIBRO_IVA_DIGITAL_{libro}_ALICUOTAS.txt", alic, Encoding.Latin1) }
+                .Concat(observaciones is null ? [] : [($"OBSERVACIONES_{libro}.txt", observaciones, (Encoding)new UTF8Encoding(true))]))
+            {
+                await using var s = zip.CreateEntry(nombre).Open();
+                await s.WriteAsync(codificacion.GetBytes(texto), ct);
+            }
+        }
+        return new LibroIvaArchivo($"LibroIvaDigital_{(r.Filtro.Compras ? "Compras" : "Ventas")}_{LibroIvaArcaValidator.Digitos(r.CuitEmisor)}_{r.Filtro.Desde:yyyyMM}{(observaciones is null ? "" : "_CON_OBSERVACIONES")}.zip", "application/zip", ms.ToArray());
+    }
 
     internal static (string Comprobantes, string Alicuotas) ArmarTxt(IEnumerable<LibroIvaFila> filas)
     {

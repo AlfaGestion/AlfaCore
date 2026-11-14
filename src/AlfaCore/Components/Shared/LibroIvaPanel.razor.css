@@ -50,3 +50,14 @@
     background: var(--alfa-bg-input, var(--alfa-bg-surface)); color: var(--alfa-text-primary); font: inherit; font-size: 12px; color-scheme: light dark; }
 .liva-mes__flecha { height: 32px; border: 1px solid var(--alfa-border-default); border-radius: 6px; background: transparent; color: var(--alfa-text-secondary); cursor: pointer; }
 .liva-mes__flecha:hover:not(:disabled) { border-color: var(--alfa-accent); color: var(--alfa-accent); }
+
+.liva-obs { border: 1px solid var(--alfa-danger, #dc2626); border-radius: 8px; margin: 0 0 12px; background: var(--alfa-surface-raised, transparent); }
+.liva-obs > header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; padding: 10px 14px; }
+.liva-obs > header > div:first-child { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 240px; font-size: 13px; }
+.liva-obs > header strong { color: var(--alfa-text-primary); }
+.liva-obs > header span { color: var(--alfa-text-secondary); }
+.liva-obs__acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.liva-obs__tabla { max-height: 260px; overflow: auto; border-top: 1px solid var(--alfa-border-default); }
+.liva-obs__tabla table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.liva-obs__tabla th, .liva-obs__tabla td { text-align: left; padding: 6px 14px; border-bottom: 1px solid var(--alfa-border-default); vertical-align: top; }
+.liva-obs__tabla th { position: sticky; top: 0; background: var(--alfa-surface-default, inherit); color: var(--alfa-text-secondary); font-weight: 600; }

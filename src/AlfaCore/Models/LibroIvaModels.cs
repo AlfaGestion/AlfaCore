@@ -115,3 +115,15 @@ public sealed record LibroIvaUnidad(string Codigo, string Descripcion, string Cu
 public sealed record LibroIvaUnidadResumen(string Codigo, string Nombre, string Cuit, int Cantidad, decimal Neto, decimal Iva, decimal Total);
 
 public sealed record LibroIvaArchivo(string Nombre, string ContentType, byte[] Contenido);
+
+/// <summary>Una observación del control previo al TXT de ARCA. Sin comprobante (Numero = 0) es general del libro (por ejemplo, el CUIT del informante).</summary>
+public sealed record LibroIvaObservacion(string Unidad, string Tc, string Letra, int PuntoVenta, long Numero, DateTime? Fecha, string Texto)
+{
+    public string Comprobante => Numero > 0 ? $"{Tc} {Letra} {PuntoVenta:0000}-{Numero:00000000}".Replace("  ", " ") : "General";
+}
+
+/// <summary>
+/// Resultado de generar el TXT del Libro IVA Digital: el archivo (null si se frenó por observaciones) y las observaciones del control.
+/// Con «aunque tenga observaciones» se genera igual (sin los comprobantes sin código ARCA) y el zip trae OBSERVACIONES.txt.
+/// </summary>
+public sealed record LibroIvaTxtResultado(LibroIvaArchivo? Archivo, IReadOnlyList<LibroIvaObservacion> Observaciones, bool ConObservaciones);
