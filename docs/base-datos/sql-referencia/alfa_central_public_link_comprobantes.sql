@@ -1,5 +1,6 @@
 /*
-   Habilita enlaces públicos de comprobantes en ALFA_CENTRAL.
+   Habilita enlaces públicos de comprobantes y de mesas (QR del Salón POS) en ALFA_CENTRAL.
+   AlfaCore lo aplica solo (PublicLinkTipos.CheckConstraintScript) si un alta choca con el CHECK viejo.
    Ejecutar contra la base ALFA_CENTRAL. No forma parte de App_Data/updates,
    que actualiza las bases de los clientes.
 */
@@ -16,4 +17,4 @@ IF EXISTS (
 
 ALTER TABLE dbo.ALFA_PUBLIC_LINK
     ADD CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo
-    CHECK ([Tipo] IN ('CARRITO', 'CATALOGO', 'CPTE'));
+    CHECK ([Tipo] IN ('CARRITO', 'CATALOGO', 'CPTE', 'MESA'));

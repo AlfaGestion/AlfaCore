@@ -1,0 +1,1063 @@
+@page "/ventas/punto-venta/salon"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta/salon"
+@inherits SaaSRoutePageBase
+@using System.Globalization
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaSalonService SalonSvc
+@inject IPuntoVentaCartaService CartaSvc
+@inject IPuntoVentaService PuntoVentaSvc
+@inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteCtx
+@inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IAsyncDisposable
+
+<PageTitle>Salón | Punto de Venta</PageTitle>
+
+<section class="page-grid salon-page">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">@(_salon?.NombrePuntoVenta ?? "Salón")</h2>
+            <p class="page-intro__text">Tocá una mesa libre para abrirla o una ocupada para ver la comanda.</p>
+        </div>
+        <div class="actions salon-intro-actions">
+            @if (_salon is not null)
+            {
+                <span class="salon-kpi"><i class="bi bi-circle"></i> Libres @CountMesas(m => m.EstaLibre)</span>
+                <span class="salon-kpi salon-kpi--abierta"><i class="bi bi-circle-fill"></i> Ocupadas @CountMesas(m => !m.EstaLibre)</span>
+                <span class="salon-kpi salon-kpi--cuenta"><i class="bi bi-receipt"></i> Cuenta @CountMesas(m => m.Estado == PuntoVentaSalonMesaEstadoKeys.Cuenta)</span>
+                <span class="salon-kpi salon-kpi--listo"><i class="bi bi-bell"></i> Para servir @CountMesas(m => m.LineasListas > 0)</span>
+            }
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => LoadSalonAsync(false)" title="Actualizar">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            @if (_editandoPlano)
+            {
+                <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarPlanoAsync" disabled="@_busy">Guardar plano</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelarEdicionPlanoAsync">Cancelar</button>
+            }
+            else
+            {
+                <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute($"/ventas/punto-venta/cocina?idPuntoVenta={IdPuntoVentaQuery}")" title="Pantalla de cocina y barra">
+                    <i class="bi bi-fire"></i> Cocina
+                </a>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfigCartaAsync" title="Carta QR: qué se muestra y si se puede pedir desde el celular">
+                    <i class="bi bi-qr-code"></i> Carta QR
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="EditarPlanoAsync" disabled="@(SectorActual is null)">
+                    <i class="bi bi-arrows-move"></i> Editar plano
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <strong>@_feedback.Title</strong>
+            <span>@_feedback.Message</span>
+        </div>
+    }
+
+    @if (_salon?.Llamados.Count > 0)
+    {
+        <div class="salon-llamados" aria-live="polite">
+            @foreach (var llamado in _salon.Llamados)
+            {
+                <span class="salon-llamado">
+                    <i class="bi @(llamado.Tipo == PuntoVentaLlamadoTipoKeys.Cuenta ? "bi-receipt" : "bi-bell-fill")"></i>
+                    @llamado.NombreMesa @(llamado.Tipo == PuntoVentaLlamadoTipoKeys.Cuenta ? "pide la cuenta" : "llama al mozo")
+                    <small>@Minutos(llamado.FechaHora)</small>
+                    <button type="button" class="btn btn--primary btn--xs" @onclick="() => AtenderLlamadoAsync(llamado)" disabled="@_busy">Voy</button>
+                </span>
+            }
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando salón...</div>
+    }
+    else if (_salon is null)
+    {
+        <div class="panel-card empty-state">
+            <p>No se pudo cargar el salón.</p>
+            <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute("/ventas/punto-venta")">Volver a puntos de venta</a>
+        </div>
+    }
+    else if (_salon.Sectores.Count == 0 || _salon.Sectores.All(s => s.Mesas.Count == 0))
+    {
+        <div class="panel-card empty-state">
+            <p>Este salón todavía no tiene sectores ni mesas.</p>
+            <a class="btn btn--primary btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">Agregar sectores y mesas</a>
+        </div>
+    }
+    else
+    {
+        <div class="salon-sectores" role="tablist">
+            @foreach (var sector in _salon.Sectores.Where(s => s.Mesas.Count > 0))
+            {
+                var ocupadas = sector.Mesas.Count(m => !m.EstaLibre);
+                <button type="button" role="tab"
+                        class="salon-sector-tab @(sector.Id == _idSectorActual ? "salon-sector-tab--active" : string.Empty)"
+                        disabled="@_editandoPlano"
+                        @onclick="() => _idSectorActual = sector.Id">
+                    @sector.Nombre <span class="salon-sector-tab__count">@ocupadas/@sector.Mesas.Count</span>
+                </button>
+            }
+        </div>
+
+        @if (SectorActual is not null)
+        {
+            @if (_editandoPlano)
+            {
+                <div class="editor-msg editor-msg--info">
+                    <strong>Editando el plano</strong>
+                    <span>Arrastrá las mesas a su lugar y tocá "Guardar plano".</span>
+                </div>
+            }
+            <div class="salon-plano-scroll">
+                <div id="@CanvasId" @key="_planoVersion" class="salon-plano @(_editandoPlano ? "salon-plano--editando" : string.Empty)">
+                    @{ var indice = 0; }
+                    @foreach (var mesa in SectorActual.Mesas)
+                    {
+                        var pos = GetPosicion(mesa, indice++);
+                        <button type="button"
+                                data-mesa-id="@mesa.Id"
+                                class="salon-mesa @GetMesaCss(mesa) @(mesa.IdPedido == _detalle?.IdPedido && _detalle is not null ? "salon-mesa--seleccionada" : string.Empty)"
+                                style="@pos"
+                                @onclick="() => OnMesaClickAsync(mesa)">
+                            <span class="salon-mesa__nombre">@mesa.Nombre</span>
+                            @if (mesa.EstaLibre)
+                            {
+                                <span class="salon-mesa__meta">@(mesa.Capacidad is > 0 ? $"{mesa.Capacidad} lugares" : "Libre")</span>
+                            }
+                            else
+                            {
+                                <span class="salon-mesa__total">@FmtMoney(mesa.Total)</span>
+                                <span class="salon-mesa__meta">
+                                    @Minutos(mesa.FechaHoraApertura)
+                                    @if (mesa.Cubiertos is > 0)
+                                    {
+                                        <span> · <i class="bi bi-person"></i>@mesa.Cubiertos</span>
+                                    }
+                                </span>
+                                <span class="salon-mesa__badges">
+                                    @if (mesa.LineasPendientes > 0)
+                                    {
+                                        <span class="salon-badge salon-badge--pendiente" title="Cargado sin enviar">@mesa.LineasPendientes sin enviar</span>
+                                    }
+                                    @if (mesa.LineasListas > 0)
+                                    {
+                                        <span class="salon-badge salon-badge--listo" title="Listo para servir"><i class="bi bi-bell-fill"></i> @mesa.LineasListas</span>
+                                    }
+                                    @if (mesa.Estado == PuntoVentaSalonMesaEstadoKeys.Cuenta || mesa.PideCuenta)
+                                    {
+                                        <span class="salon-badge salon-badge--cuenta">Cuenta</span>
+                                    }
+                                    @if (mesa.LineasQrPorConfirmar > 0)
+                                    {
+                                        <span class="salon-badge salon-badge--qr" title="Pedido desde la carta QR, por confirmar"><i class="bi bi-qr-code"></i> @mesa.LineasQrPorConfirmar</span>
+                                    }
+                                    @if (mesa.LlamaMozo)
+                                    {
+                                        <span class="salon-badge salon-badge--llama"><i class="bi bi-hand-index-thumb"></i> Llama</span>
+                                    }
+                                </span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    }
+</section>
+
+@* ---------------------------------------------------------------- detalle de la mesa *@
+@if (_detalle is not null)
+{
+    <aside class="salon-panel" aria-label="Detalle de la mesa">
+        <header class="salon-panel__header">
+            <div>
+                <h3>@_detalle.NombreMesa <small>@_detalle.NombreSector</small></h3>
+                <p>
+                    @GetEstadoMesaTexto(_detalle.Estado) · abierta @_detalle.FechaHoraApertura.ToString("HH:mm") (@Minutos(_detalle.FechaHoraApertura))
+                    @if (!string.IsNullOrWhiteSpace(_detalle.MozoNombre) || !string.IsNullOrWhiteSpace(_detalle.Mozo))
+                    {
+                        <span> · Mozo: @(string.IsNullOrWhiteSpace(_detalle.MozoNombre) ? _detalle.Mozo : _detalle.MozoNombre)</span>
+                    }
+                    @if (_detalle.Cubiertos is > 0)
+                    {
+                        <span> · @_detalle.Cubiertos cubiertos</span>
+                    }
+                </p>
+                @if (!string.IsNullOrWhiteSpace(_detalle.Observaciones))
+                {
+                    <p class="salon-panel__obs">@_detalle.Observaciones</p>
+                }
+                @if (_salon?.QrModo == PuntoVentaQrModoKeys.Pedido && !string.IsNullOrWhiteSpace(_detalle.Pin))
+                {
+                    <span class="salon-pin" title="Los comensales lo ingresan en la carta QR para pedir a esta cuenta">
+                        <i class="bi bi-qr-code"></i> Código de mesa <strong>@_detalle.Pin</strong>
+                    </span>
+                }
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarDetalle" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+        </header>
+
+        <div class="salon-panel__body">
+            @if (_detalle.Lineas.Count == 0)
+            {
+                <p class="salon-panel__empty">Todavía no se cargó nada. Tocá "Agregar artículos".</p>
+            }
+            else
+            {
+                <ul class="salon-lineas">
+                    @foreach (var linea in _detalle.Lineas)
+                    {
+                        var anulada = linea.Estado == PuntoVentaSalonLineaEstadoKeys.Anulado;
+                        var qrPorConfirmar = linea.Origen == PuntoVentaSalonOrigenKeys.Qr && linea.Estado == PuntoVentaSalonLineaEstadoKeys.Pendiente;
+                        <li class="salon-linea @(anulada ? "salon-linea--anulada" : string.Empty) @(qrPorConfirmar ? "salon-linea--qr" : string.Empty)">
+                            <div class="salon-linea__main">
+                                <span class="salon-linea__cant">@FmtQty(linea.Cantidad)</span>
+                                <span class="salon-linea__desc">
+                                    @linea.Descripcion
+                                    @if (!string.IsNullOrWhiteSpace(linea.Observaciones) && linea.Observaciones != "Cubiertos")
+                                    {
+                                        <small>@linea.Observaciones</small>
+                                    }
+                                    @if (anulada && !string.IsNullOrWhiteSpace(linea.MotivoAnulacion))
+                                    {
+                                        <small>Anulado: @linea.MotivoAnulacion</small>
+                                    }
+                                </span>
+                                <span class="salon-linea__importe">@FmtMoney(linea.Subtotal)</span>
+                            </div>
+                            <div class="salon-linea__meta">
+                                <span class="salon-chip salon-chip--@linea.Estado.ToLowerInvariant()">@GetEstadoLineaTexto(linea.Estado)</span>
+                                @if (!string.IsNullOrWhiteSpace(linea.Destino))
+                                {
+                                    <span class="salon-linea__destino">@GetDestinoTexto(linea.Destino)</span>
+                                }
+                                @if (linea.Origen == PuntoVentaSalonOrigenKeys.Qr)
+                                {
+                                    <span class="salon-linea__destino"><i class="bi bi-qr-code"></i> QR</span>
+                                }
+                                @if (!anulada && EsMesaAbierta)
+                                {
+                                    <span class="salon-linea__acciones">
+                                        @if (linea.Estado is PuntoVentaSalonLineaEstadoKeys.Enviado or PuntoVentaSalonLineaEstadoKeys.EnPreparacion or PuntoVentaSalonLineaEstadoKeys.Listo)
+                                        {
+                                            <button type="button" class="btn btn--ghost btn--xs" @onclick="() => MarcarServidoAsync(linea)" disabled="@_busy">Servido</button>
+                                        }
+                                        <button type="button" class="btn btn--ghost btn--xs" @onclick="() => PedirAnularLinea(linea)" disabled="@_busy" title="Quitar">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </span>
+                                }
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <footer class="salon-panel__footer">
+            <div class="salon-panel__total">
+                <span>Total</span>
+                <strong>@FmtMoney(_detalle.Total)</strong>
+            </div>
+            @if (EsMesaAbierta)
+            {
+                var pendientes = _detalle.Lineas.Count(l => l.Estado == PuntoVentaSalonLineaEstadoKeys.Pendiente);
+                var pendientesQr = _detalle.Lineas.Count(l => l.Estado == PuntoVentaSalonLineaEstadoKeys.Pendiente && l.Origen == PuntoVentaSalonOrigenKeys.Qr);
+                <div class="salon-panel__acciones">
+                    <button type="button" class="btn btn--primary" @onclick="AgregarArticulos" disabled="@_busy">
+                        <i class="bi bi-plus-lg"></i> Agregar artículos
+                    </button>
+                    @if (pendientes > 0)
+                    {
+                        <button type="button" class="btn btn--primary" @onclick="EnviarPendientesAsync" disabled="@_busy">
+                            <i class="bi bi-send"></i> @(pendientesQr > 0 ? $"Aceptar pedido QR y enviar ({pendientes})" : $"Enviar {pendientes} a cocina/barra")
+                        </button>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="PrecuentaAsync" disabled="@(_busy || _detalle.Total <= 0)">
+                        <i class="bi bi-printer"></i> Precuenta
+                    </button>
+                    @if (_detalle.Estado == PuntoVentaSalonMesaEstadoKeys.Cuenta)
+                    {
+                        <button type="button" class="btn btn--ghost" @onclick="ReabrirAsync" disabled="@_busy">Reabrir</button>
+                    }
+                    <button type="button" class="btn btn--primary salon-btn-cobrar" @onclick="Cobrar" disabled="@(_busy || _detalle.Total <= 0)">
+                        <i class="bi bi-cash-stack"></i> Cobrar
+                    </button>
+                </div>
+                <div class="salon-panel__acciones salon-panel__acciones--sec">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirEditarMesa" disabled="@_busy"><i class="bi bi-pencil"></i> Mozo / cubiertos</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirMover(false)" disabled="@_busy"><i class="bi bi-arrow-left-right"></i> Cambiar mesa</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirMover(true)" disabled="@_busy"><i class="bi bi-union"></i> Unir con…</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirLiberar" disabled="@_busy"><i class="bi bi-x-circle"></i> Liberar sin cobrar</button>
+                </div>
+            }
+        </footer>
+    </aside>
+}
+
+@* ---------------------------------------------------------------- modales *@
+@if (_modal != ModalSalon.Ninguno)
+{
+    <div class="salon-modal-backdrop" @onclick="CerrarModal">
+        <section class="salon-modal" role="dialog" @onclick:stopPropagation>
+            @switch (_modal)
+            {
+                case ModalSalon.Abrir:
+                case ModalSalon.Editar:
+                    <h3>@(_modal == ModalSalon.Abrir ? $"Abrir {_mesaParaAbrir?.Nombre}" : $"Datos de {_detalle?.NombreMesa}")</h3>
+                    @if (_salon?.Mozos.Count > 0)
+                    {
+                        <div class="field">
+                            <label>Mozo@(_salon.RequiereMozo ? " (obligatorio)" : string.Empty)</label>
+                            <select @bind="_formMozo">
+                                <option value="">Sin asignar</option>
+                                @foreach (var mozo in _salon.Mozos)
+                                {
+                                    <option value="@mozo.Valor">@mozo.Descripcion (@mozo.Valor)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="field">
+                        <label>Cubiertos (personas)</label>
+                        <input type="number" min="0" max="99" @bind="_formCubiertos" />
+                    </div>
+                    <div class="field">
+                        <label>Observaciones</label>
+                        <input type="text" maxlength="200" @bind="_formObservaciones" placeholder="Opcional" />
+                    </div>
+                    @if (_modalError is not null)
+                    {
+                        <p class="salon-modal__error">@_modalError</p>
+                    }
+                    <div class="salon-modal__acciones">
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarModal">Cancelar</button>
+                        @if (_modal == ModalSalon.Abrir)
+                        {
+                            <button type="button" class="btn btn--ghost" @onclick="() => ConfirmarAbrirAsync(false)" disabled="@_busy">Solo abrir</button>
+                            <button type="button" class="btn btn--primary" @onclick="() => ConfirmarAbrirAsync(true)" disabled="@_busy">Abrir y cargar</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn--primary" @onclick="ConfirmarEditarAsync" disabled="@_busy">Guardar</button>
+                        }
+                    </div>
+                    break;
+
+                case ModalSalon.Mover:
+                case ModalSalon.Unir:
+                    var opciones = OpcionesMover(_modal == ModalSalon.Unir);
+                    <h3>@(_modal == ModalSalon.Unir ? $"Unir {_detalle?.NombreMesa} con…" : $"Pasar {_detalle?.NombreMesa} a…")</h3>
+                    <p class="salon-modal__hint">
+                        @(_modal == ModalSalon.Unir
+                            ? "Todo lo cargado en esta mesa pasa a la mesa elegida y esta queda libre."
+                            : "Elegí una mesa libre. La comanda se mueve completa.")
+                    </p>
+                    @if (opciones.Count == 0)
+                    {
+                        <p>@(_modal == ModalSalon.Unir ? "No hay otras mesas ocupadas." : "No hay mesas libres.")</p>
+                    }
+                    else
+                    {
+                        <div class="salon-modal__mesas">
+                            @foreach (var op in opciones)
+                            {
+                                <button type="button" class="salon-mesa-opcion" @onclick="() => ConfirmarMoverAsync(op)" disabled="@_busy">
+                                    <strong>@op.Nombre</strong>
+                                    <small>@GetNombreSector(op.IdSector)@(op.EstaLibre ? string.Empty : " · " + FmtMoney(op.Total))</small>
+                                </button>
+                            }
+                        </div>
+                    }
+                    @if (_modalError is not null)
+                    {
+                        <p class="salon-modal__error">@_modalError</p>
+                    }
+                    <div class="salon-modal__acciones">
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarModal">Cancelar</button>
+                    </div>
+                    break;
+
+                case ModalSalon.AnularLinea:
+                case ModalSalon.Liberar:
+                    <h3>@(_modal == ModalSalon.Liberar ? $"Liberar {_detalle?.NombreMesa} sin cobrar" : $"Quitar {_lineaParaAnular?.Descripcion}")</h3>
+                    <p class="salon-modal__hint">
+                        @(_modal == ModalSalon.Liberar
+                            ? "La mesa queda libre y lo cargado se anula. Si ya se envió algo a cocina, indicá el motivo."
+                            : "El artículo ya se envió a preparar: indicá el motivo (queda registrado).")
+                    </p>
+                    <div class="field">
+                        <label>Motivo</label>
+                        <input type="text" maxlength="100" @bind="_formMotivo" placeholder="Ej: el cliente se fue, error de carga" />
+                    </div>
+                    @if (_modalError is not null)
+                    {
+                        <p class="salon-modal__error">@_modalError</p>
+                    }
+                    <div class="salon-modal__acciones">
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarModal">Cancelar</button>
+                        <button type="button" class="btn btn--danger" @onclick="ConfirmarMotivoAsync" disabled="@_busy">Confirmar</button>
+                    </div>
+                    break;
+
+                case ModalSalon.Carta:
+                    <h3>Carta QR</h3>
+                    <p class="salon-modal__hint">Cada mesa tiene su QR: el cliente lo escanea y ve la carta en el celular, sin descargar nada.</p>
+                    @if (_cartaConfig is not null)
+                    {
+                        <div class="field">
+                            <label>Uso de la carta</label>
+                            <select @bind="_cartaConfig.QrModo">
+                                <option value="@PuntoVentaQrModoKeys.No">Desactivada</option>
+                                <option value="@PuntoVentaQrModoKeys.Carta">Solo ver la carta y precios</option>
+                                <option value="@PuntoVentaQrModoKeys.Pedido">Ver, pedir, llamar al mozo y pedir la cuenta</option>
+                            </select>
+                        </div>
+                        @if (_cartaConfig.QrModo == PuntoVentaQrModoKeys.Pedido)
+                        {
+                            <label class="salon-check">
+                                <input type="checkbox" @bind="_cartaConfig.AutoAcepta" />
+                                Enviar a cocina sin que el mozo confirme (si no, el mozo acepta cada pedido con un toque)
+                            </label>
+                        }
+                        <div class="field">
+                            <label>Mensaje de bienvenida</label>
+                            <input type="text" maxlength="200" @bind="_cartaConfig.Mensaje" placeholder="Ej: ¡Bienvenidos! La cocina cierra a las 23:30" />
+                        </div>
+                        <div class="field">
+                            <label>Familias de la carta (sin marcar ninguna = todas las que tengan precio)</label>
+                            <div class="salon-config-familias">
+                                @foreach (var familia in _familias)
+                                {
+                                    var id = familia.IdFamilia.Trim();
+                                    <label>
+                                        <input type="checkbox" checked="@_cartaConfig.Familias.Contains(id)"
+                                               @onchange="e => ToggleFamilia(id, (bool)e.Value!)" />
+                                        @familia.Descripcion
+                                    </label>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (_modalError is not null)
+                    {
+                        <p class="salon-modal__error">@_modalError</p>
+                    }
+                    <div class="salon-modal__acciones">
+                        <a class="btn btn--ghost" href="@RouteCtx.BuildRoute($"/ventas/punto-venta/salon/qr?idPuntoVenta={IdPuntoVentaQuery}")">
+                            <i class="bi bi-printer"></i> Imprimir QR de las mesas
+                        </a>
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarModal">Cancelar</button>
+                        <button type="button" class="btn btn--primary" @onclick="GuardarConfigCartaAsync" disabled="@_busy">Guardar</button>
+                    </div>
+                    break;
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private enum ModalSalon { Ninguno, Abrir, Editar, Mover, Unir, AnularLinea, Liberar, Carta }
+
+    private PuntoVentaCartaConfigDto? _cartaConfig;
+    private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
+    private HashSet<int> _llamadosVistos = [];
+    private bool _llamadosInicializados;
+
+    private const string CanvasId = "pos-salon-plano";
+    private const int RefrescoSegundos = 10;
+
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "idPedido")]
+    public int? IdPedidoQuery { get; set; }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private PuntoVentaSalonDto? _salon;
+    private PuntoVentaSalonMesaDetalleDto? _detalle;
+    private AppUiMessage? _feedback;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _editandoPlano;
+    private int _idSectorActual;
+    private int _planoVersion;
+
+    private ModalSalon _modal = ModalSalon.Ninguno;
+    private string? _modalError;
+    private PuntoVentaSalonMesaDto? _mesaParaAbrir;
+    private PuntoVentaSalonLineaDto? _lineaParaAnular;
+    private string _formMozo = string.Empty;
+    private int? _formCubiertos;
+    private string _formObservaciones = string.Empty;
+    private string _formMotivo = string.Empty;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _timerCts;
+
+    private PuntoVentaSalonSectorDto? SectorActual => _salon?.Sectores.FirstOrDefault(s => s.Id == _idSectorActual);
+    private bool EsMesaAbierta => _detalle is not null && PuntoVentaSalonMesaEstadoKeys.Abiertos.Contains(_detalle.Estado);
+    private string Usuario => AppUserSession.GetCurrentUserName(string.Empty);
+    private IEnumerable<PuntoVentaSalonMesaDto> TodasLasMesas => _salon?.Sectores.SelectMany(s => s.Mesas) ?? [];
+
+    // ------------------------------------------------------------ ciclo de vida
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IdPuntoVentaQuery is not > 0)
+        {
+            Nav.NavigateTo(RouteCtx.BuildRoute("/ventas/punto-venta"));
+            return;
+        }
+
+        await LoadSalonAsync(false);
+        _idSectorActual = _salon?.Sectores.FirstOrDefault(s => s.Mesas.Count > 0)?.Id ?? 0;
+
+        if (IdPedidoQuery is > 0)
+        {
+            await LoadDetalleAsync(IdPedidoQuery.Value);
+            var mesa = TodasLasMesas.FirstOrDefault(m => m.IdPedido == IdPedidoQuery.Value);
+            if (mesa is not null)
+                _idSectorActual = mesa.IdSector;
+        }
+
+        _loading = false;
+        IniciarRefresco();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _timerCts?.Cancel();
+        _timer?.Dispose();
+        _timerCts?.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+        await Task.CompletedTask;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
+        TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "punto-venta")
+    });
+
+    // Refresco periodico: el salon lo usan varios mozos a la vez.
+    private void IniciarRefresco()
+    {
+        _timerCts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(RefrescoSegundos));
+        var token = _timerCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await _timer.WaitForNextTickAsync(token))
+                {
+                    if (_busy || _editandoPlano || _modal != ModalSalon.Ninguno)
+                        continue;
+                    await InvokeAsync(async () =>
+                    {
+                        await LoadSalonAsync(true);
+                        if (_detalle is not null)
+                            await LoadDetalleAsync(_detalle.IdPedido, silencioso: true);
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // pagina cerrada
+            }
+            catch (ObjectDisposedException)
+            {
+                // pagina cerrada
+            }
+        }, token);
+    }
+
+    // ------------------------------------------------------------ carga
+
+    private async Task LoadSalonAsync(bool silencioso)
+    {
+        try
+        {
+            _salon = await SalonSvc.GetSalonAsync(IdPuntoVentaQuery!.Value);
+            if (!silencioso)
+                _feedback = null;
+            if (_idSectorActual == 0 || _salon.Sectores.All(s => s.Id != _idSectorActual))
+                _idSectorActual = _salon.Sectores.FirstOrDefault(s => s.Mesas.Count > 0)?.Id ?? 0;
+            await AvisarLlamadosNuevosAsync();
+        }
+        catch (Exception ex)
+        {
+            if (!silencioso)
+                _feedback = AppUiMessage.Warning("No se pudo cargar el salón", ex.Message);
+        }
+    }
+
+    private async Task LoadDetalleAsync(int idPedido, bool silencioso = false)
+    {
+        try
+        {
+            var detalle = await SalonSvc.GetMesaDetalleAsync(idPedido);
+            // Si otro mozo la cobro o la libero, se cierra el panel.
+            _detalle = detalle is not null && PuntoVentaSalonMesaEstadoKeys.Abiertos.Contains(detalle.Estado) ? detalle : null;
+        }
+        catch (Exception ex)
+        {
+            if (!silencioso)
+                _feedback = AppUiMessage.Warning("No se pudo cargar la mesa", ex.Message);
+        }
+    }
+
+    // ------------------------------------------------------------ carta QR y llamados
+
+    private async Task AvisarLlamadosNuevosAsync()
+    {
+        if (_salon is null)
+            return;
+        var nuevos = _salon.Llamados.Count(l => !_llamadosVistos.Contains(l.Id));
+        foreach (var llamado in _salon.Llamados)
+            _llamadosVistos.Add(llamado.Id);
+        if (nuevos > 0 && _llamadosInicializados)
+        {
+            try { await Js.InvokeVoidAsync("alfaPosSalon.beep", 2); } catch { /* sin audio */ }
+        }
+        _llamadosInicializados = true;
+    }
+
+    private Task AtenderLlamadoAsync(PuntoVentaSalonLlamadoDto llamado)
+        => RunAccionAsync(async () =>
+        {
+            await SalonSvc.AtenderLlamadoAsync(llamado.Id, Usuario);
+            if (llamado.IdPedido is > 0)
+                await LoadDetalleAsync(llamado.IdPedido.Value);
+        });
+
+    private async Task AbrirConfigCartaAsync()
+    {
+        _modalError = null;
+        try
+        {
+            _cartaConfig = await CartaSvc.GetConfigAsync(IdPuntoVentaQuery!.Value);
+            if (_cartaConfig.QrModo == PuntoVentaQrModoKeys.No)
+                _cartaConfig.QrModo = PuntoVentaQrModoKeys.Pedido;
+            _familias = await PuntoVentaSvc.GetFamiliasAsync();
+            _modal = ModalSalon.Carta;
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo abrir la configuración de la carta", ex.Message);
+        }
+    }
+
+    private void ToggleFamilia(string idFamilia, bool marcada)
+    {
+        if (_cartaConfig is null)
+            return;
+        _cartaConfig.Familias.Remove(idFamilia);
+        if (marcada)
+            _cartaConfig.Familias.Add(idFamilia);
+    }
+
+    private Task GuardarConfigCartaAsync()
+        => RunModalAsync(async () =>
+        {
+            await CartaSvc.SaveConfigAsync(_cartaConfig!, Usuario);
+            await LoadSalonAsync(true);
+            _feedback = AppUiMessage.Success("Carta QR guardada", _cartaConfig!.QrModo == PuntoVentaQrModoKeys.No
+                ? "La carta QR quedó desactivada."
+                : "Imprimí los QR de las mesas desde \"Carta QR\" → \"Imprimir QR de las mesas\".");
+        });
+
+    private async Task RefrescarTodoAsync()
+    {
+        await LoadSalonAsync(true);
+        if (_detalle is not null)
+            await LoadDetalleAsync(_detalle.IdPedido);
+    }
+
+    // ------------------------------------------------------------ acciones de mesa
+
+    private async Task OnMesaClickAsync(PuntoVentaSalonMesaDto mesa)
+    {
+        if (_editandoPlano)
+            return;
+
+        _feedback = null;
+        if (mesa.EstaLibre)
+        {
+            _mesaParaAbrir = mesa;
+            _formMozo = string.Empty;
+            _formCubiertos = mesa.Capacidad is > 0 ? mesa.Capacidad : null;
+            _formObservaciones = string.Empty;
+            _modalError = null;
+            _modal = ModalSalon.Abrir;
+            return;
+        }
+
+        await LoadDetalleAsync(mesa.IdPedido!.Value);
+    }
+
+    private async Task ConfirmarAbrirAsync(bool cargar)
+    {
+        if (_mesaParaAbrir is null)
+            return;
+
+        await RunModalAsync(async () =>
+        {
+            var result = await SalonSvc.AbrirMesaAsync(new PuntoVentaSalonAbrirMesaRequest
+            {
+                IdMesa = _mesaParaAbrir.Id,
+                Mozo = _formMozo,
+                Cubiertos = _formCubiertos,
+                Observaciones = _formObservaciones,
+                UsuarioAccion = Usuario
+            });
+
+            if (result.YaEstabaAbierta)
+                _feedback = AppUiMessage.Info("Mesa ocupada", $"{_mesaParaAbrir.Nombre} ya la había abierto otro usuario.");
+
+            if (cargar && !result.YaEstabaAbierta)
+            {
+                IrAMostrador(result.IdPedido, "agregar");
+                return;
+            }
+
+            await LoadDetalleAsync(result.IdPedido);
+            await LoadSalonAsync(true);
+        });
+    }
+
+    private void AbrirEditarMesa()
+    {
+        if (_detalle is null)
+            return;
+        _formMozo = _detalle.Mozo;
+        _formCubiertos = _detalle.Cubiertos;
+        _formObservaciones = _detalle.Observaciones;
+        _modalError = null;
+        _modal = ModalSalon.Editar;
+    }
+
+    private Task ConfirmarEditarAsync()
+        => RunModalAsync(async () =>
+        {
+            await SalonSvc.ActualizarMesaAsync(_detalle!.IdPedido, _formMozo, _formCubiertos, _formObservaciones, Usuario);
+            await RefrescarTodoAsync();
+        });
+
+    private void AgregarArticulos()
+    {
+        if (_detalle is not null)
+            IrAMostrador(_detalle.IdPedido, "agregar");
+    }
+
+    private void Cobrar()
+    {
+        if (_detalle is not null)
+            IrAMostrador(_detalle.IdPedido, "cerrar");
+    }
+
+    private void IrAMostrador(int idPedido, string accion)
+        => Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPedido={idPedido}&accionPedido={accion}"));
+
+    private Task EnviarPendientesAsync()
+        => RunAccionAsync(async () =>
+        {
+            var enviadas = await SalonSvc.EnviarPendientesAsync(_detalle!.IdPedido, Usuario);
+            _feedback = AppUiMessage.Success("Comanda enviada", enviadas == 1 ? "Se envió 1 artículo a preparar." : $"Se enviaron {enviadas} artículos a preparar.");
+        });
+
+    private Task MarcarServidoAsync(PuntoVentaSalonLineaDto linea)
+        => RunAccionAsync(() => SalonSvc.CambiarEstadoLineaAsync(linea.Id, PuntoVentaSalonLineaEstadoKeys.Servido, Usuario));
+
+    private async Task PedirAnularLinea(PuntoVentaSalonLineaDto linea)
+    {
+        if (linea.Estado == PuntoVentaSalonLineaEstadoKeys.Pendiente)
+        {
+            await RunAccionAsync(() => SalonSvc.AnularLineaAsync(linea.Id, string.Empty, Usuario));
+            return;
+        }
+
+        _lineaParaAnular = linea;
+        _formMotivo = string.Empty;
+        _modalError = null;
+        _modal = ModalSalon.AnularLinea;
+    }
+
+    private void AbrirLiberar()
+    {
+        _formMotivo = string.Empty;
+        _modalError = null;
+        _modal = ModalSalon.Liberar;
+    }
+
+    private Task ConfirmarMotivoAsync()
+        => RunModalAsync(async () =>
+        {
+            if (_modal == ModalSalon.Liberar)
+            {
+                await SalonSvc.AnularMesaAsync(_detalle!.IdPedido, _formMotivo, Usuario);
+                _detalle = null;
+                await LoadSalonAsync(true);
+                return;
+            }
+
+            await SalonSvc.AnularLineaAsync(_lineaParaAnular!.Id, _formMotivo, Usuario);
+            await RefrescarTodoAsync();
+        });
+
+    private Task ReabrirAsync()
+        => RunAccionAsync(() => SalonSvc.ReabrirAsync(_detalle!.IdPedido, Usuario));
+
+    private void AbrirMover(bool unir)
+    {
+        _modalError = null;
+        _modal = unir ? ModalSalon.Unir : ModalSalon.Mover;
+    }
+
+    private List<PuntoVentaSalonMesaDto> OpcionesMover(bool unir)
+        => TodasLasMesas
+            .Where(m => unir ? !m.EstaLibre && m.IdPedido != _detalle?.IdPedido : m.EstaLibre)
+            .ToList();
+
+    private Task ConfirmarMoverAsync(PuntoVentaSalonMesaDto destino)
+        => RunModalAsync(async () =>
+        {
+            var idPedido = _detalle!.IdPedido;
+            if (_modal == ModalSalon.Unir)
+            {
+                await SalonSvc.UnirMesasAsync(idPedido, destino.IdPedido!.Value, Usuario);
+                idPedido = destino.IdPedido.Value;
+            }
+            else
+            {
+                await SalonSvc.CambiarMesaAsync(idPedido, destino.Id, Usuario);
+            }
+
+            _idSectorActual = destino.IdSector;
+            await LoadSalonAsync(true);
+            await LoadDetalleAsync(idPedido);
+        });
+
+    private async Task PrecuentaAsync()
+    {
+        if (_detalle is null)
+            return;
+
+        await RunAccionAsync(async () =>
+        {
+            await SalonSvc.PedirCuentaAsync(_detalle.IdPedido, Usuario);
+            await Js.InvokeAsync<bool>("alfaPosSalon.printHtml", PuntoVentaSalonTickets.BuildHtml(_salon?.NombrePuntoVenta ?? string.Empty, _detalle));
+        });
+    }
+
+    // ------------------------------------------------------------ plano
+
+    private async Task EditarPlanoAsync()
+    {
+        CerrarDetalle();
+        _editandoPlano = true;
+        StateHasChanged();
+        await Task.Yield();
+        await Js.InvokeVoidAsync("alfaPosSalon.setEditing", CanvasId, true);
+    }
+
+    private async Task CancelarEdicionPlanoAsync()
+    {
+        await Js.InvokeVoidAsync("alfaPosSalon.setEditing", CanvasId, false);
+        _editandoPlano = false;
+        // @key nuevo: el plano se vuelve a crear con las posiciones grabadas (descarta lo que movio el JS).
+        _planoVersion++;
+        await LoadSalonAsync(true);
+    }
+
+    private async Task GuardarPlanoAsync()
+    {
+        _busy = true;
+        try
+        {
+            var posiciones = await Js.InvokeAsync<List<PosicionMesa>>("alfaPosSalon.getPositions", CanvasId);
+            await SalonSvc.GuardarPosicionesAsync(posiciones
+                .Select(p => new PuntoVentaMesaDto { Id = p.Id, PosX = p.X, PosY = p.Y, Width = p.W, Height = p.H })
+                .ToList());
+            await Js.InvokeVoidAsync("alfaPosSalon.setEditing", CanvasId, false);
+            _editandoPlano = false;
+            _planoVersion++;
+            await LoadSalonAsync(true);
+            _feedback = AppUiMessage.Success("Plano guardado", "Las posiciones de las mesas quedaron grabadas.");
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo guardar el plano", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class PosicionMesa
+    {
+        public int Id { get; set; }
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double W { get; set; }
+        public double H { get; set; }
+    }
+
+    /// <summary>Posicion en % del plano virtual 1000 x 600. Mesas sin posicion se acomodan en grilla.</summary>
+    private static string GetPosicion(PuntoVentaSalonMesaDto mesa, int indice)
+    {
+        const int columnas = 7;
+        var w = mesa.Width is > 20 ? mesa.Width.Value : 110;
+        var h = mesa.Height is > 20 ? mesa.Height.Value : 110;
+        var x = mesa.PosX ?? 25 + (indice % columnas) * 140;
+        var y = mesa.PosY ?? 25 + (indice / columnas) * 140;
+        x = Math.Clamp(x, 0, 1000 - w);
+        y = Math.Clamp(y, 0, 600 - h);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"left:{x / 10:0.##}%;top:{y / 6:0.##}%;width:{w / 10:0.##}%;height:{h / 6:0.##}%;");
+    }
+
+    // ------------------------------------------------------------ helpers UI
+
+    private async Task RunAccionAsync(Func<Task> accion)
+    {
+        if (_busy)
+            return;
+        _busy = true;
+        _feedback = null;
+        try
+        {
+            await accion();
+            await RefrescarTodoAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo completar la acción", ex.Message);
+            await RefrescarTodoAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RunModalAsync(Func<Task> accion)
+    {
+        if (_busy)
+            return;
+        _busy = true;
+        _modalError = null;
+        try
+        {
+            await accion();
+            _modal = ModalSalon.Ninguno;
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void CerrarModal()
+    {
+        if (_busy)
+            return;
+        _modal = ModalSalon.Ninguno;
+        _modalError = null;
+    }
+
+    private void CerrarDetalle() => _detalle = null;
+
+    private int CountMesas(Func<PuntoVentaSalonMesaDto, bool> filtro) => TodasLasMesas.Count(filtro);
+
+    private string GetNombreSector(int idSector) => _salon?.Sectores.FirstOrDefault(s => s.Id == idSector)?.Nombre ?? string.Empty;
+
+    private static string GetMesaCss(PuntoVentaSalonMesaDto mesa)
+    {
+        if (mesa.EstaLibre)
+            return "salon-mesa--libre";
+        if (mesa.LlamaMozo)
+            return "salon-mesa--llama";
+        if (mesa.Estado == PuntoVentaSalonMesaEstadoKeys.Cuenta || mesa.PideCuenta)
+            return "salon-mesa--cuenta";
+        if (mesa.LineasListas > 0)
+            return "salon-mesa--listo";
+        if (mesa.LineasPendientes > 0)
+            return "salon-mesa--pendiente";
+        return "salon-mesa--abierta";
+    }
+
+    private static string GetEstadoMesaTexto(string estado) => estado switch
+    {
+        PuntoVentaSalonMesaEstadoKeys.Cuenta => "Pidió la cuenta",
+        PuntoVentaSalonMesaEstadoKeys.Abierta => "Abierta",
+        PuntoVentaSalonMesaEstadoKeys.Cobrada => "Cobrada",
+        PuntoVentaSalonMesaEstadoKeys.Anulada => "Liberada",
+        _ => "Libre"
+    };
+
+    private static string GetEstadoLineaTexto(string estado) => estado switch
+    {
+        PuntoVentaSalonLineaEstadoKeys.Pendiente => "Sin enviar",
+        PuntoVentaSalonLineaEstadoKeys.Enviado => "Enviado",
+        PuntoVentaSalonLineaEstadoKeys.EnPreparacion => "En marcha",
+        PuntoVentaSalonLineaEstadoKeys.Listo => "Listo",
+        PuntoVentaSalonLineaEstadoKeys.Servido => "Servido",
+        PuntoVentaSalonLineaEstadoKeys.Anulado => "Anulado",
+        _ => estado
+    };
+
+    private static string GetDestinoTexto(string destino) => destino switch
+    {
+        PuntoVentaSalonDestinoKeys.Cocina => "Cocina",
+        PuntoVentaSalonDestinoKeys.Barra => "Barra",
+        PuntoVentaSalonDestinoKeys.Barra2 => "Barra 2",
+        _ => destino
+    };
+
+    private static string Minutos(DateTime? desde)
+    {
+        if (desde is null)
+            return string.Empty;
+        var minutos = (int)Math.Max(0, (DateTime.Now - desde.Value).TotalMinutes);
+        return minutos < 60 ? $"{minutos} min" : $"{minutos / 60} h {minutos % 60:00} min";
+    }
+
+    private static string FmtMoney(decimal value) => PuntoVentaSalonTickets.FmtMoney(value);
+    private static string FmtQty(decimal value) => PuntoVentaSalonTickets.FmtQty(value);
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+}

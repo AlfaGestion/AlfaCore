@@ -215,10 +215,22 @@ public sealed class CentralPublicLinkService(IConfiguration configuration, IAppE
             VALUES (@IdWeb, @IdBase, @Tipo, @IdReferencia, @Token, @Slug, 1, SYSDATETIME());
             """;
 
-        return await cn.QuerySingleAsync<PublicLinkDto>(new CommandDefinition(
+        var command = new CommandDefinition(
             insertSql,
             new { IdWeb = idWeb.Trim(), IdBase = idBase, Tipo = tipo, IdReferencia = idReferencia, Token = token, Slug = slug },
-            cancellationToken: ct)).ConfigureAwait(false);
+            cancellationToken: ct);
+
+        try
+        {
+            return await cn.QuerySingleAsync<PublicLinkDto>(command).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (ex.Number == 547 && PublicLinkTipos.All.Contains(tipo))
+        {
+            // Centrales con el CHECK viejo (sin los tipos agregados después, ej. MESA): se amplía
+            // una sola vez y se reintenta. Mismo texto que docs/base-datos/sql-referencia/alfa_central_public_link_comprobantes.sql.
+            await cn.ExecuteAsync(new CommandDefinition(PublicLinkTipos.CheckConstraintScript, cancellationToken: ct)).ConfigureAwait(false);
+            return await cn.QuerySingleAsync<PublicLinkDto>(command).ConfigureAwait(false);
+        }
     }
 
     private const string InsertedColumns = """

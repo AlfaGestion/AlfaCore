@@ -4,6 +4,9 @@ public static class PuntoVentaPedidoModalidadKeys
 {
     public const string Delivery = "DELIVERY";
     public const string TakeAway = "TAKEAWAY";
+    // Mesa del modo Salon. No va en All: los pedidos de salon los crea PuntoVentaSalonService,
+    // no el formulario de Delivery/Take Away.
+    public const string Salon = "SALON";
 
     public static readonly string[] All = [Delivery, TakeAway];
 }
@@ -56,6 +59,7 @@ public sealed class PuntoVentaPedidoDto
     public DateTime? FechaHoraAlta { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
     public decimal Total { get; set; }
+    public int? IdMesa { get; set; }
     public List<PuntoVentaPedidoItemDto> Items { get; set; } = [];
 }
 

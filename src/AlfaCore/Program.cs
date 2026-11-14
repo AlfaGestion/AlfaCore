@@ -487,6 +487,9 @@ public class Program
         builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
         builder.Services.AddScoped<IPuntoVentaPedidoService, PuntoVentaPedidoService>();
         builder.Services.AddScoped<IPuntoVentaPedidoValidator, PuntoVentaPedidoValidator>();
+        builder.Services.AddScoped<IPuntoVentaSalonService, PuntoVentaSalonService>();
+        builder.Services.AddScoped<IPuntoVentaCocinaService, PuntoVentaCocinaService>();
+        builder.Services.AddScoped<IPuntoVentaCartaService, PuntoVentaCartaService>();
         builder.Services.AddScoped<IPuntoVentaTurnoService, PuntoVentaTurnoService>();
         builder.Services.AddScoped<IPuntoVentaTurnoValidator, PuntoVentaTurnoValidator>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
