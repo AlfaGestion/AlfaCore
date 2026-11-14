@@ -1,0 +1,575 @@
+@page "/{idweb}/mesa/{PublicToken}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICentralPublicLinkService PublicLinkSvc
+@inject ICentralBasesService CentralBasesSvc
+@inject ISessionService SessionSvc
+@inject IPuntoVentaCartaService CartaSvc
+@inject IJSRuntime Js
+@inject ILogger<CartaMesa> Logger
+@implements IAsyncDisposable
+
+<PageTitle>@(_mesa is null ? "Carta" : $"{_mesa.NombrePuntoVenta} · {_mesa.NombreMesa}")</PageTitle>
+
+<div class="carta">
+    @if (_loading)
+    {
+        <div class="carta-estado">Cargando la carta...</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="carta-estado carta-estado--error">
+            <i class="bi bi-emoji-frown"></i>
+            <p>@_error</p>
+        </div>
+    }
+    else if (_mesa is not null && _carta is not null)
+    {
+        <header class="carta-header">
+            <div class="carta-header__local">@_mesa.NombrePuntoVenta</div>
+            <h1 class="carta-header__mesa">@_mesa.NombreMesa</h1>
+            @if (!string.IsNullOrWhiteSpace(_carta.Mensaje))
+            {
+                <p class="carta-header__mensaje">@_carta.Mensaje</p>
+            }
+        </header>
+
+        @if (PuedePedir)
+        {
+            <section class="carta-sesion">
+                @if (_sesion is not null)
+                {
+                    <div class="carta-sesion__ok">
+                        <span><i class="bi bi-check-circle-fill"></i> Estás en la cuenta de la mesa</span>
+                        <span class="carta-sesion__pin">Código <strong>@_sesion.Pin</strong></span>
+                    </div>
+                    <p class="carta-sesion__ayuda">Si llega alguien más, pasale este código para que pida a la misma cuenta.</p>
+                }
+                else if (_mesa.IdPedidoAbierto is > 0)
+                {
+                    <p class="carta-sesion__titulo">La mesa ya está abierta</p>
+                    <p class="carta-sesion__ayuda">Ingresá el código de 4 números que tiene quien abrió la mesa (o pedíselo al mozo).</p>
+                    <div class="carta-pin">
+                        <input type="tel" inputmode="numeric" maxlength="4" placeholder="0000" @bind="_pinIngresado" @bind:event="oninput" />
+                        <button type="button" class="carta-btn carta-btn--primario" @onclick="UnirseAsync" disabled="@(_busy || (_pinIngresado ?? string.Empty).Trim().Length != 4)">Entrar</button>
+                    </div>
+                }
+                else
+                {
+                    <p class="carta-sesion__titulo">¿Ya se sentaron?</p>
+                    <p class="carta-sesion__ayuda">Abrí la mesa para pedir desde el celular. Te damos un código para que tus acompañantes pidan a la misma cuenta.</p>
+                    <button type="button" class="carta-btn carta-btn--primario carta-btn--ancho" @onclick="AbrirMesaAsync" disabled="@_busy">Abrir la mesa</button>
+                }
+                @if (_sesionError is not null)
+                {
+                    <p class="carta-error">@_sesionError</p>
+                }
+            </section>
+        }
+
+        <nav class="carta-tabs">
+            <button type="button" class="@(_vista == Vista.Carta ? "activo" : string.Empty)" @onclick="() => _vista = Vista.Carta">Carta</button>
+            @if (_sesion is not null)
+            {
+                <button type="button" class="@(_vista == Vista.Mesa ? "activo" : string.Empty)" @onclick="IrAMiMesaAsync">
+                    Mi mesa @(_estado is { Lineas.Count: > 0 } ? $"· {Fmt(_estado.Total)}" : string.Empty)
+                </button>
+            }
+        </nav>
+
+        @if (_vista == Vista.Carta)
+        {
+            <div class="carta-buscador">
+                <i class="bi bi-search"></i>
+                <input type="search" placeholder="Buscar en la carta" @bind="_buscar" @bind:event="oninput" />
+            </div>
+
+            @if (string.IsNullOrWhiteSpace(_buscar) && _carta.Familias.Count > 1)
+            {
+                <div class="carta-familias">
+                    @foreach (var familia in _carta.Familias)
+                    {
+                        <button type="button" class="@(familia.IdFamilia == _familiaActual ? "activo" : string.Empty)"
+                                @onclick="() => _familiaActual = familia.IdFamilia">@familia.Descripcion</button>
+                    }
+                </div>
+            }
+
+            @if (_carta.Familias.Count == 0)
+            {
+                <div class="carta-estado">Todavía no hay productos en la carta.</div>
+            }
+
+            <ul class="carta-productos">
+                @foreach (var art in ProductosVisibles)
+                {
+                    var cantidad = CantidadEnCarrito(art.IdArticulo);
+                    <li class="carta-producto">
+                        @if (!string.IsNullOrWhiteSpace(art.ImagenUrl))
+                        {
+                            <img src="@art.ImagenUrl" alt="" loading="lazy" onerror="this.remove()" />
+                        }
+                        <div class="carta-producto__info">
+                            <span class="carta-producto__nombre">@art.Descripcion</span>
+                            @if (!string.IsNullOrWhiteSpace(art.Presentacion))
+                            {
+                                <span class="carta-producto__detalle">@art.Presentacion</span>
+                            }
+                            <span class="carta-producto__precio">@Fmt(art.Precio)</span>
+                        </div>
+                        @if (_sesion is not null)
+                        {
+                            @if (cantidad == 0)
+                            {
+                                <button type="button" class="carta-mas" @onclick="() => Sumar(art, 1)" aria-label="Agregar @art.Descripcion">+</button>
+                            }
+                            else
+                            {
+                                <div class="carta-stepper">
+                                    <button type="button" @onclick="() => Sumar(art, -1)" aria-label="Quitar uno">−</button>
+                                    <span>@cantidad</span>
+                                    <button type="button" @onclick="() => Sumar(art, 1)" aria-label="Agregar uno">+</button>
+                                </div>
+                            }
+                        }
+                    </li>
+                }
+            </ul>
+        }
+        else if (_estado is not null)
+        {
+            <section class="carta-mimesa">
+                @if (_estado.Lineas.Count == 0)
+                {
+                    <div class="carta-estado">Todavía no pidieron nada.</div>
+                }
+                else
+                {
+                    <ul class="carta-pedido">
+                        @foreach (var linea in _estado.Lineas)
+                        {
+                            <li>
+                                <span class="carta-pedido__cant">@PuntoVentaSalonTickets.FmtQty(linea.Cantidad)</span>
+                                <span class="carta-pedido__desc">
+                                    @PuntoVentaCartaService.ToTitulo(linea.Descripcion)
+                                    @if (!string.IsNullOrWhiteSpace(linea.Observaciones) && linea.Observaciones != "Cubiertos")
+                                    {
+                                        <small>@linea.Observaciones</small>
+                                    }
+                                </span>
+                                <span class="carta-chip carta-chip--@linea.Estado.ToLowerInvariant()">@EstadoTexto(linea)</span>
+                                <span class="carta-pedido__importe">@Fmt(linea.Subtotal)</span>
+                            </li>
+                        }
+                    </ul>
+                    <div class="carta-total"><span>Total</span><strong>@Fmt(_estado.Total)</strong></div>
+                }
+
+                <div class="carta-acciones">
+                    <button type="button" class="carta-btn" @onclick="() => LlamarAsync(PuntoVentaLlamadoTipoKeys.Mozo)" disabled="@(_busy || _estado.LlamadoMozoPendiente)">
+                        <i class="bi bi-bell"></i> @(_estado.LlamadoMozoPendiente ? "Avisamos al mozo…" : "Llamar al mozo")
+                    </button>
+                    <button type="button" class="carta-btn" @onclick="() => LlamarAsync(PuntoVentaLlamadoTipoKeys.Cuenta)" disabled="@(_busy || _estado.CuentaPedida || _estado.Lineas.Count == 0)">
+                        <i class="bi bi-receipt"></i> @(_estado.CuentaPedida ? "Cuenta pedida" : "Pedir la cuenta")
+                    </button>
+                </div>
+                @if (_estado.LlamadoMozoAtendido && !_estado.LlamadoMozoPendiente)
+                {
+                    <p class="carta-aviso"><i class="bi bi-person-walking"></i> El mozo ya viene.</p>
+                }
+                @if (_estado.CuentaPedida)
+                {
+                    <p class="carta-aviso">Pediste la cuenta: el mozo te la acerca y cobrás como siempre.</p>
+                }
+            </section>
+        }
+
+        @if (_carrito.Count > 0 && _vista == Vista.Carta)
+        {
+            <div class="carta-barra">
+                <button type="button" class="carta-btn carta-btn--primario carta-btn--ancho" @onclick="() => _verCarrito = true">
+                    Ver pedido (@_carrito.Sum(c => c.Cantidad)) · @Fmt(_carrito.Sum(c => c.Cantidad * c.Precio))
+                </button>
+            </div>
+        }
+
+        @if (_verCarrito)
+        {
+            <div class="carta-sheet-fondo" @onclick="() => _verCarrito = false">
+                <section class="carta-sheet" @onclick:stopPropagation>
+                    <h2>Tu pedido</h2>
+                    <ul class="carta-carrito">
+                        @foreach (var item in _carrito)
+                        {
+                            <li>
+                                <div class="carta-carrito__fila">
+                                    <span class="carta-carrito__nombre">@item.Descripcion</span>
+                                    <div class="carta-stepper">
+                                        <button type="button" @onclick="() => SumarItem(item, -1)">−</button>
+                                        <span>@item.Cantidad</span>
+                                        <button type="button" @onclick="() => SumarItem(item, 1)">+</button>
+                                    </div>
+                                </div>
+                                <input type="text" maxlength="120" placeholder="Aclaración (ej: sin cebolla)" @bind="item.Observaciones" />
+                            </li>
+                        }
+                    </ul>
+                    <div class="carta-total"><span>Total</span><strong>@Fmt(_carrito.Sum(c => c.Cantidad * c.Precio))</strong></div>
+                    @if (_pedidoError is not null)
+                    {
+                        <p class="carta-error">@_pedidoError</p>
+                    }
+                    <button type="button" class="carta-btn carta-btn--primario carta-btn--ancho" @onclick="EnviarPedidoAsync" disabled="@_busy">
+                        @(_busy ? "Enviando…" : "Enviar pedido")
+                    </button>
+                    <p class="carta-sesion__ayuda">@(_mesa.AutoAcepta ? "Va directo a la cocina." : "El mozo lo confirma y sale a la cocina.")</p>
+                </section>
+            </div>
+        }
+
+        @if (_toast is not null)
+        {
+            <div class="carta-toast">@_toast</div>
+        }
+    }
+</div>
+
+@code {
+    private enum Vista { Carta, Mesa }
+
+    private sealed class ItemCarrito
+    {
+        public string IdArticulo { get; init; } = string.Empty;
+        public string Descripcion { get; init; } = string.Empty;
+        public decimal Precio { get; init; }
+        public int Cantidad { get; set; }
+        public string Observaciones { get; set; } = string.Empty;
+    }
+
+    [Parameter] public string PublicToken { get; set; } = string.Empty;
+
+    private PuntoVentaMesaPublicaDto? _mesa;
+    private PuntoVentaCartaDto? _carta;
+    private PuntoVentaMesaSesionDto? _sesion;
+    private PuntoVentaMesaEstadoPublicoDto? _estado;
+    private readonly List<ItemCarrito> _carrito = [];
+    private Vista _vista = Vista.Carta;
+    private string? _familiaActual;
+    private string? _buscar;
+    private string? _pinIngresado;
+    private string? _error;
+    private string? _sesionError;
+    private string? _pedidoError;
+    private string? _toast;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _verCarrito;
+    private int _idMesa;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _timerCts;
+
+    private bool PuedePedir => _mesa?.QrModo == PuntoVentaQrModoKeys.Pedido;
+    private string ClaveSesion => $"alfacore.mesa.{PublicToken}";
+
+    private IEnumerable<PuntoVentaCartaArticuloDto> ProductosVisibles
+    {
+        get
+        {
+            if (_carta is null)
+                return [];
+            var texto = (_buscar ?? string.Empty).Trim();
+            if (texto.Length > 0)
+                return _carta.Familias.SelectMany(f => f.Articulos)
+                    .Where(a => a.Descripcion.Contains(texto, StringComparison.OrdinalIgnoreCase));
+            return _carta.Familias.FirstOrDefault(f => f.IdFamilia == _familiaActual)?.Articulos
+                   ?? _carta.Familias.FirstOrDefault()?.Articulos
+                   ?? [];
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // El token (ALFA_PUBLIC_LINK tipo MESA) es la única credencial: resuelve base y mesa.
+            var link = await PublicLinkSvc.ResolveAsync(idweb ?? string.Empty, PublicLinkTipos.Mesa, PublicToken);
+            var routeBase = link is null ? null : await CentralBasesSvc.GetByIdAsync(link.IdBase);
+            if (link is null || routeBase is null)
+            {
+                _error = "Este QR no es válido o ya no está disponible. Pedile la carta al mozo.";
+                return;
+            }
+
+            SessionSvc.SetWebhookOverride(new SessionDto
+            {
+                Id = SessionDto.BuildGuidFromBaseId(routeBase.IdBase),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
+
+            _idMesa = link.IdReferencia;
+            _mesa = await CartaSvc.GetMesaPublicaAsync(_idMesa);
+            if (_mesa is null || _mesa.QrModo == PuntoVentaQrModoKeys.No)
+            {
+                _error = "La carta digital no está disponible en este momento. Pedile la carta al mozo.";
+                return;
+            }
+
+            _carta = await CartaSvc.GetCartaAsync(_mesa.IdPuntoVenta);
+            _familiaActual = _carta.Familias.FirstOrDefault()?.IdFamilia;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo abrir la carta de la mesa {Token} de {IdWeb}.", PublicToken, idweb);
+            _error = "No pudimos cargar la carta. Probá de nuevo en un momento.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _mesa is null || !PuedePedir)
+            return;
+
+        // Sesion guardada en este celular (idPedido|pin): se revalida contra la base.
+        try
+        {
+            var guardada = await Js.InvokeAsync<string?>("alfaPosSalon.getLocal", ClaveSesion);
+            var partes = (guardada ?? string.Empty).Split('|');
+            if (partes.Length == 2 && int.TryParse(partes[0], out var idPedido))
+            {
+                var sesion = new PuntoVentaMesaSesionDto { IdPedido = idPedido, Pin = partes[1] };
+                var estado = await CartaSvc.GetEstadoAsync(_idMesa, sesion);
+                if (estado is not null)
+                {
+                    _sesion = sesion;
+                    _estado = estado;
+                }
+                else
+                {
+                    await Js.InvokeVoidAsync("alfaPosSalon.setLocal", ClaveSesion, string.Empty);
+                }
+            }
+        }
+        catch
+        {
+            // sin storage: se pide el codigo de nuevo
+        }
+
+        IniciarRefresco();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _timerCts?.Cancel();
+        _timer?.Dispose();
+        _timerCts?.Dispose();
+        await Task.CompletedTask;
+    }
+
+    private void IniciarRefresco()
+    {
+        _timerCts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(8));
+        var token = _timerCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await _timer.WaitForNextTickAsync(token))
+                {
+                    if (_busy)
+                        continue;
+                    await InvokeAsync(async () =>
+                    {
+                        await RefrescarAsync();
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }, token);
+    }
+
+    private async Task RefrescarAsync()
+    {
+        try
+        {
+            if (_sesion is not null)
+            {
+                _estado = await CartaSvc.GetEstadoAsync(_idMesa, _sesion);
+                if (_estado is null)
+                {
+                    // La mesa se cobro o se libero: se termina la sesion de este celular.
+                    _sesion = null;
+                    _carrito.Clear();
+                    _vista = Vista.Carta;
+                    await Js.InvokeVoidAsync("alfaPosSalon.setLocal", ClaveSesion, string.Empty);
+                    MostrarToast("¡Gracias por venir! La mesa ya se cerró.");
+                }
+            }
+            _mesa = await CartaSvc.GetMesaPublicaAsync(_idMesa) ?? _mesa;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "No se pudo refrescar la carta de la mesa {IdMesa}.", _idMesa);
+        }
+    }
+
+    private async Task AbrirMesaAsync()
+        => await RunAsync(async () =>
+        {
+            var sesion = await CartaSvc.AbrirMesaAsync(_idMesa);
+            if (sesion is null)
+            {
+                _mesa = await CartaSvc.GetMesaPublicaAsync(_idMesa) ?? _mesa;
+                _sesionError = "Alguien ya abrió esta mesa. Pedile el código.";
+                return;
+            }
+            await GuardarSesionAsync(sesion);
+            MostrarToast($"Mesa abierta. Código: {sesion.Pin}");
+        }, e => _sesionError = e);
+
+    private async Task UnirseAsync()
+        => await RunAsync(async () =>
+        {
+            var sesion = await CartaSvc.UnirseAsync(_idMesa, _pinIngresado ?? string.Empty);
+            if (sesion is null)
+            {
+                _sesionError = "El código no coincide. Revisalo o pedíselo al mozo.";
+                return;
+            }
+            await GuardarSesionAsync(sesion);
+            MostrarToast("Listo, ya podés pedir.");
+        }, e => _sesionError = e);
+
+    private async Task GuardarSesionAsync(PuntoVentaMesaSesionDto sesion)
+    {
+        _sesion = sesion;
+        _sesionError = null;
+        _pinIngresado = null;
+        await Js.InvokeVoidAsync("alfaPosSalon.setLocal", ClaveSesion, $"{sesion.IdPedido}|{sesion.Pin}");
+        _estado = await CartaSvc.GetEstadoAsync(_idMesa, sesion);
+    }
+
+    private async Task EnviarPedidoAsync()
+        => await RunAsync(async () =>
+        {
+            await CartaSvc.PedirAsync(_idMesa, _sesion!, _carrito.Select(c => new PuntoVentaCartaItemRequest
+            {
+                IdArticulo = c.IdArticulo,
+                Cantidad = c.Cantidad,
+                Observaciones = c.Observaciones
+            }).ToList());
+            _carrito.Clear();
+            _verCarrito = false;
+            _pedidoError = null;
+            _estado = await CartaSvc.GetEstadoAsync(_idMesa, _sesion!);
+            _vista = Vista.Mesa;
+            MostrarToast(_mesa!.AutoAcepta ? "¡Pedido enviado a la cocina!" : "¡Pedido enviado! El mozo lo confirma enseguida.");
+        }, e => _pedidoError = e);
+
+    private async Task LlamarAsync(string tipo)
+        => await RunAsync(async () =>
+        {
+            await CartaSvc.LlamarAsync(_idMesa, _sesion!, tipo);
+            _estado = await CartaSvc.GetEstadoAsync(_idMesa, _sesion!);
+            MostrarToast(tipo == PuntoVentaLlamadoTipoKeys.Cuenta ? "Pedimos la cuenta." : "Avisamos al mozo.");
+        }, MostrarToast);
+
+    private async Task IrAMiMesaAsync()
+    {
+        _vista = Vista.Mesa;
+        await RefrescarAsync();
+    }
+
+    private async Task RunAsync(Func<Task> accion, Action<string> onError)
+    {
+        if (_busy)
+            return;
+        _busy = true;
+        try
+        {
+            await accion();
+        }
+        catch (InvalidOperationException ex)
+        {
+            onError(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Error en la carta de la mesa {IdMesa}.", _idMesa);
+            onError("No pudimos completar la operación. Probá de nuevo.");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Sumar(PuntoVentaCartaArticuloDto art, int delta)
+    {
+        var item = _carrito.FirstOrDefault(c => c.IdArticulo == art.IdArticulo);
+        if (item is null)
+        {
+            if (delta > 0)
+                _carrito.Add(new ItemCarrito { IdArticulo = art.IdArticulo, Descripcion = art.Descripcion, Precio = art.Precio, Cantidad = delta });
+            return;
+        }
+        SumarItem(item, delta);
+    }
+
+    private void SumarItem(ItemCarrito item, int delta)
+    {
+        item.Cantidad = Math.Min(20, item.Cantidad + delta);
+        if (item.Cantidad <= 0)
+            _carrito.Remove(item);
+        if (_carrito.Count == 0)
+            _verCarrito = false;
+    }
+
+    private int CantidadEnCarrito(string idArticulo) => _carrito.FirstOrDefault(c => c.IdArticulo == idArticulo)?.Cantidad ?? 0;
+
+    private void MostrarToast(string mensaje)
+    {
+        _toast = mensaje;
+        _ = Task.Delay(3500).ContinueWith(_ => InvokeAsync(() =>
+        {
+            if (_toast == mensaje)
+            {
+                _toast = null;
+                StateHasChanged();
+            }
+        }));
+    }
+
+    private static string EstadoTexto(PuntoVentaSalonLineaDto linea) => linea.Estado switch
+    {
+        PuntoVentaSalonLineaEstadoKeys.Pendiente => linea.Origen == PuntoVentaSalonOrigenKeys.Qr ? "Por confirmar" : "Anotado",
+        PuntoVentaSalonLineaEstadoKeys.Enviado => "En cocina",
+        PuntoVentaSalonLineaEstadoKeys.EnPreparacion => "En marcha",
+        PuntoVentaSalonLineaEstadoKeys.Listo => "¡Listo!",
+        PuntoVentaSalonLineaEstadoKeys.Servido => "Servido",
+        _ => linea.Estado
+    };
+
+    private static string Fmt(decimal value) => PuntoVentaSalonTickets.FmtMoney(value);
+}

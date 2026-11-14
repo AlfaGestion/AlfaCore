@@ -9,6 +9,19 @@ public static class PublicLinkTipos
     public const string Carrito = "CARRITO";
     // Código corto para compatibilidad con bases centrales antiguas donde Tipo es varchar(10).
     public const string Comprobante = "CPTE";
+    // QR de una mesa del modo Salón del POS (IdReferencia = POS_MESA.ID de la base del cliente).
+    public const string Mesa = "MESA";
+
+    public static readonly string[] All = [Catalogo, Carrito, Comprobante, Mesa];
+
+    /// <summary>CHECK de ALFA_PUBLIC_LINK.Tipo con todos los tipos vigentes (idempotente).</summary>
+    public const string CheckConstraintScript = """
+        IF EXISTS (SELECT 1 FROM sys.check_constraints
+                   WHERE name = N'CK_ALFA_PUBLIC_LINK_Tipo' AND parent_object_id = OBJECT_ID(N'dbo.ALFA_PUBLIC_LINK'))
+            ALTER TABLE dbo.ALFA_PUBLIC_LINK DROP CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo;
+        ALTER TABLE dbo.ALFA_PUBLIC_LINK
+            ADD CONSTRAINT CK_ALFA_PUBLIC_LINK_Tipo CHECK ([Tipo] IN ('CARRITO', 'CATALOGO', 'CPTE', 'MESA'));
+        """;
 }
 
 /// <summary>

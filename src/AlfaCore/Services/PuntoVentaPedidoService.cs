@@ -36,7 +36,7 @@ public sealed class PuntoVentaPedidoService(
                     ISNULL(p.OBSERVACIONES, '') AS Observaciones,
                     ISNULL(p.USUARIO, '') AS Usuario,
                     p.FECHAHORA_ALTA, p.FECHAHORA_MODIFICACION,
-                    ISNULL((SELECT SUM(d.CANTIDAD * d.PRECIO) FROM dbo.POS_PEDIDO_DET d WHERE d.IDPEDIDO = p.ID), 0) AS Total
+                    ISNULL((SELECT SUM(d.CANTIDAD * d.PRECIO) FROM dbo.POS_PEDIDO_DET d WHERE d.IDPEDIDO = p.ID AND ISNULL(d.ESTADO, '') <> 'ANULADO'), 0) AS Total
                 FROM dbo.POS_PEDIDO p
                 WHERE p.IDPUNTOVENTA = @IdPuntoVenta
                   AND (@Estado IS NULL OR p.ESTADO = @Estado)
@@ -71,7 +71,8 @@ public sealed class PuntoVentaPedidoService(
                 p.FECHA, p.HORARIOPROGRAMADO, p.ESTADO,
                 ISNULL(p.OBSERVACIONES, '') AS Observaciones,
                 ISNULL(p.USUARIO, '') AS Usuario,
-                p.FECHAHORA_ALTA, p.FECHAHORA_MODIFICACION
+                p.FECHAHORA_ALTA, p.FECHAHORA_MODIFICACION,
+                p.IDMESA AS IdMesa
             FROM dbo.POS_PEDIDO p
             WHERE p.ID = @Id;
             """;
@@ -87,7 +88,7 @@ public sealed class PuntoVentaPedidoService(
                 CANTIDAD AS Cantidad, PRECIO AS Precio, TASAIVA AS TasaIva, EXENTO AS Exento,
                 ISNULL(FAMILIA, '') AS Familia, ISNULL(OBSERVACIONES, '') AS Observaciones
             FROM dbo.POS_PEDIDO_DET
-            WHERE IDPEDIDO = @Id
+            WHERE IDPEDIDO = @Id AND ISNULL(ESTADO, '') <> 'ANULADO'
             ORDER BY ID;
             """;
 

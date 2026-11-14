@@ -487,6 +487,30 @@ Criterio aplicado:
 - Datos que usa: `IGestionDashboardService`
 - Observaciones: puede abrir ítems de comprobante por `TC` e `IdComprobante`.
 
+### PuntoVentaSalonService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PuntoVentaSalonService.cs` (página `Components/Pages/VentasSalon.razor`, ruta `/ventas/punto-venta/salon`)
+- Propósito: modo Salón del POS. Plano de mesas por sector, abrir mesa (mozo, cubiertos), cargar ítems por rondas, enviar a cocina o barra, precuenta, reabrir, cambiar, unir y liberar mesas, y guardar posiciones del plano.
+- Datos que usa: `POS_PUNTOVENTA`, `POS_SECTOR`, `POS_MESA`, `POS_PEDIDO` (MODALIDAD `SALON`, `IDMESA`, `MOZO`, `CUBIERTOS`, `PIN`), `POS_PEDIDO_DET` (`ESTADO`, `DESTINO`, `ORIGEN`), `V_TA_VENDEDORES`, `V_MA_ARTICULOS.TalleDefault`, `TA_CONFIGURACION` (`GOUR_ArtCubiertos`, `GOUR_RequiereMozo`).
+- Observaciones: el cobro no está acá; se hace en Mostrador (`?idPedido=X&accionPedido=cerrar`) con `PuntoVentaService.CreateSaleAsync`, igual que Delivery, y `accionPedido=agregar` suma una ronda con `AgregarItemsAsync`. El destino de cocina sale de `TalleDefault` como en el salón VB6 (C = cocina, B = barra, R = barra 2). No usa `V_MV_COMANDA` ni el comprobante PE del legacy: una base trabaja el salón con VB6 o con AlfaCore. Los tickets (precuenta y comanda) los arma `PuntoVentaSalonTickets`. También muestra los llamados de la carta QR (`POS_MESA_LLAMADO`) y los atiende (`AtenderLlamadoAsync`). Guía del módulo: `docs/modulos/pos-salon.md`.
+
+### PuntoVentaCocinaService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PuntoVentaCocinaService.cs` (página `Components/Pages/VentasCocina.razor`, ruta `/ventas/punto-venta/cocina`)
+- Propósito: pantalla de cocina y barra (KDS). Comandas pendientes por destino, avance de cada plato (nuevo → en marcha → listo → entregado), platos agotados y cola de impresión para comanderas.
+- Datos que usa: `POS_COMANDA`, `POS_PEDIDO_DET` (`IDCOMANDA`, `ESTADO`), `POS_PEDIDO`, `POS_MESA`, `POS_SECTOR`, `POS_ARTICULO_AGOTADO`, `V_TA_VENDEDORES`, `V_MA_ARTICULOS`.
+- Observaciones: cada envío a preparar crea una `POS_COMANDA` por destino (`PuntoVentaSalonService.EnviarPendientesCoreAsync`). La comandera es la misma página con "Comandera" tildado en la PC de la cocina: `ReclamarParaImprimirAsync` reserva con `UPDLOCK, READPAST` las comandas sin imprimir de la última hora, así dos estaciones no imprimen la misma. Imprime en la impresora predeterminada; sin diálogo con Chrome `--kiosk-printing`. Las preferencias del dispositivo (pantalla, comandera, destino) quedan en el navegador.
+
+### PuntoVentaCartaService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/PuntoVentaCartaService.cs` (página pública `Components/Pages/CartaMesa.razor`, ruta `/{idweb}/mesa/{token}`; hoja de QR `Components/Pages/VentasSalonQr.razor`, ruta `/ventas/punto-venta/salon/qr`)
+- Propósito: carta QR por mesa. El comensal ve la carta, abre la mesa o se suma con el código (PIN), pide, llama al mozo y pide la cuenta, sin login ni descarga.
+- Datos que usa: `POS_PUNTOVENTA` (`QR_MODO`, `QR_AUTOACEPTA`, `QR_MENSAJE`), `POS_CARTA_FAMILIA`, `POS_ARTICULO_AGOTADO`, `POS_MESA_LLAMADO`, `POS_PEDIDO`, `V_MA_ARTICULOS`, `V_TA_FAMILIAS`; `ALFA_CENTRAL.ALFA_PUBLIC_LINK` tipo `MESA` (vía `ICentralPublicLinkService`).
+- Observaciones: el token del QR es la única credencial (resuelve base y mesa en ALFA_CENTRAL); para escribir hace falta además el PIN de la mesa abierta. Todo se revalida en el servidor: mesa abierta, artículo en la carta, no agotado, precio del POS (`GetArticuloPorCodigoAsync`, nunca el del navegador), máximo 60 líneas por minuto y 8 intentos de PIN cada 5 minutos. La carta toma las familias configuradas por prefijo (incluye subfamilias) y se cachea 60 s; los agotados se aplican siempre en el momento. Si la central tiene el CHECK viejo de `ALFA_PUBLIC_LINK.Tipo`, `CentralPublicLinkService` lo amplía una vez (`PublicLinkTipos.CheckConstraintScript`).
+
 ### ConversacionAsistenteService
 
 - Tipo: Service

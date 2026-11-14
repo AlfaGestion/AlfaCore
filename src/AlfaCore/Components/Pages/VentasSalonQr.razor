@@ -1,0 +1,151 @@
+@page "/ventas/punto-venta/salon/qr"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta/salon/qr"
+@inherits SaaSRoutePageBase
+@using QRCoder
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaSalonService SalonSvc
+@inject IPuntoVentaCartaService CartaSvc
+@inject ICentralPublicLinkService PublicLinkSvc
+@inject ISessionService SessionSvc
+@inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteCtx
+@inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject ILogger<VentasSalonQr> Logger
+@implements IDisposable
+
+<PageTitle>QR de mesas | Punto de Venta</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">QR de las mesas</h2>
+            <p class="page-intro__text">Imprimí y pegá cada QR en su mesa. El cliente lo escanea con la cámara del celular y abre la carta, sin descargar nada.</p>
+        </div>
+        <div class="actions salon-intro-actions">
+            <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute($"/ventas/punto-venta/salon?idPuntoVenta={IdPuntoVentaQuery}")">
+                <i class="bi bi-arrow-left"></i> Salón
+            </a>
+            <button type="button" class="btn btn--primary btn--sm" @onclick="ImprimirAsync" disabled="@(_tarjetas.Count == 0)">
+                <i class="bi bi-printer"></i> Imprimir
+            </button>
+        </div>
+    </div>
+
+    @if (_aviso is not null)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Atención</strong>
+            <span>@_aviso</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Generando los QR...</div>
+    }
+    else if (_tarjetas.Count > 0)
+    {
+        <div class="salon-qr-print">
+            <div class="salon-qr-grid">
+                @foreach (var t in _tarjetas)
+                {
+                    <article class="salon-qr-card">
+                        <div class="salon-qr-card__local">@_nombrePuntoVenta</div>
+                        <div class="salon-qr-card__mesa">@t.Mesa</div>
+                        <img src="@t.QrDataUrl" alt="QR de @t.Mesa" />
+                        <div class="salon-qr-card__texto">@(_soloCarta ? "Escaneá para ver la carta" : "Escaneá para ver la carta y pedir")</div>
+                        <div class="salon-qr-card__url">@t.Url</div>
+                    </article>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private sealed record TarjetaQr(string Mesa, string Url, string QrDataUrl);
+
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private List<TarjetaQr> _tarjetas = [];
+    private string _nombrePuntoVenta = string.Empty;
+    private string? _aviso;
+    private bool _soloCarta;
+    private bool _loading = true;
+
+    protected override void OnInitialized() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
+        TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "punto-venta")
+    });
+
+    public void Dispose()
+    {
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (IdPuntoVentaQuery is not > 0)
+            {
+                Nav.NavigateTo(RouteCtx.BuildRoute("/ventas/punto-venta"));
+                return;
+            }
+
+            var config = await CartaSvc.GetConfigAsync(IdPuntoVentaQuery.Value);
+            if (config.QrModo == PuntoVentaQrModoKeys.No)
+                _aviso = "La carta QR está desactivada: los QR abren un aviso de carta no disponible. Activala en Salón → Carta QR.";
+            _soloCarta = config.QrModo == PuntoVentaQrModoKeys.Carta;
+
+            var salon = await SalonSvc.GetSalonAsync(IdPuntoVentaQuery.Value);
+            _nombrePuntoVenta = salon.NombrePuntoVenta;
+            var mesas = salon.Sectores.SelectMany(s => s.Mesas.Select(m => (Mesa: m, Sector: s.Nombre))).ToList();
+
+            // Los links públicos viven en ALFA_CENTRAL: el token resuelve la base y la mesa,
+            // nunca se toma la base desde el navegador.
+            var idWeb = idweb?.Trim();
+            if (string.IsNullOrWhiteSpace(idWeb))
+                idWeb = AppUserSession.CurrentUser?.IdWeb?.Trim();
+            var idBase = idbase ?? SessionSvc.GetActiveSession()?.BaseId;
+            if (string.IsNullOrWhiteSpace(idWeb) || idBase is not > 0)
+            {
+                _aviso = "No se pudo determinar la empresa y la base de la sesión para generar los QR.";
+                return;
+            }
+
+            var links = await PublicLinkSvc.GetOrCreateManyAsync(idWeb, idBase.Value, PublicLinkTipos.Mesa,
+                mesas.Select(x => (x.Mesa.Id, (string?)$"{_nombrePuntoVenta} {x.Mesa.Nombre}")).ToList());
+
+            using var generator = new QRCodeGenerator();
+            foreach (var (mesa, _) in mesas)
+            {
+                if (!links.TryGetValue(mesa.Id, out var link))
+                    continue;
+                var url = $"{Nav.BaseUri.TrimEnd('/')}/{Uri.EscapeDataString(idWeb)}/mesa/{link.RouteSegment}";
+                using var qr = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+                using var png = new PngByteQRCode(qr);
+                _tarjetas.Add(new TarjetaQr(mesa.Nombre, url, $"data:image/png;base64,{Convert.ToBase64String(png.GetGraphic(10))}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudieron generar los QR de las mesas del punto de venta {IdPuntoVenta}.", IdPuntoVentaQuery);
+            _aviso = $"No se pudieron generar los QR: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ImprimirAsync() => await Js.InvokeVoidAsync("window.print");
+}
