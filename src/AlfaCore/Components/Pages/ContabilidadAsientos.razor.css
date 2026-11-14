@@ -62,6 +62,9 @@
 .as-mal { color: var(--alfa-danger, #dc2626); }
 .as-dlg-sub { margin: 0 0 8px; font-size: 13px; color: var(--alfa-text-secondary); }
 .as-form { display: flex; flex-direction: column; gap: 10px; }
+.as-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--alfa-text-secondary); }
+.as-libro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.as-libro-total { padding: 8px 10px; border: 1px solid var(--alfa-border-default); border-radius: 6px; font-size: 13px; }
 .as-sub td { border-bottom: 1px solid var(--alfa-border-default); padding-top: 0; }
 .as-tabla tr:has(+ .as-sub) td { border-bottom: none; }
 .as-extra { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12px; color: var(--alfa-text-secondary); padding: 2px 0 6px; }

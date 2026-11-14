@@ -148,11 +148,43 @@ public sealed class AsientoDetalle
     public string CuitComprobante { get; set; } = string.Empty;
     public decimal TotalComprobante { get; set; }
     public string Cae { get; set; } = string.Empty;
+    /// <summary>Se puede incluir en el libro de IVA desde acá (asiento sin datos de libro, de un solo comprobante, que no es de cierre, resumen ni de otro módulo).</summary>
+    public bool PuedeIncluirEnLibroIva { get; set; }
+    /// <summary>Entró al libro de IVA desde esta pantalla («Incluir en libro de IVA»): se puede quitar.</summary>
+    public bool LibroIvaManual { get; set; }
     public string Comprobante => $"{Tc} {Sucursal}-{Numero} {Letra}".Trim();
     /// <summary>Huella de lo leído: al grabar o anular se verifica que nadie lo haya cambiado mientras tanto.</summary>
     public string Huella { get; set; } = string.Empty;
     public decimal TotalDebe => Renglones.Sum(r => r.Debe);
     public decimal TotalHaber => Renglones.Sum(r => r.Haber);
+}
+
+/// <summary>
+/// Datos para que un asiento ya cargado figure en el libro de IVA (por ejemplo la devolución de una retención de IIBB, que no tiene neto ni IVA).
+/// Los importes se cargan en positivo y <see cref="Resta"/> los pasa a negativo (nota de crédito / devolución). La suma de los conceptos
+/// (el total del comprobante en el libro) no puede superar el importe del asiento.
+/// </summary>
+public sealed class AsientoLibroIva
+{
+    /// <summary>COMPRAS o VENTAS.</summary>
+    public string Libro { get; set; } = "COMPRAS";
+    /// <summary>Quien emite el comprobante (el banco, la tarjeta, el proveedor).</summary>
+    public string Nombre { get; set; } = string.Empty;
+    public string Cuit { get; set; } = string.Empty;
+    public decimal NetoGravado { get; set; }
+    public decimal NoGravado { get; set; }
+    public decimal Exento { get; set; }
+    public decimal Alicuota { get; set; }
+    public decimal Iva { get; set; }
+    public decimal RetencionIva { get; set; }
+    public decimal RetencionIibb { get; set; }
+    public decimal RetencionGanancias { get; set; }
+    /// <summary>La devolución o nota de crédito resta en el libro.</summary>
+    public bool Resta { get; set; } = true;
+    /// <summary>Importe del asiento (solo para mostrar y controlar; el servidor lo vuelve a calcular).</summary>
+    public decimal ImporteAsiento { get; set; }
+    public string Huella { get; set; } = string.Empty;
+    public decimal Total => NetoGravado + NoGravado + Exento + Iva + RetencionIva + RetencionIibb + RetencionGanancias;
 }
 
 public sealed record AsientoCuenta(string Codigo, string Descripcion, string MedioDePago, bool PideVencimiento, string Moneda = "1", string TipoVista = "")

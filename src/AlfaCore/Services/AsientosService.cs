@@ -20,6 +20,12 @@ public interface IAsientosService
     Task EliminarAsync(AsientoClave clave, string huella, CancellationToken ct = default);
     /// <summary>Cruce del asiento de una factura con el último Mis Comprobantes del mes bajado de ARCA.</summary>
     Task<AsientoControlArca> ControlArcaAsync(AsientoClave clave, CancellationToken ct = default);
+    /// <summary>Datos de partida (importe, emisor habitual) para incluir un asiento en el libro de IVA.</summary>
+    Task<AsientoLibroIva> SugerirLibroIvaAsync(AsientoClave clave, CancellationToken ct = default);
+    /// <summary>Marca el asiento para el libro de IVA con los importes cargados (sin tocar debe ni haber). La suma no puede superar el importe del asiento.</summary>
+    Task<AsientoDetalle> IncluirEnLibroIvaAsync(AsientoClave clave, AsientoLibroIva libro, CancellationToken ct = default);
+    /// <summary>Quita del libro un asiento que se incluyó desde esta pantalla.</summary>
+    Task<AsientoDetalle> QuitarDeLibroIvaAsync(AsientoClave clave, string huella, CancellationToken ct = default);
     Task<AsientoModelo> ModeloAsync(string nombre, CancellationToken ct = default);
     /// <summary>Crea o reemplaza un modelo (MA_MODELOS) con los renglones dados.</summary>
     Task GuardarModeloAsync(AsientoModelo modelo, CancellationToken ct = default);
@@ -599,14 +605,8 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", r.Select(x =>
             $"{x.Cuenta}|{x.Dh}|{x.Importe.ToString("0.00", CultureInfo.InvariantCulture)}|{x.Detalle}|{x.Fecha:yyyyMMdd}")))))[..32];
 
-    public Task<AsientoDetalle> GetAsync(AsientoClave clave, CancellationToken ct = default) => EjecutarAsync("Consultar", MenusConsulta, async cn =>
-    {
-        var u = await UsuarioAsync(cn, null, ct);
-        var manuales = (await TalonariosAsync(cn, null, u.Unidad, ct)).Select(t => t.Codigo).ToList();
-        var d = Armar(clave, await RenglonesAsync(cn, null, clave, false, ct), manuales);
-        await CargarCentrosAsync(cn, d, ct);
-        return d;
-    }, ct);
+    public Task<AsientoDetalle> GetAsync(AsientoClave clave, CancellationToken ct = default) => EjecutarAsync("Consultar", MenusConsulta, cn =>
+        LeerDetalleAsync(cn, null, clave, ct), ct);
 
     private static async Task CargarCentrosAsync(SqlConnection cn, AsientoDetalle d, CancellationToken ct)
     {
@@ -663,9 +663,161 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             Huella = Huella(r.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha)))
         };
         d.Editable = d.MotivoSoloLectura.Length == 0;
+        d.PuedeIncluirEnLibroIva = PuedeIncluirEnLibroIva(r, clave.TipoReg);
         DetectarMonedaAsiento(d);
         return d;
     }
+
+    // ── Libro de IVA desde el asiento ───────────────────────────────────────────────────────────
+
+    internal const string ProcesoLibroIva = "AlfaCore: libro IVA";
+    /// <summary>Tolerancia para comparar el IVA con neto × alícuota (centavos de redondeo del comprobante).</summary>
+    private const decimal ToleranciaIva = 0.05m;
+    internal static readonly decimal[] AlicuotasIva = [0m, 2.5m, 5m, 10.5m, 21m, 27m];
+
+    /// <summary>Un asiento sin datos de libro, de un solo comprobante y que no es de cierre, resumen, sueldos, mutuales ni de otro subdiario.</summary>
+    private static bool PuedeIncluirEnLibroIva(IReadOnlyList<RenglonSql> r, string tipoReg)
+        => r.Count > 0 && tipoReg.Trim().Length == 0 && r.All(x => x.LivaTipo.Length == 0 && !x.Resumen && !x.Cierre && x.Observaciones != "ASIENTO_SISPER"
+               && !x.TcOrigen.Equals("mutl", StringComparison.OrdinalIgnoreCase))
+           && r.Select(x => x.Tc + x.Sucursal + x.Numero + x.Letra).Distinct().Count() == 1;
+
+    /// <summary>
+    /// Controles de lo que se carga para el libro de IVA. Devuelve los importes con el signo que se graba (negativos si resta).
+    /// El total del libro no puede superar el importe del asiento ni quedar en cero; el IVA tiene que cerrar con neto × alícuota.
+    /// </summary>
+    internal static void ValidarLibroIva(AsientoLibroIva l, decimal importeAsiento)
+    {
+        if (!(l.Libro is "COMPRAS" or "VENTAS")) throw new ReglaException("Elegí el libro: compras o ventas.");
+        var importes = new[] { l.NetoGravado, l.NoGravado, l.Exento, l.Alicuota, l.Iva, l.RetencionIva, l.RetencionIibb, l.RetencionGanancias };
+        if (importes.Any(x => x < 0 || decimal.Round(x, 2) != x || x > 9_999_999_999m)) throw new ReglaException("Los importes se cargan en positivo, con hasta 2 decimales (el signo lo da «Resta»).");
+        if ((l.Nombre ?? "").Trim().Length is < 3 or > 50) throw new ReglaException("Escribí quién emite el comprobante (razón social, de 3 a 50 caracteres).");
+        if (!LibroIvaArcaValidator.CuitValido(l.Cuit ?? "")) throw new ReglaException("El CUIT de quien emite no es válido.");
+        var total = l.Total;
+        if (total <= 0) throw new ReglaException("Cargá al menos un importe para el libro (neto, IVA, retención…).");
+        if (total > importeAsiento)
+            throw new ReglaException($"Lo cargado para el libro suma {total:N2} y supera el importe del asiento ({importeAsiento:N2}). El libro no puede tener más que el asiento.");
+        if (l.Iva > 0 && l.NetoGravado == 0) throw new ReglaException("Cargaste IVA sin neto gravado.");
+        if (l.Iva > 0 || (l.NetoGravado > 0 && l.Alicuota > 0))
+        {
+            if (!AlicuotasIva.Contains(l.Alicuota) || l.Alicuota == 0) throw new ReglaException("Elegí la alícuota de IVA (2,5 / 5 / 10,5 / 21 / 27 %).");
+            var esperado = decimal.Round(l.NetoGravado * l.Alicuota / 100m, 2, MidpointRounding.AwayFromZero);
+            if (Math.Abs(esperado - l.Iva) > ToleranciaIva)
+                throw new ReglaException($"El IVA no cierra: {l.Alicuota:0.##} % de {l.NetoGravado:N2} es {esperado:N2} y cargaste {l.Iva:N2}.");
+        }
+        else if (l.NetoGravado > 0) throw new ReglaException("Hay neto gravado sin alícuota ni IVA: si no tiene IVA, cargalo como no gravado.");
+    }
+
+    private static string CuitConGuiones(string cuit)
+    {
+        var d = LibroIvaArcaValidator.Digitos(cuit);
+        return d.Length == 11 ? $"{d[..2]}-{d[2..10]}-{d[10]}" : cuit.Trim();
+    }
+
+    private async Task<bool> EsLibroIvaManualAsync(SqlConnection cn, SqlTransaction? tx, AsientoClave k, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+            SELECT COUNT(*) FROM dbo.V_MV_CPTEACCIONES WHERE LTRIM(RTRIM(Periodo)) = @Periodo AND Mes_Operativo = @Mes AND NUMEROASIENTO = @Numero
+              AND ISNULL(LTRIM(RTRIM(Tipo_Reg)),'') = @TipoReg AND Proceso = @Proceso;
+            """, new { Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim(), Proceso = ProcesoLibroIva }, tx, cancellationToken: ct)) > 0;
+
+    private async Task<AsientoDetalle> LeerDetalleAsync(SqlConnection cn, SqlTransaction? tx, AsientoClave clave, CancellationToken ct)
+    {
+        var u = await UsuarioAsync(cn, tx, ct);
+        var manuales = (await TalonariosAsync(cn, tx, u.Unidad, ct)).Select(t => t.Codigo).ToList();
+        var d = Armar(clave, await RenglonesAsync(cn, tx, clave, false, ct), manuales);
+        await CargarCentrosAsync(cn, d, ct);
+        d.LibroIvaManual = d.LivaTipo.Length > 0 && await EsLibroIvaManualAsync(cn, tx, clave, ct);
+        return d;
+    }
+
+    /// <summary>Datos de partida para el diálogo: el importe del asiento y quien emitió el último comprobante del libro con la misma cuenta.</summary>
+    public Task<AsientoLibroIva> SugerirLibroIvaAsync(AsientoClave clave, CancellationToken ct = default) => EjecutarAsync("SugerirLibroIva", MenusConsulta, async cn =>
+    {
+        var r = await RenglonesAsync(cn, null, clave, false, ct);
+        if (!PuedeIncluirEnLibroIva(r, clave.TipoReg)) throw new ReglaException("Este asiento no se puede incluir en el libro de IVA desde acá.");
+        var l = new AsientoLibroIva { ImporteAsiento = r.Where(x => x.Dh == "D").Sum(x => x.Importe), Huella = Huella(r.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) };
+        var cuentas = r.Select(x => x.Cuenta).Distinct().ToList();
+        var previo = await cn.QueryFirstOrDefaultAsync<(string Nombre, string Cuit)>(new CommandDefinition("""
+            SELECT TOP (1) LTRIM(RTRIM(CABNOMBRE)), LTRIM(RTRIM(CABCUIT)) FROM dbo.MV_ASIENTOS
+            WHERE LIVA_TIPO = N'COMPRAS' AND LTRIM(RTRIM(ISNULL(CABCUIT,''))) <> '' AND LTRIM(RTRIM(ISNULL(CABNOMBRE,''))) <> '' AND LTRIM(RTRIM(CABCUENTA)) IN @Cuentas
+            ORDER BY FECHA DESC;
+            """, new { Cuentas = cuentas }, cancellationToken: ct));
+        if (previo.Cuit is { Length: > 0 }) (l.Nombre, l.Cuit) = (previo.Nombre, previo.Cuit);
+        return l;
+    }, ct);
+
+    public Task<AsientoDetalle> IncluirEnLibroIvaAsync(AsientoClave k, AsientoLibroIva l, CancellationToken ct = default) => EjecutarAsync("IncluirLibroIva", [MenuAsientos], async cn =>
+    {
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var u = await UsuarioAsync(cn, tx, ct);
+        if (!u.Modificar) throw new ReglaException("Tu usuario no tiene permiso para modificar asientos (Modificar asientos en el usuario).");
+        var previo = await RenglonesAsync(cn, tx, k, bloquear: true, ct);
+        if (previo.Count == 0) throw new ReglaException("El asiento no existe (puede haberse anulado).");
+        if (!PuedeIncluirEnLibroIva(previo, k.TipoReg)) throw new ReglaException("Este asiento no se puede incluir en el libro de IVA desde acá (ya está en un libro, es de cierre, de otro módulo o agrupa varios comprobantes).");
+        if (Huella(previo.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) != l.Huella)
+            throw new ReglaException("Otro usuario modificó este asiento mientras lo editabas. Volvé a abrirlo.");
+        var importeAsiento = previo.Where(x => x.Dh == "D").Sum(x => x.Importe);
+        ValidarLibroIva(l, importeAsiento);
+        var p = previo.OrderBy(x => x.Secuencia).First();
+        var signo = l.Resta ? -1m : 1m;
+        var codigo = await LibroIvaService.CodigoArcaDeTablaAsync(cn, tx, p.Tc, p.Letra, ct);
+        var filas = await cn.ExecuteAsync(new CommandDefinition($"""
+            UPDATE a SET LIVA_TIPO = @Libro, CABCUENTA = @CabCuenta, CABNOMBRE = @Nombre, CABCUIT = @Cuit,
+                LIVA_ImpNetoGrav = @Neto, LIVA_ImpNetoNGrav = @NoGrav, LIVA_EXENTO = @Exento, LIVA_AlicIVA = @Alicuota, LIVA_ImpIVA = @Iva,
+                LIVA_Ret_Perc = @RetIva, LIVA_Ret_IBtos = @RetIibb, LIVA_Ret_Ganancias = @RetGan, LIVA_TOTAL = @Total, CodCpteDGI = @Codigo,
+                FechaHora_Modificacion = GETDATE()
+            FROM dbo.MV_ASIENTOS a
+            WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+              AND a.SECUENCIA = @Secuencia {FiltroCpte("a")};
+            """, new
+        {
+            Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim(), ConCpte = true, Tc = p.Tc, Suc = p.Sucursal, Nro = p.Numero, Letra = p.Letra, Secuencia = p.Secuencia,
+            l.Libro, CabCuenta = p.Cuenta, Nombre = l.Nombre.Trim(), Cuit = CuitConGuiones(l.Cuit),
+            Neto = l.NetoGravado * signo, NoGrav = l.NoGravado * signo, Exento = l.Exento * signo, Alicuota = l.Iva > 0 ? l.Alicuota : 0m, Iva = l.Iva * signo,
+            RetIva = l.RetencionIva * signo, RetIibb = l.RetencionIibb * signo, RetGan = l.RetencionGanancias * signo, Total = l.Total * signo,
+            Codigo = codigo is { } c ? c.ToString(CultureInfo.InvariantCulture).PadLeft(4) : null
+        }, tx, cancellationToken: ct));
+        if (filas != 1) throw new ReglaException("No se pudo marcar el renglón del asiento para el libro de IVA. No se grabó.");
+        var clave = k with { Tc = p.Tc, Sucursal = p.Sucursal, NumeroCpte = p.Numero, Letra = p.Letra };
+        await AccionAsync(cn, tx, "M", p.Tc, p.Sucursal + p.Numero + p.Letra, clave, p.Fecha, p.Cuenta, users.GetCurrentUserName(), ct, ProcesoLibroIva);
+        await tx.CommitAsync(ct);
+        await events.LogAuditAsync("Asientos", "LibroIva", "MV_ASIENTOS", clave.Texto,
+            $"Incluyó el asiento {clave.Texto} ({p.Tc} {p.Sucursal}-{p.Numero}) en el libro de IVA {l.Libro.ToLowerInvariant()} por {(l.Resta ? "-" : "")}{l.Total:N2} (asiento {importeAsiento:N2}).",
+            new { clave.Periodo, clave.Mes, clave.Numero, l.Libro, l.Resta, l.NetoGravado, l.NoGravado, l.Exento, l.Alicuota, l.Iva, l.RetencionIva, l.RetencionIibb, l.RetencionGanancias, l.Cuit }, CancellationToken.None);
+        return await LeerDetalleAsync(cn, null, clave, ct);
+    }, ct);
+
+    /// <summary>Quita del libro de IVA un asiento que entró desde esta pantalla (no toca los que genera un comprobante o el legacy).</summary>
+    public Task<AsientoDetalle> QuitarDeLibroIvaAsync(AsientoClave k, string huella, CancellationToken ct = default) => EjecutarAsync("QuitarLibroIva", [MenuAsientos], async cn =>
+    {
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var u = await UsuarioAsync(cn, tx, ct);
+        if (!u.Modificar) throw new ReglaException("Tu usuario no tiene permiso para modificar asientos (Modificar asientos en el usuario).");
+        var previo = await RenglonesAsync(cn, tx, k, bloquear: true, ct);
+        if (previo.Count == 0) throw new ReglaException("El asiento no existe (puede haberse anulado).");
+        if (previo.All(x => x.LivaTipo.Length == 0)) throw new ReglaException("El asiento no está en el libro de IVA.");
+        if (!await EsLibroIvaManualAsync(cn, tx, k, ct)) throw new ReglaException("Solo se puede quitar del libro un asiento que se incluyó desde esta pantalla. Los de comprobantes se corrigen desde el comprobante.");
+        if (Huella(previo.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) != huella)
+            throw new ReglaException("Otro usuario modificó este asiento. Volvé a abrirlo.");
+        var p = previo.First(x => x.LivaTipo.Length > 0);
+        var filas = await cn.ExecuteAsync(new CommandDefinition($"""
+            UPDATE a SET LIVA_TIPO = NULL, CABCUENTA = NULL, CABNOMBRE = NULL, CABCUIT = NULL, CodCpteDGI = NULL,
+                LIVA_ImpNetoGrav = 0, LIVA_ImpNetoNGrav = 0, LIVA_EXENTO = 0, LIVA_AlicIVA = 0, LIVA_ImpIVA = 0,
+                LIVA_Ret_Perc = 0, LIVA_Ret_IBtos = 0, LIVA_Ret_Ganancias = 0, LIVA_TOTAL = 0, FechaHora_Modificacion = GETDATE()
+            FROM dbo.MV_ASIENTOS a
+            WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+              AND a.SECUENCIA = @Secuencia {FiltroCpte("a")};
+            """, new
+        {
+            Periodo = k.Periodo.Trim(), k.Mes, k.Numero, TipoReg = k.TipoReg.Trim(), ConCpte = true, Tc = p.Tc, Suc = p.Sucursal, Nro = p.Numero, Letra = p.Letra, Secuencia = p.Secuencia
+        }, tx, cancellationToken: ct));
+        if (filas != 1) throw new ReglaException("No se pudo quitar el asiento del libro de IVA. No se grabó.");
+        var clave = k with { Tc = p.Tc, Sucursal = p.Sucursal, NumeroCpte = p.Numero, Letra = p.Letra };
+        await AccionAsync(cn, tx, "M", p.Tc, p.Sucursal + p.Numero + p.Letra, clave, p.Fecha, p.Cuenta, users.GetCurrentUserName(), ct);
+        await tx.CommitAsync(ct);
+        await events.LogAuditAsync("Asientos", "LibroIva", "MV_ASIENTOS", clave.Texto,
+            $"Quitó el asiento {clave.Texto} ({p.Tc} {p.Sucursal}-{p.Numero}) del libro de IVA.", new { clave.Periodo, clave.Mes, clave.Numero }, CancellationToken.None);
+        return await LeerDetalleAsync(cn, null, clave, ct);
+    }, ct);
 
     // ── Validación ──────────────────────────────────────────────────────────────────────────────
 
@@ -934,13 +1086,13 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     }, ct);
 
     private static Task AccionAsync(SqlConnection cn, SqlTransaction tx, string accion, string tc, string idComprobante, AsientoClave k, DateTime fecha, string cuenta,
-        string usuario, CancellationToken ct)
+        string usuario, CancellationToken ct, string proceso = "AlfaCore: asientos")
         => cn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO dbo.V_MV_CPTEACCIONES (TC, IDCOMPROBANTE, IDCOMPLEMENTO, TIPO_ACCION, FECHAHORA, USUARIO, PC, SYSTEMUSER, Periodo, Tipo_Reg, Fecha,
                 Mes_Operativo, NUMEROASIENTO, Cuenta, Proceso)
-            VALUES (@Tc, @Id, 0, @Accion, GETDATE(), @Usuario, HOST_NAME(), SYSTEM_USER, @Periodo, @TipoReg, @Fecha, @Mes, @Numero, @Cuenta, N'AlfaCore: asientos');
+            VALUES (@Tc, @Id, 0, @Accion, GETDATE(), @Usuario, HOST_NAME(), SYSTEM_USER, @Periodo, @TipoReg, @Fecha, @Mes, @Numero, @Cuenta, @Proceso);
             """, new { Tc = tc, Id = idComprobante, Accion = accion, Usuario = usuario, Periodo = k.Periodo, TipoReg = CodigoPk.Format(k.TipoReg, 4), Fecha = fecha.Date,
-                k.Mes, k.Numero, Cuenta = cuenta }, tx, cancellationToken: ct));
+                k.Mes, k.Numero, Cuenta = cuenta, Proceso = proceso }, tx, cancellationToken: ct));
 
     // ── Anular ──────────────────────────────────────────────────────────────────────────────────
 

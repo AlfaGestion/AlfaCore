@@ -278,6 +278,61 @@
     </Footer>
 </AlfaDialog>
 
+<AlfaDialog Open="@(_libro is not null)" Title="Incluir en libro de IVA" Size="AlfaDialogSize.Md" Loading="@_busy" ErrorMessage="@_errorLibro" OnClose="() => _libro = null">
+    <ChildContent>
+    @if (_libro is { } lb)
+    {
+        <p class="as-dlg-sub">Asiento @_edit?.Clave?.Texto · @_edit?.Comprobante · importe @lb.ImporteAsiento.ToString("N2", Culture). No cambia el debe ni el haber: solo lo muestra en el libro.</p>
+        <div class="as-form">
+            <label>Libro
+                <select class="as-input" value="@lb.Libro" @onchange="e => lb.Libro = e.Value?.ToString() ?? lb.Libro">
+                    <option value="COMPRAS">IVA compras</option>
+                    <option value="VENTAS">IVA ventas</option>
+                </select>
+            </label>
+            <label>Efecto en el libro
+                <select class="as-input" value="@(lb.Resta ? "R" : "S")" @onchange="e => lb.Resta = EsResta(e)">
+                    <option value="R">Resta (devolución / nota de crédito)</option>
+                    <option value="S">Suma</option>
+                </select>
+            </label>
+            <label>Emisor (razón social)
+                <input class="as-input" maxlength="50" value="@lb.Nombre" @onchange="e => lb.Nombre = e.Value?.ToString() ?? string.Empty" placeholder="Ej. Banco de la Nación Argentina" />
+            </label>
+            <label>CUIT del emisor
+                <input class="as-input" maxlength="13" value="@lb.Cuit" @onchange="e => lb.Cuit = e.Value?.ToString() ?? string.Empty" placeholder="30-00000000-0" />
+            </label>
+            <div class="as-libro-grid">
+                <label>Neto gravado <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.NetoGravado)" @onchange="e => { lb.NetoGravado = Math.Round(LeerDec(e), 2); RecalcularIva(lb); }" /></label>
+                <label>Alícuota IVA
+                    <select class="as-input" value="@Dec(lb.Alicuota, "0.##")" @onchange="e => { lb.Alicuota = LeerDec(e); RecalcularIva(lb); }">
+                        <option value="">—</option>
+                        @foreach (var al in AlfaCore.Services.AsientosService.AlicuotasIva.Where(x => x > 0)) { <option value="@al.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)">@al.ToString("0.##", Culture) %</option> }
+                    </select>
+                </label>
+                <label>IVA <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.Iva)" @onchange="e => lb.Iva = Math.Round(LeerDec(e), 2)" /></label>
+                <label>No gravado <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.NoGravado)" @onchange="e => lb.NoGravado = Math.Round(LeerDec(e), 2)" /></label>
+                <label>Exento <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.Exento)" @onchange="e => lb.Exento = Math.Round(LeerDec(e), 2)" /></label>
+                <label>Retención / percepción IVA <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.RetencionIva)" @onchange="e => lb.RetencionIva = Math.Round(LeerDec(e), 2)" /></label>
+                <label>Retención / percepción IIBB <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.RetencionIibb)" @onchange="e => lb.RetencionIibb = Math.Round(LeerDec(e), 2)" /></label>
+                <label>Retención Ganancias <input class="as-input as-input--imp" type="number" step="0.01" min="0" value="@Dec(lb.RetencionGanancias)" @onchange="e => lb.RetencionGanancias = Math.Round(LeerDec(e), 2)" /></label>
+            </div>
+            <div class="as-libro-total @(lb.Total > lb.ImporteAsiento ? "as-mal" : null)">
+                Total en el libro: <b>@(lb.Resta ? "-" : "")@lb.Total.ToString("N2", Culture)</b> de @lb.ImporteAsiento.ToString("N2", Culture) del asiento
+                @if (lb.Total > lb.ImporteAsiento) { <span> · supera el importe del asiento</span> }
+            </div>
+        </div>
+    }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="_busy" OnClick="_ => _libro = null">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check2" Disabled="_busy || _libro is null || _libro.Total > _libro.ImporteAsiento" OnClick="_ => IncluirEnLibroAsync()">Incluir en el libro</AlfaButton>
+    </Footer>
+</AlfaDialog>
+
+<AlfaConfirmDialog Open="@_confirmarQuitarLibro" Title="Quitar del libro de IVA" ConfirmLabel="Quitar" Loading="_busy" OnConfirm="QuitarDeLibroAsync" OnCancel="() => _confirmarQuitarLibro = false"
+                   Message="@($"El asiento {_edit?.Clave?.Texto} ({_edit?.Comprobante}) deja de figurar en el libro de IVA. El debe y el haber no cambian. ¿Seguro?")" />
+
 <AlfaConfirmDialog Open="@_confirmarAnular" Title="Anular asiento" ConfirmLabel="Anular" Loading="_busy" OnConfirm="AnularAsync" OnCancel="() => _confirmarAnular = false"
                    Message="@($"Se borra el asiento {_edit?.Clave?.Texto} ({_edit?.Comprobante}). Queda registrado en la auditoría. ¿Seguro?")" />
 
@@ -289,7 +344,9 @@
     private AsientoDetalle? _edit;
     private AsientoControlArca? _arca;
     private AppUiMessage? _feedback;
-    private bool _busy, _buscado, _confirmarAnular, _sucio;
+    private bool _busy, _buscado, _confirmarAnular, _sucio, _confirmarQuitarLibro;
+    private AsientoLibroIva? _libro;
+    private string? _errorLibro;
     private string _texto = string.Empty;
     private PageHeaderConfig? _header;
     private AsientoModelo? _modelo, _guardarModelo;
@@ -767,7 +824,7 @@
             else _feedback = r.Feedback;
         }
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
-        if (_edit is { LivaTipo.Length: > 0, Clave: { } k }) await ControlArcaAsync(k);
+        if (_edit is { LivaTipo.Length: > 0, LibroIvaManual: false, Clave: { } k }) await ControlArcaAsync(k);
     }
 
     private async Task ControlArcaAsync(AsientoClave k)
@@ -919,6 +976,54 @@
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
+    private static bool EsResta(ChangeEventArgs e) => e.Value?.ToString() == "R";
+
+    private static void RecalcularIva(AsientoLibroIva l)
+        => l.Iva = l.Alicuota > 0 ? Math.Round(l.NetoGravado * l.Alicuota / 100m, 2, MidpointRounding.AwayFromZero) : 0;
+
+    private async Task AbrirLibroIvaAsync()
+    {
+        if (_edit?.Clave is not { } k || _busy) return;
+        _busy = true; _errorLibro = null; UpdateHeader();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.SugerirLibroIvaAsync(k), "Libro de IVA");
+            if (r.Success) _libro = r.Value; else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private async Task IncluirEnLibroAsync()
+    {
+        if (_edit?.Clave is not { } k || _libro is not { } l || _busy) return;
+        _busy = true; _errorLibro = null;
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.IncluirEnLibroIvaAsync(k, l), "Incluir en libro de IVA");
+            if (r.Success)
+            {
+                _edit = r.Value; _libro = null; _sucio = false;
+                _feedback = AppUiMessage.Success("Incluido en el libro de IVA", $"El asiento {k.Texto} figura en el libro de IVA {l.Libro.ToLowerInvariant()}.");
+            }
+            else _errorLibro = r.Feedback?.Message ?? "No se pudo incluir el asiento en el libro de IVA.";
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
+    private async Task QuitarDeLibroAsync()
+    {
+        _confirmarQuitarLibro = false;
+        if (_edit?.Clave is not { } k || _busy) return;
+        _busy = true; UpdateHeader();
+        try
+        {
+            var r = await UiOps.RunAsync(() => Service.QuitarDeLibroIvaAsync(k, _edit.Huella), "Quitar del libro de IVA");
+            if (r.Success) { _edit = r.Value; _arca = null; _feedback = AppUiMessage.Success("Quitado del libro de IVA", $"El asiento {k.Texto} ya no figura en el libro."); }
+            else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
     private Task CambiarTexto(string? t) { _texto = t ?? string.Empty; return Task.CompletedTask; }
 
     private void UpdateHeader()
@@ -936,7 +1041,11 @@
                 acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Disabled = _busy, OnClick = () => { _confirmarAnular = true; StateHasChanged(); return Task.CompletedTask; } });
             if ((Editable || _edit.Editable) && _cat?.PuedeGuardarModelos == true && _edit.Renglones.Count(x => x.Cuenta.Length > 0) >= 2)
                 acciones.Add(new() { Key = "modelo", Label = "Guardar como modelo", Icon = "bi-bookmark-plus", Style = PageHeaderActionStyle.Ghost, Disabled = _busy, OnClick = AbrirGuardarModelo });
-            if (_edit is { LivaTipo.Length: > 0, Clave: { } k })
+            if (_edit.Clave is not null && _edit.PuedeIncluirEnLibroIva && _cat?.PuedeModificar == true)
+                acciones.Add(new() { Key = "libroiva", Label = "Incluir en libro de IVA", Icon = "bi-journal-plus", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = AbrirLibroIvaAsync });
+            if (_edit.Clave is not null && _edit.LibroIvaManual && _cat?.PuedeModificar == true)
+                acciones.Add(new() { Key = "quitarlibro", Label = "Quitar del libro de IVA", Icon = "bi-journal-minus", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = () => { _confirmarQuitarLibro = true; StateHasChanged(); return Task.CompletedTask; } });
+            if (_edit is { LivaTipo.Length: > 0, Clave: { } k } && !_edit.LibroIvaManual)
                 acciones.Add(new() { Key = "arca", Label = "Controlar con ARCA", Icon = "bi-shield-check", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = () => ControlArcaAsync(k) });
             acciones.Add(new() { Key = "volver", Label = _sucio ? "Cancelar" : "Volver", Icon = "bi-arrow-left", Style = PageHeaderActionStyle.Secondary, Disabled = _busy, OnClick = Volver });
         }
