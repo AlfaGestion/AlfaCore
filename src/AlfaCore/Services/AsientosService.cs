@@ -26,6 +26,8 @@ public interface IAsientosService
     Task<AsientoDetalle> IncluirEnLibroIvaAsync(AsientoClave clave, AsientoLibroIva libro, CancellationToken ct = default);
     /// <summary>Quita del libro un asiento que se incluyó desde esta pantalla.</summary>
     Task<AsientoDetalle> QuitarDeLibroIvaAsync(AsientoClave clave, string huella, CancellationToken ct = default);
+    /// <summary>Cambia la cuenta de renglones de un asiento de solo lectura (compra, venta, liquidación…) sin tocar importes, total, IVA ni la cuenta principal.</summary>
+    Task<AsientoDetalle> ReimputarAsync(AsientoClave clave, IReadOnlyList<AsientoReimputacion> cambios, string huella, CancellationToken ct = default);
     Task<AsientoModelo> ModeloAsync(string nombre, CancellationToken ct = default);
     /// <summary>Crea o reemplaza un modelo (MA_MODELOS) con los renglones dados.</summary>
     Task GuardarModeloAsync(AsientoModelo modelo, CancellationToken ct = default);
@@ -661,7 +663,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             Modificado = r.Max(x => x.Modificado),
             Renglones = r.Select(x => new AsientoRenglon
             {
-                Cuenta = x.Cuenta, CuentaNombre = x.CuentaNombre,
+                Cuenta = x.Cuenta, CuentaNombre = x.CuentaNombre, Secuencia = x.Secuencia,
                 Detalle = x.Detalle.Trim().EndsWith('.') && x.Detalle.Trim().TrimEnd('.') != detalle ? x.Detalle.Trim().TrimEnd('.') : "",
                 Debe = x.Dh == "D" ? x.Importe : 0, Haber = x.Dh == "D" ? 0 : x.Importe,
                 Moneda = x.Moneda.Length == 0 ? "1" : x.Moneda, Cotizacion = x.Cotizacion <= 0 ? 1 : x.Cotizacion,
@@ -681,9 +683,135 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         };
         d.Editable = d.MotivoSoloLectura.Length == 0;
         d.PuedeIncluirEnLibroIva = PuedeIncluirEnLibroIva(r, clave.TipoReg);
+        d.PuedeReimputar = !d.Editable && PuedeReimputar(r, clave.TipoReg);
         DetectarMonedaAsiento(d);
         return d;
     }
+
+    // ── Reimputar: cambiar la cuenta de renglones sin tocar importes, total ni IVA ───────────────
+
+    internal const string ProcesoReimputar = "AlfaCore: reimputacion";
+    /// <summary>Columnas de TA_CUENTASIVA que no son cuentas fiscales sino de imputación (ventas, compras, descuentos y anticipos): se pueden reimputar.</summary>
+    private static readonly string[] ColumnasNoFiscales = ["CTAVTA", "CTACPRA", "DESCUENTO", "ANTICIPOS"];
+
+    /// <summary>Asiento de un solo comprobante, sin subdiario y que no es de cierre, resumen, conciliado, sueldos ni mutuales.</summary>
+    private static bool PuedeReimputar(IReadOnlyList<RenglonSql> r, string tipoReg)
+        => r.Count > 1 && tipoReg.Trim().Length == 0 && r.All(x => !x.Resumen && !x.Cierre && !x.Conciliado && x.Observaciones != "ASIENTO_SISPER"
+               && !x.TcOrigen.Equals("mutl", StringComparison.OrdinalIgnoreCase))
+           && r.Select(x => x.Tc + x.Sucursal + x.Numero + x.Letra).Distinct().Count() == 1
+           && r.Select(x => x.Caja).Distinct().Count() == 1;
+
+    /// <summary>
+    /// Renglones cuya cuenta no se cambia: el principal (el primero), los de cheques y los de cuentas fiscales (IVA, retenciones y percepciones de TA_CUENTASIVA,
+    /// V_TA_RETENCIONES y la configuración), caja, banco, tarjeta, clientes y proveedores. Devuelve también las cuentas fiscales, para no imputar a ellas.
+    /// </summary>
+    private static async Task<(HashSet<string> Fiscales, HashSet<int> Fijos)> FijosAsync(SqlConnection cn, SqlTransaction? tx,
+        IReadOnlyList<(int Secuencia, string Cuenta, bool Cheque)> renglones, CancellationToken ct)
+    {
+        var fiscales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var filas = await cn.QueryAsync(new CommandDefinition(
+            "IF OBJECT_ID(N'dbo.TA_CUENTASIVA', N'U') IS NULL SELECT TOP 0 1 Sin ELSE SELECT * FROM dbo.TA_CUENTASIVA;", transaction: tx, cancellationToken: ct));
+        foreach (IDictionary<string, object> fila in filas)
+            foreach (var (columna, valor) in fila)
+                if (valor is string v && v.Trim().Length > 0 && !ColumnasNoFiscales.Any(n => columna.Contains(n, StringComparison.OrdinalIgnoreCase)))
+                    fiscales.Add(v.Trim());
+        foreach (var c in await cn.QueryAsync<string>(new CommandDefinition("""
+            IF OBJECT_ID(N'dbo.V_TA_RETENCIONES') IS NOT NULL SELECT LTRIM(RTRIM(CONVERT(nvarchar(50), CUENTA))) FROM dbo.V_TA_RETENCIONES WHERE ISNULL(LTRIM(RTRIM(CONVERT(nvarchar(50), CUENTA))),'') <> '';
+            """, transaction: tx, cancellationToken: ct))) fiscales.Add(c);
+        foreach (var c in await cn.QueryAsync<string>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(CONVERT(nvarchar(50), VALOR))) FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'CUENTAPERCEPCIONIVA', N'CUENTAPERCEPCIONIB', N'CUENTAIMPUESTOINTERNO', N'IVACFRESINS', N'IVARETPER', N'IVADFRESINS', N'IVADFRESNOINS', N'IVADFACREC', N'IVADFCONSF', N'IVADFMONO')
+              AND ISNULL(LTRIM(RTRIM(CONVERT(nvarchar(50), VALOR))),'') <> '';
+            """, transaction: tx, cancellationToken: ct))) fiscales.Add(c);
+        var cuentas = renglones.Select(x => x.Cuenta.Trim()).Distinct().ToList();
+        var especiales = (await cn.QueryAsync<string>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.MA_CUENTAS WHERE LTRIM(RTRIM(CODIGO)) IN @Cuentas AND (LTRIM(RTRIM(ISNULL(MedioDePago,''))) <> '' OR ISNULL(CajaYBanco,0) <> 0)
+            UNION SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_CLIENTES WHERE LTRIM(RTRIM(CODIGO)) IN @Cuentas
+            UNION SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_PROVEEDORES WHERE LTRIM(RTRIM(CODIGO)) IN @Cuentas;
+            """, new { Cuentas = cuentas }, tx, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var principal = renglones.Min(x => x.Secuencia);
+        var fijos = renglones.Where(x => x.Secuencia == principal || x.Cheque || fiscales.Contains(x.Cuenta.Trim()) || especiales.Contains(x.Cuenta.Trim()))
+            .Select(x => x.Secuencia).ToHashSet();
+        return (fiscales, fijos);
+    }
+
+    public Task<AsientoDetalle> ReimputarAsync(AsientoClave k, IReadOnlyList<AsientoReimputacion> cambios, string huella, CancellationToken ct = default)
+        => EjecutarAsync("Reimputar", [MenuAsientos], async cn =>
+    {
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var u = await UsuarioAsync(cn, tx, ct);
+        if (!u.Modificar) throw new ReglaException("Tu usuario no tiene permiso para modificar asientos (Modificar asientos en el usuario).");
+        var previo = await RenglonesAsync(cn, tx, k, bloquear: true, ct);
+        if (previo.Count == 0) throw new ReglaException("El asiento no existe (puede haberse anulado).");
+        if (Huella(previo.Select(x => (x.Cuenta, x.Dh, x.Importe, x.Detalle, x.Fecha))) != huella)
+            throw new ReglaException("Otro usuario modificó este asiento mientras lo editabas. Volvé a abrirlo.");
+        if (!PuedeReimputar(previo, k.TipoReg)) throw new ReglaException("Este asiento no se puede reimputar desde acá (está conciliado, es de cierre, de sueldos o de otro módulo, o agrupa varios comprobantes).");
+        var talonarios = await TalonariosAsync(cn, tx, u.Unidad, ct);
+        if (MotivoSoloLectura(previo.Select(x => (x.Tc, k.TipoReg, x.LivaTipo, x.Conciliado, x.Observaciones, x.TcOrigen, x.Cierre, x.Resumen, x.Caja,
+                x.Tc + x.Sucursal + x.Numero + x.Letra, x.MedioDePago)).ToList(), talonarios.Select(t => t.Codigo).ToList()).Length == 0)
+            throw new ReglaException("Es un asiento manual: se modifica directamente, no hace falta reimputar.");
+        cambios = cambios.Where(c => c.Cuenta.Trim().Length > 0).GroupBy(c => c.Secuencia).Select(g => g.Last()).ToList();
+        var (fiscales, fijos) = await FijosAsync(cn, tx, previo.Select(x => (x.Secuencia, x.Cuenta, x.NroBancario.Length > 0 && x.IdBanco.Length > 0)).ToList(), ct);
+        var catalogo = (await CuentasAsync(cn, tx, ct)).ToDictionary(c => c.Codigo, StringComparer.OrdinalIgnoreCase);
+        var nuevas = cambios.Select(c => c.Cuenta.Trim()).Distinct().ToList();
+        var terceros = (await cn.QueryAsync<string>(new CommandDefinition("""
+            SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_CLIENTES WHERE LTRIM(RTRIM(CODIGO)) IN @C UNION SELECT LTRIM(RTRIM(CODIGO)) FROM dbo.VT_PROVEEDORES WHERE LTRIM(RTRIM(CODIGO)) IN @C;
+            """, new { C = nuevas.Count == 0 ? [""] : nuevas }, tx, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var efectivos = new List<(RenglonSql Fila, string Nueva)>();
+        foreach (var c in cambios)
+        {
+            var fila = previo.FirstOrDefault(x => x.Secuencia == c.Secuencia) ?? throw new ReglaException("El renglón que querés cambiar no existe en el asiento.");
+            var nueva = c.Cuenta.Trim();
+            if (nueva.Equals(fila.Cuenta.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
+            if (fijos.Contains(fila.Secuencia)) throw new ReglaException($"El renglón {fila.Secuencia} ({fila.Cuenta.Trim()} {fila.CuentaNombre}) es la cuenta principal, del IVA, de una retención, de caja, banco o de un cliente o proveedor: no se cambia.");
+            if (!catalogo.TryGetValue(nueva, out var cuenta)) throw new ReglaException($"La cuenta {nueva} no existe, es un título o está bloqueada o dada de baja.");
+            if (fiscales.Contains(nueva) || cuenta.MedioDePago.Length > 0 || cuenta.Bancaria || terceros.Contains(nueva))
+                throw new ReglaException($"No se puede imputar a la cuenta {nueva} ({cuenta.Descripcion}): es de IVA, retenciones, caja, banco, tarjeta, cliente o proveedor.");
+            var monedaAnterior = fila.Moneda.Trim().TrimStart('0'); var monedaNueva = cuenta.Moneda.Trim().TrimStart('0');
+            if (monedaAnterior.Length == 0) monedaAnterior = "1";
+            if (monedaNueva.Length == 0) monedaNueva = "1";
+            if (monedaAnterior != monedaNueva) throw new ReglaException($"La cuenta {nueva} es de otra moneda que el renglón {fila.Secuencia}.");
+            efectivos.Add((fila, nueva));
+        }
+        if (efectivos.Count == 0) throw new ReglaException("No cambiaste ninguna cuenta.");
+        var p = previo.OrderBy(x => x.Secuencia).First();
+        await ValidarFechaAsync(cn, tx, p.Fecha, previo.Any(x => catalogo.TryGetValue(x.Cuenta.Trim(), out var c) && c.MedioDePago.Length > 0), ct);
+        var clave = k with { Tc = p.Tc, Sucursal = p.Sucursal, NumeroCpte = p.Numero, Letra = p.Letra };
+        foreach (var (fila, nueva) in efectivos)
+        {
+            var args = new
+            {
+                Periodo = clave.Periodo.Trim(), clave.Mes, clave.Numero, TipoReg = clave.TipoReg.Trim(), ConCpte = true, Tc = clave.Tc.Trim(), Suc = clave.Sucursal.Trim(), Nro = clave.NumeroCpte.Trim(),
+                Letra = clave.Letra.Trim(), Secuencia = fila.Secuencia, Anterior = fila.Cuenta.Trim(), Nueva = nueva
+            };
+            // Los centros de costo siguen al renglón: se actualizan primero, mientras el renglón conserva la cuenta anterior que los identifica.
+            await cn.ExecuteAsync(new CommandDefinition($"""
+                IF OBJECT_ID(N'dbo.MV_ASIENTOSCCOSTO', N'U') IS NOT NULL
+                    UPDATE c SET CUENTA = @Nueva FROM dbo.MV_ASIENTOSCCOSTO c
+                    WHERE LTRIM(RTRIM(c.PERIODO)) = @Periodo AND c.MES_OPERATIVO = @Mes AND c.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(c.TIPO_REG)),'') = @TipoReg
+                      AND c.SECUENCIA = @Secuencia AND LTRIM(RTRIM(c.CUENTA)) = @Anterior {FiltroCentros};
+                """, args, tx, cancellationToken: ct));
+            var filas = await cn.ExecuteAsync(new CommandDefinition($"""
+                UPDATE a SET CUENTA = @Nueva, FechaHora_Modificacion = GETDATE() FROM dbo.MV_ASIENTOS a
+                WHERE LTRIM(RTRIM(a.PERIODO)) = @Periodo AND a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(a.TIPO_REG)),'') = @TipoReg
+                  AND a.SECUENCIA = @Secuencia AND LTRIM(RTRIM(a.CUENTA)) = @Anterior {FiltroCpte("a")};
+                """, args, tx, cancellationToken: ct));
+            if (filas != 1) throw new ReglaException("No se pudo cambiar la cuenta del renglón. No se grabó.");
+        }
+        // Control final: mismos renglones, mismos importes y lados, mismo total, y los renglones fijos con su cuenta.
+        var despues = await RenglonesAsync(cn, tx, clave, bloquear: false, ct);
+        var cambiadas = efectivos.Select(x => x.Fila.Secuencia).ToHashSet();
+        if (despues.Count != previo.Count || despues.Sum(x => x.Dh == "D" ? x.Importe : -x.Importe) != 0
+            || previo.Any(a => despues.FirstOrDefault(b => b.Secuencia == a.Secuencia) is not { } b || b.Importe != a.Importe || b.Dh != a.Dh
+                || (!cambiadas.Contains(a.Secuencia) && b.Cuenta.Trim() != a.Cuenta.Trim()) || b.LivaTotal != a.LivaTotal || b.LivaTipo != a.LivaTipo))
+            throw new ReglaException("El control final no coincide con el asiento original. No se grabó.");
+        await AccionAsync(cn, tx, "M", p.Tc, p.Sucursal + p.Numero + p.Letra, clave, p.Fecha, p.Cuenta, users.GetCurrentUserName(), ct, ProcesoReimputar);
+        await tx.CommitAsync(ct);
+        await events.LogAuditAsync("Asientos", "Reimputacion", "MV_ASIENTOS", clave.Texto,
+            $"Reimputó el asiento {clave.Texto} ({p.Tc} {p.Sucursal}-{p.Numero}): {string.Join("; ", efectivos.Select(x => $"renglón {x.Fila.Secuencia} {x.Fila.Cuenta.Trim()} → {x.Nueva}"))}.",
+            new { clave.Periodo, clave.Mes, clave.Numero, cambios = efectivos.Select(x => new { x.Fila.Secuencia, Anterior = x.Fila.Cuenta.Trim(), x.Nueva, x.Fila.Importe }) }, CancellationToken.None);
+        return await LeerDetalleAsync(cn, null, clave, ct);
+    }, ct);
 
     // ── Libro de IVA desde el asiento ───────────────────────────────────────────────────────────
 
@@ -743,6 +871,12 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         var d = Armar(clave, await RenglonesAsync(cn, tx, clave, false, ct), manuales);
         await CargarCentrosAsync(cn, d, ct);
         d.LibroIvaManual = d.LivaTipo.Length > 0 && await EsLibroIvaManualAsync(cn, tx, clave, ct);
+        if (d.PuedeReimputar)
+        {
+            var (fiscales, fijos) = await FijosAsync(cn, tx, d.Renglones.Select(x => (x.Secuencia, x.Cuenta, x.Cheque is not null)).ToList(), ct);
+            d.CuentasFiscales = fiscales.ToList();
+            foreach (var x in d.Renglones) x.Fijo = fijos.Contains(x.Secuencia);
+        }
         return d;
     }
 

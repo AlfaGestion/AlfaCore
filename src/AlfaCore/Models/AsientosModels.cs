@@ -99,6 +99,10 @@ public sealed class AsientoRenglon
     public bool DeModelo { get; set; }
     /// <summary>El modelo no deja cambiar la cuenta de este renglón.</summary>
     public bool CuentaFija { get; set; }
+    /// <summary>Orden del renglón en MV_ASIENTOS (SECUENCIA).</summary>
+    public int Secuencia { get; set; }
+    /// <summary>Reimputación: la cuenta de este renglón no se puede cambiar (principal, IVA, retenciones, caja, banco, clientes y proveedores).</summary>
+    public bool Fijo { get; set; }
     /// <summary>Modelos: lado de la cuenta cuando el renglón no tiene importe (MA_MODELOS.DEBE-HABER).</summary>
     public bool AlHaber { get; set; }
 }
@@ -158,6 +162,10 @@ public sealed class AsientoDetalle
     public string Cae { get; set; } = string.Empty;
     /// <summary>Se puede incluir en el libro de IVA desde acá (asiento sin datos de libro, de un solo comprobante, que no es de cierre, resumen ni de otro módulo).</summary>
     public bool PuedeIncluirEnLibroIva { get; set; }
+    /// <summary>Asiento de solo lectura en el que se puede cambiar la cuenta de los renglones que no son fijos (importes, total e IVA no cambian).</summary>
+    public bool PuedeReimputar { get; set; }
+    /// <summary>Cuentas de IVA, retenciones y percepciones (TA_CUENTASIVA): no se imputa a ellas ni se las cambia.</summary>
+    public List<string> CuentasFiscales { get; set; } = [];
     /// <summary>Entró al libro de IVA desde esta pantalla («Incluir en libro de IVA»): se puede quitar.</summary>
     public bool LibroIvaManual { get; set; }
     public string Comprobante => $"{Tc} {Sucursal}-{Numero} {Letra}".Trim();
@@ -194,6 +202,9 @@ public sealed class AsientoLibroIva
     public string Huella { get; set; } = string.Empty;
     public decimal Total => NetoGravado + NoGravado + Exento + Iva + RetencionIva + RetencionIibb + RetencionGanancias;
 }
+
+/// <summary>Cambio de cuenta de un renglón (por su SECUENCIA) al reimputar un asiento.</summary>
+public sealed record AsientoReimputacion(int Secuencia, string Cuenta);
 
 public sealed record AsientoCuenta(string Codigo, string Descripcion, string MedioDePago, bool PideVencimiento, string Moneda = "1", string TipoVista = "")
 {

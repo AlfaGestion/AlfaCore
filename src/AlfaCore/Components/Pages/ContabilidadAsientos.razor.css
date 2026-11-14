@@ -75,3 +75,6 @@
 .as-input--cuit { width: 130px; }
 .as-input--cartera { min-width: 340px; max-width: 100%; }
 .as-aviso { color: var(--alfa-warning, #d97706); }
+
+.as-reimp { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; margin: 6px 0; border: 1px solid var(--alfa-border-default); border-radius: 6px; font-size: 13px; color: var(--alfa-text-secondary); }
+.as-fijo { margin-left: 4px; color: var(--alfa-text-secondary); }

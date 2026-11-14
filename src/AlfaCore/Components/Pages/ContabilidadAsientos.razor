@@ -68,6 +68,11 @@
             {
                 <div class="as-solo-lectura"><i class="bi bi-lock" aria-hidden="true"></i>
                     @(a.MotivoSoloLectura.Length > 0 ? a.MotivoSoloLectura : "Tu usuario no tiene permiso para modificar asientos.")</div>
+                @if (Reimputable)
+                {
+                    <div class="as-reimp"><i class="bi bi-arrow-left-right" aria-hidden="true"></i>
+                        <span><b>Reimputar:</b> podés cambiar la cuenta de los renglones que no están marcados con candado. Los importes, el total, el IVA y la cuenta principal no cambian, y el asiento sigue coincidiendo con el comprobante.</span></div>
+                }
             }
             <div class="as-cab__campos">
                 <label>Fecha <input type="date" class="as-input" value="@a.Fecha.ToString("yyyy-MM-dd")" disabled="@(!Editable)" @onchange="CambiarFechaAsiento" /></label>
@@ -168,7 +173,14 @@
                         }
                         else
                         {
-                            <td class="as-col-cuenta"><span class="mono">@r.Cuenta</span> @r.CuentaNombre</td>
+                            @if (Reimputable)
+                            {
+                                <td class="as-col-cuenta">
+                                    @if (r.Fijo) { <span class="mono">@r.Cuenta</span> @r.CuentaNombre <i class="bi bi-lock as-fijo" title="Cuenta principal, de IVA, retención, caja, banco, cliente o proveedor: no se cambia" aria-hidden="true"></i> }
+                                    else { <AsientoCuentaLookup Cuenta="@CuentaReimp(r)" CuentaChanged="v => CambiarReimp(r, v)" Cuentas="CuentasReimputables" /> }
+                                </td>
+                            }
+                            else { <td class="as-col-cuenta"><span class="mono">@r.Cuenta</span> @r.CuentaNombre</td> }
                             <td>@r.Detalle</td>
                             <td class="n">@(r.Debe != 0 ? r.Debe.ToString("N2", Culture) : "")</td>
                             <td class="n">@(r.Haber != 0 ? r.Haber.ToString("N2", Culture) : "")</td>
@@ -348,6 +360,10 @@
     private bool _busy, _buscado, _confirmarAnular, _sucio, _confirmarQuitarLibro;
     private AsientoLibroIva? _libro;
     private string? _errorLibro;
+    // Reimputar: cambios de cuenta pendientes por SECUENCIA del renglón.
+    private readonly Dictionary<int, string> _reimp = [];
+    private IReadOnlyList<AsientoCuenta>? _cuentasReimp;
+    private AsientoDetalle? _cuentasReimpDe;
     private string _texto = string.Empty;
     private PageHeaderConfig? _header;
     private AsientoModelo? _modelo, _guardarModelo;
@@ -828,7 +844,7 @@
     private async Task AbrirAsync(AsientoClave clave)
     {
         if (_busy) return;
-        _busy = true; _arca = null; UpdateHeader();
+        _busy = true; _arca = null; _reimp.Clear(); UpdateHeader();
         try
         {
             var r = await UiOps.RunAsync(() => Service.GetAsync(clave), "Asiento");
@@ -876,7 +892,7 @@
 
     private Task Volver()
     {
-        _edit = null; _arca = null; _sucio = false; _modelo = null;
+        _edit = null; _arca = null; _sucio = false; _modelo = null; _reimp.Clear();
         UpdateHeader(); StateHasChanged();
         return Task.CompletedTask;
     }
@@ -1002,6 +1018,50 @@
         finally { _busy = false; UpdateHeader(); StateHasChanged(); }
     }
 
+    private bool Reimputable => _edit is { PuedeReimputar: true } && !Editable && _cat?.PuedeModificar == true;
+
+    private IReadOnlyList<AsientoCuenta> CuentasReimputables
+    {
+        get
+        {
+            if (!ReferenceEquals(_cuentasReimpDe, _edit) || _cuentasReimp is null)
+            {
+                var fiscales = (_edit?.CuentasFiscales ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _cuentasReimp = (_cat?.Cuentas ?? []).Where(c => c.MedioDePago.Length == 0 && !c.Bancaria && !fiscales.Contains(c.Codigo)).ToList();
+                _cuentasReimpDe = _edit;
+            }
+            return _cuentasReimp;
+        }
+    }
+
+    private string CuentaReimp(AsientoRenglon r) => _reimp.TryGetValue(r.Secuencia, out var c) ? c : r.Cuenta;
+
+    private void CambiarReimp(AsientoRenglon r, string cuenta)
+    {
+        if (cuenta.Trim().Length == 0 || cuenta.Trim().Equals(r.Cuenta.Trim(), StringComparison.OrdinalIgnoreCase)) _reimp.Remove(r.Secuencia);
+        else _reimp[r.Secuencia] = cuenta.Trim();
+        _sucio = _reimp.Count > 0;
+        UpdateHeader();
+    }
+
+    private async Task GrabarReimputacionAsync()
+    {
+        if (_edit?.Clave is not { } k || _reimp.Count == 0 || _busy) return;
+        _busy = true; _feedback = null; UpdateHeader();
+        try
+        {
+            var cambios = _reimp.Select(x => new AsientoReimputacion(x.Key, x.Value)).ToList();
+            var r = await UiOps.RunAsync(() => Service.ReimputarAsync(k, cambios, _edit.Huella), "Reimputar asiento");
+            if (r.Success)
+            {
+                _edit = r.Value; _reimp.Clear(); _sucio = false;
+                _feedback = AppUiMessage.Success("Asiento reimputado", $"Se cambió la cuenta de {cambios.Count} renglón(es) del asiento {k.Texto}. Los importes y el IVA no cambiaron.");
+            }
+            else _feedback = r.Feedback;
+        }
+        finally { _busy = false; UpdateHeader(); StateHasChanged(); }
+    }
+
     private static bool EsResta(ChangeEventArgs e) => e.Value?.ToString() == "R";
 
     private static void RecalcularIva(AsientoLibroIva l)
@@ -1063,6 +1123,8 @@
         {
             if (Editable)
                 acciones.Add(new() { Key = "grabar", Label = "Grabar", Icon = "bi-check2", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = GrabarAsync });
+            if (Reimputable && _reimp.Count > 0)
+                acciones.Add(new() { Key = "reimputar", Label = $"Grabar reimputación ({_reimp.Count})", Icon = "bi-check2", Style = PageHeaderActionStyle.Primary, Disabled = _busy, OnClick = GrabarReimputacionAsync });
             if (_edit.Clave is not null && _edit.Editable && _cat?.PuedeAnular == true)
                 acciones.Add(new() { Key = "anular", Label = "Anular", Icon = "bi-trash", Style = PageHeaderActionStyle.Danger, Disabled = _busy, OnClick = () => { _confirmarAnular = true; StateHasChanged(); return Task.CompletedTask; } });
             if ((Editable || _edit.Editable) && _cat?.PuedeGuardarModelos == true && _edit.Renglones.Count(x => x.Cuenta.Length > 0) >= 2)
