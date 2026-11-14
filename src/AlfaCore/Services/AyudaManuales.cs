@@ -23,7 +23,8 @@ public static class AyudaManuales
         new AyudaTema("conciliacion","Conciliación","AlfaCore.Docs.manual_conciliacion_bancaria.md"),
         new AyudaTema("tarjetas","Conciliación de tarjetas asistida con IA","AlfaCore.Docs.manual_conciliacion_tarjetas.md"),
         new AyudaTema("cobranzas","Cobranzas","AlfaCore.Docs.manual_cobranzas.md"),
-        new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md") });
+        new AyudaTema("stock","Stock","AlfaCore.Docs.manual_stock_movimientos.md"),
+        new AyudaTema("salon","Punto de Venta: Salón y carta QR","AlfaCore.Docs.manual_punto_venta_salon.md") });
     private static readonly Lazy<IReadOnlyDictionary<string,AyudaManual>> Manuales=new(()=>Temas.ToDictionary(t=>t.Clave,Cargar));
     private static readonly MarkdownPipeline Pipeline=new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
     public static AyudaManual Obtener(string tema)=>Manuales.Value.TryGetValue(tema,out var manual)
@@ -32,6 +33,9 @@ public static class AyudaManuales
     // la primera coincidencia gana (por eso "visor" va antes que "carga-comprobantes").
     // Al documentar una pantalla nueva, agregarla acá; AyudaContextualTests verifica que el artículo exista.
     internal static readonly IReadOnlyList<(string Ruta,string Tema,string? Articulo)> Pantallas=Array.AsReadOnly(new (string,string,string?)[] {
+        ("/ventas/punto-venta/salon/qr","salon","Imprimir los QR de las mesas"),
+        ("/ventas/punto-venta/salon","salon","Trabajar con el salón"),
+        ("/ventas/punto-venta/cocina","salon","Pantalla de cocina y barra"),
         ("conciliacion-bancaria","conciliacion",null),
         ("conciliacion-tarjetas","tarjetas",null),
         ("cobranzas","cobranzas",null),
