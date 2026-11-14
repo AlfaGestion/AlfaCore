@@ -34,7 +34,9 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(15);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> EnCurso = new(StringComparer.OrdinalIgnoreCase);
     internal static readonly Regex NombreArchivo = new(@"^ARCA_(RECIBIDOS|EMITIDOS)_(\d{11})_(\d{6})\.(?:xlsx?|csv)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private sealed class ReglaException(string message) : InvalidOperationException(message);
+    private class ReglaException(string message) : InvalidOperationException(message);
+    /// <summary>Falla del script de descarga (código de salida, tiempo máximo, archivo ausente): se registra en AUX_ERR.</summary>
+    private sealed class ScriptException(string message) : ReglaException(message);
 
     private int IdBase => sessions.GetActiveSession()?.BaseId ?? 0;
 
@@ -81,7 +83,14 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
     public Task<ArcaArchivoDescargado> DescargarAsync(bool recibidos, int anio, int mes, CancellationToken ct = default)
         => EjecutarAsync("Descargar", async cn =>
         {
-            var r = await DescargarEnConexionAsync(cn, servidor.Estado(IdBase), recibidos, anio, mes, visible: false, ct);
+            ArcaArchivoDescargado r;
+            try { r = await DescargarEnConexionAsync(cn, servidor.Estado(IdBase), recibidos, anio, mes, visible: false, ct); }
+            catch (ScriptException ex)
+            {
+                var codigo = await events.LogErrorAsync("ControlArca", "Descargar", ex, ex.Message,
+                    new { Tipo = recibidos ? "RECIBIDOS" : "EMITIDOS", Anio = anio, Mes = mes }, ct: CancellationToken.None);
+                throw new AppUserFacingException(ex.Message, codigo, ex);
+            }
             await events.LogAuditAsync("ControlArca", "Descargar", "MIS_COMPROBANTES", r.Nombre,
                 $"Descargó de ARCA Mis Comprobantes {(recibidos ? "Recibidos" : "Emitidos")} {mes:00}/{anio}.", new { r.Nombre, r.Bytes }, CancellationToken.None);
             return r;
@@ -142,19 +151,19 @@ public sealed class ArcaDescargaService(ISessionService sessions, IAppUserSessio
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* ya terminó */ }
                 if (ct.IsCancellationRequested) throw;
-                throw new ReglaException("El script superó el tiempo máximo (15 minutos) y se canceló.");
+                throw new ScriptException("El script superó el tiempo máximo (15 minutos) y se canceló.");
             }
             if (p.ExitCode != 0)
             {
                 var stderr = await errores.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : "", CancellationToken.None);
                 var detalle = DetalleError(stderr, clave);
                 if (detalle.Length == 0) detalle = DetalleError(UltimoErrorLog(carpeta), clave);
-                throw new ReglaException(MensajeSalida(p.ExitCode) + detalle + $" Revisá arca_comprobantes.log en {carpeta}.");
+                throw new ScriptException(MensajeSalida(p.ExitCode) + detalle + $" Revisá arca_comprobantes.log en {carpeta}.");
             }
             // Con Excel en el servidor el script deja .xls (formato del importador del legacy); sin Excel deja el .xlsx oficial de ARCA.
             var info = new[] { destino, Path.ChangeExtension(destino, ".xlsx") }.Select(f => new FileInfo(f))
                 .Where(f => f.Exists && f.LastWriteTime >= inicio.AddMinutes(-1)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault()
-                ?? throw new ReglaException("El script terminó pero no dejó el archivo esperado: " + Path.GetFileName(destino));
+                ?? throw new ScriptException("El script terminó pero no dejó el archivo esperado: " + Path.GetFileName(destino));
             try { Limpiar(carpeta, servidor.RetencionMeses, servidor.DiagnosticoDias, DateTime.Now); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* la limpieza nunca debe hacer fallar una descarga */ }
             return new ArcaArchivoDescargado(info.Name, recibidos, periodo, info.LastWriteTime, info.Length);

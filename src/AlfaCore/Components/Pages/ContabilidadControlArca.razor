@@ -67,6 +67,17 @@
                     {
                         <span>@AutoTexto(_cfg)</span>
                     }
+                    @if (_resultadoDescarga is { } rd)
+                    {
+                        <div class="ca-resultado ca-resultado--@(rd.Severity.ToString().ToLowerInvariant())" role="alert">
+                            <div>
+                                <strong>@rd.Title</strong> @rd.Message
+                                @if (rd.Code.Length > 0) { <span> (código @rd.Code)</span> }
+                                @if (rd.Suggestion.Length > 0) { <small class="d-block">@rd.Suggestion</small> }
+                            </div>
+                            <button type="button" class="ca-resultado__cerrar" aria-label="Cerrar" @onclick="() => _resultadoDescarga = null">×</button>
+                        </div>
+                    }
                 }
             </div>
             @if (_archivos.Count > 0)
@@ -328,6 +339,7 @@
     private AppUiMessage? _feedback;
     private bool _busy, _disposed, _exportando, _descargando;
     private int _segundos;
+    private AppUiMessage? _resultadoDescarga;
     // Historial
     private bool _histAbierto, _histBusy;
     private string? _histError;
@@ -465,16 +477,24 @@
         if (_busy || _cfg is null) return;
         if (!DateTime.TryParseExact(_periodo + "-01", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var p))
         { _feedback = AppUiMessage.Warning("Período", "Elegí el mes a descargar."); return; }
-        _busy = true; _descargando = true; _segundos = 0; _feedback = null; UpdateHeader(); StateHasChanged();
+        _busy = true; _descargando = true; _segundos = 0; _feedback = null; _resultadoDescarga = null; UpdateHeader(); StateHasChanged();
         using var reloj = new CancellationTokenSource();
         _ = RelojAsync(reloj.Token);
+        var tipo = _descargaRecibidos ? "Recibidos" : "Emitidos";
         try
         {
             var r = await UiOps.RunAsync(() => Descarga.DescargarAsync(_descargaRecibidos, p.Year, p.Month), "Descarga de ARCA");
             reloj.Cancel(); _descargando = false; StateHasChanged();
-            if (!r.Success) { _feedback = r.Feedback; return; }
+            // El resultado queda fijo junto al botón: la descarga tarda minutos y un aviso que se cierra solo se pierde.
+            if (!r.Success) { _resultadoDescarga = r.Feedback; _feedback = r.Feedback; return; }
             _archivos = await Descarga.ArchivosAsync();
             await ControlarAsync(await Descarga.LeerArchivoAsync(r.Value!.Nombre), r.Value.Nombre);
+            _resultadoDescarga = _feedback is { Severity: not AppUiFeedbackSeverity.Success } f ? f
+                : AppUiMessage.Success("Descarga terminada", $"{tipo} {p.Month:00}/{p.Year} descargado de ARCA y comparado.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _resultadoDescarga = UiOps.BuildMessage(ex, "Descarga de ARCA");
         }
         finally { reloj.Cancel(); _busy = false; _descargando = false; if (!_disposed) { UpdateHeader(); StateHasChanged(); } }
     }
