@@ -7,25 +7,33 @@ public sealed class AsientosFiltro
     public DateTime? Hasta { get; set; }
     /// <summary>Número («10-25» o «25»), comprobante, detalle, cuenta o usuario.</summary>
     public string Texto { get; set; } = string.Empty;
-    /// <summary>MANUALES (editables), COMPROBANTES (de compras, ventas, cobranzas, pagos…) o TODOS.</summary>
+    /// <summary>MANUALES (editables), COMPRAS, VENTAS, SINVENTAS (todo menos ventas), COMPROBANTES (de compras, ventas, cobranzas, pagos…) o TODOS.</summary>
     public string Origen { get; set; } = "MANUALES";
     public string Cuenta { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
+    /// <summary>Código del comprobante (FCC, CC, CB…); vacío = todos.</summary>
+    public string Tc { get; set; } = string.Empty;
+    /// <summary>Caja (MV_ASIENTOS.IdCajas); vacío = todas.</summary>
+    public string Caja { get; set; } = string.Empty;
     public bool IncluirProformas { get; set; }
 }
 
 /// <summary>Filtros de la pantalla de Asientos para el buscador estándar (GestionSmartSearch). Por defecto, «Todo».</summary>
 public sealed class AsientosBusqueda : GestionDateFilterBase
 {
-    public AsientosBusqueda()
-    {
-        FechaDesde = null;
-        FechaHasta = null;
-    }
+    /// <summary>Por defecto, la semana y sin las ventas: un comercio genera miles de asientos de facturas por día.</summary>
+    public const string OrigenPorDefecto = "SINVENTAS";
 
-    public string Origen { get; set; } = "TODOS";
+    public AsientosBusqueda() => PeriodoPorDefecto();
+
+    public void PeriodoPorDefecto() => (FechaDesde, FechaHasta) = AlfaCore.Components.Shared.GestionRangosFecha.Calcular("semana");
+
+    /// <summary>SINVENTAS (por defecto), TODOS, MANUALES (contables), COMPRAS, VENTAS o COMPROBANTES.</summary>
+    public string Origen { get; set; } = OrigenPorDefecto;
     public string Cuenta { get; set; } = string.Empty;
     public string Unidad { get; set; } = string.Empty;
+    public string Tc { get; set; } = string.Empty;
+    public string Caja { get; set; } = string.Empty;
     public bool IncluirProformas { get; set; }
 }
 
@@ -235,6 +243,9 @@ public sealed class AsientosCatalogo
     public IReadOnlyList<AsientoTalonario> Talonarios { get; set; } = [];
     public IReadOnlyList<CompraCargaOpcion> Unidades { get; set; } = [];
     public IReadOnlyList<CompraCargaOpcion> Centros { get; set; } = [];
+    /// <summary>Comprobantes de V_TA_CPTE, para filtrar la lista.</summary>
+    public IReadOnlyList<CompraCargaOpcion> Comprobantes { get; set; } = [];
+    public IReadOnlyList<CompraCargaOpcion> Cajas { get; set; } = [];
     public IReadOnlyList<AsientoMoneda> Monedas { get; set; } = [];
     public IReadOnlyList<ChequeraBanco> Bancos { get; set; } = [];
     public IReadOnlyList<AsientoCentroDefault> CentrosPorCuenta { get; set; } = [];

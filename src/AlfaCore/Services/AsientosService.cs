@@ -115,6 +115,12 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             Bancos = (await cn.QueryAsync<ChequeraBanco>(new CommandDefinition(
                 "IF OBJECT_ID(N'dbo.V_TA_Bancos', N'U') IS NULL SELECT TOP 0 N'' IdBanco, N'' Descripcion ELSE SELECT LTRIM(RTRIM(IdBanco)) IdBanco, LTRIM(RTRIM(ISNULL(Descripcion,''))) Descripcion FROM dbo.V_TA_Bancos ORDER BY Descripcion;",
                 cancellationToken: ct))).ToList(),
+            Comprobantes = (await cn.QueryAsync<CompraCargaOpcion>(new CommandDefinition(
+                "IF OBJECT_ID(N'dbo.V_TA_CPTE', N'U') IS NULL SELECT TOP 0 N'' Codigo, N'' Descripcion ELSE SELECT LTRIM(RTRIM(CODIGO)) Codigo, MAX(LTRIM(RTRIM(ISNULL(DESCRIPCION,'')))) Descripcion FROM dbo.V_TA_CPTE WHERE LTRIM(RTRIM(ISNULL(CODIGO,''))) <> '' GROUP BY LTRIM(RTRIM(CODIGO)) ORDER BY 1;",
+                cancellationToken: ct))).ToList(),
+            Cajas = (await cn.QueryAsync<CompraCargaOpcion>(new CommandDefinition(
+                "IF OBJECT_ID(N'dbo.V_Ta_Cajas', N'V') IS NULL AND OBJECT_ID(N'dbo.V_Ta_Cajas', N'U') IS NULL SELECT TOP 0 N'' Codigo, N'' Descripcion ELSE SELECT LTRIM(RTRIM(IdCajas)) Codigo, MAX(LTRIM(RTRIM(ISNULL(Descripcion,'')))) Descripcion FROM dbo.V_Ta_Cajas GROUP BY LTRIM(RTRIM(IdCajas)) ORDER BY 1;",
+                cancellationToken: ct))).ToList(),
             Centros = await CentrosAsync(cn, null, ct), CentrosPorCuenta = await CentrosPorCuentaAsync(cn, null, u.Unidad, ct), Modelos = await ModelosAsync(cn, ct),
             PuedeGuardarModelos = await permissions.HasAccessAsync(MenuModelos, ct) || (cargar && u.Modificar),
             PuedeVerProformas = await ContabilidadReportesService.PuedeVerProformasAsync(cn, ct, users.GetCurrentUserName()),
@@ -445,15 +451,16 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
     private static readonly string FiltroCentros =
         $"AND (@ConCpte = 0 OR EXISTS (SELECT 1 FROM dbo.MV_ASIENTOS x WHERE LTRIM(RTRIM(x.PERIODO)) = @Periodo AND x.MES_OPERATIVO = @Mes AND x.[NUMERO ASIENTO] = @Numero AND ISNULL(LTRIM(RTRIM(x.TIPO_REG)),'') = @TipoReg AND x.CUENTA = c.CUENTA AND x.SECUENCIA = c.SECUENCIA {FiltroCpte("x")}))";
 
-    /// <summary>Marcas de un asiento que lo hacen de solo lectura acá (se calculan por asiento, sobre todos sus renglones).</summary>
+    /// <summary>Marcas de un asiento que lo hacen de solo lectura acá (se calculan por asiento, sobre todos sus renglones).
+    /// Ojo: con COUNT(DISTINCT …) junto al detalle, un mes de 65 mil renglones tardaba más de un minuto; MIN/MAX da lo mismo en 3 s.</summary>
     private const string BloqueosSql = """
         MAX(CASE WHEN ISNULL(LTRIM(RTRIM(a.LIVA_TIPO)),'') <> '' THEN 1 ELSE 0 END)
         + MAX(CASE WHEN ISNULL(a.Conciliado,0) <> 0 THEN 1 ELSE 0 END)
         + MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.TJ_Observaciones,''))) = 'ASIENTO_SISPER' THEN 1 ELSE 0 END)
         + MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.Tc_Origen,''))) = 'mutl' THEN 1 ELSE 0 END)
         + MAX(CASE WHEN ISNULL(a.EsCierre,0) <> 0 THEN 1 ELSE 0 END)
-        + CASE WHEN COUNT(DISTINCT ISNULL(a.IdCajas,'')) > 1 THEN 1 ELSE 0 END
-        + CASE WHEN COUNT(DISTINCT LTRIM(RTRIM(a.TC)) + a.SUCURSAL + a.NUMERO + a.LETRA) > 1 THEN 1 ELSE 0 END
+        + CASE WHEN MIN(ISNULL(a.IdCajas,'')) <> MAX(ISNULL(a.IdCajas,'')) THEN 1 ELSE 0 END
+        + CASE WHEN MIN(LTRIM(RTRIM(a.TC)) + a.SUCURSAL + a.NUMERO + a.LETRA) <> MAX(LTRIM(RTRIM(a.TC)) + a.SUCURSAL + a.NUMERO + a.LETRA) THEN 1 ELSE 0 END
         """;
 
     /// <summary>Sin fecha desde se muestran los últimos asientos: se busca hacia atrás (3 meses, 1 año, 3 años) hasta juntar estos.</summary>
@@ -471,6 +478,10 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
         int? mes = null, numero = null;
         if (Regex.Match(texto, @"^(\d{1,2})\s*-\s*(\d{1,7})$") is { Success: true } m) { mes = int.Parse(m.Groups[1].Value); numero = int.Parse(m.Groups[2].Value); texto = ""; }
         var like = texto.Length == 0 ? "" : "%" + texto.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
+        // Un importe exacto («14880,27») también busca por monto; el texto que coincide con el nombre de una cuenta trae los asientos de esa cuenta.
+        decimal? importe = Regex.IsMatch(texto, @"^\d{1,12}([.,]\d{1,2})?$") && decimal.TryParse(texto.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var imp) ? imp : null;
+        var cuentasLike = like.Length == 0 ? [] : (await cn.QueryAsync<string>(new CommandDefinition(
+            "SELECT TOP (300) LTRIM(RTRIM(CODIGO)) FROM dbo.MA_CUENTAS WHERE CONVERT(nvarchar(200), DESCRIPCION) LIKE @Like;", new { Like = like }, cancellationToken: ct))).ToList();
         var origen = (f.Origen ?? "MANUALES").ToUpperInvariant();
         // Sin hasta: incluye asientos con fecha futura.
         var hasta = (f.Hasta ?? new DateTime(2100, 12, 31)).Date;
@@ -497,19 +508,25 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             FROM dbo.MV_ASIENTOS a
             WHERE a.FECHA >= @Desde AND a.FECHA < DATEADD(day, 1, @Hasta) AND ISNULL(a.EsResumen,0) = 0
               AND (@Unidad = '' OR LTRIM(RTRIM(ISNULL(a.UNEGOCIO,''))) = @Unidad)
+              AND (@Tc = '' OR LTRIM(RTRIM(a.TC)) = @Tc)
               AND (@ConProformas = 1 OR LTRIM(RTRIM(ISNULL(a.TC,''))) NOT IN @Proformas)
               AND (@Mes IS NULL OR (a.MES_OPERATIVO = @Mes AND a.[NUMERO ASIENTO] = @Numero))
               {conCandidatos}
             -- El comprobante forma parte de la clave: el número de asiento se repite entre comprobantes distintos.
             GROUP BY a.PERIODO, a.MES_OPERATIVO, a.[NUMERO ASIENTO], a.TIPO_REG, LTRIM(RTRIM(a.TC)), LTRIM(RTRIM(a.SUCURSAL)), LTRIM(RTRIM(a.NUMERO)), LTRIM(RTRIM(a.LETRA))
             HAVING (@Cuenta = '' OR MAX(CASE WHEN LTRIM(RTRIM(a.CUENTA)) = @Cuenta THEN 1 ELSE 0 END) = 1)
-               AND (@Like = '' OR MAX(CASE WHEN CONVERT(nvarchar(200), a.DETALLE) LIKE @Like OR a.CUENTA LIKE @Like OR a.USUARIO_LOGEADO LIKE @Like
+               AND (@Caja = '' OR MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.IdCajas,''))) = @Caja THEN 1 ELSE 0 END) = 1)
+               AND (@Like = '' OR MAX(CASE WHEN LTRIM(RTRIM(a.CUENTA)) IN @CuentasLike OR (@Importe IS NOT NULL AND a.IMPORTE = @Importe) THEN 1 ELSE 0 END) = 1
+                    OR MAX(CASE WHEN CONVERT(nvarchar(200), a.DETALLE) LIKE @Like OR a.CUENTA LIKE @Like OR a.USUARIO_LOGEADO LIKE @Like
                         OR LTRIM(RTRIM(a.TC)) + ' ' + LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO)) LIKE @Like OR a.NUMERO LIKE @Like THEN 1 ELSE 0 END) = 1)
                AND (@Origen = 'TODOS'
+                    OR (@Origen = 'SINVENTAS' AND MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.LIVA_TIPO,''))) = 'VENTAS' THEN 1 ELSE 0 END) = 0)
+                    OR (@Origen = 'VENTAS' AND MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.LIVA_TIPO,''))) = 'VENTAS' THEN 1 ELSE 0 END) = 1)
+                    OR (@Origen = 'COMPRAS' AND MAX(CASE WHEN LTRIM(RTRIM(ISNULL(a.LIVA_TIPO,''))) = 'COMPRAS' THEN 1 ELSE 0 END) = 1)
                     OR (@Origen = 'MANUALES' AND LTRIM(MAX(ISNULL(a.TIPO_REG,''))) = '' AND MAX(LTRIM(RTRIM(a.TC))) IN @Manuales AND {BloqueosSql} = 0)
                     OR (@Origen = 'COMPROBANTES' AND NOT (LTRIM(MAX(ISNULL(a.TIPO_REG,''))) = '' AND MAX(LTRIM(RTRIM(a.TC))) IN @Manuales AND {BloqueosSql} = 0)))
             ORDER BY MIN(a.FECHA) DESC, MAX(a.FechaHora_Grabacion) DESC, a.MES_OPERATIVO DESC, a.[NUMERO ASIENTO] DESC;
-            """, new { Top = top, Desde = desde, Hasta = hasta, Unidad = (f.Unidad ?? "").Trim(), Cuenta = (f.Cuenta ?? "").Trim(), Like = like, Mes = mes, Numero = numero,
+            """, new { Top = top, Desde = desde, Hasta = hasta, Unidad = (f.Unidad ?? "").Trim(), Tc = (f.Tc ?? "").Trim(), Caja = (f.Caja ?? "").Trim(), Cuenta = (f.Cuenta ?? "").Trim(), Like = like, CuentasLike = cuentasLike.Count == 0 ? [""] : cuentasLike, Importe = importe, Mes = mes, Numero = numero,
                 Origen = origen, Manuales = manuales.Length == 0 ? ["CC"] : manuales, ConProformas = conProformas, Proformas = ContabilidadReportesService.Proformas }, commandTimeout: 120, cancellationToken: ct))).ToList();
 
         List<ResumenSql> filas;
@@ -520,7 +537,7 @@ public sealed class AsientosService(ISessionService sessions, IAppUserSessionSer
             // Últimos cargados: ventanas crecientes sobre el índice de FECHA (MV_ASIENTOS tiene millones de renglones).
             // Toda la historia solo si se busca algo puntual (número, texto o cuenta).
             var referencia = (f.Hasta ?? DateTime.Today).Date;
-            var puntual = mes is not null || like.Length > 0 || (f.Cuenta ?? "").Trim().Length > 0;
+            var puntual = mes is not null || like.Length > 0 || (f.Cuenta ?? "").Trim().Length > 0 || (f.Tc ?? "").Trim().Length > 0 || (f.Caja ?? "").Trim().Length > 0;
             filas = [];
             foreach (var dias in VentanasDias)
             {

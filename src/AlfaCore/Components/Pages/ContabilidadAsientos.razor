@@ -19,7 +19,7 @@
         @if (_lista.Count == 0 && _buscado)
         {
             <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin asientos"
-                            Message="@(_f.Origen == "MANUALES" ? "No hay asientos manuales con esos filtros. Cargá uno con «Nuevo asiento» o, en el embudo de filtros, elegí «Todos» para ver también los de comprobantes." : "No hay asientos con esos filtros. Probá con otro período.")" />
+                            Message="@(_f.Origen == "MANUALES" ? "No hay asientos contables (manuales) con esos filtros. Cargá uno con «Nuevo asiento» o, en el embudo de filtros, elegí otro tipo de asiento." : _f.Origen == "SINVENTAS" ? "No hay asientos en este período (las ventas no se muestran por defecto). Probá con otro período o elegí «Ventas» en el embudo de filtros." : "No hay asientos con esos filtros. Probá con otro período.")" />
         }
         else if (_lista.Count > 0)
         {
@@ -52,6 +52,7 @@
                 <small class="as-nota">@(_lista.Count >= AlfaCore.Services.AsientosService.UltimosAsientos ? $"Últimos {_lista.Count} asientos, del más reciente al más antiguo. Para ver otros, elegí un período o buscá por número." : $"{_lista.Count} asiento(s) encontrados.")</small>
             }
             else if (_lista.Count >= 500) { <small class="as-nota">Se muestran los 500 más recientes: acotá el período o buscá por número.</small> }
+            @if (_f.Origen == "SINVENTAS") { <small class="as-nota">No se muestran los asientos de ventas (uno por factura). Para verlos, elegí «Ventas» o «Todos, con ventas» en el embudo de filtros.</small> }
         }
     }
     else
@@ -716,15 +717,16 @@
 
     private AsientosFiltro Filtro() => new()
     {
-        Desde = _f.FechaDesde?.Date, Hasta = _f.FechaHasta?.Date, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad,
+        Desde = _f.FechaDesde?.Date, Hasta = _f.FechaHasta?.Date, Texto = _texto, Origen = _f.Origen, Cuenta = _f.Cuenta, Unidad = _f.Unidad, Tc = _f.Tc, Caja = _f.Caja,
         IncluirProformas = _f.IncluirProformas
     };
 
     // Buscador estándar (como Clientes y los tableros): período, origen, unidad y cuenta en el embudo, con chips.
     private static readonly (string Key, string Label)[] Origenes =
-        [("TODOS", "Todos"), ("MANUALES", "Solo asientos manuales"), ("COMPROBANTES", "Solo de comprobantes")];
+        [("SINVENTAS", "Todo menos ventas"), ("MANUALES", "Contables (asientos manuales)"), ("COMPRAS", "Compras"), ("VENTAS", "Ventas"),
+         ("COMPROBANTES", "Todos los de comprobantes"), ("TODOS", "Todos, con ventas")];
 
-    private RenderFragment RenderSmartSearch() => @<GestionSmartSearch Model="_f" Placeholder="Buscar: número (10-25), comprobante, detalle, cuenta o usuario"
+    private RenderFragment RenderSmartSearch() => @<GestionSmartSearch Model="_f" Placeholder="Buscar: número (10-25), importe, detalle, nombre de cuenta, comprobante o usuario"
                                                                     Texto="@_texto" TextoChanged="CambiarTexto" PermitirTodo="true"
                                                                     Chips="SmartChips" OnRemoveChip="QuitarChip" OnClear="LimpiarFiltros" OnApply="BuscarAsync">
         <Columnas>
@@ -735,7 +737,7 @@
                     <button type="button" class="@(_f.Origen == o.Key ? "smart-option is-active" : "smart-option")" @onclick="() => Filtrar(() => _f.Origen = o.Key)">@o.Label</button>
                 }
             </div>
-            @if (_cat is { Unidades.Count: > 1 } || _cat is { Cuentas.Count: > 0 } || _cat is { PuedeVerProformas: true })
+            @if (_cat is { Unidades.Count: > 1 } || _cat is { Cuentas.Count: > 0 } || _cat is { PuedeVerProformas: true } || _cat is { Comprobantes.Count: > 0 } || _cat is { Cajas.Count: > 1 })
             {
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel"></i> Otros filtros</h4>
@@ -746,6 +748,26 @@
                             <select value="@_f.Unidad" @onchange="e => Filtrar(() => _f.Unidad = e.Value?.ToString() ?? string.Empty)">
                                 <option value="">Todas</option>
                                 @foreach (var u in _cat.Unidades) { <option value="@u.Codigo">@u.Codigo · @u.Descripcion</option> }
+                            </select>
+                        </div>
+                    }
+                    @if (_cat is { Comprobantes.Count: > 0 })
+                    {
+                        <div class="smart-search__inline">
+                            <label>Comprobante</label>
+                            <select value="@_f.Tc" @onchange="e => Filtrar(() => _f.Tc = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">Todos</option>
+                                @foreach (var c in _cat.Comprobantes) { <option value="@c.Codigo">@c.Codigo · @c.Descripcion</option> }
+                            </select>
+                        </div>
+                    }
+                    @if (_cat is { Cajas.Count: > 1 })
+                    {
+                        <div class="smart-search__inline">
+                            <label>Caja</label>
+                            <select value="@_f.Caja" @onchange="e => Filtrar(() => _f.Caja = e.Value?.ToString() ?? string.Empty)">
+                                <option value="">Todas</option>
+                                @foreach (var c in _cat.Cajas) { <option value="@c.Codigo">@c.Codigo · @c.Descripcion</option> }
                             </select>
                         </div>
                     }
@@ -769,6 +791,8 @@
             var chips = new List<GestionSmartChip>();
             if (_f.Origen != "TODOS") chips.Add(new("origen", Origenes.First(o => o.Key == _f.Origen).Label));
             if (_f.Unidad.Length > 0) chips.Add(new("unidad", $"Unidad: {_f.Unidad}"));
+            if (_f.Tc.Length > 0) chips.Add(new("tc", $"Comprobante: {_f.Tc}"));
+            if (_f.Caja.Length > 0) chips.Add(new("caja", $"Caja: {_cat?.Cajas.FirstOrDefault(c => c.Codigo == _f.Caja)?.Descripcion ?? _f.Caja}"));
             if (_f.Cuenta.Length > 0) chips.Add(new("cuenta", $"Cuenta: {_f.Cuenta}"));
             if (_f.IncluirProformas) chips.Add(new("proformas", "Incluye proformas"));
             return chips;
@@ -782,15 +806,17 @@
     {
         if (key == "origen") _f.Origen = "TODOS";
         else if (key == "unidad") _f.Unidad = string.Empty;
+        else if (key == "tc") _f.Tc = string.Empty;
+        else if (key == "caja") _f.Caja = string.Empty;
         else if (key == "cuenta") _f.Cuenta = string.Empty;
         else if (key == "proformas") _f.IncluirProformas = false;
     }
 
-    // «Limpiar» vuelve a lo de entrada: los últimos asientos, sin período.
+    // «Limpiar» vuelve a lo de entrada: la semana, sin las ventas.
     private void LimpiarFiltros()
     {
-        _f.FechaDesde = null; _f.FechaHasta = null;
-        _f.Origen = "TODOS"; _f.Unidad = string.Empty; _f.Cuenta = string.Empty; _f.IncluirProformas = false; _texto = string.Empty;
+        _f.PeriodoPorDefecto();
+        _f.Origen = AsientosBusqueda.OrigenPorDefecto; _f.Unidad = string.Empty; _f.Tc = string.Empty; _f.Caja = string.Empty; _f.Cuenta = string.Empty; _f.IncluirProformas = false; _texto = string.Empty;
     }
 
     private static string Origen(AsientoResumen x) => x.Manual ? "Manual" : x.LivaTipo.ToUpperInvariant() switch
