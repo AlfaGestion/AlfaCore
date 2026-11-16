@@ -6,6 +6,7 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
+@inject AlfaCore.Services.IPuntoVentaSalonService SalonSvc
 @inject AlfaCore.Services.IPuntoVentaConfigService PosConfigSvc
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
@@ -5555,7 +5556,7 @@
                         <button type="button" class="pos-mobile-footer__secondary" @onclick="CloseMobileCart"><i class="bi bi-arrow-left"></i> Volver</button>
                         @if (_pedidoContexto is not null && !EsCierrePedido)
                         {
-                            <button type="button" class="pos-mobile-footer__primary" @onclick="GuardarPedidoDesdeCarritoAsync" disabled="@(!_cartItems.Any())">Guardar pedido</button>
+                            <button type="button" class="pos-mobile-footer__primary" @onclick="GuardarPedidoDesdeCarritoAsync" disabled="@(!_cartItems.Any())">@(EsPedidoSalon ? "Enviar comanda" : "Guardar pedido")</button>
                         }
                         else
                         {
@@ -5657,8 +5658,8 @@
                         @if (_pedidoContexto is not null && !EsCierrePedido)
                         {
                             <button type="button" class="pos-charge" @onclick="GuardarPedidoDesdeCarritoAsync" disabled="@(!_cartItems.Any())">
-                                <i class="bi bi-journal-check pos-charge__icon"></i>
-                                <span class="pos-charge__label">Guardar pedido</span>
+                                <i class="bi @(EsPedidoSalon ? "bi-send" : "bi-journal-check") pos-charge__icon"></i>
+                                <span class="pos-charge__label">@(EsPedidoSalon ? "Enviar comanda" : "Guardar pedido")</span>
                             </button>
                         }
                         else
@@ -7268,6 +7269,12 @@
 
     private bool EsCierrePedido => string.Equals(AccionPedidoQuery, "cerrar", StringComparison.OrdinalIgnoreCase);
 
+    // Mesa del modo Salón: fuera del cierre, el carrito arranca vacío y lo cargado se agrega
+    // como una ronda nueva (PuntoVentaSalonService.AgregarItemsAsync), sin tocar lo ya enviado a cocina.
+    private bool EsPedidoSalon => string.Equals(_pedidoContexto?.Modalidad, PuntoVentaPedidoModalidadKeys.Salon, StringComparison.OrdinalIgnoreCase);
+    private decimal _salonTotalCargado;
+    private string RutaSalon => $"/ventas/punto-venta/salon?idPuntoVenta={_pedidoContexto?.IdPuntoVenta}";
+
     private PuntoVentaPedidoDto? _pedidoContexto;
     private string? _pedidoError;
     private string? _pedidoSucursalOverride;
@@ -7391,7 +7398,31 @@
                     // se limpia y se repuebla con los ítems ya guardados del pedido para
                     // no arrastrar un carrito de otra sesión de Mostrador.
                     CartState.Clear();
-                    foreach (var item in _pedidoContexto.Items)
+                    var itemsACargar = _pedidoContexto.Items;
+                    if (EsPedidoSalon)
+                    {
+                        _salonTotalCargado = _pedidoContexto.Items.Sum(i => i.Subtotal);
+                        // Al cobrar una mesa se agrupan las rondas (mismo artículo y precio) en una sola línea;
+                        // al agregar, el carrito arranca vacío.
+                        itemsACargar = EsCierrePedido
+                            ? _pedidoContexto.Items
+                                .GroupBy(i => new { IdArticulo = i.IdArticulo.Trim(), i.Precio, i.TasaIva, i.Exento })
+                                .Select(g => new PuntoVentaPedidoItemDto
+                                {
+                                    IdArticulo = g.Key.IdArticulo,
+                                    Descripcion = g.First().Descripcion,
+                                    Presentacion = g.First().Presentacion,
+                                    Precio = g.Key.Precio,
+                                    Cantidad = g.Sum(x => x.Cantidad),
+                                    TasaIva = g.Key.TasaIva,
+                                    Exento = g.Key.Exento,
+                                    Familia = g.First().Familia
+                                })
+                                .ToList()
+                            : [];
+                    }
+
+                    foreach (var item in itemsACargar)
                     {
                         _cartItems.Add(new PuntoVentaCartItemDto
                         {
@@ -7464,6 +7495,21 @@
             Familia = x.Familia
         }).ToList();
 
+        if (EsPedidoSalon)
+        {
+            try
+            {
+                await SalonSvc.AgregarItemsAsync(_pedidoContexto.Id, items, enviar: true, PuntoVentaSalonOrigenKeys.Mozo, AppUserSession.GetCurrentUserName(string.Empty));
+                CartState.Clear();
+                Nav.NavigateTo(RouteCtx.BuildRoute($"{RutaSalon}&idPedido={_pedidoContexto.Id}"));
+            }
+            catch (Exception ex)
+            {
+                _pedidoError = ex.Message;
+            }
+            return;
+        }
+
         var request = new PuntoVentaPedidoSaveRequest
         {
             Id = _pedidoContexto.Id,
@@ -7497,7 +7543,15 @@
         if (_pedidoContexto is null)
             return string.Empty;
 
-        var modalidad = _pedidoContexto.Modalidad == PuntoVentaPedidoModalidadKeys.Delivery ? "Delivery" : "Take Away";
+        if (EsPedidoSalon)
+        {
+            var mesa = _pedidoContexto.NombreCliente;
+            return EsCierrePedido
+                ? $"Cobrar {mesa}"
+                : $"{mesa} · ya cargado {FmtMoney(_salonTotalCargado)} · lo que agregues se envía a cocina/barra";
+        }
+
+        var modalidad =_pedidoContexto.Modalidad == PuntoVentaPedidoModalidadKeys.Delivery ? "Delivery" : "Take Away";
         var partes = new List<string> { $"Pedido {modalidad}", _pedidoContexto.NombreCliente };
         if (!string.IsNullOrWhiteSpace(_pedidoContexto.Direccion))
             partes.Add(_pedidoContexto.Direccion);
@@ -9946,7 +10000,9 @@
         // Si el comprobante se generó cerrando un pedido de Delivery/Take Away,
         // no tiene sentido quedarse en Mostrador: se vuelve al tablero de pedidos.
         if (_pedidoContexto is not null)
-            Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/delivery?idPuntoVenta={_pedidoContexto.IdPuntoVenta}"));
+            Nav.NavigateTo(RouteCtx.BuildRoute(EsPedidoSalon
+                ? RutaSalon
+                : $"/ventas/delivery?idPuntoVenta={_pedidoContexto.IdPuntoVenta}"));
     }
 
     private void ContinueWithNewReceipt()

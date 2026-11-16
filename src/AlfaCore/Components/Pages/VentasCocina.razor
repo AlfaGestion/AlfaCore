@@ -1,0 +1,490 @@
+@page "/ventas/punto-venta/cocina"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta/cocina"
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaCocinaService CocinaSvc
+@inject IPuntoVentaService PuntoVentaSvc
+@inject IPuntoVentaConfigService PosConfigSvc
+@inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteCtx
+@inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IAsyncDisposable
+
+<PageTitle>Cocina | Punto de Venta</PageTitle>
+
+<section class="page-grid cocina-page">
+    <div class="cocina-toolbar">
+        <div class="cocina-toolbar__titulo">
+            <h2>@(_nombrePuntoVenta ?? "Cocina")</h2>
+            <span>@(_comandas.Count) comandas · @_comandas.Count(c => c.TodoListo) listas</span>
+        </div>
+
+        <div class="cocina-destinos" role="tablist">
+            @foreach (var (valor, texto) in Destinos)
+            {
+                <button type="button" role="tab"
+                        class="cocina-chip @(_destino == valor ? "cocina-chip--activo" : string.Empty)"
+                        @onclick="() => CambiarDestinoAsync(valor)">@texto</button>
+            }
+        </div>
+
+        <div class="cocina-toolbar__acciones">
+            <label class="cocina-switch" title="Muestra las comandas en esta pantalla">
+                <input type="checkbox" checked="@_mostrarPantalla" @onchange="e => SetPantallaAsync((bool)e.Value!)" /> Pantalla
+            </label>
+            <label class="cocina-switch" title="Imprime automáticamente cada comanda nueva en la impresora predeterminada de esta PC">
+                <input type="checkbox" checked="@_imprimir" @onchange="e => SetImprimirAsync((bool)e.Value!)" /> Comandera
+            </label>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirAgotadosAsync">
+                <i class="bi bi-slash-circle"></i> Agotados @(_agotados.Count > 0 ? $"({_agotados.Count})" : string.Empty)
+            </button>
+            <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute($"/ventas/punto-venta/salon?idPuntoVenta={IdPuntoVentaQuery}")">
+                <i class="bi bi-grid-3x3-gap"></i> Salón
+            </a>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @(_feedback.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : "editor-msg--warning")">
+            <strong>@_feedback.Title</strong>
+            <span>@_feedback.Message</span>
+        </div>
+    }
+
+    @if (_imprimir)
+    {
+        <div class="cocina-impresion">
+            <i class="bi bi-printer"></i>
+            <span>
+                Comandera activa en esta PC (@(DestinoTexto(_destino))). Imprime en la impresora predeterminada;
+                para que salga sin el cuadro de impresión, abrí el navegador con <code>--kiosk-printing</code>.
+                Impresas en esta sesión: <strong>@_impresas</strong>.
+            </span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando comandas...</div>
+    }
+    else if (_mostrarPantalla)
+    {
+        @if (_comandas.Count == 0)
+        {
+            <div class="panel-card empty-state cocina-vacio">
+                <i class="bi bi-check2-circle"></i>
+                <p>No hay comandas pendientes.</p>
+            </div>
+        }
+        else
+        {
+            <div class="cocina-board">
+                @foreach (var comanda in _comandas)
+                {
+                    var minutos = (int)Math.Max(0, (DateTime.Now - comanda.FechaHora).TotalMinutes);
+                    <article class="cocina-ticket @GetTicketCss(comanda, minutos)">
+                        <header class="cocina-ticket__header">
+                            <div>
+                                <strong class="cocina-ticket__mesa">@comanda.NombreMesa</strong>
+                                <span class="cocina-ticket__meta">
+                                    #@comanda.IdComanda · @PuntoVentaSalonTickets.DestinoTexto(comanda.Destino)
+                                    @if (!string.IsNullOrWhiteSpace(comanda.Mozo))
+                                    {
+                                        <span> · @comanda.Mozo</span>
+                                    }
+                                </span>
+                            </div>
+                            <span class="cocina-ticket__tiempo">@minutos'</span>
+                        </header>
+                        <ul class="cocina-ticket__lineas">
+                            @foreach (var linea in comanda.Lineas)
+                            {
+                                <li>
+                                    <button type="button" class="cocina-linea cocina-linea--@linea.Estado.ToLowerInvariant()"
+                                            @onclick="() => AvanzarAsync(linea)" disabled="@_busy"
+                                            title="Tocá para pasar a En marcha / Listo">
+                                        <span class="cocina-linea__cant">@PuntoVentaSalonTickets.FmtQty(linea.Cantidad)</span>
+                                        <span class="cocina-linea__desc">
+                                            @linea.Descripcion
+                                            @if (!string.IsNullOrWhiteSpace(linea.Observaciones))
+                                            {
+                                                <small>@linea.Observaciones</small>
+                                            }
+                                        </span>
+                                        <span class="cocina-linea__estado">@EstadoTexto(linea.Estado)</span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                        <footer class="cocina-ticket__footer">
+                            @if (comanda.TodoListo)
+                            {
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => MarcarAsync(comanda, PuntoVentaSalonLineaEstadoKeys.Servido)" disabled="@_busy">
+                                    <i class="bi bi-check2-all"></i> Entregado
+                                </button>
+                            }
+                            else
+                            {
+                                @if (!comanda.EnMarcha)
+                                {
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MarcarAsync(comanda, PuntoVentaSalonLineaEstadoKeys.EnPreparacion)" disabled="@_busy">
+                                        <i class="bi bi-fire"></i> Empezar
+                                    </button>
+                                }
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => MarcarAsync(comanda, PuntoVentaSalonLineaEstadoKeys.Listo)" disabled="@_busy">
+                                    <i class="bi bi-bell"></i> Todo listo
+                                </button>
+                            }
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ReimprimirAsync(comanda)" title="Reimprimir" disabled="@_busy">
+                                <i class="bi bi-printer"></i>
+                            </button>
+                        </footer>
+                    </article>
+                }
+            </div>
+        }
+    }
+</section>
+
+@if (_showAgotados)
+{
+    <div class="salon-modal-backdrop" @onclick="() => _showAgotados = false">
+        <section class="salon-modal cocina-agotados" role="dialog" @onclick:stopPropagation>
+            <h3>Agotados</h3>
+            <p class="salon-modal__hint">Lo que marques como agotado no se puede pedir y desaparece de la carta QR al instante.</p>
+            @if (_agotados.Count > 0)
+            {
+                <ul class="cocina-agotados__lista">
+                    @foreach (var agotado in _agotados)
+                    {
+                        <li>
+                            <span>@agotado.Descripcion <small>@agotado.IdArticulo · desde @agotado.FechaHora.ToString("HH:mm")</small></span>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => SetAgotadoAsync(agotado.IdArticulo, false)" disabled="@_busy">Hay de nuevo</button>
+                        </li>
+                    }
+                </ul>
+            }
+            <div class="field">
+                <label>Marcar como agotado</label>
+                <input type="search" placeholder="Buscar plato o bebida..." @bind="_busqueda" @bind:event="oninput" @bind:after="BuscarAsync" />
+            </div>
+            @if (_resultados.Count > 0)
+            {
+                <ul class="cocina-agotados__lista">
+                    @foreach (var art in _resultados.Where(r => _agotados.All(a => !string.Equals(a.IdArticulo, r.IdArticulo.Trim(), StringComparison.OrdinalIgnoreCase))))
+                    {
+                        <li>
+                            <span>@art.Descripcion <small>@art.IdArticulo</small></span>
+                            <button type="button" class="btn btn--danger btn--sm" @onclick="() => SetAgotadoAsync(art.IdArticulo, true)" disabled="@_busy">Agotado</button>
+                        </li>
+                    }
+                </ul>
+            }
+            <div class="salon-modal__acciones">
+                <button type="button" class="btn btn--ghost" @onclick="() => _showAgotados = false">Cerrar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly (string Valor, string Texto)[] Destinos =
+    [
+        ("", "Todo"),
+        (PuntoVentaSalonDestinoKeys.Cocina, "Cocina"),
+        (PuntoVentaSalonDestinoKeys.Barra, "Barra"),
+        (PuntoVentaSalonDestinoKeys.Barra2, "Barra 2")
+    ];
+
+    private const int RefrescoSegundos = 5;
+
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "destino")]
+    public string? DestinoQuery { get; set; }
+
+    private PageHeaderConfig? _pageHeaderPublicado;
+    private string? _nombrePuntoVenta;
+    private List<PuntoVentaCocinaComandaDto> _comandas = [];
+    private List<PuntoVentaAgotadoDto> _agotados = [];
+    private List<PuntoVentaArticleDto> _resultados = [];
+    private HashSet<int> _comandasVistas = [];
+    private AppUiMessage? _feedback;
+    private string _destino = string.Empty;
+    private string _busqueda = string.Empty;
+    private string _estacion = Environment.MachineName;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _mostrarPantalla = true;
+    private bool _imprimir;
+    private bool _showAgotados;
+    private bool _primeraCarga = true;
+    private int _impresas;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _timerCts;
+
+    private string ClaveLocal => $"alfacore.pos.cocina.{IdPuntoVentaQuery}";
+
+    protected override void OnInitialized()
+    {
+        _destino = (DestinoQuery ?? string.Empty).Trim().ToUpperInvariant();
+        UpdatePageHeader();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IdPuntoVentaQuery is not > 0)
+        {
+            Nav.NavigateTo(RouteCtx.BuildRoute("/ventas/punto-venta"));
+            return;
+        }
+
+        try
+        {
+            _nombrePuntoVenta = (await PosConfigSvc.GetPuntoVentaByIdAsync(IdPuntoVentaQuery.Value))?.Nombre?.Trim();
+        }
+        catch
+        {
+            // el titulo es solo informativo
+        }
+        await CargarAsync();
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        UpdatePageHeader();
+
+        // Preferencias de este dispositivo: pantalla / comandera / destino / nombre de estacion.
+        var guardado = await Js.InvokeAsync<string?>("alfaPosSalon.getLocal", ClaveLocal);
+        if (!string.IsNullOrWhiteSpace(guardado))
+        {
+            var partes = guardado.Split('|');
+            _mostrarPantalla = partes.ElementAtOrDefault(0) != "0";
+            _imprimir = partes.ElementAtOrDefault(1) == "1";
+            if (string.IsNullOrWhiteSpace(DestinoQuery))
+                _destino = partes.ElementAtOrDefault(2) ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(partes.ElementAtOrDefault(3)))
+                _estacion = partes[3];
+        }
+        else
+        {
+            _estacion = $"{Environment.MachineName}-{Guid.NewGuid().ToString("N")[..6]}";
+        }
+
+        await CargarAsync();
+        await ImprimirPendientesAsync();
+        StateHasChanged();
+        IniciarRefresco();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _timerCts?.Cancel();
+        _timer?.Dispose();
+        _timerCts?.Dispose();
+        if (ReferenceEquals(PageHeader.Current, _pageHeaderPublicado))
+            PageHeader.Clear();
+        await Task.CompletedTask;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(_pageHeaderPublicado = new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        ModuleKey = "ventas",
+        TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "punto-venta")
+    });
+
+    private void IniciarRefresco()
+    {
+        _timerCts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(RefrescoSegundos));
+        var token = _timerCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await _timer.WaitForNextTickAsync(token))
+                {
+                    if (_busy || _showAgotados)
+                        continue;
+                    await InvokeAsync(async () =>
+                    {
+                        await CargarAsync();
+                        await ImprimirPendientesAsync();
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }, token);
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _comandas = (await CocinaSvc.GetComandasAsync(IdPuntoVentaQuery!.Value, _destino)).ToList();
+            _agotados = (await CocinaSvc.GetAgotadosAsync(IdPuntoVentaQuery.Value)).ToList();
+
+            var nuevas = _comandas.Count(c => !_comandasVistas.Contains(c.IdComanda));
+            if (nuevas > 0 && !_primeraCarga && _mostrarPantalla)
+            {
+                try { await Js.InvokeVoidAsync("alfaPosSalon.beep", Math.Min(nuevas, 3)); } catch { /* sin audio */ }
+            }
+            foreach (var c in _comandas)
+                _comandasVistas.Add(c.IdComanda);
+            _primeraCarga = false;
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudieron cargar las comandas", ex.Message);
+        }
+    }
+
+    private async Task ImprimirPendientesAsync()
+    {
+        if (!_imprimir)
+            return;
+        try
+        {
+            var comandas = await CocinaSvc.ReclamarParaImprimirAsync(IdPuntoVentaQuery!.Value, _destino, _estacion);
+            if (comandas.Count == 0)
+                return;
+            await Js.InvokeAsync<bool>("alfaPosSalon.printHtml", PuntoVentaSalonTickets.BuildComandasHtml(comandas));
+            _impresas += comandas.Count;
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo imprimir la comanda", ex.Message);
+        }
+    }
+
+    private async Task GuardarPreferenciasAsync()
+        => await Js.InvokeVoidAsync("alfaPosSalon.setLocal", ClaveLocal,
+            $"{(_mostrarPantalla ? "1" : "0")}|{(_imprimir ? "1" : "0")}|{_destino}|{_estacion}");
+
+    private async Task CambiarDestinoAsync(string destino)
+    {
+        _destino = destino;
+        await GuardarPreferenciasAsync();
+        await CargarAsync();
+    }
+
+    private async Task SetPantallaAsync(bool valor)
+    {
+        _mostrarPantalla = valor;
+        await GuardarPreferenciasAsync();
+    }
+
+    private async Task SetImprimirAsync(bool valor)
+    {
+        _imprimir = valor;
+        await GuardarPreferenciasAsync();
+        await ImprimirPendientesAsync();
+    }
+
+    private Task AvanzarAsync(PuntoVentaCocinaLineaDto linea)
+        => RunAsync(() => CocinaSvc.AvanzarLineaAsync(linea.Id, AppUserSession.GetCurrentUserName(string.Empty)));
+
+    private Task MarcarAsync(PuntoVentaCocinaComandaDto comanda, string estado)
+        => RunAsync(() => CocinaSvc.MarcarComandaAsync(comanda.IdComanda, estado, AppUserSession.GetCurrentUserName(string.Empty)));
+
+    private async Task ReimprimirAsync(PuntoVentaCocinaComandaDto comanda)
+    {
+        var completa = await CocinaSvc.GetComandaAsync(comanda.IdComanda);
+        if (completa is not null)
+            await Js.InvokeAsync<bool>("alfaPosSalon.printHtml", PuntoVentaSalonTickets.BuildComandasHtml([completa], reimpresion: true));
+    }
+
+    private async Task RunAsync(Func<Task> accion)
+    {
+        if (_busy)
+            return;
+        _busy = true;
+        _feedback = null;
+        try
+        {
+            await accion();
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo actualizar", ex.Message);
+            await CargarAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ----------------------------------------------------------- agotados
+
+    private async Task AbrirAgotadosAsync()
+    {
+        _busqueda = string.Empty;
+        _resultados = [];
+        _showAgotados = true;
+        await CargarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (_busqueda.Trim().Length < 2)
+        {
+            _resultados = [];
+            return;
+        }
+        try
+        {
+            var catalogo = await PuntoVentaSvc.SearchArticulosAsync(new PuntoVentaCatalogFiltersDto { Texto = _busqueda, TamanioPagina = 12 });
+            _resultados = catalogo.Articulos.ToList();
+        }
+        catch (Exception ex)
+        {
+            _feedback = AppUiMessage.Warning("No se pudo buscar", ex.Message);
+        }
+    }
+
+    private Task SetAgotadoAsync(string idArticulo, bool agotado)
+        => RunAsync(() => CocinaSvc.SetAgotadoAsync(IdPuntoVentaQuery!.Value, idArticulo, agotado, AppUserSession.GetCurrentUserName(string.Empty)));
+
+    // ----------------------------------------------------------- helpers
+
+    private static string GetTicketCss(PuntoVentaCocinaComandaDto comanda, int minutos)
+    {
+        if (comanda.TodoListo)
+            return "cocina-ticket--listo";
+        if (minutos >= 20)
+            return "cocina-ticket--demorado";
+        if (minutos >= 10)
+            return "cocina-ticket--atento";
+        return comanda.EnMarcha ? "cocina-ticket--marcha" : "cocina-ticket--nuevo";
+    }
+
+    private static string EstadoTexto(string estado) => estado switch
+    {
+        PuntoVentaSalonLineaEstadoKeys.Enviado => "Nuevo",
+        PuntoVentaSalonLineaEstadoKeys.EnPreparacion => "En marcha",
+        PuntoVentaSalonLineaEstadoKeys.Listo => "Listo",
+        _ => estado
+    };
+
+    private static string DestinoTexto(string destino)
+        => string.IsNullOrWhiteSpace(destino) ? "todos los destinos" : PuntoVentaSalonTickets.DestinoTexto(destino).ToLowerInvariant();
+}

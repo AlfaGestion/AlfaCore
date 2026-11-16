@@ -127,10 +127,13 @@
                     return;
             }
 
-            if (_puntosVenta.Any(x => x.Id == idPuntoVenta))
+            var pvDirecto = _puntosVenta.FirstOrDefault(x => x.Id == idPuntoVenta);
+            if (pvDirecto is not null)
             {
                 await Js.InvokeVoidAsync("localStorage.setItem", PuntoVentaStorageKey, idPuntoVenta.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPuntoVenta={idPuntoVenta}&directo=1"));
+                Nav.NavigateTo(RouteCtx.BuildRoute(pvDirecto.Modo == PuntoVentaModoKeys.Salon
+                    ? $"/ventas/punto-venta/salon?idPuntoVenta={idPuntoVenta}"
+                    : $"/ventas/punto-venta/mostrador?idPuntoVenta={idPuntoVenta}&directo=1"));
             }
         }
         catch
@@ -173,13 +176,13 @@
     }
 
     private static bool EstaDisponible(string modo)
-        => modo == PuntoVentaModoKeys.Mostrador || modo == PuntoVentaModoKeys.Delivery;
+        => modo is PuntoVentaModoKeys.Mostrador or PuntoVentaModoKeys.Delivery or PuntoVentaModoKeys.Salon;
 
     private async Task AbrirAsync(PuntoVentaEntidadDto pv)
     {
         if (!EstaDisponible(pv.Modo))
         {
-            _feedback = AppUiMessage.Success("Próximamente", $"El modo Salón todavía no está disponible para \"{pv.Nombre}\".");
+            _feedback = AppUiMessage.Success("Próximamente", $"Este modo todavía no está disponible para \"{pv.Nombre}\".");
             return;
         }
 
@@ -195,6 +198,7 @@
         var ruta = pv.Modo switch
         {
             PuntoVentaModoKeys.Delivery => $"/ventas/delivery?idPuntoVenta={pv.Id}",
+            PuntoVentaModoKeys.Salon => $"/ventas/punto-venta/salon?idPuntoVenta={pv.Id}",
             _ => $"/ventas/punto-venta/mostrador?idPuntoVenta={pv.Id}"
         };
 
